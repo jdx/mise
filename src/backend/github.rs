@@ -7,7 +7,10 @@ use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_platform_key, lookup_with_fallback,
     template_string, try_with_v_prefix, try_with_v_prefix_and_repo, verify_artifact,
 };
-use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
+use crate::backend::{
+    MISE_BINS_DIR, SecurityFeature, backend_arg_matches_registry_backend,
+    runtime_path_for_install_path,
+};
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::{Config, Settings};
 use crate::file;
@@ -104,6 +107,42 @@ impl<'a> GitBackendOptions<'a> {
             })
     }
 
+    /// Substring an asset name must contain to remain a candidate, applied as a
+    /// pre-filter before platform autodetection (ported from the ubi backend).
+    fn matching(&self) -> Option<&'a str> {
+        self.values.str("matching")
+    }
+
+    /// Regex an asset name must match to remain a candidate, applied as a
+    /// pre-filter before platform autodetection (ported from the ubi backend).
+    fn matching_regex(&self) -> Option<&'a str> {
+        self.values.str("matching_regex")
+    }
+
+    /// `matching`/`matching_regex` for *provenance* selection, suppressed when
+    /// `asset_pattern` is set for this target.
+    ///
+    /// `asset_pattern` replaces autodetection and selects the binary directly,
+    /// ignoring the matching pre-filter (see the asset-selection call sites). Its
+    /// provenance must therefore align with that asset by platform alone:
+    /// re-applying `matching` here could narrow provenance to a *different* binary
+    /// than `asset_pattern` picked. Suppressing it also keeps an invalid
+    /// `matching_regex` — which is never validated on the asset_pattern path,
+    /// since that path skips `match_by_auto_detection` — from reaching the
+    /// provenance picker and silently returning no provenance (a verification
+    /// downgrade). When `asset_pattern` is unset this is just `matching`/
+    /// `matching_regex` unchanged.
+    fn matching_for_provenance(
+        &self,
+        target: &PlatformTarget,
+    ) -> (Option<&'a str>, Option<&'a str>) {
+        if self.asset_pattern_for_target(target).is_some() {
+            (None, None)
+        } else {
+            (self.matching(), self.matching_regex())
+        }
+    }
+
     fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
         if self.api_url() != self.default_api_url {
@@ -120,6 +159,12 @@ impl<'a> GitBackendOptions<'a> {
         }
         if self.no_app_for_target(target) {
             result.insert("no_app".to_string(), "true".to_string());
+        }
+        if let Some(value) = self.matching() {
+            result.insert("matching".to_string(), value.to_string());
+        }
+        if let Some(value) = self.matching_regex() {
+            result.insert("matching_regex".to_string(), value.to_string());
         }
         result
     }
@@ -176,6 +221,8 @@ pub fn install_time_option_keys() -> Vec<String> {
         "url".into(),
         "version_prefix".into(),
         "no_app".into(),
+        "matching".into(),
+        "matching_regex".into(),
     ]
 }
 
@@ -359,7 +406,10 @@ impl Backend for UnifiedGitBackend {
         Ok(versions)
     }
 
-    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+    async fn latest_stable_version_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Option<VersionInfo>> {
         if Settings::get().offline() {
             trace!("Skipping latest stable version due to offline mode");
             return Ok(None);
@@ -380,20 +430,23 @@ impl Backend for UnifiedGitBackend {
             return Ok(None);
         }
 
-        let latest_tag = if self.is_gitlab() {
+        let latest_release = if self.is_gitlab() {
             // GitLab doesn't have a "latest" endpoint
             return Ok(None);
         } else if self.is_forgejo() {
             match forgejo::get_release_for_url(&api_url, &repo, "latest").await {
-                Ok(r) => Some(r.tag_name),
+                Ok(r) => Some((r.tag_name, r.created_at, r.prerelease)),
                 Err(e) => {
                     debug!("Failed to fetch latest Forgejo release for {repo}: {e}");
                     None
                 }
             }
         } else {
-            match github::get_release_for_url(&api_url, &repo, "latest").await {
-                Ok(r) => Some(r.tag_name),
+            match self
+                .get_github_release_for_url(&api_url, &repo, "latest")
+                .await
+            {
+                Ok(r) => Some((r.tag_name, r.created_at, r.prerelease)),
                 Err(e) => {
                     debug!("Failed to fetch latest GitHub release for {repo}: {e}");
                     None
@@ -401,14 +454,14 @@ impl Backend for UnifiedGitBackend {
             }
         };
 
-        let latest_version = latest_tag
-            .filter(|tag| version_prefix.is_none_or(|p| tag.starts_with(p)))
-            .map(|tag| self.strip_version_prefix(&tag, &opts));
-
-        match latest_version {
-            Some(version) => Ok(Some(version)),
-            None => Ok(None),
-        }
+        Ok(latest_release
+            .filter(|(tag, _, _)| version_prefix.is_none_or(|p| tag.starts_with(p)))
+            .map(|(tag, created_at, prerelease)| VersionInfo {
+                version: self.strip_version_prefix(&tag, &opts),
+                created_at: Some(created_at),
+                prerelease,
+                ..Default::default()
+            }))
     }
 
     async fn resolve_exact_version(
@@ -426,10 +479,19 @@ impl Backend for UnifiedGitBackend {
         let api_url = opts.api_url();
         let version_prefix = opts.version_prefix();
 
+        let use_versions_host = self.use_versions_host_for_github_metadata();
         match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
             let api_url = api_url.clone();
             let repo = repo.clone();
-            async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+            async move {
+                github::get_release_for_url_with_versions_host(
+                    &api_url,
+                    &repo,
+                    &candidate,
+                    use_versions_host,
+                )
+                .await
+            }
         })
         .await
         {
@@ -450,6 +512,28 @@ impl Backend for UnifiedGitBackend {
         let raw_opts = ctx.config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
+
+        // Validate `matching_regex` up front, before the cached-URL branch below.
+        // Reusing a cached lockfile URL skips binary selection (the path that
+        // normally hard-errors on a bad pattern), so without this an invalid
+        // regex would reach the provenance picker, return `None`, and silently
+        // skip SLSA verification rather than failing closed.
+        //
+        // Skip this when `asset_pattern` is set: it supersedes `matching`/
+        // `matching_regex` for both binary selection and provenance (see
+        // `matching_for_provenance` and `resolve_*_asset_url_for_target`), so the
+        // regex is never consulted and an invalid one is irrelevant. mise doesn't
+        // hard-fail on options it won't act on — `url` short-circuits before
+        // `asset_pattern` is ever templated (resolve_asset_url_for_target), an
+        // ignored hook `shell` is dropped with a warning (src/hooks.rs), and
+        // unknown tool-option keys are silently ignored. Validating here would be
+        // the lone exception that rejects a superseded option.
+        if opts
+            .asset_pattern_for_target(&PlatformTarget::from_current())
+            .is_none()
+        {
+            asset_matcher::validate_matching_regex(opts.matching_regex())?;
+        }
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
@@ -503,9 +587,9 @@ impl Backend for UnifiedGitBackend {
         &self,
         request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let raw_opts = request.options();
-        self.options(&raw_opts).lockfile_options(target)
+        Ok(self.options(&raw_opts).lockfile_options(target))
     }
 
     /// Resolve platform-specific lock information for cross-platform lockfile generation.
@@ -519,6 +603,19 @@ impl Backend for UnifiedGitBackend {
         let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
+
+        // Fail closed on an invalid `matching_regex` instead of writing an empty
+        // entry. The `Err` arm below intentionally swallows resolution failures so a
+        // platform with no matching asset is skipped rather than failing the whole
+        // (best-effort) lock — but `resolve_asset_url_for_target` returns the same
+        // `Err` for an invalid regex, which would then be caught and written as a
+        // url-less `PlatformInfo::default()`. Returning `Err` here makes the lock
+        // orchestration skip the platform (no entry written) instead. Gated on the
+        // same `asset_pattern` precedence as everywhere else, so an ignored regex is
+        // never validated.
+        if opts.asset_pattern_for_target(target).is_none() {
+            asset_matcher::validate_matching_regex(opts.matching_regex())?;
+        }
 
         // Resolve asset for the target platform
         let asset = self
@@ -605,6 +702,25 @@ impl UnifiedGitBackend {
         }
     }
 
+    fn use_versions_host_for_github_metadata(&self) -> bool {
+        backend_arg_matches_registry_backend(&self.ba)
+    }
+
+    async fn get_github_release_for_url(
+        &self,
+        api_url: &str,
+        repo: &str,
+        tag: &str,
+    ) -> Result<github::GithubRelease> {
+        github::get_release_for_url_with_versions_host(
+            api_url,
+            repo,
+            tag,
+            self.use_versions_host_for_github_metadata(),
+        )
+        .await
+    }
+
     /// Detect what provenance type is available for a release by checking its assets
     /// and querying the GitHub attestation API.
     async fn detect_provenance_type(
@@ -620,11 +736,20 @@ impl UnifiedGitBackend {
         let version = &tv.version;
         let version_prefix = opts.version_prefix();
 
+        let use_versions_host = self.use_versions_host_for_github_metadata();
         let release =
             try_with_v_prefix_and_repo(version, version_prefix, Some(repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.to_string();
-                async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+                async move {
+                    github::get_release_for_url_with_versions_host(
+                        &api_url,
+                        &repo,
+                        &candidate,
+                        use_versions_host,
+                    )
+                    .await
+                }
             })
             .await
             .ok();
@@ -643,7 +768,11 @@ impl UnifiedGitBackend {
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
                 match crate::github::sigstore::detect_attestations(
-                    owner, repo_name, api_url, digest,
+                    owner,
+                    repo_name,
+                    api_url,
+                    digest,
+                    self.use_versions_host_for_github_metadata(),
                 )
                 .await
                 {
@@ -684,11 +813,18 @@ impl UnifiedGitBackend {
         // when a matching provenance file exists for the target platform.
         if settings.slsa && settings.github.slsa {
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
+            // Narrow provenance the same way the binary is narrowed, so a
+            // multi-binary release's per-binary provenance files don't
+            // cross-verify the wrong digest. Suppressed when `asset_pattern` is
+            // set (it selects the binary, ignoring `matching`).
+            let (matching, matching_regex) = opts.matching_for_provenance(target);
             let picker = AssetPicker::with_libc(
                 target.os_name().to_string(),
                 target.arch_name().to_string(),
                 target.qualifier().map(|s| s.to_string()),
-            );
+            )
+            .with_matching(matching.unwrap_or_default())
+            .with_matching_regex(matching_regex.unwrap_or_default());
             if let Some(provenance_name) = picker.pick_best_provenance(&asset_names) {
                 let url = release
                     .assets
@@ -754,6 +890,7 @@ impl UnifiedGitBackend {
                     repo_name,
                     None,
                     Some(api_url),
+                    self.use_versions_host_for_github_metadata(),
                 )
                 .await
                 {
@@ -782,21 +919,35 @@ impl UnifiedGitBackend {
         if settings.slsa && settings.github.slsa {
             let version = &tv.version;
             let version_prefix = opts.version_prefix();
+            let use_versions_host = self.use_versions_host_for_github_metadata();
             let release =
                 try_with_v_prefix_and_repo(version, version_prefix, Some(repo), |candidate| {
                     let api_url = api_url.to_string();
                     let repo = repo.to_string();
-                    async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+                    async move {
+                        github::get_release_for_url_with_versions_host(
+                            &api_url,
+                            &repo,
+                            &candidate,
+                            use_versions_host,
+                        )
+                        .await
+                    }
                 })
                 .await?;
 
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
             let current_platform = PlatformTarget::from_current();
+            // Keep provenance aligned with the matching-selected binary, unless
+            // `asset_pattern` is set (it selects the binary, ignoring `matching`).
+            let (matching, matching_regex) = opts.matching_for_provenance(&current_platform);
             let picker = AssetPicker::with_libc(
                 current_platform.os_name().to_string(),
                 current_platform.arch_name().to_string(),
                 current_platform.qualifier().map(|s| s.to_string()),
-            );
+            )
+            .with_matching(matching.unwrap_or_default())
+            .with_matching_regex(matching_regex.unwrap_or_default());
 
             if let Some(provenance_name) = picker.pick_best_provenance(&asset_names) {
                 let provenance_asset = release
@@ -1181,7 +1332,9 @@ impl UnifiedGitBackend {
         version: &str,
         target: &PlatformTarget,
     ) -> Result<ReleaseAsset> {
-        let release = github::get_release_for_url(api_url, repo, version).await?;
+        let release = self
+            .get_github_release_for_url(api_url, repo, version)
+            .await?;
         let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
 
         // Build asset list with URLs for checksum fetching
@@ -1191,7 +1344,10 @@ impl UnifiedGitBackend {
             .map(|a| Asset::new(&a.name, &a.browser_download_url))
             .collect();
 
-        // Try explicit pattern first
+        // Try explicit pattern first. `asset_pattern` replaces autodetection
+        // entirely, so it intentionally takes precedence over and ignores
+        // `matching`/`matching_regex` (there is no autodetected candidate set left
+        // to narrow). Do NOT thread the matching filter into this branch.
         if let Some(pattern) = opts.asset_pattern_for_target(target) {
             // Template the pattern for the target platform
             let templated_pattern = template_string_for_target(&pattern, tv, target);
@@ -1227,6 +1383,8 @@ impl UnifiedGitBackend {
             .for_target(target)
             .with_no_app(opts.no_app_for_target(target))
             .with_preferred_name(self.preferred_asset_name())
+            .with_matching(opts.matching().unwrap_or_default())
+            .with_matching_regex(opts.matching_regex().unwrap_or_default())
             .pick_from(&available_assets)?
             .name;
         let asset = self
@@ -1281,7 +1439,10 @@ impl UnifiedGitBackend {
             .map(|a| Asset::new(&a.name, &a.direct_asset_url))
             .collect();
 
-        // Try explicit pattern first
+        // Try explicit pattern first. `asset_pattern` replaces autodetection
+        // entirely, so it intentionally takes precedence over and ignores
+        // `matching`/`matching_regex` (there is no autodetected candidate set left
+        // to narrow). Do NOT thread the matching filter into this branch.
         if let Some(pattern) = opts.asset_pattern_for_target(target) {
             // Template the pattern for the target platform
             let templated_pattern = template_string_for_target(&pattern, tv, target);
@@ -1314,6 +1475,8 @@ impl UnifiedGitBackend {
             .for_target(target)
             .with_no_app(opts.no_app_for_target(target))
             .with_preferred_name(self.preferred_asset_name())
+            .with_matching(opts.matching().unwrap_or_default())
+            .with_matching_regex(opts.matching_regex().unwrap_or_default())
             .pick_from(&available_assets)?
             .name;
         let asset = self
@@ -1368,7 +1531,10 @@ impl UnifiedGitBackend {
             )
         };
 
-        // Try explicit pattern first
+        // Try explicit pattern first. `asset_pattern` replaces autodetection
+        // entirely, so it intentionally takes precedence over and ignores
+        // `matching`/`matching_regex` (there is no autodetected candidate set left
+        // to narrow). Do NOT thread the matching filter into this branch.
         if let Some(pattern) = opts.asset_pattern_for_target(target) {
             // Template the pattern for the target platform
             let templated_pattern = template_string_for_target(&pattern, tv, target);
@@ -1401,6 +1567,8 @@ impl UnifiedGitBackend {
             .for_target(target)
             .with_no_app(opts.no_app_for_target(target))
             .with_preferred_name(self.preferred_asset_name())
+            .with_matching(opts.matching().unwrap_or_default())
+            .with_matching_regex(opts.matching_regex().unwrap_or_default())
             .pick_from(&available_assets)?
             .name;
         let asset = self
@@ -1791,6 +1959,7 @@ impl UnifiedGitBackend {
             repo_name,
             None, // We don't know the expected workflow
             Some(api_url),
+            self.use_versions_host_for_github_metadata(),
         )
         .await
         {
@@ -1884,11 +2053,20 @@ impl UnifiedGitBackend {
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.version_prefix();
+        let use_versions_host = self.use_versions_host_for_github_metadata();
         let release =
             match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.clone();
-                async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+                async move {
+                    github::get_release_for_url_with_versions_host(
+                        &api_url,
+                        &repo,
+                        &candidate,
+                        use_versions_host,
+                    )
+                    .await
+                }
             })
             .await
             {
@@ -1903,11 +2081,17 @@ impl UnifiedGitBackend {
         // Find the best provenance asset for the current platform
         let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
         let current_platform = PlatformTarget::from_current();
+        // Keep provenance aligned with the matching-selected binary at install
+        // time, matching the selection used at lock time. Suppressed when
+        // `asset_pattern` is set (it selects the binary, ignoring `matching`).
+        let (matching, matching_regex) = opts.matching_for_provenance(&current_platform);
         let picker = AssetPicker::with_libc(
             current_platform.os_name().to_string(),
             current_platform.arch_name().to_string(),
             current_platform.qualifier().map(|s| s.to_string()),
-        );
+        )
+        .with_matching(matching.unwrap_or_default())
+        .with_matching_regex(matching_regex.unwrap_or_default());
 
         let provenance_name = match picker.pick_best_provenance(&asset_names) {
             Some(name) => name,
@@ -2091,6 +2275,20 @@ mod tests {
         ))
     }
 
+    fn create_test_gitlab_backend() -> UnifiedGitBackend {
+        UnifiedGitBackend::from_arg(BackendArg::new(
+            "gitlab:test/repo".to_string(),
+            Some("gitlab:test/repo".to_string()),
+        ))
+    }
+
+    fn create_test_forgejo_backend() -> UnifiedGitBackend {
+        UnifiedGitBackend::from_arg(BackendArg::new(
+            "forgejo:test/repo".to_string(),
+            Some("forgejo:test/repo".to_string()),
+        ))
+    }
+
     #[test]
     fn test_pick_by_pattern_basic() {
         // Single-match cases that the old `matches_pattern` test covered.
@@ -2207,6 +2405,18 @@ mod tests {
     }
 
     #[test]
+    fn test_matching_options_are_install_time_keys() {
+        // `matching`/`matching_regex` must be install-time-only keys so a stale
+        // cached filter from a prior install can't silently override what's in
+        // mise.toml now. They are deliberately NOT folded into the install path
+        // (that stays keyed by tool name + version) — `tool_alias` is the way to
+        // install multiple binaries from one repo into distinct dirs.
+        let keys = install_time_option_keys();
+        assert!(keys.contains(&"matching".to_string()));
+        assert!(keys.contains(&"matching_regex".to_string()));
+    }
+
+    #[test]
     fn test_lockfile_options_use_target_artifact_inputs() {
         let backend = create_test_backend();
         let mut opts = ToolVersionOptions::default();
@@ -2217,6 +2427,17 @@ mod tests {
         opts.opts.insert(
             "version_prefix".to_string(),
             toml::Value::String("release-".to_string()),
+        );
+        // matching/matching_regex are top-level (not per-platform) options; they
+        // must round-trip into lockfile_options for every target so a relock on
+        // another OS reproduces the same asset selection.
+        opts.opts.insert(
+            "matching".to_string(),
+            toml::Value::String("tool".to_string()),
+        );
+        opts.opts.insert(
+            "matching_regex".to_string(),
+            toml::Value::String("^tool-".to_string()),
         );
         let mut platforms = toml::Table::new();
         let mut linux = toml::Table::new();
@@ -2249,6 +2470,8 @@ mod tests {
                     "asset_pattern".to_string(),
                     "tool-*-linux.tar.gz".to_string()
                 ),
+                ("matching".to_string(), "tool".to_string()),
+                ("matching_regex".to_string(), "^tool-".to_string()),
                 ("version_prefix".to_string(), "release-".to_string()),
             ])
         );
@@ -2263,10 +2486,140 @@ mod tests {
                     "asset_pattern".to_string(),
                     "tool-*-windows.zip".to_string()
                 ),
+                ("matching".to_string(), "tool".to_string()),
+                ("matching_regex".to_string(), "^tool-".to_string()),
                 ("no_app".to_string(), "true".to_string()),
                 ("version_prefix".to_string(), "release-".to_string()),
             ])
         );
+    }
+
+    #[test]
+    fn test_matching_for_provenance_suppressed_when_asset_pattern_set() {
+        // `asset_pattern` selects the binary directly and ignores `matching`, so
+        // provenance must NOT be narrowed by `matching` on that path — otherwise a
+        // self-contradictory config could attach a *different* binary's provenance
+        // than `asset_pattern` picked, and an invalid `matching_regex` (never
+        // validated on the asset_pattern path) could silently skip verification.
+        let backend = create_test_backend();
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "matching".to_string(),
+            toml::Value::String("oxlint".to_string()),
+        );
+        opts.opts.insert(
+            "matching_regex".to_string(),
+            toml::Value::String("^oxlint-".to_string()),
+        );
+        // asset_pattern set for linux only, not for macos.
+        let mut platforms = toml::Table::new();
+        let mut linux = toml::Table::new();
+        linux.insert(
+            "asset_pattern".to_string(),
+            toml::Value::String("oxlint-*-linux.tar.gz".to_string()),
+        );
+        platforms.insert("linux-x64".to_string(), toml::Value::Table(linux));
+        opts.opts
+            .insert("platforms".to_string(), toml::Value::Table(platforms));
+
+        let linux = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        let macos = PlatformTarget::new(crate::platform::Platform::parse("macos-arm64").unwrap());
+
+        // asset_pattern set for this target -> matching suppressed for provenance.
+        assert_eq!(
+            backend.options(&opts).matching_for_provenance(&linux),
+            (None, None)
+        );
+        // No asset_pattern for this target -> matching flows through to provenance.
+        assert_eq!(
+            backend.options(&opts).matching_for_provenance(&macos),
+            (Some("oxlint"), Some("^oxlint-"))
+        );
+    }
+
+    #[test]
+    fn test_matching_plumbing_parity_across_git_backends() {
+        // The github/gitlab/forgejo backends share one option struct
+        // (`GitBackendOptions`) and one `AssetMatcher`, but each has its OWN
+        // `resolve_*_asset_url_for_target` function that threads
+        // `matching`/`matching_regex` separately (copy-paste identical today, with
+        // only backend-specific asset/digest plumbing differing). This test guards
+        // the shared seams those three paths depend on from drifting per backend
+        // type: the option accessors, lockfile serialization, and install-time-key
+        // inheritance must behave identically for all three. The resolve functions
+        // themselves are covered end-to-end for github by
+        // e2e/backend/test_github_matching, and the matcher all three feed is
+        // covered by the asset_matcher unit tests.
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "matching".to_string(),
+            toml::Value::String("oxlint".to_string()),
+        );
+        opts.opts.insert(
+            "matching_regex".to_string(),
+            toml::Value::String("^oxlint-".to_string()),
+        );
+        let target = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+
+        // Guard that the helpers really build distinct backend types, so the loop
+        // below genuinely exercises gitlab/forgejo and isn't three githubs.
+        assert!(create_test_gitlab_backend().is_gitlab());
+        assert!(create_test_forgejo_backend().is_forgejo());
+
+        for backend in [
+            create_test_backend(),
+            create_test_gitlab_backend(),
+            create_test_forgejo_backend(),
+        ] {
+            let backend_type = backend.ba.backend_type();
+            let resolved = backend.options(&opts);
+
+            // Accessors the three resolve_*_asset_url_for_target functions read.
+            assert_eq!(
+                resolved.matching(),
+                Some("oxlint"),
+                "matching() must be readable for {backend_type:?}"
+            );
+            assert_eq!(
+                resolved.matching_regex(),
+                Some("^oxlint-"),
+                "matching_regex() must be readable for {backend_type:?}"
+            );
+
+            // Both keys must round-trip to the lockfile for every git backend so a
+            // relock on another platform reproduces the same asset selection.
+            let lf = resolved.lockfile_options(&target);
+            assert_eq!(
+                lf.get("matching").map(String::as_str),
+                Some("oxlint"),
+                "matching must round-trip to lockfile for {backend_type:?}"
+            );
+            assert_eq!(
+                lf.get("matching_regex").map(String::as_str),
+                Some("^oxlint-"),
+                "matching_regex must round-trip to lockfile for {backend_type:?}"
+            );
+
+            // Cache-keying: a stale cached filter must never silently override
+            // mise.toml, so both keys must be install-time keys for every type
+            // (gitlab/forgejo inherit github's list via the routing in mod.rs).
+            let itk = crate::backend::install_time_option_keys_for_type(&backend_type);
+            assert!(
+                itk.contains(&"matching".to_string())
+                    && itk.contains(&"matching_regex".to_string()),
+                "matching/matching_regex must be install-time keys for {backend_type:?}"
+            );
+            // ...including the per-platform `platforms.<target>.matching` form the
+            // stale-cache check uses.
+            assert!(
+                crate::backend::is_install_time_option_key_for_type(&backend_type, "matching")
+                    && crate::backend::is_install_time_option_key_for_type(
+                        &backend_type,
+                        "platforms.linux-x64.matching"
+                    ),
+                "is_install_time_option_key_for_type must report matching for {backend_type:?}"
+            );
+        }
     }
 
     #[test]

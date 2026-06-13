@@ -2,27 +2,8 @@ use aho_corasick::AhoCorasick;
 use indexmap::IndexSet;
 use std::sync::Arc;
 
-use crate::tera::render_str_if_template;
-
 #[derive(Default, Clone, Debug, serde::Deserialize)]
 pub struct Redactions(pub IndexSet<String>);
-
-impl Redactions {
-    pub fn merge(&mut self, other: Self) {
-        self.0.extend(other.0);
-    }
-
-    pub fn render(&mut self, tera: &mut tera::Tera, ctx: &tera::Context) -> eyre::Result<()> {
-        for r in self.0.clone().drain(..) {
-            self.0.insert(render_str_if_template(tera, &r, ctx)?);
-        }
-        Ok(())
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
 
 /// A redactor that uses Aho-Corasick for efficient multi-pattern string replacement.
 ///
@@ -69,12 +50,6 @@ impl Redactor {
             }
         }
         Self::new(patterns)
-    }
-
-    /// Returns the patterns being redacted.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn patterns(&self) -> &IndexSet<String> {
-        &self.patterns
     }
 
     /// Returns the patterns as an Arc for efficient sharing.
@@ -157,7 +132,7 @@ mod tests {
     #[test]
     fn test_empty_patterns_filtered() {
         let r = Redactor::new(["".to_string(), "secret".to_string(), "".to_string()]);
-        assert_eq!(r.patterns().len(), 1);
+        assert_eq!(r.patterns_arc().len(), 1);
         assert_eq!(r.redact("my secret"), "my [redacted]");
     }
 }

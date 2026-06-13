@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::config::Config;
-use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
+use crate::install_before::resolve_cli_minimum_release_age;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, ToolsetBuilder};
@@ -257,10 +257,7 @@ impl Lock {
     /// Get the before_date from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled during tool request resolution.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(minimum_release_age) = &self.minimum_release_age {
-            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
-        }
-        Ok(None)
+        resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 
     fn is_unfiltered_lock_run(&self) -> bool {
@@ -516,11 +513,17 @@ impl Lock {
 
         // First pass: tools from the resolved toolset whose source maps to this lockfile
         for (backend, tv) in ts.list_current_versions() {
-            if let Some(source_path) = tv.request.source().path() {
-                let (source_lockfile, _) = lockfile::lockfile_path_for_config(source_path);
+            if let Some((source_lockfile, _)) =
+                lockfile::lockfile_path_for_tool_source(config, tv.request.source())
+            {
                 if source_lockfile != target_lockfile_path {
                     continue;
                 }
+            } else if tv.request.source().path().is_some() {
+                // Path-backed sources that do not map to a mise lockfile, such
+                // as .tool-versions and tool stubs, should not be folded into
+                // an arbitrary project mise.lock.
+                continue;
             } else {
                 // Tools without a source path (env vars, CLI args) go to mise.lock only
                 let is_base_lockfile = target_lockfile_path
@@ -545,11 +548,16 @@ impl Lock {
         // Second pass: iterate config files matching this lockfile to catch
         // tools that were overridden by a higher-priority config
         for (path, cf) in config.config_files.iter() {
-            if !config_paths_set.contains(path) {
+            let source = cf.source();
+            let source_lockfile_matches = lockfile::lockfile_path_for_tool_source(config, &source)
+                .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path);
+            if !(config_paths_set.contains(path)
+                || source.is_idiomatic_version_file() && source_lockfile_matches)
+            {
                 continue;
             }
             if let Ok(trs) = cf.to_tool_request_set() {
-                for (ba, requests, _source) in trs.iter() {
+                for (ba, requests, source) in trs.iter() {
                     for request in requests {
                         if ba.backend().is_ok() {
                             // Check if the resolved toolset has a matching request.
@@ -568,11 +576,13 @@ impl Lock {
                                     }
                                 }
                             }
-                            // Resolve overridden `latest` requests through the same path as
-                            // active tools. When an install-before cutoff is active, bypass
-                            // installed-version selection so the fallback still uses release
-                            // dates from the remote version metadata.
-                            if !matched_resolved && request.version() == "latest" {
+                            // Resolve overridden requests through the same path as active
+                            // tools when the request cannot be copied from the resolved
+                            // toolset. Keep this broad only for idiomatic version files;
+                            // other sources preserve the previous latest-only behavior.
+                            let should_resolve_overridden =
+                                request.version() == "latest" || source.is_idiomatic_version_file();
+                            if !matched_resolved && should_resolve_overridden {
                                 let mut resolve_options = match request
                                     .resolve_options(base_resolve_options)
                                 {

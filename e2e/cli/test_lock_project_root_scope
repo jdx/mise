@@ -43,7 +43,7 @@ echo "=== Testing monorepo lock scope follows the active config root ==="
 mkdir -p monorepo-root/packages/api
 
 cat >monorepo-root/mise.toml <<'EOF'
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["packages/*"]

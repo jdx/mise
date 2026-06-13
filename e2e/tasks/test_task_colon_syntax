@@ -18,7 +18,7 @@ assert_fail "mise run ':build'" "require a monorepo root configuration"
 export MISE_EXPERIMENTAL=1
 
 cat <<'EOF' >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["project", "app"]

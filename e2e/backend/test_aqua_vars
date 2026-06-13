@@ -63,6 +63,27 @@ EOF_MISE
 MISE_TIMINGS=1 mise lock --platform "$MISE_PLATFORM"
 assert_succeed "cmp mise.lock nested-vars.lock"
 
+rm -f mise.toml mise.lock
+mkdir -p .config/mise/conf.d
+
+cat <<'EOF_MISE' >.config/mise/conf.d/01-base.toml
+[tools."aqua:example/vars-tool"]
+version = "1.0.0"
+vars.fixture_version = "1.0.0"
+EOF_MISE
+
+cat <<'EOF_MISE' >.config/mise/conf.d/02-override.toml
+[tools."aqua:example/vars-tool"]
+version = "1.0.0"
+fixture_version = "2.0.0"
+EOF_MISE
+
+MISE_TIMINGS=1 mise lock --platform "$MISE_PLATFORM"
+assert_contains "cat .config/mise/mise.lock" '"vars.fixture_version" = "2.0.0"'
+assert_contains "cat .config/mise/mise.lock" 'url = "https://mise.en.dev/test-fixtures/hello-world-2.0.0.tar.gz"'
+assert_not_contains "cat .config/mise/mise.lock" '"vars.fixture_version" = "1.0.0"'
+rm -rf .config/mise
+
 cat <<'EOF_MISE' >mise.toml
 [tools]
 "aqua:example/vars-tool" = { version = "1.0.0", vars = { fixture_version = ["2.0.0"] } }

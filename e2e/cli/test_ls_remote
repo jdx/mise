@@ -17,6 +17,7 @@ assert "mise ls-remote dummy@sub-1:2" "1.0.0
 # result is cached and reused for the second query.
 assert_contains "mise ls-remote jq --minimum-release-age 2019-01-01" "1.6"
 assert_not_contains "mise ls-remote jq --minimum-release-age 2019-01-01" "1.7.1"
+assert_contains "mise ls-remote jq --minimum-release-age 2019-01-01 2>&1" "newer jq release"
 assert_contains "mise ls-remote jq --minimum-release-age 2024-01-01" "1.7.1"
 assert_not_empty "mise ls-remote jq --minimum-release-age 1d"
 assert_contains "mise ls-remote jq --before 2019-01-01" "1.6"

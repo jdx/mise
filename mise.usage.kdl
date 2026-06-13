@@ -1,4 +1,4 @@
-min_usage_version "3.4"
+min_usage_version "3.5"
 name mise
 bin mise
 about "Dev tools, env vars, and tasks in one CLI"
@@ -280,6 +280,227 @@ Tool(s) to look up
 e.g.: ruby@3
 """# required=#false var=#true
 }
+cmd bootstrap help="[experimental] Set up a machine for the current config in one command" {
+    long_help #"""
+[experimental] Set up a machine for the current config in one command
+
+Runs the bootstrap steps for the current config in order:
+
+1. `mise bootstrap packages install` — install missing
+   `[bootstrap.packages]`
+2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+3. `mise bootstrap macos-defaults apply` — write
+   `[bootstrap.macos.defaults]` entries (macOS)
+4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+5. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+   (Unix)
+6. `mise install` — install missing tools from `[tools]`
+7. `mise run bootstrap` — if a task named `bootstrap` is defined
+
+The declarative steps converge — anything already in its desired state
+is skipped, so re-running is safe. The `bootstrap` task runs on every
+invocation; keep it idempotent. Use it for any project-specific setup
+that doesn't fit the declarative sections (cloning repos, seeding
+databases, etc.) — it runs with the installed tools on PATH.
+"""#
+    after_long_help #"""
+Examples:
+
+    $ mise bootstrap                    # packages + dotfiles + tools + bootstrap task
+    $ mise bootstrap packages install --yes
+    $ mise bootstrap macos-defaults status
+    $ mise bootstrap launchd apply --dry-run
+    $ mise bootstrap user apply --dry-run
+
+"""#
+    flag "-n --dry-run" help="Print what would happen without installing anything"
+    flag "-y --yes" help="Skip confirmation prompts"
+    flag --update help="Refresh system package manager metadata first (apt: `apt-get update`)"
+    cmd launchd subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" {
+        cmd apply {
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+        }
+        cmd status {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured LaunchAgent is not in its desired state"
+        }
+    }
+    cmd macos-defaults subcommand_required=#true help="Manage macOS defaults from `[bootstrap.macos.defaults]`" {
+        cmd apply {
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+        }
+        cmd status {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured defaults are not in their desired state"
+        }
+    }
+    cmd packages subcommand_required=#true help="Manage bootstrap system packages from `[bootstrap.packages]`" {
+        cmd brew subcommand_required=#true help="Manage Homebrew taps used by bootstrap packages" {
+            long_help #"""
+Manage Homebrew taps used by bootstrap packages
+
+These commands edit `[bootstrap.brew.taps]` so tapped formulae and casks
+can be fetched directly by mise without a Homebrew installation.
+"""#
+            cmd tap help="Add a Homebrew tap URL to [bootstrap.brew.taps]" {
+                after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages brew tap railwaycat/emacsmacport
+    $ mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-tools.git
+
+"""#
+                flag "-l --local" help="Write to the local config instead of the global config"
+                flag "-n --dry-run" help="Print the config change without writing it"
+                flag "-p --path" help="Write to this config file or directory" {
+                    arg <PATH>
+                }
+                arg <TAP> help="Tap name, e.g. `owner/repo`"
+                arg "[URL]" help="GitHub URL for the tap. Defaults to https://github.com/<owner>/homebrew-<repo>.git" required=#false
+            }
+            cmd untap help="Remove Homebrew tap URLs from [bootstrap.brew.taps]" {
+                alias remove rm
+                after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages brew untap railwaycat/emacsmacport
+
+"""#
+                flag "-l --local" help="Write to the local config instead of the global config"
+                flag "-n --dry-run" help="Print the config change without writing it"
+                flag "-p --path" help="Write to this config file or directory" {
+                    arg <PATH>
+                }
+                arg <TAPS>… help="Tap name(s), e.g. `owner/repo`" var=#true
+            }
+        }
+        cmd install help="Install missing system packages from `[bootstrap.packages]`" {
+            alias i
+            long_help #"""
+Install missing system packages from `[bootstrap.packages]`
+
+Checks which configured packages are missing and installs them with the
+system package manager. This may elevate with sudo when not running as
+root (see the `system_packages.sudo` setting).
+
+Packages can also be given explicitly in `manager:package` form (e.g.
+`apt:curl`, `brew:jq`); they are installed whether or not they appear in
+the config. Explicit packages and `--manager` scope the run to packages
+only.
+"""#
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages install
+    $ mise bootstrap packages install apt:curl brew:jq brew-cask:firefox
+    $ mise bootstrap packages install --dry-run
+    $ mise bootstrap packages install --manager apt --yes
+
+"""#
+            flag "-m --manager" help="Only install packages for this manager, e.g. `apt`, `brew`, or `brew-cask`" {
+                arg <MANAGER> {
+                    choices apt brew brew-cask dnf pacman
+                }
+            }
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+            flag --update help="Refresh package manager metadata first (apt: `apt-get update`)"
+            arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
+        }
+        cmd status help="Show the status of system packages from `[bootstrap.packages]`" {
+            alias ls
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages status
+    $ mise bootstrap packages status --json
+    $ mise bootstrap packages status --missing # exit 1 if anything is out of sync
+
+"""#
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured packages are not in their desired state"
+        }
+        cmd upgrade help="Upgrade installed bootstrap packages from `[bootstrap.packages]`" {
+            alias up
+            long_help #"""
+Upgrade installed bootstrap packages from `[bootstrap.packages]`
+
+Refreshes package manager metadata and upgrades the configured packages
+that are already installed: apt/dnf/pacman upgrade to the newest available
+version (apt and dnf honor a version pinned in config), brew pours the
+formula's current bottle and replaces the old keg, and brew-cask installs
+the current cask artifact. Packages that are not installed yet are skipped
+— use `mise bootstrap packages install` for those.
+
+Packages can also be given explicitly in `manager:package` form.
+"""#
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages upgrade
+    $ mise bootstrap packages upgrade brew:postgresql@17
+    $ mise bootstrap packages upgrade --manager brew-cask
+    $ mise bootstrap packages upgrade --manager apt --yes
+    $ mise bootstrap packages upgrade --dry-run
+
+"""#
+            flag "-m --manager" help="Only upgrade packages for this manager, e.g. `apt`, `brew`, or `brew-cask`" {
+                arg <MANAGER> {
+                    choices apt brew brew-cask dnf pacman
+                }
+            }
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+            arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
+        }
+        cmd use help="Add bootstrap packages to [bootstrap.packages] and install them" {
+            alias u
+            long_help #"""
+Add bootstrap packages to [bootstrap.packages] and install them
+
+Like `mise use` for tools: writes `"manager:package" = "version"` entries
+to mise.toml (the local config by default, the global one with `-g`) and
+then installs whatever is missing.
+
+Versions are pinned with `@`: `mise bootstrap packages use apt:curl@8.5.0-2`. Without
+`@` (or with `@latest`) no pin is written. brew formulae and casks
+version through their names instead (for example `brew:postgresql@17`,
+`brew-cask:temurin@17`), where `@` is part of the Homebrew name rather than
+a mise version selector.
+"""#
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages use apt:curl brew:jq brew-cask:firefox
+    $ mise bootstrap packages use -g brew:postgresql@17
+    $ mise bootstrap packages use apt:curl@8.5.0-2
+
+"""#
+            flag "-e --env" help="Write to the config file for this environment (mise.<ENV>.toml)" {
+                arg <ENV>
+            }
+            flag "-g --global" help="Write to the global config (~/.config/mise/config.toml) instead of the local one"
+            flag "-n --dry-run" help="Print the commands that would run without writing config or installing"
+            flag "-p --path" help="Write to this config file or directory" {
+                arg <PATH>
+            }
+            flag "-y --yes" help="Skip the confirmation prompt"
+            arg <PACKAGE>… help="Packages in `manager:package[@version]` form" var=#true
+        }
+    }
+    cmd user subcommand_required=#true help="Manage current-user bootstrap settings from `[bootstrap.user]`" {
+        cmd apply {
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+        }
+        cmd status {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured user setting is not in its desired state"
+        }
+    }
+}
 cmd cache help="Manage the mise cache" {
     long_help #"""
 Manage the mise cache
@@ -506,6 +727,107 @@ for direnv to consume.
 for direnv to consume.
 """#
 }
+cmd dotfiles subcommand_required=#true help="[experimental] Manage dotfiles from `[dotfiles]`" {
+    long_help #"""
+[experimental] Manage dotfiles from `[dotfiles]`
+
+Dotfiles are config files symlinked, copied, or rendered to target paths,
+plus marker-delimited blocks or single lines in files mise doesn't own.
+Unlike `[tools]`, dotfiles are only acted on when explicitly requested with
+`mise dotfiles apply` or `mise bootstrap`.
+"""#
+    cmd add help="Add or update dotfiles in `[dotfiles]`" {
+        long_help #"""
+Add or update dotfiles in `[dotfiles]`
+
+If the target is already managed, this updates its source from the live
+target. Otherwise it creates a `[dotfiles]` entry and seeds the source
+under `dotfiles.root` unless `--source` is provided.
+"""#
+        after_long_help #"""
+Examples:
+
+    $ mise dotfiles add ~/.zshrc
+    $ mise dotfiles add --mode copy ~/.config/starship.toml
+    $ mise dotfiles add --source dotfiles/gitconfig ~/.gitconfig
+
+"""#
+        flag "-f --force" help="Overwrite existing sources without prompting"
+        flag "-g --global" help="Write to the global config"
+        flag "-l --local" help="Write to the local config instead of the global config"
+        flag "-m --mode" help="Dotfile mode to write" {
+            arg <MODE>
+        }
+        flag "-n --dry-run" help="Print the config/source updates without writing anything"
+        flag "-p --path" help="Write to this config file or directory" {
+            arg <PATH>
+        }
+        flag "-s --source" help="Source path to use for a single target" {
+            arg <PATH>
+        }
+        flag "-y --yes" help="Skip the confirmation prompt"
+        arg <TARGET>… help="Targets to add or update" var=#true
+    }
+    cmd apply help="Apply dotfiles from `[dotfiles]`" {
+        long_help #"""
+Apply dotfiles from `[dotfiles]`
+
+Applies configured whole-file entries and edits that aren't in their
+desired state. Whole-file entries may symlink, copy, or render templates.
+Edit entries manage a marker-delimited block or a single line in a file
+mise doesn't otherwise own.
+"""#
+        after_long_help #"""
+Examples:
+
+    $ mise dotfiles apply
+    $ mise dotfiles apply --dry-run
+    $ mise dotfiles apply --dry-run --verbose
+    $ mise dotfiles apply --force --yes
+
+"""#
+        flag "-f --force" help="Overwrite existing files that conflict with whole-file dotfile entries"
+        flag "-n --dry-run" help="Print the actions that would run without writing anything"
+        flag "-y --yes" help="Skip the confirmation prompt"
+        arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
+    }
+    cmd edit help="Edit a managed dotfile source" {
+        after_long_help #"""
+Examples:
+
+    $ mise dotfiles edit ~/.zshrc
+    $ mise dotfiles edit --apply ~/.config/starship.toml
+
+"""#
+        flag --apply help="Apply this target after the editor exits"
+        flag "-m --mode" help="Dotfile mode to use if the target is not yet managed" {
+            arg <MODE>
+        }
+        flag "-s --source" help="Source path to use if the target is not yet managed" {
+            arg <PATH>
+        }
+        flag "-y --yes" help="Skip the confirmation prompt when adding an unmanaged target"
+        arg <TARGET> help="Target to edit"
+    }
+    cmd status help="Show the status of dotfiles from `[dotfiles]`" {
+        alias ls
+        after_long_help #"""
+Examples:
+
+    $ mise dotfiles status
+    $ mise dotfiles status ~/.zshrc
+    $ mise dotfiles status --json
+    $ mise dotfiles status --missing # exit 1 if anything is out of sync
+
+"""#
+        flag "-J --json" help="Output in JSON format"
+        flag --missing help=#"""
+Exit with code 1 if any configured dotfiles are not in their desired
+state (missing, source missing, differs)
+"""#
+        arg "[TARGET]…" help="Only show these targets" required=#false var=#true
+    }
+}
 cmd doctor help="Check mise installation for possible problems" {
     alias dr
     after_long_help #"""
@@ -628,28 +950,28 @@ Number of jobs to run in parallel
         arg <JOBS>
     }
     flag --allow-env help=#"""
-[experimental] Allow specific env var through (implies --deny-env for everything else)
+Allow specific env var through (implies --deny-env for everything else)
 Supports wildcards, e.g. --allow-env='MYAPP_*'
 """# var=#true {
         arg <VAR>
     }
     flag --allow-net help=#"""
-[experimental] Allow network to specific host (implies --deny-net for everything else)
+Allow network to specific host (implies --deny-net for everything else)
 macOS only in v1; on Linux falls back to allowing all network
 """# var=#true {
         arg <HOST>
     }
-    flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+    flag --allow-read help="Allow reads from specific path (implies --deny-read for everything else)" var=#true {
         arg <PATH>
     }
-    flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+    flag --allow-write help="Allow writes to specific path (implies --deny-write for everything else)" var=#true {
         arg <PATH>
     }
-    flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
-    flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
-    flag --deny-net help="[experimental] Block all network access"
-    flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
-    flag --deny-write help="[experimental] Block all filesystem writes"
+    flag --deny-all help="Block reads, writes, network, and env vars"
+    flag --deny-env help="Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+    flag --deny-net help="Block all network access"
+    flag --deny-read help="Block filesystem reads (system libs and tool dirs still accessible)"
+    flag --deny-write help="Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-deps help="Skip automatic dependency preparation"
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
@@ -1007,6 +1329,7 @@ Examples:
 """#
         flag --oauth help="Force native GitHub OAuth device flow instead of normal token resolution"
         flag --raw help="Print only the token value"
+        flag --refresh help="Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow"
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }
@@ -1162,18 +1485,18 @@ Supports absolute dates like "2024-06-01" and relative durations like "90d" or "
         arg <MINIMUM_RELEASE_AGE>
     }
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
-    flag --shared help="[experimental] Install tool(s) to a shared directory" {
+    flag --shared help="Install tool(s) to a shared directory" {
         long_help #"""
-[experimental] Install tool(s) to a shared directory
+Install tool(s) to a shared directory
 
 Installs to the specified directory instead of the default install location.
 May require elevated permissions depending on the path.
 """#
         arg <SHARED>
     }
-    flag --system help="[experimental] Install tool(s) to the system-wide shared directory" {
+    flag --system help="Install tool(s) to the system-wide shared directory" {
         long_help #"""
-[experimental] Install tool(s) to the system-wide shared directory
+Install tool(s) to the system-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
@@ -1488,9 +1811,9 @@ The version prefix to use when querying the latest version
 same as the first argument after the "@"
 """# required=#false
 }
-cmd mcp help="[experimental] Run Model Context Protocol (MCP) server" {
+cmd mcp help="Run Model Context Protocol (MCP) server" {
     long_help #"""
-[experimental] Run Model Context Protocol (MCP) server
+Run Model Context Protocol (MCP) server
 
 This command starts an MCP server that exposes mise functionality
 to AI assistants over stdin/stdout using JSON-RPC protocol.
@@ -1527,9 +1850,7 @@ Examples:
         "mise": {
           "command": "mise",
           "args": ["mcp"],
-          "env": {
-            "MISE_EXPERIMENTAL": "1"
-          }
+          "env": {}
         }
       }
     }
@@ -1622,6 +1943,14 @@ By default `mise oci build` only packages tools declared in the project's mise c
             arg <MOUNT_POINT>
         }
         flag --no-mise help="Do not embed the currently-running mise binary at /usr/local/bin/mise"
+        flag --owner help="UID[:GID] to assign to every tar entry in generated layers" {
+            long_help #"""
+UID[:GID] to assign to every tar entry in generated layers
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+"""#
+            arg "<UID[:GID]>"
+        }
     }
     cmd push help="[experimental] Build an OCI image and push it to a registry" {
         long_help #"""
@@ -1674,6 +2003,14 @@ See `mise oci build --help` for details.
             arg <MOUNT_POINT>
         }
         flag --no-mise help="Don't embed the mise binary (ignored with --image-dir)"
+        flag --owner help="UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)" {
+            long_help #"""
+UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+"""#
+            arg "<UID[:GID]>"
+        }
         flag --tool help="Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`" default=auto {
             arg <TOOL> {
                 choices auto skopeo crane
@@ -1741,6 +2078,14 @@ By default, both the container (`--rm`) and the loaded image are removed when th
             arg <MOUNT_POINT>
         }
         flag --no-mise help="Don't embed the mise binary (ignored with --image-dir)"
+        flag --owner help="UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)" {
+            long_help #"""
+UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+"""#
+            arg "<UID[:GID]>"
+        }
         flag --volume help="Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)" var=#true {
             long_help #"""
 Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
@@ -2326,25 +2671,25 @@ Or it can be overridden with the `shell` property on a task.
         arg <TOOL@VERSION>
     }
     flag --allow-env help=#"""
-[experimental] Allow specific env var through (implies --deny-env for everything else)
+Allow specific env var through (implies --deny-env for everything else)
 Supports wildcards, e.g. --allow-env='MYAPP_*'
 """# var=#true {
         arg <VAR>
     }
-    flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
+    flag --allow-net help="Allow network to specific host (implies --deny-net for everything else)" var=#true {
         arg <HOST>
     }
-    flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+    flag --allow-read help="Allow reads from specific path (implies --deny-read for everything else)" var=#true {
         arg <PATH>
     }
-    flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+    flag --allow-write help="Allow writes to specific path (implies --deny-write for everything else)" var=#true {
         arg <PATH>
     }
-    flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
-    flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
-    flag --deny-net help="[experimental] Block all network access"
-    flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
-    flag --deny-write help="[experimental] Block all filesystem writes"
+    flag --deny-all help="Block reads, writes, network, and env vars"
+    flag --deny-env help="Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+    flag --deny-net help="Block all network access"
+    flag --deny-read help="Block filesystem reads (system libs and tool dirs still accessible)"
+    flag --deny-write help="Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-cache help="Do not use cache on remote tasks"
     flag --no-deps help="Skip automatic dependency preparation"
@@ -3122,25 +3467,25 @@ Or it can be overridden with the `shell` property on a task.
             arg <TOOL@VERSION>
         }
         flag --allow-env help=#"""
-[experimental] Allow specific env var through (implies --deny-env for everything else)
+Allow specific env var through (implies --deny-env for everything else)
 Supports wildcards, e.g. --allow-env='MYAPP_*'
 """# var=#true {
             arg <VAR>
         }
-        flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
+        flag --allow-net help="Allow network to specific host (implies --deny-net for everything else)" var=#true {
             arg <HOST>
         }
-        flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+        flag --allow-read help="Allow reads from specific path (implies --deny-read for everything else)" var=#true {
             arg <PATH>
         }
-        flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+        flag --allow-write help="Allow writes to specific path (implies --deny-write for everything else)" var=#true {
             arg <PATH>
         }
-        flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
-        flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
-        flag --deny-net help="[experimental] Block all network access"
-        flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
-        flag --deny-write help="[experimental] Block all filesystem writes"
+        flag --deny-all help="Block reads, writes, network, and env vars"
+        flag --deny-env help="Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+        flag --deny-net help="Block all network access"
+        flag --deny-read help="Block filesystem reads (system libs and tool dirs still accessible)"
+        flag --deny-write help="Block all filesystem writes"
         flag --fresh-env help="Bypass the environment cache and recompute the environment"
         flag --no-cache help="Do not use cache on remote tasks"
         flag --no-deps help="Skip automatic dependency preparation"
@@ -3272,9 +3617,13 @@ Examples:
     $ mise token github github.mycompany.com
     github.mycompany.com: (none)
 
+    $ mise token github --oauth --refresh
+    github.com: gho_…xxxx (source: GitHub OAuth)
+
 """#
-        flag --oauth help="[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources"
+        flag --oauth help="Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources"
         flag --raw help="Print only the token value"
+        flag --refresh help="Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire"
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }
@@ -3355,6 +3704,13 @@ that may execute code or affect the environment. mise checks trust before
 parsing `mise.toml`. Without trust, mise may prompt, skip the config in some
 discovery paths, fail with an untrusted-config error when it cannot prompt,
 or assume trust in detected CI unless paranoid mode is enabled.
+
+Safe config files do not require trust: files that only contain
+`min_version`, `[tools]` entries with plain version strings (or arrays
+of them), and `[tasks]` (no templates and no tool options) are loaded
+without prompting, since nothing in them executes code at load time —
+tools install and tasks run only on explicit commands like `mise install`
+or `mise run`.
 """#
     after_long_help #"""
 Examples:

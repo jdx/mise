@@ -259,9 +259,9 @@ impl Backend for CargoBackend {
         &self,
         request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let opts = request.options();
-        CargoOptions::new(&opts).lockfile_options(target)
+        Ok(CargoOptions::new(&opts).lockfile_options(target))
     }
 }
 

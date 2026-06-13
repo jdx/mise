@@ -10,6 +10,10 @@ run = 'echo "using shell $0"'
 EOF
 
 assert "mise run shell" "using shell bash"
+# A forwarded arg is appended to the inline command, so it does NOT shift the
+# shell's $0 (which stays "bash"); before the Windows fix, `bash -c <script> arg`
+# made the first arg $0. See #9355.
+assert "mise run shell -- myarg" "using shell bash myarg"
 assert_fail "mise run shell-invalid" "invalid shell"
 
 cat <<EOF >mise.toml

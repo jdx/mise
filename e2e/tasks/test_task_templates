@@ -1,25 +1,8 @@
 #!/usr/bin/env bash
 
-# Test task templates feature (requires experimental = true)
+# Test task templates feature
 
-# First, test that extends fails without experimental flag
 cat <<'EOF' >mise.toml
-[task_templates."python:build"]
-run = "echo building python"
-description = "Build a Python project"
-
-[tasks.build]
-extends = "python:build"
-EOF
-
-# Should fail without experimental mode (override the env var)
-assert_fail "MISE_EXPERIMENTAL=0 mise run build" "experimental = true"
-
-# Now enable experimental mode and test basic template functionality
-cat <<'EOF' >mise.toml
-[settings]
-experimental = true
-
 [task_templates."python:build"]
 run = "echo building python"
 description = "Build a Python project"
@@ -33,9 +16,6 @@ assert "mise run build" "building python"
 
 # Test local override of run command
 cat <<'EOF' >mise.toml
-[settings]
-experimental = true
-
 [task_templates."python:build"]
 run = "echo template build"
 description = "Template description"
@@ -49,9 +29,6 @@ assert "mise run build" "local build"
 
 # Test tools deep merge
 cat <<'EOF' >mise.toml
-[settings]
-experimental = true
-
 [task_templates."python:build"]
 run = "echo tools: python={{ env.MISE_TOOL_OPTS_PYTHON | default(value='none') }} node={{ env.MISE_TOOL_OPTS_NODE | default(value='none') }}"
 tools = { python = "3.12", node = "18" }
@@ -67,9 +44,6 @@ assert_contains "mise tasks build" "node"
 
 # Test env deep merge
 cat <<'EOF' >mise.toml
-[settings]
-experimental = true
-
 [task_templates."python:build"]
 run = "echo FOO=$FOO BAR=$BAR"
 env = { FOO = "template_foo", BAR = "template_bar" }
@@ -83,9 +57,6 @@ assert "mise run build" "FOO=local_foo BAR=template_bar"
 
 # Test description from template (when local is empty)
 cat <<'EOF' >mise.toml
-[settings]
-experimental = true
-
 [task_templates."python:build"]
 run = "echo build"
 description = "Template description"
@@ -98,9 +69,6 @@ assert_contains "mise tasks build" "Template description"
 
 # Test local description overrides template
 cat <<'EOF' >mise.toml
-[settings]
-experimental = true
-
 [task_templates."python:build"]
 run = "echo build"
 description = "Template description"
@@ -115,9 +83,6 @@ assert_not_contains "mise tasks build" "Template description"
 
 # Test depends from template (using task name, not :prefix syntax)
 cat <<'EOF' >mise.toml
-[settings]
-experimental = true
-
 [task_templates."python:test"]
 run = "echo testing"
 depends = ["build"]
@@ -134,9 +99,6 @@ testing"
 
 # Test depends local override (local takes precedence completely)
 cat <<'EOF' >mise.toml
-[settings]
-experimental = true
-
 [task_templates."python:test"]
 run = "echo testing"
 depends = ["prep"]
@@ -158,9 +120,6 @@ assert_not_contains "mise run test" "prep"
 
 # Test template not found error
 cat <<'EOF' >mise.toml
-[settings]
-experimental = true
-
 [tasks.build]
 extends = "nonexistent:template"
 EOF
@@ -169,9 +128,6 @@ assert_fail "mise run build" "not found"
 
 # Test namespaced template names with colons
 cat <<'EOF' >mise.toml
-[settings]
-experimental = true
-
 [task_templates."rust:cargo:build"]
 run = "echo cargo build"
 
@@ -180,5 +136,21 @@ extends = "rust:cargo:build"
 EOF
 
 assert "mise run build" "cargo build"
+
+# Test templates apply to tasks defined in included tasks.toml files
+cat <<'EOF' >mise.toml
+[task_templates."template:failing-task"]
+run = "echo from template && exit 1"
+
+[task_config]
+includes = ["tasks.toml"]
+EOF
+
+cat <<'EOF' >tasks.toml
+[failing-task]
+extends = "template:failing-task"
+EOF
+
+assert_fail "mise run failing-task" "from template"
 
 echo '' >mise.toml

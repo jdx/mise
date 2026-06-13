@@ -3,7 +3,7 @@
 # Tests for `mise tasks info` in a monorepo setup
 
 cat >mise.toml <<EOF
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["lib"]

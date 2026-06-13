@@ -11,6 +11,8 @@ const GRANT_DEVICE_CODE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_TOKEN_SECS: i64 = 8 * 60 * 60;
 const REUSE_BUFFER_SECS: i64 = 300;
 
+static REFRESH_TOKEN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[derive(Debug, Clone)]
 pub struct TokenRequest {
     pub host: String,
@@ -18,6 +20,13 @@ pub struct TokenRequest {
     /// reusable cached or refreshed token is available. When false, an
     /// uncached host bails instead of prompting the user.
     pub allow_device_flow: bool,
+    /// Mint a fresh token even when the cached one is still time-valid: try
+    /// the refresh-token grant first, then fall back to the device flow (if
+    /// allowed). GitHub App user tokens are scoped to the installations that
+    /// existed when they were minted, so a cached token silently misses
+    /// permissions granted afterwards (e.g. the app was installed on a repo
+    /// after authorizing) until it expires hours later.
+    pub force_refresh: bool,
 }
 
 impl Default for TokenRequest {
@@ -25,6 +34,7 @@ impl Default for TokenRequest {
         Self {
             host: "github.com".to_string(),
             allow_device_flow: false,
+            force_refresh: false,
         }
     }
 }
@@ -65,6 +75,9 @@ struct TokenCache {
     tokens: HashMap<String, CachedToken>,
 }
 
+#[cfg(test)]
+static TEST_CACHE_PATH: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
 pub fn resolve_token(host: &str) -> Option<String> {
     let settings = Settings::get();
     if settings.github.oauth_client_id.trim().is_empty()
@@ -76,8 +89,28 @@ pub fn resolve_token(host: &str) -> Option<String> {
     token(TokenRequest {
         host: host.to_string(),
         allow_device_flow: false,
+        force_refresh: false,
     })
     .ok()
+}
+
+pub fn cached_access_token_for_host(host: &str) -> Option<String> {
+    let settings = Settings::get();
+    let client_id = settings.github.oauth_client_id.trim();
+    if client_id.is_empty() || !host_matches_settings(host, &settings.github.oauth_api_url) {
+        return None;
+    }
+    let canonical_host =
+        api_host(&settings.github.oauth_api_url).unwrap_or_else(|| host.to_string());
+    let cache_key = cache_key(
+        &canonical_host,
+        client_id,
+        settings.github.oauth_scopes.trim(),
+    );
+    read_cache()
+        .tokens
+        .get(&cache_key)
+        .map(|cached| cached.access_token.clone())
 }
 
 /// If OAuth is configured and a cached or refreshable token is available,
@@ -105,9 +138,66 @@ pub fn token(req: TokenRequest) -> Result<String> {
     block_on(token_async(req))
 }
 
+pub async fn refresh_cached_token_for_host(
+    host: &str,
+    stale_access_token: &str,
+) -> Result<Option<String>> {
+    let settings = Settings::get();
+    if settings.github.oauth_client_id.trim().is_empty()
+        || !host_matches_settings(host, &settings.github.oauth_api_url)
+    {
+        return Ok(None);
+    }
+
+    let client_id = settings.github.oauth_client_id.trim();
+    let scopes = settings.github.oauth_scopes.trim();
+    let canonical_host =
+        api_host(&settings.github.oauth_api_url).unwrap_or_else(|| host.to_string());
+    let cache_key = cache_key(&canonical_host, client_id, scopes);
+    refresh_cached_token(&cache_key, Some(stale_access_token)).await
+}
+
+async fn refresh_cached_token(
+    cache_key: &str,
+    stale_access_token: Option<&str>,
+) -> Result<Option<String>> {
+    let _lock = REFRESH_TOKEN_LOCK.lock().await;
+    let mut cache = read_cache();
+    let Some(mut cached) = cache.tokens.get(cache_key).cloned() else {
+        return Ok(None);
+    };
+
+    let invalidate_on_none = if let Some(stale_access_token) = stale_access_token {
+        if cached.access_token != stale_access_token {
+            return Ok(Some(cached.access_token));
+        }
+        true
+    } else if reusable(&cached) {
+        return Ok(Some(cached.access_token));
+    } else {
+        false
+    };
+
+    let Some(refreshed) = refresh_token(&cached).await? else {
+        if invalidate_on_none {
+            cached.expires_at = chrono::Utc::now();
+            cache.tokens.insert(cache_key.to_string(), cached);
+            if let Err(err) = write_cache(&cache) {
+                warn!("failed to invalidate GitHub OAuth token cache: {err:#}");
+            }
+        }
+        return Ok(None);
+    };
+    let access_token = refreshed.access_token.clone();
+    cache.tokens.insert(cache_key.to_string(), refreshed);
+    if let Err(err) = write_cache(&cache) {
+        warn!("failed to cache refreshed GitHub OAuth token: {err:#}");
+    }
+    Ok(Some(access_token))
+}
+
 async fn token_async(req: TokenRequest) -> Result<String> {
     let settings = Settings::get();
-    settings.ensure_experimental("native GitHub OAuth")?;
     let client_id = settings.github.oauth_client_id.trim();
     let scopes = settings.github.oauth_scopes.trim();
     if client_id.is_empty() {
@@ -125,27 +215,24 @@ async fn token_async(req: TokenRequest) -> Result<String> {
         api_host(&settings.github.oauth_api_url).unwrap_or_else(|| req.host.clone());
     let cache_key = cache_key(&canonical_host, client_id, scopes);
     let mut cache = read_cache();
-    if let Some(cached) = cache.tokens.get(&cache_key)
+    if !req.force_refresh
+        && let Some(cached) = cache.tokens.get(&cache_key)
         && reusable(cached)
     {
         return Ok(cached.access_token.clone());
     }
     if let Some(cached) = cache.tokens.get(&cache_key).cloned() {
-        match refresh_token(&cached).await {
-            Ok(Some(refreshed)) => {
-                let token = refreshed.access_token.clone();
-                cache.tokens.insert(cache_key, refreshed);
-                if let Err(err) = write_cache(&cache) {
-                    warn!("failed to cache GitHub OAuth token: {err:#}");
-                }
-                return Ok(token);
-            }
+        // Passing the cached token as "stale" forces the refresh-token grant
+        // even though the token is still time-valid.
+        let stale_access_token = req.force_refresh.then_some(cached.access_token.as_str());
+        match refresh_cached_token(&cache_key, stale_access_token).await {
+            Ok(Some(token)) => return Ok(token),
             Ok(None) => {}
             Err(err) => {
                 debug!("failed to refresh GitHub OAuth token: {err:#}");
             }
         }
-        if cached.expires_at > chrono::Utc::now() {
+        if !req.force_refresh && cached.expires_at > chrono::Utc::now() {
             return Ok(cached.access_token);
         }
     }
@@ -346,6 +433,10 @@ fn cache_key(host: &str, client_id: &str, scopes: &str) -> String {
 }
 
 fn cache_path() -> PathBuf {
+    #[cfg(test)]
+    if let Some(path) = TEST_CACHE_PATH.read().unwrap().clone() {
+        return path;
+    }
     env::MISE_STATE_DIR.join("github-oauth-tokens.toml")
 }
 
@@ -400,14 +491,204 @@ fn default_poll_interval() -> u64 {
     5
 }
 
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        tokio::task::block_in_place(|| handle.block_on(future))
+fn block_on<F>(future: F) -> F::Output
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    if tokio::runtime::Handle::try_current().is_ok() {
+        std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("failed to build tokio runtime")
+                .block_on(future)
+        })
+        .join()
+        .expect("tokio runtime thread panicked")
     } else {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("failed to build tokio runtime")
             .block_on(future)
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+
+    pub(crate) fn cache_key(host: &str, client_id: &str, scopes: &str) -> String {
+        super::cache_key(host, client_id, scopes)
+    }
+
+    pub(crate) fn set_cache_path(path: PathBuf) {
+        *TEST_CACHE_PATH.write().unwrap() = Some(path);
+    }
+
+    pub(crate) fn clear_cache_path() {
+        *TEST_CACHE_PATH.write().unwrap() = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct OAuthEnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        vars: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl OAuthEnvGuard {
+        fn new(auth_url: String, cache_path: PathBuf) -> Self {
+            let lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+            let vars = vec![
+                (
+                    "MISE_GITHUB_OAUTH_CLIENT_ID",
+                    std::env::var("MISE_GITHUB_OAUTH_CLIENT_ID").ok(),
+                ),
+                (
+                    "MISE_GITHUB_OAUTH_AUTH_URL",
+                    std::env::var("MISE_GITHUB_OAUTH_AUTH_URL").ok(),
+                ),
+                (
+                    "MISE_GITHUB_OAUTH_API_URL",
+                    std::env::var("MISE_GITHUB_OAUTH_API_URL").ok(),
+                ),
+                (
+                    "MISE_GITHUB_OAUTH_SCOPES",
+                    std::env::var("MISE_GITHUB_OAUTH_SCOPES").ok(),
+                ),
+                ("MISE_EXPERIMENTAL", std::env::var("MISE_EXPERIMENTAL").ok()),
+            ];
+            crate::env::set_var("MISE_GITHUB_OAUTH_CLIENT_ID", "Iv1.mock");
+            crate::env::set_var("MISE_GITHUB_OAUTH_AUTH_URL", auth_url);
+            crate::env::set_var("MISE_GITHUB_OAUTH_API_URL", "https://api.github.com");
+            crate::env::remove_var("MISE_GITHUB_OAUTH_SCOPES");
+            crate::env::set_var("MISE_EXPERIMENTAL", "1");
+            test_support::set_cache_path(cache_path);
+            Settings::reset(None);
+            Self { _lock: lock, vars }
+        }
+    }
+
+    impl Drop for OAuthEnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.vars {
+                if let Some(value) = value {
+                    crate::env::set_var(key, value);
+                } else {
+                    crate::env::remove_var(key);
+                }
+            }
+            test_support::clear_cache_path();
+            Settings::reset(None);
+        }
+    }
+
+    #[tokio::test]
+    async fn refresh_error_preserves_cached_token() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Ok((sock, _)) = listener.accept().await {
+                drop(sock);
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("github-oauth-tokens.toml");
+        let _guard =
+            OAuthEnvGuard::new(format!("http://127.0.0.1:{port}/login"), cache_path.clone());
+
+        let expires_at = chrono::DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let cache_key = cache_key("api.github.com", "Iv1.mock", "");
+        std::fs::write(
+            &cache_path,
+            format!(
+                r#"[tokens.{cache_key}]
+access_token = "ghu-stale"
+expires_at = "2099-01-01T00:00:00Z"
+refresh_token = "ghr-refresh"
+refresh_expires_at = "2099-01-01T00:00:00Z"
+"#
+            ),
+        )
+        .unwrap();
+
+        let result = refresh_cached_token(&cache_key, Some("ghu-stale")).await;
+
+        assert!(result.is_err());
+        let cache = read_cache();
+        let cached = cache.tokens.get(&cache_key).unwrap();
+        assert_eq!(cached.access_token, "ghu-stale");
+        assert_eq!(cached.expires_at, expires_at);
+    }
+
+    #[tokio::test]
+    async fn force_refresh_mints_new_token_despite_valid_cache() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf).await;
+                let body = r#"{"access_token":"ghu-new","expires_in":28800,"refresh_token":"ghr-new","refresh_token_expires_in":15897600}"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("github-oauth-tokens.toml");
+        let _guard =
+            OAuthEnvGuard::new(format!("http://127.0.0.1:{port}/login"), cache_path.clone());
+
+        let cache_key = cache_key("api.github.com", "Iv1.mock", "");
+        std::fs::write(
+            &cache_path,
+            format!(
+                r#"[tokens.{cache_key}]
+access_token = "ghu-current"
+expires_at = "2099-01-01T00:00:00Z"
+refresh_token = "ghr-refresh"
+refresh_expires_at = "2099-01-01T00:00:00Z"
+"#
+            ),
+        )
+        .unwrap();
+
+        // Without force_refresh the time-valid cached token is reused.
+        let token = token_async(TokenRequest {
+            host: "github.com".to_string(),
+            allow_device_flow: false,
+            force_refresh: false,
+        })
+        .await
+        .unwrap();
+        assert_eq!(token, "ghu-current");
+
+        // With force_refresh the refresh-token grant mints a new token even
+        // though the cached one has not expired.
+        let token = token_async(TokenRequest {
+            host: "github.com".to_string(),
+            allow_device_flow: false,
+            force_refresh: true,
+        })
+        .await
+        .unwrap();
+        assert_eq!(token, "ghu-new");
+
+        let cache = read_cache();
+        let cached = cache.tokens.get(&cache_key).unwrap();
+        assert_eq!(cached.access_token, "ghu-new");
+        assert_eq!(cached.refresh_token.as_deref(), Some("ghr-new"));
     }
 }

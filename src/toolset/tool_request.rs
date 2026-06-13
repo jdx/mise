@@ -14,7 +14,6 @@ use crate::cli::args::BackendArg;
 use crate::config::config_file::config_root;
 use crate::dirs;
 use crate::env;
-use crate::install_before::resolve_before_date;
 use crate::lockfile::LockfileTool;
 use crate::path::PathExt;
 use crate::runtime_symlinks::is_runtime_symlink;
@@ -332,7 +331,7 @@ impl ToolRequest {
     ) -> Result<Option<LockfileTool>> {
         let request_options = if let Ok(backend) = self.backend() {
             let target = PlatformTarget::from_current();
-            backend.resolve_lockfile_options(self, &target)
+            backend.resolve_lockfile_options(self, &target)?
         } else {
             BTreeMap::new()
         };
@@ -376,7 +375,7 @@ impl ToolRequest {
     pub fn resolve_options(&self, opts: &ResolveOptions) -> Result<ResolveOptions> {
         let minimum_release_age = self.options().minimum_release_age().map(str::to_string);
         let mut opts = opts.clone();
-        opts.before_date = resolve_before_date(opts.before_date, minimum_release_age.as_deref())?;
+        opts.apply_before_date_for_tool(self.ba(), minimum_release_age.as_deref())?;
         Ok(opts)
     }
 

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/10308
+#
+# The built-in default `minimum_release_age` cutoff must not force remote
+# version resolution when an installed version satisfies the request. In
+# 2026.6.2 it disabled the installed-version fast paths for every
+# non-prefer-offline command (`mise which`, `mise use`, ...), turning each
+# invocation into a remote version-list fetch per tool (~65s shell startups).
+#
+# aqua-backed jq is used because the built-in default applies to it (the asdf
+# dummy plugin is exempt). An explicit `minimum_release_age` setting still
+# forces date-aware remote resolution — only the built-in default must not.
+
+mise install jq@1.7.1
+
+cat >mise.toml <<EOF
+[tools]
+jq = "1"
+EOF
+
+# Drop the remote-versions cache written during install so a remote fetch is
+# observable as the cache file reappearing.
+rm -rf "$MISE_CACHE_DIR/jq"
+
+# The fuzzy request must resolve to the installed version from disk.
+# shellcheck disable=SC2016 # the expression expands inside the assert helper
+assert_contains '"$(mise which jq)" --version' "jq-1.7.1"
+
+if find "$MISE_CACHE_DIR" -name 'remote_versions*' | grep -q .; then
+  fail "mise which fetched remote versions despite an installed match (the default release-age cutoff must not force remote resolution)"
+fi

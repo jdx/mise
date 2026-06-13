@@ -13,6 +13,8 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::runtime_symlinks::is_runtime_symlink;
+use crate::toolset::ToolRequest;
 use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
@@ -391,14 +393,7 @@ impl HttpBackend {
             pr.set_message(format!("extract {}", file_info.file_name()));
         }
 
-        file::untar(
-            file_path,
-            &dest_file,
-            &file::TarOptions {
-                pr,
-                ..file::TarOptions::new(file_info.format)
-            },
-        )?;
+        file::decompress_file(file_path, &dest_file, file_info.format)?;
 
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })
@@ -441,22 +436,23 @@ impl HttpBackend {
             opts.strip_components().and_then(|s| s.parse().ok());
 
         // Auto-detect strip_components=1 for single-directory archives
+        let can_probe_strip = file_info.format != file::TarFormat::SevenZip || cfg!(windows);
         if strip_components.is_none()
             && opts.bin_path().is_none()
+            && can_probe_strip
             && file::should_strip_components(file_path, file_info.format).unwrap_or(false)
         {
             debug!("Auto-detected single directory archive, using strip_components=1");
             strip_components = Some(1);
         }
 
-        let tar_opts = file::TarOptions {
-            format: file_info.format,
+        let extract_opts = file::ExtractOptions {
             strip_components: strip_components.unwrap_or(0),
             pr,
             preserve_mtime: false,
         };
 
-        file::untar(file_path, dest, &tar_opts)?;
+        file::extract_archive(file_path, dest, file_info.format, &extract_opts)?;
 
         // Handle rename_exe option for archives
         if let Some(rename_to) = opts.rename_exe() {
@@ -506,6 +502,63 @@ impl HttpBackend {
     // Symlink creation
     // -------------------------------------------------------------------------
 
+    /// Return the single path component used for the HTTP install symlink.
+    fn install_version_name(tv: &ToolVersion, cache_key: &str) -> String {
+        if tv.version == "latest" {
+            Self::content_version_name(cache_key)
+        } else if tv.version.is_empty() {
+            "_implicit".to_string()
+        } else {
+            Self::sanitize_install_version_name(&tv.version, tv.tv_pathname())
+        }
+    }
+
+    /// Return the absolute path where the HTTP install symlink should live.
+    fn install_path_for(tv: &ToolVersion, cache_key: &str) -> PathBuf {
+        tv.ba()
+            .installs_path
+            .join(Self::install_version_name(tv, cache_key))
+    }
+
+    /// Return the install path later lookups should check for this HTTP tool.
+    fn lookup_install_path(tv: &ToolVersion) -> PathBuf {
+        if let Some(path) = &tv.install_path {
+            return path.clone();
+        }
+        if tv.version == "latest" {
+            tv.install_path()
+        } else {
+            tv.ba()
+                .installs_path
+                .join(Self::install_version_name(tv, ""))
+        }
+    }
+
+    /// Return a deterministic content-derived version name for `latest` installs.
+    fn content_version_name(cache_key: &str) -> String {
+        let short = &cache_key[..7.min(cache_key.len())];
+        if short.is_empty() {
+            "_implicit".to_string()
+        } else {
+            short.to_string()
+        }
+    }
+
+    /// Sanitize a requested version into a path component without collapsing identities.
+    fn sanitize_install_version_name(raw_version: &str, version_name: String) -> String {
+        let sanitized = match version_name.replace('\\', "-").as_str() {
+            "." => "_".to_string(),
+            ".." => "__".to_string(),
+            name => name.to_string(),
+        };
+        if sanitized == raw_version {
+            sanitized
+        } else {
+            let hash = hash::hash_sha256_to_str(raw_version);
+            format!("{}-{}", sanitized, &hash[..7])
+        }
+    }
+
     /// Create install symlink(s) from install directory to cache
     fn create_install_symlink(
         &self,
@@ -517,13 +570,7 @@ impl HttpBackend {
         let cache_path = self.cache_path(cache_key);
 
         // Determine version name for install path
-        let version_name = if tv.version == "latest" || tv.version.is_empty() {
-            &cache_key[..7.min(cache_key.len())] // Content-based versioning
-        } else {
-            &tv.version
-        };
-
-        let install_path = tv.ba().installs_path.join(version_name);
+        let install_path = Self::install_path_for(tv, cache_key);
 
         // Clean up existing install
         if install_path.exists() {
@@ -552,15 +599,15 @@ impl HttpBackend {
         Ok(())
     }
 
-    /// Create additional symlink for implicit versions (latest, empty)
+    /// Create additional symlink for latest versions
     fn create_version_alias_symlink(&self, tv: &ToolVersion, cache_key: &str) -> Result<()> {
-        if tv.version != "latest" && !tv.version.is_empty() {
+        if tv.version != "latest" {
             return Ok(());
         }
 
-        let content_version = &cache_key[..7.min(cache_key.len())];
+        let content_version = Self::content_version_name(cache_key);
         let original_path = tv.ba().installs_path.join(&tv.version);
-        let content_path = tv.ba().installs_path.join(content_version);
+        let content_path = tv.ba().installs_path.join(&content_version);
 
         if original_path.exists() {
             file::remove_all(&original_path)?;
@@ -784,6 +831,7 @@ impl Backend for HttpBackend {
         // Create symlinks
         self.create_install_symlink(&tv, &cache_key, &extraction_type, &opts)?;
         self.create_version_alias_symlink(&tv, &cache_key)?;
+        tv.install_path = Some(Self::install_path_for(&tv, &cache_key));
 
         // Verify checksum for lockfile
         if lockfile_enabled || has_lockfile_checksum {
@@ -794,6 +842,23 @@ impl Backend for HttpBackend {
         Ok(tv)
     }
 
+    fn is_version_installed(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> bool {
+        match tv.request {
+            ToolRequest::System { .. } => true,
+            _ => {
+                let install_path = Self::lookup_install_path(tv);
+                install_path.exists()
+                    && !self.incomplete_file_path(tv).exists()
+                    && (!check_symlink || !is_runtime_symlink(&install_path))
+            }
+        }
+    }
+
     async fn list_bin_paths(
         &self,
         _config: &Arc<Config>,
@@ -801,18 +866,26 @@ impl Backend for HttpBackend {
     ) -> Result<Vec<PathBuf>> {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
-        let install_path = tv.install_path();
+        let install_path = Self::lookup_install_path(tv);
+        let mut tv = tv.clone();
+        tv.install_path = Some(install_path.clone());
 
         // Check for explicit bin_path
         if let Some(bin_path_template) = opts.bin_path() {
-            let bin_path = template_string(&bin_path_template, tv);
-            return Ok(vec![tv.runtime_path().join(bin_path)]);
+            let bin_path = template_string(&bin_path_template, &tv);
+            return Ok(vec![runtime_path_for_install_path(
+                &tv,
+                install_path.join(bin_path),
+            )]);
         }
 
         // Check for bin directory
         let bin_dir = install_path.join("bin");
         if bin_dir.exists() {
-            return Ok(vec![tv.runtime_path().join("bin")]);
+            return Ok(vec![runtime_path_for_install_path(
+                &tv,
+                install_path.join("bin"),
+            )]);
         }
 
         // Search subdirectories for bin directories
@@ -830,12 +903,150 @@ impl Backend for HttpBackend {
         }
 
         if paths.is_empty() {
-            Ok(vec![tv.runtime_path()])
+            Ok(vec![runtime_path_for_install_path(&tv, install_path)])
         } else {
             Ok(paths
                 .into_iter()
-                .map(|path| runtime_path_for_install_path(tv, path))
+                .map(|path| runtime_path_for_install_path(&tv, path))
                 .collect())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::args::BackendResolution;
+    use crate::toolset::{ToolRequest, ToolSource};
+
+    fn http_test_tv(version: &str) -> ToolVersion {
+        let backend = Arc::new(BackendArg::new_raw(
+            "http-absolute-version".to_string(),
+            Some("http:absolute-version".to_string()),
+            "absolute-version".to_string(),
+            None,
+            BackendResolution::new(true),
+        ));
+        let request = ToolRequest::Version {
+            backend,
+            version: version.to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        ToolVersion::new(request, version.to_string())
+    }
+
+    fn version_hash(version: &str) -> String {
+        crate::hash::hash_sha256_to_str(version)[..7].to_string()
+    }
+
+    #[test]
+    fn install_symlink_path_uses_sanitized_version_pathname() {
+        let version = "/outside-root/mise-http-version-out/selected-prefix";
+        let tv = http_test_tv(version);
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(
+            version_name,
+            format!(
+                "-outside-root-mise-http-version-out-selected-prefix-{}",
+                version_hash(version)
+            )
+        );
+        assert!(!Path::new(&version_name).is_absolute());
+    }
+
+    #[test]
+    fn install_symlink_path_sanitizes_parent_version() {
+        let version = "..";
+        let tv = http_test_tv(version);
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(version_name, format!("__-{}", version_hash(version)));
+        assert!(
+            Path::new(&version_name)
+                .components()
+                .all(|c| matches!(c, std::path::Component::Normal(_)))
+        );
+    }
+
+    #[test]
+    fn install_symlink_path_sanitizes_windows_separators() {
+        let version = r"..\..\outside-root\mise-http-version-out\selected-prefix";
+        let tv = http_test_tv(version);
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(
+            version_name,
+            format!(
+                "..-..-outside-root-mise-http-version-out-selected-prefix-{}",
+                version_hash(version)
+            )
+        );
+        assert!(!version_name.contains('\\'));
+    }
+
+    #[test]
+    fn install_symlink_path_sanitizes_windows_unc_paths() {
+        let version = r"\\server\share";
+        let tv = http_test_tv(version);
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(
+            version_name,
+            format!("--server-share-{}", version_hash(version))
+        );
+        assert!(!version_name.contains('\\'));
+    }
+
+    #[test]
+    fn install_symlink_path_preserves_distinct_sanitized_versions() {
+        let slash = HttpBackend::install_version_name(&http_test_tv("a/b"), "abcdef123456");
+        let colon = HttpBackend::install_version_name(&http_test_tv("a:b"), "abcdef123456");
+        let backslash = HttpBackend::install_version_name(&http_test_tv(r"a\b"), "abcdef123456");
+        let dash = HttpBackend::install_version_name(&http_test_tv("a-b"), "abcdef123456");
+
+        assert_eq!(dash, "a-b");
+        assert_ne!(slash, dash);
+        assert_ne!(colon, dash);
+        assert_ne!(backslash, dash);
+        assert_ne!(slash, colon);
+        assert_ne!(slash, backslash);
+        assert_ne!(colon, backslash);
+    }
+
+    #[test]
+    fn latest_install_symlink_still_uses_content_version() {
+        let tv = http_test_tv("latest");
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(version_name, "abcdef1");
+    }
+
+    #[test]
+    fn empty_install_symlink_uses_implicit_version() {
+        let tv = http_test_tv("");
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(version_name, "_implicit");
+    }
+
+    #[test]
+    fn empty_install_path_uses_implicit_version_path() {
+        let tv = http_test_tv("");
+        let install_path = HttpBackend::install_path_for(&tv, "abcdef123456");
+
+        assert_eq!(install_path, tv.ba().installs_path.join("_implicit"));
+        assert_ne!(install_path, tv.ba().installs_path);
+    }
+
+    #[test]
+    fn lookup_install_path_matches_sanitized_install_path() {
+        let version = "/outside-root/mise-http-version-out/selected-prefix";
+        let tv = http_test_tv(version);
+        let install_path = HttpBackend::install_path_for(&tv, "abcdef123456");
+        let lookup_path = HttpBackend::lookup_install_path(&tv);
+
+        assert_eq!(lookup_path, install_path);
     }
 }

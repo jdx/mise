@@ -45,6 +45,12 @@ Override in-image mount point (ignored with --image-dir)
 
 Don't embed the mise binary (ignored with --image-dir)
 
+### `--owner <UID[:GID]>`
+
+UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+
 ### `--tool <TOOL>`
 
 Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`

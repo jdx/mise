@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+# Config-less task include directories must not render task templates before trust.
+# This prevents arbitrary command execution from default task include files such as
+# mise-tasks/*.toml in a freshly cloned repository.
+
+marker="$MISE_TMP_DIR/mise-task-include-trust-marker"
+trap 'rm -f "$marker"' EXIT
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+mkdir -p mise-tasks
+cat <<EOF >mise-tasks/ci.toml
+[test]
+description = "{{ exec(command='echo PWNED > $marker') }}"
+run = "echo test"
+EOF
+
+set +e
+output=$(MISE_YES=0 MISE_PARANOID=1 mise tasks 2>&1)
+status=$?
+set -e
+
+if [[ $status -eq 0 ]]; then
+  echo "FAIL: Expected mise tasks to reject the untrusted task include"
+  echo "Output: $output"
+  exit 1
+fi
+
+if [[ -f $marker ]]; then
+  echo "FAIL: Tera exec() ran from an untrusted task include file"
+  echo "Output: $output"
+  exit 1
+fi
+
+if echo "$output" | grep -qi "not trusted"; then
+  echo "PASS: Untrusted task include file was blocked"
+else
+  echo "FAIL: Expected trust-related error, got: $output"
+  exit 1
+fi
+
+rm -rf mise-tasks
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["pkg"]
+EOF
+
+mkdir -p pkg/mise-tasks
+cat <<EOF >pkg/mise-tasks/ci.toml
+[test]
+description = "{{ exec(command='echo PWNED > $marker') }}"
+run = "echo test"
+EOF
+
+set +e
+output=$(MISE_YES=0 MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS="$PWD/mise.toml" mise tasks --all 2>&1)
+status=$?
+set -e
+
+if [[ $status -eq 0 ]]; then
+  echo "FAIL: Expected mise tasks --all to reject the untrusted monorepo task include"
+  echo "Output: $output"
+  exit 1
+fi
+
+if [[ -f $marker ]]; then
+  echo "FAIL: Tera exec() ran from an untrusted monorepo task include file"
+  echo "Output: $output"
+  exit 1
+fi
+
+if echo "$output" | grep -qi "not trusted"; then
+  echo "PASS: Untrusted monorepo task include file was blocked"
+else
+  echo "FAIL: Expected trust-related monorepo error, got: $output"
+  exit 1
+fi

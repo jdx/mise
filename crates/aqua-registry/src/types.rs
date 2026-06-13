@@ -102,6 +102,8 @@ struct AquaOverride {
     goos: Option<String>,
     goarch: Option<String>,
     #[serde(default)]
+    envs: Vec<String>,
+    #[serde(default)]
     variants: Vec<AquaVariant>,
 }
 
@@ -226,6 +228,7 @@ pub struct AquaMinisign {
 #[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaGithubArtifactAttestations {
     pub enabled: Option<bool>,
+    pub predicate_type: Option<String>,
     pub signer_workflow: Option<String>,
 }
 
@@ -464,8 +467,8 @@ impl AquaPackage {
     fn detect_format(&self, asset_name: &str) -> &'static str {
         let formats = [
             "tar.br", "tar.bz2", "tar.gz", "tar.lz4", "tar.sz", "tar.xz", "tbr", "tbz", "tbz2",
-            "tgz", "tlz4", "tsz", "txz", "tar.zst", "zip", "gz", "bz2", "lz4", "sz", "xz", "zst",
-            "dmg", "pkg", "rar", "tar",
+            "tgz", "tlz4", "tsz", "txz", "tar.zst", "zip", "7z", "gz", "bz2", "lz4", "sz", "xz",
+            "zst", "dmg", "pkg", "rar", "tar",
         ];
 
         for format in formats {
@@ -812,22 +815,21 @@ impl AquaPackage {
 
 impl AquaOverride {
     fn matches(&self, os: &str, arch: &str, runtime: AquaRuntime<'_>) -> bool {
-        let platform_matches = if let (Some(goos), Some(goarch)) = (&self.goos, &self.goarch) {
-            goos == os && goarch == arch
-        } else if let Some(goos) = &self.goos {
-            goos == os
-        } else if let Some(goarch) = &self.goarch {
-            goarch == arch
-        } else {
-            false
-        };
-
-        platform_matches
+        self.goos.as_ref().is_none_or(|goos| goos == os)
+            && self.goarch.as_ref().is_none_or(|goarch| goarch == arch)
+            && (self.envs.is_empty() || envs_match(&self.envs, os, arch))
             && self
                 .variants
                 .iter()
                 .all(|variant| variant.matches(os, runtime))
     }
+}
+
+fn envs_match(envs: &[String], os: &str, arch: &str) -> bool {
+    let os_arch = format!("{os}/{arch}");
+    // Aqua env selectors accept GOOS, GOARCH, GOOS/GOARCH, or the wildcard "all".
+    envs.iter()
+        .any(|env| env == "all" || env == os || env == arch || env == &os_arch)
 }
 
 impl AquaVariant {
@@ -1315,6 +1317,9 @@ impl AquaGithubArtifactAttestations {
         if let Some(enabled) = other.enabled {
             self.enabled = Some(enabled);
         }
+        if let Some(predicate_type) = other.predicate_type {
+            self.predicate_type = Some(predicate_type);
+        }
         if let Some(signer_workflow) = other.signer_workflow {
             self.signer_workflow = Some(signer_workflow);
         }
@@ -1375,6 +1380,30 @@ packages:
 
         assert_eq!(pkg.replacements.get("386"), Some(&"i686".to_string()));
         assert_eq!(pkg.vars[0].default.as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn test_github_artifact_attestations_predicate_type() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - github_artifact_attestations:
+      enabled: true
+      predicate_type: https://slsa.dev/provenance/v1
+      signer_workflow: canonical-workflow.yml
+"#,
+        );
+
+        let attestations = pkg.github_artifact_attestations.unwrap();
+        assert_eq!(attestations.enabled, Some(true));
+        assert_eq!(
+            attestations.predicate_type.as_deref(),
+            Some("https://slsa.dev/provenance/v1")
+        );
+        assert_eq!(
+            attestations.signer_workflow.as_deref(),
+            Some("canonical-workflow.yml")
+        );
     }
 
     #[test]
@@ -1566,6 +1595,18 @@ packages:
         let asset = pkg.asset("1.0.0", "windows", "amd64").unwrap();
 
         assert_eq!(asset, "tool-1.0.0.ps1");
+    }
+
+    #[test]
+    fn test_format_detects_7z_asset() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Version}}-{{.OS}}-{{.Arch}}.7z".to_string(),
+            ..Default::default()
+        };
+
+        let format = pkg.format("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(format, "7z");
     }
 
     #[test]
@@ -1933,6 +1974,121 @@ packages:
         assert_eq!(
             musl.url("1.0.0", "linux", "amd64").unwrap(),
             "https://example.com/tool-1.0.0-linux-amd64-musl"
+        );
+    }
+
+    #[test]
+    fn test_override_envs_match_os() {
+        let yml = r#"
+packages:
+  - files:
+      - name: catalina.sh
+        src: apache-tomcat-{{.SemVer}}/bin/catalina.sh
+    overrides:
+      - envs:
+          - windows
+        files:
+          - name: catalina.bat
+            src: apache-tomcat-{{.SemVer}}/bin/catalina.bat
+"#;
+        let pkg = first_registry_package(yml);
+
+        let linux = pkg.clone().with_version(&["10.1.0"], "linux", "amd64");
+        let windows = pkg.with_version(&["10.1.0"], "windows", "amd64");
+
+        assert_eq!(linux.files[0].name, "catalina.sh");
+        assert_eq!(windows.files[0].name, "catalina.bat");
+    }
+
+    #[test]
+    fn test_override_envs_match_os_arch() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    complete_windows_ext: false
+    overrides:
+      - envs:
+          - darwin
+          - windows/arm64
+        url: https://example.com/tool-cargo
+"#;
+        let pkg = first_registry_package(yml);
+
+        let darwin = pkg.clone().with_version(&["1.0.0"], "darwin", "amd64");
+        let windows_arm64 = pkg.clone().with_version(&["1.0.0"], "windows", "arm64");
+        let windows_amd64 = pkg.with_version(&["1.0.0"], "windows", "amd64");
+
+        assert_eq!(
+            darwin.url("1.0.0", "darwin", "amd64").unwrap(),
+            "https://example.com/tool-cargo"
+        );
+        assert_eq!(
+            windows_arm64.url("1.0.0", "windows", "arm64").unwrap(),
+            "https://example.com/tool-cargo"
+        );
+        assert_eq!(
+            windows_amd64.url("1.0.0", "windows", "amd64").unwrap(),
+            "https://example.com/tool-default"
+        );
+    }
+
+    #[test]
+    fn test_override_envs_all_matches_any_platform() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - envs:
+          - all
+        url: https://example.com/tool-all
+"#;
+        let pkg = first_registry_package(yml);
+
+        for (os, arch) in [
+            ("linux", "amd64"),
+            ("darwin", "arm64"),
+            ("windows", "amd64"),
+        ] {
+            let resolved = pkg.clone().with_version(&["1.0.0"], os, arch);
+
+            assert_eq!(
+                resolved.url("1.0.0", os, arch).unwrap(),
+                "https://example.com/tool-all"
+            );
+        }
+    }
+
+    #[test]
+    fn test_override_envs_combine_with_goarch() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - goarch: arm64
+        envs:
+          - linux
+        url: https://example.com/tool-linux-arm64
+"#;
+        let pkg = first_registry_package(yml);
+
+        let linux_amd64 = pkg.clone().with_version(&["1.0.0"], "linux", "amd64");
+        let linux_arm64 = pkg.clone().with_version(&["1.0.0"], "linux", "arm64");
+        let darwin_arm64 = pkg.with_version(&["1.0.0"], "darwin", "arm64");
+
+        assert_eq!(
+            linux_amd64.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-default"
+        );
+        assert_eq!(
+            linux_arm64.url("1.0.0", "linux", "arm64").unwrap(),
+            "https://example.com/tool-linux-arm64"
+        );
+        assert_eq!(
+            darwin_arm64.url("1.0.0", "darwin", "arm64").unwrap(),
+            "https://example.com/tool-default"
         );
     }
 

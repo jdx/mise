@@ -695,6 +695,373 @@ const completionSpec: Fig.Spec = {
       },
     },
     {
+      name: "bootstrap",
+      description:
+        "[experimental] Set up a machine for the current config in one command",
+      subcommands: [
+        {
+          name: "launchd",
+          description:
+            "Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`",
+          subcommands: [
+            {
+              name: "apply",
+              options: [
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+            },
+            {
+              name: "status",
+              options: [
+                {
+                  name: ["-J", "--json"],
+                  description: "Output in JSON format",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--missing",
+                  description:
+                    "Exit with code 1 if any configured LaunchAgent is not in its desired state",
+                  isRepeatable: false,
+                },
+              ],
+            },
+          ],
+        },
+        {
+          name: "macos-defaults",
+          description:
+            "Manage macOS defaults from `[bootstrap.macos.defaults]`",
+          subcommands: [
+            {
+              name: "apply",
+              options: [
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+            },
+            {
+              name: "status",
+              options: [
+                {
+                  name: ["-J", "--json"],
+                  description: "Output in JSON format",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--missing",
+                  description:
+                    "Exit with code 1 if any configured defaults are not in their desired state",
+                  isRepeatable: false,
+                },
+              ],
+            },
+          ],
+        },
+        {
+          name: "packages",
+          description:
+            "Manage bootstrap system packages from `[bootstrap.packages]`",
+          subcommands: [
+            {
+              name: "brew",
+              description: "Manage Homebrew taps used by bootstrap packages",
+              subcommands: [
+                {
+                  name: "tap",
+                  description:
+                    "Add a Homebrew tap URL to [bootstrap.brew.taps]",
+                  options: [
+                    {
+                      name: ["-l", "--local"],
+                      description:
+                        "Write to the local config instead of the global config",
+                      isRepeatable: false,
+                    },
+                    {
+                      name: ["-n", "--dry-run"],
+                      description: "Print the config change without writing it",
+                      isRepeatable: false,
+                    },
+                    {
+                      name: ["-p", "--path"],
+                      description: "Write to this config file or directory",
+                      isRepeatable: false,
+                      args: {
+                        name: "path",
+                        template: "filepaths",
+                      },
+                    },
+                  ],
+                  args: [
+                    {
+                      name: "tap",
+                      description: "Tap name, e.g. `owner/repo`",
+                    },
+                    {
+                      name: "url",
+                      description:
+                        "GitHub URL for the tap. Defaults to https://github.com/<owner>/homebrew-<repo>.git",
+                      isOptional: true,
+                    },
+                  ],
+                },
+                {
+                  name: ["untap", "remove", "rm"],
+                  description:
+                    "Remove Homebrew tap URLs from [bootstrap.brew.taps]",
+                  options: [
+                    {
+                      name: ["-l", "--local"],
+                      description:
+                        "Write to the local config instead of the global config",
+                      isRepeatable: false,
+                    },
+                    {
+                      name: ["-n", "--dry-run"],
+                      description: "Print the config change without writing it",
+                      isRepeatable: false,
+                    },
+                    {
+                      name: ["-p", "--path"],
+                      description: "Write to this config file or directory",
+                      isRepeatable: false,
+                      args: {
+                        name: "path",
+                        template: "filepaths",
+                      },
+                    },
+                  ],
+                  args: {
+                    name: "taps",
+                    description: "Tap name(s), e.g. `owner/repo`",
+                    isVariadic: true,
+                  },
+                },
+              ],
+            },
+            {
+              name: ["install", "i"],
+              description:
+                "Install missing system packages from `[bootstrap.packages]`",
+              options: [
+                {
+                  name: ["-m", "--manager"],
+                  description:
+                    "Only install packages for this manager, e.g. `apt`, `brew`, or `brew-cask`",
+                  isRepeatable: false,
+                  args: {
+                    name: "manager",
+                    suggestions: ["apt", "brew", "brew-cask", "dnf", "pacman"],
+                  },
+                },
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--update",
+                  description:
+                    "Refresh package manager metadata first (apt: `apt-get update`)",
+                  isRepeatable: false,
+                },
+              ],
+              args: {
+                name: "package",
+                description:
+                  "Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]",
+                isOptional: true,
+                isVariadic: true,
+              },
+            },
+            {
+              name: ["status", "ls"],
+              description:
+                "Show the status of system packages from `[bootstrap.packages]`",
+              options: [
+                {
+                  name: ["-J", "--json"],
+                  description: "Output in JSON format",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--missing",
+                  description:
+                    "Exit with code 1 if any configured packages are not in their desired state",
+                  isRepeatable: false,
+                },
+              ],
+            },
+            {
+              name: ["upgrade", "up"],
+              description:
+                "Upgrade installed bootstrap packages from `[bootstrap.packages]`",
+              options: [
+                {
+                  name: ["-m", "--manager"],
+                  description:
+                    "Only upgrade packages for this manager, e.g. `apt`, `brew`, or `brew-cask`",
+                  isRepeatable: false,
+                  args: {
+                    name: "manager",
+                    suggestions: ["apt", "brew", "brew-cask", "dnf", "pacman"],
+                  },
+                },
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+              args: {
+                name: "package",
+                description:
+                  "Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]",
+                isOptional: true,
+                isVariadic: true,
+              },
+            },
+            {
+              name: ["use", "u"],
+              description:
+                "Add bootstrap packages to [bootstrap.packages] and install them",
+              options: [
+                {
+                  name: ["-e", "--env"],
+                  description:
+                    "Write to the config file for this environment (mise.<ENV>.toml)",
+                  isRepeatable: false,
+                  args: {
+                    name: "env",
+                  },
+                },
+                {
+                  name: ["-g", "--global"],
+                  description:
+                    "Write to the global config (~/.config/mise/config.toml) instead of the local one",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without writing config or installing",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-p", "--path"],
+                  description: "Write to this config file or directory",
+                  isRepeatable: false,
+                  args: {
+                    name: "path",
+                    template: "filepaths",
+                  },
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+              args: {
+                name: "package",
+                description: "Packages in `manager:package[@version]` form",
+                isVariadic: true,
+              },
+            },
+          ],
+        },
+        {
+          name: "user",
+          description:
+            "Manage current-user bootstrap settings from `[bootstrap.user]`",
+          subcommands: [
+            {
+              name: "apply",
+              options: [
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+            },
+            {
+              name: "status",
+              options: [
+                {
+                  name: ["-J", "--json"],
+                  description: "Output in JSON format",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--missing",
+                  description:
+                    "Exit with code 1 if any configured user setting is not in its desired state",
+                  isRepeatable: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      options: [
+        {
+          name: ["-n", "--dry-run"],
+          description: "Print what would happen without installing anything",
+          isRepeatable: false,
+        },
+        {
+          name: ["-y", "--yes"],
+          description: "Skip confirmation prompts",
+          isRepeatable: false,
+        },
+        {
+          name: "--update",
+          description:
+            "Refresh system package manager metadata first (apt: `apt-get update`)",
+          isRepeatable: false,
+        },
+      ],
+    },
+    {
       name: "cache",
       description: "Manage the mise cache",
       subcommands: [
@@ -870,6 +1237,168 @@ const completionSpec: Fig.Spec = {
       description: "Disable mise for current shell session",
     },
     {
+      name: "dotfiles",
+      description: "[experimental] Manage dotfiles from `[dotfiles]`",
+      subcommands: [
+        {
+          name: "add",
+          description: "Add or update dotfiles in `[dotfiles]`",
+          options: [
+            {
+              name: ["-f", "--force"],
+              description: "Overwrite existing sources without prompting",
+              isRepeatable: false,
+            },
+            {
+              name: ["-g", "--global"],
+              description: "Write to the global config",
+              isRepeatable: false,
+            },
+            {
+              name: ["-l", "--local"],
+              description:
+                "Write to the local config instead of the global config",
+              isRepeatable: false,
+            },
+            {
+              name: ["-m", "--mode"],
+              description: "Dotfile mode to write",
+              isRepeatable: false,
+              args: {
+                name: "mode",
+              },
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Print the config/source updates without writing anything",
+              isRepeatable: false,
+            },
+            {
+              name: ["-p", "--path"],
+              description: "Write to this config file or directory",
+              isRepeatable: false,
+              args: {
+                name: "path",
+                template: "filepaths",
+              },
+            },
+            {
+              name: ["-s", "--source"],
+              description: "Source path to use for a single target",
+              isRepeatable: false,
+              args: {
+                name: "path",
+                template: "filepaths",
+              },
+            },
+            {
+              name: ["-y", "--yes"],
+              description: "Skip the confirmation prompt",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "target",
+            description: "Targets to add or update",
+            isVariadic: true,
+          },
+        },
+        {
+          name: "apply",
+          description: "Apply dotfiles from `[dotfiles]`",
+          options: [
+            {
+              name: ["-f", "--force"],
+              description:
+                "Overwrite existing files that conflict with whole-file dotfile entries",
+              isRepeatable: false,
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Print the actions that would run without writing anything",
+              isRepeatable: false,
+            },
+            {
+              name: ["-y", "--yes"],
+              description: "Skip the confirmation prompt",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "target",
+            description: "Only apply these targets",
+            isOptional: true,
+            isVariadic: true,
+          },
+        },
+        {
+          name: "edit",
+          description: "Edit a managed dotfile source",
+          options: [
+            {
+              name: "--apply",
+              description: "Apply this target after the editor exits",
+              isRepeatable: false,
+            },
+            {
+              name: ["-m", "--mode"],
+              description:
+                "Dotfile mode to use if the target is not yet managed",
+              isRepeatable: false,
+              args: {
+                name: "mode",
+              },
+            },
+            {
+              name: ["-s", "--source"],
+              description:
+                "Source path to use if the target is not yet managed",
+              isRepeatable: false,
+              args: {
+                name: "path",
+                template: "filepaths",
+              },
+            },
+            {
+              name: ["-y", "--yes"],
+              description:
+                "Skip the confirmation prompt when adding an unmanaged target",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "target",
+            description: "Target to edit",
+          },
+        },
+        {
+          name: ["status", "ls"],
+          description: "Show the status of dotfiles from `[dotfiles]`",
+          options: [
+            {
+              name: ["-J", "--json"],
+              description: "Output in JSON format",
+              isRepeatable: false,
+            },
+            {
+              name: "--missing",
+              description:
+                "Exit with code 1 if any configured dotfiles are not in their desired\nstate (missing, source missing, differs)",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "target",
+            description: "Only show these targets",
+            isOptional: true,
+            isVariadic: true,
+          },
+        },
+      ],
+    },
+    {
       name: ["doctor", "dr"],
       description: "Check mise installation for possible problems",
       subcommands: [
@@ -994,7 +1523,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-env",
           description:
-            "[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
+            "Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
           isRepeatable: true,
           args: {
             name: "var",
@@ -1003,7 +1532,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-net",
           description:
-            "[experimental] Allow network to specific host (implies --deny-net for everything else)\nmacOS only in v1; on Linux falls back to allowing all network",
+            "Allow network to specific host (implies --deny-net for everything else)\nmacOS only in v1; on Linux falls back to allowing all network",
           isRepeatable: true,
           args: {
             name: "host",
@@ -1012,7 +1541,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-read",
           description:
-            "[experimental] Allow reads from specific path (implies --deny-read for everything else)",
+            "Allow reads from specific path (implies --deny-read for everything else)",
           isRepeatable: true,
           args: {
             name: "path",
@@ -1022,7 +1551,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-write",
           description:
-            "[experimental] Allow writes to specific path (implies --deny-write for everything else)",
+            "Allow writes to specific path (implies --deny-write for everything else)",
           isRepeatable: true,
           args: {
             name: "path",
@@ -1031,30 +1560,29 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--deny-all",
-          description:
-            "[experimental] Block reads, writes, network, and env vars",
+          description: "Block reads, writes, network, and env vars",
           isRepeatable: false,
         },
         {
           name: "--deny-env",
           description:
-            "[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)",
+            "Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)",
           isRepeatable: false,
         },
         {
           name: "--deny-net",
-          description: "[experimental] Block all network access",
+          description: "Block all network access",
           isRepeatable: false,
         },
         {
           name: "--deny-read",
           description:
-            "[experimental] Block filesystem reads (system libs and tool dirs still accessible)",
+            "Block filesystem reads (system libs and tool dirs still accessible)",
           isRepeatable: false,
         },
         {
           name: "--deny-write",
-          description: "[experimental] Block all filesystem writes",
+          description: "Block all filesystem writes",
           isRepeatable: false,
         },
         {
@@ -1545,7 +2073,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--shared",
-          description: "[experimental] Install tool(s) to a shared directory",
+          description: "Install tool(s) to a shared directory",
           isRepeatable: false,
           args: {
             name: "shared",
@@ -1553,8 +2081,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--system",
-          description:
-            "[experimental] Install tool(s) to the system-wide shared directory",
+          description: "Install tool(s) to the system-wide shared directory",
           isRepeatable: false,
         },
       ],
@@ -1837,7 +2364,7 @@ const completionSpec: Fig.Spec = {
     },
     {
       name: "mcp",
-      description: "[experimental] Run Model Context Protocol (MCP) server",
+      description: "Run Model Context Protocol (MCP) server",
     },
     {
       name: "oci",
@@ -1895,6 +2422,15 @@ const completionSpec: Fig.Spec = {
                 "Do not embed the currently-running mise binary at /usr/local/bin/mise",
               isRepeatable: false,
             },
+            {
+              name: "--owner",
+              description:
+                "UID[:GID] to assign to every tar entry in generated layers",
+              isRepeatable: false,
+              args: {
+                name: "uid[:gid]",
+              },
+            },
           ],
         },
         {
@@ -1941,6 +2477,15 @@ const completionSpec: Fig.Spec = {
               description:
                 "Don't embed the mise binary (ignored with --image-dir)",
               isRepeatable: false,
+            },
+            {
+              name: "--owner",
+              description:
+                "UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "uid[:gid]",
+              },
             },
             {
               name: "--tool",
@@ -2023,6 +2568,15 @@ const completionSpec: Fig.Spec = {
               description:
                 "Don't embed the mise binary (ignored with --image-dir)",
               isRepeatable: false,
+            },
+            {
+              name: "--owner",
+              description:
+                "UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "uid[:gid]",
+              },
             },
             {
               name: "--volume",
@@ -2606,7 +3160,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-env",
           description:
-            "[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
+            "Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
           isRepeatable: true,
           args: {
             name: "var",
@@ -2615,7 +3169,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-net",
           description:
-            "[experimental] Allow network to specific host (implies --deny-net for everything else)",
+            "Allow network to specific host (implies --deny-net for everything else)",
           isRepeatable: true,
           args: {
             name: "host",
@@ -2624,7 +3178,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-read",
           description:
-            "[experimental] Allow reads from specific path (implies --deny-read for everything else)",
+            "Allow reads from specific path (implies --deny-read for everything else)",
           isRepeatable: true,
           args: {
             name: "path",
@@ -2634,7 +3188,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-write",
           description:
-            "[experimental] Allow writes to specific path (implies --deny-write for everything else)",
+            "Allow writes to specific path (implies --deny-write for everything else)",
           isRepeatable: true,
           args: {
             name: "path",
@@ -2643,30 +3197,29 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--deny-all",
-          description:
-            "[experimental] Block reads, writes, network, and env vars",
+          description: "Block reads, writes, network, and env vars",
           isRepeatable: false,
         },
         {
           name: "--deny-env",
           description:
-            "[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)",
+            "Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)",
           isRepeatable: false,
         },
         {
           name: "--deny-net",
-          description: "[experimental] Block all network access",
+          description: "Block all network access",
           isRepeatable: false,
         },
         {
           name: "--deny-read",
           description:
-            "[experimental] Block filesystem reads (system libs and tool dirs still accessible)",
+            "Block filesystem reads (system libs and tool dirs still accessible)",
           isRepeatable: false,
         },
         {
           name: "--deny-write",
-          description: "[experimental] Block all filesystem writes",
+          description: "Block all filesystem writes",
           isRepeatable: false,
         },
         {
@@ -3528,7 +4081,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--allow-env",
               description:
-                "[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
+                "Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
               isRepeatable: true,
               args: {
                 name: "var",
@@ -3537,7 +4090,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--allow-net",
               description:
-                "[experimental] Allow network to specific host (implies --deny-net for everything else)",
+                "Allow network to specific host (implies --deny-net for everything else)",
               isRepeatable: true,
               args: {
                 name: "host",
@@ -3546,7 +4099,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--allow-read",
               description:
-                "[experimental] Allow reads from specific path (implies --deny-read for everything else)",
+                "Allow reads from specific path (implies --deny-read for everything else)",
               isRepeatable: true,
               args: {
                 name: "path",
@@ -3556,7 +4109,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--allow-write",
               description:
-                "[experimental] Allow writes to specific path (implies --deny-write for everything else)",
+                "Allow writes to specific path (implies --deny-write for everything else)",
               isRepeatable: true,
               args: {
                 name: "path",
@@ -3565,30 +4118,29 @@ const completionSpec: Fig.Spec = {
             },
             {
               name: "--deny-all",
-              description:
-                "[experimental] Block reads, writes, network, and env vars",
+              description: "Block reads, writes, network, and env vars",
               isRepeatable: false,
             },
             {
               name: "--deny-env",
               description:
-                "[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)",
+                "Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)",
               isRepeatable: false,
             },
             {
               name: "--deny-net",
-              description: "[experimental] Block all network access",
+              description: "Block all network access",
               isRepeatable: false,
             },
             {
               name: "--deny-read",
               description:
-                "[experimental] Block filesystem reads (system libs and tool dirs still accessible)",
+                "Block filesystem reads (system libs and tool dirs still accessible)",
               isRepeatable: false,
             },
             {
               name: "--deny-write",
-              description: "[experimental] Block all filesystem writes",
+              description: "Block all filesystem writes",
               isRepeatable: false,
             },
             {
@@ -3817,12 +4369,18 @@ const completionSpec: Fig.Spec = {
             {
               name: "--oauth",
               description:
-                "[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources",
+                "Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources",
               isRepeatable: false,
             },
             {
               name: "--raw",
               description: "Print only the token value",
+              isRepeatable: false,
+            },
+            {
+              name: "--refresh",
+              description:
+                "Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire",
               isRepeatable: false,
             },
             {

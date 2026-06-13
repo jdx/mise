@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 
 # Test mise mcp command
-export MISE_EXPERIMENTAL=1
 
 # Test that mcp command exists and shows help
-assert_contains "mise mcp --help" "[experimental] Run Model Context Protocol (MCP) server"
+assert_contains "mise mcp --help" "Run Model Context Protocol (MCP) server"
 assert_contains "mise mcp --help" "This command starts an MCP server that exposes mise functionality"
 assert_contains "mise mcp --help" "to AI assistants over stdin/stdout using JSON-RPC protocol."
 

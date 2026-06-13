@@ -1,10 +1,10 @@
-# Monorepo Tasks <Badge type="warning" text="experimental" />
+# Monorepo Tasks
 
 mise supports monorepo-style task organization with target path syntax. This feature allows you to manage tasks across multiple projects in a single repository, where each project can have its own `mise.toml` configuration with tools, environment variables, and tasks that may be different from where the task is called from.
 
 ## Overview
 
-When `experimental_monorepo_root` is enabled in your root `mise.toml`, mise will automatically discover tasks in subdirectories and prefix them with their relative path from the monorepo root. This creates a unified task namespace across your entire repository.
+When `monorepo_root` is enabled in your root `mise.toml`, mise will automatically discover tasks in subdirectories and prefix them with their relative path from the monorepo root. This creates a unified task namespace across your entire repository.
 
 ::: tip
 The directory containing a `mise.toml` file is called the **config_root**. In monorepo mode, each project can have its own config_root with its own configuration, separate from the monorepo root. Note that if you use one of the alternate paths in a subdirectory like `./projects/frontend/.mise/config.toml`, the config_root will be `./projects/frontend`–not `./projects/frontend/.mise`.
@@ -22,26 +22,22 @@ The directory containing a `mise.toml` file is called the **config_root**. In mo
 
 ### Enabling Monorepo Mode
 
-Add `experimental_monorepo_root = true` to your root `mise.toml`:
+Add `monorepo_root = true` to your root `mise.toml`:
 
 ```toml
 # /myproject/mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [tools]
 # Tools defined here apply to all subdirectories
 node = "20"
 ```
 
-::: warning
-This feature requires `MISE_EXPERIMENTAL=1` environment variable.
-:::
-
 ### Example Structure
 
 ```
 myproject/
-├── mise.toml (with experimental_monorepo_root = true)
+├── mise.toml (with monorepo_root = true)
 ├── projects/
 │   ├── frontend/
 │   │   └── mise.toml (with tasks: build, test)
@@ -190,7 +186,7 @@ running subdirectory tasks from the monorepo root.
 
 ```toml
 # /myproject/mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [tools]
 node = "20"      # Available to all subdirectories
@@ -233,7 +229,7 @@ You must explicitly list your config roots using the `[monorepo]` section:
 
 ```toml
 # /myproject/mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = [
@@ -304,7 +300,7 @@ Place commonly-used tools and environment in the root `mise.toml` to avoid repet
 
 ```toml
 # /myproject/mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [tools]
 node = "20"
@@ -445,8 +441,7 @@ For monorepos with similar task patterns across projects, [task templates](/task
 ```toml
 # Root mise.toml
 [settings]
-experimental = true
-experimental_monorepo_root = true
+monorepo_root = true
 
 [task_templates."python:build"]
 run = "uv build"

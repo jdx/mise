@@ -39,6 +39,23 @@ pub static DISPLAYED_HINTS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| {
     Mutex::new(hints)
 });
 
+/// Would `hint!` display this id? Unlike [`should_display_hint`], this does
+/// not mark the hint as displayed — use it to skip expensive work whose only
+/// purpose is feeding a hint.
+pub fn hint_would_display(id: &str) -> bool {
+    if cfg!(test) || !console::user_attended() || !console::user_attended_stderr() {
+        return false;
+    }
+    if Settings::get()
+        .disable_hints
+        .iter()
+        .any(|hint| hint == id || hint == "*")
+    {
+        return false;
+    }
+    !DISPLAYED_HINTS.lock().unwrap().contains(id)
+}
+
 pub fn should_display_hint(id: &str) -> bool {
     if cfg!(test) || !console::user_attended() || !console::user_attended_stderr() {
         return false;

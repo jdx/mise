@@ -64,7 +64,6 @@ impl SwiftPlugin {
     }
 
     fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
-        Settings::get().ensure_experimental("swift")?;
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         let version = &tv.version;
         ctx.pr.set_message(format!("extract {filename}"));
@@ -93,10 +92,11 @@ impl SwiftPlugin {
             file::untar(
                 tarball_path,
                 &tv.install_path(),
-                &file::TarOptions {
+                file::TarFormat::TarGz,
+                &file::ExtractOptions {
                     strip_components: 1,
                     pr: Some(ctx.pr.as_ref()),
-                    ..file::TarOptions::new(file::TarFormat::TarGz)
+                    ..Default::default()
                 },
             )?;
         }
@@ -244,11 +244,7 @@ impl Backend for SwiftPlugin {
     }
 
     async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
-        if Settings::get().experimental {
-            Ok(vec![".swift-version".into()])
-        } else {
-            Ok(vec![])
-        }
+        Ok(vec![".swift-version".into()])
     }
 
     async fn install_version_(

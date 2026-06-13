@@ -1,9 +1,5 @@
 # Task Templates
 
-::: warning
-This feature is experimental and requires `experimental = true` in your settings.
-:::
-
 Task templates allow you to define reusable task definitions that can be extended by multiple tasks. This is particularly useful in monorepos or projects with similar task patterns across different components.
 
 ## Defining Templates
@@ -11,9 +7,6 @@ Task templates allow you to define reusable task definitions that can be extende
 Templates are defined in the `[task_templates.*]` section of your `mise.toml`:
 
 ```toml
-[settings]
-experimental = true
-
 [task_templates."python:build"]
 description = "Build a Python project"
 run = "uv build"
@@ -53,18 +46,18 @@ Templates use colon (`:`) separators for namespacing, similar to task naming con
 
 When a task extends a template, fields are merged according to these rules:
 
-| Field                                   | Behavior                                                    |
-| --------------------------------------- | ----------------------------------------------------------- |
-| `run`, `run_windows`                    | Local overrides completely                                  |
-| `tools`                                 | Deep merge (local tools added/override template)            |
-| `env`                                   | Deep merge (local env added/override template)              |
-| `depends`, `depends_post`, `wait_for`   | Local overrides completely (not merged)                     |
-| `dir`                                   | Local overrides; defaults to config_root if not in template |
-| `sources`, `outputs`                    | Local overrides completely                                  |
-| Sandbox deny fields                     | Compose with task-local settings                            |
-| Sandbox allow fields                    | Template and task-local values are combined                 |
-| `description`, `shell`, `timeout`, etc. | Local overrides template (if set)                           |
-| `quiet`, `hide`, `raw`                  | Not carried over (must be set explicitly in task)           |
+| Field                                             | Behavior                                                    |
+| ------------------------------------------------- | ----------------------------------------------------------- |
+| `run`, `run_windows`                              | Local overrides completely                                  |
+| `tools`                                           | Deep merge (local tools added/override template)            |
+| `env`                                             | Deep merge (local env added/override template)              |
+| `depends`, `depends_post`, `wait_for`             | Local overrides completely (not merged)                     |
+| `dir`                                             | Local overrides; defaults to config_root if not in template |
+| `sources`, `outputs`                              | Local overrides completely                                  |
+| Sandbox deny fields                               | Compose with task-local settings                            |
+| Sandbox allow fields                              | Template and task-local values are combined                 |
+| `description`, `shell`, `timeout`, etc.           | Local overrides template (if set)                           |
+| `quiet`, `hide`, `raw`, `interactive`, `raw_args` | Not supported on templates (set explicitly on each task)    |
 
 ### Example: Deep Merge for Tools
 
@@ -128,8 +121,7 @@ Task templates are especially useful in monorepos where multiple packages share 
 ```toml
 # Root mise.toml
 [settings]
-experimental = true
-experimental_monorepo_root = true
+monorepo_root = true
 
 [task_templates."python:build"]
 run = "uv build"

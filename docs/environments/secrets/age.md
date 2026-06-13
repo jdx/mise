@@ -13,7 +13,7 @@ This is a simple method of storing encrypted environment variables directly in `
 1. Enable experimental features:
 
 ```bash
-mise settings set experimental true
+mise settings set experimental=true
 ```
 
 2. [optional] Generate an age key (if you want to create a new age key and don't want to use your ssh key):
@@ -82,7 +82,7 @@ Age decryption is strict by default. If no identities are found, no available id
 To allow commands and tasks to continue when an age value cannot be decrypted, disable strict mode:
 
 ```bash
-mise settings set age.strict false
+mise settings set age.strict=false
 ```
 
 In non-strict mode, mise skips values that cannot be decrypted and continues resolving the rest of the environment.

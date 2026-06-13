@@ -54,7 +54,9 @@ pub fn config_root(path: &Path) -> PathBuf {
     let is_config_filename = |f: &str| {
         f == "config.toml" || f == "config.local.toml" || regex!(r"config\..+\.toml").is_match(f)
     };
-    let out = if parent == "conf.d" && is_mise_dir(grandparent) {
+    let out = if parent == "mise-tasks" || parent == ".mise-tasks" {
+        grandparent_path()
+    } else if (parent == "tasks" || parent == "conf.d") && is_mise_dir(grandparent) {
         if great_grandparent == ".config" {
             great_great_grandparent_path()
         } else {
@@ -96,16 +98,21 @@ mod tests {
             "/foo/bar/.mise/conf.d/foo.toml",
             "/foo/bar/.mise/config.local.toml",
             "/foo/bar/.mise/config.toml",
+            "/foo/bar/.mise/tasks/build.toml",
             "/foo/bar/.tool-versions",
             "/foo/bar/mise.env.toml",
             "/foo/bar/mise.local.toml",
             "/foo/bar/mise.toml",
             "/foo/bar/mise/config.local.toml",
             "/foo/bar/mise/config.toml",
+            "/foo/bar/mise/tasks/build.toml",
             "/foo/bar/.config/mise/config.env.toml",
             "/foo/bar/.config/mise.env.toml",
+            "/foo/bar/.config/mise/tasks/build.toml",
             "/foo/bar/.mise/config.env.toml",
             "/foo/bar/.mise.env.toml",
+            "/foo/bar/.mise-tasks/build.toml",
+            "/foo/bar/mise-tasks/build.toml",
         ] {
             println!("{p}");
             assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/bar"));
@@ -128,16 +135,21 @@ mod tests {
             "/foo/mise/.mise/conf.d/foo.toml",
             "/foo/mise/.mise/config.local.toml",
             "/foo/mise/.mise/config.toml",
+            "/foo/mise/.mise/tasks/build.toml",
             "/foo/mise/.tool-versions",
             "/foo/mise/mise.env.toml",
             "/foo/mise/mise.local.toml",
             "/foo/mise/mise.toml",
             "/foo/mise/mise/config.local.toml",
             "/foo/mise/mise/config.toml",
+            "/foo/mise/mise/tasks/build.toml",
             "/foo/mise/.config/mise/config.env.toml",
             "/foo/mise/.config/mise.env.toml",
+            "/foo/mise/.config/mise/tasks/build.toml",
             "/foo/mise/.mise/config.env.toml",
             "/foo/mise/.mise.env.toml",
+            "/foo/mise/.mise-tasks/build.toml",
+            "/foo/mise/mise-tasks/build.toml",
         ] {
             println!("{p}");
             assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/mise"));

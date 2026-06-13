@@ -14,4 +14,4 @@ jobs:
       checks: read
       statuses: read
     steps:
-      - uses: jdx/pr-closer@44b9e7859d29e01b4b38e50e2ad6b5c5d00a6973 # v1.0.1
+      - uses: jdx/pr-closer@ddc40dfad5567fc7296a2463880c618344d26055 # v1.1.0

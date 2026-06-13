@@ -73,14 +73,144 @@ struct AttestationsResponse {
     attestations: Vec<Attestation>,
 }
 
+#[derive(Clone, Copy)]
+struct VersionsHostLogContext<'a> {
+    endpoint: &'static str,
+    tool: Option<&'a str>,
+    repo: Option<&'a str>,
+    tag: Option<&'a str>,
+    digest: Option<&'a str>,
+    full: Option<&'a str>,
+    version: Option<&'a str>,
+}
+
+impl<'a> VersionsHostLogContext<'a> {
+    fn version_list(tool: &'a str) -> Self {
+        Self {
+            endpoint: "version_list",
+            tool: Some(tool),
+            repo: None,
+            tag: None,
+            digest: None,
+            full: None,
+            version: None,
+        }
+    }
+
+    fn github_release(repo: &'a str, tag: &'a str) -> Self {
+        Self {
+            endpoint: "github_release",
+            tool: None,
+            repo: Some(repo),
+            tag: Some(tag),
+            digest: None,
+            full: None,
+            version: None,
+        }
+    }
+
+    fn github_attestations(repo: &'a str, digest: &'a str) -> Self {
+        Self {
+            endpoint: "github_attestations",
+            tool: None,
+            repo: Some(repo),
+            tag: None,
+            digest: Some(digest),
+            full: None,
+            version: None,
+        }
+    }
+
+    fn install_track(tool: &'a str, full: &'a str, version: &'a str) -> Self {
+        Self {
+            endpoint: "install_track",
+            tool: Some(tool),
+            repo: None,
+            tag: None,
+            digest: None,
+            full: Some(full),
+            version: Some(version),
+        }
+    }
+
+    fn fields(&self) -> String {
+        let mut fields = format!("endpoint={}", self.endpoint);
+        if let Some(tool) = self.tool {
+            fields.push_str(&format!(" tool={}", log_value(tool)));
+        }
+        if let Some(repo) = self.repo {
+            fields.push_str(&format!(" repo={}", log_value(repo)));
+        }
+        if let Some(tag) = self.tag {
+            fields.push_str(&format!(" tag={}", log_value(tag)));
+        }
+        if let Some(digest) = self.digest {
+            fields.push_str(&format!(" digest={}", log_value(digest)));
+        }
+        if let Some(full) = self.full {
+            fields.push_str(&format!(
+                " full={}",
+                log_value(&sanitize_full_for_log(full))
+            ));
+        }
+        if let Some(version) = self.version {
+            fields.push_str(&format!(" version={}", log_value(version)));
+        }
+        fields
+    }
+}
+
+fn log_value(value: &str) -> String {
+    if value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/' | b':' | b'@'))
+    {
+        value.to_string()
+    } else {
+        format!("{:?}", value)
+    }
+}
+
+fn sanitize_full_for_log(full: &str) -> String {
+    let Some((backend, value)) = full.split_once(':') else {
+        return full.to_string();
+    };
+    if let Ok(mut url) = url::Url::parse(value) {
+        let _ = url.set_username("");
+        let _ = url.set_password(None);
+        url.set_query(None);
+        url.set_fragment(None);
+        return format!("{backend}:{url}");
+    }
+    full.to_string()
+}
+
+fn log_versions_host_trace(ctx: VersionsHostLogContext<'_>, outcome: &str, extra: &str) {
+    if extra.is_empty() {
+        trace!("mise-versions {} outcome={outcome}", ctx.fields());
+    } else {
+        trace!("mise-versions {} outcome={outcome} {extra}", ctx.fields());
+    }
+}
+
+fn log_versions_host_warn(ctx: VersionsHostLogContext<'_>, outcome: &str, extra: &str) {
+    if extra.is_empty() {
+        warn!("mise-versions {} outcome={outcome}", ctx.fields());
+    } else {
+        warn!("mise-versions {} outcome={outcome} {extra}", ctx.fields());
+    }
+}
+
 /// List versions from the versions host (mise-versions.jdx.dev).
 /// Returns Vec<VersionInfo> with created_at timestamps from the TOML endpoint.
 pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>> {
+    let ctx = VersionsHostLogContext::version_list(tool);
     let settings = Settings::get();
     if settings.prefer_offline()
         || !settings.use_versions_host
         || !PLUGINS_USE_VERSION_HOST.contains(tool)
     {
+        log_versions_host_trace(ctx, "disabled", "fallback=true");
         return Ok(None);
     }
 
@@ -89,15 +219,16 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
     static RATE_LIMITED: AtomicBool = AtomicBool::new(false);
 
     if let Some(versions) = CACHE.lock().await.get(tool) {
+        log_versions_host_trace(ctx, "cache_hit", &format!("versions={}", versions.len()));
         return Ok(Some(versions.clone()));
     }
     if RATE_LIMITED.load(Ordering::Relaxed) {
-        warn!("{tool}: skipping versions host check due to rate limit");
+        log_versions_host_warn(ctx, "skipped_rate_limited", "fallback=true");
         return Ok(None);
     }
 
-    // Use TOML format which includes created_at timestamps
-    let url = format!("https://mise-versions.jdx.dev/tools/{}.toml", tool);
+    // Use the static TOML asset which includes created_at timestamps.
+    let url = version_list_url(tool);
     let versions: Vec<VersionInfo> = match HTTP_FETCH
         .get_text_request(&url)
         .headers(&VERSIONS_HOST_HEADERS)
@@ -120,25 +251,35 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
                 .collect()
         }
         Err(err) => match http::error_code(&err).unwrap_or(0) {
-            404 => return Ok(None),
-            429 => {
-                RATE_LIMITED.store(true, Ordering::Relaxed);
-                warn!("{tool}: mise-versions rate limited");
+            404 => {
+                log_versions_host_trace(ctx, "not_found", "status=404 fallback=true");
                 return Ok(None);
             }
-            _ => return Err(err),
+            429 => {
+                RATE_LIMITED.store(true, Ordering::Relaxed);
+                log_versions_host_warn(ctx, "rate_limited", "status=429 fallback=true");
+                return Ok(None);
+            }
+            status => {
+                log_versions_host_warn(
+                    ctx,
+                    "failed",
+                    &format!(
+                        "status={status} fallback=false error={}",
+                        log_value(&err.to_string())
+                    ),
+                );
+                return Err(err);
+            }
         },
     };
 
-    trace!(
-        "got {} {} versions from versions host",
-        versions.len(),
-        tool
-    );
-
     if versions.is_empty() {
+        log_versions_host_trace(ctx, "empty", "fallback=true");
         return Ok(None);
     }
+
+    log_versions_host_trace(ctx, "success", &format!("versions={}", versions.len()));
 
     CACHE
         .lock()
@@ -166,20 +307,26 @@ pub async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option<Github
         encode_path_segment(tag)
     );
 
-    let Some(release) = fetch_optional_json(&url, "GitHub release metadata").await? else {
+    let ctx = VersionsHostLogContext::github_release(repo, tag);
+    let Some(release) = fetch_optional_json(&url, ctx).await? else {
         return Ok(None);
     };
     if !valid_github_release_asset_urls(&release, owner, repo_name) {
-        warn!("mise-versions returned invalid GitHub release asset URLs for {repo}@{tag}");
+        log_versions_host_warn(ctx, "invalid_asset_urls", "fallback=true");
         return Ok(None);
     }
     if !valid_github_release_tag(&release, tag) {
-        warn!(
-            "mise-versions returned GitHub release tag {} for requested {repo}@{tag}",
-            release.tag_name
+        log_versions_host_warn(
+            ctx,
+            "tag_mismatch",
+            &format!(
+                "returned_tag={} fallback=true",
+                log_value(&release.tag_name)
+            ),
         );
         return Ok(None);
     }
+    log_versions_host_trace(ctx, "success", "");
     Ok(Some(release))
 }
 
@@ -205,32 +352,97 @@ pub async fn github_attestations(
         encode_digest_path_segment(digest)
     );
 
-    let response: Option<AttestationsResponse> =
-        fetch_optional_json(&url, "GitHub attestations").await?;
+    let ctx = VersionsHostLogContext::github_attestations(repo, digest);
+    let response: Option<AttestationsResponse> = fetch_optional_json(&url, ctx).await?;
+    if let Some(response) = &response {
+        log_versions_host_trace(
+            ctx,
+            "success",
+            &format!("attestations={}", response.attestations.len()),
+        );
+    }
     Ok(response.map(|r| r.attestations))
 }
 
-async fn fetch_optional_json<T>(url: &str, label: &str) -> eyre::Result<Option<T>>
+async fn fetch_optional_json<T>(
+    url: &str,
+    ctx: VersionsHostLogContext<'_>,
+) -> eyre::Result<Option<T>>
 where
     T: serde::de::DeserializeOwned,
 {
+    if Settings::get().offline() {
+        log_versions_host_trace(ctx, "disabled", "fallback=true");
+        return Ok(None);
+    }
+
+    debug!("GET {url}");
     match HTTP_FETCH
-        .json_with_headers(url, &VERSIONS_HOST_HEADERS)
+        .get_async_with_headers_allow_error_status(url, &VERSIONS_HOST_HEADERS)
         .await
     {
-        Ok(value) => Ok(Some(value)),
-        Err(err) => match http::error_code(&err).unwrap_or(0) {
-            404 => Ok(None),
-            429 => {
-                debug!("mise-versions rate limited while fetching {label}");
-                Ok(None)
+        Ok(resp) => {
+            let status = resp.status();
+            debug!("GET {url} {status}");
+            if status.is_success() {
+                return Ok(Some(resp.json().await?));
             }
-            _ => {
-                debug!("mise-versions {label} lookup failed: {err:#}");
-                Ok(None)
+            let body = resp.text().await.unwrap_or_default();
+            match status.as_u16() {
+                404 => {
+                    log_versions_host_trace(ctx, "not_found", "status=404 fallback=true");
+                    Ok(None)
+                }
+                429 => {
+                    log_versions_host_warn(ctx, "rate_limited", "status=429 fallback=true");
+                    Ok(None)
+                }
+                status => {
+                    log_versions_host_warn(
+                        ctx,
+                        "failed",
+                        &format!(
+                            "status={status} fallback=true error={}",
+                            log_value(&versions_host_error_message(status, &body))
+                        ),
+                    );
+                    Ok(None)
+                }
             }
-        },
+        }
+        Err(err) => {
+            log_versions_host_warn(
+                ctx,
+                "failed",
+                &format!(
+                    "status={} fallback=true error={}",
+                    http::error_code(&err).unwrap_or(0),
+                    log_value(&err.to_string())
+                ),
+            );
+            Ok(None)
+        }
     }
+}
+
+fn versions_host_error_message(status: u16, body: &str) -> String {
+    let body = body.trim();
+    let status_code = reqwest::StatusCode::from_u16(status);
+    let label = match status_code {
+        Ok(status) if status.is_client_error() => "HTTP status client error",
+        Ok(status) if status.is_server_error() => "HTTP status server error",
+        _ => "HTTP status error",
+    };
+    let status = status_code
+        .map(|status| status.to_string())
+        .unwrap_or_else(|_| status.to_string());
+    if body.is_empty() {
+        return format!("{label} ({status})");
+    }
+    format!(
+        "{label} ({status}): {}",
+        body.chars().take(200).collect::<String>()
+    )
 }
 
 fn enabled_for_github_metadata() -> bool {
@@ -286,8 +498,14 @@ fn valid_github_browser_download_url(url: &str, owner: &str, repo: &str, tag: &s
             segments.next()
         ),
         (Some(o), Some(r), Some("releases"), Some("download"), Some(t), Some(_asset), None)
-            if o == owner && r == repo && path_segment_matches(t, tag)
+            if github_repo_segment_matches(o, owner)
+                && github_repo_segment_matches(r, repo)
+                && path_segment_matches(t, tag)
     )
+}
+
+fn github_repo_segment_matches(segment: &str, expected: &str) -> bool {
+    segment.eq_ignore_ascii_case(expected)
 }
 
 fn path_segment_matches(segment: &str, expected: &str) -> bool {
@@ -313,7 +531,7 @@ fn valid_github_asset_api_url(url: &str, owner: &str, repo: &str) -> bool {
             segments.next()
         ),
         (Some("repos"), Some(o), Some(r), Some("releases"), Some("assets"), Some(_), None)
-            if o == owner && r == repo
+            if github_repo_segment_matches(o, owner) && github_repo_segment_matches(r, repo)
     )
 }
 
@@ -363,9 +581,25 @@ async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Res
         .post_json_with_headers(url, &body, &VERSIONS_HOST_HEADERS)
         .await
     {
-        Ok(true) => trace!("Tracked install: {full}@{version}"),
-        Ok(false) => trace!("Track request failed"),
-        Err(e) => trace!("Track request error: {e}"),
+        Ok(true) => log_versions_host_trace(
+            VersionsHostLogContext::install_track(tool, full, version),
+            "success",
+            "",
+        ),
+        Ok(false) => log_versions_host_trace(
+            VersionsHostLogContext::install_track(tool, full, version),
+            "failed",
+            "status=unknown",
+        ),
+        Err(err) => log_versions_host_trace(
+            VersionsHostLogContext::install_track(tool, full, version),
+            "failed",
+            &format!(
+                "status={} error={}",
+                http::error_code(&err).unwrap_or(0),
+                log_value(&err.to_string())
+            ),
+        ),
     }
 
     Ok(())
@@ -376,6 +610,10 @@ fn track_install_url(tool: &str) -> String {
         "https://mise-versions.jdx.dev/api/tools/{}",
         urlencoding::encode(tool)
     )
+}
+
+fn version_list_url(tool: &str) -> String {
+    format!("https://mise-versions.jdx.dev/data/{}.toml", tool)
 }
 
 #[cfg(test)]
@@ -395,6 +633,38 @@ mod tests {
         assert_eq!(
             track_install_url("node"),
             "https://mise-versions.jdx.dev/api/tools/node"
+        );
+    }
+
+    #[test]
+    fn test_version_list_url_uses_static_asset_path() {
+        assert_eq!(
+            version_list_url("node"),
+            "https://mise-versions.jdx.dev/data/node.toml"
+        );
+    }
+
+    #[test]
+    fn test_versions_host_log_context_fields_quotes_spaces() {
+        let fields =
+            VersionsHostLogContext::install_track("some tool", "github:jdx/mise", "1.2.3").fields();
+        assert_eq!(
+            fields,
+            r#"endpoint=install_track tool="some tool" full=github:jdx/mise version=1.2.3"#
+        );
+    }
+
+    #[test]
+    fn test_versions_host_log_context_redacts_full_url_credentials() {
+        let fields = VersionsHostLogContext::install_track(
+            "private",
+            "github:https://user:token@example.com/org/repo?token=secret#frag",
+            "1.2.3",
+        )
+        .fields();
+        assert_eq!(
+            fields,
+            r#"endpoint=install_track tool=private full=github:https://example.com/org/repo version=1.2.3"#
         );
     }
 
@@ -432,6 +702,12 @@ mod tests {
             "mise-test-fixtures",
             "release/2026"
         ));
+        assert!(valid_github_browser_download_url(
+            "https://github.com/Dicklesworthstone/destructive_command_guard/releases/download/v0.5.6/dcg-aarch64-apple-darwin.tar.xz",
+            "Dicklesworthstone",
+            "Destructive_command_guard",
+            "v0.5.6"
+        ));
         assert!(!valid_github_browser_download_url(
             "https://github.com/jdx/mise-test-fixtures/releases/download/v0.9.0/hello-world.tar.gz",
             "jdx",
@@ -464,6 +740,11 @@ mod tests {
             "https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1",
             "jdx",
             "mise-test-fixtures"
+        ));
+        assert!(valid_github_asset_api_url(
+            "https://api.github.com/repos/Dicklesworthstone/destructive_command_guard/releases/assets/430632958",
+            "Dicklesworthstone",
+            "Destructive_command_guard"
         ));
         assert!(!valid_github_asset_api_url(
             "https://api.github.com/repos/other/mise-test-fixtures/releases/assets/1",
@@ -512,6 +793,32 @@ mod tests {
         assert!(valid_github_release_tag(&release, "v1.0.0"));
         assert!(valid_github_release_tag(&release, "latest"));
         assert!(!valid_github_release_tag(&release, "v2.0.0"));
+    }
+
+    #[test]
+    fn test_versions_host_error_message_includes_body() {
+        assert_eq!(
+            versions_host_error_message(403, "GitHub repo is not in the mise registry\n"),
+            "HTTP status client error (403 Forbidden): GitHub repo is not in the mise registry"
+        );
+    }
+
+    #[test]
+    fn test_versions_host_error_message_caps_body() {
+        let body = "x".repeat(250);
+        let message = versions_host_error_message(502, &body);
+        assert_eq!(
+            message.len(),
+            "HTTP status server error (502 Bad Gateway): ".len() + 200
+        );
+    }
+
+    #[test]
+    fn test_versions_host_error_message_uses_generic_label_for_other_statuses() {
+        assert_eq!(
+            versions_host_error_message(302, ""),
+            "HTTP status error (302 Found)"
+        );
     }
 
     #[test]

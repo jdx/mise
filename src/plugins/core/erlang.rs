@@ -7,7 +7,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 #[cfg(unix)]
-use crate::file::TarOptions;
+use crate::file::ExtractOptions;
 use crate::file::display_path;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -236,9 +236,10 @@ impl ErlangPlugin {
         file::untar(
             &tarball_path,
             &tv.download_path(),
-            &TarOptions {
+            file::TarFormat::TarGz,
+            &ExtractOptions {
                 pr: Some(ctx.pr.as_ref()),
-                ..TarOptions::new(file::TarFormat::TarGz)
+                ..Default::default()
             },
         )?;
 
@@ -322,9 +323,10 @@ impl ErlangPlugin {
         file::untar(
             &tarball_path,
             &tv.install_path(),
-            &TarOptions {
+            file::TarFormat::TarGz,
+            &ExtractOptions {
                 pr: Some(ctx.pr.as_ref()),
-                ..TarOptions::new(file::TarFormat::TarGz)
+                ..Default::default()
             },
         )?;
         Ok(Some(tv))
@@ -491,7 +493,7 @@ impl Backend for ErlangPlugin {
         &self,
         _request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
 
@@ -516,7 +518,7 @@ impl Backend for ErlangPlugin {
             }
         }
 
-        opts
+        Ok(opts)
     }
 
     async fn resolve_lock_info(

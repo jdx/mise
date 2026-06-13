@@ -435,14 +435,7 @@ pub fn install_artifact(
             install_path.join(cleaned_name)
         };
 
-        file::untar(
-            file_path,
-            &dest,
-            &file::TarOptions {
-                pr,
-                ..file::TarOptions::new(format)
-            },
-        )?;
+        file::decompress_file(file_path, &dest, format)?;
 
         file::make_executable(&dest)?;
     } else if format == file::TarFormat::Raw {
@@ -479,14 +472,14 @@ pub fn install_artifact(
             debug!("Auto-detected single directory archive, extracting with strip_components=1");
             strip_components = Some(1);
         }
-        let tar_opts = file::TarOptions {
+        let extract_opts = file::ExtractOptions {
             strip_components: strip_components.unwrap_or(0),
             pr,
-            ..file::TarOptions::new(format)
+            ..Default::default()
         };
 
         // Extract with determined strip_components
-        file::untar(file_path, &install_path, &tar_opts)?;
+        file::extract_archive(file_path, &install_path, format, &extract_opts)?;
 
         // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
         let full_tool_name = tv.ba().tool_name.as_str();

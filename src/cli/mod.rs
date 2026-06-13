@@ -14,6 +14,7 @@ pub mod args;
 mod asdf;
 pub mod backends;
 mod bin_paths;
+mod bootstrap;
 mod cache;
 mod completion;
 mod config;
@@ -21,6 +22,7 @@ mod current;
 mod deactivate;
 mod direnv;
 mod doctor;
+mod dotfiles;
 mod en;
 mod env;
 pub mod exec;
@@ -65,6 +67,7 @@ mod shell;
 mod shell_alias;
 mod sponsors;
 mod sync;
+mod system;
 mod tasks;
 mod test_tool;
 mod token;
@@ -208,12 +211,14 @@ pub enum Commands {
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
+    Bootstrap(bootstrap::Bootstrap),
     Cache(cache::Cache),
     Completion(completion::Completion),
     Config(config::Config),
     Current(current::Current),
     Deactivate(deactivate::Deactivate),
     Direnv(direnv::Direnv),
+    Dotfiles(dotfiles::Dotfiles),
     Doctor(doctor::Doctor),
     En(en::En),
     Env(env::Env),
@@ -281,12 +286,14 @@ impl Commands {
             Self::Asdf(cmd) => cmd.run().await,
             Self::Backends(cmd) => cmd.run().await,
             Self::BinPaths(cmd) => cmd.run().await,
+            Self::Bootstrap(cmd) => cmd.run().await,
             Self::Cache(cmd) => cmd.run(),
             Self::Completion(cmd) => cmd.run().await,
             Self::Config(cmd) => cmd.run().await,
             Self::Current(cmd) => cmd.run().await,
             Self::Deactivate(cmd) => cmd.run(),
             Self::Direnv(cmd) => cmd.run().await,
+            Self::Dotfiles(cmd) => cmd.run().await,
             Self::Doctor(cmd) => cmd.run().await,
             Self::En(cmd) => cmd.run().await,
             Self::Env(cmd) => cmd.run().await,
@@ -433,8 +440,12 @@ fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> Option<usiz
                 let flag_name = arg.split('=').next().unwrap();
                 flags_with_values.iter().any(|f| f == flag_name)
             }
-        } else if arg.len() >= 2 {
-            let flag_name = &arg[..2];
+        } else if let Some(flag_name) = arg.get(..2) {
+            // `arg.get(..2)` (not `&arg[..2]`) avoids panicking when the arg is
+            // not valid UTF-8 in the first place: args are read lossily, so a
+            // malformed byte becomes a multi-byte U+FFFD and byte index 2 may not
+            // be a char boundary. A short flag is always ASCII, so a non-ASCII
+            // prefix simply matches no value-taking flag.
             flags_with_values.iter().any(|f| f == flag_name)
         } else {
             false

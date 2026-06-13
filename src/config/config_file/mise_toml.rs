@@ -18,11 +18,13 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value}
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
+use crate::config::config_file::{
+    ConfigFile, TaskConfig, config_trust_root, is_ignored, trust, trust_check,
+};
 use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions, RequiredValue};
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap, Config};
+use crate::config::{Alias, AliasMap, Config, Settings};
 use crate::deps::DepsConfig;
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
@@ -30,6 +32,7 @@ use crate::hooks::{Hook, HookDef, Hooks};
 use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
+use crate::system::{BootstrapTomlConfig, DotfilesTomlConfig};
 use crate::task::{Task, TaskTemplate};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
@@ -37,7 +40,7 @@ use crate::watch_files::WatchFile;
 use crate::{env, file};
 
 use super::diagnostic::toml_parse_error;
-use super::{ConfigFileType, min_version::MinVersionSpec};
+use super::min_version::MinVersionSpec;
 
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
@@ -176,12 +179,16 @@ pub struct MiseToml {
     #[serde(default)]
     oci: Option<OciConfig>,
     #[serde(default)]
+    bootstrap: Option<BootstrapTomlConfig>,
+    #[serde(default)]
+    dotfiles: Option<DotfilesTomlConfig>,
+    #[serde(default)]
     vars: EnvList,
     #[serde(default)]
     settings: SettingsPartial,
     /// Marks this config as a monorepo root, enabling target path syntax for tasks
-    #[serde(default)]
-    experimental_monorepo_root: Option<bool>,
+    #[serde(default, alias = "experimental_monorepo_root")]
+    monorepo_root: Option<bool>,
     /// Configuration for monorepo task discovery
     #[serde(default)]
     monorepo: Option<MonorepoConfig>,
@@ -270,7 +277,9 @@ impl MiseToml {
     }
 
     pub fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
-        trust_check(path)?;
+        if !Self::is_trust_exempt(body, path) {
+            trust_check(path)?;
+        }
         trace!("parsing: {}", display_path(path));
         let des = toml::Deserializer::parse(body).map_err(|e| toml_parse_error(&e, body, path))?;
         let de_res = serde_ignored::deserialize(des, |p| {
@@ -297,6 +306,32 @@ impl MiseToml {
         }
         // trace!("{}", rf.dump()?);
         Ok(rf)
+    }
+
+    /// Whether the config file at `path` loads without trust (see
+    /// [`Self::is_trust_exempt`]). Returns false for unreadable files and for
+    /// non-mise.toml files (e.g. `.tool-versions`), which have their own flow.
+    pub fn path_is_trust_exempt(path: &Path) -> bool {
+        file::read_to_string(path).is_ok_and(|body| Self::is_trust_exempt(&body, path))
+    }
+
+    /// Whether this config body can be loaded without trusting the file.
+    ///
+    /// Safe configs cannot execute code or change mise's behavior beyond
+    /// requesting tool versions and defining tasks, so there is nothing to
+    /// gate behind a trust prompt. Anything else — env vars, hooks, settings,
+    /// aliases, templates, tool options like `postinstall`/`install_env` —
+    /// still requires trust.
+    fn is_trust_exempt(body: &str, path: &Path) -> bool {
+        if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+            return false;
+        }
+        // configs the user chose to ignore should stay unloaded rather than
+        // becoming loadable because their content happens to be safe
+        if is_ignored(&config_trust_root(path)) || is_ignored(path) {
+            return false;
+        }
+        is_safe_config_body(body)
     }
 
     fn doc(&self) -> eyre::Result<DocumentMut> {
@@ -484,6 +519,90 @@ impl MiseToml {
         Ok(())
     }
 
+    /// Set `[bootstrap.packages]."<manager>:<package>" = "<version>"`,
+    /// creating the tables as needed ("latest" means no pin)
+    pub fn update_bootstrap_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
+        self.bootstrap
+            .get_or_insert_with(Default::default)
+            .packages
+            .insert(spec.to_string(), version.to_string());
+        let mut doc = self.doc_mut()?;
+        let bootstrap = doc
+            .get_mut()
+            .unwrap()
+            .entry("bootstrap")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        // don't render an empty [bootstrap] header above [bootstrap.packages]
+        bootstrap.set_implicit(true);
+        let packages = bootstrap
+            .entry("packages")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        let key = get_key_with_decor(packages, spec);
+        packages.insert_formatted(&key, toml_edit::value(version));
+        Ok(())
+    }
+
+    /// Set `[bootstrap.brew.taps]."<owner>/<tap>" = "<url>"`, creating the
+    /// tables as needed.
+    pub fn update_bootstrap_brew_tap(&mut self, tap: &str, url: &str) -> eyre::Result<()> {
+        self.bootstrap
+            .get_or_insert_with(Default::default)
+            .brew
+            .taps
+            .insert(tap.to_string(), url.to_string());
+        let mut doc = self.doc_mut()?;
+        let bootstrap = doc
+            .get_mut()
+            .unwrap()
+            .entry("bootstrap")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        bootstrap.set_implicit(true);
+        let brew = bootstrap
+            .entry("brew")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        brew.set_implicit(true);
+        let taps = brew
+            .entry("taps")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        let key = get_key_with_decor(taps, tap);
+        taps.insert_formatted(&key, toml_edit::value(url));
+        Ok(())
+    }
+
+    pub fn remove_bootstrap_brew_tap(&mut self, tap: &str) -> eyre::Result<()> {
+        if let Some(bootstrap) = &mut self.bootstrap {
+            bootstrap.brew.taps.shift_remove(tap);
+        }
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        if let Some(bootstrap) = doc.get_mut("bootstrap").and_then(|v| v.as_table_mut())
+            && let Some(brew) = bootstrap.get_mut("brew").and_then(|v| v.as_table_mut())
+            && let Some(taps) = brew.get_mut("taps").and_then(|v| v.as_table_mut())
+        {
+            taps.remove(tap);
+            if taps.is_empty() {
+                brew.remove("taps");
+                if brew.is_empty() {
+                    bootstrap.remove("brew");
+                    if bootstrap.is_empty() {
+                        doc.remove("bootstrap");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn update_env_age(
         &mut self,
         key: &str,
@@ -585,10 +704,6 @@ impl MiseToml {
 }
 
 impl ConfigFile for MiseToml {
-    fn config_type(&self) -> ConfigFileType {
-        ConfigFileType::MiseToml
-    }
-
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }
@@ -915,8 +1030,21 @@ impl ConfigFile for MiseToml {
         &self.task_config
     }
 
-    fn experimental_monorepo_root(&self) -> Option<bool> {
-        self.experimental_monorepo_root
+    fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
+        self.task_config
+            .includes
+            .as_ref()
+            .map(|includes| {
+                includes
+                    .iter()
+                    .map(|include| self.parse_template(include))
+                    .collect()
+            })
+            .transpose()
+    }
+
+    fn monorepo_root(&self) -> Option<bool> {
+        self.monorepo_root
     }
 
     fn monorepo(&self) -> Option<&MonorepoConfig> {
@@ -981,6 +1109,14 @@ impl ConfigFile for MiseToml {
     fn oci_config(&self) -> Option<OciConfig> {
         self.oci.clone()
     }
+
+    fn bootstrap_config(&self) -> Option<BootstrapTomlConfig> {
+        self.bootstrap.clone()
+    }
+
+    fn dotfiles_config(&self) -> Option<DotfilesTomlConfig> {
+        self.dotfiles.clone()
+    }
 }
 
 /// Returns a [`toml_edit::Key`] from the given `key`.
@@ -1004,7 +1140,7 @@ impl Debug for MiseToml {
         let title = format!("MiseToml({}): {tools}", &display_path(&self.path));
         let mut d = f.debug_struct(&title);
         if let Some(min_version) = &self.min_version {
-            d.field("min_version", &min_version.to_string());
+            d.field("min_version", min_version);
         }
         if !self.env_file.is_empty() {
             d.field("env_file", &self.env_file);
@@ -1056,8 +1192,10 @@ impl Clone for MiseToml {
             watch_files: self.watch_files.clone(),
             deps: self.deps.clone(),
             oci: self.oci.clone(),
+            bootstrap: self.bootstrap.clone(),
+            dotfiles: self.dotfiles.clone(),
             vars: self.vars.clone(),
-            experimental_monorepo_root: self.experimental_monorepo_root,
+            monorepo_root: self.monorepo_root,
             monorepo: self.monorepo.clone(),
         }
     }
@@ -1903,6 +2041,67 @@ impl<'de> de::Deserialize<'de> for Alias {
     }
 }
 
+/// A config body is safe to load without trust when nothing in it can execute
+/// code at load time or change mise's behavior without an explicit user
+/// action:
+/// - `min_version` is inert
+/// - `[tools]` entries with plain version strings only matter when the user
+///   runs something like `mise install`. Entries with options (tables) are
+///   excluded because options like `postinstall` and `install_env` run code
+///   or alter the install environment.
+/// - `[tasks]` definitions are inert until the user explicitly runs one
+/// - no Tera template syntax anywhere — templates render while config and
+///   tasks load and can run arbitrary commands via exec()
+fn is_safe_config_body(body: &str) -> bool {
+    // Fast reject: literal Tera delimiters in the raw text.
+    if contains_template_syntax(body) {
+        return false;
+    }
+    let Ok(toml::Value::Table(table)) = toml::from_str::<toml::Value>(body) else {
+        // let the normal trust + parse flow handle invalid TOML
+        return false;
+    };
+    // The raw-body check above misses escaped delimiters that TOML decodes,
+    // e.g. `"{{ exec(...) }}"` becomes `{{ exec(...) }}`
+    // after parsing and would still render via Tera. Re-check every decoded
+    // string (keys and values, at any depth) so no exec()-capable template
+    // can slip through into tool versions or task fields.
+    if toml_table_has_template(&table) {
+        return false;
+    }
+    table.iter().all(|(key, value)| match key.as_str() {
+        "min_version" | "tasks" => true,
+        "tools" => value.as_table().is_some_and(|tools| {
+            tools.values().all(|version| match version {
+                toml::Value::String(_) => true,
+                toml::Value::Array(versions) => {
+                    versions.iter().all(|v| matches!(v, toml::Value::String(_)))
+                }
+                _ => false,
+            })
+        }),
+        _ => false,
+    })
+}
+
+/// Whether any decoded string (table key or value, at any depth) contains
+/// Tera template syntax. Used to catch escaped delimiters (e.g. `{{`)
+/// that a raw-text scan misses but that still render after TOML parsing.
+pub(crate) fn toml_value_has_template(value: &toml::Value) -> bool {
+    match value {
+        toml::Value::String(s) => contains_template_syntax(s),
+        toml::Value::Array(arr) => arr.iter().any(toml_value_has_template),
+        toml::Value::Table(t) => toml_table_has_template(t),
+        _ => false,
+    }
+}
+
+fn toml_table_has_template(table: &toml::Table) -> bool {
+    table
+        .iter()
+        .any(|(k, v)| contains_template_syntax(k) || toml_value_has_template(v))
+}
+
 fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
     let mut last = None;
     for k in tools.keys() {
@@ -1921,7 +2120,7 @@ fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
 mod tests {
     use std::sync::Arc;
 
-    use indoc::formatdoc;
+    use indoc::{formatdoc, indoc};
     use insta::{assert_debug_snapshot, assert_snapshot};
     use test_log::test;
 
@@ -2002,6 +2201,165 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_bootstrap_packages() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.packages]
+        "apt:libssl-dev" = "latest"
+        "apt:curl" = "8.5.0-2"
+        "brew:postgresql@17" = "latest"
+        "future-manager:whatever" = "latest"
+
+        [bootstrap.brew.taps]
+        "railwaycat/emacsmacport" = "https://github.com/railwaycat/homebrew-emacsmacport"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        assert_eq!(system.packages.get("apt:libssl-dev").unwrap(), "latest");
+        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        assert_eq!(system.packages.get("brew:postgresql@17").unwrap(), "latest");
+        assert_eq!(
+            system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
+            "https://github.com/railwaycat/homebrew-emacsmacport"
+        );
+        assert_eq!(system.user.login_shell, None);
+        // unknown managers parse fine (forward compatibility)
+        assert_eq!(
+            system.packages.get("future-manager:whatever").unwrap(),
+            "latest"
+        );
+
+        // no [bootstrap] section -> None
+        file::write(&p, "[tools]\n").unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        assert!(cf.bootstrap_config().is_none());
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_login_shell() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.user]
+        login_shell = "/bin/zsh"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        assert_eq!(system.user.login_shell.as_deref(), Some("/bin/zsh"));
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_macos_defaults() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.macos.defaults]
+        NSGlobalDomain = { KeyRepeat = 2, ApplePressAndHoldEnabled = false }
+        "com.apple.dock" = { autohide = true, tilesize = 48, magnification-scale = 1.5, orientation = "left", future-array = [1, 2] }
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        let global = system.macos.defaults.get("NSGlobalDomain").unwrap();
+        assert_eq!(global.get("KeyRepeat").unwrap(), &toml::Value::Integer(2));
+        assert_eq!(
+            global.get("ApplePressAndHoldEnabled").unwrap(),
+            &toml::Value::Boolean(false)
+        );
+        let dock = system.macos.defaults.get("com.apple.dock").unwrap();
+        assert_eq!(dock.get("autohide").unwrap(), &toml::Value::Boolean(true));
+        assert_eq!(dock.get("tilesize").unwrap(), &toml::Value::Integer(48));
+        assert_eq!(
+            dock.get("magnification-scale").unwrap(),
+            &toml::Value::Float(1.5)
+        );
+        assert_eq!(
+            dock.get("orientation").unwrap(),
+            &toml::Value::String("left".into())
+        );
+        assert!(dock.get("future-array").unwrap().is_array());
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_macos_launchd_agents() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.macos.launchd.agents.my-sync]
+        program = "~/.local/bin/my-sync"
+        args = ["--watch"]
+        run_at_load = true
+        start_interval = 300
+        environment = { PATH = "/usr/bin:/bin" }
+        working_directory = "~"
+        stdout_path = "~/Library/Logs/my-sync.log"
+        kickstart = true
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        let agent = system.macos.launchd.agents.get("my-sync").unwrap();
+        assert_eq!(agent.program.as_deref(), Some("~/.local/bin/my-sync"));
+        assert_eq!(agent.args, vec!["--watch"]);
+        assert!(agent.run_at_load);
+        assert_eq!(agent.start_interval, Some(300));
+        assert_eq!(
+            agent.environment.get("PATH").map(String::as_str),
+            Some("/usr/bin:/bin")
+        );
+        assert_eq!(agent.working_directory.as_deref(), Some("~"));
+        assert_eq!(
+            agent.stdout_path.as_deref(),
+            Some("~/Library/Logs/my-sync.log")
+        );
+        assert!(agent.kickstart);
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_bootstrap_package() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        // creates [bootstrap.packages] when absent, preserves other sections
+        file::write(&p, "[tools]\njq = \"latest\"\n").unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.update_bootstrap_package("apt:curl", "latest").unwrap();
+        cf.update_bootstrap_package("brew:postgresql@17", "latest")
+            .unwrap();
+        // overrides an existing pin in place
+        cf.update_bootstrap_package("apt:curl", "8.5.0-2").unwrap();
+        assert_snapshot!(cf.dump().unwrap(), @r#"
+        [tools]
+        jq = "latest"
+
+        [bootstrap.packages]
+        "apt:curl" = "8.5.0-2"
+        "brew:postgresql@17" = "latest"
+        "#);
+        let system = cf.bootstrap_config().unwrap();
+        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
     async fn test_core_options_do_not_normalize_version_placeholder() {
         let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
@@ -2030,6 +2388,27 @@ mod tests {
         );
         assert_eq!(opts.get("url"), Some("https://example.com/{version}"));
         file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_tool_options_preserve_quoted_literal_dotted_keys() {
+        crate::toolset::install_state::init().await.unwrap();
+        let cf = MiseToml::from_str(
+            r#"
+            [tools."aqua:example/vars-tool"]
+            version = "1.0.0"
+            fixture_version = "2.0.0"
+            "vars.fixture_version" = "1.0.0"
+            "#,
+            std::path::Path::new("mise.toml"),
+        )
+        .unwrap();
+        let trs = cf.to_tool_request_set().unwrap();
+        let (_, requests, _) = trs.iter().next().unwrap();
+        let opts = requests[0].options();
+
+        assert_eq!(opts.get("fixture_version"), Some("2.0.0"));
+        assert_eq!(opts.get("vars.fixture_version"), Some("1.0.0"));
     }
 
     #[tokio::test]
@@ -2407,6 +2786,75 @@ run = 'echo "template"'
 
     fn parse_env(toml: String) -> String {
         parse(toml).env_entries().unwrap().into_iter().join("\n")
+    }
+
+    #[test]
+    fn test_is_safe_config_body() {
+        assert!(is_safe_config_body(""));
+        assert!(is_safe_config_body(indoc! {r#"
+        min_version = "2024.1.1"
+        [tools]
+        node = "20"
+        python = ["3.11", "3.12"]
+        "cargo:eza" = "latest"
+        "#}));
+        // tasks are inert until the user explicitly runs one
+        assert!(is_safe_config_body(indoc! {r#"
+        [tasks.build]
+        run = "cargo build"
+        dir = "src"
+        env = { FOO = "bar" }
+        [tasks.test]
+        depends = ["build"]
+        run = ["cargo test"]
+        "#}));
+
+        // templates can execute commands
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        node = "{{ exec(command='echo 20') }}"
+        "#}));
+        // tool options like postinstall/install_env run code
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        node = { version = "20", postinstall = "corepack enable" }
+        "#}));
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        node = [{ version = "20" }]
+        "#}));
+        // tasks with templates render (and can exec) while loading
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tasks.build]
+        run = "cargo build"
+        description = "{{ exec(command='echo hi') }}"
+        "#}));
+        // escaped Tera delimiters ({ == '{', } == '}') decode to
+        // `{{ exec(...) }}` after TOML parsing and must not bypass the check
+        assert!(!is_safe_config_body(
+            "[tools]\nnode = \"\\u007b\\u007b exec(command='echo 20') \\u007d\\u007d\"\n"
+        ));
+        assert!(!is_safe_config_body(
+            "[tasks.build]\nrun = \"cargo build\"\ndescription = \"\\u007b\\u007b exec(command='echo hi') \\u007d\\u007d\"\n"
+        ));
+        // an escaped delimiter in a key must also be caught
+        assert!(!is_safe_config_body(
+            "[tasks]\n\"\\u007b\\u007b exec() \\u007d\\u007d\" = { run = \"x\" }\n"
+        ));
+        // anything beyond min_version/tools/tasks requires trust
+        for body in [
+            "[env]\nFOO = \"bar\"",
+            "[task_config]\nincludes = [\"tasks.toml\"]",
+            "[hooks]\nenter = \"echo hi\"",
+            "[settings]\nparanoid = false",
+            "[alias]\nnode = \"asdf:foo/bar\"",
+            "[plugins]\nfoo = \"https://example.com/foo.git\"",
+            "env_file = \".env\"",
+        ] {
+            assert!(!is_safe_config_body(body), "should require trust: {body}");
+        }
+        // invalid toml falls back to the normal trust + parse flow
+        assert!(!is_safe_config_body("[tools"));
     }
 
     #[tokio::test]

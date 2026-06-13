@@ -11,7 +11,7 @@ mise settings set idiomatic_version_file_enable_tools tiny
 
 # Create monorepo root config
 cat <<EOF >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["packages/*"]

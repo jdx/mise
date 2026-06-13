@@ -135,8 +135,10 @@ onMounted(async () => {
 
 .EndevSponsorsLogo {
   align-items: center;
+  background: #171717;
   border: 1px solid var(--vp-c-divider);
   border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(42, 31, 26, 0.08);
   display: inline-flex;
   height: 40px;
   justify-content: center;
@@ -147,7 +149,18 @@ onMounted(async () => {
 }
 
 .EndevSponsorsLogo:hover {
+  background: #242424;
+  border-color: var(--vp-c-brand-1);
+}
+
+.dark .EndevSponsorsLogo {
   background: var(--vp-c-bg-soft);
+  border-color: var(--vp-c-divider);
+  box-shadow: none;
+}
+
+.dark .EndevSponsorsLogo:hover {
+  background: var(--vp-c-bg-mute);
   border-color: var(--vp-c-brand-1);
 }
 

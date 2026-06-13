@@ -7,6 +7,19 @@ ENV_TMPL_EXEC = "{{ exec(command='echo foo') }}"
 EOF
 assert_contains "mise env -s zsh | grep ENV_TMPL_EXEC" "export ENV_TMPL_EXEC=foo"
 
+# Inner double quotes in an exec() command must survive to the shell. This is
+# the same run_once path shared with the Windows cmd-verbatim fix; on Unix it
+# guards against a regression in the refactor. `echo "a b"` must resolve to
+# exactly `a b` (echo strips the quotes) — not `"a b"` or a backslash-escaped
+# variant, which a broken refactor could produce.
+cat <<EOF >mise.toml
+[env]
+ENV_TMPL_EXEC_QUOTED = "{{ exec(command='echo \"a b\"') }}"
+EOF
+assert_json_partial_object "mise env --json" "ENV_TMPL_EXEC_QUOTED" '{
+  "ENV_TMPL_EXEC_QUOTED": "a b"
+}'
+
 cat <<EOF >mise.toml
 [env]
 B = "{{ env.A }}"

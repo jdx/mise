@@ -9,6 +9,7 @@ pub const BUILTIN_PROVIDERS: &[&str] = &[
     "pnpm",
     "bun",           // Node.js
     "aube",          // Node.js
+    "deno",          // Deno
     "go",            // Go
     "pip",           // Python (requirements.txt)
     "poetry",        // Python (poetry)
@@ -52,13 +53,6 @@ pub struct DepsProviderConfig {
     pub timeout: Option<String>,
 }
 
-impl DepsProviderConfig {
-    /// Check if this is a custom rule (has explicit run command and is not a built-in name)
-    pub fn is_custom(&self, name: &str) -> bool {
-        !BUILTIN_PROVIDERS.contains(&name) && self.run.is_some()
-    }
-}
-
 /// Top-level [deps] configuration section
 ///
 /// All providers are configured at the same level:
@@ -72,24 +66,4 @@ pub struct DepsConfig {
     /// All provider configurations (both built-in and custom)
     #[serde(flatten)]
     pub providers: BTreeMap<String, DepsProviderConfig>,
-}
-
-impl DepsConfig {
-    /// Merge two DepsConfigs, with `other` taking precedence
-    pub fn merge(&self, other: &DepsConfig) -> DepsConfig {
-        let mut providers = self.providers.clone();
-        for (k, v) in &other.providers {
-            providers.insert(k.clone(), v.clone());
-        }
-
-        let mut disable = self.disable.clone();
-        disable.extend(other.disable.clone());
-
-        DepsConfig { disable, providers }
-    }
-
-    /// Get a provider config by name
-    pub fn get(&self, name: &str) -> Option<&DepsProviderConfig> {
-        self.providers.get(name)
-    }
 }

@@ -11,7 +11,6 @@ use crate::cli::version::VERSION;
 use color_eyre::{Section, SectionExt};
 use eyre::Report;
 use indoc::indoc;
-use itertools::Itertools;
 
 #[cfg(test)]
 #[macro_use]
@@ -85,6 +84,7 @@ mod shims;
 mod shorthands;
 mod sops;
 mod sysconfig;
+mod system;
 pub(crate) mod task;
 pub(crate) mod tera;
 pub(crate) mod timeout;
@@ -131,7 +131,7 @@ async fn main_() -> eyre::Result<()> {
         }
     }
     measure!("main", {
-        let args = env::args().collect_vec();
+        let args = env::args_safe();
         match Cli::run(&args)
             .await
             .with_section(|| VERSION.to_string().header("Version:"))

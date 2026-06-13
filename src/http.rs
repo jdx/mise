@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use eyre::{Report, Result, bail, ensure};
+use eyre::{Report, Result, bail, ensure, eyre};
 use regex::Regex;
 use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
@@ -41,6 +41,45 @@ pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
 type CachedResult = Arc<OnceCell<Result<String, String>>>;
 static HTTP_CACHE: Lazy<Mutex<HashMap<String, CachedResult>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+type RetryStateHandle = Arc<Mutex<RetryState>>;
+
+struct RetryState {
+    headers: HeaderMap,
+    use_netrc: bool,
+}
+
+#[derive(Clone)]
+struct SendOnceOptions {
+    use_netrc: bool,
+    retry_github_oauth_401: bool,
+    error_for_status: bool,
+    retry_state: Option<RetryStateHandle>,
+}
+
+impl SendOnceOptions {
+    fn new(retry_state: Option<RetryStateHandle>, use_netrc: bool) -> Self {
+        Self {
+            use_netrc,
+            retry_github_oauth_401: true,
+            error_for_status: true,
+            retry_state,
+        }
+    }
+
+    fn allow_error_status(mut self) -> Self {
+        self.error_for_status = false;
+        self
+    }
+
+    fn recursive_retry(&self) -> Self {
+        Self {
+            use_netrc: false,
+            retry_github_oauth_401: false,
+            error_for_status: self.error_for_status,
+            retry_state: self.retry_state.clone(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Client {
@@ -125,6 +164,17 @@ impl Client {
             .await?;
         resp.error_for_status_ref()?;
         Ok(resp)
+    }
+
+    pub async fn get_async_with_headers_allow_error_status<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+    ) -> Result<Response> {
+        ensure!(!Settings::get().offline(), "offline mode is enabled");
+        let url = url.into_url().unwrap();
+        self.send_with_https_fallback_allow_error_status(Method::GET, url, headers, "GET")
+            .await
     }
 
     pub async fn head<U: IntoUrl>(&self, url: U) -> Result<Response> {
@@ -369,6 +419,25 @@ impl Client {
             headers,
             verb_label,
             Settings::get().http_retries,
+            true,
+        )
+        .await
+    }
+
+    async fn send_with_https_fallback_allow_error_status(
+        &self,
+        method: Method,
+        url: Url,
+        headers: &HeaderMap,
+        verb_label: &str,
+    ) -> Result<Response> {
+        self.send_with_https_fallback_with_retries(
+            method,
+            url,
+            headers,
+            verb_label,
+            Settings::get().http_retries,
+            false,
         )
         .await
     }
@@ -380,10 +449,31 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
         retries: i64,
+        error_for_status: bool,
     ) -> Result<Response> {
+        let retry_state = Arc::new(Mutex::new(RetryState {
+            headers: headers.clone(),
+            use_netrc: true,
+        }));
         retry_async_with_retries(verb_label, &url, retries, || async {
-            self.send_once_with_https_fallback(method.clone(), url.clone(), headers, verb_label)
-                .await
+            let (headers, use_netrc) = {
+                let state = retry_state.lock().unwrap();
+                (state.headers.clone(), state.use_netrc)
+            };
+            let options = SendOnceOptions::new(Some(retry_state.clone()), use_netrc);
+            let options = if error_for_status {
+                options
+            } else {
+                options.allow_error_status()
+            };
+            self.send_once_with_https_fallback_with_retry_headers(
+                method.clone(),
+                url.clone(),
+                &headers,
+                verb_label,
+                options,
+            )
+            .await
         })
         .await
     }
@@ -402,28 +492,54 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
     ) -> Result<Response> {
+        self.send_once_with_https_fallback_with_retry_headers(
+            method,
+            url,
+            headers,
+            verb_label,
+            SendOnceOptions::new(None, true),
+        )
+        .await
+    }
+
+    async fn send_once_with_https_fallback_with_retry_headers(
+        &self,
+        method: Method,
+        url: Url,
+        headers: &HeaderMap,
+        verb_label: &str,
+        options: SendOnceOptions,
+    ) -> Result<Response> {
         match self
-            .send_once(method.clone(), url.clone(), headers, verb_label)
+            .send_once_with_retry_headers(
+                method.clone(),
+                url.clone(),
+                headers,
+                verb_label,
+                options.clone(),
+            )
             .await
         {
             Ok(resp) => Ok(resp),
             Err(err) if url.scheme() == "http" && is_connection_error(&err) => {
                 let mut url = url;
                 url.set_scheme("https").unwrap();
-                self.send_once(method, url, headers, verb_label).await
+                self.send_once_with_retry_headers(method, url, headers, verb_label, options)
+                    .await
             }
             Err(err) => Err(err),
         }
     }
 
-    async fn send_once(
+    async fn send_once_with_retry_headers(
         &self,
         method: Method,
         url: Url,
         headers: &HeaderMap,
         verb_label: &str,
+        options: SendOnceOptions,
     ) -> Result<Response> {
-        self.send_once_inner(method, url, headers, verb_label, true)
+        self.send_once_inner(method, url, headers, verb_label, options)
             .await
     }
 
@@ -433,14 +549,15 @@ impl Client {
         mut url: Url,
         headers: &HeaderMap,
         verb_label: &str,
-        use_netrc: bool,
+        options: SendOnceOptions,
     ) -> Result<Response> {
+        let original_url = url.clone();
         apply_url_replacements(&mut url);
         debug!("{} {}", verb_label, &url);
 
         // Apply netrc credentials after URL replacement
         let mut final_headers = headers.clone();
-        if use_netrc {
+        if options.use_netrc {
             final_headers.extend(netrc_headers(&url));
         }
 
@@ -476,30 +593,87 @@ impl Client {
         }
         debug!("{} {url} {}", verb_label, resp.status());
         display_github_rate_limit(&resp);
-        if is_authenticated_github_forbidden(&url, &final_headers, &resp) {
+        if options.retry_github_oauth_401
+            && let Some(stale_access_token) =
+                stale_github_oauth_unauthorized_token(&original_url, &final_headers, &resp)
+            && let Some(host) = original_url.host_str()
+        {
+            match crate::github::oauth::refresh_cached_token_for_host(host, &stale_access_token)
+                .await
+            {
+                Ok(Some(token)) => {
+                    let mut headers = headers.clone();
+                    if let Ok(value) = HeaderValue::from_str(format!("Bearer {token}").as_str()) {
+                        headers.insert(AUTHORIZATION, value);
+                        if let Some(retry_state) = &options.retry_state {
+                            *retry_state.lock().unwrap() = RetryState {
+                                headers: headers.clone(),
+                                use_netrc: false,
+                            };
+                        }
+                        debug!(
+                            "{} {} retrying with refreshed GitHub OAuth token after 401",
+                            verb_label, &url
+                        );
+                        return Box::pin(self.send_once_inner(
+                            method,
+                            original_url,
+                            &headers,
+                            verb_label,
+                            options.recursive_retry(),
+                        ))
+                        .await;
+                    } else {
+                        debug!(
+                            "refreshed GitHub OAuth token contains invalid header bytes; skipping retry"
+                        );
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    debug!("failed to refresh GitHub OAuth token after 401: {err:#}");
+                }
+            }
+        }
+        if options.error_for_status && is_github_forbidden(&url, &resp) {
             let status = resp.status();
             let status_error = resp
                 .error_for_status_ref()
                 .expect_err("403 response should be an error");
+            let used_github_token = final_headers.contains_key(AUTHORIZATION);
+            let rate_limit = github_rate_limit_summary(&resp);
             let body = resp.text().await.unwrap_or_default();
             // Retry without auth when the response mentions IP allow lists: GitHub App
             // installation tokens (`ghs_*`) get 403 on public API resources for orgs with IP
             // allow lists; stripping auth avoids that path.
             // https://github.com/orgs/community/discussions/191185
             // https://github.com/jdx/mise/discussions/9119
-            if body.contains("IP allow list") {
+            if used_github_token && body.contains("IP allow list") {
                 let mut headers = final_headers;
                 headers.remove(AUTHORIZATION);
                 debug!(
                     "{} {} retrying without GitHub auth after {}",
                     verb_label, &url, status
                 );
-                return Box::pin(self.send_once_inner(method, url, &headers, verb_label, false))
-                    .await;
+                return Box::pin(self.send_once_inner(
+                    method,
+                    original_url,
+                    &headers,
+                    verb_label,
+                    options.recursive_retry(),
+                ))
+                .await;
             }
-            return Err(status_error.into());
+            return Err(github_forbidden_report(
+                status_error,
+                used_github_token,
+                rate_limit,
+                &body,
+            ));
         }
-        resp.error_for_status_ref()?;
+        if options.error_for_status {
+            resp.error_for_status_ref()?;
+        }
         Ok(resp)
     }
 }
@@ -535,6 +709,7 @@ impl TextRequest<'_> {
                 &headers,
                 "GET",
                 self.retries,
+                true,
             )
             .await?;
         let text = resp.text().await?;
@@ -550,10 +725,89 @@ impl TextRequest<'_> {
     }
 }
 
-fn is_authenticated_github_forbidden(url: &Url, headers: &HeaderMap, resp: &Response) -> bool {
-    resp.status() == StatusCode::FORBIDDEN
-        && url.host_str() == Some("api.github.com")
-        && headers.contains_key(AUTHORIZATION)
+fn is_github_forbidden(url: &Url, resp: &Response) -> bool {
+    resp.status() == StatusCode::FORBIDDEN && url.host_str() == Some("api.github.com")
+}
+
+fn github_forbidden_report(
+    status_error: reqwest::Error,
+    used_github_token: bool,
+    rate_limit: Option<String>,
+    body: &str,
+) -> Report {
+    let token_status = if used_github_token { "yes" } else { "no" };
+    let rate_limit = rate_limit
+        .map(|summary| format!("\ngithub rate limit: {summary}"))
+        .unwrap_or_default();
+    let body = format_response_body(body);
+    eyre!("{status_error}\ngithub auth: {token_status}{rate_limit}\ngithub response: {body}")
+}
+
+fn format_response_body(body: &str) -> String {
+    const MAX_BODY_CHARS: usize = 4096;
+    if body.trim().is_empty() {
+        return "<empty>".to_string();
+    }
+
+    let mut chars = body.chars();
+    let mut formatted: String = chars.by_ref().take(MAX_BODY_CHARS).collect();
+    if chars.next().is_some() {
+        formatted.push_str("\n<truncated>");
+    }
+    formatted
+}
+
+fn github_rate_limit_summary(resp: &Response) -> Option<String> {
+    let headers = resp.headers();
+    let limit = headers
+        .get("x-ratelimit-limit")
+        .and_then(|h| h.to_str().ok());
+    let remaining = headers
+        .get("x-ratelimit-remaining")
+        .and_then(|h| h.to_str().ok());
+    let resource = headers
+        .get("x-ratelimit-resource")
+        .and_then(|h| h.to_str().ok());
+    let reset = headers
+        .get("x-ratelimit-reset")
+        .and_then(|h| h.to_str().ok());
+
+    if limit.is_none() && remaining.is_none() && resource.is_none() && reset.is_none() {
+        return None;
+    }
+
+    Some(format!(
+        "{}/{}{}{}",
+        remaining.unwrap_or("?"),
+        limit.unwrap_or("?"),
+        resource
+            .map(|resource| format!(" ({resource})"))
+            .unwrap_or_default(),
+        reset
+            .map(|reset| format!(", resets at {reset}"))
+            .unwrap_or_default()
+    ))
+}
+
+fn stale_github_oauth_unauthorized_token(
+    url: &Url,
+    headers: &HeaderMap,
+    resp: &Response,
+) -> Option<String> {
+    if resp.status() != StatusCode::UNAUTHORIZED || !crate::github::is_github_api_url(url) {
+        return None;
+    }
+    let host = url.host_str()?;
+    let token = crate::github::oauth::cached_access_token_for_host(host)?;
+    let header_token = headers
+        .get(AUTHORIZATION)
+        .and_then(|header| header.to_str().ok())
+        .and_then(|header| header.strip_prefix("Bearer "))?;
+    if header_token == token {
+        Some(header_token.to_string())
+    } else {
+        None
+    }
 }
 
 pub fn error_code(e: &Report) -> Option<u16> {
@@ -802,6 +1056,7 @@ mod tests {
     use super::*;
     use confique::Layer;
     use indexmap::IndexMap;
+    use std::path::PathBuf;
     use url::Url;
 
     // Mutex to ensure tests don't interfere with each other when modifying global settings
@@ -902,12 +1157,87 @@ mod tests {
         SettingsGuard { _lock: lock }
     }
 
+    struct GithubOauthSettingsGuard {
+        _settings_lock: std::sync::MutexGuard<'static, ()>,
+        _github_env_lock: std::sync::MutexGuard<'static, ()>,
+        vars: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl Drop for GithubOauthSettingsGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.vars {
+                if let Some(value) = value {
+                    crate::env::set_var(key, value);
+                } else {
+                    crate::env::remove_var(key);
+                }
+            }
+            crate::github::oauth::test_support::clear_cache_path();
+            crate::config::Settings::reset(None);
+        }
+    }
+
+    fn set_test_github_oauth(server_url: &str, cache_path: PathBuf) -> GithubOauthSettingsGuard {
+        let settings_lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let github_env_lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let vars = vec![
+            ("MISE_EXPERIMENTAL", std::env::var("MISE_EXPERIMENTAL").ok()),
+            (
+                "MISE_GITHUB_OAUTH_CLIENT_ID",
+                std::env::var("MISE_GITHUB_OAUTH_CLIENT_ID").ok(),
+            ),
+            (
+                "MISE_GITHUB_OAUTH_AUTH_URL",
+                std::env::var("MISE_GITHUB_OAUTH_AUTH_URL").ok(),
+            ),
+            (
+                "MISE_GITHUB_OAUTH_API_URL",
+                std::env::var("MISE_GITHUB_OAUTH_API_URL").ok(),
+            ),
+            (
+                "MISE_GITHUB_OAUTH_SCOPES",
+                std::env::var("MISE_GITHUB_OAUTH_SCOPES").ok(),
+            ),
+            ("MISE_GITHUB_TOKEN", std::env::var("MISE_GITHUB_TOKEN").ok()),
+            ("GITHUB_API_TOKEN", std::env::var("GITHUB_API_TOKEN").ok()),
+            ("GITHUB_TOKEN", std::env::var("GITHUB_TOKEN").ok()),
+        ];
+
+        crate::env::set_var("MISE_EXPERIMENTAL", "1");
+        crate::env::set_var("MISE_GITHUB_OAUTH_CLIENT_ID", "Iv1.mock");
+        crate::env::set_var("MISE_GITHUB_OAUTH_AUTH_URL", format!("{server_url}/login"));
+        crate::env::set_var("MISE_GITHUB_OAUTH_API_URL", format!("{server_url}/api/v3"));
+        crate::env::remove_var("MISE_GITHUB_OAUTH_SCOPES");
+        crate::env::remove_var("MISE_GITHUB_TOKEN");
+        crate::env::remove_var("GITHUB_API_TOKEN");
+        crate::env::remove_var("GITHUB_TOKEN");
+        crate::github::oauth::test_support::set_cache_path(cache_path);
+        crate::config::Settings::reset(None);
+
+        GithubOauthSettingsGuard {
+            _settings_lock: settings_lock,
+            _github_env_lock: github_env_lock,
+            vars,
+        }
+    }
+
     // A tiny in-process HTTP/1.1 responder. Each accepted connection consumes
     // the next response from `responses` and writes it back. Returns the bound
     // port and an Arc counter of connections actually served.
     async fn spawn_canned_server(
         responses: Vec<&'static str>,
     ) -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        let (port, count, _) = spawn_recording_server(responses).await;
+        (port, count)
+    }
+
+    async fn spawn_recording_server(
+        responses: Vec<&'static str>,
+    ) -> (
+        u16,
+        std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    ) {
         use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -915,7 +1245,9 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let count = Arc::new(AtomicUsize::new(0));
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
         let count_inner = count.clone();
+        let requests_inner = requests.clone();
         tokio::spawn(async move {
             for resp in responses {
                 let Ok((mut sock, _)) = listener.accept().await else {
@@ -937,11 +1269,15 @@ mod tests {
                         Err(_) => break,
                     }
                 }
+                requests_inner
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&total).to_string());
                 let _ = sock.write_all(resp.as_bytes()).await;
                 let _ = sock.shutdown().await;
             }
         });
-        (port, count)
+        (port, count, requests)
     }
 
     fn ok_response() -> &'static str {
@@ -955,6 +1291,119 @@ mod tests {
     }
     fn server_error_response() -> &'static str {
         "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    }
+    fn unauthorized_response() -> &'static str {
+        "HTTP/1.1 401 Unauthorized\r\nContent-Length: 15\r\nConnection: close\r\n\r\nBad credentials"
+    }
+    fn github_forbidden_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 403 Forbidden\r\n",
+            "Content-Type: application/json\r\n",
+            "X-RateLimit-Limit: 5000\r\n",
+            "X-RateLimit-Remaining: 42\r\n",
+            "X-RateLimit-Resource: core\r\n",
+            "X-RateLimit-Reset: 1781337353\r\n",
+            "Content-Length: 47\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            r#"{"message":"secondary rate limit","docs":"url"}"#
+        )
+    }
+    fn github_oauth_token_response() -> &'static str {
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 51\r\nConnection: close\r\n\r\n{\"access_token\":\"ghu-refreshed\",\"expires_in\":28800}"
+    }
+    fn json_empty_array_response() -> &'static str {
+        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]"
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_github_oauth_401_refreshes_and_retries_once() {
+        let (port, count, requests) = spawn_recording_server(vec![
+            unauthorized_response(),
+            github_oauth_token_response(),
+            json_empty_array_response(),
+        ])
+        .await;
+        let server_url = format!("http://127.0.0.1:{port}");
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("github-oauth-tokens.toml");
+        let _guard = set_test_github_oauth(&server_url, cache_path.clone());
+        let settings = crate::config::Settings::get();
+        let cache_key = crate::github::oauth::test_support::cache_key(
+            "127.0.0.1",
+            "Iv1.mock",
+            settings.github.oauth_scopes.trim(),
+        );
+        std::fs::write(
+            &cache_path,
+            format!(
+                r#"[tokens.{cache_key}]
+access_token = "ghu-stale"
+expires_at = "2099-01-01T00:00:00Z"
+refresh_token = "ghr-refresh"
+refresh_expires_at = "2099-01-01T00:00:00Z"
+"#
+            ),
+        )
+        .unwrap();
+
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer ghu-stale"));
+        let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+        let text = client
+            .get_text_request(format!("{server_url}/api/v3/repos/owner/repo/releases"))
+            .headers(&headers)
+            .send()
+            .await
+            .unwrap_or_else(|err| {
+                let requests = requests.lock().unwrap();
+                panic!(
+                    "request failed: {err:#}\nrequests:\n{}",
+                    requests.join("\n---\n")
+                );
+            });
+
+        assert_eq!(text, "[]");
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
+        let requests = requests.lock().unwrap();
+        let first_request = requests[0].to_ascii_lowercase();
+        let refresh_request = requests[1].to_ascii_lowercase();
+        let retry_request = requests[2].to_ascii_lowercase();
+        assert!(first_request.contains("get /api/v3/repos/owner/repo/releases"));
+        assert!(first_request.contains("authorization: bearer ghu-stale"));
+        assert!(refresh_request.contains("post /login/oauth/access_token"));
+        assert!(retry_request.contains("get /api/v3/repos/owner/repo/releases"));
+        assert!(retry_request.contains("authorization: bearer ghu-refreshed"));
+        let cache = std::fs::read_to_string(cache_path).unwrap();
+        assert!(cache.contains("ghu-refreshed"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_github_forbidden_report_includes_body_and_auth_state() {
+        let (port, _count) = spawn_canned_server(vec![github_forbidden_response()]).await;
+        let url = format!("http://127.0.0.1:{port}/repos/microsoft/edit/releases");
+        let resp = reqwest::Client::new().get(url).send().await.unwrap();
+        let rate_limit = github_rate_limit_summary(&resp);
+        let status_error = resp
+            .error_for_status_ref()
+            .expect_err("403 response should be an error");
+        let body = resp.text().await.unwrap();
+        let err = github_forbidden_report(status_error, true, rate_limit, &body);
+        let msg = format!("{err:?}");
+
+        assert!(msg.contains("github auth: yes"));
+        assert!(msg.contains("github rate limit: 42/5000 (core), resets at 1781337353"));
+        assert!(msg.contains(r#"{"message":"secondary rate limit","docs":"url"}"#));
+    }
+
+    #[test]
+    fn test_format_response_body_handles_empty_and_truncates() {
+        assert_eq!(format_response_body(" \n\t"), "<empty>");
+
+        let body = "a".repeat(4097);
+        let formatted = format_response_body(&body);
+        assert_eq!(formatted.strip_suffix("\n<truncated>").unwrap().len(), 4096);
+        assert!(formatted.ends_with("\n<truncated>"));
     }
 
     #[tokio::test(flavor = "current_thread")]

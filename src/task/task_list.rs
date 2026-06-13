@@ -1,4 +1,4 @@
-use crate::config::{self, Config, Settings};
+use crate::config::{self, Config};
 use crate::file::display_path;
 use crate::task::{
     GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, resolve_task_pattern,
@@ -51,20 +51,6 @@ pub fn split_task_spec(spec: &str) -> (&str, Vec<String>) {
 
 /// Validate that monorepo features are properly configured
 fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
-    // Check if experimental mode is enabled
-    if !Settings::get().experimental {
-        bail!(
-            "Monorepo task paths (like `//path:task` or `:task`) require experimental mode.\n\
-            \n\
-            To enable experimental features, set:\n\
-            {}\n\
-            \n\
-            Or run with: {}",
-            style::eyellow("  export MISE_EXPERIMENTAL=true"),
-            style::eyellow("MISE_EXPERIMENTAL=1 mise run ...")
-        );
-    }
-
     // Check if a monorepo root is configured
     if !config.is_monorepo() {
         bail!(
@@ -75,7 +61,7 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
             \n\
             Then create task files in subdirectories that will be automatically discovered.\n\
             See {} for more information.",
-            style::eyellow("  experimental_monorepo_root = true"),
+            style::eyellow("  monorepo_root = true"),
             style::eunderline("https://mise.en.dev/tasks/task-configuration.html#monorepo-support")
         );
     }
@@ -240,7 +226,7 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
         if !cfg!(windows)
             && let Some(cwd) = &*dirs::CWD
         {
-            let includes = config::task_includes_for_dir(cwd, &config.config_files);
+            let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
             let non_exec_files = find_non_executable_task_files(&includes);
             if !non_exec_files.is_empty() {
                 let dirs_with_files: Vec<String> = includes
@@ -271,7 +257,7 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
         );
     }
     if let Some(cwd) = &*dirs::CWD {
-        let includes = config::task_includes_for_dir(cwd, &config.config_files);
+        let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
         let path = includes
             .iter()
             .map(|d| d.join(name))

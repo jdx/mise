@@ -478,7 +478,7 @@ pub struct Task {
     #[serde(default)]
     pub allow_env: Vec<String>,
 
-    /// Name of the task template to extend (requires experimental = true)
+    /// Name of the task template to extend
     #[serde(default)]
     pub extends: Option<String>,
 
@@ -504,6 +504,41 @@ pub struct Task {
     pub trailing_args: Vec<String>,
 }
 
+/// Parse the `#MISE key=value` (and `// MISE`, `:: MISE`, `[MISE]`) header
+/// lines out of a task script into their decoded TOML values.
+fn parse_mise_header_toml(body: &str) -> Result<Vec<toml::Value>> {
+    body.lines()
+        .filter_map(|line| {
+            regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z0-9_.-]+\s*=\s*[^\n]+)$").captures(line)
+        })
+        .map(|captures| captures.extract().1)
+        .map(|[toml]| {
+            toml::de::from_str::<toml::Value>(toml)
+                .map_err(|e| eyre::eyre!("failed to parse task header TOML {toml:?}: {e}"))
+        })
+        .collect()
+}
+
+/// Whether a task include file contains Tera template syntax only after TOML
+/// decoding (e.g. `{{` written as `{{`). Such escapes pass a
+/// raw-text scan but decode to real templates that render — and can `exec()` —
+/// at load time, so they must still require trust. `.toml` task files are
+/// checked whole; script files are checked through their `#MISE` headers (the
+/// only part parsed and rendered at load).
+pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
+    use crate::config::config_file::mise_toml::toml_value_has_template;
+    if path.extension().is_some_and(|e| e == "toml") {
+        // Unparseable TOML won't load as a task file (it errors before any
+        // render), so it doesn't need trust on this account.
+        toml::from_str::<toml::Value>(body).is_ok_and(|v| toml_value_has_template(&v))
+    } else {
+        parse_mise_header_toml(body)
+            .unwrap_or_default()
+            .iter()
+            .any(toml_value_has_template)
+    }
+}
+
 impl Task {
     pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
         Ok(Self {
@@ -521,18 +556,7 @@ impl Task {
         config_root: &Path,
     ) -> Result<Task> {
         let mut task = Task::new(path, prefix, config_root)?;
-        let info = file::read_to_string(path)?
-            .lines()
-            .filter_map(|line| {
-                regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z0-9_.-]+\s*=\s*[^\n]+)$")
-                    .captures(line)
-            })
-            .map(|captures| captures.extract().1)
-            .map(|[toml]| {
-                toml::de::from_str::<toml::Value>(toml)
-                    .map_err(|e| eyre::eyre!("failed to parse task header TOML {toml:?}: {e}"))
-            })
-            .collect::<Result<Vec<_>>>()?
+        let info = parse_mise_header_toml(&file::read_to_string(path)?)?
             .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
             .flatten()
@@ -741,7 +765,15 @@ impl Task {
         let config = Config::get().await.unwrap();
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        for dir in config::task_includes_for_dir(&project_root, &config.config_files) {
+        let task_includes = match config::task_includes_for_dir(&project_root, &config.config_files)
+        {
+            Ok(includes) => includes,
+            Err(err) => {
+                warn!("failed to resolve task include paths: {err:#}");
+                Vec::new()
+            }
+        };
+        for dir in task_includes {
             if dir.is_dir() && project_root.join(&dir).exists() {
                 return project_root.join(dir);
             }
@@ -944,6 +976,30 @@ impl Task {
         }
         spec.cmd.usage = spec.cmd.usage();
     }
+
+    fn populate_usage_about(&self, spec: &mut usage::Spec) {
+        let has_usage_spec = has_any_args_defined(spec)
+            || has_any_usage_spec(spec)
+            || !self.usage.trim().is_empty()
+            || !spec.cmd.usage.is_empty();
+        if has_usage_spec
+            && !self.description.is_empty()
+            && spec.cmd.help.as_deref() == Some(self.description.as_str())
+        {
+            if spec.about.is_none() {
+                spec.about = Some(
+                    self.description
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .to_string(),
+                );
+            }
+            if spec.about_long.is_none() && self.description.contains('\n') {
+                spec.about_long = Some(self.description.clone());
+            }
+        }
+    }
     pub async fn parse_usage_spec_with_vars(
         &self,
         config: &Arc<Config>,
@@ -969,6 +1025,7 @@ impl Task {
             (spec, scripts)
         };
         self.populate_spec_metadata(&mut spec);
+        self.populate_usage_about(&mut spec);
         Ok((spec, scripts))
     }
 
@@ -1002,6 +1059,7 @@ impl Task {
                 .await?
         };
         self.populate_spec_metadata(&mut spec);
+        self.populate_usage_about(&mut spec);
         Ok(spec)
     }
 
@@ -1044,7 +1102,10 @@ impl Task {
     }
 
     pub async fn render_markdown(&self, config: &Arc<Config>) -> Result<String> {
-        let spec = self.parse_usage_spec_for_display(config).await?;
+        let mut spec = self.parse_usage_spec_for_display(config).await?;
+        if spec.about.is_some() && spec.cmd.help.as_deref() == Some(self.description.as_str()) {
+            spec.cmd.help = None;
+        }
         let ctx = usage::docs::markdown::MarkdownRenderer::new(spec)
             .with_replace_pre_with_code_fences(true)
             .with_header_level(2);
@@ -2010,12 +2071,21 @@ where
             }
             // If it doesn't contain wildcards or ':', it's a simple task name
             if !pat.contains('*') && !pat.contains("...") && !pat.contains(':') {
+                // Prefer exact name matches; only fall back to extension-stripped
+                // matches when there is no exact match. Otherwise a TOML task
+                // "hello" and an auto-discovered file task "hello.sh" would both
+                // match `mise run hello` and run the script twice (#10298).
+                let exact: Vec<&T> = self
+                    .iter()
+                    .filter(|(k, _)| k.as_str() == pat)
+                    .map(|(_, v)| v)
+                    .collect();
+                if !exact.is_empty() {
+                    return Ok(exact);
+                }
                 return Ok(self
                     .iter()
-                    .filter(|(k, _)| {
-                        // Check if task name exactly matches, or matches without extension
-                        k.as_str() == pat || strip_extension(k) == pat
-                    })
+                    .filter(|(k, _)| strip_extension(k) == pat)
                     .map(|(_, v)| v)
                     .collect());
             }
@@ -2098,73 +2168,91 @@ where
             (None, None)
         };
 
-        // === Match tasks with extension stripping ===
-        Ok(self
-            .iter()
-            .filter(|(k, _)| {
-                // Split task name into path and task parts
-                let key_parts: Vec<&str> = k.splitn(2, ':').collect();
-                let (key_path, key_task) = match key_parts.as_slice() {
+        // === Match tasks ===
+        // Whether a key matches the pattern. `allow_ext_strip` enables the
+        // extension-stripped fallback for the task part; we run an exact pass first
+        // and only fall back to stripping when nothing matched exactly, so a toml
+        // task `//pkg:hello` is not joined by a file task `//pkg:hello.sh` for the
+        // pattern `//pkg:hello` (which would run the script twice — #10298). The
+        // path part and wildcard (`*`) task patterns are unaffected by the flag.
+        let entry_matches = |k: &str, allow_ext_strip: bool| -> bool {
+            // Split task name into path and task parts
+            let key_parts: Vec<&str> = k.splitn(2, ':').collect();
+            let (key_path, key_task) = match key_parts.as_slice() {
+                [path, task] => (*path, *task),
+                [path] => (*path, ""),
+                _ => (k, ""),
+            };
+
+            // Match path part with ellipsis support
+            let path_matches = if let Some(ref matcher) = path_matcher {
+                matcher.is_match(key_path)
+            } else {
+                false
+            };
+
+            // Match task part with asterisk support and (optional) extension stripping.
+            // When the pattern explicitly uses a wildcard after `:` (e.g., "test:*"),
+            // require the key to actually have a task part (i.e., contain a `:`
+            // separator). This prevents "test" from matching "test:*", which would
+            // cause circular dependencies. Implicit wildcards (bare names like "test")
+            // should still match the exact task.
+            let task_matches = if task_glob == "*" {
+                !has_explicit_task_glob || !key_task.is_empty()
+            } else if let Some(ref matcher) = task_matcher {
+                matcher.is_match(key_task)
+                    || (allow_ext_strip && matcher.is_match(strip_extension(key_task)))
+            } else {
+                false
+            };
+
+            // Try matching without // prefix for relative patterns
+            let relative_match = if !pat.starts_with("//") {
+                let stripped_key = k.strip_prefix("//").unwrap_or(k);
+                let stripped_parts: Vec<&str> = stripped_key.splitn(2, ':').collect();
+                let (stripped_path, stripped_task) = match stripped_parts.as_slice() {
                     [path, task] => (*path, *task),
                     [path] => (*path, ""),
-                    _ => (k.as_str(), ""),
+                    _ => (stripped_key, ""),
                 };
 
-                // Match path part with ellipsis support
-                let path_matches = if let Some(ref matcher) = path_matcher {
-                    matcher.is_match(key_path)
+                let rel_path_matches = if let Some(ref matcher) = rel_path_matcher {
+                    matcher.is_match(stripped_path)
                 } else {
                     false
                 };
 
-                // Match task part with asterisk support and extension stripping
-                // When the pattern explicitly uses a wildcard after `:` (e.g., "test:*"),
-                // require the key to actually have a task part (i.e., contain a `:`
-                // separator). This prevents "test" from matching "test:*", which would
-                // cause circular dependencies. Implicit wildcards (bare names like "test")
-                // should still match the exact task.
-                let task_matches = if task_glob == "*" {
-                    !has_explicit_task_glob || !key_task.is_empty()
-                } else if let Some(ref matcher) = task_matcher {
-                    // Check exact match OR match without extension
-                    matcher.is_match(key_task) || matcher.is_match(strip_extension(key_task))
+                let rel_task_matches = if task_glob == "*" {
+                    !has_explicit_task_glob || !stripped_task.is_empty()
+                } else if let Some(ref matcher) = rel_task_matcher {
+                    matcher.is_match(stripped_task)
+                        || (allow_ext_strip && matcher.is_match(strip_extension(stripped_task)))
                 } else {
                     false
                 };
 
-                // Try matching without // prefix for relative patterns
-                let relative_match = if !pat.starts_with("//") {
-                    let stripped_key = k.strip_prefix("//").unwrap_or(k);
-                    let stripped_parts: Vec<&str> = stripped_key.splitn(2, ':').collect();
-                    let (stripped_path, stripped_task) = match stripped_parts.as_slice() {
-                        [path, task] => (*path, *task),
-                        [path] => (*path, ""),
-                        _ => (stripped_key, ""),
-                    };
+                rel_path_matches && rel_task_matches
+            } else {
+                false
+            };
 
-                    let rel_path_matches = if let Some(ref matcher) = rel_path_matcher {
-                        matcher.is_match(stripped_path)
-                    } else {
-                        false
-                    };
+            (path_matches && task_matches) || relative_match
+        };
 
-                    let rel_task_matches = if task_glob == "*" {
-                        !has_explicit_task_glob || !stripped_task.is_empty()
-                    } else if let Some(ref matcher) = rel_task_matcher {
-                        // Check exact match OR match without extension
-                        matcher.is_match(stripped_task)
-                            || matcher.is_match(strip_extension(stripped_task))
-                    } else {
-                        false
-                    };
-
-                    rel_path_matches && rel_task_matches
-                } else {
-                    false
-                };
-
-                (path_matches && task_matches) || relative_match
-            })
+        // Prefer exact task-name matches; fall back to extension-stripped matches
+        // only when no key matched exactly.
+        let exact: Vec<&T> = self
+            .iter()
+            .filter(|(k, _)| entry_matches(k.as_str(), false))
+            .map(|(_, t)| t)
+            .unique()
+            .collect();
+        if !exact.is_empty() {
+            return Ok(exact);
+        }
+        Ok(self
+            .iter()
+            .filter(|(k, _)| entry_matches(k.as_str(), true))
             .map(|(_, t)| t)
             .unique()
             .collect())
@@ -2251,7 +2339,7 @@ mod tests {
     use std::path::Path;
     use std::sync::Mutex;
 
-    use crate::task::Task;
+    use crate::task::{RunEntry, Task};
     use crate::{config::Config, dirs};
     use pretty_assertions::assert_eq;
 
@@ -2268,6 +2356,33 @@ mod tests {
         CAPTURED_PARSER_FIELDS.with(|captured| {
             *captured.lock().unwrap() = Some(fields);
         });
+    }
+
+    #[test]
+    fn test_file_has_decoded_template() {
+        use super::file_has_decoded_template;
+        let toml = Path::new("ci.toml");
+        let script = Path::new("script.sh");
+
+        // plain template-free includes do not need trust
+        assert!(!file_has_decoded_template(
+            toml,
+            "[hello]\nrun = \"echo hi\"\ndescription = \"a plain task\"\n"
+        ));
+        assert!(!file_has_decoded_template(
+            script,
+            "#!/usr/bin/env bash\n#MISE description=\"a plain task\"\necho hi\n"
+        ));
+
+        // escaped delimiters ({ == '{', } == '}') decode to a template
+        assert!(file_has_decoded_template(
+            toml,
+            "[hello]\nrun = \"echo hi\"\ndescription = \"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\n"
+        ));
+        assert!(file_has_decoded_template(
+            script,
+            "#!/usr/bin/env bash\n#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
+        ));
     }
 
     #[cfg(unix)]
@@ -2325,6 +2440,36 @@ mod tests {
 
         assert_eq!(task.allow_read, vec![crate::env::HOME.join("read")]);
         assert_eq!(task.allow_write, vec![crate::env::HOME.join("write")]);
+    }
+
+    #[tokio::test]
+    async fn test_usage_task_description_populates_help_metadata() {
+        let config = Config::get().await.unwrap();
+        let description = indoc::indoc! {"
+            Format the changed files
+
+            If you just want to check the files without automatically fixing them, use the check task.
+        "}
+        .trim()
+        .to_string();
+        let task = Task {
+            name: "format".to_string(),
+            display_name: "format".to_string(),
+            description: description.clone(),
+            usage: r#"arg "<file>""#.to_string(),
+            run: vec![RunEntry::Script("echo {{ usage.file }}".to_string())],
+            ..Default::default()
+        };
+
+        let spec = task.parse_usage_spec_for_display(&config).await.unwrap();
+
+        assert_eq!(spec.about.as_deref(), Some("Format the changed files"));
+        assert_eq!(spec.about_long.as_deref(), Some(description.as_str()));
+        assert_eq!(spec.cmd.help.as_deref(), Some(description.as_str()));
+
+        let help = usage::docs::cli::render_help(&spec, &spec.cmd, true);
+        assert!(help.contains("Format the changed files"));
+        assert!(help.contains("If you just want to check the files"));
     }
 
     #[test]
@@ -3399,6 +3544,64 @@ echo "test"
         // Bare name "test" should still match the "test" task (implicit wildcard)
         let matches = tasks.get_matching("test").unwrap();
         assert!(matches.contains(&&"test".to_string()));
+    }
+
+    #[test]
+    fn test_get_matching_prefers_exact_over_extension_stripped() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        // #10298: a TOML task "hello" and an auto-discovered file task "hello.sh"
+        // coexist; `mise run hello` must match only the exact "hello", not also
+        // "hello.sh" (which would run the script twice).
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("hello".to_string(), "hello".to_string());
+        tasks.insert("hello.sh".to_string(), "hello.sh".to_string());
+
+        let matches = tasks.get_matching("hello").unwrap();
+        assert_eq!(matches, vec![&"hello".to_string()]);
+
+        // Exact match for the file task's own name still works.
+        let matches = tasks.get_matching("hello.sh").unwrap();
+        assert_eq!(matches, vec![&"hello.sh".to_string()]);
+
+        // Extension-stripped fallback still applies when there is no exact match
+        // (e.g. `mise run build` runs a `build.js` file task).
+        let mut only_file: BTreeMap<String, String> = BTreeMap::new();
+        only_file.insert("build.js".to_string(), "build.js".to_string());
+        let matches = only_file.get_matching("build").unwrap();
+        assert_eq!(matches, vec![&"build.js".to_string()]);
+    }
+
+    #[test]
+    fn test_get_matching_prefers_exact_monorepo() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        // #10298 in monorepo form: `//pkg:hello` (toml) and `//pkg:hello.sh` (file)
+        // coexist; the monorepo pattern must match only the exact task part, not
+        // also the extension-stripped file task.
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("//pkg:hello".to_string(), "//pkg:hello".to_string());
+        tasks.insert("//pkg:hello.sh".to_string(), "//pkg:hello.sh".to_string());
+
+        let matches = tasks.get_matching("//pkg:hello").unwrap();
+        assert_eq!(matches, vec![&"//pkg:hello".to_string()]);
+
+        let matches = tasks.get_matching("//pkg:hello.sh").unwrap();
+        assert_eq!(matches, vec![&"//pkg:hello.sh".to_string()]);
+
+        // Extension-stripped fallback still applies in monorepo form when there is
+        // no exact match (e.g. `//pkg:migrate` resolving a `migrate.sh` file task).
+        let mut only_file: BTreeMap<String, String> = BTreeMap::new();
+        only_file.insert(
+            "//pkg:migrate.sh".to_string(),
+            "//pkg:migrate.sh".to_string(),
+        );
+        let matches = only_file.get_matching("//pkg:migrate").unwrap();
+        assert_eq!(matches, vec![&"//pkg:migrate.sh".to_string()]);
     }
 
     #[test]

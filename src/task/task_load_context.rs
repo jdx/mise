@@ -173,11 +173,11 @@ pub fn expand_colon_task_syntax(
         );
     }
 
-    // Get the monorepo root (the config file with experimental_monorepo_root = true)
+    // Get the monorepo root config file.
     let monorepo_root = config
         .config_files
         .values()
-        .find(|cf| cf.experimental_monorepo_root() == Some(true))
+        .find(|cf| cf.monorepo_root() == Some(true))
         .and_then(|cf| cf.project_root());
 
     // If not in monorepo context, only expand if it's a colon pattern (error), otherwise return as-is

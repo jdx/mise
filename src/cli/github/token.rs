@@ -19,6 +19,11 @@ pub struct Token {
     #[clap(long)]
     raw: bool,
 
+    /// Mint a fresh OAuth token even if the cached one has not
+    /// expired, via the refresh-token grant or a new device-code flow
+    #[clap(long, requires = "oauth")]
+    refresh: bool,
+
     /// Show the full unmasked token
     #[clap(long)]
     unmask: bool,
@@ -35,6 +40,7 @@ impl From<Token> for Github {
         Github {
             host: t.host,
             oauth: t.oauth,
+            refresh: t.refresh,
             raw: t.raw,
             unmask: t.unmask,
         }

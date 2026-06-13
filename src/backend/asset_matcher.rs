@@ -175,6 +175,16 @@ pub struct AssetPicker {
     target_libc: String,
     no_app: bool,
     preferred_name: Option<String>,
+    /// Substring that an asset name must contain to remain a candidate.
+    /// Applied as a pre-filter before platform scoring (ubi's `matching`).
+    matching: Option<String>,
+    /// Regex an asset name must match to remain a candidate (ubi's `matching_regex`),
+    /// compiled once when the picker is built. `Some(Ok)` is a valid pattern;
+    /// `Some(Err(msg))` records that the pattern was set but failed to compile (the
+    /// string is a ready-to-surface error message). Caching the compile here makes
+    /// regex validity a local property of the picker rather than something that
+    /// depends on call ordering between binary and provenance selection.
+    matching_regex: Option<Result<Regex, String>>,
 }
 
 impl AssetPicker {
@@ -198,6 +208,8 @@ impl AssetPicker {
             target_libc,
             no_app: false,
             preferred_name: None,
+            matching: None,
+            matching_regex: None,
         }
     }
 
@@ -216,6 +228,73 @@ impl AssetPicker {
         self
     }
 
+    /// Narrow candidates to assets whose name contains `matching`, before
+    /// platform autodetection runs. Ports ubi's `matching` to keep a portable,
+    /// autodetecting config for repos that ship multiple binaries per platform.
+    pub fn with_matching(mut self, matching: impl Into<String>) -> Self {
+        let matching = matching.into();
+        if !matching.is_empty() {
+            self.matching = Some(matching);
+        }
+        self
+    }
+
+    /// Narrow candidates to assets whose name matches `matching_regex`, before
+    /// platform autodetection runs. Ports ubi's `matching_regex`. Empty is a no-op.
+    ///
+    /// The pattern is compiled here, once, and the result is cached on the picker.
+    /// An invalid pattern is retained as `Some(Err(msg))` rather than dropped, so
+    /// it can be surfaced as a hard error on the binary path and fails closed on
+    /// the provenance path — never silently degrading to "no filter".
+    pub fn with_matching_regex(mut self, matching_regex: impl Into<String>) -> Self {
+        let matching_regex = matching_regex.into();
+        if !matching_regex.is_empty() {
+            let compiled = Regex::new(&matching_regex)
+                .map_err(|e| format!("invalid matching_regex \"{matching_regex}\": {e}"));
+            self.matching_regex = Some(compiled);
+        }
+        self
+    }
+
+    /// The compile error message when `matching_regex` was set but failed to
+    /// compile, else `None`. Single source of truth for "is the cached pattern
+    /// invalid?" so the binary choke point ([`AssetMatcher::match_by_auto_detection`],
+    /// which hard-errors) and the provenance guard ([`Self::pick_best_provenance`],
+    /// which returns `None`) decide it the same way and can't drift apart.
+    fn matching_regex_error(&self) -> Option<&str> {
+        match &self.matching_regex {
+            Some(Err(msg)) => Some(msg.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Apply the `matching` / `matching_regex` pre-filter to the candidate set.
+    ///
+    /// Returns the assets that pass the filter; when neither option is set this
+    /// is the full list unchanged (so the no-matching path is byte-for-byte the
+    /// previous behavior). The regex was compiled once when the picker was built,
+    /// so this uses the cached result and never recompiles. An invalid pattern
+    /// (`Some(Err)`) fails closed — it matches *nothing* rather than degrading to
+    /// "no filter" — so a misconfiguration surfaces as "no asset found" instead
+    /// of silently installing whatever plain autodetection would have picked. On
+    /// the binary path that empty result is turned into a hard error upstream in
+    /// [`AssetMatcher::match_by_auto_detection`].
+    fn apply_matching_filter<'a>(&self, assets: &'a [String]) -> Vec<&'a String> {
+        assets
+            .iter()
+            .filter(|asset| match &self.matching {
+                Some(m) => asset.contains(m.as_str()),
+                None => true,
+            })
+            .filter(|asset| match &self.matching_regex {
+                Some(Ok(re)) => re.is_match(asset),
+                // Invalid pattern: fail closed (matches nothing).
+                Some(Err(_)) => false,
+                None => true,
+            })
+            .collect()
+    }
+
     /// Picks the best asset from available options.
     ///
     /// When multiple assets tie on score, prefers the shortest name. This handles
@@ -224,7 +303,21 @@ impl AssetPicker {
     /// canonical binary's name is almost always the shortest.
     /// See: https://github.com/jdx/mise/discussions/9358
     pub fn pick_best_asset(&self, assets: &[String]) -> Option<String> {
-        let scored_assets = self.score_all_assets(assets);
+        // Narrow by `matching`/`matching_regex` before scoring. When neither is
+        // set, score the assets directly — no filtering, no intermediate clone —
+        // so the no-matching path is allocation-identical to the pre-feature
+        // behavior. Only when a filter is active do we materialize the narrowed
+        // candidate set.
+        let scored_assets = if self.matching.is_none() && self.matching_regex.is_none() {
+            self.score_all_assets(assets)
+        } else {
+            let candidates: Vec<String> = self
+                .apply_matching_filter(assets)
+                .into_iter()
+                .cloned()
+                .collect();
+            self.score_all_assets(&candidates)
+        };
         scored_assets
             .into_iter()
             .filter(|(score, asset)| *score > 0 && !self.has_arch_mismatch(asset))
@@ -255,8 +348,53 @@ impl AssetPicker {
             return None;
         }
 
+        // Narrow by `matching`/`matching_regex` so a multi-binary release's
+        // per-binary provenance files don't cross-verify (e.g. attaching oxfmt's
+        // provenance to an oxlint install). Mirrors the pre-filter the binary
+        // picker applies, keeping the provenance aligned with the selected tool.
+        //
+        // When neither filter is set, score the provenance files directly — no
+        // intermediate clone — mirroring the binary picker's no-op short-circuit
+        // (`pick_best_asset`). `owned_provenance` is function-scoped so the narrowed
+        // `candidates` can borrow it past the `if`.
+        let owned_provenance: Vec<String>;
+        let candidates: Vec<&String> = if self.matching.is_none() && self.matching_regex.is_none() {
+            provenance_assets
+        } else {
+            // A malformed `matching_regex` is a different case from a valid filter
+            // that excludes everything (handled by the fallback below). We can't
+            // trust a garbage pattern to narrow anything, so refuse to pick rather
+            // than fall back to the full set and risk attaching the wrong binary's
+            // provenance. Production never reaches here with a bad pattern: the
+            // autodetection path validates it up front and hard-errors first; the
+            // `asset_pattern` path suppresses `matching` entirely for provenance
+            // (`matching_for_provenance`); and the install path that reuses a cached
+            // lockfile URL — which skips binary selection — validates it explicitly
+            // via [`validate_matching_regex`] before any verification runs. So a bad
+            // pattern is never threaded into this picker. This guard purely backstops
+            // a future caller that builds a provenance picker without any of those
+            // protections.
+            if self.matching_regex_error().is_some() {
+                return None;
+            }
+
+            // Fall back to the full provenance set when the filter excludes
+            // everything: a single shared provenance file (e.g. goreleaser's
+            // `multiple.intoto.jsonl`) attests every artifact in the release but
+            // doesn't carry the binary name, so it would be filtered out. Dropping
+            // it would silently skip verification — a downgrade — so we keep it
+            // instead and let cryptographic verification decide.
+            owned_provenance = provenance_assets.into_iter().cloned().collect();
+            let filtered = self.apply_matching_filter(&owned_provenance);
+            if filtered.is_empty() {
+                owned_provenance.iter().collect()
+            } else {
+                filtered
+            }
+        };
+
         // Score by platform match only (no format/build penalties)
-        let mut scored: Vec<(i32, &String)> = provenance_assets
+        let mut scored: Vec<(i32, &String)> = candidates
             .into_iter()
             .map(|asset| {
                 let score = self.score_os_match(asset) + self.score_arch_match(asset);
@@ -289,7 +427,37 @@ impl AssetPicker {
         score
     }
 
+    /// Returns the part of the asset used for platform (OS/arch/libc) detection,
+    /// with the tool's own name stripped from the front when it is known. This
+    /// prevents OS/arch tokens that happen to appear in the tool name (e.g. the
+    /// "arch" in "go-arch-lint", or the "win" in "win-tool") from being matched
+    /// as the asset's platform. Falls back to the full asset when no preferred
+    /// name is set or the asset does not start with it.
+    fn platform_part<'a>(&self, asset: &'a str) -> &'a str {
+        let Some(preferred_name) = self.preferred_name.as_deref() else {
+            return asset;
+        };
+        let Some(prefix) = asset.get(..preferred_name.len()) else {
+            return asset;
+        };
+        if !prefix.eq_ignore_ascii_case(preferred_name) {
+            return asset;
+        }
+        let rest = &asset[preferred_name.len()..];
+        // Only strip when the tool name is a complete leading token, i.e. it ends
+        // at a separator or version boundary. Otherwise the prefix would cut
+        // through a longer first token (e.g. preferred_name "win" inside
+        // "windows-...") and corrupt detection. Mirrors the boundary handling in
+        // asset_matches_preferred_name.
+        match rest.chars().next() {
+            None => rest,
+            Some(c) if c == '-' || c == '_' || c == '.' || c.is_ascii_digit() => rest,
+            _ => asset,
+        }
+    }
+
     fn score_os_match(&self, asset: &str) -> i32 {
+        let asset = self.platform_part(asset);
         for (os, pattern) in OS_PATTERNS.iter() {
             if pattern.is_match(asset) {
                 return if os.matches_target(&self.target_os) {
@@ -312,6 +480,7 @@ impl AssetPicker {
     }
 
     fn score_arch_match(&self, asset: &str) -> i32 {
+        let asset = self.platform_part(asset);
         for (arch, pattern) in ARCH_PATTERNS.iter() {
             if pattern.is_match(asset) {
                 return if arch.matches_target(&self.target_arch) {
@@ -339,6 +508,7 @@ impl AssetPicker {
     }
 
     fn score_libc_match(&self, asset: &str) -> i32 {
+        let asset = self.platform_part(asset);
         for (libc, pattern) in LIBC_PATTERNS.iter() {
             if pattern.is_match(asset) {
                 return if libc.matches_target(&self.target_libc) {
@@ -569,6 +739,26 @@ static CHECKSUM_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     ]
 });
 
+/// Validate a `matching_regex` option string, returning a hard error that names
+/// the pattern if it fails to compile (an empty/`None` value is a no-op).
+///
+/// Binary selection already surfaces an invalid pattern via
+/// [`AssetMatcher::match_by_auto_detection`], but the github backend's install
+/// path can reuse a cached lockfile URL and skip binary selection entirely
+/// (`install_version_`). That branch must still reject a bad pattern up front —
+/// otherwise the invalid regex reaches [`AssetPicker::pick_best_provenance`],
+/// which returns `None` and is read downstream as "no provenance", silently
+/// skipping SLSA verification. This reuses the picker's cached-compile and error
+/// message so every path decides "is the pattern valid?" identically.
+pub fn validate_matching_regex(matching_regex: Option<&str>) -> Result<()> {
+    let picker = AssetPicker::with_libc(String::new(), String::new(), None)
+        .with_matching_regex(matching_regex.unwrap_or_default());
+    if let Some(msg) = picker.matching_regex_error() {
+        return Err(eyre::eyre!("{msg}"));
+    }
+    Ok(())
+}
+
 /// Represents a matched asset with metadata
 #[derive(Debug, Clone)]
 pub struct MatchedAsset {
@@ -589,6 +779,10 @@ pub struct AssetMatcher {
     no_app: bool,
     /// Preferred primary executable/tool name for asset selection
     preferred_name: Option<String>,
+    /// Substring an asset name must contain (ubi's `matching`)
+    matching: Option<String>,
+    /// Regex an asset name must match (ubi's `matching_regex`)
+    matching_regex: Option<String>,
 }
 
 impl AssetMatcher {
@@ -616,6 +810,32 @@ impl AssetMatcher {
         let preferred_name = preferred_name.into();
         if !preferred_name.is_empty() {
             self.preferred_name = Some(preferred_name);
+        }
+        self
+    }
+
+    /// Narrow candidates to assets whose name contains `matching` before
+    /// platform autodetection (ubi's `matching`). Empty is a no-op. Mirrors
+    /// [`Self::with_preferred_name`]'s signature so the optional string fields
+    /// are configured the same way.
+    pub fn with_matching(mut self, matching: impl Into<String>) -> Self {
+        let matching = matching.into();
+        if !matching.is_empty() {
+            self.matching = Some(matching);
+        }
+        self
+    }
+
+    /// Narrow candidates to assets matching `matching_regex` before platform
+    /// autodetection (ubi's `matching_regex`). Empty is a no-op.
+    ///
+    /// This stores the *unparsed* pattern by design: the compile-once cache lives
+    /// on [`AssetPicker`] (built in [`Self::create_picker`]), so validity is a
+    /// local property of the picker rather than of this builder.
+    pub fn with_matching_regex(mut self, matching_regex: impl Into<String>) -> Self {
+        let matching_regex = matching_regex.into();
+        if !matching_regex.is_empty() {
+            self.matching_regex = Some(matching_regex);
         }
         self
     }
@@ -666,7 +886,9 @@ impl AssetMatcher {
         Some(
             AssetPicker::with_libc(os.clone(), arch.clone(), self.target_libc.clone())
                 .with_no_app(self.no_app)
-                .with_preferred_name(self.preferred_name.clone().unwrap_or_default()),
+                .with_preferred_name(self.preferred_name.clone().unwrap_or_default())
+                .with_matching(self.matching.clone().unwrap_or_default())
+                .with_matching_regex(self.matching_regex.clone().unwrap_or_default()),
         )
     }
 
@@ -675,13 +897,40 @@ impl AssetMatcher {
             .create_picker()
             .ok_or_else(|| eyre::eyre!("Target OS and arch must be set for auto-detection"))?;
 
+        // Reject an invalid `matching_regex` as a hard error that names it, rather
+        // than letting it silently drop to plain autodetection and install the
+        // wrong asset. The picker compiled the pattern once when it was built and
+        // cached the result, so this just surfaces that error. This is the single
+        // Result-returning choke point all binary-asset selection funnels through.
+        if let Some(msg) = picker.matching_regex_error() {
+            return Err(eyre::eyre!("{msg}"));
+        }
+
         let best = picker.pick_best_asset(assets).ok_or_else(|| {
             let os = self.target_os.as_deref().unwrap_or("unknown");
             let arch = self.target_arch.as_deref().unwrap_or("unknown");
+            // When a matching filter is set, surface it — otherwise an empty
+            // filter result reads as "no asset for this platform", hiding that
+            // the user's own `matching`/`matching_regex` excluded everything.
+            // Report every active filter so a user who set both isn't told only
+            // half of what narrowed the candidate set.
+            let mut active_filters = Vec::new();
+            if let Some(m) = &self.matching {
+                active_filters.push(format!("matching=\"{m}\""));
+            }
+            if let Some(re) = &self.matching_regex {
+                active_filters.push(format!("matching_regex=\"{re}\""));
+            }
+            let filter_note = if active_filters.is_empty() {
+                String::new()
+            } else {
+                format!("\nNote: filtered by {}", active_filters.join(", "))
+            };
             eyre::eyre!(
-                "No matching asset found for platform {}-{}\nAvailable assets:\n{}",
+                "No matching asset found for platform {}-{}{}\nAvailable assets:\n{}",
                 os,
                 arch,
+                filter_note,
                 assets.join("\n")
             )
         })?;
@@ -1101,6 +1350,103 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
     }
 
     #[test]
+    fn test_asset_picker_tool_name_with_distro_alias() {
+        // Regression for #10208: a tool whose name contains a Linux distro alias
+        // (e.g. "go-arch-lint" -> "arch") must not have every asset classified as
+        // Linux. The tool name is stripped before platform detection, so the alias
+        // in the name does not shadow each asset's real OS token.
+        let assets = vec![
+            "go-arch-lint_1.15.0_darwin_amd64.tar.gz".to_string(),
+            "go-arch-lint_1.15.0_darwin_arm64.tar.gz".to_string(),
+            "go-arch-lint_1.15.0_linux_amd64.tar.gz".to_string(),
+            "go-arch-lint_1.15.0_linux_arm64.tar.gz".to_string(),
+            "go-arch-lint_1.15.0_windows_amd64.zip".to_string(),
+        ];
+
+        let picked = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_preferred_name("go-arch-lint")
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "go-arch-lint_1.15.0_darwin_arm64.tar.gz");
+
+        let picked = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("go-arch-lint")
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "go-arch-lint_1.15.0_windows_amd64.zip");
+
+        let picked = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("go-arch-lint")
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "go-arch-lint_1.15.0_linux_amd64.tar.gz");
+    }
+
+    #[test]
+    fn test_asset_picker_tool_name_with_os_token_keeps_distro_asset() {
+        // Reverse guard: a tool whose name contains an OS token (e.g. "win" in
+        // "win-tool") must not cause its Linux distro-alias asset to be detected as
+        // that OS. Stripping the tool name before platform detection avoids moving
+        // the #10208 problem onto another name/alias combination.
+        let assets = vec![
+            "win-tool-ubuntu-x64.tar.gz".to_string(),
+            "win-tool-macos-x64.tar.gz".to_string(),
+            "win-tool-windows-x64.zip".to_string(),
+        ];
+
+        let picked = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("win-tool")
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "win-tool-ubuntu-x64.tar.gz");
+
+        let picked = AssetPicker::with_libc("macos".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("win-tool")
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "win-tool-macos-x64.tar.gz");
+
+        // Complete the round-trip: the Windows target still resolves its asset.
+        let picked = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("win-tool")
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "win-tool-windows-x64.zip");
+    }
+
+    #[test]
+    fn test_platform_part_only_strips_at_token_boundary() {
+        // A tool name that is a prefix of an OS token (e.g. "win" inside "windows")
+        // must NOT be stripped mid-token, or the OS evidence is lost. With the
+        // boundary guard the full token is kept and the OS still scores as a match
+        // (without it, "windows-x64.zip" would be cut to "dows-x64.zip" -> OS 0).
+        let picker = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("win");
+        assert_eq!(picker.score_os_match("windows-x64.zip"), 100);
+
+        // The boundary cases that should still strip: separators, a version digit,
+        // and end-of-string.
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("tool");
+        assert_eq!(
+            picker.platform_part("tool-linux-x64.tar.gz"),
+            "-linux-x64.tar.gz"
+        );
+        assert_eq!(
+            picker.platform_part("tool_linux_x64.tar.gz"),
+            "_linux_x64.tar.gz"
+        );
+        assert_eq!(picker.platform_part("tool.linux.x64"), ".linux.x64");
+        assert_eq!(picker.platform_part("tool1.2.3-linux"), "1.2.3-linux");
+        assert_eq!(picker.platform_part("tool"), "");
+        // No boundary -> not stripped.
+        assert_eq!(
+            picker.platform_part("toolkit-linux-x64"),
+            "toolkit-linux-x64"
+        );
+    }
+
+    #[test]
     fn test_asset_scoring() {
         let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
 
@@ -1259,6 +1605,566 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
             .with_preferred_name("opengrep");
         let picked = picker.pick_best_asset(&assets).unwrap();
         assert_eq!(picked, "opengrep_osx_arm64");
+    }
+
+    /// Multi-binary release set used by the `matching` tests below.
+    ///
+    /// `oxc-project/oxc` ships both `oxlint` and `oxfmt` as separate per-platform
+    /// assets in a single release. Neither is named after the repo (`oxc`).
+    fn oxc_assets() -> Vec<String> {
+        vec![
+            "oxlint-aarch64-apple-darwin.tar.gz".to_string(),
+            "oxfmt-aarch64-apple-darwin.tar.gz".to_string(),
+            "oxlint-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "oxfmt-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "oxlint-i686-pc-windows-msvc.zip".to_string(),
+            "oxfmt-i686-pc-windows-msvc.zip".to_string(),
+        ]
+    }
+
+    #[test]
+    fn test_multi_binary_release_without_matching_is_ambiguous() {
+        // Demonstrates the gap that `matching` closes, using ONLY existing APIs
+        // (runs against current `main` with no new production code), and guards
+        // the unchanged no-matching path — `matching` must stay purely additive.
+        //
+        // `oxc-project/oxc` ships `oxlint` and `oxfmt` as separate per-platform
+        // assets. Neither is named after the repo, so no existing signal can
+        // portably select `oxlint`:
+        let assets = vec![
+            "oxlint-aarch64-apple-darwin.tar.gz".to_string(),
+            "oxfmt-aarch64-apple-darwin.tar.gz".to_string(),
+        ];
+
+        // 1. Plain autodetection falls back to the #9358 shortest-name tiebreak
+        //    and picks `oxfmt` (5 chars) over `oxlint` (6) — the wrong binary.
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None);
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "oxfmt-aarch64-apple-darwin.tar.gz"
+        );
+
+        // 2. The #10008 repo-name preference can't rescue it either: the github
+        //    backend passes preferred_name = the repo's last path segment
+        //    (`oxc`), but neither asset starts with `oxc`, so there is no boost
+        //    and `oxfmt` still wins. This is exactly the missing signal that
+        //    `matching` supplies (see the `matching` tests below).
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_preferred_name("oxc");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "oxfmt-aarch64-apple-darwin.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_matching_narrows_multi_binary_release_to_named_binary() {
+        // `matching=oxlint` supplies the signal autodetection lacks, while
+        // keeping platform autodetection (ubi's `matching`, ported to github).
+        let assets = oxc_assets();
+
+        // macOS arm64 -> the darwin oxlint asset.
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("oxlint");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "oxlint-aarch64-apple-darwin.tar.gz"
+        );
+
+        // The SAME config is portable: linux x64 -> the linux oxlint asset.
+        // (`asset_pattern` can't do this — it discards platform autodetection.)
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_matching("oxlint");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "oxlint-x86_64-unknown-linux-gnu.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_matching_selects_the_other_binary_from_the_same_release() {
+        // Complements the oxlint test above: the SAME oxc release also ships
+        // oxfmt, and `matching=oxfmt` selects it independently. This is what lets
+        // a `tool_alias` config install both oxlint and oxfmt from one repo, each
+        // picked portably (see e2e/backend/test_github_tool_alias_matching).
+        let assets = oxc_assets();
+
+        // macOS arm64 -> the darwin oxfmt asset.
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("oxfmt");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "oxfmt-aarch64-apple-darwin.tar.gz"
+        );
+
+        // Portable across platforms: linux x64 -> the linux oxfmt asset.
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_matching("oxfmt");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "oxfmt-x86_64-unknown-linux-gnu.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_matching_regex_narrows_multi_binary_release() {
+        let assets = oxc_assets();
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching_regex("^oxlint-");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "oxlint-aarch64-apple-darwin.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_matching_still_respects_platform_autodetection() {
+        // `matching` NARROWS — it does not override platform autodetection the
+        // way `asset_pattern` does. With `matching=oxlint` on a macOS target but
+        // only a *windows* oxlint asset surviving the filter, the result is
+        // None (no asset for this OS/arch) — NOT the wrong-OS asset.
+        let assets = vec![
+            "oxlint-i686-pc-windows-msvc.zip".to_string(),
+            "oxfmt-aarch64-apple-darwin.tar.gz".to_string(),
+        ];
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("oxlint");
+        assert_eq!(picker.pick_best_asset(&assets), None);
+    }
+
+    #[test]
+    fn test_matching_filtering_out_all_assets_returns_none() {
+        // If `matching` excludes every asset there is nothing to install;
+        // callers turn this None into an error naming the matching filter.
+        let assets = vec!["oxfmt-aarch64-apple-darwin.tar.gz".to_string()];
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("oxlint");
+        assert_eq!(picker.pick_best_asset(&assets), None);
+    }
+
+    #[test]
+    fn test_asset_matcher_with_matching_threads_through_to_picker() {
+        // Covers the high-level builder path the github backend actually uses:
+        // AssetMatcher::new().for_target(..).with_matching(..).pick_from(..).
+        use crate::platform::Platform;
+
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let assets = oxc_assets();
+
+        // matching threads through AssetMatcher -> AssetPicker; the linux oxlint
+        // asset is chosen (autodetection still picks the OS/arch).
+        let picked = AssetMatcher::new()
+            .for_target(&target)
+            .with_matching("oxlint")
+            .pick_from(&assets)
+            .unwrap()
+            .name;
+        assert_eq!(picked, "oxlint-x86_64-unknown-linux-gnu.tar.gz");
+
+        // Empty matching is a no-op (the github backend passes
+        // opts.matching().unwrap_or_default(), so an unset option arrives here
+        // as ""); the same set is ambiguous and the shortest-name tiebreak picks
+        // oxfmt, proving the no-matching path is unchanged.
+        let picked = AssetMatcher::new()
+            .for_target(&target)
+            .with_matching("")
+            .pick_from(&assets)
+            .unwrap()
+            .name;
+        assert_eq!(picked, "oxfmt-x86_64-unknown-linux-gnu.tar.gz");
+    }
+
+    #[test]
+    fn test_asset_matcher_empty_matching_regex_is_noop() {
+        // Twin of the empty-`matching` no-op above, for `matching_regex`. The
+        // github backend passes opts.matching_regex().unwrap_or_default(), so an
+        // unset option arrives as "" and must be a no-op (not a filter that
+        // excludes everything). The set is then ambiguous and the shortest-name
+        // tiebreak picks oxfmt — identical to the no-filter path.
+        use crate::platform::Platform;
+
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let assets = oxc_assets();
+
+        let picked = AssetMatcher::new()
+            .for_target(&target)
+            .with_matching_regex("")
+            .pick_from(&assets)
+            .unwrap()
+            .name;
+        assert_eq!(picked, "oxfmt-x86_64-unknown-linux-gnu.tar.gz");
+    }
+
+    #[test]
+    fn test_matching_does_not_fall_back_to_sibling_when_named_binary_missing_for_platform() {
+        // The decisive safety property: when `matching` names a binary that is
+        // NOT published for this platform, the result is None — it must NOT fall
+        // back to a *sibling* binary that IS published here. Here oxlint ships for
+        // linux and windows but not macOS, while oxfmt ships for macOS; a macOS
+        // target with matching=oxlint must yield None, never the macOS oxfmt.
+        let assets = vec![
+            "oxlint-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "oxlint-i686-pc-windows-msvc.zip".to_string(),
+            "oxfmt-aarch64-apple-darwin.tar.gz".to_string(),
+        ];
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("oxlint");
+        assert_eq!(picker.pick_best_asset(&assets), None);
+    }
+
+    #[test]
+    fn test_matching_on_windows_target() {
+        // The matching tests above target macOS/linux; cover a Windows target too
+        // (matching is platform-string-driven, so this guards the windows arm).
+        // The oxc fixture ships i686-pc-windows-msvc assets for both binaries;
+        // matching=oxlint selects the windows oxlint asset, not oxfmt.
+        let assets = oxc_assets();
+        let picker = AssetPicker::with_libc("windows".to_string(), "x86".to_string(), None)
+            .with_matching("oxlint");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "oxlint-i686-pc-windows-msvc.zip"
+        );
+    }
+
+    #[test]
+    fn test_invalid_matching_regex_is_a_hard_error() {
+        // A syntactically invalid `matching_regex` must be a HARD ERROR that
+        // names the bad pattern — not silently ignored. Silently ignoring it
+        // would fall back to plain autodetection and install the WRONG binary
+        // (here: oxfmt instead of the intended oxlint) with no signal to the
+        // user. This matches ubi, which rejects an invalid pattern up front.
+        use crate::platform::Platform;
+
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let assets = oxc_assets();
+
+        // `oxlint(` is invalid (unclosed group). Same bad pattern the e2e uses.
+        let err = AssetMatcher::new()
+            .for_target(&target)
+            .with_matching_regex("oxlint(")
+            .pick_from(&assets)
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("matching_regex") && msg.contains("oxlint("),
+            "error must name the option and the bad pattern, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_matching_regex_rejects_bad_pattern_without_a_picker() {
+        // The github install path can reuse a cached lockfile URL and skip binary
+        // selection — the path that normally hard-errors on a bad pattern. That
+        // branch instead calls `validate_matching_regex` up front so an invalid
+        // pattern still fails closed (rather than reaching the provenance picker,
+        // returning `None`, and silently skipping SLSA verification). This guards
+        // that the standalone validator names the option + the bad pattern, and
+        // that valid/empty/None patterns are a no-op.
+        let err = validate_matching_regex(Some("oxlint(")).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("matching_regex") && msg.contains("oxlint("),
+            "error must name the option and the bad pattern, got: {msg}"
+        );
+
+        assert!(validate_matching_regex(Some("^oxlint")).is_ok());
+        assert!(validate_matching_regex(Some("")).is_ok());
+        assert!(validate_matching_regex(None).is_ok());
+    }
+
+    #[test]
+    fn test_matching_is_a_literal_substring_not_a_regex() {
+        // `matching` is a plain substring test (str::contains), so regex
+        // metacharacters in the value are LITERAL. `matching="a.c"` selects only
+        // the asset whose name literally contains "a.c"; the `.` is a dot, not a
+        // wildcard. The decoy "abc-..." matches `a.c` *as a regex* and is the
+        // shorter name (so the shortest-name tiebreak would prefer it), so if
+        // `matching` were ever treated as a regex this assertion would pick the
+        // wrong asset. Use `matching_regex` when you want pattern semantics.
+        let assets = vec![
+            "mytool-a.c-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "abc-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+        ];
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_matching("a.c");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "mytool-a.c-x86_64-unknown-linux-gnu.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_matching_and_matching_regex_combine_as_and() {
+        // matching and matching_regex set TOGETHER on the same picker are ANDed:
+        // an asset must satisfy both to survive the pre-filter. This is the only
+        // test that chains both on one picker — the other multi-filter tests use
+        // separate pickers, so they'd still pass if the two filters were ever
+        // accidentally ORed in apply_matching_filter.
+        let assets = oxc_assets();
+
+        // matching="ox" admits both oxlint and oxfmt; the regex narrows to
+        // oxlint. The survivor is the intersection: the darwin oxlint asset.
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("ox")
+            .with_matching_regex("^oxlint-");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "oxlint-aarch64-apple-darwin.tar.gz"
+        );
+
+        // Contradictory filters (substring wants oxfmt, regex wants oxlint)
+        // intersect to nothing -> None, not a fall-back to either filter alone.
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("oxfmt")
+            .with_matching_regex("^oxlint-");
+        assert_eq!(picker.pick_best_asset(&assets), None);
+    }
+
+    #[test]
+    fn test_matching_substring_leaks_into_longer_sibling_name() {
+        // `matching` uses substring `contains`, so a value that is a prefix of
+        // another binary's name admits BOTH — it does not uniquely select. This
+        // documents that footgun and shows the `matching_regex` escape hatch.
+        let assets = vec![
+            "tool-a-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "tool-ab-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+        ];
+
+        // "tool-a" is a substring of BOTH names, so both survive the pre-filter
+        // and the shortest-name tiebreak decides. A user who actually wanted the
+        // longer-named sibling would silently get the wrong one.
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_matching("tool-a");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "tool-a-x86_64-unknown-linux-gnu.tar.gz"
+        );
+
+        // An anchored `matching_regex` disambiguates: only tool-ab matches.
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_matching_regex("^tool-ab-");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "tool-ab-x86_64-unknown-linux-gnu.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_direct_picker_invalid_regex_fails_closed() {
+        // The picker caches the compiled matching_regex. A direct AssetPicker
+        // built with a bad pattern must fail CLOSED: an invalid regex matches
+        // nothing (-> None), never degrading to "no filter" and silently
+        // installing the autodetected asset. (The AssetMatcher path turns this
+        // into the hard error covered by test_invalid_matching_regex_is_a_hard_error;
+        // the provenance path returns None via
+        // test_pick_best_provenance_invalid_regex_returns_none_not_fallback.)
+        let assets = oxc_assets();
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching_regex("oxlint(");
+        assert_eq!(picker.pick_best_asset(&assets), None);
+    }
+
+    /// Real release set for bazelbuild/buildtools v7.1.2 — three bare binaries
+    /// per platform. This is the case the ubi backend covers via e2e
+    /// (`e2e/cli/test_upgrade`: `ubi:bazelbuild/buildtools[matching=buildifier]`);
+    /// ported here so the github backend has the same coverage at the unit level.
+    fn bazel_buildtools_assets() -> Vec<String> {
+        vec![
+            "buildifier-darwin-amd64".to_string(),
+            "buildifier-darwin-arm64".to_string(),
+            "buildifier-linux-amd64".to_string(),
+            "buildifier-linux-arm64".to_string(),
+            "buildifier-windows-amd64.exe".to_string(),
+            "buildozer-darwin-amd64".to_string(),
+            "buildozer-darwin-arm64".to_string(),
+            "buildozer-linux-amd64".to_string(),
+            "buildozer-linux-arm64".to_string(),
+            "buildozer-windows-amd64.exe".to_string(),
+            "unused_deps-darwin-amd64".to_string(),
+            "unused_deps-darwin-arm64".to_string(),
+            "unused_deps-linux-amd64".to_string(),
+            "unused_deps-linux-arm64".to_string(),
+            "unused_deps-windows-amd64.exe".to_string(),
+        ]
+    }
+
+    #[test]
+    fn test_matching_selects_buildifier_from_bazel_buildtools() {
+        // Mirrors the ubi e2e: `matching=buildifier` selects buildifier from a
+        // multi-binary release, while platform autodetection still chooses the
+        // correct OS/arch — so one config is portable across platforms.
+        let assets = bazel_buildtools_assets();
+
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("buildifier");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "buildifier-darwin-arm64"
+        );
+
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_matching("buildifier");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "buildifier-linux-amd64"
+        );
+
+        // matching_regex works the same way.
+        let picker = AssetPicker::with_libc("linux".to_string(), "aarch64".to_string(), None)
+            .with_matching_regex("^buildifier-");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "buildifier-linux-arm64"
+        );
+    }
+
+    #[test]
+    fn test_bazel_buildtools_without_matching_picks_shortest_not_buildifier() {
+        // Documents why `matching` is needed for this repo: with three binaries
+        // per platform and none named after the repo (`buildtools`), the #9358
+        // shortest-name tiebreak picks `buildozer` (shorter than `buildifier`),
+        // so a user wanting buildifier has no portable signal without `matching`.
+        let assets = bazel_buildtools_assets();
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "buildozer-linux-amd64"
+        );
+    }
+
+    /// Real release set for grpc-ecosystem/grpc-gateway v2.27.3 — two binaries
+    /// per platform that SHARE the `protoc-gen-` prefix. This is the shape behind
+    /// the wrong-artifact bug ubi hit (ubi #137 / mise discussion #6611), where
+    /// `--matching protoc-gen-openapiv2` selected the wrong binary because ubi
+    /// applied `matching` *after* arch filtering. Ported here as a regression
+    /// guard for the github backend's pre-filter ordering.
+    fn grpc_gateway_assets() -> Vec<String> {
+        vec![
+            "protoc-gen-grpc-gateway-v2.27.3-darwin-arm64".to_string(),
+            "protoc-gen-grpc-gateway-v2.27.3-darwin-x86_64".to_string(),
+            "protoc-gen-grpc-gateway-v2.27.3-linux-arm64".to_string(),
+            "protoc-gen-grpc-gateway-v2.27.3-linux-x86_64".to_string(),
+            "protoc-gen-grpc-gateway-v2.27.3-windows-x86_64.exe".to_string(),
+            "protoc-gen-openapiv2-v2.27.3-darwin-arm64".to_string(),
+            "protoc-gen-openapiv2-v2.27.3-darwin-x86_64".to_string(),
+            "protoc-gen-openapiv2-v2.27.3-linux-arm64".to_string(),
+            "protoc-gen-openapiv2-v2.27.3-linux-x86_64".to_string(),
+            "protoc-gen-openapiv2-v2.27.3-windows-x86_64.exe".to_string(),
+        ]
+    }
+
+    #[test]
+    fn test_matching_overrides_shortest_name_tiebreak_for_shared_prefix() {
+        // Regression for the wrong-artifact class of bug (ubi #137 / mise #6611).
+        // grpc-gateway ships protoc-gen-grpc-gateway and protoc-gen-openapiv2,
+        // sharing the `protoc-gen-` prefix. The decisive case: `matching` must be
+        // able to select protoc-gen-grpc-gateway — the LONGER name, which the
+        // #9358 shortest-name tiebreak would never pick on its own. This proves
+        // the pre-filter genuinely overrides autodetection's tiebreak rather than
+        // coinciding with it (the distinct-prefix oxc/bazel fixtures can't show
+        // this, since there the wanted binary is also the shorter one).
+        let assets = grpc_gateway_assets();
+
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("protoc-gen-grpc-gateway");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "protoc-gen-grpc-gateway-v2.27.3-darwin-arm64"
+        );
+
+        // The same config selects protoc-gen-openapiv2 portably across platforms.
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_matching("protoc-gen-openapiv2");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "protoc-gen-openapiv2-v2.27.3-linux-x86_64"
+        );
+
+        // `contains` is substring, but the prefix is shared safely: the openapiv2
+        // matching string does NOT appear in the grpc-gateway asset name, so the
+        // filter is unambiguous despite the common `protoc-gen-` prefix.
+        let picker = AssetPicker::with_libc("macos".to_string(), "x86_64".to_string(), None)
+            .with_matching_regex("^protoc-gen-grpc-gateway-");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "protoc-gen-grpc-gateway-v2.27.3-darwin-x86_64"
+        );
+    }
+
+    #[test]
+    fn test_grpc_gateway_without_matching_falls_to_tiebreak() {
+        // Documents why `matching` is required for this repo: without it, both
+        // binaries score equally for the platform and the shortest-name tiebreak
+        // decides — so a user wanting the longer-named protoc-gen-grpc-gateway has
+        // no portable signal. (ubi picked grpc-gateway here via a different
+        // tiebreak; the point is identical — without `matching` the choice isn't
+        // the user's to make.)
+        let assets = grpc_gateway_assets();
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None);
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "protoc-gen-openapiv2-v2.27.3-darwin-arm64"
+        );
+    }
+
+    #[test]
+    fn test_matching_is_case_sensitive_with_regex_escape_hatch() {
+        // Characterization for ubi #83 (open: "match executable names
+        // case-insensitively"). The github backend's `matching` is case-SENSITIVE
+        // (ubi parity — it uses substring `contains`). Lock that in, and document
+        // that `matching_regex` with the `(?i)` inline flag is the escape hatch
+        // for users who need case-insensitive selection.
+        let assets = vec![
+            "OxLint-aarch64-apple-darwin.tar.gz".to_string(),
+            "oxfmt-aarch64-apple-darwin.tar.gz".to_string(),
+        ];
+
+        // Wrong case excludes the intended asset -> None (case-sensitive).
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("oxlint");
+        assert_eq!(picker.pick_best_asset(&assets), None);
+
+        // `(?i)` makes the regex case-insensitive and selects it.
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching_regex("(?i)^oxlint-");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "OxLint-aarch64-apple-darwin.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_matching_and_case_insensitive_regex_each_apply_independently() {
+        // When both options are set they AND, and each keeps its own case rule:
+        // `matching` stays case-SENSITIVE even when `matching_regex` opts into
+        // case-insensitivity via `(?i)`. So a case-insensitive regex does NOT
+        // loosen the substring test — an asset must satisfy both as written.
+        let assets = vec![
+            "OxLint-aarch64-apple-darwin.tar.gz".to_string(),
+            "oxlint-aarch64-apple-darwin.tar.gz".to_string(),
+        ];
+
+        // `(?i)^oxlint-` matches both casings, but case-sensitive `matching=oxlint`
+        // still excludes the capitalized one -> only the lowercase asset survives.
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("oxlint")
+            .with_matching_regex("(?i)^oxlint-");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "oxlint-aarch64-apple-darwin.tar.gz"
+        );
+
+        // Flip the `matching` case: case-sensitive `matching=OxLint` selects the
+        // capitalized asset even though the regex matches both, proving the
+        // substring test keeps its own (sensitive) case rule inside the AND.
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("OxLint")
+            .with_matching_regex("(?i)^oxlint-");
+        assert_eq!(
+            picker.pick_best_asset(&assets).unwrap(),
+            "OxLint-aarch64-apple-darwin.tar.gz"
+        );
     }
 
     #[test]
@@ -1714,6 +2620,147 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             picked, "tool-1.0.0.provenance.json",
             "Should return the only provenance file available"
         );
+    }
+
+    #[test]
+    fn test_pick_best_provenance_respects_matching() {
+        // A multi-binary release that ships a SEPARATE provenance file per binary
+        // per platform. Both darwin provenance files score identically on
+        // platform, and pick_best_provenance breaks ties by stable input order
+        // (no shortest-name tiebreak), so the FIRST one wins — here oxfmt. For an
+        // oxlint install that attaches oxfmt's provenance, verifying the wrong
+        // digest. `matching` must narrow provenance the same way it narrows the
+        // binary so the provenance follows the selected tool.
+        let assets = vec![
+            // oxfmt deliberately first so the unfiltered pick is the WRONG one.
+            "oxfmt-aarch64-apple-darwin.intoto.jsonl".to_string(),
+            "oxlint-aarch64-apple-darwin.intoto.jsonl".to_string(),
+        ];
+
+        // Without matching: positional tiebreak picks oxfmt's provenance.
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None);
+        assert_eq!(
+            picker.pick_best_provenance(&assets).unwrap(),
+            "oxfmt-aarch64-apple-darwin.intoto.jsonl"
+        );
+
+        // matching=oxlint selects oxlint's provenance despite oxfmt being first.
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("oxlint");
+        assert_eq!(
+            picker.pick_best_provenance(&assets).unwrap(),
+            "oxlint-aarch64-apple-darwin.intoto.jsonl"
+        );
+
+        // matching=oxfmt selects oxfmt's, independently — proves it narrows to the
+        // named binary rather than just preferring a fixed one.
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("oxfmt");
+        assert_eq!(
+            picker.pick_best_provenance(&assets).unwrap(),
+            "oxfmt-aarch64-apple-darwin.intoto.jsonl"
+        );
+    }
+
+    #[test]
+    fn test_pick_best_provenance_respects_matching_regex() {
+        // Same as above but driven by matching_regex, since both options thread
+        // into the picker and both must narrow provenance.
+        let assets = vec![
+            "oxfmt-x86_64-unknown-linux-gnu.intoto.jsonl".to_string(),
+            "oxlint-x86_64-unknown-linux-gnu.intoto.jsonl".to_string(),
+        ];
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_matching_regex("^oxlint-");
+        assert_eq!(
+            picker.pick_best_provenance(&assets).unwrap(),
+            "oxlint-x86_64-unknown-linux-gnu.intoto.jsonl"
+        );
+    }
+
+    #[test]
+    fn test_pick_best_provenance_matching_keeps_platform_autodetection() {
+        // matching narrows to the binary; platform autodetection still chooses the
+        // right OS/arch among that binary's per-platform provenance files. So a
+        // portable `matching=oxlint` config picks the linux oxlint provenance on a
+        // linux target — not oxlint's darwin provenance, and not oxfmt's anything.
+        let assets = vec![
+            "oxlint-aarch64-apple-darwin.intoto.jsonl".to_string(),
+            "oxlint-x86_64-unknown-linux-gnu.intoto.jsonl".to_string(),
+            "oxfmt-x86_64-unknown-linux-gnu.intoto.jsonl".to_string(),
+        ];
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_matching("oxlint");
+        assert_eq!(
+            picker.pick_best_provenance(&assets).unwrap(),
+            "oxlint-x86_64-unknown-linux-gnu.intoto.jsonl"
+        );
+    }
+
+    #[test]
+    fn test_pick_best_provenance_matching_falls_back_to_shared_file() {
+        // goreleaser-style: ONE provenance file attests every artifact in the
+        // release (its subject digest list covers oxlint too). Its name doesn't
+        // contain the binary name, so the matching filter would exclude it — but
+        // with no per-binary provenance to fall back to, dropping it would lose
+        // verification entirely. The shared file must still be returned.
+        let assets = vec![
+            "oxlint-aarch64-apple-darwin.tar.gz".to_string(),
+            "oxfmt-aarch64-apple-darwin.tar.gz".to_string(),
+            "multiple.intoto.jsonl".to_string(),
+        ];
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("oxlint");
+        assert_eq!(
+            picker.pick_best_provenance(&assets).unwrap(),
+            "multiple.intoto.jsonl"
+        );
+    }
+
+    #[test]
+    fn test_pick_best_provenance_matching_excludes_all_real_provenance_falls_back() {
+        // Per-binary provenance exists but matching excludes ALL of it (e.g. a
+        // typo'd or over-narrow filter). Rather than report "no provenance" and
+        // silently skip verification — a downgrade — fall back to the full
+        // provenance set so verification still runs (and fails loudly if the
+        // digest doesn't match), mirroring how the binary path errors rather than
+        // silently degrading.
+        let assets = vec![
+            "oxfmt-aarch64-apple-darwin.intoto.jsonl".to_string(),
+            "oxlint-aarch64-apple-darwin.intoto.jsonl".to_string(),
+        ];
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching("does-not-exist");
+        // Falls back to platform scoring over all provenance (positional tiebreak).
+        assert_eq!(
+            picker.pick_best_provenance(&assets).unwrap(),
+            "oxfmt-aarch64-apple-darwin.intoto.jsonl"
+        );
+    }
+
+    #[test]
+    fn test_pick_best_provenance_invalid_regex_returns_none_not_fallback() {
+        // Defense-in-depth: an INVALID matching_regex must NOT fall back to the
+        // full provenance set (which could attach the wrong binary's provenance).
+        // This is deliberately DIFFERENT from a VALID but over-narrow filter (see
+        // test_pick_best_provenance_matching_excludes_all_real_provenance_falls_back),
+        // which DOES fall back so verification still runs and fails loudly. A
+        // malformed pattern can't be trusted to narrow anything, so we refuse to
+        // pick rather than guess at a provenance file.
+        //
+        // In production this is unreachable — binary selection validates the regex
+        // up front and hard-errors first (test_invalid_matching_regex_is_a_hard_error)
+        // — so this guards against a future refactor that reaches a provenance
+        // picker without first resolving (and validating) the binary. The compiled
+        // regex is cached on the picker, so validity is a local property of the
+        // picker rather than something that depends on call ordering.
+        let assets = vec![
+            "oxfmt-aarch64-apple-darwin.intoto.jsonl".to_string(),
+            "oxlint-aarch64-apple-darwin.intoto.jsonl".to_string(),
+        ];
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_matching_regex("oxlint("); // invalid: unclosed group
+        assert_eq!(picker.pick_best_provenance(&assets), None);
     }
 
     #[test]

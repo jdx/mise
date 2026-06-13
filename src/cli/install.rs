@@ -5,8 +5,8 @@ use std::sync::Arc;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::config::Settings;
-use crate::duration::parse_into_timestamp;
 use crate::hooks::Hooks;
+use crate::install_before::resolve_cli_minimum_release_age;
 use crate::toolset::{
     InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset, tool_env_vars,
 };
@@ -26,7 +26,7 @@ use std::path::PathBuf;
 /// Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.
 ///
 /// Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
-#[derive(Debug, clap::Args)]
+#[derive(Debug, Default, clap::Args)]
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Install {
     /// Tool(s) to install
@@ -70,14 +70,14 @@ pub struct Install {
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
 
-    /// [experimental] Install tool(s) to a shared directory
+    /// Install tool(s) to a shared directory
     ///
     /// Installs to the specified directory instead of the default install location.
     /// May require elevated permissions depending on the path.
     #[clap(long, verbatim_doc_comment, value_hint = ValueHint::DirPath, conflicts_with = "system")]
     shared: Option<PathBuf>,
 
-    /// [experimental] Install tool(s) to the system-wide shared directory
+    /// Install tool(s) to the system-wide shared directory
     ///
     /// Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
     /// May require elevated permissions (e.g. sudo).
@@ -86,6 +86,15 @@ pub struct Install {
 }
 
 impl Install {
+    /// a bare `mise install` (install everything missing from config), as run
+    /// by `mise bootstrap`
+    pub(crate) fn new_bare(dry_run: bool) -> Self {
+        Self {
+            dry_run,
+            ..Default::default()
+        }
+    }
+
     fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
@@ -102,7 +111,85 @@ impl Install {
             }
             None => self.install_missing_runtimes(config).await?,
         };
+        self.hint_missing_system_packages().await;
         Ok(())
+    }
+
+    /// one-time hint when `[bootstrap.packages]` entries are missing — mise
+    /// never installs system packages implicitly
+    async fn hint_missing_system_packages(&self) {
+        // the status queries spawn package-manager processes; skip them
+        // entirely once the hint has been shown (or is disabled)
+        if !Settings::get().experimental
+            || !crate::hint::hint_would_display("system_packages_missing")
+        {
+            return;
+        }
+        let Ok(config) = Config::get().await else {
+            return;
+        };
+        let mgrs = crate::system::packages_from_config(&config);
+        if mgrs.is_empty() {
+            return;
+        }
+        // when everything is satisfied the hint never fires, so also
+        // throttle the checks to once per day — but only while the set of
+        // packages that would actually be checked is unchanged, so editing
+        // [bootstrap.packages] or widening system_packages.managers re-checks
+        // immediately
+        let fingerprint = mgrs
+            .iter()
+            .filter(|mp| !mp.disabled && mp.manager.is_available())
+            .flat_map(|mp| {
+                mp.requests
+                    .iter()
+                    .map(move |r| format!("{}:{}", mp.manager.name(), r))
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let checked = crate::dirs::STATE.join("system-packages-checked");
+        if checked
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age < std::time::Duration::from_secs(24 * 60 * 60))
+            && crate::file::read_to_string(&checked).is_ok_and(|prev| prev == fingerprint)
+        {
+            return;
+        }
+        let mut missing = 0;
+        let mut all_queries_ok = true;
+        for mp in mgrs {
+            if mp.disabled || !mp.manager.is_available() {
+                continue;
+            }
+            match mp.manager.installed(&mp.requests).await {
+                Ok(statuses) => {
+                    missing += statuses
+                        .iter()
+                        .filter(|s| {
+                            !matches!(
+                                s.state,
+                                crate::system::packages::PackageState::Installed { .. }
+                            )
+                        })
+                        .count();
+                }
+                // a transient query failure must not start the 24h throttle
+                Err(_) => all_queries_ok = false,
+            }
+        }
+        if all_queries_ok {
+            let _ = crate::file::write(&checked, &fingerprint);
+        }
+        if missing > 0 {
+            hint!(
+                "system_packages_missing",
+                "{missing} system package(s) from [bootstrap.packages] are missing. Install them with",
+                "mise bootstrap packages install"
+            );
+        }
     }
 
     #[async_backtrace::framed]
@@ -248,6 +335,7 @@ impl Install {
                 use_locked_version: true,
                 latest_versions: true,
                 before_date: self.get_before_date()?,
+                before_date_from_default: false,
                 offline: false,
                 refresh_remote_versions: false,
                 inactive: false,
@@ -262,10 +350,7 @@ impl Install {
     /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(minimum_release_age) = &self.minimum_release_age {
-            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
-        }
-        Ok(None)
+        resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 
     fn get_requested_tool_versions(

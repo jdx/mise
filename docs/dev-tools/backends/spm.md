@@ -1,4 +1,4 @@
-# SPM Backend <Badge type="warning" text="experimental" />
+# SPM Backend
 
 You may install executables managed by [Swift Package Manager](https://www.swift.org/documentation/package-manager) directly from GitHub or GitLab releases.
 

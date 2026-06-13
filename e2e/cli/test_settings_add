@@ -7,15 +7,20 @@ assert "mise settings get disable_hints" '["a", "b"]'
 assert "mise settings add disable_hints a" ""
 assert "grep disable_hints ~/.config/mise/config.toml" 'disable_hints = ["a", "b"]'
 
-assert "mise settings add idiomatic_version_file_enable_tools python" ""
+assert "mise settings add idiomatic_version_file_enable_tools=python" ""
 assert "mise settings add idiomatic_version_file_enable_tools rust" ""
 assert "mise settings get idiomatic_version_file_enable_tools" '["python", "rust"]'
-assert "mise settings add idiomatic_version_file_enable_tools python,rust,zig" ""
+assert "mise settings add idiomatic_version_file_enable_tools=python,rust,zig" ""
 assert "grep idiomatic_version_file_enable_tools ~/.config/mise/config.toml" 'idiomatic_version_file_enable_tools = ["python", "rust", "zig"]'
 
 # test "settings add key=value" format
 assert "mise settings add disable_hints=c" ""
 assert "mise settings get disable_hints" '["a", "b", "c"]'
+
+# test adding to a list setting
+assert "mise settings set aqua.registries https://example.com/first" ""
+assert "mise settings add aqua.registries https://example.com/second" ""
+assert "mise settings get aqua.registries" '["https://example.com/first", "https://example.com/second"]'
 
 # test "settings add" with no value and no = fails
 assert_fail "mise settings add disable_hints"

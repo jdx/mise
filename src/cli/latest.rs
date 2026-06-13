@@ -3,7 +3,7 @@ use jiff::Timestamp;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::duration::parse_into_timestamp;
+use crate::install_before::resolve_cli_minimum_release_age;
 use crate::toolset::ToolRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -80,10 +80,7 @@ impl Latest {
     /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled by backend latest resolution.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(minimum_release_age) = &self.minimum_release_age {
-            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
-        }
-        Ok(None)
+        resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 }
 

@@ -58,6 +58,66 @@ calling `curl https://mise.run` dynamically—though of course this means it wil
 the version of mise that was current when the script was created.
 :::
 
+## Project-local task entrypoints
+
+If you want contributors to run project tasks without installing mise first, pair
+[`mise generate bootstrap`](/cli/generate/bootstrap.html) with
+[`mise generate task-stubs`](/cli/generate/task-stubs.html):
+
+```sh
+mkdir -p bin
+mise generate bootstrap --localize --write bin/mise
+mise generate task-stubs --mise-bin ./bin/mise
+./bin/test
+```
+
+The generated task stubs behave like small project commands, while `bin/mise`
+downloads and runs the pinned mise binary for the project.
+
+## Machine bootstrapping <Badge type="warning" text="experimental" />
+
+Beyond `[tools]`, mise can declare the rest of the machine setup needed for
+a project or workstation, and [`mise bootstrap`](/cli/bootstrap.html)
+converges it in one command — system packages, then dotfiles, then macOS
+defaults, then LaunchAgents, then login shell, then tools, then a
+`bootstrap` task if you define one:
+
+```toml
+[bootstrap.packages]                      # OS packages (apt/dnf/pacman/brew)
+"apt:build-essential" = "latest"
+"brew:postgresql@17" = "latest"
+
+[dotfiles]                             # dotfiles: symlink/copy/template
+"~/.gitconfig" = { mode = "symlink" }
+"~/.config/nvim" = { mode = "symlink" }
+"~/.zshrc/activate" = { block = 'eval "$(mise activate zsh)"' }
+
+[bootstrap.macos.defaults]                    # macOS defaults write
+"com.apple.dock" = { autohide = true }
+
+[bootstrap.macos.launchd.agents.my-sync]      # macOS user LaunchAgents
+program = "~/.local/bin/my-sync"
+run_at_load = true
+
+[bootstrap.user]                       # current user's login shell
+login_shell = "/bin/zsh"
+
+[tasks.bootstrap]                      # anything else, with tools on PATH
+run = "gh auth status || gh auth login"
+```
+
+```sh
+mise bootstrap --yes   # new laptop or container -> ready to work
+```
+
+Everything is declarative and idempotent: re-running skips whatever is
+already in its desired state, `mise bootstrap packages status --missing` and
+`mise dotfiles status --missing` make CI checks, and nothing is ever applied
+implicitly. See
+[Bootstrap](/bootstrap.html), [Bootstrap Packages](/bootstrap/packages/),
+[Dotfiles](/dotfiles.html), [macOS Defaults](/bootstrap/macos-defaults.html),
+[launchd](/bootstrap/launchd.html), and [User Login Shell](/bootstrap/user.html).
+
 ## Installation via zsh zinit
 
 [Zinit](https://github.com/zdharma-continuum/zinit) is a plugin manager for ZSH, which this snippet you will get mise (and usage for shell completion):
@@ -146,60 +206,86 @@ mise test
 Don't do this inside of scripts because mise may add a command in a future version and could conflict with your task.
 :::
 
+## Watch tasks while editing
+
+[`mise watch`](/cli/watch.html) reruns tasks when files change. It uses
+`watchexec`, which you can install globally with mise:
+
+```sh
+mise use -g watchexec@latest
+mise watch test
+```
+
+Use `--restart` for long-running processes that should restart on changes:
+
+```sh
+mise watch --restart dev
+```
+
+## Share task catalogs
+
+For projects with a lot of tasks,
+[`task_config.includes`](/tasks/task-configuration.html#task-config-includes)
+can load task definitions from additional directories, `tasks.toml` files, or
+remote git repositories:
+
+```toml
+[task_config]
+includes = [
+  "mise-tasks",
+  "tasks.toml",
+  "git::https://github.com/myorg/shared-tasks.git//tasks?ref=v1.0.0",
+]
+```
+
+Included `tasks.toml` files use the same shape as the `[tasks]` table without
+the `[tasks.]` prefix.
+
+## Reuse task definitions with templates
+
+Experimental [task templates](/tasks/templates.html) let multiple tasks share
+common tools, environment variables, and command defaults:
+
+```toml
+[settings]
+experimental = true
+
+[task_templates."node:test"]
+tools = { node = "24", pnpm = "latest" }
+run = "pnpm test"
+
+[tasks.test]
+extends = "node:test"
+run = "pnpm test -- --watch=false"
+```
+
+This is especially useful in monorepos where each package needs similar build,
+test, or lint tasks with small local overrides.
+
+## Redact secrets from task output
+
+If a task may echo secrets in CI logs, add `redactions` to the task or config.
+The listed environment variables are replaced with `[redacted]` in task output:
+
+```toml
+redactions = ["API_KEY", "PASSWORD"]
+```
+
+Glob patterns are also supported:
+
+```toml
+redactions.env = ["SECRETS_*"]
+```
+
 ## Software verification
 
-mise provides **native software verification** for aqua tools without requiring external dependencies. For aqua tools, Cosign/Minisign signatures, SLSA provenance, and GitHub artifact attestations are verified automatically using mise's built-in implementation.
-
-For other verification needs (like GPG), you can install additional tools:
-
-```sh
-brew install gpg
-# Note: cosign and slsa-verifier are no longer needed for aqua tools
-# mise now handles verification natively
-```
-
-To configure aqua verification (all enabled by default):
-
-```sh
-# Disable specific verification methods if needed
-export MISE_AQUA_COSIGN=false
-export MISE_AQUA_SLSA=false
-export MISE_AQUA_GITHUB_ATTESTATIONS=false
-export MISE_AQUA_MINISIGN=false
-```
+See [Security](/security.html#software-verification) for mise's software verification controls,
+including aqua signatures, SLSA provenance, and GitHub artifact attestations.
 
 ## Minimum release age
 
-To limit supply chain risk, you can restrict mise to only install versions released before a certain date or duration. This is similar to Renovate's [minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/) concept — newly published versions are ignored until they've been available for a configurable amount of time.
-
-```toml
-# mise.toml
-[settings]
-minimum_release_age = "7d"  # only install versions released more than 7 days ago
-```
-
-Supports relative durations (`7d`, `6m`, `1y`) and absolute dates (`2024-06-01`). For most backends, this only affects fuzzy version resolution (e.g., `node@20` or `latest`) — explicitly pinned versions like `node@22.5.0` bypass the filter.
-
-For `npm:` and `pipx:` tools, the same cutoff is also forwarded to transitive dependency resolution
-during install. Refer to the
-[npm backend docs](/dev-tools/backends/npm.html) and [pipx backend docs](/dev-tools/backends/pipx.html)
-for package-manager support details.
-
-You can also set `minimum_release_age` per-tool to override the global setting:
-
-```toml
-# mise.toml
-[settings]
-minimum_release_age = "7d"  # default for all tools
-
-[tools.trivy]
-version = "latest"
-minimum_release_age = "1d"  # trivy updates are time-sensitive, use a shorter window
-```
-
-Precedence: `--minimum-release-age` CLI flag > per-tool `minimum_release_age` > global `minimum_release_age` setting.
-
-See [`minimum_release_age`](/configuration/settings.html#minimum_release_age) for more details.
+See [Security](/security.html#minimum-release-age) for supply-chain delay controls, backend support,
+and transitive dependency filtering behavior.
 
 ## [`mise up --bump`](/cli/upgrade.html)
 

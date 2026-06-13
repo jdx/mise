@@ -20,9 +20,9 @@ type JobOutput = Result<(String, DepsStepResult, Vec<PathBuf>), (String, eyre::R
 use super::deps_ordering::DepsOrdering;
 use super::providers::{
     AubeDepsProvider, BunDepsProvider, BundlerDepsProvider, ComposerDepsProvider,
-    CustomDepsProvider, DartDepsProvider, GitSubmoduleDepsProvider, GoDepsProvider,
-    NpmDepsProvider, PipDepsProvider, PnpmDepsProvider, PoetryDepsProvider, UvDepsProvider,
-    YarnDepsProvider,
+    CustomDepsProvider, DartDepsProvider, DenoDepsProvider, GitSubmoduleDepsProvider,
+    GoDepsProvider, NpmDepsProvider, PipDepsProvider, PnpmDepsProvider, PoetryDepsProvider,
+    UvDepsProvider, YarnDepsProvider,
 };
 use super::rule::BUILTIN_PROVIDERS;
 use super::state::{self, DepsState};
@@ -178,6 +178,10 @@ impl DepsEngine {
                 ))),
                 "bun" => Some(Box::new(BunDepsProvider::new(config_root, provider_config))),
                 "aube" => Some(Box::new(AubeDepsProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "deno" => Some(Box::new(DenoDepsProvider::new(
                     config_root,
                     provider_config,
                 ))),
@@ -767,9 +771,15 @@ impl DepsEngine {
             None => std::env::current_dir()?,
         };
 
-        let mut runner = CmdLineRunner::new(&cmd.program)
-            .args(&cmd.args)
-            .current_dir(cwd);
+        // cmd.args is [shell flags.., run]; route the run body through
+        // cmd_body_args so an inner-quoted command survives `cmd /c` on Windows.
+        // On Unix / non-cmd shells this is byte-identical to .args(&cmd.args).
+        let mut runner = CmdLineRunner::new(&cmd.program);
+        runner = match cmd.args.split_last() {
+            Some((body, flags)) => runner.cmd_body_args(flags, body),
+            None => runner,
+        };
+        runner = runner.current_dir(cwd);
 
         // Apply timeout if configured
         if let Some(timeout) = timeout {

@@ -5,7 +5,7 @@ export MISE_EXPERIMENTAL=1
 
 # Create monorepo root config with a task that calls a project task via run block
 cat <<'TOML' >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["projects/*"]
@@ -42,7 +42,7 @@ echo "$output" | grep -q "after dependency" || (echo "FAIL: Root task did not ru
 
 # Test 3: Multiple project tasks in run block
 cat <<'TOML' >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["projects/*"]

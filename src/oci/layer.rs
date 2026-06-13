@@ -2,7 +2,7 @@
 //!
 //! Produces a gzipped tar where:
 //! - All mtimes are zeroed (or set from SOURCE_DATE_EPOCH).
-//! - All uid/gid are 0 with empty uname/gname.
+//! - All uid/gid are set from a fixed owner (default 0:0) with empty uname/gname.
 //! - Entries are sorted by path before writing.
 //! - Permissions are normalized (dirs 0755, exec files 0755, others 0644).
 //! - Gzip header mtime is zero'd (fixed compression level).
@@ -15,6 +15,7 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use eyre::{Context, Result};
 use flate2::Compression;
@@ -38,26 +39,102 @@ pub struct LayerBlob {
     pub bytes: Vec<u8>,
 }
 
+/// Numeric owner to write into every tar header in a generated OCI layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LayerOwner {
+    pub uid: u32,
+    pub gid: u32,
+}
+
+impl LayerOwner {
+    pub const fn new(uid: u32, gid: u32) -> Self {
+        Self { uid, gid }
+    }
+}
+
+impl Default for LayerOwner {
+    fn default() -> Self {
+        Self::new(0, 0)
+    }
+}
+
+impl FromStr for LayerOwner {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let mut parts = s.split(':');
+        let uid = parse_owner_id(parts.next().unwrap_or_default(), "uid")?;
+        let gid = match parts.next() {
+            Some(gid) => parse_owner_id(gid, "gid")?,
+            None => uid,
+        };
+        if parts.next().is_some() {
+            return Err("owner must be UID or UID:GID".to_string());
+        }
+        Ok(Self::new(uid, gid))
+    }
+}
+
+fn parse_owner_id(value: &str, name: &str) -> std::result::Result<u32, String> {
+    if value.is_empty() {
+        return Err(format!("{name} must not be empty"));
+    }
+    value
+        .parse::<u32>()
+        .map_err(|_| format!("{name} must be a non-negative integer <= {}", u32::MAX))
+}
+
 /// Build a reproducible gzipped tar layer from files in `src_dir`, placing them
 /// under `target_prefix` inside the tar (e.g. `/mise/installs/node/20.0.0`).
 ///
 /// `src_dir` must exist and be a directory. Symlinks are preserved; their
-/// targets are NOT followed.
-pub fn build_layer_from_dir(src_dir: &Path, target_prefix: &str) -> Result<LayerBlob> {
+/// targets are NOT followed. `owner` is applied to every emitted tar entry.
+pub fn build_layer_from_dir(
+    src_dir: &Path,
+    target_prefix: &str,
+    owner: LayerOwner,
+) -> Result<LayerBlob> {
     if !src_dir.is_dir() {
         eyre::bail!("not a directory: {}", src_dir.display());
     }
 
-    let entries = collect_sorted_entries(src_dir)?;
-    build_layer_from_entries(&entries, target_prefix)
+    let entries = collect_sorted_entries(src_dir, false, owner)?;
+    build_layer_from_entries(&entries, target_prefix, owner)
+}
+
+/// Build a layer from a source directory, preserving uid/gid/mode from disk.
+pub fn build_layer_from_dir_preserve_metadata(
+    src_dir: &Path,
+    target_prefix: &str,
+) -> Result<LayerBlob> {
+    if !src_dir.is_dir() {
+        eyre::bail!("not a directory: {}", src_dir.display());
+    }
+
+    let entries = collect_sorted_entries(src_dir, true, LayerOwner::default())?;
+    build_layer_from_entries(&entries, target_prefix, LayerOwner::default())
 }
 
 /// Build a layer from an in-memory list of (path_in_tar, content) pairs.
 /// Useful for layers that don't correspond to a real directory (e.g. the
-/// synthesized config layer).
-pub fn build_layer_from_files(files: &[(String, Vec<u8>, u32)]) -> Result<LayerBlob> {
-    let mut sorted = files.to_vec();
+/// synthesized config layer). `owner` is applied to every emitted tar entry.
+pub fn build_layer_from_files(
+    files: &[(String, Vec<u8>, u32)],
+    owner: LayerOwner,
+) -> Result<LayerBlob> {
+    build_layer_from_files_and_dirs(files, &[], owner)
+}
+
+/// Build a layer from in-memory file and directory entries.
+pub fn build_layer_from_files_and_dirs(
+    files: &[(String, Vec<u8>, u32)],
+    dirs: &[String],
+    owner: LayerOwner,
+) -> Result<LayerBlob> {
+    let mut sorted: Vec<&(String, Vec<u8>, u32)> = files.iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut sorted_dirs: Vec<&String> = dirs.iter().collect();
+    sorted_dirs.sort();
 
     let mut tar_bytes = Vec::new();
     {
@@ -67,27 +144,27 @@ pub fn build_layer_from_files(files: &[(String, Vec<u8>, u32)]) -> Result<LayerB
         // Track which parent directories we've emitted so we don't repeat them.
         let mut emitted_dirs: std::collections::BTreeSet<String> = Default::default();
 
-        for (path, contents, mode) in &sorted {
+        for dir in sorted_dirs {
+            for parent in parent_dirs(dir) {
+                if emitted_dirs.insert(parent.clone()) {
+                    emit_dir(&mut builder, &parent, owner)?;
+                }
+            }
+            if emitted_dirs.insert((*dir).clone()) {
+                emit_dir(&mut builder, dir, owner)?;
+            }
+        }
+
+        for (path, contents, mode) in sorted {
             for dir in parent_dirs(path) {
                 if emitted_dirs.insert(dir.clone()) {
-                    let mut header = Header::new_gnu();
-                    header.set_entry_type(EntryType::Directory);
-                    header.set_mode(0o755);
-                    header.set_uid(0);
-                    header.set_gid(0);
-                    header.set_size(0);
-                    header.set_mtime(0);
-                    header.set_cksum();
-                    builder
-                        .append_data(&mut header, format!("{dir}/"), std::io::empty())
-                        .wrap_err_with(|| format!("writing dir entry {dir}"))?;
+                    emit_dir(&mut builder, &dir, owner)?;
                 }
             }
             let mut header = Header::new_gnu();
             header.set_entry_type(EntryType::Regular);
             header.set_mode(*mode);
-            header.set_uid(0);
-            header.set_gid(0);
+            apply_owner(&mut header, owner);
             header.set_size(contents.len() as u64);
             header.set_mtime(0);
             header.set_cksum();
@@ -107,6 +184,7 @@ struct Entry {
     abs: PathBuf,
     kind: EntryKind,
     mode: u32,
+    owner: LayerOwner,
     size: u64,
 }
 
@@ -117,7 +195,11 @@ enum EntryKind {
     Symlink(PathBuf),
 }
 
-fn collect_sorted_entries(src_dir: &Path) -> Result<Vec<Entry>> {
+fn collect_sorted_entries(
+    src_dir: &Path,
+    preserve_metadata: bool,
+    owner: LayerOwner,
+) -> Result<Vec<Entry>> {
     // Canonicalize once so we can match symlink targets that traverse via
     // different path spellings (e.g. with `..` components or through
     // intermediate symlinks).
@@ -134,21 +216,41 @@ fn collect_sorted_entries(src_dir: &Path) -> Result<Vec<Entry>> {
         let file_type = entry.file_type();
         let md = entry.path().symlink_metadata()?;
         let (kind, mode, size) = if file_type.is_dir() {
-            (EntryKind::Dir, 0o755u32, 0u64)
+            let mode = if preserve_metadata {
+                mode_from_metadata(&md)
+            } else {
+                0o755u32
+            };
+            (EntryKind::Dir, mode, 0u64)
         } else if file_type.is_symlink() {
             let raw_target = std::fs::read_link(entry.path())?;
             let target = rebase_symlink_target(&raw_target, &abs, &canonical_src, src_dir);
-            (EntryKind::Symlink(target), 0o777u32, 0u64)
+            let mode = if preserve_metadata {
+                mode_from_metadata(&md)
+            } else {
+                0o777u32
+            };
+            (EntryKind::Symlink(target), mode, 0u64)
         } else {
-            let is_exec = file_is_executable(entry.path(), &md);
-            let mode = if is_exec { 0o755 } else { 0o644 };
+            let mode = if preserve_metadata {
+                mode_from_metadata(&md)
+            } else {
+                let is_exec = file_is_executable(entry.path(), &md);
+                if is_exec { 0o755 } else { 0o644 }
+            };
             (EntryKind::File, mode, md.len())
+        };
+        let entry_owner = if preserve_metadata {
+            owner_from_metadata(&md)
+        } else {
+            owner
         };
         entries.push(Entry {
             rel,
             abs,
             kind,
             mode,
+            owner: entry_owner,
             size,
         });
     }
@@ -160,7 +262,11 @@ fn collect_sorted_entries(src_dir: &Path) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
-fn build_layer_from_entries(entries: &[Entry], target_prefix: &str) -> Result<LayerBlob> {
+fn build_layer_from_entries(
+    entries: &[Entry],
+    target_prefix: &str,
+    owner: LayerOwner,
+) -> Result<LayerBlob> {
     let prefix = target_prefix.trim_matches('/');
 
     let mut tar_bytes = Vec::new();
@@ -175,7 +281,7 @@ fn build_layer_from_entries(entries: &[Entry], target_prefix: &str) -> Result<La
         let mut emitted_dirs: std::collections::BTreeSet<String> = Default::default();
         for dir in prefix_parents(prefix) {
             if emitted_dirs.insert(dir.clone()) {
-                emit_dir(&mut builder, &dir)?;
+                emit_dir(&mut builder, &dir, owner)?;
             }
         }
 
@@ -192,15 +298,14 @@ fn build_layer_from_entries(entries: &[Entry], target_prefix: &str) -> Result<La
             match &e.kind {
                 EntryKind::Dir => {
                     if emitted_dirs.insert(path_in_tar.clone()) {
-                        emit_dir(&mut builder, &path_in_tar)?;
+                        emit_dir_with_mode(&mut builder, &path_in_tar, e.owner, e.mode)?;
                     }
                 }
                 EntryKind::File => {
                     let mut header = Header::new_gnu();
                     header.set_entry_type(EntryType::Regular);
                     header.set_mode(e.mode);
-                    header.set_uid(0);
-                    header.set_gid(0);
+                    apply_owner(&mut header, e.owner);
                     header.set_size(e.size);
                     header.set_mtime(0);
                     header.set_cksum();
@@ -214,8 +319,7 @@ fn build_layer_from_entries(entries: &[Entry], target_prefix: &str) -> Result<La
                     let mut header = Header::new_gnu();
                     header.set_entry_type(EntryType::Symlink);
                     header.set_mode(e.mode);
-                    header.set_uid(0);
-                    header.set_gid(0);
+                    apply_owner(&mut header, e.owner);
                     header.set_size(0);
                     header.set_mtime(0);
                     header
@@ -234,12 +338,45 @@ fn build_layer_from_entries(entries: &[Entry], target_prefix: &str) -> Result<La
     finalize_layer(tar_bytes)
 }
 
-fn emit_dir<W: Write>(builder: &mut tar::Builder<W>, path: &str) -> Result<()> {
+fn apply_owner(header: &mut Header, owner: LayerOwner) {
+    header.set_uid(owner.uid as u64);
+    header.set_gid(owner.gid as u64);
+}
+
+#[cfg(unix)]
+fn mode_from_metadata(md: &std::fs::Metadata) -> u32 {
+    md.mode() & 0o7777
+}
+
+#[cfg(not(unix))]
+fn mode_from_metadata(md: &std::fs::Metadata) -> u32 {
+    if md.is_dir() { 0o755 } else { 0o644 }
+}
+
+#[cfg(unix)]
+fn owner_from_metadata(md: &std::fs::Metadata) -> LayerOwner {
+    LayerOwner::new(md.uid(), md.gid())
+}
+
+#[cfg(not(unix))]
+fn owner_from_metadata(_md: &std::fs::Metadata) -> LayerOwner {
+    LayerOwner::default()
+}
+
+fn emit_dir<W: Write>(builder: &mut tar::Builder<W>, path: &str, owner: LayerOwner) -> Result<()> {
+    emit_dir_with_mode(builder, path, owner, 0o755)
+}
+
+fn emit_dir_with_mode<W: Write>(
+    builder: &mut tar::Builder<W>,
+    path: &str,
+    owner: LayerOwner,
+    mode: u32,
+) -> Result<()> {
     let mut header = Header::new_gnu();
     header.set_entry_type(EntryType::Directory);
-    header.set_mode(0o755);
-    header.set_uid(0);
-    header.set_gid(0);
+    header.set_mode(mode);
+    apply_owner(&mut header, owner);
     header.set_size(0);
     header.set_mtime(0);
     header.set_cksum();
@@ -431,8 +568,10 @@ mod tests {
         fs::write(dir.path().join("bin/hello"), b"#!/bin/sh\necho hi\n").unwrap();
         fs::write(dir.path().join("README"), b"hello\n").unwrap();
 
-        let a = build_layer_from_dir(dir.path(), "mise/installs/test/1.0").unwrap();
-        let b = build_layer_from_dir(dir.path(), "mise/installs/test/1.0").unwrap();
+        let a = build_layer_from_dir(dir.path(), "mise/installs/test/1.0", LayerOwner::default())
+            .unwrap();
+        let b = build_layer_from_dir(dir.path(), "mise/installs/test/1.0", LayerOwner::default())
+            .unwrap();
         assert_eq!(a.digest, b.digest, "digests should match across runs");
         assert_eq!(a.diff_id, b.diff_id, "diff_ids should match across runs");
         assert_eq!(a.bytes, b.bytes, "bytes should match across runs");
@@ -442,8 +581,8 @@ mod tests {
     fn different_prefix_different_digest() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("x"), b"x").unwrap();
-        let a = build_layer_from_dir(dir.path(), "a").unwrap();
-        let b = build_layer_from_dir(dir.path(), "b").unwrap();
+        let a = build_layer_from_dir(dir.path(), "a", LayerOwner::default()).unwrap();
+        let b = build_layer_from_dir(dir.path(), "b", LayerOwner::default()).unwrap();
         assert_ne!(a.digest, b.digest);
     }
 
@@ -457,9 +596,145 @@ mod tests {
                 0o755,
             ),
         ];
-        let a = build_layer_from_files(&files).unwrap();
-        let b = build_layer_from_files(&files).unwrap();
+        let a = build_layer_from_files(&files, LayerOwner::default()).unwrap();
+        let b = build_layer_from_files(&files, LayerOwner::default()).unwrap();
         assert_eq!(a.bytes, b.bytes);
+    }
+
+    #[test]
+    fn default_files_layer_owner_is_root() {
+        let files = vec![("etc/mise/config.toml".to_string(), b"foo\n".to_vec(), 0o644)];
+        let blob = build_layer_from_files(&files, LayerOwner::default()).unwrap();
+
+        assert_layer_owner(&blob, 0, 0);
+    }
+
+    #[test]
+    fn configured_files_layer_owner_applies_to_every_entry_and_is_reproducible() {
+        let files = vec![
+            ("etc/mise/config.toml".to_string(), b"foo\n".to_vec(), 0o644),
+            (
+                "usr/local/bin/mise".to_string(),
+                b"#!/bin/sh\nexec true\n".to_vec(),
+                0o755,
+            ),
+        ];
+        let owner = LayerOwner::new(1000, 1001);
+
+        let a = build_layer_from_files(&files, owner).unwrap();
+        let b = build_layer_from_files(&files, owner).unwrap();
+
+        assert_layer_owner(&a, 1000, 1001);
+        assert_eq!(a.bytes, b.bytes);
+    }
+
+    #[test]
+    fn configured_dir_layer_owner_applies_to_every_entry() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("bin")).unwrap();
+        fs::write(dir.path().join("bin/hello"), b"#!/bin/sh\necho hi\n").unwrap();
+
+        let blob = build_layer_from_dir(
+            dir.path(),
+            "opt/mise/installs/test/1.0",
+            LayerOwner::new(1000, 1000),
+        )
+        .unwrap();
+
+        assert_layer_owner(&blob, 1000, 1000);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preserve_metadata_dir_layer_keeps_special_permission_bits() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o1777)).unwrap();
+        let helper = bin.join("helper");
+        fs::write(&helper, b"#!/bin/sh\necho hi\n").unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o4755)).unwrap();
+
+        let blob = build_layer_from_dir_preserve_metadata(dir.path(), "").unwrap();
+
+        assert_layer_mode(&blob, "bin", 0o1777);
+        assert_layer_mode(&blob, "bin/helper", 0o4755);
+        let md = fs::symlink_metadata(&helper).unwrap();
+        assert_layer_entry_owner(&blob, "bin/helper", md.uid() as u64, md.gid() as u64);
+    }
+
+    #[test]
+    fn layer_owner_parses_uid_and_optional_gid() {
+        assert_eq!(
+            "1000".parse::<LayerOwner>().unwrap(),
+            LayerOwner::new(1000, 1000)
+        );
+        assert_eq!(
+            "1000:1001".parse::<LayerOwner>().unwrap(),
+            LayerOwner::new(1000, 1001)
+        );
+
+        for invalid in ["", ":", "1000:", ":1000", "1:2:3", "abc", "-1"] {
+            assert!(
+                invalid.parse::<LayerOwner>().is_err(),
+                "{invalid:?} should be rejected"
+            );
+        }
+    }
+
+    fn assert_layer_owner(blob: &LayerBlob, uid: u64, gid: u64) {
+        let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
+        let mut archive = tar::Archive::new(decoder);
+        let mut entries_seen = 0;
+
+        for entry in archive.entries().unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path().unwrap().to_string_lossy().into_owned();
+            assert_eq!(entry.header().uid().unwrap(), uid, "uid for {path}");
+            assert_eq!(entry.header().gid().unwrap(), gid, "gid for {path}");
+            entries_seen += 1;
+        }
+
+        assert!(entries_seen > 0, "expected at least one tar entry");
+    }
+
+    fn assert_layer_mode(blob: &LayerBlob, expected_path: &str, expected_mode: u32) {
+        let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
+        let mut archive = tar::Archive::new(decoder);
+
+        for entry in archive.entries().unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path().unwrap().to_string_lossy().into_owned();
+            if path.trim_end_matches('/') == expected_path.trim_end_matches('/') {
+                assert_eq!(
+                    entry.header().mode().unwrap(),
+                    expected_mode,
+                    "mode for {path}"
+                );
+                return;
+            }
+        }
+
+        panic!("expected layer entry {expected_path}");
+    }
+
+    fn assert_layer_entry_owner(blob: &LayerBlob, expected_path: &str, uid: u64, gid: u64) {
+        let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
+        let mut archive = tar::Archive::new(decoder);
+
+        for entry in archive.entries().unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path().unwrap().to_string_lossy().into_owned();
+            if path == expected_path {
+                assert_eq!(entry.header().uid().unwrap(), uid, "uid for {path}");
+                assert_eq!(entry.header().gid().unwrap(), gid, "gid for {path}");
+                return;
+            }
+        }
+
+        panic!("expected layer entry {expected_path}");
     }
 
     #[cfg(unix)]
@@ -486,7 +761,7 @@ mod tests {
         // as-is with a warning; we only assert it doesn't panic).
         symlink("/usr/bin/false", src.join("bin/external")).unwrap();
 
-        let entries = collect_sorted_entries(src).unwrap();
+        let entries = collect_sorted_entries(src, false, LayerOwner::default()).unwrap();
         let npm = entries
             .iter()
             .find(|e| e.rel == Path::new("bin/npm"))
