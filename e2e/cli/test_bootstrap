@@ -43,6 +43,15 @@ assert_succeed "mise bootstrap --dry-run"
 assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/2.1.0"
 assert_fail "cat bootstrap_ran"
 
+# macOS LaunchAgents in shared configs are inert when launchd is unavailable
+cat <<EOF >mise.toml
+[bootstrap.macos.launchd.agents.my-sync]
+program = "~/.local/bin/my-sync"
+run_at_load = true
+EOF
+assert_succeed "mise bootstrap --dry-run"
+assert_contains "mise bootstrap launchd status" "skipped"
+
 # unavailable system package managers are skipped, not errors
 cat <<EOF >mise.toml
 [bootstrap.packages]

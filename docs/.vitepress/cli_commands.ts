@@ -28,6 +28,9 @@ export const commands: { [key: string]: Command } = {
   bootstrap: {
     hide: false,
     subcommands: {
+      launchd: {
+        hide: false,
+      },
       "macos-defaults": {
         hide: false,
       },
