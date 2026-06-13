@@ -15,7 +15,9 @@ into the canonical Homebrew prefix — `/opt/homebrew` on arm64 macOS,
 formulae.brew.sh API, resolves the runtime dependency closure, downloads
 prebuilt bottles from ghcr.io (verifying sha256 checksums), and performs the
 same relocation, code-signing, and linking work `brew` does when pouring a
-bottle. mise never shells out to `brew`.
+bottle. Formulae without a usable bottle are built from source, also without
+Homebrew (see [Source formulae](#source-formulae)). mise never shells out to
+`brew`.
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like
@@ -32,8 +34,9 @@ what makes them work.
 | Linux arm64                 | `/home/linuxbrew/.linuxbrew` |
 
 Intel macs are not supported — the `brew` manager reports itself unavailable
-there. On Linux, formulae without a bottle for your architecture fail with a
-clear error (arm64 Linux bottles exist for most but not all of homebrew/core).
+there. On Linux, formulae without a bottle for your architecture (arm64
+Linux bottles exist for most but not all of homebrew/core) are built from
+source instead.
 
 ## The prefix
 
@@ -82,6 +85,39 @@ For each formula in the dependency closure (dependencies first):
    [keg-only](https://docs.brew.sh/FAQ#what-does-keg-only-mean) formulae get
    the `opt` link but are not linked into the prefix, same as brew.
 
+## Source formulae
+
+A few formulae have no bottle at all (source-only formulae), and some have
+bottles for other platforms but not yours. mise builds those from source —
+still without Homebrew:
+
+1. **Ruby** — a formula is Ruby code, so mise provisions a mise-managed
+   ruby through its normal tool machinery (precompiled, fast; respects your
+   configured ruby if you have one).
+2. **Formula** — the formula's `.rb` is downloaded from homebrew/core,
+   pinned to the exact commit the API metadata was generated from and
+   verified against the API's sha256 for it.
+3. **Source** — the stable source archive is downloaded and verified
+   against the API's sha256.
+4. **Build deps** — the formula's build dependencies (cmake, pkgconf, ...)
+   are added to the install closure and poured as regular bottles first.
+5. **Build** — mise evaluates the formula with its own Formula-DSL shim and
+   runs `def install` against the canonical prefix, with `PATH`,
+   `PKG_CONFIG_PATH`, and compiler flags pointing at the dependency kegs.
+   The keg gets the same brew-compatible receipt as a poured bottle, with
+   `poured_from_bottle: false` — exactly how brew marks its own source
+   builds.
+
+The shim implements the commonly-used subset of the formula DSL
+(configure/cmake/meson-style builds, resources, patches, the standard path
+and environment helpers). Formulae that use parts of the DSL the shim
+doesn't cover — language-specific helpers like `virtualenv_install_with_resources`,
+VCS downloads, and similar — fail with a clear `formula uses ...` error
+rather than miscompiling silently.
+
+Source builds need a working toolchain (Xcode Command Line Tools on macOS,
+gcc/make on Linux), exactly as they would under plain Homebrew.
+
 ## Upgrades
 
 `mise system upgrade` re-resolves the configured formulae against the
@@ -97,8 +133,10 @@ operation.
   implemented.
 - **No taps.** Third-party taps are Ruby code that requires Homebrew to
   evaluate; only homebrew/core is supported.
-- **No source builds.** Formulae without a bottle for your platform fail
-  with a clear error.
+- **Source builds cover the common formula shapes.** mise's formula shim
+  implements the widely-used subset of the DSL (see
+  [Source formulae](#source-formulae)); formulae that reach beyond it fail
+  with a clear error naming the unsupported feature.
 - **Use canonical formula names.** `postgresql@17` is a formula name, not a
   mise version pin — the API's current stable version decides what gets
   installed. Aliases (`postgres`) install correctly but `mise system status`

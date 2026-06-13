@@ -23,11 +23,42 @@ pub struct Formula {
     /// runtime dependencies (formula names)
     #[serde(default)]
     pub dependencies: Vec<String>,
+    /// build-time-only dependencies — needed for source builds, not pours
+    #[serde(default)]
+    pub build_dependencies: Vec<String>,
     #[serde(default)]
     pub bottle: HashMap<String, BottleSpec>,
     /// per-bottle-tag overrides (e.g. different dependencies on some platforms)
     #[serde(default)]
     pub variations: HashMap<String, Variation>,
+    /// source download specs keyed by spec name ("stable")
+    #[serde(default)]
+    pub urls: HashMap<String, SourceUrl>,
+    /// formula .rb location in homebrew/core (e.g. "Formula/h/hello.rb")
+    #[serde(default)]
+    pub ruby_source_path: Option<String>,
+    #[serde(default)]
+    pub ruby_source_checksum: Option<RubySourceChecksum>,
+    /// homebrew/core commit this API snapshot was generated from
+    #[serde(default)]
+    pub tap_git_head: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SourceUrl {
+    pub url: String,
+    /// sha256 of the source archive; absent for VCS sources
+    #[serde(default)]
+    pub checksum: Option<String>,
+    /// non-default download strategy (":git", ":svn", ...) — unsupported
+    #[serde(default)]
+    pub using: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RubySourceChecksum {
+    #[serde(default)]
+    pub sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -53,6 +84,8 @@ pub struct BottleFile {
 pub struct Variation {
     #[serde(default)]
     pub dependencies: Option<Vec<String>>,
+    #[serde(default)]
+    pub build_dependencies: Option<Vec<String>>,
 }
 
 impl Formula {
@@ -80,8 +113,23 @@ impl Formula {
         &self.dependencies
     }
 
+    /// build-time dependencies for the given bottle tag, applying `variations`
+    pub fn build_dependencies_for(&self, tag: &str) -> &[String] {
+        if let Some(v) = self.variations.get(tag)
+            && let Some(deps) = &v.build_dependencies
+        {
+            return deps;
+        }
+        &self.build_dependencies
+    }
+
     pub fn bottle_files(&self) -> Option<&HashMap<String, BottleFile>> {
         self.bottle.get("stable").map(|b| &b.files)
+    }
+
+    /// the stable source archive spec, when present
+    pub fn stable_url(&self) -> Option<&SourceUrl> {
+        self.urls.get("stable")
     }
 }
 

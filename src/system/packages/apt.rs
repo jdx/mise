@@ -101,7 +101,7 @@ fn parse_dpkg_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageSta
         .collect()
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl SystemPackageManager for AptManager {
     fn name(&self) -> &'static str {
         "apt"
