@@ -89,15 +89,15 @@ place but should not install anything during that check.
 
 ## What Goes Where
 
-| Config                       | Use for                                                       |
-| ---------------------------- | ------------------------------------------------------------- |
-| `[bootstrap.packages]`       | OS packages from apt, dnf, pacman, or brew                    |
-| `[dotfiles]`                 | Whole-file dotfiles and small managed edits to existing files |
-| `[bootstrap.macos.defaults]` | macOS user preferences written through `defaults write`       |
-| `[bootstrap.macos.launchd]`  | macOS user LaunchAgents written and loaded with `launchctl`   |
-| `[bootstrap.user]`           | Current-user settings such as `login_shell`                   |
-| `[tools]`                    | Versioned dev tools managed by mise                           |
-| `[tasks.bootstrap]`          | Anything custom that should run after tools are installed     |
+| Config                             | Use for                                                       |
+| ---------------------------------- | ------------------------------------------------------------- |
+| `[bootstrap.packages]`             | OS packages from apt, dnf, pacman, or brew                    |
+| `[dotfiles]`                       | Whole-file dotfiles and small managed edits to existing files |
+| `[bootstrap.macos.defaults]`       | macOS user preferences written through `defaults write`       |
+| `[bootstrap.macos.launchd.agents]` | macOS user LaunchAgents written and loaded with `launchctl`   |
+| `[bootstrap.user]`                 | Current-user settings such as `login_shell`                   |
+| `[tools]`                          | Versioned dev tools managed by mise                           |
+| `[tasks.bootstrap]`                | Anything custom that should run after tools are installed     |
 
 Use declarative sections when mise can inspect and converge the state. Use
 `[tasks.bootstrap]` for imperative setup that does not fit those sections,

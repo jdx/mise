@@ -731,7 +731,7 @@ const completionSpec: Fig.Spec = {
                 {
                   name: "--missing",
                   description:
-                    "Exit with code 1 if any configured LaunchAgent is not loaded",
+                    "Exit with code 1 if any configured LaunchAgent is not in its desired state",
                   isRepeatable: false,
                 },
               ],

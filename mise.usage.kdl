@@ -323,7 +323,7 @@ Examples:
         }
         cmd status {
             flag "-J --json" help="Output in JSON format"
-            flag --missing help="Exit with code 1 if any configured LaunchAgent is not loaded"
+            flag --missing help="Exit with code 1 if any configured LaunchAgent is not in its desired state"
         }
     }
     cmd macos-defaults subcommand_required=#true help="Manage macOS defaults from `[bootstrap.macos.defaults]`" {

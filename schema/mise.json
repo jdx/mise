@@ -3090,6 +3090,8 @@
                     "properties": {
                       "program": {
                         "type": "string",
+                        "minLength": 1,
+                        "pattern": ".*\\S.*",
                         "description": "program path for ProgramArguments[0]"
                       },
                       "args": {

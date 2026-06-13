@@ -17,7 +17,8 @@ stderr_path = "~/Library/Logs/my-sync.err.log"
 ```
 
 Each agent is written to `~/Library/LaunchAgents/dev.mise.<name>.plist` and
-loaded with `launchctl bootstrap gui/$UID`. Agent names may contain letters,
+loaded with `launchctl bootstrap gui/$UID
+~/Library/LaunchAgents/dev.mise.<name>.plist`. Agent names may contain letters,
 numbers, `.`, `_`, and `-`. mise owns only the plist files it creates with the
 `dev.mise.` label prefix.
 

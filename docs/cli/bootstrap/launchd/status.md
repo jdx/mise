@@ -12,4 +12,4 @@ Output in JSON format
 
 ### `--missing`
 
-Exit with code 1 if any configured LaunchAgent is not loaded
+Exit with code 1 if any configured LaunchAgent is not in its desired state

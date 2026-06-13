@@ -30,6 +30,14 @@ export const commands: { [key: string]: Command } = {
     subcommands: {
       launchd: {
         hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
       },
       "macos-defaults": {
         hide: false,

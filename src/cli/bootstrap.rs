@@ -145,7 +145,7 @@ struct BootstrapLaunchdStatus {
     #[clap(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured LaunchAgent is not loaded
+    /// Exit with code 1 if any configured LaunchAgent is not in its desired state
     #[clap(long, verbatim_doc_comment)]
     missing: bool,
 }
