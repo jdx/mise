@@ -171,6 +171,7 @@ serde = { version = "1", features = ["derive"] }
 serde_ignored = "0.1"
 serde_json = "1"
 serde_yaml = "0.9"
+sevenz-rust2 = "0.20"
 sha1 = "0.11"
 sha2 = "0.11"
 blake3 = "1"
@@ -232,7 +233,6 @@ self_update = { version = "0.44", optional = true, default-features = false, fea
   "rustls",
 ] }
 zipsign-api = "0.2"
-sevenz-rust = "0.6"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
 
 [build-dependencies]
