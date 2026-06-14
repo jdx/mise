@@ -294,8 +294,7 @@ revision in the platform `url`:
 url = "https://github.com/jdx/ruby/releases/download/3.3.11-1/ruby-3.3.11.x86_64_linux.tar.gz"
 ```
 
-Here `3.3.11-1` is build revision `1`; `3.3.11` without a suffix is the base
-release. See [Ruby precompiled build revisions](/lang/ruby.html#precompiled-build-revisions)
+Here `3.3.11-1` is build revision `1`. See [Ruby precompiled build revisions](/lang/ruby.html#precompiled-build-revisions)
 for details on why revisions exist, how unlocked installs behave, and how to
 update older lockfiles.
 
