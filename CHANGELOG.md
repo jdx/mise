@@ -1,5 +1,32 @@
 # Changelog
 
+## [2026.6.8](https://github.com/jdx/mise/compare/v2026.6.7..v2026.6.8) - 2026-06-14
+
+### 🐛 Bug Fixes
+
+- **(ruby)** require build revision releases by @jdx in [#10428](https://github.com/jdx/mise/pull/10428)
+- **(zig)** resolve master channel to the concrete nightly version by @JamBalaya56562 in [#10423](https://github.com/jdx/mise/pull/10423)
+
+### 📚 Documentation
+
+- **(css)** align social links icons vertically center by @smasato in [#10424](https://github.com/jdx/mise/pull/10424)
+
+### Chore
+
+- **(ci)** make release asset upload idempotent by @jdx in [#10430](https://github.com/jdx/mise/pull/10430)
+- **(ci)** increase release job timeout by @jdx in [#10431](https://github.com/jdx/mise/pull/10431)
+- silence platform-conditional dead-code warnings by @JamBalaya56562 in [#10425](https://github.com/jdx/mise/pull/10425)
+
+### New Contributors
+
+- @smasato made their first contribution in [#10424](https://github.com/jdx/mise/pull/10424)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`fallow-rs/fallow`](https://github.com/fallow-rs/fallow)
+
 ## [2026.6.7](https://github.com/jdx/mise/compare/v2026.6.6..v2026.6.7) - 2026-06-14
 
 ### 🚀 Features
