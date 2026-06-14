@@ -289,10 +289,16 @@ mise install
 Precompiled Ruby binaries from `jdx/ruby` may publish rebuilt assets for the same Ruby version under build revision release tags such as `3.3.11-1`. The lockfile keeps `version = "3.3.11"` but records the selected build revision in the platform `url`.
 
 Those rebuilds are for changes to the portable binary package, not changes to
-Ruby's own version number. For example, the `jdx/ruby` release history includes
-rebuilds after native gem packaging fixes, CA certificate lookup fixes, RI
-documentation packaging changes, SLSA/provenance workflow fixes, and mass
-regeneration of existing releases. This list is not exhaustive.
+Ruby's own version number. The `jdx/ruby` release history includes rebuilds for
+reasons such as:
+
+- native gem packaging fixes
+- CA certificate lookup fixes
+- RI documentation packaging changes
+- SLSA/provenance workflow fixes
+- mass regeneration of existing releases
+
+This list is not exhaustive.
 
 To see which revision a lockfile uses, check the release tag in the platform URL:
 

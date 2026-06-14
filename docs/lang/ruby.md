@@ -51,10 +51,16 @@ falls back to compiling from source using ruby-build.
 Precompiled Ruby binaries are released from `jdx/ruby`. Sometimes the binary for a Ruby version is rebuilt without changing the Ruby version itself. Those rebuilds use build revision release tags like `3.3.11-1` or `3.3.11-2`.
 
 Rebuilds are for changes to the portable binary package, not changes to Ruby's
-own version number. For example, the `jdx/ruby` release history includes
-rebuilds after native gem packaging fixes, CA certificate lookup fixes, RI
-documentation packaging changes, SLSA/provenance workflow fixes, and mass
-regeneration of existing releases. This list is not exhaustive.
+own version number. The `jdx/ruby` release history includes rebuilds for
+reasons such as:
+
+- native gem packaging fixes
+- CA certificate lookup fixes
+- RI documentation packaging changes
+- SLSA/provenance workflow fixes
+- mass regeneration of existing releases
+
+This list is not exhaustive.
 
 Mise still treats the Ruby version as `3.3.11`, but the download URL in `mise.lock` records which precompiled build revision is used:
 
