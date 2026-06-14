@@ -1247,16 +1247,21 @@ impl Task {
             .map(|directive| (directive, self.config_source.clone()))
             .collect();
         directives.extend(self.overlay_vars.iter().cloned());
+        let template_env: EnvMap = tera_ctx
+            .get("env")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_else(|| env::PRISTINE_ENV.clone());
         let results = EnvResults::resolve(
             config,
             tera_ctx.clone(),
-            &env::PRISTINE_ENV,
+            &template_env,
             directives,
             EnvResolveOptions {
                 vars: true,
                 tools: ToolsFilter::NonToolsOnly,
                 warn_on_missing_required: false,
                 preserve_context_vars: false,
+                default_env: Some(env::PRISTINE_ENV.clone()),
             },
         )
         .await?;
@@ -1691,6 +1696,7 @@ impl Task {
                 tools: ToolsFilter::Both,
                 warn_on_missing_required: false,
                 preserve_context_vars: false,
+                default_env: None,
             },
         )
         .await?;

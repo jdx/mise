@@ -303,6 +303,7 @@ mod tests {
                 tools: ToolsFilter::ToolsOnly,
                 warn_on_missing_required: false,
                 preserve_context_vars: false,
+                default_env: None,
             },
         )
         .await

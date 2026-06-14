@@ -49,6 +49,19 @@ vars = { derived = "derived from {{vars.base}}" }
 EOF
 assert "mise run a" "derived from base_value"
 
+# Per-task var templates can reference mise env values
+cat <<EOF >mise.toml
+[env]
+greeting = "env-section"
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+
+[tasks.a.vars]
+greeting = "{{ env.greeting }}"
+EOF
+assert "mise run a" "env-section"
+
 # Config vars can preserve an existing non-empty env var with a fallback
 cat <<EOF >mise.toml
 [vars]
