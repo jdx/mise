@@ -2361,12 +2361,12 @@ fn prefer_windows_file_task_siblings_inner(file_tasks: Vec<Task>) -> Vec<Task> {
         .iter()
         .map(|ext| ext.to_lowercase())
         .collect::<IndexSet<_>>();
-    let extensionless_task_stems = file_tasks
+    let extensionless_task_keys = file_tasks
         .iter()
         .filter(|task| task.config_source.extension().is_none())
-        .map(|task| task.name.clone())
+        .map(|task| (task.config_source.clone(), task.name.clone()))
         .collect::<IndexSet<_>>();
-    let mut windows_native_task_stem_counts = IndexMap::new();
+    let mut windows_native_task_key_counts = IndexMap::new();
     for task in &file_tasks {
         let Some(ext) = task
             .config_source
@@ -2377,14 +2377,17 @@ fn prefer_windows_file_task_siblings_inner(file_tasks: Vec<Task>) -> Vec<Task> {
             continue;
         };
         if windows_exts.contains(&ext) {
-            *windows_native_task_stem_counts
-                .entry(strip_task_extension(&task.name).to_string())
+            *windows_native_task_key_counts
+                .entry((
+                    task.config_source.with_extension(""),
+                    strip_task_extension(&task.name).to_string(),
+                ))
                 .or_insert(0) += 1;
         }
     }
-    let windows_takeover_stems = extensionless_task_stems
+    let windows_takeover_keys = extensionless_task_keys
         .iter()
-        .filter(|stem| windows_native_task_stem_counts.get(*stem) == Some(&1))
+        .filter(|key| windows_native_task_key_counts.get(*key) == Some(&1))
         .cloned()
         .collect::<IndexSet<_>>();
 
@@ -2392,7 +2395,7 @@ fn prefer_windows_file_task_siblings_inner(file_tasks: Vec<Task>) -> Vec<Task> {
         .into_iter()
         .filter_map(|mut task| {
             if task.config_source.extension().is_none()
-                && windows_takeover_stems.contains(task.name.as_str())
+                && windows_takeover_keys.contains(&(task.config_source.clone(), task.name.clone()))
             {
                 return None;
             }
@@ -2403,7 +2406,9 @@ fn prefer_windows_file_task_siblings_inner(file_tasks: Vec<Task>) -> Vec<Task> {
                 .is_some_and(|ext| windows_exts.contains(&ext.to_lowercase()))
             {
                 let stem = strip_task_extension(&task.name);
-                if windows_takeover_stems.contains(stem) {
+                if windows_takeover_keys
+                    .contains(&(task.config_source.with_extension(""), stem.to_string()))
+                {
                     task.name = stem.to_string();
                 }
             }
@@ -2955,6 +2960,38 @@ mod tests {
                 Path::new("mise-tasks/hello"),
                 Path::new("mise-tasks/hello.ps1"),
                 Path::new("mise-tasks/hello.cmd"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_prefer_windows_file_task_siblings_scopes_to_source_family() {
+        let file_tasks = vec![
+            Task {
+                name: "build".to_string(),
+                config_source: PathBuf::from("included-tasks/build"),
+                ..Default::default()
+            },
+            Task {
+                name: "build.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/build.ps1"),
+                ..Default::default()
+            },
+        ];
+
+        let tasks = prefer_windows_file_task_siblings_inner(file_tasks);
+        let task_names = tasks.iter().map(|task| task.name.as_str()).collect_vec();
+        let task_sources = tasks
+            .iter()
+            .map(|task| task.config_source.as_path())
+            .collect_vec();
+
+        assert_eq!(task_names, vec!["build", "build.ps1"]);
+        assert_eq!(
+            task_sources,
+            vec![
+                Path::new("included-tasks/build"),
+                Path::new("mise-tasks/build.ps1"),
             ]
         );
     }
