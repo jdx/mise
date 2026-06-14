@@ -1,5 +1,59 @@
 # Changelog
 
+## [2026.6.7](https://github.com/jdx/mise/compare/v2026.6.6..v2026.6.7) - 2026-06-14
+
+### 🚀 Features
+
+- **(backend)** add pkgx backend by @jdx in [#10408](https://github.com/jdx/mise/pull/10408)
+- **(bootstrap)** add launchd agents by @jdx in [#10396](https://github.com/jdx/mise/pull/10396)
+- **(bootstrap)** add phase hooks by @jdx in [#10395](https://github.com/jdx/mise/pull/10395)
+- **(bootstrap)** add friendly macos defaults by @jdx in [#10398](https://github.com/jdx/mise/pull/10398)
+- **(bootstrap)** add mas package manager by @jdx in [#10397](https://github.com/jdx/mise/pull/10397)
+- **(bootstrap)** add systemd user units by @jdx in [#10399](https://github.com/jdx/mise/pull/10399)
+- **(file)** support tbz extraction format alias by @risu729 in [#10403](https://github.com/jdx/mise/pull/10403)
+
+### 🐛 Bug Fixes
+
+- **(activate)** don't reorder PATH for the mise dir in --shims mode by @JamBalaya56562 in [#10394](https://github.com/jdx/mise/pull/10394)
+- **(aqua)** strip aqua asset formats from AssetWithoutExt by @risu729 in [#10104](https://github.com/jdx/mise/pull/10104)
+- **(aqua)** reject unsupported package formats by @risu729 in [#10409](https://github.com/jdx/mise/pull/10409)
+- **(bootstrap)** scope forced dotfile conflicts by @jdx in [#10410](https://github.com/jdx/mise/pull/10410)
+- **(dotnet)** send semVerLevel=2.0.0 in NuGet search query by @JamBalaya56562 in [#10384](https://github.com/jdx/mise/pull/10384)
+- **(erlang)** record lockfile fallback mode by @risu729 in [#10239](https://github.com/jdx/mise/pull/10239)
+- **(github)** strip tool name before asset platform detection by @JamBalaya56562 in [#10390](https://github.com/jdx/mise/pull/10390)
+- **(github)** only strip the tool name at a token boundary in asset matching by @JamBalaya56562 in [#10391](https://github.com/jdx/mise/pull/10391)
+- **(github,forgejo)** paginate past an all-prerelease first page of releases by @JamBalaya56562 in [#10420](https://github.com/jdx/mise/pull/10420)
+- **(install)** detect busybox tar so zstd tarballs are not mis-extracted by @JamBalaya56562 in [#10385](https://github.com/jdx/mise/pull/10385)
+- **(install)** run tool postinstall against the just-installed version by @JamBalaya56562 in [#10415](https://github.com/jdx/mise/pull/10415)
+- **(plugins)** prompt before installing non-registry plugin URLs by @risu729 in [#10402](https://github.com/jdx/mise/pull/10402)
+- **(task)** join wrapped command lines in task output header by @JamBalaya56562 in [#10387](https://github.com/jdx/mise/pull/10387)
+- **(task)** prefer exact task name over extension-stripped match by @JamBalaya56562 in [#10393](https://github.com/jdx/mise/pull/10393)
+- **(watch)** forward --wrap-process to watchexec by @JamBalaya56562 in [#10392](https://github.com/jdx/mise/pull/10392)
+
+### 🚜 Refactor
+
+- **(aqua)** stop canonicalizing archive format aliases by @risu729 in [#10404](https://github.com/jdx/mise/pull/10404)
+- **(file)** rename TarFormat to ExtractionFormat by @risu729 in [#10275](https://github.com/jdx/mise/pull/10275)
+- **(file)** derive extraction format extensions from display by @risu729 in [#10412](https://github.com/jdx/mise/pull/10412)
+- **(file)** return option from extraction format parsing by @risu729 in [#10411](https://github.com/jdx/mise/pull/10411)
+
+### 📚 Documentation
+
+- **(ruby)** document precompiled build revisions by @jdx in [#10419](https://github.com/jdx/mise/pull/10419)
+
+### 📦 Registry
+
+- scope imagemagick aqua backend to windows-x64 by @risu729 in [#10400](https://github.com/jdx/mise/pull/10400)
+- add SQLcl ([aqua:oracle.com/sqlcl](https://github.com/oracle.com/sqlcl)) by @jasonlyle88 in [#10417](https://github.com/jdx/mise/pull/10417)
+
+### Chore
+
+- update mise.lock by @JamBalaya56562 in [#10418](https://github.com/jdx/mise/pull/10418)
+
+### New Contributors
+
+- @jasonlyle88 made their first contribution in [#10417](https://github.com/jdx/mise/pull/10417)
+
 ## [2026.6.6](https://github.com/jdx/mise/compare/v2026.6.5..v2026.6.6) - 2026-06-13
 
 ### 🚀 Features
