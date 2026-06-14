@@ -15,6 +15,20 @@ use crate::toolset::env_cache::{CachedEnv, compute_settings_hash, get_file_mtime
 use crate::toolset::tool_request::ToolRequest;
 use crate::{env, github, parallel, uv};
 
+/// PATH with mise-managed install dirs filtered out. mise re-adds the current
+/// toolset's bin dirs below, so a stale `installs/<tool>/<ver>/bin` left on PATH
+/// (e.g. carried in from a frozen env snapshot) does not outrank the version that
+/// `mise x`/`run`/`env` selects for the whole process tree. Mirrors the hook-env
+/// reactivation filter from #10162. (#10345)
+fn pristine_path_without_install_dirs() -> Vec<PathBuf> {
+    let install_dirs = crate::path_env::mise_install_dirs();
+    env::PATH
+        .iter()
+        .filter(|p| !crate::path_env::is_mise_install_path(p.as_path(), &install_dirs))
+        .cloned()
+        .collect()
+}
+
 impl Toolset {
     pub async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
@@ -38,7 +52,7 @@ impl Toolset {
     /// dependency_env to avoid triggering module hooks on a partial PATH.
     pub async fn env_with_path_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let (mut env, add_paths) = self.env(config).await?;
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        let mut path_env = PathEnv::from_iter(pristine_path_without_install_dirs());
         for p in config.path_dirs().await?.clone() {
             path_env.add(p);
         }
@@ -64,7 +78,7 @@ impl Toolset {
         }
 
         let (mut env, env_results) = self.final_env(config).await?;
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        let mut path_env = PathEnv::from_iter(pristine_path_without_install_dirs());
         // Use split paths so we save a cache compatible with env_with_path_and_split
         let (user_paths, tool_paths) = self
             .list_final_paths_split(config, env_results.clone())
@@ -105,7 +119,7 @@ impl Toolset {
             trace!("env_cache: using cached environment with split paths");
             let mut env = cached.env;
             // Reconstruct PATH from cached paths
-            let mut path_env = PathEnv::from_iter(env::PATH.clone());
+            let mut path_env = PathEnv::from_iter(pristine_path_without_install_dirs());
             for p in cached.user_paths.iter().chain(cached.tool_paths.iter()) {
                 path_env.add(p.clone());
             }
@@ -126,7 +140,7 @@ impl Toolset {
             .await?;
 
         // Build PATH
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        let mut path_env = PathEnv::from_iter(pristine_path_without_install_dirs());
         for p in user_paths.iter().chain(tool_paths.iter()) {
             path_env.add(p.clone());
         }
@@ -163,7 +177,7 @@ impl Toolset {
             Some(cached) => {
                 let mut env = cached.env;
                 // Reconstruct PATH from cached paths
-                let mut path_env = PathEnv::from_iter(env::PATH.clone());
+                let mut path_env = PathEnv::from_iter(pristine_path_without_install_dirs());
                 for p in cached.user_paths.into_iter().chain(cached.tool_paths) {
                     path_env.add(p);
                 }
@@ -362,7 +376,7 @@ impl Toolset {
         let (mut env, add_paths) = self.env(config).await?;
         let mut tera_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         tera_env.extend(env.clone());
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        let mut path_env = PathEnv::from_iter(pristine_path_without_install_dirs());
 
         for p in config.path_dirs().await?.clone() {
             path_env.add(p);
