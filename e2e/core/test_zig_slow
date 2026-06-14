@@ -1,4 +1,17 @@
 #!/usr/bin/env bash
 
 assert "mise x zig@0.13.0 -- zig version" "0.13.0"
-assert "mise x zig@master -- zig version"
+
+# #10251: zig@master is a rolling channel. Even with only a STABLE zig installed
+# (0.13.0 above), zig@master must resolve to the concrete nightly (e.g.
+# 0.17.0-dev.NNN) -- it must NOT short-circuit to the unrelated installed stable --
+# and install under a versioned dir rather than a frozen "master" dir, so
+# `mise upgrade`/`outdated` can track new nightlies.
+assert_contains "mise x zig@master -- zig version" "-dev."
+[ ! -d "$MISE_DATA_DIR/installs/zig/master" ] || fail "zig@master must not create a frozen installs/zig/master dir"
+# A concrete nightly dir (e.g. 0.17.0-dev.NNN) must exist under installs/zig.
+# Use a glob rather than `ls | grep` (SC2010) to tolerate odd filenames.
+shopt -s nullglob
+dev_dirs=("$MISE_DATA_DIR"/installs/zig/*-dev.*)
+shopt -u nullglob
+[ ${#dev_dirs[@]} -gt 0 ] || fail "zig@master should install a concrete -dev nightly"

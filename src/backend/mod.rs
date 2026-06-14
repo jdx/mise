@@ -1311,6 +1311,37 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// Whether `version` names a rolling release channel (e.g. zig's "master")
+    /// rather than a concrete version. Cheap (no network). Channels are re-resolved
+    /// to a concrete version like "latest" so `mise upgrade`/`outdated` can track
+    /// new builds instead of pinning the channel name forever. (#10251)
+    fn is_rolling_channel(&self, _version: &str) -> bool {
+        false
+    }
+
+    /// The latest installed version that belongs to the rolling `channel` (see
+    /// [`Backend::is_rolling_channel`]), or `None`. Lets `mise x` / hook-env reuse
+    /// an installed channel build without a network round-trip, while never falling
+    /// back to an unrelated release (e.g. a stable Zig for `zig@master`). Cheap --
+    /// it filters already-installed versions, no network. (#10251)
+    fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
+        None
+    }
+
+    /// Resolve a rolling channel (see [`Backend::is_rolling_channel`]) to the
+    /// concrete version it currently points at. Returns `Ok(None)` when `version`
+    /// is not a channel or cannot be resolved; callers fall back to normal
+    /// resolution. May hit the network, so it is only called when re-resolving is
+    /// wanted (install/upgrade or first-run exec), never on the prefer-offline
+    /// hook-env path. (#10251)
+    async fn resolve_channel_version(
+        &self,
+        _config: &Arc<Config>,
+        _version: &str,
+    ) -> eyre::Result<Option<String>> {
+        Ok(None)
+    }
+
     /// Backend opt-in for installing an unresolved `latest` request.
     ///
     /// Most backends must resolve `latest` to a concrete version before install.
