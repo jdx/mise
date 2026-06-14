@@ -62,7 +62,13 @@ reasons such as:
 
 This list is not exhaustive.
 
-Mise still treats the Ruby version as `3.3.11`, but the download URL in `mise.lock` records which precompiled build revision is used:
+Mise still treats the Ruby version as `3.3.11`. Without a `mise.lock`, mise
+uses the latest available precompiled build revision when resolving the install.
+That means reinstalling the same Ruby version later may pick up a newer rebuild
+if one was published.
+
+With a `mise.lock`, the download URL records which precompiled build revision is
+used:
 
 ```toml
 [[tools.ruby]]

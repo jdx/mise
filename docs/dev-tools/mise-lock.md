@@ -300,6 +300,11 @@ reasons such as:
 
 This list is not exhaustive.
 
+Without a `mise.lock`, mise uses the latest available precompiled build revision
+when resolving the install. That means reinstalling the same Ruby version later
+may pick up a newer rebuild if one was published. With a `mise.lock`, the
+platform URL pins the selected build revision.
+
 To see which revision a lockfile uses, check the release tag in the platform URL:
 
 ```toml
