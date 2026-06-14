@@ -372,9 +372,16 @@ jobs:
           EOF
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      - name: Create and verify GitHub Release assets
+      - name: Create Draft GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
-        run: scripts/github-release-assets.sh /tmp/release-notes.txt
+        run: |
+          VERSION="$(./scripts/get-version.sh)"
+          gh release create "$VERSION" \
+            --title "$RELEASE_TITLE" \
+            --notes-file /tmp/release-notes.txt \
+            --verify-tag \
+            --draft \
+            "releases/$VERSION"/*
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
       - name: Publish Release Assets to CDN
