@@ -700,6 +700,7 @@ mod tests {
         assert!(entries_seen > 0, "expected at least one tar entry");
     }
 
+    #[cfg(unix)]
     fn assert_layer_mode(blob: &LayerBlob, expected_path: &str, expected_mode: u32) {
         let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
         let mut archive = tar::Archive::new(decoder);
@@ -720,6 +721,7 @@ mod tests {
         panic!("expected layer entry {expected_path}");
     }
 
+    #[cfg(unix)]
     fn assert_layer_entry_owner(blob: &LayerBlob, expected_path: &str, uid: u64, gid: u64) {
         let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
         let mut archive = tar::Archive::new(decoder);

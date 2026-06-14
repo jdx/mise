@@ -506,7 +506,8 @@ impl<'a> CmdLineRunner<'a> {
     /// and discussion #9355.
     #[cfg(windows)]
     pub fn raw_arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
-        use std::os::windows::process::CommandExt;
+        // tokio's `Command` exposes `raw_arg` as an inherent method, so the
+        // `std::os::windows::process::CommandExt` trait import is unnecessary.
         self.cmd.raw_arg(arg);
         self
     }
