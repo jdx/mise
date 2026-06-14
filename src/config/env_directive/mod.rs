@@ -253,6 +253,12 @@ pub enum ToolsFilter {
     #[default]
     NonToolsOnly,
     Both,
+    /// `tools = true` directives, but only plain `Val` (`KEY = value`) entries.
+    /// Env *modules* (PythonVenv/Module/Source/File/Path) are skipped because they
+    /// may reference tools outside a partial (dependency) toolset and would error.
+    /// Used by `dependency_env` so a dependent tool's install sees `tools = true`
+    /// value vars like `CLOUDSDK_PYTHON = "{{ tools.python.path }}/..."`. (#10282)
+    ToolsOnlyVals,
 }
 
 pub struct EnvResolveOptions {
@@ -296,6 +302,9 @@ impl EnvResults {
                     ToolsFilter::ToolsOnly => directive.options().tools,
                     ToolsFilter::NonToolsOnly => !directive.options().tools,
                     ToolsFilter::Both => true,
+                    ToolsFilter::ToolsOnlyVals => {
+                        directive.options().tools && matches!(directive, EnvDirective::Val(..))
+                    }
                 };
 
                 if !should_include {
@@ -775,5 +784,60 @@ impl Debug for EnvResults {
             ds.field("tool_add_paths", &self.tool_add_paths);
         }
         ds.finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::env_diff::EnvMap;
+    use crate::tera::BASE_CONTEXT;
+
+    /// `ToolsFilter::ToolsOnlyVals` must select only `tools = true` `Val`
+    /// directives — excluding `tools = false` vars and `tools = true` *modules*
+    /// (here a `Path`). This is what `dependency_env` relies on to surface vars
+    /// like `CLOUDSDK_PYTHON = "{{ tools.python.path }}/..."` during a dependent
+    /// tool's install without running env modules on a partial toolset. (#10282)
+    #[tokio::test]
+    async fn test_tools_only_vals_filter() {
+        let env = EnvMap::new();
+        let config = Config::get().await.unwrap();
+        let tools = EnvDirectiveOptions {
+            tools: true,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &env,
+            vec![
+                // tools = true Val -> included
+                (
+                    EnvDirective::Val("TOOLS_VAL".into(), "yes".into(), tools.clone()),
+                    PathBuf::from("/config"),
+                ),
+                // tools = false Val -> excluded
+                (
+                    EnvDirective::Val("PLAIN_VAL".into(), "no".into(), Default::default()),
+                    PathBuf::from("/config"),
+                ),
+                // tools = true module (Path) -> excluded
+                (
+                    EnvDirective::Path("/should/not/appear".into(), tools.clone()),
+                    PathBuf::from("/config"),
+                ),
+            ],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::ToolsOnlyVals,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+        let keys: Vec<String> = results.env.keys().cloned().collect();
+        assert_eq!(keys, vec!["TOOLS_VAL".to_string()]);
+        assert!(results.env_paths.is_empty());
     }
 }

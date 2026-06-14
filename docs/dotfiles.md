@@ -145,6 +145,10 @@ directory where a symlink should go, or a directory where a file should go,
 is an error listing the conflicting paths. Pass
 `mise dotfiles apply --force` to replace them.
 
+For symlink entries, an existing regular file with identical content to the
+source is converged without `--force` by replacing it with the requested
+symlink. If the content differs, mise still treats it as a conflict.
+
 Content updates are not conflicts: a `copy` or `template` entry overwrites
 the target file's content without `--force` — that is the declared intent of
 those modes. Symlinks are re-pointed freely, since a symlink is never data.

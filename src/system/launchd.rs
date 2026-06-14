@@ -301,6 +301,7 @@ fn current_uid() -> u32 {
     0
 }
 
+#[cfg(unix)]
 fn current_uid_from(euid: u32, sudo_uid: Option<&str>) -> u32 {
     if euid == 0
         && let Some(uid) = sudo_uid.and_then(|uid| uid.parse::<u32>().ok())
@@ -464,6 +465,7 @@ mod tests {
         assert!(plist_matches(&plist, &request));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_current_uid_prefers_sudo_uid_for_root() {
         assert_eq!(current_uid_from(0, Some("501")), 501);

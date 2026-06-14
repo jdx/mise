@@ -49,6 +49,14 @@ impl ZigPlugin {
         }
     }
 
+    /// Nightly (`-dev.`) builds are not top-level download-index keys; they are
+    /// published under /builds/. Both get_tarball_url and resolve_lock_info need
+    /// this URL, so construct it in one place to keep the pattern in sync. (#10251)
+    fn nightly_tarball_url(arch: &str, os: &str, version: &str) -> String {
+        let ext = if os == "windows" { "zip" } else { "tar.xz" };
+        format!("https://ziglang.org/builds/zig-{arch}-{os}-{version}.{ext}")
+    }
+
     fn test_zig(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("zig version".into());
         CmdLineRunner::new(self.zig_bin(tv))
@@ -290,6 +298,61 @@ impl Backend for ZigPlugin {
         Ok(versions)
     }
 
+    fn is_rolling_channel(&self, version: &str) -> bool {
+        version == "master"
+    }
+
+    fn latest_installed_channel_version(&self, channel: &str) -> Option<String> {
+        if !self.is_rolling_channel(channel) {
+            return None;
+        }
+        // "master" builds are dev versions (e.g. 0.17.0-dev.NNN). Reuse the latest
+        // installed nightly so hook-env / exec stay network-free, but never fall
+        // back to a stable release that has nothing to do with the channel. (#10251)
+        //
+        // list_installed_versions() is already ordered ascending by install_state
+        // (the canonical version sort), so take the last "-dev." entry instead of
+        // re-sorting here. list_installed_versions_matching() is unusable: it drops
+        // prereleases (the "-dev." nightlies) unless the tool opts into them.
+        // rfind() walks from the newest end (the list is double-ended), giving the
+        // latest nightly without re-sorting.
+        self.list_installed_versions()
+            .into_iter()
+            .rfind(|v| v.contains("-dev."))
+    }
+
+    async fn resolve_channel_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> Result<Option<String>> {
+        if !self.is_rolling_channel(version) {
+            return Ok(None);
+        }
+        // The download index lists "master" as a moving channel whose `version`
+        // field is the concrete nightly it currently points at (e.g.
+        // "0.17.0-dev.836+e357134f0"). Resolve to that concrete version so the
+        // install lands in a versioned dir and `mise upgrade`/`outdated` can track
+        // new nightlies instead of pinning "master" forever. (#10251)
+        // Treat a failed fetch as "cannot resolve right now" (Ok(None)) rather than
+        // a hard error, so a transient network blip falls through to normal
+        // resolution instead of breaking hook-env / exec. (#10251)
+        let index_json: serde_json::Value = match HTTP_FETCH
+            .json("https://ziglang.org/download/index.json")
+            .await
+        {
+            Ok(v) => v,
+            Err(err) => {
+                debug!("zig: failed to fetch download index resolving {version}: {err:#}");
+                return Ok(None);
+            }
+        };
+        Ok(index_json
+            .pointer(&format!("/{version}/version"))
+            .and_then(|v| v.as_str())
+            .map(String::from))
+    }
+
     async fn list_bin_paths(
         &self,
         _config: &Arc<Config>,
@@ -388,6 +451,11 @@ impl Backend for ZigPlugin {
                     tv.version, os, arch, tv.version
                 )))
             }
+            Err(_) if tv.version.contains("-dev.") => {
+                // Resolved from a rolling channel (e.g. "master"): nightly builds
+                // are not top-level index keys; they live under /builds/. (#10251)
+                Ok(Some(Self::nightly_tarball_url(arch, os, &tv.version)))
+            }
             Err(_) => Ok(None),
         }
     }
@@ -446,6 +514,14 @@ impl Backend for ZigPlugin {
                         "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
                         tv.version, os, arch, tv.version
                     )),
+                    ..Default::default()
+                })
+            }
+            Err(_) if tv.version.contains("-dev.") => {
+                // Resolved from a rolling channel (e.g. "master"): nightly lives
+                // under /builds/, no checksum (minisign verifies at install). (#10251)
+                Ok(PlatformInfo {
+                    url: Some(Self::nightly_tarball_url(arch, os, &tv.version)),
                     ..Default::default()
                 })
             }

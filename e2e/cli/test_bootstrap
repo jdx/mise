@@ -50,7 +50,11 @@ program = "~/.local/bin/my-sync"
 run_at_load = true
 EOF
 assert_succeed "mise bootstrap --dry-run"
-assert_contains "mise bootstrap launchd status" "skipped"
+if [[ $(uname) == "Darwin" ]]; then
+  assert_contains "mise bootstrap launchd status" "my-sync"
+else
+  assert_contains "mise bootstrap launchd status" "skipped"
+fi
 
 # systemd user services are declarative and safe to inspect in dry-runs
 cat <<EOF >mise.toml
@@ -92,6 +96,18 @@ assert_fail "cat final_hook_ran"
 assert_succeed "mise bootstrap --yes"
 assert "cat post_dotfiles_hook_ran" "post-dotfiles"
 assert "cat final_hook_ran" "final"
+
+# bootstrap refuses dotfile conflicts unless scoped force is requested
+echo "bootstrap source" >dotfiles/bootstrap-force
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.bootstrap-force-dotfiles" = "dotfiles/bootstrap-force"
+EOF
+echo "local content" >~/.bootstrap-force-dotfiles
+assert_fail "mise bootstrap --yes" "use --force-dotfiles"
+assert "cat ~/.bootstrap-force-dotfiles" "local content"
+assert_succeed "mise bootstrap --yes --force-dotfiles"
+assert "readlink ~/.bootstrap-force-dotfiles" "$PWD/dotfiles/bootstrap-force"
 
 # dry-run previews hooks from templated config dotfiles
 cat <<'EOF' >dotfiles/mise/config.local.toml.tmpl

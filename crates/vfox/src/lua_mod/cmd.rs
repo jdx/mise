@@ -9,6 +9,28 @@ pub fn mod_cmd(lua: &Lua) -> LuaResult<()> {
     let cmd = lua.create_table_from(vec![("exec", lua.create_function(exec)?)])?;
     loaded.set("cmd", cmd.clone())?;
     loaded.set("vfox.cmd", cmd)?;
+
+    // Route Lua's `os.execute` through mise's sanitized env (registry `mise_env`),
+    // matching cmd.exec. Stock `os.execute` inherits mise's raw process env, which
+    // during a combined `mise install` can carry stale `tools = true` values
+    // (e.g. a `CLOUDSDK_PYTHON` rendered before its python dependency was
+    // installed). Plugins that shell out via `os.execute` (e.g. vfox-gcloud's
+    // install.sh) would otherwise use the stale value and fail. When `mise_env`
+    // is unset, `os.execute` behaves exactly as stock. (#10282)
+    //
+    // Reuse the existing `os` table so `os.time`/`os.date`/etc. are preserved; only
+    // create one if `os` is absent (`nil`). A non-table `os` propagates the error
+    // rather than being silently overwritten.
+    let globals = lua.globals();
+    let os: Table = match globals.get::<Option<Table>>("os")? {
+        Some(os) => os,
+        None => {
+            let os = lua.create_table()?;
+            globals.set("os", os.clone())?;
+            os
+        }
+    };
+    os.set("execute", lua.create_function(os_execute)?)?;
     Ok(())
 }
 
@@ -36,16 +58,7 @@ fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
 
     // Apply mise-constructed environment if available in Lua registry.
     // This ensures mise-managed tools are on PATH when called from env module hooks.
-    let has_mise_env = if let Ok(mise_env) = lua.named_registry_value::<Table>("mise_env") {
-        cmd.env_clear();
-        for pair in mise_env.pairs::<String, String>() {
-            let (key, value) = pair?;
-            cmd.env(key, value);
-        }
-        true
-    } else {
-        false
-    };
+    let has_mise_env = apply_mise_env(lua, &mut cmd)?;
     debug!("[cmd.exec] command={command:?} shell={shell:?} has_mise_env={has_mise_env}");
 
     // Apply options if provided (explicit env vars override mise env)
@@ -85,6 +98,44 @@ fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
             output.status, stderr
         )))
     }
+}
+
+/// Apply the mise-constructed environment (Lua registry `mise_env`) to `cmd`,
+/// clearing the inherited environment first so the child sees exactly the env
+/// mise built. Returns true if it was applied; when `mise_env` is absent the
+/// command's inherited environment is left untouched (stock behavior).
+fn apply_mise_env(lua: &Lua, cmd: &mut Command) -> LuaResult<bool> {
+    if let Ok(mise_env) = lua.named_registry_value::<Table>("mise_env") {
+        cmd.env_clear();
+        for pair in mise_env.pairs::<String, String>() {
+            let (key, value) = pair?;
+            cmd.env(key, value);
+        }
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+/// Drop-in replacement for Lua's `os.execute` that applies mise's sanitized env
+/// (see [`apply_mise_env`]) and runs through the same shell as cmd.exec, while
+/// keeping `os.execute`'s streaming stdio (output goes to the terminal rather
+/// than being captured). Returns the process exit code (Lua 5.1 convention:
+/// `0` on success); `os.execute()` with no argument reports shell availability.
+/// (#10282)
+fn os_execute(lua: &Lua, command: Option<String>) -> LuaResult<i64> {
+    let Some(command) = command else {
+        // `os.execute()` with no argument: report that a shell is available.
+        return Ok(1);
+    };
+    let shell = cmd_shell(lua)?;
+    let mut cmd = command_from_shell(&shell, &command)?;
+    let has_mise_env = apply_mise_env(lua, &mut cmd)?;
+    debug!("[os.execute] command={command:?} shell={shell:?} has_mise_env={has_mise_env}");
+    let status = cmd
+        .status()
+        .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")))?;
+    Ok(status.code().unwrap_or(-1) as i64)
 }
 
 fn cmd_shell(lua: &Lua) -> LuaResult<Vec<String>> {
@@ -181,6 +232,32 @@ mod tests {
             assert(result:find("hello world") ~= nil)
         "#
         ))
+        .exec()
+        .unwrap();
+    }
+
+    // os.execute must honor the mise_env registry (env_clear + mise_env) so
+    // plugins shelling out via os.execute get mise's sanitized env, not the raw
+    // process env (which may carry stale tools=true values). (#10282)
+    #[test]
+    #[cfg(unix)]
+    fn test_os_execute_applies_mise_env() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let env = lua.create_table().unwrap();
+        // env_clear wipes PATH, so re-supply it for `sh` to resolve.
+        env.set("PATH", std::env::var("PATH").unwrap_or_default())
+            .unwrap();
+        env.set("MISE_OS_EXEC_MARKER", "yes").unwrap();
+        lua.set_named_registry_value("mise_env", env).unwrap();
+        lua.load(
+            r#"
+            local ok = os.execute('[ "$MISE_OS_EXEC_MARKER" = yes ]')
+            assert(ok == 0, "mise_env not applied to os.execute: " .. tostring(ok))
+            local bad = os.execute('[ "$MISE_OS_EXEC_MARKER" = no ]')
+            assert(bad ~= 0, "expected non-zero exit on false test")
+        "#,
+        )
         .exec()
         .unwrap();
     }

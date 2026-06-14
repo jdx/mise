@@ -3,9 +3,9 @@ use crate::cache::{PruneOptions, PruneResults};
 use crate::config::Settings;
 use crate::dirs::CACHE;
 use crate::toolset::env_cache::CachedEnv;
+use bytesize::ByteSize;
 use eyre::Result;
 use heck::ToKebabCase;
-use number_prefix::NumberPrefix;
 use std::time::Duration;
 
 /// Removes stale mise cache files
@@ -91,8 +91,5 @@ impl CachePrune {
 }
 
 fn bytes_str(bytes: u64) -> String {
-    match NumberPrefix::binary(bytes as f64) {
-        NumberPrefix::Standalone(bytes) => format!("{bytes} bytes"),
-        NumberPrefix::Prefixed(prefix, n) => format!("{n:.1} {prefix}B"),
-    }
+    ByteSize::b(bytes).display().iec().to_string()
 }

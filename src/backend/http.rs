@@ -83,16 +83,13 @@ impl FileInfo {
         let file_name = effective_path.file_name().unwrap().to_string_lossy();
         let format = file::ExtractionFormat::from_file_name(&file_name);
 
-        let extension = format
-            .extension()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| {
-                effective_path
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_string()
-            });
+        let extension = format.extension().unwrap_or_else(|| {
+            effective_path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string()
+        });
 
         let is_compressed_binary = !format.is_archive() && format != file::ExtractionFormat::Raw;
 
@@ -436,10 +433,8 @@ impl HttpBackend {
             opts.strip_components().and_then(|s| s.parse().ok());
 
         // Auto-detect strip_components=1 for single-directory archives
-        let can_probe_strip = file_info.format != file::ExtractionFormat::SevenZip || cfg!(windows);
         if strip_components.is_none()
             && opts.bin_path().is_none()
-            && can_probe_strip
             && file::should_strip_components(file_path, file_info.format).unwrap_or(false)
         {
             debug!("Auto-detected single directory archive, using strip_components=1");

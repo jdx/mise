@@ -1107,6 +1107,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--force-dotfiles",
+          description:
+            "Overwrite existing files that conflict with whole-file dotfile entries",
+          isRepeatable: false,
+        },
+        {
           name: "--update",
           description:
             "Refresh system package manager metadata first (apt: `apt-get update`)",

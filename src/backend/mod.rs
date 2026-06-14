@@ -68,6 +68,7 @@ pub mod jq;
 pub mod npm;
 pub(crate) mod options;
 pub mod pipx;
+pub mod pkgx;
 pub mod platform_target;
 mod platform_tokens;
 pub mod s3;
@@ -363,6 +364,7 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
+        BackendType::Pkgx => Some(Arc::new(pkgx::PkgxBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::S3 => Some(Arc::new(s3::S3Backend::from_arg(ba))),
@@ -393,6 +395,7 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
         BackendType::Go => go::install_time_option_keys(),
         BackendType::Npm => npm::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
+        BackendType::Pkgx => pkgx::install_time_option_keys(),
         BackendType::Aqua => aqua::install_time_option_keys(),
         BackendType::Spm => spm::install_time_option_keys(),
         _ => vec![],
@@ -1308,6 +1311,37 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// Whether `version` names a rolling release channel (e.g. zig's "master")
+    /// rather than a concrete version. Cheap (no network). Channels are re-resolved
+    /// to a concrete version like "latest" so `mise upgrade`/`outdated` can track
+    /// new builds instead of pinning the channel name forever. (#10251)
+    fn is_rolling_channel(&self, _version: &str) -> bool {
+        false
+    }
+
+    /// The latest installed version that belongs to the rolling `channel` (see
+    /// [`Backend::is_rolling_channel`]), or `None`. Lets `mise x` / hook-env reuse
+    /// an installed channel build without a network round-trip, while never falling
+    /// back to an unrelated release (e.g. a stable Zig for `zig@master`). Cheap --
+    /// it filters already-installed versions, no network. (#10251)
+    fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
+        None
+    }
+
+    /// Resolve a rolling channel (see [`Backend::is_rolling_channel`]) to the
+    /// concrete version it currently points at. Returns `Ok(None)` when `version`
+    /// is not a channel or cannot be resolved; callers fall back to normal
+    /// resolution. May hit the network, so it is only called when re-resolving is
+    /// wanted (install/upgrade or first-run exec), never on the prefer-offline
+    /// hook-env path. (#10251)
+    async fn resolve_channel_version(
+        &self,
+        _config: &Arc<Config>,
+        _version: &str,
+    ) -> eyre::Result<Option<String>> {
+        Ok(None)
+    }
+
     /// Backend opt-in for installing an unresolved `latest` request.
     ///
     /// Most backends must resolve `latest` to a concrete version before install.
@@ -1928,8 +1962,17 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         script: &str,
     ) -> eyre::Result<()> {
+        // Resolve the hook against the exact version just installed (locked) rather
+        // than the request's runtime symlink: for a fuzzy request (e.g. `version = "3"`)
+        // the runtime symlink (installs/python/3) still points at the previous version
+        // until all installs finish and symlinks are rebuilt. Without this, both the
+        // hook's env (exec_env, e.g. a backend deriving PYTHONHOME/JAVA_HOME from
+        // runtime_path()) and its PATH (list_bin_paths, e.g. `pip`) would resolve to a
+        // stale install (#10347).
+        let tv_exact = tv.clone().with_locked();
+
         // Get pre-tools environment variables from config
-        let mut env_vars = self.exec_env(&ctx.config, &ctx.ts, tv).await?;
+        let mut env_vars = self.exec_env(&ctx.config, &ctx.ts, &tv_exact).await?;
 
         // Add pre-tools environment variables from config if available
         if let Some(config_env) = ctx.config.env_maybe() {
@@ -1941,8 +1984,8 @@ pub trait Backend: Debug + Send + Sync {
 
         // Use the backend's list_bin_paths to get the correct binary directories
         // instead of hardcoding install_path/bin, which may not match the actual
-        // binary location for backends like aqua
-        let bin_paths = self.list_bin_paths(&ctx.config, tv).await?;
+        // binary location for backends like aqua.
+        let bin_paths = self.list_bin_paths(&ctx.config, &tv_exact).await?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
         for p in bin_paths {
             path_env.add(p);
