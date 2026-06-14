@@ -13,9 +13,9 @@ use crate::toolset::{ResolveOptions, ToolVersion};
 use crate::ui::info;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
+use bytesize::ByteSize;
 use clap::ValueHint;
 use color_eyre::eyre::bail;
-use humansize::{BINARY, format_size};
 use indexmap::IndexMap;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -809,7 +809,7 @@ fn is_bootstrap_stub(content: &str) -> bool {
 }
 
 fn format_size_comment(bytes: u64) -> String {
-    format!(" # {}", format_size(bytes, BINARY))
+    format!(" # {}", ByteSize::b(bytes).display().iec())
 }
 
 /// Extract TOML content from a stub file (handles both regular and bootstrap stubs)
