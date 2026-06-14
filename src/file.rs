@@ -1327,8 +1327,11 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
             archive.file_name().unwrap().to_string_lossy()
         ));
     }
-    sevenz_rust2::decompress_file(archive, dest)
-        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
+    sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
+        let dest_path = dest.join(normalize_7z_entry_path(entry.name()));
+        sevenz_rust2::default_entry_extract_fn(entry, reader, &dest_path)
+    })
+    .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
 
     if !opts.preserve_mtime {
         reset_dir_mtime_to_now(dest)?;
@@ -1340,6 +1343,10 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
             display_path(archive)
         )
     })
+}
+
+fn normalize_7z_entry_path(path: &str) -> PathBuf {
+    PathBuf::from(path.replace('\\', "/"))
 }
 
 pub fn split_file_name(path: &Path) -> (String, String) {
@@ -1452,7 +1459,7 @@ pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     let mut top_level_components = std::collections::HashMap::new();
 
     for file in &sevenz.files {
-        let path = PathBuf::from(file.name());
+        let path = normalize_7z_entry_path(file.name());
 
         // Get the first non-CurDir component of the path (top-level directory/file)
         let mut components = skip_curdir_components(&path);
@@ -2249,6 +2256,7 @@ mod tests {
 
     #[test]
     fn test_extract_archive_7z() {
+        use std::io::Cursor;
         use tempfile::tempdir;
 
         let dir = tempdir().unwrap();
@@ -2256,6 +2264,9 @@ mod tests {
         let pkg_dir = src_dir.join("pkg");
         let archive_path = dir.path().join("test.7z");
         let dest_dir = dir.path().join("out_dir");
+        let stripped_dest_dir = dir.path().join("stripped_out_dir");
+        let backslash_archive_path = dir.path().join("backslash.7z");
+        let backslash_dest_dir = dir.path().join("backslash_out_dir");
 
         std::fs::create_dir_all(&pkg_dir).unwrap();
         std::fs::write(pkg_dir.join("tool"), "hello world").unwrap();
@@ -2277,6 +2288,58 @@ mod tests {
         assert!(extracted_path.exists());
         assert!(extracted_path.is_file());
         let content = std::fs::read_to_string(&extracted_path).unwrap();
+        assert_eq!(content, "hello world");
+
+        extract_archive(
+            &archive_path,
+            &stripped_dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions {
+                strip_components: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let stripped_path = stripped_dest_dir.join("tool");
+        assert!(stripped_path.exists());
+        assert!(stripped_path.is_file());
+        assert!(!stripped_dest_dir.join("pkg").exists());
+        let content = std::fs::read_to_string(&stripped_path).unwrap();
+        assert_eq!(content, "hello world");
+
+        let mut backslash_archive =
+            sevenz_rust2::ArchiveWriter::create(&backslash_archive_path).unwrap();
+        backslash_archive
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry::new_file("pkg\\tool"),
+                Some(Cursor::new(b"hello world")),
+            )
+            .unwrap();
+        backslash_archive.finish().unwrap();
+
+        let contents = inspect_7z_contents(&backslash_archive_path).unwrap();
+        assert!(contents.contains(&("pkg".to_string(), true)));
+        assert!(
+            should_strip_components(&backslash_archive_path, ExtractionFormat::SevenZip).unwrap()
+        );
+
+        extract_archive(
+            &backslash_archive_path,
+            &backslash_dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions {
+                strip_components: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let backslash_stripped_path = backslash_dest_dir.join("tool");
+        assert!(backslash_stripped_path.exists());
+        assert!(backslash_stripped_path.is_file());
+        assert!(!backslash_dest_dir.join("pkg").exists());
+        let content = std::fs::read_to_string(&backslash_stripped_path).unwrap();
         assert_eq!(content, "hello world");
     }
 
