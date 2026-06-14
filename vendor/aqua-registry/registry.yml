@@ -2410,6 +2410,48 @@ packages:
           - amd64
   - type: github_release
     repo_owner: CycloneDX
+    repo_name: cdxgen
+    description: Creates CycloneDX Bill of Materials (BOM) from source code and container images
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 11.5.0")
+        error_message: The version is too old. Please use a version 11.5.0 or higher.
+      - version_constraint: semver("<= 11.9.0")
+        asset: cdxgen-{{.OS}}-{{.Arch}}
+        format: raw
+        overrides:
+          - goos: linux
+            asset: cdxgen-{{.OS}}-{{.Arch}}-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: semver("<= 12.0.0")
+        asset: cdxgen-{{.OS}}-{{.Arch}}
+        format: raw
+        overrides:
+          - goos: linux
+            asset: cdxgen-{{.OS}}-{{.Arch}}-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+      - version_constraint: "true"
+        asset: cdxgen-{{.OS}}-{{.Arch}}
+        format: raw
+        overrides:
+          - goos: linux
+            asset: cdxgen-{{.OS}}-{{.Arch}}-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+  - type: github_release
+    repo_owner: CycloneDX
     repo_name: cyclonedx-cli
     description: CycloneDX CLI tool for SBOM analysis, merging, diffs and format conversions
     files:
@@ -14178,7 +14220,7 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.5.4")
         asset: argd_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -14194,6 +14236,25 @@ packages:
             bundle:
               type: github_release
               asset: argd_checksums.txt.bundle
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+      - version_constraint: "true"
+        asset: argd_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: argd_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: argd_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
@@ -46672,18 +46733,16 @@ packages:
     repo_name: ghcup-hs
     url: https://downloads.haskell.org/~ghcup/{{trimV .Version}}/{{.Arch}}-{{.OS}}-ghcup-{{trimV .Version}}
     format: raw
+    windows_arm_emulation: true
     link: https://www.haskell.org/ghcup/
     description: GHCup is an installer for the general purpose language Haskell
     replacements:
       arm64: aarch64
       amd64: x86_64
       darwin: apple-darwin
+      windows: mingw64
     files:
       - name: ghcup
-        src: "{{.Arch}}-{{.OS}}-ghcup-{{trimV .Version}}"
-    supported_envs:
-      - linux
-      - darwin
   - type: github_release
     repo_owner: hasura
     repo_name: graphql-engine

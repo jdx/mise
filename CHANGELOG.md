@@ -1,5 +1,41 @@
 # Changelog
 
+## [2026.6.10](https://github.com/jdx/mise/compare/v2026.6.9..v2026.6.10) - 2026-06-14
+
+### 🚀 Features
+
+- **(env)** add default fallback shorthand by @jdx in [#10441](https://github.com/jdx/mise/pull/10441)
+
+### 🐛 Bug Fixes
+
+- **(backend)** enable 7z archives on unix by @risu729 in [#10434](https://github.com/jdx/mise/pull/10434)
+- **(env)** drop stale mise install dirs from mise x/run child PATH by @JamBalaya56562 in [#10422](https://github.com/jdx/mise/pull/10422)
+- **(env)** expand shell defaults like POSIX by @jdx in [#10445](https://github.com/jdx/mise/pull/10445)
+- **(file)** atomically replace symlinks to avoid spurious EEXIST warnings by @JamBalaya56562 in [#10414](https://github.com/jdx/mise/pull/10414)
+- **(shims)** guard Windows bash shims against WSL PATH interop by @JamBalaya56562 in [#10421](https://github.com/jdx/mise/pull/10421)
+- **(task)** prefer Windows script task siblings by @jdx in [#10443](https://github.com/jdx/mise/pull/10443)
+- **(vfox)** apply tools=true env to os.execute install hooks by @JamBalaya56562 in [#10432](https://github.com/jdx/mise/pull/10432)
+
+### 📦️ Dependency Updates
+
+- replace size formatting deps by @risu729 in [#10438](https://github.com/jdx/mise/pull/10438)
+
+### Chore
+
+- **(ci)** enable coderabbit for draft prs by @risu729 in [#10436](https://github.com/jdx/mise/pull/10436)
+- **(ci)** use shared coderabbit config by @jdx in [#10442](https://github.com/jdx/mise/pull/10442)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`CycloneDX/cdxgen`](https://github.com/CycloneDX/cdxgen)
+
+#### Updated Packages (2)
+
+- [`aquaproj/registry-tool`](https://github.com/aquaproj/registry-tool)
+- [`haskell/ghcup-hs`](https://github.com/haskell/ghcup-hs)
+
 ## [2026.6.9](https://github.com/jdx/mise/compare/v2026.6.8..v2026.6.9) - 2026-06-14
 
 ### Chore
