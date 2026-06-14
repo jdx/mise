@@ -742,25 +742,60 @@ impl Backend for NodePlugin {
     fn resolve_lockfile_options(
         &self,
         _request: &ToolRequest,
-        target: &PlatformTarget,
+        _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
-        let is_current_platform = target.is_current();
+        let node = &settings.node;
 
-        // Only include compile option if true (non-default)
-        let compile = if is_current_platform {
-            settings.node.compile.unwrap_or(false)
-        } else {
-            false
-        };
-        if compile {
-            opts.insert("compile".to_string(), "true".to_string());
+        let mirror = node.mirror_url();
+        if mirror.as_str() != DEFAULT_NODE_MIRROR_URL {
+            opts.insert("mirror_url".to_string(), mirror.to_string());
         }
 
-        // Flavor affects which binary variant is downloaded
-        // Apply to all platforms to avoid splitting lockfile entries (#8390)
-        if let Some(flavor) = settings.node.flavor.clone() {
+        if node.compile == Some(true) {
+            opts.insert("compile".to_string(), "true".to_string());
+            if let Some(cflags) = node.cflags().filter(|cflags| !cflags.is_empty()) {
+                opts.insert("cflags".to_string(), cflags);
+            }
+            if let Some(configure_opts) = node
+                .configure_opts
+                .clone()
+                .or_else(|| env::var("NODE_CONFIGURE_OPTS").ok())
+                .filter(|configure_opts| !configure_opts.is_empty())
+            {
+                opts.insert("configure_opts".to_string(), configure_opts);
+            }
+            if let Some(make) = node.make.clone().filter(|make| make != "make") {
+                opts.insert("make".to_string(), make);
+            }
+            if let Some(make_opts) = node
+                .make_opts
+                .clone()
+                .or_else(|| env::var("NODE_MAKE_OPTS").ok())
+                .filter(|make_opts| !make_opts.is_empty())
+            {
+                opts.insert("make_opts".to_string(), make_opts);
+            }
+            if let Some(make_install_opts) = node
+                .make_install_opts
+                .clone()
+                .or_else(|| env::var("NODE_MAKE_INSTALL_OPTS").ok())
+                .filter(|make_install_opts| !make_install_opts.is_empty())
+            {
+                opts.insert("make_install_opts".to_string(), make_install_opts);
+            }
+            if let Some(ninja) = node.ninja {
+                opts.insert("ninja".to_string(), ninja.to_string());
+            }
+            if let Some(concurrency) = node.concurrency.map(|concurrency| std::cmp::max(concurrency, 1)) {
+                opts.insert("concurrency".to_string(), concurrency.to_string());
+            }
+        }
+
+        // Flavor affects which binary variant is downloaded.
+        // Apply to all platforms to avoid splitting lockfile entries (#8390).
+        if let Some(flavor) = node.flavor.clone().filter(|flavor| !flavor.is_empty()) {
             opts.insert("flavor".to_string(), flavor);
         }
 
@@ -965,7 +1000,38 @@ struct NodeVersion {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::settings::SettingsNode;
+    use crate::config::settings::{SettingsNode, SettingsPartial};
+    use crate::toolset::ToolSource;
+    use confique::Layer;
+
+    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct SettingsResetGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for SettingsResetGuard {
+        fn drop(&mut self) {
+            Settings::reset(None);
+        }
+    }
+
+    fn resolve_node_lockfile_options(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+    ) -> BTreeMap<String, String> {
+        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let mut settings = SettingsPartial::empty();
+        configure_settings(&mut settings);
+        Settings::reset(Some(settings));
+        let _guard = SettingsResetGuard { _lock: lock };
+
+        let backend = NodePlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "22.0.0", ToolSource::Unknown)
+            .expect("valid node request");
+        backend
+            .resolve_lockfile_options(&request, &PlatformTarget::from_current())
+            .expect("node lockfile options")
+    }
 
     #[test]
     fn test_mirror_url_for_routes_musl_to_unofficial_builds() {
@@ -993,5 +1059,60 @@ mod tests {
         let musl = mirror_url_for(&node, "node-v24.14.0-linux-x64-musl.tar.gz");
         assert_eq!(glibc.as_str(), "https://corp.example/node/");
         assert_eq!(musl.as_str(), "https://corp.example/node/");
+    }
+
+    #[test]
+    fn test_node_lockfile_options_omit_default_precompiled_settings() {
+        let opts = resolve_node_lockfile_options(|_| {});
+
+        assert!(opts.is_empty());
+    }
+
+    #[test]
+    fn test_node_lockfile_options_include_binary_settings() {
+        let opts = resolve_node_lockfile_options(|settings| {
+            settings.node.compile = Some(false);
+            settings.node.mirror_url = Some("https://corp.example/node/".to_string());
+            settings.node.flavor = Some("musl".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                ("flavor".to_string(), "musl".to_string()),
+                (
+                    "mirror_url".to_string(),
+                    "https://corp.example/node/".to_string()
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_node_lockfile_options_include_source_build_settings() {
+        let opts = resolve_node_lockfile_options(|settings| {
+            settings.node.compile = Some(true);
+            settings.node.cflags = Some("-O2".to_string());
+            settings.node.configure_opts = Some("--openssl-no-asm".to_string());
+            settings.node.make = Some("gmake".to_string());
+            settings.node.make_opts = Some("-s".to_string());
+            settings.node.make_install_opts = Some("--no-strip".to_string());
+            settings.node.concurrency = Some(16);
+            settings.node.ninja = Some(false);
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                ("cflags".to_string(), "-O2".to_string()),
+                ("compile".to_string(), "true".to_string()),
+                ("concurrency".to_string(), "16".to_string()),
+                ("configure_opts".to_string(), "--openssl-no-asm".to_string()),
+                ("make".to_string(), "gmake".to_string()),
+                ("make_install_opts".to_string(), "--no-strip".to_string()),
+                ("make_opts".to_string(), "-s".to_string()),
+                ("ninja".to_string(), "false".to_string()),
+            ])
+        );
     }
 }
