@@ -367,10 +367,24 @@ impl EnvResults {
                 }
                 EnvDirective::Default(k, v, _opts) => {
                     if resolve_opts.vars {
-                        if vars.get(&k).is_some_and(|v| !v.is_empty()) {
+                        if let Some(v) = vars.get(&k).filter(|v| !v.is_empty()) {
+                            if redact.unwrap_or(false) {
+                                r.redactions.push(k.clone());
+                            }
+                            r.vars.insert(k, (v.clone(), source.clone()));
+                            continue;
+                        }
+                        if let Some((v, _)) = env.get(&k).filter(|(v, _)| !v.is_empty()) {
+                            if redact.unwrap_or(false) {
+                                r.redactions.push(k.clone());
+                            }
+                            r.vars.insert(k, (v.clone(), source.clone()));
                             continue;
                         }
                     } else if env.get(&k).is_some_and(|(v, _)| !v.is_empty()) {
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
                         continue;
                     }
 

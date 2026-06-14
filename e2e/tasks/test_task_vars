@@ -48,3 +48,14 @@ run = "echo {{vars.derived}}"
 vars = { derived = "derived from {{vars.base}}" }
 EOF
 assert "mise run a" "derived from base_value"
+
+# Config vars can preserve an existing non-empty env var with a fallback
+cat <<EOF >mise.toml
+[vars]
+greeting = { default = "hello" }
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+EOF
+assert "mise run a" "hello"
+greeting=hi assert "mise run a" "hi"

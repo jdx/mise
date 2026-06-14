@@ -2012,8 +2012,25 @@
         }
       },
       "additionalProperties": {
-        "description": "value of variable",
-        "type": "string"
+        "oneOf": [
+          {
+            "description": "value of variable",
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "default": {
+                "$ref": "#/$defs/env_default"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["default"],
+            "unevaluatedProperties": false
+          }
+        ]
       }
     },
     "task_config": {

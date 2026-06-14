@@ -807,6 +807,13 @@ vars = { e2e_args = '--headed' }
 
 The task-level `vars` override any config-level vars with the same name. In the example above, `e2e_args` resolves to `'--headed'` instead of the config-level `'--headless'`.
 
+Like `[env]`, vars can preserve an existing non-empty value while providing a fallback:
+
+```toml
+[vars]
+e2e_args = { default = "--headless" }
+```
+
 Like `[env]`, vars can also be read in as a file:
 
 ```toml
