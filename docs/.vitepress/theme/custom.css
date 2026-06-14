@@ -196,6 +196,11 @@
   }
 }
 
+/* Social links */
+.VPSocialLinks {
+  align-items: center !important;
+}
+
 /* GitHub star count badge */
 .VPSocialLinks a[href*="github.com/jdx/mise"] {
   display: inline-flex !important;
