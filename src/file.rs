@@ -9,6 +9,8 @@ use std::os::unix::fs::symlink;
 #[cfg(unix)]
 use std::os::unix::prelude::*;
 use std::sync::Mutex;
+#[cfg(unix)]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use bzip2::read::BzDecoder;
@@ -487,11 +489,31 @@ pub fn recursive_ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
 #[cfg(unix)]
 pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
     trace!("ln -sf {} {}", target.display(), link.display());
-    if link.is_file() || link.is_symlink() {
-        fs::remove_file(link)?;
-    }
-    symlink(target, link)
+    // Create the symlink at a unique temporary name in the same directory, then
+    // atomically rename it over `link`. rename(2) replaces an existing path in a
+    // single step, so concurrent mise processes racing to create the same link all
+    // succeed (last writer wins) instead of one failing with EEXIST — which showed
+    // up as spurious "failed to ln -sf ...: File exists (os error 17)" warnings
+    // when several mise invocations start at once (e.g. spawning a git worktree,
+    // #10292). Approach based on the closed PR #9701.
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let file_name = link
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("symlink");
+    let tmp = link.with_file_name(format!(
+        ".{file_name}.tmp.{}.{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = fs::remove_file(&tmp);
+    symlink(target, &tmp)
         .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
+    if let Err(err) = fs::rename(&tmp, link) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err)
+            .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()));
+    }
     Ok((target.to_path_buf(), link.to_path_buf()))
 }
 
@@ -1685,6 +1707,37 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn test_make_symlink_creates_and_atomically_replaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let target_a = dir.path().join("a");
+        let target_b = dir.path().join("b");
+        fs::write(&target_a, "a").unwrap();
+        fs::write(&target_b, "b").unwrap();
+        let link = dir.path().join("link");
+
+        // Creates a new symlink.
+        make_symlink(&target_a, &link).unwrap();
+        assert_eq!(fs::read_link(&link).unwrap(), target_a);
+
+        // Atomically replaces an existing symlink (no EEXIST).
+        make_symlink(&target_b, &link).unwrap();
+        assert_eq!(fs::read_link(&link).unwrap(), target_b);
+
+        // The temporary symlink is consumed by the rename — nothing left behind.
+        let leftovers: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+            .map(|e| e.file_name())
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp symlink left behind: {leftovers:?}"
+        );
+    }
 
     #[test]
     fn test_archive_content_files_tar_hashes_regular_files() {
