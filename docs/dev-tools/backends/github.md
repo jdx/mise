@@ -119,39 +119,6 @@ When `version_prefix` is configured, mise will:
   - User specifies `1.0.0` → mise searches for `1.0.0` tag (no prefix)
   - Useful for repositories that don't use any prefix
 
-### Build Revision Releases
-
-Some GitHub-backed tools publish rebuilt binaries for the same upstream version under build revision tags. A build revision tag appends a numeric suffix to the release tag, such as `v2026.6.6-1` or `v2026.6.6-2`. The base version stays `2026.6.6`, but the release assets come from the highest available build revision. This lets maintainers rebuild packaging without changing the user-facing tool version.
-
-For `github:jdx/mise`, mise resolves assets from build revision releases automatically. For example, if both `v2026.6.6` and `v2026.6.6-1` exist, `mise.lock` still records:
-
-```toml
-[[tools."github:jdx/mise"]]
-version = "2026.6.6"
-```
-
-but the platform URL points at the selected build revision:
-
-```toml
-[tools."github:jdx/mise".platforms.linux-x64]
-url = "https://github.com/jdx/mise/releases/download/v2026.6.6-1/mise-v2026.6.6-linux-x64.tar.gz"
-```
-
-To see which build revision you have, inspect the `url` under your platform in `mise.lock`:
-
-- `/releases/download/v2026.6.6/` means the base release, also called revision `0`
-- `/releases/download/v2026.6.6-1/` means build revision `1`
-- `/releases/download/v2026.6.6-2/` means build revision `2`
-
-To update an older lockfile to the newest build revision for the same version, regenerate the lock entry and reinstall:
-
-```sh
-mise lock github:jdx/mise
-mise install --force github:jdx/mise
-```
-
-If `github:jdx/mise` is configured under a tool alias, use that alias in the commands instead. Commit the updated `mise.lock` so other machines and CI use the same build revision.
-
 ### Platform-specific Asset Patterns
 
 For different asset patterns per platform:

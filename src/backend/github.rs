@@ -721,42 +721,6 @@ impl UnifiedGitBackend {
         .await
     }
 
-    async fn get_github_release_for_asset_resolution(
-        &self,
-        api_url: &str,
-        repo: &str,
-        tag: &str,
-    ) -> Result<github::GithubRelease> {
-        Self::get_github_release_for_asset_resolution_with(
-            api_url,
-            repo,
-            tag,
-            self.use_versions_host_for_github_metadata(),
-            self.uses_build_revision_releases(repo),
-        )
-        .await
-    }
-
-    async fn get_github_release_for_asset_resolution_with(
-        api_url: &str,
-        repo: &str,
-        tag: &str,
-        use_versions_host: bool,
-        use_build_revision_releases: bool,
-    ) -> Result<github::GithubRelease> {
-        if use_build_revision_releases {
-            github::get_release_for_url_with_build_revision(api_url, repo, tag, use_versions_host)
-                .await
-        } else {
-            github::get_release_for_url_with_versions_host(api_url, repo, tag, use_versions_host)
-                .await
-        }
-    }
-
-    fn uses_build_revision_releases(&self, repo: &str) -> bool {
-        repo == "jdx/mise"
-    }
-
     /// Detect what provenance type is available for a release by checking its assets
     /// and querying the GitHub attestation API.
     async fn detect_provenance_type(
@@ -773,18 +737,16 @@ impl UnifiedGitBackend {
         let version_prefix = opts.version_prefix();
 
         let use_versions_host = self.use_versions_host_for_github_metadata();
-        let use_build_revision_releases = self.uses_build_revision_releases(repo);
         let release =
             try_with_v_prefix_and_repo(version, version_prefix, Some(repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.to_string();
                 async move {
-                    Self::get_github_release_for_asset_resolution_with(
+                    github::get_release_for_url_with_versions_host(
                         &api_url,
                         &repo,
                         &candidate,
                         use_versions_host,
-                        use_build_revision_releases,
                     )
                     .await
                 }
@@ -958,18 +920,16 @@ impl UnifiedGitBackend {
             let version = &tv.version;
             let version_prefix = opts.version_prefix();
             let use_versions_host = self.use_versions_host_for_github_metadata();
-            let use_build_revision_releases = self.uses_build_revision_releases(repo);
             let release =
                 try_with_v_prefix_and_repo(version, version_prefix, Some(repo), |candidate| {
                     let api_url = api_url.to_string();
                     let repo = repo.to_string();
                     async move {
-                        Self::get_github_release_for_asset_resolution_with(
+                        github::get_release_for_url_with_versions_host(
                             &api_url,
                             &repo,
                             &candidate,
                             use_versions_host,
-                            use_build_revision_releases,
                         )
                         .await
                     }
@@ -1373,7 +1333,7 @@ impl UnifiedGitBackend {
         target: &PlatformTarget,
     ) -> Result<ReleaseAsset> {
         let release = self
-            .get_github_release_for_asset_resolution(api_url, repo, version)
+            .get_github_release_for_url(api_url, repo, version)
             .await?;
         let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
 
@@ -2094,18 +2054,16 @@ impl UnifiedGitBackend {
         // Try to get the release (with version prefix support)
         let version_prefix = opts.version_prefix();
         let use_versions_host = self.use_versions_host_for_github_metadata();
-        let use_build_revision_releases = self.uses_build_revision_releases(&repo);
         let release =
             match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.clone();
                 async move {
-                    Self::get_github_release_for_asset_resolution_with(
+                    github::get_release_for_url_with_versions_host(
                         &api_url,
                         &repo,
                         &candidate,
                         use_versions_host,
-                        use_build_revision_releases,
                     )
                     .await
                 }

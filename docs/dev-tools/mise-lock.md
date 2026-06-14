@@ -284,24 +284,24 @@ mise uninstall --all
 mise install
 ```
 
-### GitHub Build Revision Releases
+### Ruby Precompiled Build Revision Releases
 
-Some GitHub tools, including `github:jdx/mise`, may publish rebuilt assets for the same version under build revision release tags such as `v2026.6.6-1`. The lockfile keeps `version = "2026.6.6"` but records the selected build revision in the platform `url`.
+Precompiled Ruby binaries from `jdx/ruby` may publish rebuilt assets for the same Ruby version under build revision release tags such as `3.3.11-1`. The lockfile keeps `version = "3.3.11"` but records the selected build revision in the platform `url`.
 
 To see which revision a lockfile uses, check the release tag in the platform URL:
 
 ```toml
-url = "https://github.com/jdx/mise/releases/download/v2026.6.6-1/mise-v2026.6.6-linux-x64.tar.gz"
+url = "https://github.com/jdx/ruby/releases/download/3.3.11-1/ruby-3.3.11.x86_64_linux.tar.gz"
 ```
 
-Here `v2026.6.6-1` is build revision `1`; `v2026.6.6` without a suffix is the base release. To move an older lockfile to the latest build revision for the same version:
+Here `3.3.11-1` is build revision `1`; `3.3.11` without a suffix is the base release. To move an older lockfile to the latest build revision for the same Ruby version:
 
 ```sh
-mise lock github:jdx/mise
-mise install --force github:jdx/mise
+mise lock ruby
+mise install --force ruby
 ```
 
-See [GitHub backend build revision releases](/dev-tools/backends/github.html#build-revision-releases) for details.
+See [Ruby precompiled binaries](/lang/ruby.html#precompiled-binaries) for details.
 
 ### Lockfile Conflicts
 

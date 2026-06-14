@@ -346,32 +346,6 @@ pub async fn get_release_with_build_revision(repo: &str, version: &str) -> Resul
     }
 }
 
-/// Find the latest build revision for a version using a specific GitHub API URL.
-///
-/// Note: this relies on [`list_releases_from_url`] which may only return the first page of
-/// results when `MISE_LIST_ALL_VERSIONS` is not set. For repos with many releases, older
-/// versions may not be found via build-revision lookup, falling back to the exact version
-/// tag via [`get_release_for_url_with_versions_host`].
-pub async fn get_release_for_url_with_build_revision(
-    api_url: &str,
-    repo: &str,
-    version: &str,
-    use_versions_host: bool,
-) -> Result<GithubRelease> {
-    if version == "latest" {
-        return get_release_for_url_with_versions_host(api_url, repo, version, use_versions_host)
-            .await;
-    }
-
-    let releases = list_releases_from_url(api_url, repo).await?;
-    match pick_best_build_revision(releases, version) {
-        Some(release) => Ok(release),
-        None => {
-            get_release_for_url_with_versions_host(api_url, repo, version, use_versions_host).await
-        }
-    }
-}
-
 /// Select the release with the highest build revision for a given version.
 ///
 /// Given releases with tags like "3.3.11", "3.3.11-1", "3.3.11-2", picks the one
@@ -942,33 +916,6 @@ something_else = "value"
         ];
         let best = pick_best_build_revision(releases, "3.3.11").unwrap();
         assert_eq!(best.tag_name, "3.3.11-1");
-    }
-
-    #[tokio::test]
-    async fn test_build_revision_for_url_selects_highest() {
-        let _config = crate::config::Config::get().await.unwrap();
-        let mut server = mockito::Server::new_async().await;
-        let repo = "owner/url-build-revision-test";
-        let releases = vec![
-            make_release("v1.0.0"),
-            make_release("v1.0.0-2"),
-            make_release("v1.0.0-1"),
-            make_release("v0.9.0-9"),
-        ];
-        let mock = server
-            .mock("GET", format!("/repos/{repo}/releases").as_str())
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(serde_json::to_string(&releases).unwrap())
-            .expect(1)
-            .create_async()
-            .await;
-
-        let release = get_release_for_url_with_build_revision(&server.url(), repo, "v1.0.0", false)
-            .await
-            .unwrap();
-        assert_eq!(release.tag_name, "v1.0.0-2");
-        mock.assert_async().await;
     }
 
     fn make_asset(name: &str) -> GithubAsset {
