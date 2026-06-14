@@ -66,7 +66,7 @@ To see which precompiled build revision you have, inspect the release tag in the
 - `/releases/download/3.3.11-1/` means build revision `1`
 - `/releases/download/3.3.11-2/` means build revision `2`
 
-To update an older lockfile to the newest precompiled build revision for the same Ruby version, regenerate the lock entry and reinstall:
+If the lockfile already points at a build revision such as `3.3.11-1`, mise keeps using that exact revision for reproducibility. To update to the newest precompiled build revision for the same Ruby version, remove the Ruby entry (or the relevant platform URL) from `mise.lock`, then regenerate the lock entry and reinstall:
 
 ```sh
 mise lock ruby

@@ -294,7 +294,7 @@ To see which revision a lockfile uses, check the release tag in the platform URL
 url = "https://github.com/jdx/ruby/releases/download/3.3.11-1/ruby-3.3.11.x86_64_linux.tar.gz"
 ```
 
-Here `3.3.11-1` is build revision `1`; `3.3.11` without a suffix is the base release. To move an older lockfile to the latest build revision for the same Ruby version:
+Here `3.3.11-1` is build revision `1`; `3.3.11` without a suffix is the base release. If the lockfile already points at a build revision such as `3.3.11-1`, mise keeps using that exact revision for reproducibility. To move to the latest build revision for the same Ruby version, remove the Ruby entry (or the relevant platform URL) from `mise.lock`, then regenerate the lock entry and reinstall:
 
 ```sh
 mise lock ruby
