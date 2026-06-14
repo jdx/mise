@@ -1256,6 +1256,7 @@ impl Task {
                 vars: true,
                 tools: ToolsFilter::NonToolsOnly,
                 warn_on_missing_required: false,
+                preserve_context_vars: false,
             },
         )
         .await?;
@@ -1689,6 +1690,7 @@ impl Task {
                 vars: false,
                 tools: ToolsFilter::Both,
                 warn_on_missing_required: false,
+                preserve_context_vars: false,
             },
         )
         .await?;

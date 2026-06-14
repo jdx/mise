@@ -690,6 +690,7 @@ impl Config {
                 vars: false,
                 tools: ToolsFilter::NonToolsOnly,
                 warn_on_missing_required: *env::WARN_ON_MISSING_REQUIRED_ENV,
+                preserve_context_vars: false,
             },
         )
         .await?;
@@ -1710,6 +1711,7 @@ pub(crate) async fn resolve_vars_from_config_files(
             vars: true,
             tools: ToolsFilter::NonToolsOnly,
             warn_on_missing_required: false,
+            preserve_context_vars: true,
         },
     )
     .await

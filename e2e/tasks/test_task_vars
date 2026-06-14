@@ -75,6 +75,20 @@ EOF
 assert "mise run a" "hello"
 greeting=hi assert "mise run a" "hi"
 
+# Task vars defaults override config-level vars when the process env is unset
+cat <<EOF >mise.toml
+[vars]
+greeting = "config"
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+
+[tasks.a.vars]
+greeting = { default = "task" }
+EOF
+assert "mise run a" "task"
+greeting=hi assert "mise run a" "hi"
+
 # Config vars defaults read from the process environment, not [env]
 cat <<EOF >mise.toml
 [env]

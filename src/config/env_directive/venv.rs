@@ -302,6 +302,7 @@ mod tests {
                 vars: false,
                 tools: ToolsFilter::ToolsOnly,
                 warn_on_missing_required: false,
+                preserve_context_vars: false,
             },
         )
         .await

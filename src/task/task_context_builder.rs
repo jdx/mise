@@ -365,6 +365,7 @@ impl TaskContextBuilder {
                         vars: true,
                         tools: ToolsFilter::NonToolsOnly,
                         warn_on_missing_required: false,
+                        preserve_context_vars: true,
                     },
                 )
                 .await?;
@@ -414,6 +415,7 @@ impl TaskContextBuilder {
                 vars: false,
                 tools: ToolsFilter::Both,
                 warn_on_missing_required: false,
+                preserve_context_vars: false,
             },
         )
         .await

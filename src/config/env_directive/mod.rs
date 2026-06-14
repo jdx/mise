@@ -263,6 +263,7 @@ pub struct EnvResolveOptions {
     pub vars: bool,
     pub tools: ToolsFilter,
     pub warn_on_missing_required: bool,
+    pub preserve_context_vars: bool,
 }
 
 impl EnvResults {
@@ -336,7 +337,7 @@ impl EnvResults {
                 .collect::<EnvMap>();
             ctx.insert("env", &env_vars);
 
-            let mut vars: EnvMap = if let Some(Value::Object(existing_vars)) = ctx.get("vars") {
+            let context_vars: EnvMap = if let Some(Value::Object(existing_vars)) = ctx.get("vars") {
                 existing_vars
                     .iter()
                     .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
@@ -345,6 +346,7 @@ impl EnvResults {
                 EnvMap::new()
             };
 
+            let mut vars = context_vars.clone();
             vars.extend(r.vars.iter().map(|(k, (v, _))| (k.clone(), v.clone())));
 
             ctx.insert("vars", &vars);
@@ -367,7 +369,16 @@ impl EnvResults {
                 }
                 EnvDirective::Default(k, v, _opts) => {
                     if resolve_opts.vars {
-                        if let Some(v) = vars.get(&k).filter(|v| !v.is_empty()) {
+                        if let Some((v, _)) = r.vars.get(&k).filter(|(v, _)| !v.is_empty()) {
+                            if redact.unwrap_or(false) {
+                                r.redactions.push(k.clone());
+                            }
+                            r.vars.insert(k, (v.clone(), source.clone()));
+                            continue;
+                        }
+                        if resolve_opts.preserve_context_vars
+                            && let Some(v) = context_vars.get(&k).filter(|v| !v.is_empty())
+                        {
                             if redact.unwrap_or(false) {
                                 r.redactions.push(k.clone());
                             }

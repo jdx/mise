@@ -65,6 +65,7 @@ mod tests {
                 vars: false,
                 tools: ToolsFilter::NonToolsOnly,
                 warn_on_missing_required: false,
+                preserve_context_vars: false,
             },
         )
         .await

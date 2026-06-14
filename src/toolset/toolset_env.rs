@@ -438,6 +438,7 @@ impl Toolset {
                 vars: false,
                 tools: ToolsFilter::ToolsOnly,
                 warn_on_missing_required: *WARN_ON_MISSING_REQUIRED_ENV,
+                preserve_context_vars: false,
             },
         )
         .await?;
