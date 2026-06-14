@@ -377,7 +377,9 @@ impl Toolset {
         let mut ctx = config.tera_ctx.clone();
         ctx.insert("env", &tera_env);
         ctx.insert("tools", &self.build_tools_tera_map(config));
-        let mut env_results = self.load_post_env(config, ctx, &tera_env).await?;
+        let mut env_results = self
+            .load_post_env(config, ctx, &tera_env, ToolsFilter::ToolsOnly)
+            .await?;
 
         // Include watch_files from tools=false plugins so the env cache tracks all
         // plugin watch_files, not just tools=true ones. env_results_cached()
@@ -412,6 +414,7 @@ impl Toolset {
         config: &Arc<Config>,
         ctx: tera::Context,
         env: &EnvMap,
+        tools_filter: ToolsFilter,
     ) -> Result<EnvResults> {
         if Settings::no_env() || Settings::get().no_env.unwrap_or(false) {
             return Ok(EnvResults::default());
@@ -436,7 +439,7 @@ impl Toolset {
             entries,
             EnvResolveOptions {
                 vars: false,
-                tools: ToolsFilter::ToolsOnly,
+                tools: tools_filter,
                 warn_on_missing_required: *WARN_ON_MISSING_REQUIRED_ENV,
             },
         )
@@ -447,5 +450,31 @@ impl Toolset {
             debug!("{env_results:?}");
         }
         Ok(env_results)
+    }
+
+    /// Resolve only `tools = true` `[env]` *value* directives (plain
+    /// `KEY = value` templates such as `{{ tools.python.path }}`) against this
+    /// toolset's currently-installed tools, layered on top of `base_env`, and
+    /// return just those vars. Env *modules* are skipped (see
+    /// [`ToolsFilter::ToolsOnlyVals`]).
+    ///
+    /// Deliberately lean: it builds only the `tools.*` tera map (cheap; no
+    /// `exec_env`) rather than recomputing the full env, so `dependency_env` can
+    /// call it per-install without the cost/recursion of `final_env`. Used so a
+    /// dependent tool's install picks up vars like `CLOUDSDK_PYTHON` during a
+    /// combined `mise install`, mirroring what a re-activated shell exports
+    /// between separate installs. (#10282)
+    pub async fn tool_val_env(&self, config: &Arc<Config>, base_env: &EnvMap) -> Result<EnvMap> {
+        let mut ctx = config.tera_ctx.clone();
+        ctx.insert("env", base_env);
+        ctx.insert("tools", &self.build_tools_tera_map(config));
+        let env_results = self
+            .load_post_env(config, ctx, base_env, ToolsFilter::ToolsOnlyVals)
+            .await?;
+        Ok(env_results
+            .env
+            .into_iter()
+            .map(|(k, (v, _))| (k, v))
+            .collect())
     }
 }
