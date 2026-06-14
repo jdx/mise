@@ -668,16 +668,19 @@ impl MiseToml {
     // so they are available for templating.
     // Note this only merges regular key-value variables; referenced files are not resolved.
     fn update_context_env(&mut self, mut base_env: EnvMap) {
-        let env_vars = self
-            .env
-            .0
-            .iter()
-            .filter_map(|e| match e {
-                EnvDirective::Val(key, value, _) => Some((key.clone(), value.clone())),
-                _ => None,
-            })
-            .collect::<IndexMap<_, _>>();
-        base_env.extend(env_vars);
+        for e in &self.env.0 {
+            match e {
+                EnvDirective::Val(key, value, _) => {
+                    base_env.insert(key.clone(), value.clone());
+                }
+                EnvDirective::Default(key, value, _) => {
+                    if !base_env.get(key).is_some_and(|v| !v.is_empty()) {
+                        base_env.insert(key.clone(), value.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
         self.context.insert("env", &base_env);
     }
 
@@ -1610,6 +1613,24 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 Int(i64),
                                 Bool(bool),
                             }
+                            impl PrimitiveVal {
+                                fn into_value_string(self) -> Option<String> {
+                                    match self {
+                                        PrimitiveVal::Str(s) => Some(s),
+                                        PrimitiveVal::Int(i) => Some(i.to_string()),
+                                        PrimitiveVal::Bool(true) => Some("true".to_string()),
+                                        PrimitiveVal::Bool(false) => None,
+                                    }
+                                }
+
+                                fn into_default_string(self) -> String {
+                                    match self {
+                                        PrimitiveVal::Str(s) => s,
+                                        PrimitiveVal::Int(i) => i.to_string(),
+                                        PrimitiveVal::Bool(b) => b.to_string(),
+                                    }
+                                }
+                            }
                             #[derive(Deserialize)]
                             #[serde(untagged)]
                             enum Val {
@@ -1623,6 +1644,11 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 },
                                 Map {
                                     value: PrimitiveVal,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                                DefaultMap {
+                                    default: PrimitiveVal,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
@@ -1641,7 +1667,34 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 #[serde(flatten)]
                                 options: EnvDirectiveOptions,
                             }
-                            let val_result = map.next_value::<Val>()?;
+                            let raw_value = map.next_value::<toml::Value>()?;
+                            if let Some(table) = raw_value.as_table() {
+                                let has_default = table.contains_key("default");
+                                if has_default && table.contains_key("value") {
+                                    return Err(serde::de::Error::custom(format!(
+                                        "Environment variable '{}' cannot have both 'value' and 'default'. The 'value' field always overwrites, while 'default' only applies when the variable is unset or empty. Remove either the 'value' field or the 'default' field.",
+                                        key
+                                    )));
+                                }
+                                if has_default && table.contains_key("required") {
+                                    return Err(serde::de::Error::custom(format!(
+                                        "Environment variable '{}' cannot have both 'default' and 'required'. The 'required' flag means the variable must be defined elsewhere, while 'default' provides a fallback value. Remove either the 'default' field or the 'required' flag.",
+                                        key
+                                    )));
+                                }
+                                if has_default && table.contains_key("age") {
+                                    return Err(serde::de::Error::custom(format!(
+                                        "Environment variable '{}' cannot have both 'age' and 'default'. Remove either the 'age' field or the 'default' field.",
+                                        key
+                                    )));
+                                }
+                            }
+                            let val_result = raw_value.try_into::<Val>().map_err(|e| {
+                                serde::de::Error::custom(format!(
+                                    "failed to parse environment variable '{}': {}",
+                                    key, e
+                                ))
+                            })?;
 
                             // Handle Age variants separately since they create different directive types
                             match &val_result {
@@ -1668,39 +1721,32 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 _ => {}
                             }
 
-                            let (value, options) = match val_result {
-                                Val::Primitive(p) => (Some(p), EnvDirectiveOptions::default()),
-                                Val::Map { value, options } => (Some(value), options),
-                                Val::OptionsOnly { options } => (None, options),
-                                Val::AgeComplex { .. } | Val::AgeWithOptions { .. } => {
-                                    unreachable!() // Already handled above
-                                }
-                            };
-
-                            // Validate that required cannot be used with any value
-                            if options.required.is_required() {
-                                match &value {
-                                    Some(_) => {
+                            let directive = match val_result {
+                                Val::Primitive(p) => match p.into_value_string() {
+                                    Some(s) => {
+                                        EnvDirective::Val(key, s, EnvDirectiveOptions::default())
+                                    }
+                                    None => EnvDirective::Rm(key, EnvDirectiveOptions::default()),
+                                },
+                                Val::Map { value, options } => {
+                                    // Validate that required cannot be used with any value
+                                    if options.required.is_required() {
                                         return Err(serde::de::Error::custom(format!(
                                             "Environment variable '{}' cannot have both 'value' and 'required'. The 'required' flag means the variable must be defined elsewhere (in the environment or a later config file). Remove either the 'value' field or the 'required' flag.",
                                             key
                                         )));
                                     }
-                                    None => {
-                                        // Required without a value is valid - it means the variable must be defined elsewhere
+                                    match value.into_value_string() {
+                                        Some(s) => EnvDirective::Val(key, s, options),
+                                        None => EnvDirective::Rm(key, options),
                                     }
                                 }
-                            }
-                            let directive = match value {
-                                Some(PrimitiveVal::Str(s)) => EnvDirective::Val(key, s, options),
-                                Some(PrimitiveVal::Int(i)) => {
-                                    EnvDirective::Val(key, i.to_string(), options)
-                                }
-                                Some(PrimitiveVal::Bool(true)) => {
-                                    EnvDirective::Val(key, "true".to_string(), options)
-                                }
-                                Some(PrimitiveVal::Bool(false)) => EnvDirective::Rm(key, options),
-                                None => {
+                                Val::DefaultMap { default, options } => EnvDirective::Default(
+                                    key,
+                                    default.into_default_string(),
+                                    options,
+                                ),
+                                Val::OptionsOnly { options } => {
                                     // No value provided - this creates a required variable that must be defined elsewhere
                                     if !options.required.is_required() {
                                         return Err(serde::de::Error::custom(format!(
@@ -1710,6 +1756,9 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     }
                                     // For required variables without a value, we create a Required directive
                                     EnvDirective::Required(key, options)
+                                }
+                                Val::AgeComplex { .. } | Val::AgeWithOptions { .. } => {
+                                    unreachable!() // Already handled above
                                 }
                             };
                             env.push(directive);
@@ -2778,6 +2827,41 @@ run = 'echo "template"'
     }
 
     #[test]
+    fn test_env_default_entries() {
+        let toml = indoc! {r#"
+        [env]
+        foo1 = { default = "fallback" }
+        foo2 = { default = 2, tools = true }
+        foo3 = { default = false, redact = true }
+        "#}
+        .to_string();
+        assert_snapshot!(parse_env(toml), @r#"
+        foo1 default=fallback
+        foo2 default=2
+        foo3 default=false
+        "#);
+    }
+
+    #[test]
+    fn test_env_default_invalid_combinations() {
+        let err = parse_error("[env]\nFOO = { value = \"x\", default = \"y\" }\n");
+        assert!(
+            err.contains("cannot have both 'value' and 'default'"),
+            "{err}"
+        );
+        let err = parse_error("[env]\nFOO = { required = true, default = \"y\" }\n");
+        assert!(
+            err.contains("cannot have both 'default' and 'required'"),
+            "{err}"
+        );
+        let err = parse_error("[env]\nFOO = { age = \"AGE-SECRET\", default = \"y\" }\n");
+        assert!(
+            err.contains("cannot have both 'age' and 'default'"),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn test_env_arr() {
         let toml = formatdoc! {r#"
         [[env]]
@@ -2827,6 +2911,16 @@ run = 'echo "template"'
 
     fn parse_env(toml: String) -> String {
         parse(toml).env_entries().unwrap().into_iter().join("\n")
+    }
+
+    fn parse_error(toml: &str) -> String {
+        #[derive(Debug, Deserialize)]
+        struct TestConfig {
+            #[allow(dead_code)]
+            env: EnvList,
+        }
+
+        toml::from_str::<TestConfig>(toml).unwrap_err().to_string()
     }
 
     #[test]

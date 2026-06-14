@@ -19,6 +19,15 @@ To clear an env var, set it to `false`:
 NODE_ENV = false # unset a previously set NODE_ENV
 ```
 
+To set a fallback while preserving an existing non-empty value, use `default`:
+
+```toml [mise.toml]
+[env]
+NODE_ENV = { default = "development" }
+```
+
+This keeps `NODE_ENV` if it was already set before mise ran or by an earlier config file. If it is unset or empty, mise sets it to `"development"`.
+
 You can also use the CLI to get/set env vars:
 
 ```sh
