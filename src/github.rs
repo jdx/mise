@@ -347,6 +347,11 @@ pub async fn get_release_with_build_revision(repo: &str, version: &str) -> Resul
 }
 
 /// Find the latest build revision for a version using a specific GitHub API URL.
+///
+/// Note: this relies on [`list_releases_from_url`] which may only return the first page of
+/// results when `MISE_LIST_ALL_VERSIONS` is not set. For repos with many releases, older
+/// versions may not be found via build-revision lookup, falling back to the exact version
+/// tag via [`get_release_for_url_with_versions_host`].
 pub async fn get_release_for_url_with_build_revision(
     api_url: &str,
     repo: &str,
