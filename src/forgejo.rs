@@ -83,22 +83,37 @@ pub async fn list_releases_including_prereleases_from_url(
         .to_vec())
 }
 
+/// See the constant of the same name in [`crate::github`]: bound the prerelease
+/// fallback pagination so a repo full of nightly prereleases still surfaces a stable
+/// release without unbounded API calls. (#10343)
+const MAX_RELEASE_FALLBACK_PAGES: usize = 3;
+
 async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<ForgejoRelease>> {
-    let url = format!("{api_url}/repos/{repo}/releases");
+    let url = format!("{api_url}/repos/{repo}/releases?limit=100");
     let headers = get_headers(&url);
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<ForgejoRelease>, _>(url, &headers)
         .await?;
 
-    if *env::MISE_LIST_ALL_VERSIONS {
-        while let Some(next) = next_page(&headers) {
-            headers = get_headers(&next);
-            let (more, h) = crate::http::HTTP_FETCH
-                .json_headers_with_headers::<Vec<ForgejoRelease>, _>(next, &headers)
-                .await?;
-            releases.extend(more);
-            headers = h;
+    // Fetch additional pages when MISE_LIST_ALL_VERSIONS is set, or (bounded) while
+    // every release seen so far is a prerelease/draft, mirroring src/github.rs. (#10343)
+    // pages_fetched counts the initial page already fetched above, so the cap
+    // applies to the total number of pages rather than to extra requests.
+    let mut pages_fetched = 1;
+    while let Some(next) = next_page(&headers) {
+        if !*env::MISE_LIST_ALL_VERSIONS
+            && (releases.iter().any(|r| !r.prerelease && !r.draft)
+                || pages_fetched >= MAX_RELEASE_FALLBACK_PAGES)
+        {
+            break;
         }
+        headers = get_headers(&next);
+        let (more, h) = crate::http::HTTP_FETCH
+            .json_headers_with_headers::<Vec<ForgejoRelease>, _>(next, &headers)
+            .await?;
+        releases.extend(more);
+        headers = h;
+        pages_fetched += 1;
     }
     releases.retain(is_published_release);
 
@@ -383,5 +398,144 @@ something_else = "value"
 "#;
         let result = tokens::parse_tokens_toml(toml).unwrap();
         assert!(result.is_empty());
+    }
+
+    // #10343: a first page made up entirely of prereleases must not yield "no
+    // versions found" -- the fallback (bounded) follows the Link header to a later
+    // page that has a stable release. Forgejo paginates with limit=100.
+    #[tokio::test]
+    async fn test_list_releases_paginates_past_all_prerelease_first_page() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let repo = "owner/all-prerelease-first-page";
+
+        let page1 = vec![
+            release("v2.0.0-alpha.2", false, true),
+            release("v2.0.0-alpha.1", false, true),
+        ];
+        let page2 = vec![release("v1.0.0", false, false)];
+
+        let page1_mock = server
+            .mock("GET", format!("/repos/{repo}/releases").as_str())
+            .match_query(mockito::Matcher::UrlEncoded("limit".into(), "100".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/page2>; rel=\"next\"").as_str())
+            .with_body(serde_json::to_string(&page1).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let page2_mock = server
+            .mock("GET", "/page2")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&page2).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let releases = list_releases_(&base, repo).await.unwrap();
+        page1_mock.assert_async().await;
+        page2_mock.assert_async().await;
+        assert!(
+            releases
+                .iter()
+                .any(|r| r.tag_name == "v1.0.0" && !r.prerelease)
+        );
+    }
+
+    // #10343: once a stable release is seen the fallback stops (no extra requests).
+    #[tokio::test]
+    async fn test_list_releases_stops_when_first_page_has_stable() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let repo = "owner/stable-on-first-page";
+
+        let page1 = vec![
+            release("v1.1.0-alpha.1", false, true),
+            release("v1.0.0", false, false),
+        ];
+
+        let page1_mock = server
+            .mock("GET", format!("/repos/{repo}/releases").as_str())
+            .match_query(mockito::Matcher::UrlEncoded("limit".into(), "100".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/page2>; rel=\"next\"").as_str())
+            .with_body(serde_json::to_string(&page1).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        // A stable release is already present, so page 2 must NOT be fetched.
+        let page2_mock = server
+            .mock("GET", "/page2")
+            .with_status(200)
+            .with_body("[]")
+            .expect(0)
+            .create_async()
+            .await;
+
+        let releases = list_releases_(&base, repo).await.unwrap();
+        page1_mock.assert_async().await;
+        page2_mock.assert_async().await;
+        assert!(releases.iter().any(|r| r.tag_name == "v1.0.0"));
+    }
+
+    // #10343: the prerelease fallback is bounded to MAX_RELEASE_FALLBACK_PAGES pages.
+    #[tokio::test]
+    async fn test_list_releases_fallback_pagination_is_bounded() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let repo = "owner/all-prerelease-many-pages";
+
+        let body = || serde_json::to_string(&vec![release("v9.0.0-alpha", false, true)]).unwrap();
+
+        // Three all-prerelease pages, each linking to the next.
+        let p1 = server
+            .mock("GET", format!("/repos/{repo}/releases").as_str())
+            .match_query(mockito::Matcher::UrlEncoded("limit".into(), "100".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/p2>; rel=\"next\"").as_str())
+            .with_body(body())
+            .expect(1)
+            .create_async()
+            .await;
+        let p2 = server
+            .mock("GET", "/p2")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/p3>; rel=\"next\"").as_str())
+            .with_body(body())
+            .expect(1)
+            .create_async()
+            .await;
+        let p3 = server
+            .mock("GET", "/p3")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/p4>; rel=\"next\"").as_str())
+            .with_body(body())
+            .expect(1)
+            .create_async()
+            .await;
+        // The 4th page must never be requested (capped at MAX_RELEASE_FALLBACK_PAGES).
+        let p4 = server
+            .mock("GET", "/p4")
+            .with_status(200)
+            .with_body("[]")
+            .expect(0)
+            .create_async()
+            .await;
+
+        let releases = list_releases_(&base, repo).await.unwrap();
+        p1.assert_async().await;
+        p2.assert_async().await;
+        p3.assert_async().await;
+        p4.assert_async().await;
+        assert_eq!(releases.len(), 3);
     }
 }
