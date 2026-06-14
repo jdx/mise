@@ -48,3 +48,69 @@ run = "echo {{vars.derived}}"
 vars = { derived = "derived from {{vars.base}}" }
 EOF
 assert "mise run a" "derived from base_value"
+
+# Per-task var templates can reference mise env values
+cat <<EOF >mise.toml
+[env]
+greeting = "env-section"
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+
+[tasks.a.vars]
+greeting = "{{ env.greeting }}"
+EOF
+assert "mise run a" "env-section"
+
+# Config vars can preserve an existing non-empty env var with a fallback
+cat <<EOF >mise.toml
+[vars]
+greeting = { default = "hello" }
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+EOF
+assert "mise run a" "hello"
+greeting=hi assert "mise run a" "hi"
+greeting="" assert "mise run a" "hello"
+
+# Task vars defaults also read from the process environment, not [env]
+cat <<EOF >mise.toml
+[env]
+greeting = "env-section"
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+
+[tasks.a.vars]
+greeting = { default = "hello" }
+EOF
+assert "mise run a" "hello"
+greeting=hi assert "mise run a" "hi"
+
+# Task vars defaults override config-level vars when the process env is unset
+cat <<EOF >mise.toml
+[vars]
+greeting = "config"
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+
+[tasks.a.vars]
+greeting = { default = "task" }
+EOF
+assert "mise run a" "task"
+greeting=hi assert "mise run a" "hi"
+
+# Config vars defaults read from the process environment, not [env]
+cat <<EOF >mise.toml
+[env]
+greeting = "env-section"
+
+[vars]
+greeting = { default = "hello" }
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+EOF
+assert "mise run a" "hello"

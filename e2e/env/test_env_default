@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# Missing vars use the fallback
+cat <<'EOF' >mise.toml
+[env]
+FOO = { default = "fallback" }
+EOF
+assert_contains "mise env -s bash | grep FOO" "export FOO=fallback"
+
+# Existing non-empty vars are preserved
+cat <<'EOF' >mise.toml
+[env]
+FOO = { default = "fallback" }
+EOF
+FOO=existing assert "mise exec -- bash -c 'echo \$FOO'" "existing"
+
+# Existing empty vars use the fallback
+cat <<'EOF' >mise.toml
+[env]
+FOO = { default = "fallback" }
+EOF
+FOO='' assert "mise exec -- bash -c 'echo \$FOO'" "fallback"
+
+# Earlier config values are preserved
+cat <<'EOF' >mise.toml
+[[env]]
+FOO = "earlier"
+
+[[env]]
+FOO = { default = "fallback" }
+EOF
+assert_contains "mise env -s bash | grep FOO" "export FOO=earlier"
+
+# Later config values override defaults
+cat <<'EOF' >mise.toml
+[[env]]
+FOO = { default = "fallback" }
+
+[[env]]
+FOO = "later"
+EOF
+assert_contains "mise env -s bash | grep FOO" "export FOO=later"
+
+# tools=true defaults resolve in the tools env pass
+cat <<'EOF' >mise.toml
+[env]
+BASE_DIR = "/opt/tools"
+TOOL_BIN = { default = "$BASE_DIR/bin", tools = true }
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep TOOL_BIN" "export TOOL_BIN=/opt/tools/bin"
+
+# tools=true defaults preserve existing non-empty vars too
+cat <<'EOF' >mise.toml
+[env]
+TOOL_BIN = { default = "fallback", tools = true }
+EOF
+TOOL_BIN=existing assert "mise exec -- bash -c 'echo \$TOOL_BIN'" "existing"
+
+# Invalid combinations fail clearly
+cat <<'EOF' >mise.toml
+[env]
+FOO = { value = "x", default = "y" }
+EOF
+assert_fail_contains "mise env" "cannot have both 'value' and 'default'"
+
+cat <<'EOF' >mise.toml
+[env]
+FOO = { required = true, default = "y" }
+EOF
+assert_fail_contains "mise env" "cannot have both 'default' and 'required'"

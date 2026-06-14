@@ -118,6 +118,8 @@ pub struct EnvDirectiveOptions {
 pub enum EnvDirective {
     /// simple key/value pair
     Val(String, String, EnvDirectiveOptions),
+    /// use a fallback value if the key is not already set
+    Default(String, String, EnvDirectiveOptions),
     /// remove a key
     Rm(String, EnvDirectiveOptions),
     /// Required variable that must be defined elsewhere
@@ -150,6 +152,7 @@ impl EnvDirective {
     pub fn options(&self) -> &EnvDirectiveOptions {
         match self {
             EnvDirective::Val(_, _, opts)
+            | EnvDirective::Default(_, _, opts)
             | EnvDirective::Rm(_, opts)
             | EnvDirective::Required(_, opts)
             | EnvDirective::File(_, opts)
@@ -178,6 +181,7 @@ impl Display for EnvDirective {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
+            EnvDirective::Default(k, v, _) => write!(f, "{k} default={v}"),
             EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
             EnvDirective::Required(k, _) => write!(f, "{k} (required)"),
             EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
@@ -341,7 +345,7 @@ impl EnvResults {
                 .collect::<EnvMap>();
             ctx.insert("env", &env_vars);
 
-            let mut vars: EnvMap = if let Some(Value::Object(existing_vars)) = ctx.get("vars") {
+            let context_vars: EnvMap = if let Some(Value::Object(existing_vars)) = ctx.get("vars") {
                 existing_vars
                     .iter()
                     .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
@@ -350,6 +354,7 @@ impl EnvResults {
                 EnvMap::new()
             };
 
+            let mut vars = context_vars.clone();
             vars.extend(r.vars.iter().map(|(k, (v, _))| (k.clone(), v.clone())));
 
             ctx.insert("vars", &vars);
@@ -364,6 +369,41 @@ impl EnvResults {
                     } else {
                         r.env_remove.remove(&k);
                         // trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
+                        env.insert(k, (v, Some(source.clone())));
+                    }
+                }
+                EnvDirective::Default(k, v, _opts) => {
+                    if resolve_opts.vars {
+                        if let Some((v, _)) = r.vars.get(&k).filter(|(v, _)| !v.is_empty()) {
+                            if redact.unwrap_or(false) {
+                                r.redactions.push(k.clone());
+                            }
+                            r.vars.insert(k, (v.clone(), source.clone()));
+                            continue;
+                        }
+                        if let Some(v) = env::PRISTINE_ENV.get(&k).filter(|v| !v.is_empty()) {
+                            if redact.unwrap_or(false) {
+                                r.redactions.push(k.clone());
+                            }
+                            r.vars.insert(k, (v.clone(), source.clone()));
+                            continue;
+                        }
+                    } else if env.get(&k).is_some_and(|(v, _)| !v.is_empty()) {
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
+                        continue;
+                    }
+
+                    let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &v)?;
+
+                    if resolve_opts.vars {
+                        r.vars.insert(k, (v, source.clone()));
+                    } else {
+                        r.env_remove.remove(&k);
                         if redact.unwrap_or(false) {
                             r.redactions.push(k.clone());
                         }
@@ -628,6 +668,9 @@ impl EnvResults {
         for (directive, source) in input {
             match directive {
                 EnvDirective::Val(key, _, options) if options.required.is_required() => {
+                    required_vars.push((key.clone(), source.clone(), options.required.clone()));
+                }
+                EnvDirective::Default(key, _, options) if options.required.is_required() => {
                     required_vars.push((key.clone(), source.clone(), options.required.clone()));
                 }
                 EnvDirective::Required(key, options) => {

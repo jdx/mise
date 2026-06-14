@@ -807,6 +807,13 @@ vars = { e2e_args = '--headed' }
 
 The task-level `vars` override any config-level vars with the same name. In the example above, `e2e_args` resolves to `'--headed'` instead of the config-level `'--headless'`.
 
+Config vars can read from process environment variables when using the `default` form. If a process environment variable with the same name exists and is non-empty, its value is used; otherwise, the default is applied. Values from the `[env]` section are not used for this lookup.
+
+```toml
+[vars]
+e2e_args = { default = "--headless" }
+```
+
 Like `[env]`, vars can also be read in as a file:
 
 ```toml

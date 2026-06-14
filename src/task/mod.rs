@@ -1188,7 +1188,7 @@ impl Task {
         // Insert base vars first so that task-level var templates can reference them
         // (e.g. a task var `foo = "{{vars.bar}}"` can read a config-level `bar`).
         tera_ctx.insert("vars", &vars);
-        vars.extend(self.resolve_task_vars(config, ts, &tera_ctx).await?);
+        vars.extend(self.resolve_task_vars(config, &tera_ctx).await?);
         // Re-insert with task-level vars merged in so callers see the final combined map,
         // with task-level values taking precedence over config-level ones.
         tera_ctx.insert("vars", &vars);
@@ -1233,14 +1233,12 @@ impl Task {
     async fn resolve_task_vars(
         &self,
         config: &Arc<Config>,
-        ts: &Toolset,
         tera_ctx: &tera::Context,
     ) -> Result<IndexMap<String, String>> {
         if self.vars.0.is_empty() && self.overlay_vars.is_empty() {
             return Ok(IndexMap::new());
         }
 
-        let env_map = ts.full_env(config).await?;
         let mut directives: Vec<(EnvDirective, PathBuf)> = self
             .vars
             .0
@@ -1249,10 +1247,14 @@ impl Task {
             .map(|directive| (directive, self.config_source.clone()))
             .collect();
         directives.extend(self.overlay_vars.iter().cloned());
+        let template_env: EnvMap = tera_ctx
+            .get("env")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_else(|| env::PRISTINE_ENV.clone());
         let results = EnvResults::resolve(
             config,
             tera_ctx.clone(),
-            &env_map,
+            &template_env,
             directives,
             EnvResolveOptions {
                 vars: true,
