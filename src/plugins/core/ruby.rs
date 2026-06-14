@@ -437,8 +437,12 @@ impl RubyPlugin {
         Some(ProvenanceType::GithubAttestations)
     }
 
-    fn use_versions_host_for_precompiled_attestations(source: &str) -> bool {
+    fn is_default_ruby_source(source: &str) -> bool {
         source == DEFAULT_RUBY_PRECOMPILED_URL
+    }
+
+    fn use_versions_host_for_precompiled_attestations(source: &str) -> bool {
+        Self::is_default_ruby_source(source)
     }
 
     /// Check if precompiled binaries should be tried
@@ -557,11 +561,7 @@ impl RubyPlugin {
                     if let Some(end) = after.find('/') {
                         let tag = &after[..end];
                         // Check if this is a build revision of the version
-                        if tag != version
-                            && tag.starts_with(&format!("{version}-"))
-                            && let Some(suffix) = tag.strip_prefix(&format!("{version}-"))
-                            && suffix.parse::<u32>().is_ok()
-                        {
+                        if Self::is_build_revision_tag(version, tag) {
                             return Some(tag.to_string());
                         }
                     }
@@ -569,6 +569,15 @@ impl RubyPlugin {
             }
         }
         None
+    }
+
+    fn source_requires_build_revision(source: &str) -> bool {
+        Self::is_default_ruby_source(source)
+    }
+
+    fn is_build_revision_tag(version: &str, tag: &str) -> bool {
+        tag.strip_prefix(&format!("{version}-"))
+            .is_some_and(|suffix| suffix.parse::<u32>().is_ok())
     }
 
     /// Find precompiled asset from a GitHub repo's releases.
@@ -582,6 +591,7 @@ impl RubyPlugin {
         prefer_no_yjit: bool,
         locked_build_revision: Option<&str>,
     ) -> Result<Option<(String, Option<String>)>> {
+        let requires_build_revision = Self::source_requires_build_revision(repo);
         let release = if let Some(tag) = locked_build_revision {
             // Use the exact build revision from the lockfile
             debug!("using locked build revision {tag} for ruby {version}");
@@ -589,8 +599,14 @@ impl RubyPlugin {
                 Ok(r) => r,
                 Err(err) => {
                     debug!("locked build revision {tag} not found, finding latest: {err}");
-                    match github::get_release_with_build_revision(repo, version).await {
-                        Ok(r) => r,
+                    match github::get_release_with_build_revision_status(repo, version).await {
+                        Ok((r, found_build_revision)) => {
+                            if requires_build_revision && !found_build_revision {
+                                debug!("no build revision release found for ruby {version}");
+                                return Ok(None);
+                            }
+                            r
+                        }
                         Err(err) => {
                             debug!("no precompiled ruby found for {version}: {err}");
                             return Ok(None);
@@ -599,8 +615,14 @@ impl RubyPlugin {
                 }
             }
         } else {
-            match github::get_release_with_build_revision(repo, version).await {
-                Ok(r) => r,
+            match github::get_release_with_build_revision_status(repo, version).await {
+                Ok((r, found_build_revision)) => {
+                    if requires_build_revision && !found_build_revision {
+                        debug!("no build revision release found for ruby {version}");
+                        return Ok(None);
+                    }
+                    r
+                }
                 Err(err) => {
                     debug!("no precompiled ruby found for {version}: {err}");
                     return Ok(None);
@@ -1295,6 +1317,26 @@ mod tests {
         assert!(!RubyPlugin::use_versions_host_for_precompiled_attestations(
             "acme/ruby"
         ));
+    }
+
+    #[test]
+    fn test_ruby_default_precompiled_source_requires_build_revision() {
+        assert!(RubyPlugin::source_requires_build_revision(
+            DEFAULT_RUBY_PRECOMPILED_URL
+        ));
+        assert!(!RubyPlugin::source_requires_build_revision("acme/ruby"));
+    }
+
+    #[test]
+    fn test_ruby_build_revision_tags_are_numeric_suffixes() {
+        assert!(RubyPlugin::is_build_revision_tag("3.3.11", "3.3.11-1"));
+        assert!(RubyPlugin::is_build_revision_tag("3.3.11", "3.3.11-10"));
+        assert!(!RubyPlugin::is_build_revision_tag("3.3.11", "3.3.11"));
+        assert!(!RubyPlugin::is_build_revision_tag(
+            "3.3.11",
+            "3.3.11-preview1"
+        ));
+        assert!(!RubyPlugin::is_build_revision_tag("3.3.11", "3.3.10-1"));
     }
 
     #[test]

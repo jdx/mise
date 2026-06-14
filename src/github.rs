@@ -347,7 +347,8 @@ fn should_cache_release(release: &GithubRelease) -> bool {
 ///
 /// Build revisions use the pattern `{version}-{N}` where N is an incrementing integer.
 /// For example, given version "3.3.11", this will prefer tag "3.3.11-2" over "3.3.11-1"
-/// over "3.3.11". Returns the release with the highest build revision.
+/// over "3.3.11". Returns the release with the highest build revision and whether
+/// a numeric build revision tag was found.
 ///
 /// This is used by precompiled binary repos (e.g., jdx/ruby) where binaries may be
 /// rebuilt with different checksums while keeping the same upstream version.
@@ -356,12 +357,41 @@ fn should_cache_release(release: &GithubRelease) -> bool {
 /// when `MISE_LIST_ALL_VERSIONS` is not set. For repos with many releases, older versions
 /// may not be found, falling back to the exact version tag via `get_release`.
 #[cfg_attr(windows, allow(dead_code))]
-pub async fn get_release_with_build_revision(repo: &str, version: &str) -> Result<GithubRelease> {
+pub async fn get_release_with_build_revision_status(
+    repo: &str,
+    version: &str,
+) -> Result<(GithubRelease, bool)> {
     let releases = list_releases(repo).await?;
-    match pick_best_build_revision(releases, version) {
-        Some(release) => Ok(release),
-        None => get_release(repo, version).await,
+    match pick_best_numeric_build_revision(releases.clone(), version) {
+        Some(release) => Ok((release, true)),
+        None => match pick_best_build_revision(releases, version) {
+            Some(release) => Ok((release, false)),
+            None => Ok((get_release(repo, version).await?, false)),
+        },
     }
+}
+
+/// Select the highest numeric build revision for a given version.
+///
+/// Given releases with tags like "3.3.11", "3.3.11-1", "3.3.11-2", picks the
+/// highest numeric `-N` suffix and ignores the base version.
+#[cfg_attr(windows, allow(dead_code))]
+fn pick_best_numeric_build_revision(
+    releases: Vec<GithubRelease>,
+    version: &str,
+) -> Option<GithubRelease> {
+    let prefix = format!("{version}-");
+    releases
+        .into_iter()
+        .filter_map(|r| {
+            let revision = r
+                .tag_name
+                .strip_prefix(&prefix)
+                .and_then(|suffix| suffix.parse::<u32>().ok())?;
+            Some((revision, r))
+        })
+        .max_by_key(|(revision, _)| *revision)
+        .map(|(_, release)| release)
 }
 
 /// Select the release with the highest build revision for a given version.
@@ -909,6 +939,21 @@ something_else = "value"
         ];
         let best = pick_best_build_revision(releases, "3.3.11").unwrap();
         assert_eq!(best.tag_name, "3.3.11-2");
+    }
+
+    #[test]
+    fn test_numeric_build_revision_selects_highest_without_base_fallback() {
+        let releases = vec![
+            make_release("3.3.11"),
+            make_release("3.3.11-1"),
+            make_release("3.3.11-2"),
+            make_release("3.3.10-1"),
+        ];
+        let best = pick_best_numeric_build_revision(releases, "3.3.11").unwrap();
+        assert_eq!(best.tag_name, "3.3.11-2");
+
+        let releases = vec![make_release("3.3.11"), make_release("3.3.10-1")];
+        assert!(pick_best_numeric_build_revision(releases, "3.3.11").is_none());
     }
 
     #[test]
