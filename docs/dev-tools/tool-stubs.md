@@ -165,7 +165,7 @@ The generator automatically detects and extracts various archive formats:
 - `.tar.bz2` / `.tbz2` (bzip2 compressed tarballs)
 - `.tar.zst` / `.tzst` (zstd compressed tarballs)
 - `.zip` (zip archives)
-- `.7z` (7-zip archives, Windows only)
+- `.7z` (7-zip archives)
 
 ### Generated Stub Example
 

@@ -1069,16 +1069,7 @@ pub fn extract_archive(
         | ExtractionFormat::TarSz
         | ExtractionFormat::Raw => untar(archive, dest, format, opts),
         ExtractionFormat::Zip => unzip(archive, dest, opts),
-        ExtractionFormat::SevenZip => {
-            #[cfg(windows)]
-            {
-                return un7z(archive, dest, opts);
-            }
-            #[cfg(not(windows))]
-            {
-                bail!("7z format not supported on this platform");
-            }
-        }
+        ExtractionFormat::SevenZip => un7z(archive, dest, opts),
         ExtractionFormat::Gz
         | ExtractionFormat::Xz
         | ExtractionFormat::Bz2
@@ -1329,7 +1320,6 @@ pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
 pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()> {
     if let Some(pr) = &opts.pr {
         pr.set_message(format!(
@@ -1337,7 +1327,7 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
             archive.file_name().unwrap().to_string_lossy()
         ));
     }
-    sevenz_rust::decompress_file(archive, dest)
+    sevenz_rust2::decompress_file(archive, dest)
         .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
 
     if !opts.preserve_mtime {
@@ -1457,12 +1447,11 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
 }
 
 /// Adapted from inspect_tar_contents for 7z archives
-#[cfg(windows)]
 pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
-    let sevenz = sevenz_rust::SevenZReader::open(archive, sevenz_rust::Password::empty())?;
+    let sevenz = sevenz_rust2::Archive::open(archive)?;
     let mut top_level_components = std::collections::HashMap::new();
 
-    for file in &sevenz.archive().files {
+    for file in &sevenz.files {
         let path = PathBuf::from(file.name());
 
         // Get the first non-CurDir component of the path (top-level directory/file)
@@ -1479,11 +1468,6 @@ pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     }
 
     Ok(top_level_components.into_iter().collect())
-}
-
-#[cfg(not(windows))]
-pub fn inspect_7z_contents(_archive: &Path) -> Result<Vec<(String, bool)>> {
-    bail!("7z format not supported on this platform")
 }
 
 /// Determines if strip_components=1 should be applied based on archive structure
@@ -2264,6 +2248,39 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_archive_7z() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let src_dir = dir.path().join("src");
+        let pkg_dir = src_dir.join("pkg");
+        let archive_path = dir.path().join("test.7z");
+        let dest_dir = dir.path().join("out_dir");
+
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(pkg_dir.join("tool"), "hello world").unwrap();
+        sevenz_rust2::compress_to_path(&src_dir, &archive_path).unwrap();
+
+        let contents = inspect_7z_contents(&archive_path).unwrap();
+        assert!(contents.contains(&("pkg".to_string(), true)));
+        assert!(should_strip_components(&archive_path, ExtractionFormat::SevenZip).unwrap());
+
+        extract_archive(
+            &archive_path,
+            &dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions::default(),
+        )
+        .unwrap();
+
+        let extracted_path = dest_dir.join("pkg").join("tool");
+        assert!(extracted_path.exists());
+        assert!(extracted_path.is_file());
+        let content = std::fs::read_to_string(&extracted_path).unwrap();
+        assert_eq!(content, "hello world");
+    }
+
+    #[test]
     fn test_untar_rejects_single_file_compression() {
         use tempfile::tempdir;
 
@@ -2317,20 +2334,6 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("lz4 format not supported"));
-    }
-
-    #[cfg(not(windows))]
-    #[test]
-    fn test_should_strip_components_7z_errors_on_non_windows() {
-        use tempfile::NamedTempFile;
-
-        let archive = NamedTempFile::new().unwrap();
-        let err = should_strip_components(archive.path(), ExtractionFormat::SevenZip).unwrap_err();
-
-        assert!(
-            format!("{err:#}").contains("7z format not supported on this platform"),
-            "{err:#}"
-        );
     }
 
     #[tokio::test]
