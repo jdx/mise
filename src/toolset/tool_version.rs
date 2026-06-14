@@ -411,6 +411,36 @@ impl ToolVersion {
             }
             return Err(Self::no_versions_found(&backend, opts.before_date));
         }
+        // Rolling release channels (e.g. zig's "master") are moving pointers that
+        // mise must re-resolve to a concrete version -- like "latest" -- so they are
+        // not pinned forever. Mirror the "latest" fast paths: prefer an installed
+        // concrete version when not explicitly resolving latest (keeps hook-env /
+        // exec network-free), otherwise re-resolve the channel. (#10251)
+        if backend.is_rolling_channel(&v) {
+            // Reuse an installed build of THIS channel (e.g. a -dev nightly for
+            // zig@master), never an unrelated installed release, so we don't
+            // short-circuit zig@master to a stable version that happens to be
+            // installed.
+            if !opts.latest_versions
+                && !should_filter_installed_versions
+                && let Some(installed) = backend.latest_installed_channel_version(&v)
+            {
+                return build(installed);
+            }
+            if !is_offline
+                && let Some(concrete) = backend.resolve_channel_version(config, &v).await?
+            {
+                return build(concrete);
+            }
+            if opts.offline {
+                return build(v);
+            }
+            // Online but the channel did not resolve to a concrete version --
+            // either the index lacked the channel key, or the fetch failed
+            // transiently (resolve_channel_version maps both to Ok(None)). Fall
+            // through to normal resolution, which still matches the literal
+            // channel name in the backend's version list as before.
+        }
         if !opts.latest_versions {
             let matches = backend.list_installed_versions_matching(&v);
             if matches.contains(&v) {
