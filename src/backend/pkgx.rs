@@ -931,6 +931,7 @@ fn pkgx_arch_for_target(target: &PlatformTarget) -> String {
     }
 }
 
+#[cfg(any(unix, test))]
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
