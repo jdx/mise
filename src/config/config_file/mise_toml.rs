@@ -676,7 +676,7 @@ impl MiseToml {
                     base_env.insert(key.clone(), value.clone());
                 }
                 EnvDirective::Default(key, value, _) => {
-                    if !base_env.get(key).is_some_and(|v| !v.is_empty()) {
+                    if base_env.get(key).is_none_or(|v| v.is_empty()) {
                         base_env.insert(key.clone(), value.clone());
                     }
                 }

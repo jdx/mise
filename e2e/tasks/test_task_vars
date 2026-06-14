@@ -59,3 +59,17 @@ run = "echo {{vars.greeting}}"
 EOF
 assert "mise run a" "hello"
 greeting=hi assert "mise run a" "hi"
+greeting="" assert "mise run a" "hello"
+
+# Config vars defaults read from the process environment, not [env]
+cat <<EOF >mise.toml
+[env]
+greeting = "env-section"
+
+[vars]
+greeting = { default = "hello" }
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+EOF
+assert "mise run a" "hello"
