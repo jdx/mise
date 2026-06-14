@@ -1,5 +1,26 @@
 # Changelog
 
+## [2026.6.9](https://github.com/jdx/mise/compare/v2026.6.8..v2026.6.9) - 2026-06-14
+
+### Chore
+
+- **(ci)** revert idempotent release asset upload by @jdx in [#10433](https://github.com/jdx/mise/pull/10433)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (10)
+
+- [`UpCloudLtd/upcloud-cli`](https://github.com/UpCloudLtd/upcloud-cli)
+- [`dprint/dprint`](https://github.com/dprint/dprint)
+- [`j178/prek`](https://github.com/j178/prek)
+- [`jdx/hk`](https://github.com/jdx/hk)
+- [`jdx/mise`](https://github.com/jdx/mise)
+- [`jdx/usage`](https://github.com/jdx/usage)
+- [`pnpm/pnpm`](https://github.com/pnpm/pnpm)
+- [`reviewdog/nightly`](https://github.com/reviewdog/nightly)
+- [`suzuki-shunsuke/cmdx`](https://github.com/suzuki-shunsuke/cmdx)
+- [`twpayne/chezmoi`](https://github.com/twpayne/chezmoi)
+
 ## [2026.6.8](https://github.com/jdx/mise/compare/v2026.6.7..v2026.6.8) - 2026-06-14
 
 ### 🐛 Bug Fixes

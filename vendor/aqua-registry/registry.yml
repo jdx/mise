@@ -8350,8 +8350,6 @@ packages:
         overrides:
           - goos: windows
             format: zip
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: Version == "v3.32.0"
         asset: upcloud-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -8364,8 +8362,6 @@ packages:
         overrides:
           - goos: windows
             format: zip
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: "true"
         asset: upcloud-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -8380,8 +8376,6 @@ packages:
         overrides:
           - goos: windows
             format: zip
-        github_immutable_release: true
-        github_release_attestations: true
   - type: github_release
     repo_owner: Versent
     repo_name: saml2aws
@@ -34285,8 +34279,6 @@ packages:
           type: github_release
           asset: SHASUMS256.txt
           algorithm: sha256
-        github_immutable_release: true
-        github_release_attestations: true
   - type: github_release
     repo_owner: drlau
     repo_name: akashi
@@ -50248,8 +50240,6 @@ packages:
             format: zip
             files:
               - name: prek
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: "true"
         asset: prek-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -50273,8 +50263,6 @@ packages:
               - name: prek
         github_artifact_attestations:
           signer_workflow: j178/prek/.github/workflows/release.yml
-        github_immutable_release: true
-        github_release_attestations: true
   - type: github_release
     repo_owner: jacek-kurlit
     repo_name: pik
@@ -50746,8 +50734,6 @@ packages:
           - linux
           - darwin/arm64
           - windows
-        github_immutable_release: true
-        github_release_attestations: true
   - type: github_release
     repo_owner: jdx
     repo_name: mise
@@ -50852,8 +50838,6 @@ packages:
         supported_envs:
           - linux
           - darwin
-        github_immutable_release: true
-        github_release_attestations: true
         checksum:
           type: github_release
           asset: SHASUMS512.txt
@@ -50963,8 +50947,6 @@ packages:
         supported_envs:
           - linux
           - darwin
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: "true"
         asset: usage-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -50979,8 +50961,6 @@ packages:
             asset: usage-universal-{{.OS}}.{{.Format}}
           - goos: windows
             format: zip
-        github_immutable_release: true
-        github_release_attestations: true
   - type: github_release
     repo_owner: jedisct1
     repo_name: minisign
@@ -73721,8 +73701,6 @@ packages:
           amd64: x64
           darwin: macos
           windows: win
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: semver("<= 11.0.4")
         asset: pnpm-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -73737,8 +73715,6 @@ packages:
         overrides:
           - goos: windows
             format: zip
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: semver("<= 11.0.6")
         asset: pnpm-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -73755,8 +73731,6 @@ packages:
             format: zip
         github_artifact_attestations:
           signer_workflow: pnpm/pnpm/\.github/workflows/release\.yml
-        github_immutable_release: true
-        github_release_attestations: true
         supported_envs:
           - linux
           - windows
@@ -73785,8 +73759,6 @@ packages:
             format: zip
         github_artifact_attestations:
           signer_workflow: pnpm/pnpm/\.github/workflows/release\.yml
-        github_immutable_release: true
-        github_release_attestations: true
         supported_envs:
           - linux
           - windows
@@ -77044,8 +77016,6 @@ packages:
     description: reviewdog nightly releases
     asset: reviewdog_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
     format: tar.gz
-    github_immutable_release: true
-    github_release_attestations: true
     files:
       - name: reviewdog
     replacements:
@@ -87029,8 +86999,6 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
-        github_immutable_release: true
-        github_release_attestations: true
         overrides:
           - goos: windows
             format: zip
@@ -93454,8 +93422,6 @@ packages:
           - goos: windows
             format: zip
             asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: semver("<= 2.68.1")
         asset: chezmoi_{{trimV .Version}}_{{.OS}}-glibc_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -93483,8 +93449,6 @@ packages:
           - goos: windows
             format: zip
             asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: "true"
         asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -93501,8 +93465,6 @@ packages:
         overrides:
           - goos: windows
             format: zip
-        github_immutable_release: true
-        github_release_attestations: true
   - type: github_release
     repo_owner: txn2
     repo_name: kubefwd
