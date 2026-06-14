@@ -547,7 +547,8 @@ impl MiseToml {
     }
 
     /// Set `[bootstrap.brew.taps]."<owner>/<tap>" = "<url>"`, creating the
-    /// tables as needed.
+    /// tables as needed. Only used by the `#[cfg(unix)]` brew CLI commands.
+    #[cfg(unix)]
     pub fn update_bootstrap_brew_tap(&mut self, tap: &str, url: &str) -> eyre::Result<()> {
         self.bootstrap
             .get_or_insert_with(Default::default)
@@ -579,6 +580,7 @@ impl MiseToml {
         Ok(())
     }
 
+    #[cfg(unix)]
     pub fn remove_bootstrap_brew_tap(&mut self, tap: &str) -> eyre::Result<()> {
         if let Some(bootstrap) = &mut self.bootstrap {
             bootstrap.brew.taps.shift_remove(tap);

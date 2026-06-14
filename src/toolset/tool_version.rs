@@ -13,7 +13,7 @@ use crate::env;
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_source};
-use crate::lockfile::{CondaPackageInfo, LockfileTool, PlatformInfo};
+use crate::lockfile::{CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
 use console::style;
@@ -44,6 +44,8 @@ pub struct ToolVersion {
     pub install_path: Option<PathBuf>,
     /// Conda packages resolved during installation: (platform, basename) -> CondaPackageInfo
     pub conda_packages: BTreeMap<(String, String), CondaPackageInfo>,
+    /// pkgx packages resolved during installation: (platform, package@version) -> PkgxPackageInfo
+    pub pkgx_packages: BTreeMap<(String, String), PkgxPackageInfo>,
 }
 
 impl ToolVersion {
@@ -68,6 +70,7 @@ impl ToolVersion {
             lock_platforms: Default::default(),
             install_path: None,
             conda_packages: Default::default(),
+            pkgx_packages: Default::default(),
         }
     }
 
@@ -116,6 +119,15 @@ impl ToolVersion {
 
     fn with_before_date(mut self, before_date: Option<Timestamp>) -> Self {
         self.before_date = before_date;
+        self
+    }
+
+    /// Returns a copy locked to the exact resolved version, so `runtime_path()`
+    /// resolves to `install_path()` rather than a fuzzy runtime symlink (e.g.
+    /// `installs/python/3`). Used during postinstall so the hook sees the version
+    /// just installed, not a stale symlink target (#10347).
+    pub(crate) fn with_locked(mut self) -> Self {
+        self.locked = true;
         self
     }
 
@@ -398,6 +410,36 @@ impl ToolVersion {
                 return build(v);
             }
             return Err(Self::no_versions_found(&backend, opts.before_date));
+        }
+        // Rolling release channels (e.g. zig's "master") are moving pointers that
+        // mise must re-resolve to a concrete version -- like "latest" -- so they are
+        // not pinned forever. Mirror the "latest" fast paths: prefer an installed
+        // concrete version when not explicitly resolving latest (keeps hook-env /
+        // exec network-free), otherwise re-resolve the channel. (#10251)
+        if backend.is_rolling_channel(&v) {
+            // Reuse an installed build of THIS channel (e.g. a -dev nightly for
+            // zig@master), never an unrelated installed release, so we don't
+            // short-circuit zig@master to a stable version that happens to be
+            // installed.
+            if !opts.latest_versions
+                && !should_filter_installed_versions
+                && let Some(installed) = backend.latest_installed_channel_version(&v)
+            {
+                return build(installed);
+            }
+            if !is_offline
+                && let Some(concrete) = backend.resolve_channel_version(config, &v).await?
+            {
+                return build(concrete);
+            }
+            if opts.offline {
+                return build(v);
+            }
+            // Online but the channel did not resolve to a concrete version --
+            // either the index lacked the channel key, or the fetch failed
+            // transiently (resolve_channel_version maps both to Ok(None)). Fall
+            // through to normal resolution, which still matches the literal
+            // channel name in the backend's version list as before.
         }
         if !opts.latest_versions {
             let matches = backend.list_installed_versions_matching(&v);
@@ -795,6 +837,65 @@ mod tests {
         let runtime_path = tv.runtime_path();
         assert_eq!(runtime_path, install_path);
         assert!(runtime_path.is_dir());
+
+        Ok(())
+    }
+
+    #[test]
+    fn with_locked_runtime_path_uses_install_path_for_fuzzy_request() -> Result<()> {
+        reset_install_path_cache();
+
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "dummy-locked-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut backend = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short,
+            None,
+            BackendResolution::new(false),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join("dummy");
+
+        let install_path = backend.installs_path.join("3.14.6");
+        fs::create_dir_all(install_path.join("bin"))?;
+
+        // Reproduce the stale state during `mise up` (#10347): the fuzzy runtime
+        // symlink installs/dummy/3 still points at a previous version (3.13.9) while
+        // 3.14.6 is the version just installed -- runtime symlinks are only rebuilt
+        // after all installs finish. is_runtime_symlink() requires a "./" target; on
+        // Windows runtime symlinks are stored as a file containing the target.
+        let old_path = backend.installs_path.join("3.13.9");
+        fs::create_dir_all(old_path.join("bin"))?;
+        let runtime_link = backend.installs_path.join("3");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("./3.13.9", &runtime_link)?;
+        #[cfg(windows)]
+        fs::write(&runtime_link, "./3.13.9")?;
+
+        // Fuzzy request ("3") resolved to a concrete version ("3.14.6").
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "3".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "3.14.6".into());
+
+        // Without locking, runtime_path() follows the stale fuzzy runtime symlink, so
+        // it does NOT resolve to the version just installed -- the bug behavior. (This
+        // also self-checks the stale-symlink setup above.)
+        assert_ne!(tv.runtime_path(), install_path);
+
+        // with_locked() pins runtime_path() to the exact install just made, not the
+        // fuzzy runtime symlink, so the postinstall hook sees 3.14.6 (#10347).
+        assert_eq!(tv.clone().with_locked().runtime_path(), install_path);
+        assert_eq!(tv.clone().with_locked().runtime_path(), tv.install_path());
 
         Ok(())
     }

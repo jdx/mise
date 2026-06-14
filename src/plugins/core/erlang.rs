@@ -134,6 +134,7 @@ impl ErlangPlugin {
         ))
     }
 
+    #[cfg(linux)]
     fn linux_precompiled_cache_name(url: &str) -> String {
         url.strip_prefix("https://builds.hex.pm/builds/otp/")
             .unwrap_or(url)
