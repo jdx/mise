@@ -9,7 +9,6 @@ use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_json::Value;
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -755,29 +754,14 @@ impl EnvResults {
                         .get("env")
                         .and_then(|v| serde_json::from_value(v.clone()).ok())
                         .unwrap_or_default();
-                    let before_expand = output.clone();
                     let mut missing_vars = Vec::new();
-                    output = shellexpand::env_with_context_no_errors(&output, |var| match env_vars
-                        .get(var)
-                    {
-                        Some(v) => Some(Cow::Borrowed(v.as_str())),
-                        None => {
-                            missing_vars.push(var.to_string());
-                            None
-                        }
-                    })
-                    .into_owned();
+                    output = shell_expand_env(&output, &env_vars, &mut missing_vars);
                     for var in missing_vars {
-                        // Don't warn if the user provided a default via ${VAR:-...} or ${VAR-...}
-                        if !before_expand.contains(&format!("${{{var}:-"))
-                            && !before_expand.contains(&format!("${{{var}-"))
-                        {
-                            warn_once!(
-                                "env var '{var}' is not defined and will be left unexpanded. \
-                                 Use ${{{var}:-}} to default to an empty string and suppress \
-                                 this warning."
-                            );
-                        }
+                        warn_once!(
+                            "env var '{var}' is not defined and will be left unexpanded. \
+                             Use ${{{var}:-}} to default to an empty string and suppress \
+                             this warning."
+                        );
                     }
                 }
                 Some(false) => {}
@@ -803,6 +787,156 @@ impl EnvResults {
             && self.env_scripts.is_empty()
             && self.tool_add_paths.is_empty()
     }
+}
+
+fn shell_expand_env(
+    input: &str,
+    env_vars: &BTreeMap<String, String>,
+    missing_vars: &mut Vec<String>,
+) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut chars = input.char_indices().peekable();
+
+    while let Some((idx, ch)) = chars.next() {
+        if ch != '$' {
+            output.push(ch);
+            continue;
+        }
+
+        match chars.peek().copied() {
+            Some((_, '{')) => {
+                chars.next();
+                if let Some((end, expr)) = read_braced_expr(input, idx + 2) {
+                    output.push_str(&expand_braced_expr(
+                        expr,
+                        &input[idx..=end],
+                        env_vars,
+                        missing_vars,
+                    ));
+                    while chars.peek().is_some_and(|(i, _)| *i <= end) {
+                        chars.next();
+                    }
+                } else {
+                    output.push_str(&input[idx..]);
+                    break;
+                }
+            }
+            Some((_, next)) if is_var_start(next) => {
+                let start = chars.peek().map(|(i, _)| *i).unwrap_or(idx + 1);
+                let mut end = start;
+                while let Some((i, next)) = chars.peek().copied() {
+                    if is_var_char(next) {
+                        end = i + next.len_utf8();
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                let var = &input[start..end];
+                if let Some(value) = env_vars.get(var) {
+                    output.push_str(value);
+                } else {
+                    missing_vars.push(var.to_string());
+                    output.push_str(&input[idx..end]);
+                }
+            }
+            _ => output.push('$'),
+        }
+    }
+
+    output
+}
+
+fn read_braced_expr(input: &str, start: usize) -> Option<(usize, &str)> {
+    let mut depth = 1;
+    let mut command_depth = 0;
+    let mut chars = input[start..].char_indices().peekable();
+
+    while let Some((offset, ch)) = chars.next() {
+        let idx = start + offset;
+        if command_depth > 0 {
+            match ch {
+                '(' => command_depth += 1,
+                ')' => command_depth -= 1,
+                _ => {}
+            }
+            continue;
+        }
+
+        match ch {
+            '$' if chars.peek().is_some_and(|(_, next)| *next == '{') => {
+                chars.next();
+                depth += 1;
+            }
+            '$' if chars.peek().is_some_and(|(_, next)| *next == '(') => {
+                chars.next();
+                command_depth = 1;
+            }
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((idx, &input[start..idx]));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn expand_braced_expr(
+    expr: &str,
+    original: &str,
+    env_vars: &BTreeMap<String, String>,
+    missing_vars: &mut Vec<String>,
+) -> String {
+    let Some(var_end) = expr
+        .char_indices()
+        .take_while(|(_, ch)| is_var_char(*ch))
+        .last()
+        .map(|(idx, ch)| idx + ch.len_utf8())
+    else {
+        return original.to_string();
+    };
+
+    let var = &expr[..var_end];
+    if !var.chars().next().is_some_and(is_var_start) {
+        return original.to_string();
+    }
+
+    match expr.get(var_end..) {
+        Some("") => match env_vars.get(var) {
+            Some(value) => value.to_string(),
+            None => {
+                missing_vars.push(var.to_string());
+                original.to_string()
+            }
+        },
+        Some(rest) if rest.starts_with(":-") => {
+            let default = &rest[2..];
+            match env_vars.get(var) {
+                Some(value) if !value.is_empty() => value.to_string(),
+                _ => shell_expand_env(default, env_vars, missing_vars),
+            }
+        }
+        Some(rest) if rest.starts_with('-') => {
+            let default = &rest[1..];
+            match env_vars.get(var) {
+                Some(value) => value.to_string(),
+                None => shell_expand_env(default, env_vars, missing_vars),
+            }
+        }
+        _ => original.to_string(),
+    }
+}
+
+fn is_var_start(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphabetic()
+}
+
+fn is_var_char(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
 }
 
 impl Debug for EnvResults {
