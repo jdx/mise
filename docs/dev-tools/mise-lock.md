@@ -286,39 +286,18 @@ mise install
 
 ### Ruby Precompiled Build Revision Releases
 
-Precompiled Ruby binaries from `jdx/ruby` may publish rebuilt assets for the same Ruby version under build revision release tags such as `3.3.11-1`. The lockfile keeps `version = "3.3.11"` but records the selected build revision in the platform `url`.
-
-Those rebuilds are for changes to the portable binary package, not changes to
-Ruby's own version number. The `jdx/ruby` release history includes rebuilds for
-reasons such as:
-
-- native gem packaging fixes
-- CA certificate lookup fixes
-- RI documentation packaging changes
-- SLSA/provenance workflow fixes
-- mass regeneration of existing releases
-
-This list is not exhaustive.
-
-Without a `mise.lock`, mise uses the latest available precompiled build revision
-when resolving the install. That means reinstalling the same Ruby version later
-may pick up a newer rebuild if one was published. With a `mise.lock`, the
-platform URL pins the selected build revision.
-
-To see which revision a lockfile uses, check the release tag in the platform URL:
+Precompiled Ruby binaries can have build revision releases for the same Ruby
+version. The lockfile keeps `version = "3.3.11"` but pins the selected build
+revision in the platform `url`:
 
 ```toml
 url = "https://github.com/jdx/ruby/releases/download/3.3.11-1/ruby-3.3.11.x86_64_linux.tar.gz"
 ```
 
-Here `3.3.11-1` is build revision `1`; `3.3.11` without a suffix is the base release. If the lockfile already points at a build revision such as `3.3.11-1`, mise keeps using that exact revision for reproducibility. To move to the latest build revision for the same Ruby version, remove the Ruby entry (or the relevant platform URL) from `mise.lock`, then regenerate the lock entry and reinstall:
-
-```sh
-mise lock ruby
-mise install --force ruby
-```
-
-See [Ruby precompiled binaries](/lang/ruby.html#precompiled-binaries) for details.
+Here `3.3.11-1` is build revision `1`; `3.3.11` without a suffix is the base
+release. See [Ruby precompiled build revisions](/lang/ruby.html#precompiled-build-revisions)
+for details on why revisions exist, how unlocked installs behave, and how to
+update older lockfiles.
 
 ### Lockfile Conflicts
 
