@@ -2046,7 +2046,7 @@ pub trait GetMatchingExt<T> {
 /// Helper function to strip file extension from a task name
 /// e.g., "test.js" -> "test", "build" -> "build"
 /// Special case: hidden files like ".hidden" are preserved to avoid empty strings
-fn strip_extension(name: &str) -> &str {
+pub(crate) fn strip_extension(name: &str) -> &str {
     let result = name.rsplitn(2, '.').last().unwrap_or(name);
     // Don't strip extension if it would result in empty string (hidden files)
     if result.is_empty() { name } else { result }

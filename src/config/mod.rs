@@ -27,7 +27,7 @@ use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENA
 use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
-use crate::task::{Task, TaskTemplate};
+use crate::task::{Task, TaskTemplate, strip_extension};
 use crate::tera::{contains_template_syntax, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
@@ -2335,7 +2335,7 @@ async fn load_config_and_file_tasks(
 /// `load_tasks_in_dir`.
 fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -> Vec<Task> {
     let mut by_name: IndexMap<String, Task> = IndexMap::new();
-    for t in file_tasks {
+    for t in prefer_windows_file_task_siblings(file_tasks) {
         by_name.insert(t.name.clone(), t);
     }
     for t in config_tasks {
@@ -2346,6 +2346,83 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         }
     }
     by_name.into_values().collect()
+}
+
+fn prefer_windows_file_task_siblings(file_tasks: Vec<Task>) -> Vec<Task> {
+    if !cfg!(windows) {
+        return file_tasks;
+    }
+    prefer_windows_file_task_siblings_inner(file_tasks)
+}
+
+fn prefer_windows_file_task_siblings_inner(file_tasks: Vec<Task>) -> Vec<Task> {
+    let windows_exts = Settings::get()
+        .windows_executable_extensions
+        .iter()
+        .map(|ext| ext.to_lowercase())
+        .collect::<IndexSet<_>>();
+    let extensionless_task_stems = file_tasks
+        .iter()
+        .filter(|task| task.config_source.extension().is_none())
+        .map(|task| task.name.clone())
+        .collect::<IndexSet<_>>();
+    let mut windows_native_task_stem_counts = IndexMap::new();
+    for task in &file_tasks {
+        let Some(ext) = task
+            .config_source
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(str::to_lowercase)
+        else {
+            continue;
+        };
+        if windows_exts.contains(&ext) {
+            *windows_native_task_stem_counts
+                .entry(strip_task_extension(&task.name).to_string())
+                .or_insert(0) += 1;
+        }
+    }
+    let windows_takeover_stems = extensionless_task_stems
+        .iter()
+        .filter(|stem| windows_native_task_stem_counts.get(*stem) == Some(&1))
+        .cloned()
+        .collect::<IndexSet<_>>();
+
+    file_tasks
+        .into_iter()
+        .filter_map(|mut task| {
+            if task.config_source.extension().is_none()
+                && windows_takeover_stems.contains(task.name.as_str())
+            {
+                return None;
+            }
+            if task
+                .config_source
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| windows_exts.contains(&ext.to_lowercase()))
+            {
+                let stem = strip_task_extension(&task.name);
+                if windows_takeover_stems.contains(stem) {
+                    task.name = stem.to_string();
+                }
+            }
+            Some(task)
+        })
+        .collect()
+}
+
+fn strip_task_extension(name: &str) -> &str {
+    if let Some((prefix, task_part)) = name.rsplit_once(':') {
+        let task_without_ext = strip_extension(task_part);
+        if task_without_ext == task_part {
+            name
+        } else {
+            &name[..prefix.len() + 1 + task_without_ext.len()]
+        }
+    } else {
+        strip_extension(name)
+    }
 }
 
 async fn load_config_tasks(
@@ -2727,6 +2804,159 @@ mod tests {
     async fn test_load() {
         let config = Config::reset().await.unwrap();
         assert_debug_snapshot!(config);
+    }
+
+    #[test]
+    fn test_prefer_windows_file_task_siblings_keeps_windows_native_script() {
+        let file_tasks = vec![
+            Task {
+                name: "pkl:gen".to_string(),
+                config_source: PathBuf::from("mise-tasks/pkl/gen"),
+                ..Default::default()
+            },
+            Task {
+                name: "pkl:gen.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/pkl/gen.ps1"),
+                ..Default::default()
+            },
+        ];
+
+        let names = prefer_windows_file_task_siblings_inner(file_tasks)
+            .into_iter()
+            .map(|task| task.name)
+            .collect_vec();
+
+        assert_eq!(names, vec!["pkl:gen"]);
+    }
+
+    #[test]
+    fn test_prefer_windows_file_task_siblings_ignores_non_windows_extension() {
+        let file_tasks = vec![
+            Task {
+                name: "hello".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello"),
+                ..Default::default()
+            },
+            Task {
+                name: "hello.sh".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello.sh"),
+                ..Default::default()
+            },
+        ];
+
+        let names = prefer_windows_file_task_siblings_inner(file_tasks)
+            .into_iter()
+            .map(|task| task.name)
+            .collect_vec();
+
+        assert_eq!(names, vec!["hello", "hello.sh"]);
+    }
+
+    #[test]
+    fn test_prefer_windows_file_task_siblings_preserves_toml_overlay_stem() {
+        let file_tasks = vec![
+            Task {
+                name: "hello".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello"),
+                ..Default::default()
+            },
+            Task {
+                name: "hello.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello.ps1"),
+                ..Default::default()
+            },
+        ];
+        let config_tasks = vec![Task {
+            name: "hello".to_string(),
+            description: "windows task metadata".to_string(),
+            ..Default::default()
+        }];
+
+        let tasks = merge_file_and_config_tasks(
+            prefer_windows_file_task_siblings_inner(file_tasks),
+            config_tasks,
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello");
+        assert_eq!(
+            tasks[0].config_source,
+            PathBuf::from("mise-tasks/hello.ps1")
+        );
+        assert_eq!(tasks[0].description, "windows task metadata");
+    }
+
+    #[test]
+    fn test_prefer_windows_file_task_siblings_keeps_exact_stem_for_matching() {
+        use crate::task::GetMatchingExt;
+
+        let file_tasks = vec![
+            Task {
+                name: "hello".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello"),
+                ..Default::default()
+            },
+            Task {
+                name: "hello.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello.ps1"),
+                ..Default::default()
+            },
+            Task {
+                name: "hello.sh".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello.sh"),
+                ..Default::default()
+            },
+        ];
+        let tasks = prefer_windows_file_task_siblings_inner(file_tasks)
+            .into_iter()
+            .map(|task| (task.name.clone(), task))
+            .collect::<BTreeMap<_, _>>();
+
+        let matches = tasks.get_matching("hello").unwrap();
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(
+            matches[0].config_source,
+            PathBuf::from("mise-tasks/hello.ps1")
+        );
+    }
+
+    #[test]
+    fn test_prefer_windows_file_task_siblings_keeps_ambiguous_windows_siblings() {
+        let file_tasks = vec![
+            Task {
+                name: "hello".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello"),
+                ..Default::default()
+            },
+            Task {
+                name: "hello.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello.ps1"),
+                ..Default::default()
+            },
+            Task {
+                name: "hello.cmd".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello.cmd"),
+                ..Default::default()
+            },
+        ];
+
+        let tasks = prefer_windows_file_task_siblings_inner(file_tasks);
+        let task_names = tasks.iter().map(|task| task.name.as_str()).collect_vec();
+        let task_sources = tasks
+            .iter()
+            .map(|task| task.config_source.as_path())
+            .collect_vec();
+
+        assert_eq!(task_names, vec!["hello", "hello.ps1", "hello.cmd"]);
+        assert_eq!(
+            task_sources,
+            vec![
+                Path::new("mise-tasks/hello"),
+                Path::new("mise-tasks/hello.ps1"),
+                Path::new("mise-tasks/hello.cmd"),
+            ]
+        );
     }
 
     #[test]
