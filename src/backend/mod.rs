@@ -1931,8 +1931,17 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         script: &str,
     ) -> eyre::Result<()> {
+        // Resolve the hook against the exact version just installed (locked) rather
+        // than the request's runtime symlink: for a fuzzy request (e.g. `version = "3"`)
+        // the runtime symlink (installs/python/3) still points at the previous version
+        // until all installs finish and symlinks are rebuilt. Without this, both the
+        // hook's env (exec_env, e.g. a backend deriving PYTHONHOME/JAVA_HOME from
+        // runtime_path()) and its PATH (list_bin_paths, e.g. `pip`) would resolve to a
+        // stale install (#10347).
+        let tv_exact = tv.clone().with_locked();
+
         // Get pre-tools environment variables from config
-        let mut env_vars = self.exec_env(&ctx.config, &ctx.ts, tv).await?;
+        let mut env_vars = self.exec_env(&ctx.config, &ctx.ts, &tv_exact).await?;
 
         // Add pre-tools environment variables from config if available
         if let Some(config_env) = ctx.config.env_maybe() {
@@ -1944,8 +1953,8 @@ pub trait Backend: Debug + Send + Sync {
 
         // Use the backend's list_bin_paths to get the correct binary directories
         // instead of hardcoding install_path/bin, which may not match the actual
-        // binary location for backends like aqua
-        let bin_paths = self.list_bin_paths(&ctx.config, tv).await?;
+        // binary location for backends like aqua.
+        let bin_paths = self.list_bin_paths(&ctx.config, &tv_exact).await?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
         for p in bin_paths {
             path_env.add(p);

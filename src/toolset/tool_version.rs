@@ -122,6 +122,15 @@ impl ToolVersion {
         self
     }
 
+    /// Returns a copy locked to the exact resolved version, so `runtime_path()`
+    /// resolves to `install_path()` rather than a fuzzy runtime symlink (e.g.
+    /// `installs/python/3`). Used during postinstall so the hook sees the version
+    /// just installed, not a stale symlink target (#10347).
+    pub(crate) fn with_locked(mut self) -> Self {
+        self.locked = true;
+        self
+    }
+
     fn from_lockfile(request: ToolRequest, lt: LockfileTool) -> Self {
         let mut tv = Self::new(request, lt.version);
         tv.locked = true;
@@ -798,6 +807,65 @@ mod tests {
         let runtime_path = tv.runtime_path();
         assert_eq!(runtime_path, install_path);
         assert!(runtime_path.is_dir());
+
+        Ok(())
+    }
+
+    #[test]
+    fn with_locked_runtime_path_uses_install_path_for_fuzzy_request() -> Result<()> {
+        reset_install_path_cache();
+
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "dummy-locked-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut backend = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short,
+            None,
+            BackendResolution::new(false),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join("dummy");
+
+        let install_path = backend.installs_path.join("3.14.6");
+        fs::create_dir_all(install_path.join("bin"))?;
+
+        // Reproduce the stale state during `mise up` (#10347): the fuzzy runtime
+        // symlink installs/dummy/3 still points at a previous version (3.13.9) while
+        // 3.14.6 is the version just installed -- runtime symlinks are only rebuilt
+        // after all installs finish. is_runtime_symlink() requires a "./" target; on
+        // Windows runtime symlinks are stored as a file containing the target.
+        let old_path = backend.installs_path.join("3.13.9");
+        fs::create_dir_all(old_path.join("bin"))?;
+        let runtime_link = backend.installs_path.join("3");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("./3.13.9", &runtime_link)?;
+        #[cfg(windows)]
+        fs::write(&runtime_link, "./3.13.9")?;
+
+        // Fuzzy request ("3") resolved to a concrete version ("3.14.6").
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "3".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "3.14.6".into());
+
+        // Without locking, runtime_path() follows the stale fuzzy runtime symlink, so
+        // it does NOT resolve to the version just installed -- the bug behavior. (This
+        // also self-checks the stale-symlink setup above.)
+        assert_ne!(tv.runtime_path(), install_path);
+
+        // with_locked() pins runtime_path() to the exact install just made, not the
+        // fuzzy runtime symlink, so the postinstall hook sees 3.14.6 (#10347).
+        assert_eq!(tv.clone().with_locked().runtime_path(), install_path);
+        assert_eq!(tv.clone().with_locked().runtime_path(), tv.install_path());
 
         Ok(())
     }
