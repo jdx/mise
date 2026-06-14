@@ -27,8 +27,7 @@ NODE_ENV = { default = "development" }
 ```
 
 This keeps `NODE_ENV` if it was already set before mise ran or by an earlier config file. If it is unset or empty, mise sets it to `"development"`.
-
-Boolean defaults are values: `FOO = { default = false }` sets `FOO` to `"false"` when the fallback is used. Only top-level `FOO = false` unsets an environment variable.
+Defaults can be strings or integers.
 
 You can also use the CLI to get/set env vars:
 

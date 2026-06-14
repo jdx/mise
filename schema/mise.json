@@ -114,7 +114,16 @@
       "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
     },
     "env_default": {
-      "$ref": "#/$defs/env_value",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "fallback value to use when the environment variable is unset or empty"
+        },
+        {
+          "type": "integer",
+          "description": "fallback value to use when the environment variable is unset or empty"
+        }
+      ],
       "description": "fallback value to use when the environment variable is unset or empty"
     },
     "env_age": {

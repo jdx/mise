@@ -1625,11 +1625,11 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     }
                                 }
 
-                                fn into_default_string(self) -> String {
+                                fn into_default_string(self) -> Option<String> {
                                     match self {
-                                        PrimitiveVal::Str(s) => s,
-                                        PrimitiveVal::Int(i) => i.to_string(),
-                                        PrimitiveVal::Bool(b) => b.to_string(),
+                                        PrimitiveVal::Str(s) => Some(s),
+                                        PrimitiveVal::Int(i) => Some(i.to_string()),
+                                        PrimitiveVal::Bool(_) => None,
                                     }
                                 }
                             }
@@ -1743,11 +1743,15 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         None => EnvDirective::Rm(key, options),
                                     }
                                 }
-                                Val::DefaultMap { default, options } => EnvDirective::Default(
-                                    key,
-                                    default.into_default_string(),
-                                    options,
-                                ),
+                                Val::DefaultMap { default, options } => {
+                                    let Some(default) = default.into_default_string() else {
+                                        return Err(serde::de::Error::custom(format!(
+                                            "Environment variable '{}' default cannot be a boolean. Use a string or integer fallback instead.",
+                                            key
+                                        )));
+                                    };
+                                    EnvDirective::Default(key, default, options)
+                                }
                                 Val::OptionsOnly { options } => {
                                     // No value provided - this creates a required variable that must be defined elsewhere
                                     if !options.required.is_required() {
@@ -2834,13 +2838,11 @@ run = 'echo "template"'
         [env]
         foo1 = { default = "fallback" }
         foo2 = { default = 2, tools = true }
-        foo3 = { default = false, redact = true }
         "#}
         .to_string();
         assert_snapshot!(parse_env(toml), @r#"
         foo1 default=fallback
         foo2 default=2
-        foo3 default=false
         "#);
     }
 
@@ -2861,6 +2863,8 @@ run = 'echo "template"'
             err.contains("cannot have both 'age' and 'default'"),
             "{err}"
         );
+        let err = parse_error("[env]\nFOO = { default = false }\n");
+        assert!(err.contains("default cannot be a boolean"), "{err}");
     }
 
     #[test]

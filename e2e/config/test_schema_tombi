@@ -169,9 +169,11 @@ cat >"$HOME/workdir/mise-bad-env-default.toml" <<'TOML'
 VALUE_AND_DEFAULT = { value = "x", default = "y" }
 REQUIRED_AND_DEFAULT = { required = true, default = "y" }
 AGE_AND_DEFAULT = { age = "AGE-SECRET", default = "y" }
+BOOL_DEFAULT = { default = false }
 
 [vars]
 VALUE_AND_DEFAULT = { value = "x", default = "y" }
+BOOL_DEFAULT = { default = false }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-env-default.toml"
