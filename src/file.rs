@@ -1328,7 +1328,10 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
         ));
     }
     sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
-        let dest_path = dest.join(normalize_7z_entry_path(entry.name()));
+        let dest_path = dest.join(
+            sanitize_7z_entry_path(entry.name())
+                .map_err(|err| sevenz_rust2::Error::Other(format!("{err:#}").into()))?,
+        );
         sevenz_rust2::default_entry_extract_fn(entry, reader, &dest_path)
     })
     .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
@@ -1345,8 +1348,23 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
     })
 }
 
-fn normalize_7z_entry_path(path: &str) -> PathBuf {
-    PathBuf::from(path.replace('\\', "/"))
+fn sanitize_7z_entry_path(path: &str) -> Result<PathBuf> {
+    let normalized = PathBuf::from(path.replace('\\', "/"));
+    let mut safe_path = PathBuf::new();
+
+    for component in normalized.components() {
+        match component {
+            std::path::Component::Normal(part) => safe_path.push(part),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => {
+                bail!("7z archive entry path escapes extraction directory: {path}")
+            }
+        }
+    }
+
+    Ok(safe_path)
 }
 
 pub fn split_file_name(path: &Path) -> (String, String) {
@@ -1459,7 +1477,7 @@ pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     let mut top_level_components = std::collections::HashMap::new();
 
     for file in &sevenz.files {
-        let path = normalize_7z_entry_path(file.name());
+        let path = sanitize_7z_entry_path(file.name())?;
 
         // Get the first non-CurDir component of the path (top-level directory/file)
         let mut components = skip_curdir_components(&path);
@@ -2267,6 +2285,12 @@ mod tests {
         let stripped_dest_dir = dir.path().join("stripped_out_dir");
         let backslash_archive_path = dir.path().join("backslash.7z");
         let backslash_dest_dir = dir.path().join("backslash_out_dir");
+        let traversal_archive_path = dir.path().join("traversal.7z");
+        let traversal_dest_dir = dir.path().join("traversal_out_dir");
+        let traversal_target_path = dir.path().join("traversal_target");
+        let absolute_archive_path = dir.path().join("absolute.7z");
+        let absolute_dest_dir = dir.path().join("absolute_out_dir");
+        let absolute_target_path = dir.path().join("absolute_target");
 
         std::fs::create_dir_all(&pkg_dir).unwrap();
         std::fs::write(pkg_dir.join("tool"), "hello world").unwrap();
@@ -2341,6 +2365,52 @@ mod tests {
         assert!(!backslash_dest_dir.join("pkg").exists());
         let content = std::fs::read_to_string(&backslash_stripped_path).unwrap();
         assert_eq!(content, "hello world");
+
+        let mut traversal_archive =
+            sevenz_rust2::ArchiveWriter::create(&traversal_archive_path).unwrap();
+        traversal_archive
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry::new_file("../traversal_target"),
+                Some(Cursor::new(b"malicious")),
+            )
+            .unwrap();
+        traversal_archive.finish().unwrap();
+
+        let err = extract_archive(
+            &traversal_archive_path,
+            &traversal_dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions::default(),
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("escapes extraction directory"),
+            "{err:#}"
+        );
+        assert!(!traversal_target_path.exists());
+
+        let mut absolute_archive =
+            sevenz_rust2::ArchiveWriter::create(&absolute_archive_path).unwrap();
+        absolute_archive
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry::new_file(&absolute_target_path.to_string_lossy()),
+                Some(Cursor::new(b"malicious")),
+            )
+            .unwrap();
+        absolute_archive.finish().unwrap();
+
+        let err = extract_archive(
+            &absolute_archive_path,
+            &absolute_dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions::default(),
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("escapes extraction directory"),
+            "{err:#}"
+        );
+        assert!(!absolute_target_path.exists());
     }
 
     #[test]
