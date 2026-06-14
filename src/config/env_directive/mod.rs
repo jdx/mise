@@ -263,8 +263,6 @@ pub struct EnvResolveOptions {
     pub vars: bool,
     pub tools: ToolsFilter,
     pub warn_on_missing_required: bool,
-    pub preserve_context_vars: bool,
-    pub default_env: Option<EnvMap>,
 }
 
 impl EnvResults {
@@ -377,24 +375,7 @@ impl EnvResults {
                             r.vars.insert(k, (v.clone(), source.clone()));
                             continue;
                         }
-                        if resolve_opts.preserve_context_vars
-                            && let Some(v) = context_vars.get(&k).filter(|v| !v.is_empty())
-                        {
-                            if redact.unwrap_or(false) {
-                                r.redactions.push(k.clone());
-                            }
-                            r.vars.insert(k, (v.clone(), source.clone()));
-                            continue;
-                        }
-                        if let Some(default_env) = resolve_opts.default_env.as_ref() {
-                            if let Some(v) = default_env.get(&k).filter(|v| !v.is_empty()) {
-                                if redact.unwrap_or(false) {
-                                    r.redactions.push(k.clone());
-                                }
-                                r.vars.insert(k, (v.to_string(), source.clone()));
-                                continue;
-                            }
-                        } else if let Some((v, _)) = env.get(&k).filter(|(v, _)| !v.is_empty()) {
+                        if let Some(v) = env::PRISTINE_ENV.get(&k).filter(|v| !v.is_empty()) {
                             if redact.unwrap_or(false) {
                                 r.redactions.push(k.clone());
                             }

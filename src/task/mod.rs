@@ -1260,8 +1260,6 @@ impl Task {
                 vars: true,
                 tools: ToolsFilter::NonToolsOnly,
                 warn_on_missing_required: false,
-                preserve_context_vars: false,
-                default_env: Some(env::PRISTINE_ENV.clone()),
             },
         )
         .await?;
@@ -1695,8 +1693,6 @@ impl Task {
                 vars: false,
                 tools: ToolsFilter::Both,
                 warn_on_missing_required: false,
-                preserve_context_vars: false,
-                default_env: None,
             },
         )
         .await?;
