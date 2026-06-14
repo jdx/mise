@@ -80,6 +80,7 @@ aws-sdk-s3 = { version = "1", default-features = false, features = [
   "default-https-client",
 ] }
 base64 = "0.22"
+bytesize = "2"
 bzip2 = "0.6"
 calm_io = "0.1"
 chrono = { version = "0.4", default-features = false, features = [
@@ -113,7 +114,6 @@ globset = "0.4"
 ignore = { version = "0.4", features = [] }
 heck = "0.5"
 hex = "0.4"
-humansize = "2"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 clx = "2"
@@ -128,7 +128,6 @@ miette = { version = "7", features = ["fancy"] }
 netrc-rs = "0.1"
 nodejs-semver = "4.2"
 num_cpus = "1"
-number_prefix = "0.4"
 once_cell = "1"
 openssl = { version = "0.10", optional = true }
 os-release = "0.1"

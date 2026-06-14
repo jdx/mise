@@ -1270,9 +1270,9 @@ dependencies = [
 
 [[package]]
 name = "bytesize"
-version = "2.3.1"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bd91ee7b2422bcb158d90ef4d14f75ef67f340943fc4149891dcce8f8b972a3"
+checksum = "49e78e506b9d7633710dab98996f22f95f3d0f488e8f1aa162830556ed9fc14d"
 
 [[package]]
 name = "bzip2"
@@ -5319,6 +5319,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "built",
+ "bytesize",
  "bzip2 0.6.1",
  "calm_io",
  "cfg_aliases",
@@ -5353,7 +5354,6 @@ dependencies = [
  "heck",
  "hex",
  "homedir",
- "humansize",
  "ignore",
  "indenter",
  "indexmap 2.14.0",
@@ -5374,7 +5374,6 @@ dependencies = [
  "nix 0.31.3",
  "nodejs-semver",
  "num_cpus",
- "number_prefix",
  "once_cell",
  "openssl",
  "os-release",
@@ -5790,12 +5789,6 @@ dependencies = [
  "hermit-abi",
  "libc",
 ]
-
-[[package]]
-name = "number_prefix"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
 
 [[package]]
 name = "object"
