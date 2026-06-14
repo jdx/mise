@@ -284,6 +284,25 @@ mise uninstall --all
 mise install
 ```
 
+### GitHub Build Revision Releases
+
+Some GitHub tools, including `github:jdx/mise`, may publish rebuilt assets for the same version under build revision release tags such as `v2026.6.6-1`. The lockfile keeps `version = "2026.6.6"` but records the selected build revision in the platform `url`.
+
+To see which revision a lockfile uses, check the release tag in the platform URL:
+
+```toml
+url = "https://github.com/jdx/mise/releases/download/v2026.6.6-1/mise-v2026.6.6-linux-x64.tar.gz"
+```
+
+Here `v2026.6.6-1` is build revision `1`; `v2026.6.6` without a suffix is the base release. To move an older lockfile to the latest build revision for the same version:
+
+```sh
+mise lock github:jdx/mise
+mise install --force github:jdx/mise
+```
+
+See [GitHub backend build revision releases](/dev-tools/backends/github.html#build-revision-releases) for details.
+
 ### Lockfile Conflicts
 
 When merging branches with different lockfiles:
