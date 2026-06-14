@@ -5,23 +5,23 @@ mise can declare macOS user defaults (preferences) in the
 `mise bootstrap macos-defaults apply`:
 
 ```toml
-[bootstrap.macos.dock]
+[bootstrap.macos.defaults.dock]
 autohide = true
 orientation = "left"
 tilesize = 48
 show_recents = false
 
-[bootstrap.macos.finder]
+[bootstrap.macos.defaults.finder]
 show_all_files = true
 show_pathbar = true
 preferred_view_style = "list"
 
-[bootstrap.macos.keyboard]
+[bootstrap.macos.defaults.keyboard]
 key_repeat = 2
 initial_key_repeat = 15
 press_and_hold = false
 
-[bootstrap.macos.trackpad]
+[bootstrap.macos.defaults.trackpad]
 tap_to_click = true
 
 [bootstrap.macos.defaults]
@@ -37,7 +37,7 @@ override a global raw default for the same pair.
 
 ## Friendly sections
 
-`[bootstrap.macos.dock]` supports:
+`[bootstrap.macos.defaults.dock]` supports:
 
 | Key             | Raw default                    |
 | --------------- | ------------------------------ |
@@ -51,7 +51,7 @@ override a global raw default for the same pair.
 
 `orientation` must be `bottom`, `left`, or `right`.
 
-`[bootstrap.macos.finder]` supports:
+`[bootstrap.macos.defaults.finder]` supports:
 
 | Key                       | Raw default                                       |
 | ------------------------- | ------------------------------------------------- |
@@ -63,7 +63,7 @@ override a global raw default for the same pair.
 
 `preferred_view_style` must be `icon`, `list`, `column`, or `gallery`.
 
-`[bootstrap.macos.keyboard]` supports:
+`[bootstrap.macos.defaults.keyboard]` supports:
 
 | Key                  | Raw default                                 |
 | -------------------- | ------------------------------------------- |
@@ -72,7 +72,7 @@ override a global raw default for the same pair.
 | `press_and_hold`     | `NSGlobalDomain.ApplePressAndHoldEnabled`   |
 | `fn_state`           | `NSGlobalDomain.com.apple.keyboard.fnState` |
 
-`[bootstrap.macos.trackpad]` supports:
+`[bootstrap.macos.defaults.trackpad]` supports:
 
 | Key                 | Raw defaults                                                                                                                              |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
