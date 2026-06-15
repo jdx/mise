@@ -216,6 +216,7 @@ impl LinuxOsRelease {
         })
     }
 
+    #[cfg(target_os = "linux")]
     fn ids(&self) -> impl Iterator<Item = &str> {
         std::iter::once(self.id.as_str()).chain(self.id_like.iter().map(String::as_str))
     }
@@ -303,7 +304,13 @@ pub fn detect_libc() -> Option<&'static str> {
 
 #[cfg(target_os = "linux")]
 fn musl_from_os_release(path: &str) -> Option<bool> {
-    let release = read_linux_os_release(path)?;
+    let parsed_release;
+    let release = if path == "/etc/os-release" {
+        linux_os_release()?
+    } else {
+        parsed_release = read_linux_os_release(path)?;
+        &parsed_release
+    };
     // Known musl-libc distros. Compat shims (gcompat) don't change this — the
     // underlying libc is still musl.
     const MUSL_DISTROS: &[&str] = &["alpine", "postmarketos", "chimera"];
