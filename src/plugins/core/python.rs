@@ -11,7 +11,7 @@ use crate::file::{ExtractOptions, ExtractionFormat, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::lockfile::{InstallMethod, PlatformInfo, ProvenanceType};
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
@@ -856,10 +856,20 @@ impl Backend for PythonPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        if cfg!(windows) || Settings::get().python.compile != Some(true) {
-            self.install_precompiled(ctx, &mut tv).await?;
+        let locked_install_method = if ctx.locked {
+            tv.lock_platforms
+                .get(&self.get_platform_key())
+                .and_then(|pi| pi.install_method)
         } else {
+            None
+        };
+        if !cfg!(windows)
+            && (locked_install_method == Some(InstallMethod::Compile)
+                || Settings::get().python.compile == Some(true))
+        {
             self.install_compiled(ctx, &tv).await?;
+        } else {
+            self.install_precompiled(ctx, &mut tv).await?;
         }
         self.test_python(&ctx.config, &tv, ctx.pr.as_ref()).await?;
         if let Err(e) = self.get_virtualenv(&ctx.config, &tv).await {
@@ -924,25 +934,26 @@ impl Backend for PythonPlugin {
     fn resolve_lockfile_options(
         &self,
         request: &ToolRequest,
-        target: &PlatformTarget,
+        _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
-        let is_current_platform = target.is_current();
-
-        // Only include compile option if true (non-default)
-        let compile = if is_current_platform {
-            settings.python.compile.unwrap_or(false)
-        } else {
-            false
-        };
-        if compile {
-            opts.insert("compile".to_string(), "true".to_string());
+        let compile = settings.python.compile;
+        match compile {
+            Some(true) => {
+                opts.insert("compile".to_string(), "true".to_string());
+            }
+            Some(false) => {
+                opts.insert("compile".to_string(), "false".to_string());
+            }
+            None => {
+                opts.insert("compile".to_string(), "if_available".to_string());
+            }
         }
 
         // Include precompiled options for all platforms to avoid splitting
         // lockfile entries between host and non-host platforms (#8390)
-        if !compile {
+        if compile != Some(true) {
             if let Some(arch) = settings.python.precompiled_arch.clone() {
                 opts.insert("precompiled_arch".to_string(), arch);
             }
@@ -965,11 +976,29 @@ impl Backend for PythonPlugin {
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         let version = &tv.version;
+        let compile = Settings::get().python.compile;
+
+        if compile == Some(true) && target.os_name() != "windows" {
+            return Ok(PlatformInfo {
+                install_method: Some(InstallMethod::Compile),
+                ..Default::default()
+            });
+        }
 
         // Look up the precompiled release for this version and target platform
         let Some((tag, filename)) = self.fetch_precompiled_for_target(version, target).await?
         else {
-            return Ok(PlatformInfo::default());
+            return Ok(if compile == Some(false) || target.os_name() == "windows" {
+                PlatformInfo {
+                    install_method: Some(InstallMethod::Precompiled),
+                    ..Default::default()
+                }
+            } else {
+                PlatformInfo {
+                    install_method: Some(InstallMethod::Compile),
+                    ..Default::default()
+                }
+            });
         };
 
         let url = format!(
@@ -986,6 +1015,7 @@ impl Backend for PythonPlugin {
         let provenance = self.detect_precompiled_provenance();
 
         Ok(PlatformInfo {
+            install_method: Some(InstallMethod::Precompiled),
             url: Some(url),
             checksum,
             provenance,
