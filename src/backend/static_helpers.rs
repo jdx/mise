@@ -55,18 +55,45 @@ pub async fn fetch_checksum_from_shasums(shasums_url: &str, filename: &str) -> O
 /// * `None` if the checksum file couldn't be fetched
 pub async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
     match HTTP.get_text(checksum_url).await {
-        Ok(content) => {
-            // Format is typically "<hash>  <filename>" or just "<hash>"
-            content
-                .split_whitespace()
-                .next()
-                .map(|h| format!("{algo}:{}", h.trim()))
-        }
+        Ok(content) => parse_checksum_file_content(&content, algo),
         Err(e) => {
             debug!("Failed to fetch checksum from {}: {e}", checksum_url);
             None
         }
     }
+}
+
+fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
+    // PowerShell Get-FileHash output:
+    // Hash      : 7FDD...
+    for line in content.lines() {
+        if let Some((key, value)) = line.split_once(':')
+            && key.trim().eq_ignore_ascii_case("hash")
+        {
+            let hash = value.trim();
+            if is_checksum_hex(hash, algo) {
+                return Some(format!("{algo}:{}", hash.to_lowercase()));
+            }
+        }
+    }
+
+    // Standard formats are typically "<hash>  <filename>" or just "<hash>".
+    content
+        .split_whitespace()
+        .find(|token| is_checksum_hex(token, algo))
+        .map(|hash| format!("{algo}:{}", hash.to_lowercase()))
+}
+
+fn is_checksum_hex(s: &str, algo: &str) -> bool {
+    let expected_len = match algo {
+        "sha1" => 40,
+        "sha256" | "blake3" => 64,
+        "sha512" => 128,
+        "md5" => 32,
+        _ => return !s.is_empty() && s.chars().all(|c| c.is_ascii_hexdigit()),
+    };
+
+    s.len() == expected_len && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 pub trait VerifiableError: Sized + Send + Sync + 'static {
@@ -993,6 +1020,42 @@ mod tests {
     use super::*;
     use crate::toolset::ToolVersionOptions;
     use indexmap::IndexMap;
+
+    const SHA256_LOWER: &str = "7fdd1f42e6b0855421ecf27bb406e2492ade1087c85e30ebf0deab6280ea743c";
+    const SHA256_UPPER: &str = "7FDD1F42E6B0855421ECF27BB406E2492ADE1087C85E30EBF0DEAB6280EA743C";
+
+    #[test]
+    fn test_parse_checksum_file_content_standard_format() {
+        let content = format!("{SHA256_LOWER}  deno-x86_64-unknown-linux-gnu.zip\n");
+
+        assert_eq!(
+            parse_checksum_file_content(&content, "sha256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_parse_checksum_file_content_powershell_get_file_hash_format() {
+        let content = format!(
+            "\
+Algorithm : SHA256
+Hash      : {SHA256_UPPER}
+Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
+"
+        );
+
+        assert_eq!(
+            parse_checksum_file_content(&content, "sha256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_parse_checksum_file_content_rejects_non_hash_tokens() {
+        let content = "Algorithm : SHA256\nPath      : deno.zip\n";
+
+        assert_eq!(parse_checksum_file_content(content, "sha256"), None);
+    }
 
     #[test]
     fn test_clean_binary_name() {
