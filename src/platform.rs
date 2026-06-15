@@ -477,8 +477,7 @@ mod tests {
     #[test]
     fn test_os_release_alpine_id_is_musl() {
         let release =
-            LinuxOsRelease::parse("NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.22.4\n")
-                .unwrap();
+            LinuxOsRelease::parse("NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.22.4\n").unwrap();
         assert!(linux_os_release_is_musl(&release));
     }
 
@@ -506,10 +505,9 @@ mod tests {
         // Regression: previously `split_once('=')?` returned None on the first
         // comment or blank line, causing the function to ignore the `ID=` line
         // that came after and silently fall back to linker-based detection.
-        let release = LinuxOsRelease::parse(
-            "# this is a comment\n\nNAME=\"Alpine Linux\"\nID=alpine\n",
-        )
-        .unwrap();
+        let release =
+            LinuxOsRelease::parse("# this is a comment\n\nNAME=\"Alpine Linux\"\nID=alpine\n")
+                .unwrap();
         assert_eq!(release.id, "alpine");
     }
 
