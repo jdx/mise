@@ -224,8 +224,20 @@ pub enum GithubAttestationsStatus {
     Unavailable,
 }
 
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, strum::Display, strum::EnumString,
+)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum InstallMethod {
+    Precompiled,
+    Compile,
+}
+
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct PlatformInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_method: Option<InstallMethod>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
     /// Size in bytes (read-only field, preserved from existing lockfiles but not written)
@@ -272,7 +284,8 @@ impl<'de> Deserialize<'de> for PlatformInfo {
 impl PlatformInfo {
     /// Returns true if this PlatformInfo has no meaningful data (for serde skip)
     pub fn is_empty(&self) -> bool {
-        self.checksum.is_none()
+        self.install_method.is_none()
+            && self.checksum.is_none()
             && self.url.is_none()
             && self.url_api.is_none()
             && self.conda_deps.is_none()
@@ -280,6 +293,7 @@ impl PlatformInfo {
             && self.pkgx_provides.is_none()
             && self.pkgx_runtime_env.is_none()
             && self.provenance.is_none()
+            && self.github_attestations.is_none()
     }
 
     /// True when the lockfile has checksum-backed, successfully verified provenance.
@@ -335,6 +349,7 @@ impl PlatformInfo {
             (a, b) => a.or(b),
         };
         PlatformInfo {
+            install_method: self.install_method.or(other.install_method),
             checksum,
             size,
             url: self.url.clone().or_else(|| other.url.clone()),
@@ -364,6 +379,13 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 ..Default::default()
             }),
             toml::Value::Table(mut t) => {
+                let install_method = match t.remove("install_method") {
+                    Some(toml::Value::String(s)) => Some(
+                        s.parse()
+                            .map_err(|_| eyre!("unrecognized install_method {s:?} in lockfile"))?,
+                    ),
+                    _ => None,
+                };
                 let checksum = match t.remove("checksum") {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
@@ -463,6 +485,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     github_attestations
                 };
                 Ok(PlatformInfo {
+                    install_method,
                     checksum,
                     size,
                     url,
@@ -483,6 +506,12 @@ impl TryFrom<toml::Value> for PlatformInfo {
 impl From<PlatformInfo> for toml::Value {
     fn from(platform_info: PlatformInfo) -> Self {
         let mut table = toml::Table::new();
+        if let Some(install_method) = platform_info.install_method {
+            table.insert(
+                "install_method".to_string(),
+                install_method.to_string().into(),
+            );
+        }
         if let Some(checksum) = platform_info.checksum {
             table.insert("checksum".to_string(), checksum.into());
         }
@@ -1031,6 +1060,7 @@ impl Lockfile {
                     (a, b) => a.or(b),
                 };
                 PlatformInfo {
+                    install_method: platform_info.install_method.or(existing.install_method),
                     checksum: platform_info.checksum.or_else(|| {
                         if preserve_artifact_fields {
                             existing.checksum.clone()

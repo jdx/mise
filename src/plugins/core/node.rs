@@ -1,5 +1,4 @@
 use crate::backend::VersionInfo;
-use crate::backend::static_helpers::fetch_checksum_from_shasums;
 use crate::backend::{
     Backend, VersionCacheManager, normalize_idiomatic_contents, platform_target::PlatformTarget,
 };
@@ -12,7 +11,7 @@ use crate::config::{Config, Settings};
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{InstallMethod, PlatformInfo};
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
@@ -63,6 +62,7 @@ impl NodePlugin {
                 &opts.binary_tarball_url,
                 &opts.binary_tarball_path,
                 &opts.version,
+                InstallMethod::Precompiled,
             )
             .await
         {
@@ -169,6 +169,7 @@ impl NodePlugin {
                 &opts.source_tarball_url,
                 &opts.source_tarball_path,
                 &opts.version,
+                InstallMethod::Compile,
             )
             .await
         {
@@ -208,6 +209,7 @@ impl NodePlugin {
         url: &Url,
         local: &Path,
         version: &str,
+        install_method: InstallMethod,
     ) -> Result<()> {
         let settings = Settings::get();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
@@ -231,7 +233,10 @@ impl NodePlugin {
             None
         };
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        platform_info.url = Some(url.to_string());
+        platform_info.install_method = Some(install_method);
+        if install_method == InstallMethod::Precompiled {
+            platform_info.url = Some(url.to_string());
+        }
         if let Some(checksum) = checksum {
             platform_info.checksum.get_or_insert(checksum);
         }
@@ -654,10 +659,19 @@ impl Backend for NodePlugin {
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx, &tv).await?;
         trace!("node build opts: {:#?}", opts);
+        let locked_install_method = if ctx.locked {
+            tv.lock_platforms
+                .get(&self.get_platform_key())
+                .and_then(|pi| pi.install_method)
+        } else {
+            None
+        };
 
         if cfg!(windows) {
             self.install_windows(ctx, &mut tv, &opts).await?;
-        } else if settings.node.compile == Some(true) {
+        } else if locked_install_method == Some(InstallMethod::Compile)
+            || settings.node.compile == Some(true)
+        {
             self.install_compiling(ctx, &mut tv, &opts).await?;
         } else {
             self.install_precompiled(ctx, &mut tv, &opts).await?;
@@ -753,8 +767,20 @@ impl Backend for NodePlugin {
             opts.insert("mirror_url".to_string(), mirror.to_string());
         }
 
-        if node.compile == Some(true) {
-            opts.insert("compile".to_string(), "true".to_string());
+        let compile = node.compile;
+        match compile {
+            Some(true) => {
+                opts.insert("compile".to_string(), "true".to_string());
+            }
+            Some(false) => {
+                opts.insert("compile".to_string(), "false".to_string());
+            }
+            None => {
+                opts.insert("compile".to_string(), "if_available".to_string());
+            }
+        }
+
+        if compile != Some(false) {
             if let Some(cflags) = node.cflags().filter(|cflags| !cflags.is_empty()) {
                 opts.insert("cflags".to_string(), cflags);
             }
@@ -788,7 +814,10 @@ impl Backend for NodePlugin {
             if let Some(ninja) = node.ninja {
                 opts.insert("ninja".to_string(), ninja.to_string());
             }
-            if let Some(concurrency) = node.concurrency.map(|concurrency| std::cmp::max(concurrency, 1)) {
+            if let Some(concurrency) = node
+                .concurrency
+                .map(|concurrency| std::cmp::max(concurrency, 1))
+            {
                 opts.insert("concurrency".to_string(), concurrency.to_string());
             }
         }
@@ -826,11 +855,36 @@ impl Backend for NodePlugin {
             .join(&format!("v{version}/{filename}"))
             .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
 
-        // Fetch SHASUMS256.txt to get checksum without downloading the tarball
+        if settings.node.compile == Some(true) && target.os_name() != "windows" {
+            return Ok(PlatformInfo {
+                install_method: Some(InstallMethod::Compile),
+                ..Default::default()
+            });
+        }
+
+        // Fetch SHASUMS256.txt to get checksum without downloading the tarball.
+        // If the file is absent from SHASUMS in fallback mode, lock the source
+        // compile outcome instead of recording a binary URL that install would 404.
         let shasums_url = mirror.join(&format!("v{version}/SHASUMS256.txt"))?;
-        let checksum = fetch_checksum_from_shasums(shasums_url.as_str(), &filename).await;
+        let checksum = match HTTP.get_text_cached(shasums_url.as_str()).await {
+            Ok(shasums_content) => match hash::parse_shasums(&shasums_content).get(&filename) {
+                Some(shasum) => Some(format!("sha256:{shasum}")),
+                None if settings.node.compile != Some(false) => {
+                    return Ok(PlatformInfo {
+                        install_method: Some(InstallMethod::Compile),
+                        ..Default::default()
+                    });
+                }
+                None => None,
+            },
+            Err(e) => {
+                debug!("Failed to fetch SHASUMS from {}: {e}", shasums_url);
+                None
+            }
+        };
 
         Ok(PlatformInfo {
+            install_method: Some(InstallMethod::Precompiled),
             url: Some(url.to_string()),
             checksum,
             size: None,
@@ -922,6 +976,25 @@ impl BuildOpts {
         let binary_tarball_name = format!("{slug}.tar.gz");
 
         let settings = Settings::get();
+        let default_binary_tarball_url = mirror_url_for(&settings.node, &binary_tarball_name)
+            .join(&format!("v{v}/{binary_tarball_name}"))?;
+        let platform_key = Platform::current().to_key();
+        let binary_tarball_url = if ctx.locked {
+            tv.lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.url.as_deref())
+                .map(Url::parse)
+                .transpose()?
+                .unwrap_or_else(|| default_binary_tarball_url.clone())
+        } else {
+            default_binary_tarball_url
+        };
+        let binary_tarball_name = binary_tarball_url
+            .path_segments()
+            .and_then(|mut segments| segments.next_back())
+            .filter(|name| !name.is_empty())
+            .unwrap_or(&binary_tarball_name)
+            .to_string();
         Ok(Self {
             version: v.clone(),
             path: ctx.ts.list_paths(&ctx.config).await,
@@ -936,8 +1009,7 @@ impl BuildOpts {
                 .join(&format!("v{v}/{source_tarball_name}"))?,
             source_tarball_name,
             binary_tarball_path: tv.download_path().join(&binary_tarball_name),
-            binary_tarball_url: mirror_url_for(&settings.node, &binary_tarball_name)
-                .join(&format!("v{v}/{binary_tarball_name}"))?,
+            binary_tarball_url,
             binary_tarball_name,
             install_path,
         })
@@ -1016,10 +1088,48 @@ mod tests {
         }
     }
 
+    struct NodeEnvResetGuard {
+        vars: BTreeMap<String, String>,
+    }
+
+    impl NodeEnvResetGuard {
+        fn clear() -> Self {
+            let vars = std::env::vars()
+                .filter(|(key, _)| key.starts_with("NODE_"))
+                .collect::<BTreeMap<_, _>>();
+            for key in vars.keys() {
+                unsafe {
+                    std::env::remove_var(key);
+                }
+            }
+            Self { vars }
+        }
+    }
+
+    impl Drop for NodeEnvResetGuard {
+        fn drop(&mut self) {
+            for key in std::env::vars()
+                .map(|(key, _)| key)
+                .filter(|key| key.starts_with("NODE_"))
+                .collect::<Vec<_>>()
+            {
+                unsafe {
+                    std::env::remove_var(key);
+                }
+            }
+            for (key, value) in &self.vars {
+                unsafe {
+                    std::env::set_var(key, value);
+                }
+            }
+        }
+    }
+
     fn resolve_node_lockfile_options(
         configure_settings: impl FnOnce(&mut SettingsPartial),
     ) -> BTreeMap<String, String> {
         let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _env_guard = NodeEnvResetGuard::clear();
         let mut settings = SettingsPartial::empty();
         configure_settings(&mut settings);
         Settings::reset(Some(settings));
@@ -1065,7 +1175,10 @@ mod tests {
     fn test_node_lockfile_options_omit_default_precompiled_settings() {
         let opts = resolve_node_lockfile_options(|_| {});
 
-        assert!(opts.is_empty());
+        assert_eq!(
+            opts,
+            BTreeMap::from([("compile".to_string(), "if_available".to_string())])
+        );
     }
 
     #[test]
@@ -1080,6 +1193,7 @@ mod tests {
             opts,
             BTreeMap::from([
                 ("flavor".to_string(), "musl".to_string()),
+                ("compile".to_string(), "false".to_string()),
                 (
                     "mirror_url".to_string(),
                     "https://corp.example/node/".to_string()
@@ -1112,6 +1226,23 @@ mod tests {
                 ("make_install_opts".to_string(), "--no-strip".to_string()),
                 ("make_opts".to_string(), "-s".to_string()),
                 ("ninja".to_string(), "false".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_node_lockfile_options_include_auto_source_build_settings() {
+        let opts = resolve_node_lockfile_options(|settings| {
+            settings.node.configure_opts = Some("--openssl-no-asm".to_string());
+            settings.node.make_opts = Some("-s".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                ("compile".to_string(), "if_available".to_string()),
+                ("configure_opts".to_string(), "--openssl-no-asm".to_string()),
+                ("make_opts".to_string(), "-s".to_string()),
             ])
         );
     }

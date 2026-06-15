@@ -23,7 +23,7 @@ use crate::file::{
 };
 use crate::install_before::resolve_before_date_for_tool;
 use crate::install_context::InstallContext;
-use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::lockfile::{InstallMethod, PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
 use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
@@ -1870,14 +1870,16 @@ pub trait Backend: Debug + Send + Sync {
                 hint: Remove `lockfile = false` or set `lockfile = true`, or disable locked mode"
             );
         }
-        if ctx.locked && !tv.request.source().is_tool_stub() && self.supports_lockfile_url() {
+        if ctx.locked && !tv.request.source().is_tool_stub() {
             let platform_key = self.get_platform_key();
-            let has_lockfile_url = tv
-                .lock_platforms
-                .get(&platform_key)
-                .and_then(|p| p.url.as_ref())
-                .is_some();
-            if !has_lockfile_url {
+            let platform_info = tv.lock_platforms.get(&platform_key);
+            let requires_lockfile_url = match platform_info.and_then(|p| p.install_method) {
+                Some(InstallMethod::Precompiled) => true,
+                Some(InstallMethod::Compile) => false,
+                None => self.supports_lockfile_url(),
+            };
+            let has_lockfile_url = platform_info.and_then(|p| p.url.as_ref()).is_some();
+            if requires_lockfile_url && !has_lockfile_url {
                 bail!(
                     "No lockfile URL found for {} on platform {} (--locked mode)\n\
                     hint: Run `mise lock` to generate lockfile URLs, or disable locked mode",

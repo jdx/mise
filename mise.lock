@@ -653,40 +653,50 @@ url = "https://github.com/LuaLS/lua-language-server/releases/download/3.18.2/lua
 [[tools.node]]
 version = "24.16.0"
 backend = "core:node"
+options = { compile = "if_available" }
 
 [tools.node."platforms.linux-arm64"]
+install_method = "precompiled"
 checksum = "sha256:589f5b6dd4fcfee4dfda73013903c966abaa8abd93dbc9d436544e472b4f0e74"
 url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0-linux-arm64.tar.gz"
 
 [tools.node."platforms.linux-arm64-musl"]
+install_method = "precompiled"
 checksum = "sha256:85dde27aa73503b03dadfa0410a800067b4e3f702fb7fcaa3beaf284dfcc69e9"
 url = "https://unofficial-builds.nodejs.org/download/release/v24.16.0/node-v24.16.0-linux-arm64-musl.tar.gz"
 
 [tools.node."platforms.linux-x64"]
+install_method = "precompiled"
 checksum = "sha256:2faf6a387e9b62b888e21c54f01249fb27537ffecf1842f29f4c919d0a59a0ff"
 url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0-linux-x64.tar.gz"
 
 [tools.node."platforms.linux-x64-baseline"]
+install_method = "precompiled"
 checksum = "sha256:2faf6a387e9b62b888e21c54f01249fb27537ffecf1842f29f4c919d0a59a0ff"
 url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0-linux-x64.tar.gz"
 
 [tools.node."platforms.linux-x64-musl"]
+install_method = "precompiled"
 checksum = "sha256:50df5d8d474892d4f7b906167df36f77f5b93908f63dc532dc568219cab65841"
 url = "https://unofficial-builds.nodejs.org/download/release/v24.16.0/node-v24.16.0-linux-x64-musl.tar.gz"
 
 [tools.node."platforms.linux-x64-musl-baseline"]
+install_method = "precompiled"
 checksum = "sha256:50df5d8d474892d4f7b906167df36f77f5b93908f63dc532dc568219cab65841"
 url = "https://unofficial-builds.nodejs.org/download/release/v24.16.0/node-v24.16.0-linux-x64-musl.tar.gz"
 
 [tools.node."platforms.macos-arm64"]
+install_method = "precompiled"
 checksum = "sha256:39189dab4eeb15706c424af0ac08a3044c9e48f7db12a7d77f6b7aafc7dd5df6"
 url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0-darwin-arm64.tar.gz"
 
 [tools.node."platforms.windows-x64"]
+install_method = "precompiled"
 checksum = "sha256:edaca9bd58ec8e92037dac4e877d52f6b8f430b81c18b57e264b4e2fb111cd56"
 url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0-win-x64.zip"
 
 [tools.node."platforms.windows-x64-baseline"]
+install_method = "precompiled"
 checksum = "sha256:edaca9bd58ec8e92037dac4e877d52f6b8f430b81c18b57e264b4e2fb111cd56"
 url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0-win-x64.zip"
 
