@@ -97,6 +97,34 @@ impl FromStr for PathEnv {
     }
 }
 
+/// All mise-managed install dirs: the primary install dir plus any shared/system
+/// install dirs (`MISE_SHARED_INSTALL_DIRS` and the system installs dir) that
+/// `env::find_in_shared_installs` resolves tool runtime paths into. Computed once
+/// and passed to [`is_mise_install_path`] so the per-PATH-entry check stays cheap.
+pub(crate) fn mise_install_dirs() -> Vec<PathBuf> {
+    let mut install_dirs = vec![dirs::INSTALLS.to_path_buf()];
+    install_dirs.extend(crate::env::shared_install_dirs());
+    install_dirs
+}
+
+/// Whether `path` is under one of `install_dirs` (see [`mise_install_dirs`]),
+/// checked both literally and via canonicalized paths. Such dirs are mise-managed,
+/// so a stale one left on PATH (e.g. carried in from a frozen env snapshot) must
+/// not outrank the version the current toolset selects. Shared by hook-env
+/// reactivation (#10162) and the `mise x`/`run`/`env` child PATH (#10345).
+pub(crate) fn is_mise_install_path(path: &std::path::Path, install_dirs: &[PathBuf]) -> bool {
+    if install_dirs.iter().any(|d| path.starts_with(d)) {
+        return true;
+    }
+    let Some(path) = crate::file::canonicalize_cached(path) else {
+        return false;
+    };
+    install_dirs
+        .iter()
+        .filter_map(|d| crate::file::canonicalize_cached(d))
+        .any(|d| path.starts_with(d))
+}
+
 #[cfg(unix)]
 #[cfg(test)]
 mod tests {

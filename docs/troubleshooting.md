@@ -151,6 +151,25 @@ mise ERROR command failed: exit code 1
 mise ERROR Run with --verbose or MISE_VERBOSE=1 for more information
 ```
 
+### Shims leaking into WSL
+
+On Windows, mise writes an extension-less bash script next to each `<tool>.exe`
+shim (so Git Bash / Cygwin can resolve the tool). WSL's default Windows-PATH
+interop exposes the shims directory at `/mnt/c/...`, where every file is treated
+as executable, so running a shimmed tool inside WSL executes that script
+natively. mise guards the generated script: when it detects WSL it drops the
+shims directory from `PATH` and runs a native Linux tool if one is installed,
+otherwise it fails with a plain `<tool>: not found` rather than recursing
+endlessly or erroring with `mise: not found`.
+
+To keep the Windows shims out of WSL entirely, either install/manage the tool
+with mise inside WSL, or disable the Windows-PATH interop in `/etc/wsl.conf`:
+
+```ini
+[interop]
+appendWindowsPath = false
+```
+
 ### `shell = "bash -c"` task fails with `command not found` from PowerShell
 
 If a task pinned to `shell = "bash -c"` works from Git Bash but fails with

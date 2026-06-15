@@ -9,6 +9,8 @@ use std::os::unix::fs::symlink;
 #[cfg(unix)]
 use std::os::unix::prelude::*;
 use std::sync::Mutex;
+#[cfg(unix)]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use bzip2::read::BzDecoder;
@@ -487,11 +489,31 @@ pub fn recursive_ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
 #[cfg(unix)]
 pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
     trace!("ln -sf {} {}", target.display(), link.display());
-    if link.is_file() || link.is_symlink() {
-        fs::remove_file(link)?;
-    }
-    symlink(target, link)
+    // Create the symlink at a unique temporary name in the same directory, then
+    // atomically rename it over `link`. rename(2) replaces an existing path in a
+    // single step, so concurrent mise processes racing to create the same link all
+    // succeed (last writer wins) instead of one failing with EEXIST — which showed
+    // up as spurious "failed to ln -sf ...: File exists (os error 17)" warnings
+    // when several mise invocations start at once (e.g. spawning a git worktree,
+    // #10292). Approach based on the closed PR #9701.
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let file_name = link
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("symlink");
+    let tmp = link.with_file_name(format!(
+        ".{file_name}.tmp.{}.{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = fs::remove_file(&tmp);
+    symlink(target, &tmp)
         .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
+    if let Err(err) = fs::rename(&tmp, link) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err)
+            .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()));
+    }
     Ok((target.to_path_buf(), link.to_path_buf()))
 }
 
@@ -1069,16 +1091,7 @@ pub fn extract_archive(
         | ExtractionFormat::TarSz
         | ExtractionFormat::Raw => untar(archive, dest, format, opts),
         ExtractionFormat::Zip => unzip(archive, dest, opts),
-        ExtractionFormat::SevenZip => {
-            #[cfg(windows)]
-            {
-                return un7z(archive, dest, opts);
-            }
-            #[cfg(not(windows))]
-            {
-                bail!("7z format not supported on this platform");
-            }
-        }
+        ExtractionFormat::SevenZip => un7z(archive, dest, opts),
         ExtractionFormat::Gz
         | ExtractionFormat::Xz
         | ExtractionFormat::Bz2
@@ -1329,7 +1342,6 @@ pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
 pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()> {
     if let Some(pr) = &opts.pr {
         pr.set_message(format!(
@@ -1337,8 +1349,14 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
             archive.file_name().unwrap().to_string_lossy()
         ));
     }
-    sevenz_rust::decompress_file(archive, dest)
-        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
+    sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
+        let dest_path = dest.join(
+            sanitize_7z_entry_path(entry.name())
+                .map_err(|err| sevenz_rust2::Error::Other(format!("{err:#}").into()))?,
+        );
+        sevenz_rust2::default_entry_extract_fn(entry, reader, &dest_path)
+    })
+    .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
 
     if !opts.preserve_mtime {
         reset_dir_mtime_to_now(dest)?;
@@ -1350,6 +1368,25 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
             display_path(archive)
         )
     })
+}
+
+fn sanitize_7z_entry_path(path: &str) -> Result<PathBuf> {
+    let normalized = PathBuf::from(path.replace('\\', "/"));
+    let mut safe_path = PathBuf::new();
+
+    for component in normalized.components() {
+        match component {
+            std::path::Component::Normal(part) => safe_path.push(part),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => {
+                bail!("7z archive entry path escapes extraction directory: {path}")
+            }
+        }
+    }
+
+    Ok(safe_path)
 }
 
 pub fn split_file_name(path: &Path) -> (String, String) {
@@ -1457,13 +1494,12 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
 }
 
 /// Adapted from inspect_tar_contents for 7z archives
-#[cfg(windows)]
 pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
-    let sevenz = sevenz_rust::SevenZReader::open(archive, sevenz_rust::Password::empty())?;
+    let sevenz = sevenz_rust2::Archive::open(archive)?;
     let mut top_level_components = std::collections::HashMap::new();
 
-    for file in &sevenz.archive().files {
-        let path = PathBuf::from(file.name());
+    for file in &sevenz.files {
+        let path = sanitize_7z_entry_path(file.name())?;
 
         // Get the first non-CurDir component of the path (top-level directory/file)
         let mut components = skip_curdir_components(&path);
@@ -1479,11 +1515,6 @@ pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     }
 
     Ok(top_level_components.into_iter().collect())
-}
-
-#[cfg(not(windows))]
-pub fn inspect_7z_contents(_archive: &Path) -> Result<Vec<(String, bool)>> {
-    bail!("7z format not supported on this platform")
 }
 
 /// Determines if strip_components=1 should be applied based on archive structure
@@ -1685,6 +1716,37 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn test_make_symlink_creates_and_atomically_replaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let target_a = dir.path().join("a");
+        let target_b = dir.path().join("b");
+        fs::write(&target_a, "a").unwrap();
+        fs::write(&target_b, "b").unwrap();
+        let link = dir.path().join("link");
+
+        // Creates a new symlink.
+        make_symlink(&target_a, &link).unwrap();
+        assert_eq!(fs::read_link(&link).unwrap(), target_a);
+
+        // Atomically replaces an existing symlink (no EEXIST).
+        make_symlink(&target_b, &link).unwrap();
+        assert_eq!(fs::read_link(&link).unwrap(), target_b);
+
+        // The temporary symlink is consumed by the rename — nothing left behind.
+        let leftovers: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+            .map(|e| e.file_name())
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp symlink left behind: {leftovers:?}"
+        );
+    }
 
     #[test]
     fn test_archive_content_files_tar_hashes_regular_files() {
@@ -2264,6 +2326,147 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_archive_7z() {
+        use std::io::Cursor;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let src_dir = dir.path().join("src");
+        let pkg_dir = src_dir.join("pkg");
+        let archive_path = dir.path().join("test.7z");
+        let dest_dir = dir.path().join("out_dir");
+        let stripped_dest_dir = dir.path().join("stripped_out_dir");
+        let backslash_archive_path = dir.path().join("backslash.7z");
+        let backslash_dest_dir = dir.path().join("backslash_out_dir");
+        let traversal_archive_path = dir.path().join("traversal.7z");
+        let traversal_dest_dir = dir.path().join("traversal_out_dir");
+        let traversal_target_path = dir.path().join("traversal_target");
+        let absolute_archive_path = dir.path().join("absolute.7z");
+        let absolute_dest_dir = dir.path().join("absolute_out_dir");
+        let absolute_target_path = dir.path().join("absolute_target");
+
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(pkg_dir.join("tool"), "hello world").unwrap();
+        sevenz_rust2::compress_to_path(&src_dir, &archive_path).unwrap();
+
+        let contents = inspect_7z_contents(&archive_path).unwrap();
+        assert!(contents.contains(&("pkg".to_string(), true)));
+        assert!(should_strip_components(&archive_path, ExtractionFormat::SevenZip).unwrap());
+
+        extract_archive(
+            &archive_path,
+            &dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions::default(),
+        )
+        .unwrap();
+
+        let extracted_path = dest_dir.join("pkg").join("tool");
+        assert!(extracted_path.exists());
+        assert!(extracted_path.is_file());
+        let content = std::fs::read_to_string(&extracted_path).unwrap();
+        assert_eq!(content, "hello world");
+
+        extract_archive(
+            &archive_path,
+            &stripped_dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions {
+                strip_components: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let stripped_path = stripped_dest_dir.join("tool");
+        assert!(stripped_path.exists());
+        assert!(stripped_path.is_file());
+        assert!(!stripped_dest_dir.join("pkg").exists());
+        let content = std::fs::read_to_string(&stripped_path).unwrap();
+        assert_eq!(content, "hello world");
+
+        let mut backslash_archive =
+            sevenz_rust2::ArchiveWriter::create(&backslash_archive_path).unwrap();
+        backslash_archive
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry::new_file("pkg\\tool"),
+                Some(Cursor::new(b"hello world")),
+            )
+            .unwrap();
+        backslash_archive.finish().unwrap();
+
+        let contents = inspect_7z_contents(&backslash_archive_path).unwrap();
+        assert!(contents.contains(&("pkg".to_string(), true)));
+        assert!(
+            should_strip_components(&backslash_archive_path, ExtractionFormat::SevenZip).unwrap()
+        );
+
+        extract_archive(
+            &backslash_archive_path,
+            &backslash_dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions {
+                strip_components: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let backslash_stripped_path = backslash_dest_dir.join("tool");
+        assert!(backslash_stripped_path.exists());
+        assert!(backslash_stripped_path.is_file());
+        assert!(!backslash_dest_dir.join("pkg").exists());
+        let content = std::fs::read_to_string(&backslash_stripped_path).unwrap();
+        assert_eq!(content, "hello world");
+
+        let mut traversal_archive =
+            sevenz_rust2::ArchiveWriter::create(&traversal_archive_path).unwrap();
+        traversal_archive
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry::new_file("../traversal_target"),
+                Some(Cursor::new(b"malicious")),
+            )
+            .unwrap();
+        traversal_archive.finish().unwrap();
+
+        let err = extract_archive(
+            &traversal_archive_path,
+            &traversal_dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions::default(),
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("escapes extraction directory"),
+            "{err:#}"
+        );
+        assert!(!traversal_target_path.exists());
+
+        let mut absolute_archive =
+            sevenz_rust2::ArchiveWriter::create(&absolute_archive_path).unwrap();
+        absolute_archive
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry::new_file(&absolute_target_path.to_string_lossy()),
+                Some(Cursor::new(b"malicious")),
+            )
+            .unwrap();
+        absolute_archive.finish().unwrap();
+
+        let err = extract_archive(
+            &absolute_archive_path,
+            &absolute_dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions::default(),
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("escapes extraction directory"),
+            "{err:#}"
+        );
+        assert!(!absolute_target_path.exists());
+    }
+
+    #[test]
     fn test_untar_rejects_single_file_compression() {
         use tempfile::tempdir;
 
@@ -2317,20 +2520,6 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("lz4 format not supported"));
-    }
-
-    #[cfg(not(windows))]
-    #[test]
-    fn test_should_strip_components_7z_errors_on_non_windows() {
-        use tempfile::NamedTempFile;
-
-        let archive = NamedTempFile::new().unwrap();
-        let err = should_strip_components(archive.path(), ExtractionFormat::SevenZip).unwrap_err();
-
-        assert!(
-            format!("{err:#}").contains("7z format not supported on this platform"),
-            "{err:#}"
-        );
     }
 
     #[tokio::test]

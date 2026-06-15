@@ -7,14 +7,14 @@ use crate::file::{canonicalize_cached, display_rel_path};
 use crate::hook_env::{PREV_SESSION, WatchFilePattern};
 use crate::shell::{ShellType, get_shell};
 use crate::toolset::Toolset;
-use crate::{dirs, env, hook_env, hooks, watch_files};
+use crate::{env, hook_env, hooks, watch_files};
 use console::truncate_str;
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use std::collections::{BTreeSet, HashSet};
 use std::ops::Deref;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::{borrow::Cow, sync::Arc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -274,6 +274,7 @@ impl HookEnv {
                 let mut orig_reordered = Vec::new();
                 let mut seen_orig = false;
                 let mut seen_in_current: HashSet<&PathBuf> = HashSet::new();
+                let mise_install_dirs = crate::path_env::mise_install_dirs();
                 for path in &current_paths {
                     if orig_set.contains(path) {
                         seen_orig = true;
@@ -291,7 +292,7 @@ impl HookEnv {
                     // the previous session diff did not claim them. Preserving a
                     // stale install path as a user prefix can shadow the active
                     // version selected by the current toolset.
-                    if is_mise_install_path(path) {
+                    if crate::path_env::is_mise_install_path(path, &mise_install_dirs) {
                         continue;
                     }
 
@@ -503,17 +504,6 @@ impl HookEnv {
             hook_env::serialize(&session)?,
         ))
     }
-}
-
-fn is_mise_install_path(path: &Path) -> bool {
-    if path.starts_with(*dirs::INSTALLS) {
-        return true;
-    }
-
-    let Some(path) = canonicalize_cached(path) else {
-        return false;
-    };
-    canonicalize_cached(*dirs::INSTALLS).is_some_and(|installs| path.starts_with(installs))
 }
 
 fn patch_to_status(patch: EnvDiffOperation) -> String {
