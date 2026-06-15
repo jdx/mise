@@ -81,6 +81,7 @@ pub struct AquaPackage {
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     pub minisign: Option<AquaMinisign>,
     pub github_artifact_attestations: Option<AquaGithubArtifactAttestations>,
+    format_overrides: Vec<AquaFormatOverride>,
     #[rkyv(omit_bounds)]
     overrides: Vec<AquaOverride>,
     version_constraint: String,
@@ -105,6 +106,13 @@ struct AquaOverride {
     envs: Vec<String>,
     #[serde(default)]
     variants: Vec<AquaVariant>,
+}
+
+/// Format override for a specific GOOS.
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+struct AquaFormatOverride {
+    goos: String,
+    format: String,
 }
 
 /// Runtime variant selector for an override.
@@ -374,6 +382,7 @@ impl Default for AquaPackage {
             slsa_provenance: None,
             minisign: None,
             github_artifact_attestations: None,
+            format_overrides: Vec::new(),
             overrides: Vec::new(),
             version_constraint: String::new(),
             version_overrides: Vec::new(),
@@ -416,6 +425,7 @@ impl AquaPackage {
         {
             self = apply_override(self, &version_override);
         }
+        self.apply_format_override(os);
         if let Some(pkg) = self
             .overrides
             .iter()
@@ -425,6 +435,16 @@ impl AquaPackage {
             self = apply_override(self, &pkg)
         }
         self
+    }
+
+    fn apply_format_override(&mut self, os: &str) {
+        if let Some(format_override) = self
+            .format_overrides
+            .iter()
+            .find(|format_override| format_override.matches(os))
+        {
+            self.format = format_override.format.clone();
+        }
     }
 
     /// Apply user-provided variable values used by aqua `vars` templates.
@@ -809,6 +829,12 @@ impl AquaOverride {
     }
 }
 
+impl AquaFormatOverride {
+    fn matches(&self, os: &str) -> bool {
+        self.goos == os && !self.format.is_empty()
+    }
+}
+
 fn envs_match(envs: &[String], os: &str, arch: &str) -> bool {
     let os_arch = format!("{os}/{arch}");
     // Aqua env selectors accept GOOS, GOARCH, GOOS/GOARCH, or the wildcard "all".
@@ -962,6 +988,9 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     orig.replacements.extend(avo.replacements.clone());
     if let Some(avo_version_prefix) = avo.version_prefix.clone() {
         orig.version_prefix = Some(avo_version_prefix);
+    }
+    if !avo.format_overrides.is_empty() {
+        orig.format_overrides = avo.format_overrides.clone();
     }
     if !avo.overrides.is_empty() {
         orig.overrides = avo.overrides.clone();
@@ -2161,6 +2190,53 @@ packages:
             darwin_arm64.url("1.0.0", "darwin", "arm64").unwrap(),
             "https://example.com/tool-default"
         );
+    }
+
+    #[test]
+    fn test_format_overrides_apply_by_os_before_rendering() {
+        let yml = r#"
+packages:
+  - asset: tool-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+"#;
+        let pkg = first_registry_package(yml);
+
+        let linux = pkg.clone().with_version(&["1.0.0"], "linux", "amd64");
+        let windows = pkg.with_version(&["1.0.0"], "windows", "amd64");
+
+        assert_eq!(linux.format("1.0.0", "linux", "amd64").unwrap(), "tar.gz");
+        assert_eq!(
+            linux.asset("1.0.0", "linux", "amd64").unwrap(),
+            "tool-1.0.0-linux-amd64.tar.gz"
+        );
+        assert_eq!(windows.format("1.0.0", "windows", "amd64").unwrap(), "zip");
+        assert_eq!(
+            windows.asset("1.0.0", "windows", "amd64").unwrap(),
+            "tool-1.0.0-windows-amd64.zip"
+        );
+    }
+
+    #[test]
+    fn test_platform_override_can_override_format_override() {
+        let yml = r#"
+packages:
+  - asset: tool-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    overrides:
+      - goos: windows
+        asset: tool.exe
+        format: raw
+"#;
+        let pkg = first_registry_package(yml).with_version(&["1.0.0"], "windows", "amd64");
+
+        assert_eq!(pkg.format("1.0.0", "windows", "amd64").unwrap(), "raw");
+        assert_eq!(pkg.asset("1.0.0", "windows", "amd64").unwrap(), "tool.exe");
     }
 
     #[test]
