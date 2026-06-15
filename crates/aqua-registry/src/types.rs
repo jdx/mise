@@ -1253,14 +1253,17 @@ impl AquaMinisign {
         pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
 
-    pub fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
-        pkg.parse_aqua_str(
-            self.asset.as_ref().unwrap(),
-            v,
-            &Default::default(),
-            os,
-            arch,
-        )
+    pub fn asset(
+        &self,
+        pkg: &AquaPackage,
+        package_asset: &str,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<String> {
+        let mut ctx = HashMap::new();
+        ctx.insert("Asset".to_string(), package_asset.to_string());
+        pkg.parse_aqua_str(self.asset.as_ref().unwrap(), v, &ctx, os, arch)
     }
 
     pub fn public_key(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
@@ -2012,6 +2015,29 @@ packages:
         let cosign = pkg.cosign.unwrap();
         assert!(cosign.bundle.is_some());
         assert!(cosign.key.is_some());
+    }
+
+    #[test]
+    fn test_minisign_asset_template_uses_package_asset() {
+        let yml = r#"
+packages:
+  - asset: minisign-{{.Version}}-{{.OS}}.tar.gz
+    minisign:
+      type: github_release
+      asset: "{{.Asset}}.minisig"
+      public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
+"#;
+        let pkg = first_registry_package(yml);
+        let package_asset = pkg.asset("0.12", "linux", "amd64").unwrap();
+        let minisign_asset = pkg
+            .minisign
+            .as_ref()
+            .unwrap()
+            .asset(&pkg, &package_asset, "0.12", "linux", "amd64")
+            .unwrap();
+
+        assert_eq!(package_asset, "minisign-0.12-linux.tar.gz");
+        assert_eq!(minisign_asset, "minisign-0.12-linux.tar.gz.minisig");
     }
 
     #[test]
