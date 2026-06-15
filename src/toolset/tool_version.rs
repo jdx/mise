@@ -1,14 +1,13 @@
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::{cmp::Ordering, sync::LazyLock};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::{ABackend, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
-use crate::{dirs, env};
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
@@ -16,6 +15,7 @@ use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_
 use crate::lockfile::{CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
+use crate::{dirs, env};
 use console::style;
 use dashmap::DashMap;
 use eyre::{Result, bail};
@@ -770,21 +770,31 @@ fn has_linked_version(ba: &BackendArg) -> bool {
 }
 
 fn is_mise_managed_symlink_target(target: &Path) -> bool {
-    if !target.is_absolute() {
-        return false;
-    }
+    debug_assert!(target.is_absolute(), "caller filters relative targets");
+    let target = normalize_path_components(target);
 
-    [
-        *dirs::DATA,
-        *dirs::CACHE,
-        *dirs::DOWNLOADS,
-        *dirs::INSTALLS,
-    ]
-    .into_iter()
-    .any(|root| target.starts_with(root))
+    [*dirs::DATA, *dirs::CACHE, *dirs::DOWNLOADS, *dirs::INSTALLS]
+        .into_iter()
+        .any(|root| target.starts_with(normalize_path_components(root)))
         || env::shared_install_dirs()
             .iter()
-            .any(|root| target.starts_with(root))
+            .any(|root| target.starts_with(normalize_path_components(root)))
+}
+
+fn normalize_path_components(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push("..");
+                }
+            }
+            Component::CurDir => {}
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
 }
 
 impl Display for ResolveOptions {
@@ -859,17 +869,50 @@ mod tests {
     }
 
     #[test]
+    fn has_linked_version_normalizes_absolute_targets_before_managed_check() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
+        fs::create_dir_all(&backend.installs_path)?;
+
+        let escaped_target = dirs::DATA
+            .join("..")
+            .join("has-linked-version-external")
+            .join("tool");
+        if let Some(parent) = escaped_target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        crate::file::make_symlink_or_file(&escaped_target, &backend.installs_path.join("escaped"))?;
+
+        assert!(has_linked_version(&backend));
+
+        Ok(())
+    }
+
+    #[test]
     fn has_linked_version_ignores_mise_managed_absolute_targets() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
         fs::create_dir_all(&backend.installs_path)?;
 
         let mut managed_targets = vec![];
-        for (name, root) in [("data", *dirs::DATA), ("cache", *dirs::CACHE)] {
+        let mut roots = vec![
+            ("data".to_string(), *dirs::DATA),
+            ("cache".to_string(), *dirs::CACHE),
+            ("downloads".to_string(), *dirs::DOWNLOADS),
+            ("installs".to_string(), *dirs::INSTALLS),
+        ];
+        roots.extend(
+            env::shared_install_dirs()
+                .into_iter()
+                .enumerate()
+                .map(|(i, root)| (format!("shared-{i}"), root)),
+        );
+
+        for (name, root) in roots {
             fs::create_dir_all(root)?;
             let target = tempfile::Builder::new()
                 .prefix(&format!("has-linked-version-{name}-"))
-                .tempdir_in(root)?;
+                .tempdir_in(&root)?;
             crate::file::make_symlink_or_file(
                 target.path(),
                 &backend.installs_path.join(format!("{name}-target")),
