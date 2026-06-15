@@ -2340,7 +2340,9 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
     }
     for t in config_tasks {
         if let Some(existing) = by_name.get_mut(&t.name) {
-            existing.merge_toml_overlay(t);
+            if existing.file.is_some() {
+                existing.merge_toml_overlay(t);
+            }
         } else {
             by_name.insert(t.name.clone(), t);
         }
