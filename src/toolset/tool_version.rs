@@ -896,10 +896,10 @@ mod tests {
 
         let mut managed_targets = vec![];
         let mut roots = vec![
-            ("data".to_string(), *dirs::DATA),
-            ("cache".to_string(), *dirs::CACHE),
-            ("downloads".to_string(), *dirs::DOWNLOADS),
-            ("installs".to_string(), *dirs::INSTALLS),
+            ("data".to_string(), dirs::DATA.to_path_buf()),
+            ("cache".to_string(), dirs::CACHE.to_path_buf()),
+            ("downloads".to_string(), dirs::DOWNLOADS.to_path_buf()),
+            ("installs".to_string(), dirs::INSTALLS.to_path_buf()),
         ];
         roots.extend(
             env::shared_install_dirs()
