@@ -1,6 +1,6 @@
 use crate::config::Settings;
 use eyre::{Result, bail};
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
 /// Represents a target platform for lockfile operations
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -183,6 +183,77 @@ impl From<&str> for Platform {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinuxOsRelease {
+    pub id: String,
+    pub version_id: String,
+    pub id_like: Vec<String>,
+}
+
+impl LinuxOsRelease {
+    fn parse(content: &str) -> Option<Self> {
+        let mut values = BTreeMap::new();
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            values.insert(key.trim().to_string(), parse_os_release_value(value.trim()));
+        }
+
+        Some(Self {
+            id: values.remove("ID")?,
+            version_id: values.remove("VERSION_ID").unwrap_or_default(),
+            id_like: values
+                .remove("ID_LIKE")
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(str::to_string)
+                .collect(),
+        })
+    }
+
+    fn ids(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.id.as_str()).chain(self.id_like.iter().map(String::as_str))
+    }
+}
+
+pub fn linux_os_release() -> Option<&'static LinuxOsRelease> {
+    use std::sync::LazyLock;
+    static OS_RELEASE: LazyLock<Option<LinuxOsRelease>> =
+        LazyLock::new(|| read_linux_os_release("/etc/os-release"));
+    OS_RELEASE.as_ref()
+}
+
+fn read_linux_os_release(path: &str) -> Option<LinuxOsRelease> {
+    LinuxOsRelease::parse(&std::fs::read_to_string(path).ok()?)
+}
+
+fn parse_os_release_value(value: &str) -> String {
+    let Some(quote) = value.chars().next().filter(|c| *c == '"' || *c == '\'') else {
+        return value.to_string();
+    };
+
+    let mut parsed = String::new();
+    let mut chars = value[quote.len_utf8()..].chars();
+    while let Some(ch) = chars.next() {
+        if ch == quote {
+            break;
+        }
+        if quote == '"' && ch == '\\' {
+            if let Some(next) = chars.next() {
+                parsed.push(next);
+            }
+        } else {
+            parsed.push(ch);
+        }
+    }
+    parsed
+}
+
 /// Detect the current libc variant on Linux.
 ///
 /// Returns `Some("gnu")` on glibc Linux, `Some("musl")` on musl Linux,
@@ -232,26 +303,11 @@ pub fn detect_libc() -> Option<&'static str> {
 
 #[cfg(target_os = "linux")]
 fn musl_from_os_release(path: &str) -> Option<bool> {
-    let content = std::fs::read_to_string(path).ok()?;
-    let mut ids: Vec<String> = Vec::new();
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        let key = key.trim();
-        if key == "ID" || key == "ID_LIKE" {
-            let value = value.trim().trim_matches('"').trim_matches('\'');
-            ids.extend(value.split_whitespace().map(str::to_string));
-        }
-    }
+    let release = read_linux_os_release(path)?;
     // Known musl-libc distros. Compat shims (gcompat) don't change this — the
     // underlying libc is still musl.
     const MUSL_DISTROS: &[&str] = &["alpine", "postmarketos", "chimera"];
-    if ids.iter().any(|id| MUSL_DISTROS.contains(&id.as_str())) {
+    if release.ids().any(|id| MUSL_DISTROS.contains(&id)) {
         return Some(true);
     }
     None
@@ -480,5 +536,34 @@ mod tests {
         std::fs::write(&tmp, "  ID = alpine \n").unwrap();
         assert_eq!(musl_from_os_release(tmp.to_str().unwrap()), Some(true));
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_linux_os_release_parse_id_version_and_id_like() {
+        let release = LinuxOsRelease::parse(
+            r#"
+NAME="Ubuntu"
+ID=ubuntu
+VERSION_ID="24.04"
+ID_LIKE="debian"
+"#,
+        )
+        .unwrap();
+        assert_eq!(release.id, "ubuntu");
+        assert_eq!(release.version_id, "24.04");
+        assert_eq!(release.id_like, vec!["debian"]);
+    }
+
+    #[test]
+    fn test_linux_os_release_parse_quoted_escapes() {
+        let release = LinuxOsRelease::parse(
+            r#"
+ID="custom\"id"
+VERSION_ID='1.2'
+"#,
+        )
+        .unwrap();
+        assert_eq!(release.id, "custom\"id");
+        assert_eq!(release.version_id, "1.2");
     }
 }

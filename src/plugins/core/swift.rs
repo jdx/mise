@@ -3,6 +3,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::platform::linux_os_release;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, backend::VersionInfo, config::Config};
@@ -274,7 +275,7 @@ fn platform_directory() -> String {
         "xcode".into()
     } else if cfg!(windows) {
         "windows10".into()
-    } else if let Ok(os_release) = &*os_release::OS_RELEASE {
+    } else if let Some(os_release) = linux_os_release() {
         let settings = Settings::get();
         let arch = settings.arch();
         if os_release.id == "ubuntu" && arch == "arm64" {
@@ -300,7 +301,7 @@ fn platform() -> String {
         "osx".to_string()
     } else if cfg!(windows) {
         "windows10".to_string()
-    } else if let Ok(os_release) = &*os_release::OS_RELEASE {
+    } else if let Some(os_release) = linux_os_release() {
         if os_release.id == "amzn" {
             format!("amazonlinux{}", os_release.version_id)
         } else if os_release.id == "ubi" {

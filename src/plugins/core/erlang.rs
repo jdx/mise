@@ -13,7 +13,7 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::lockfile::PlatformInfo;
-use crate::platform::Platform;
+use crate::platform::{Platform, linux_os_release};
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{file, github, plugins};
 use async_trait::async_trait;
@@ -159,7 +159,7 @@ impl ErlangPlugin {
                     "ubuntu20" => "ubuntu-20.04".to_string(),
                     _ => os,
                 }
-            } else if let Ok(os_release) = &*os_release::OS_RELEASE {
+            } else if let Some(os_release) = linux_os_release() {
                 format!("{}-{}", os_release.id, os_release.version_id)
             } else {
                 bail!("could not determine OS release");

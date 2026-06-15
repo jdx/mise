@@ -5341,7 +5341,6 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "openssl",
- "os-release",
  "path-absolutize",
  "petgraph",
  "phf 0.13.1",
@@ -5375,7 +5374,6 @@ dependencies = [
  "siphasher",
  "strum 0.28.0",
  "supports-hyperlinks",
- "sys-info",
  "tabled",
  "taplo",
  "tar",
@@ -5838,15 +5836,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
 dependencies = [
  "num-traits",
-]
-
-[[package]]
-name = "os-release"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82f29ae2f71b53ec19cc23385f8e4f3d90975195aa3d09171ba3bef7159bec27"
-dependencies = [
- "lazy_static",
 ]
 
 [[package]]
@@ -8657,16 +8646,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "sys-info"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b3a0d0aba8bf96a0e1ddfdc352fc53b3df7f39318c71854910c3c4b024ae52c"
-dependencies = [
- "cc",
- "libc",
 ]
 
 [[package]]
