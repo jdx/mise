@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# Regression test for HTTP install symlinks being mistaken for `mise link`
+# symlinks, which skipped lockfile hydration on the second --locked install.
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+cat <<'EOF' >mise.toml
+[tools]
+"http:hello-locked-idempotent" = { version = "1.0.0", url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+cat <<EOF >mise.lock
+[[tools."http:hello-locked-idempotent"]]
+version = "1.0.0"
+backend = "http:hello-locked-idempotent"
+"platforms.$PLATFORM" = { url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz", checksum = "blake3:71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f" }
+EOF
+
+mise install --locked
+mise install --locked
+
+assert_contains "mise x -- hello-world" "hello world"
