@@ -417,6 +417,19 @@ pub fn is_install_time_option_key_for_type(backend_type: &BackendType, key: &str
 
 /// Normalize idiomatic file contents by removing comments and empty lines.
 /// Full-line and inline comments are supported by .python-version, .nvmrc, etc.
+// The lockfile URL is only needed to download; an already-installed tool downloads
+// nothing, so enforce the locked-mode URL check only when an install will actually
+// run (keeps `mise install --locked` idempotent).
+fn enforce_locked_url(
+    locked: bool,
+    forced: bool,
+    already_installed: bool,
+    is_tool_stub: bool,
+    supports_lockfile_url: bool,
+) -> bool {
+    locked && supports_lockfile_url && !is_tool_stub && (forced || !already_installed)
+}
+
 pub(crate) fn normalize_idiomatic_contents(contents: &str) -> String {
     contents
         .lines()
@@ -462,6 +475,20 @@ mod tests {
     use crate::toolset::{ToolSource, ToolVersionOptions};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn test_enforce_locked_url_only_when_installing() {
+        // fresh install in locked mode -> enforce
+        assert!(enforce_locked_url(true, false, false, false, true));
+        // already installed, not forced -> skip (the idempotency fix)
+        assert!(!enforce_locked_url(true, false, true, false, true));
+        // --force reinstall -> enforce even if already installed
+        assert!(enforce_locked_url(true, true, true, false, true));
+        // not locked / tool stub / backend without URL support -> never enforced
+        assert!(!enforce_locked_url(false, false, false, false, true));
+        assert!(!enforce_locked_url(true, false, false, true, true));
+        assert!(!enforce_locked_url(true, false, false, false, false));
+    }
 
     #[test]
     fn test_normalize_idiomatic_contents() {
@@ -1823,7 +1850,14 @@ pub trait Backend: Debug + Send + Sync {
                 hint: Remove `lockfile = false` or set `lockfile = true`, or disable locked mode"
             );
         }
-        if ctx.locked && !tv.request.source().is_tool_stub() && self.supports_lockfile_url() {
+        let already_installed = self.is_version_installed(&ctx.config, &tv, true);
+        if enforce_locked_url(
+            ctx.locked,
+            ctx.force,
+            already_installed,
+            tv.request.source().is_tool_stub(),
+            self.supports_lockfile_url(),
+        ) {
             let platform_key = self.get_platform_key();
             let has_lockfile_url = tv
                 .lock_platforms
