@@ -42,8 +42,7 @@ class ToolStubTestHandler(http.server.SimpleHTTPRequestHandler):
             })
             self.wfile.write(content.encode('utf-8'))
         else:
-            # Return 404 for other paths
-            self.send_error(404, "File not found")
+            super().do_GET()
 
     def log_message(self, format, *args):
         """Suppress log messages for cleaner test output"""
