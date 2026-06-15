@@ -1851,8 +1851,9 @@ pub trait Backend: Debug + Send + Sync {
             );
         }
         let already_installed = self.is_version_installed(&ctx.config, &tv, true);
+        let locked_mode = ctx.locked || settings.locked;
         if enforce_locked_url(
-            ctx.locked,
+            locked_mode,
             ctx.force,
             already_installed,
             tv.request.source().is_tool_stub(),
