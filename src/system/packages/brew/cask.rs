@@ -283,8 +283,7 @@ fn app_artifacts(cask: &Cask) -> Result<Vec<AppArtifact>> {
         let Some(app) = parse_app_artifact(artifact) else {
             warn!(
                 "brew-cask:{}: unsupported artifact type {}",
-                cask.token,
-                artifact_type
+                cask.token, artifact_type
             );
             continue;
         };
