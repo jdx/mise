@@ -293,6 +293,23 @@ impl Backend for PIPXBackend {
             }
             cmd.execute()?;
         } else {
+            if ctx.before_date.is_some() {
+                ctx.pr.set_message("pipx upgrade-shared".to_string());
+                if let Err(err) = Self::pipx_cmd(
+                    &ctx.config,
+                    &["upgrade-shared"],
+                    self,
+                    &tv,
+                    &ctx.ts,
+                    ctx.pr.as_ref(),
+                )
+                .await?
+                .execute()
+                {
+                    debug!("failed to upgrade pipx shared libraries before install: {err:#}");
+                }
+            }
+
             ctx.pr.set_message(format!("pipx install {pipx_request}"));
             let mut cmd = Self::pipx_cmd(
                 &ctx.config,
@@ -303,6 +320,9 @@ impl Backend for PIPXBackend {
                 ctx.pr.as_ref(),
             )
             .await?;
+            if ctx.before_date.is_some() {
+                cmd = cmd.env("PIPX_DEFAULT_BACKEND", "pip");
+            }
             cmd = cmd.args(Self::pip_uploaded_prior_to_args(ctx.before_date));
             if let Some(args) = options.pipx_args() {
                 cmd = cmd.args(shell_words::split(args)?);
