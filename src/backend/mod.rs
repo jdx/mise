@@ -415,8 +415,6 @@ pub fn is_install_time_option_key_for_type(backend_type: &BackendType, key: &str
             .any(|itk| key.starts_with("platforms.") && key.ends_with(&format!(".{itk}")))
 }
 
-/// Normalize idiomatic file contents by removing comments and empty lines.
-/// Full-line and inline comments are supported by .python-version, .nvmrc, etc.
 // The lockfile URL is only needed to download; an already-installed tool downloads
 // nothing, so enforce the locked-mode URL check only when an install will actually
 // run (keeps `mise install --locked` idempotent).
@@ -430,6 +428,8 @@ fn enforce_locked_url(
     locked && supports_lockfile_url && !is_tool_stub && (forced || !already_installed)
 }
 
+/// Normalize idiomatic file contents by removing comments and empty lines.
+/// Full-line and inline comments are supported by .python-version, .nvmrc, etc.
 pub(crate) fn normalize_idiomatic_contents(contents: &str) -> String {
     contents
         .lines()
