@@ -831,7 +831,7 @@ impl AquaOverride {
 
 impl AquaFormatOverride {
     fn matches(&self, os: &str) -> bool {
-        self.goos == os && !self.format.is_empty()
+        self.goos == os
     }
 }
 
