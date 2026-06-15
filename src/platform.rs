@@ -273,7 +273,7 @@ fn parse_os_release_value(value: &str) -> String {
 pub fn detect_libc() -> Option<&'static str> {
     use std::sync::LazyLock;
     static DETECTED: LazyLock<Option<&'static str>> = LazyLock::new(|| {
-        if let Some(true) = musl_from_os_release("/etc/os-release") {
+        if let Some(true) = musl_from_os_release() {
             return Some("musl");
         }
         for dir in ["/lib", "/lib64"] {
@@ -303,21 +303,16 @@ pub fn detect_libc() -> Option<&'static str> {
 }
 
 #[cfg(target_os = "linux")]
-fn musl_from_os_release(path: &str) -> Option<bool> {
-    let parsed_release;
-    let release = if path == "/etc/os-release" {
-        linux_os_release()?
-    } else {
-        parsed_release = read_linux_os_release(path)?;
-        &parsed_release
-    };
+fn musl_from_os_release() -> Option<bool> {
+    linux_os_release().map(linux_os_release_is_musl)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_os_release_is_musl(release: &LinuxOsRelease) -> bool {
     // Known musl-libc distros. Compat shims (gcompat) don't change this — the
     // underlying libc is still musl.
     const MUSL_DISTROS: &[&str] = &["alpine", "postmarketos", "chimera"];
-    if release.ids().any(|id| MUSL_DISTROS.contains(&id)) {
-        return Some(true);
-    }
-    None
+    release.ids().any(|id| MUSL_DISTROS.contains(&id))
 }
 
 #[cfg(target_os = "linux")]
@@ -486,63 +481,47 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn test_os_release_alpine_id_is_musl() {
-        let tmp = std::env::temp_dir().join("mise-libc-alpine");
-        std::fs::write(
-            &tmp,
-            "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.22.4\n",
-        )
-        .unwrap();
-        assert_eq!(musl_from_os_release(tmp.to_str().unwrap()), Some(true));
-        let _ = std::fs::remove_file(&tmp);
+        let release =
+            LinuxOsRelease::parse("NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.22.4\n")
+                .unwrap();
+        assert!(linux_os_release_is_musl(&release));
     }
 
     #[cfg(target_os = "linux")]
     #[test]
     fn test_os_release_id_like_alpine_is_musl() {
-        let tmp = std::env::temp_dir().join("mise-libc-id-like");
-        std::fs::write(&tmp, "ID=postmarketos\nID_LIKE=\"alpine\"\n").unwrap();
-        assert_eq!(musl_from_os_release(tmp.to_str().unwrap()), Some(true));
-        let _ = std::fs::remove_file(&tmp);
+        let release = LinuxOsRelease::parse("ID=postmarketos\nID_LIKE=\"alpine\"\n").unwrap();
+        assert!(linux_os_release_is_musl(&release));
     }
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn test_os_release_debian_returns_none() {
-        let tmp = std::env::temp_dir().join("mise-libc-debian");
-        std::fs::write(&tmp, "ID=debian\nID_LIKE=\"\"\n").unwrap();
-        assert_eq!(musl_from_os_release(tmp.to_str().unwrap()), None);
-        let _ = std::fs::remove_file(&tmp);
+    fn test_os_release_debian_returns_false() {
+        let release = LinuxOsRelease::parse("ID=debian\nID_LIKE=\"\"\n").unwrap();
+        assert!(!linux_os_release_is_musl(&release));
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
-    fn test_os_release_missing_returns_none() {
-        assert_eq!(musl_from_os_release("/nonexistent/os-release"), None);
+    fn test_os_release_missing_id_returns_none() {
+        assert_eq!(LinuxOsRelease::parse("NAME=\"Missing ID\"\n"), None);
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn test_os_release_comments_and_blank_lines_do_not_short_circuit() {
         // Regression: previously `split_once('=')?` returned None on the first
         // comment or blank line, causing the function to ignore the `ID=` line
         // that came after and silently fall back to linker-based detection.
-        let tmp = std::env::temp_dir().join("mise-libc-comments");
-        std::fs::write(
-            &tmp,
+        let release = LinuxOsRelease::parse(
             "# this is a comment\n\nNAME=\"Alpine Linux\"\nID=alpine\n",
         )
         .unwrap();
-        assert_eq!(musl_from_os_release(tmp.to_str().unwrap()), Some(true));
-        let _ = std::fs::remove_file(&tmp);
+        assert_eq!(release.id, "alpine");
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn test_os_release_whitespace_around_key_tolerated() {
-        let tmp = std::env::temp_dir().join("mise-libc-whitespace");
-        std::fs::write(&tmp, "  ID = alpine \n").unwrap();
-        assert_eq!(musl_from_os_release(tmp.to_str().unwrap()), Some(true));
-        let _ = std::fs::remove_file(&tmp);
+        let release = LinuxOsRelease::parse("  ID = alpine \n").unwrap();
+        assert_eq!(release.id, "alpine");
     }
 
     #[test]
