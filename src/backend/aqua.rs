@@ -18,8 +18,8 @@ use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolRequest, ToolVersion, ToolVersionOp
 use crate::ui::progress_report::SingleReport;
 use crate::{
     aqua::aqua_registry_wrapper::{
-        AQUA_REGISTRY, AquaChecksum, AquaChecksumType, AquaCosign, AquaMinisignType, AquaPackage,
-        AquaPackageType,
+        AQUA_REGISTRY, AquaChecksum, AquaChecksumType, AquaCosign, AquaGithubArtifactAttestations,
+        AquaMinisign, AquaMinisignType, AquaPackage, AquaPackageType,
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
@@ -239,6 +239,7 @@ impl Backend for AquaBackend {
             p.github_artifact_attestations
                 .as_ref()
                 .is_some_and(|a| a.enabled.unwrap_or(true))
+                || Self::checksum_github_attestations_config(p).is_some()
         });
         let has_attestations_assets = release_assets.iter().any(|a| {
             let name = a.name.to_lowercase();
@@ -285,6 +286,7 @@ impl Backend for AquaBackend {
             p.minisign
                 .as_ref()
                 .is_some_and(|m| m.enabled.unwrap_or(true))
+                || Self::checksum_minisign_config(p).is_some()
         });
         let has_minisign_assets = release_assets.iter().any(|a| {
             let name = a.name.to_lowercase();
@@ -294,6 +296,11 @@ impl Backend for AquaBackend {
             let public_key = all_pkgs
                 .iter()
                 .filter_map(|p| p.minisign.as_ref())
+                .chain(
+                    all_pkgs
+                        .iter()
+                        .filter_map(|p| Self::checksum_minisign_config(p).map(|(_, m)| m)),
+                )
                 .find_map(|m| m.public_key.clone());
             features.push(SecurityFeature::Minisign { public_key });
         }
@@ -808,8 +815,12 @@ impl Backend for AquaBackend {
         let mut provenance = self.detect_provenance_type(&pkg);
         if matches!(provenance, Some(ProvenanceType::GithubAttestations))
             && let Some(digest) = checksum.as_deref().filter(|d| d.starts_with("sha256:"))
+            && let Some(attestations) = &pkg.github_artifact_attestations
         {
-            match self.detect_github_attestations(&pkg, digest).await {
+            match self
+                .detect_github_attestations(&pkg, attestations, digest)
+                .await
+            {
                 Ok(true) => {}
                 Ok(false) => {
                     provenance = self.detect_non_github_provenance_type(&pkg);
@@ -1018,6 +1029,32 @@ impl AquaBackend {
         Some((checksum, cosign))
     }
 
+    fn checksum_minisign_config(pkg: &AquaPackage) -> Option<(&AquaChecksum, &AquaMinisign)> {
+        let checksum = pkg
+            .checksum
+            .as_ref()
+            .filter(|checksum| checksum.enabled())?;
+        let minisign = checksum
+            .minisign
+            .as_ref()
+            .filter(|minisign| minisign.enabled != Some(false))?;
+        Some((checksum, minisign))
+    }
+
+    fn checksum_github_attestations_config(
+        pkg: &AquaPackage,
+    ) -> Option<(&AquaChecksum, &AquaGithubArtifactAttestations)> {
+        let checksum = pkg
+            .checksum
+            .as_ref()
+            .filter(|checksum| checksum.enabled())?;
+        let attestations = checksum
+            .github_artifact_attestations
+            .as_ref()
+            .filter(|attestations| attestations.enabled != Some(false))?;
+        Some((checksum, attestations))
+    }
+
     /// Detect provenance type from aqua registry package config.
     ///
     /// Returns the highest-priority provenance type that is configured and
@@ -1038,8 +1075,11 @@ impl AquaBackend {
         // or on first install when the lockfile doesn't yet have provenance).
         if settings.github_attestations
             && settings.aqua.github_attestations
-            && let Some(att) = &pkg.github_artifact_attestations
-            && att.enabled != Some(false)
+            && (pkg
+                .github_artifact_attestations
+                .as_ref()
+                .is_some_and(|att| att.enabled != Some(false))
+                || Self::checksum_github_attestations_config(pkg).is_some())
         {
             return Some(ProvenanceType::GithubAttestations);
         }
@@ -1072,8 +1112,11 @@ impl AquaBackend {
 
         // Check for minisign
         if settings.aqua.minisign
-            && let Some(minisign) = &pkg.minisign
-            && minisign.enabled != Some(false)
+            && (pkg
+                .minisign
+                .as_ref()
+                .is_some_and(|minisign| minisign.enabled != Some(false))
+                || Self::checksum_minisign_config(pkg).is_some())
         {
             return Some(ProvenanceType::Minisign);
         }
@@ -1084,6 +1127,7 @@ impl AquaBackend {
     async fn detect_github_attestations(
         &self,
         pkg: &AquaPackage,
+        attestations: &AquaGithubArtifactAttestations,
         digest: &str,
     ) -> std::result::Result<bool, crate::github::sigstore::DetectError> {
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
@@ -1092,9 +1136,7 @@ impl AquaBackend {
             &pkg.repo_name,
             github::API_URL,
             digest,
-            pkg.github_artifact_attestations
-                .as_ref()
-                .and_then(|att| att.predicate_type.as_deref()),
+            attestations.predicate_type.as_deref(),
             self.use_versions_host_for_github_metadata(&repo),
         )
         .await
@@ -1123,14 +1165,33 @@ impl AquaBackend {
 
         match detected {
             ProvenanceType::GithubAttestations => {
-                match self
-                    .run_github_attestation_check(&artifact_path, pkg)
-                    .await?
-                {
-                    GithubAttestationStatus::Verified => {
-                        Ok(Some(ProvenanceType::GithubAttestations))
+                if let Some(attestations) = &pkg.github_artifact_attestations {
+                    match self
+                        .run_github_attestation_check(&artifact_path, pkg, attestations)
+                        .await?
+                    {
+                        GithubAttestationStatus::Verified => {
+                            Ok(Some(ProvenanceType::GithubAttestations))
+                        }
+                        GithubAttestationStatus::Unavailable => Ok(None),
                     }
-                    GithubAttestationStatus::Unavailable => Ok(None),
+                } else {
+                    let (checksum_config, attestations) =
+                        Self::checksum_github_attestations_config(pkg).wrap_err(
+                            "GitHub attestation provenance detected but no supported binary/checksum config found",
+                        )?;
+                    let checksum_path = self
+                        .download_checksum_file(checksum_config, pkg, v, tmp_dir.path(), None)
+                        .await?;
+                    match self
+                        .run_github_attestation_check(&checksum_path, pkg, attestations)
+                        .await?
+                    {
+                        GithubAttestationStatus::Verified => {
+                            Ok(Some(ProvenanceType::GithubAttestations))
+                        }
+                        GithubAttestationStatus::Unavailable => Ok(None),
+                    }
                 }
             }
             ProvenanceType::Slsa { .. } => {
@@ -1142,8 +1203,39 @@ impl AquaBackend {
                 }))
             }
             ProvenanceType::Minisign => {
-                self.run_minisign_check(&artifact_path, &filename, pkg, v, tmp_dir.path(), None)
+                if let Some(minisign) = &pkg.minisign {
+                    self.run_minisign_check(
+                        &artifact_path,
+                        &filename,
+                        pkg,
+                        minisign,
+                        v,
+                        tmp_dir.path(),
+                        None,
+                    )
                     .await?;
+                } else {
+                    let (checksum_config, minisign) = Self::checksum_minisign_config(pkg).wrap_err(
+                        "minisign provenance detected but no supported binary/checksum config found",
+                    )?;
+                    let checksum_path = self
+                        .download_checksum_file(checksum_config, pkg, v, tmp_dir.path(), None)
+                        .await?;
+                    let checksum_filename = checksum_path
+                        .file_name()
+                        .and_then(|f| f.to_str())
+                        .unwrap_or("checksum");
+                    self.run_minisign_check(
+                        &checksum_path,
+                        checksum_filename,
+                        pkg,
+                        minisign,
+                        v,
+                        tmp_dir.path(),
+                        None,
+                    )
+                    .await?;
+                }
                 Ok(Some(ProvenanceType::Minisign))
             }
             ProvenanceType::Cosign => {
@@ -1172,19 +1264,17 @@ impl AquaBackend {
         &self,
         artifact_path: &Path,
         pkg: &AquaPackage,
+        attestations: &AquaGithubArtifactAttestations,
     ) -> Result<GithubAttestationStatus> {
         // The aqua registry stores signer_workflow as a regex pattern (e.g. `\.github/workflows/release\.yaml`).
         // sigstore-verification's verify_attestations() uses plain str::contains(), not regex, so we must
         // unescape regex metacharacter escapes (e.g. `\.` → `.`) before passing the value through.
-        let signer_workflow = pkg
-            .github_artifact_attestations
-            .as_ref()
-            .and_then(|att| att.signer_workflow.as_deref().map(unescape_regex_literal));
+        let signer_workflow = attestations
+            .signer_workflow
+            .as_deref()
+            .map(unescape_regex_literal);
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let predicate_type = pkg
-            .github_artifact_attestations
-            .as_ref()
-            .and_then(|att| att.predicate_type.as_deref());
+        let predicate_type = attestations.predicate_type.as_deref();
 
         match crate::github::sigstore::verify_attestation_with_predicate_type(
             artifact_path,
@@ -1331,32 +1421,25 @@ impl AquaBackend {
         artifact_path: &Path,
         artifact_filename: &str,
         pkg: &AquaPackage,
+        minisign_config: &AquaMinisign,
         v: &str,
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
-        let minisign_config = pkg
-            .minisign
-            .as_ref()
-            .wrap_err("minisign provenance detected but no config found")?;
-
         let sig_path = match minisign_config._type() {
             AquaMinisignType::GithubRelease => {
                 let asset = minisign_config.asset(pkg, artifact_filename, v, os(), arch())?;
+                let asset_strs = IndexSet::from([asset]);
                 let (repo_owner, repo_name) = resolve_repo_info(
                     minisign_config.repo_owner.as_ref(),
                     minisign_config.repo_name.as_ref(),
                     pkg,
                 );
-                let url = self
-                    .get_github_release(&format!("{repo_owner}/{repo_name}"), v)
-                    .await?
-                    .assets
-                    .into_iter()
-                    .find(|a| a.name == asset)
-                    .map(|a| a.browser_download_url)
-                    .wrap_err_with(|| format!("no asset found for minisign: {asset}"))?;
-                let path = download_dir.join(&asset);
+                let mut sig_pkg = pkg.clone();
+                sig_pkg.repo_owner = repo_owner;
+                sig_pkg.repo_name = repo_name;
+                let url = self.github_release_asset(&sig_pkg, v, asset_strs).await?.0;
+                let path = download_dir.join(get_filename_from_url(&url));
                 HTTP.download_file(&url, &path, pr).await?;
                 path
             }
@@ -2018,11 +2101,27 @@ impl AquaBackend {
             let checksum_cosign = (!skip_cosign && Settings::get().aqua.cosign)
                 .then(|| Self::checksum_cosign_config(pkg).map(|(_, cosign)| cosign))
                 .flatten();
+            let checksum_github_attestations = (!skip_attestations
+                && Settings::get().github_attestations
+                && Settings::get().aqua.github_attestations)
+                .then(|| {
+                    Self::checksum_github_attestations_config(pkg)
+                        .map(|(_, attestations)| attestations)
+                })
+                .flatten();
+            let checksum_minisign = (!skip_minisign && Settings::get().aqua.minisign)
+                .then(|| Self::checksum_minisign_config(pkg).map(|(_, minisign)| minisign))
+                .flatten();
             let needs_cosign = checksum_cosign.is_some();
+            let needs_github_attestations = checksum_github_attestations.is_some();
+            let needs_minisign = checksum_minisign.is_some();
             // Re-download only if the checksum file doesn't exist yet. An existing file
             // from a prior attempt is trusted because the download directory is version-specific
             // and the final artifact is independently verified by verify_checksum at the end.
-            if (needs_checksum || (needs_cosign && !cosign_already_verified))
+            if (needs_checksum
+                || needs_github_attestations
+                || needs_minisign
+                || (needs_cosign && !cosign_already_verified))
                 && !checksum_path.exists()
             {
                 let url = match checksum._type() {
@@ -2034,6 +2133,50 @@ impl AquaBackend {
                 };
                 HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
                     .await?;
+            }
+
+            if let Some(attestations) = checksum_github_attestations
+                && checksum_path.exists()
+                && !tv
+                    .lock_platforms
+                    .get(&platform_key)
+                    .and_then(|pi| pi.provenance.as_ref())
+                    .is_some_and(|p| p.is_github_attestations())
+            {
+                match self
+                    .run_github_attestation_check(&checksum_path, pkg, attestations)
+                    .await?
+                {
+                    GithubAttestationStatus::Verified => {
+                        self.record_provenance(tv, ProvenanceType::GithubAttestations);
+                    }
+                    GithubAttestationStatus::Unavailable => {}
+                }
+            }
+
+            if let Some(minisign) = checksum_minisign
+                && checksum_path.exists()
+                && !tv
+                    .lock_platforms
+                    .get(&platform_key)
+                    .and_then(|pi| pi.provenance.as_ref())
+                    .is_some_and(|p| p.is_slsa() || p.is_github_attestations())
+            {
+                let checksum_filename = checksum_path
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .unwrap_or("checksum");
+                self.run_minisign_check(
+                    &checksum_path,
+                    checksum_filename,
+                    pkg,
+                    minisign,
+                    v,
+                    &download_path,
+                    Some(ctx.pr.as_ref()),
+                )
+                .await?;
+                self.record_provenance(tv, ProvenanceType::Minisign);
             }
 
             if let Some(cosign) = checksum_cosign
@@ -2127,6 +2270,7 @@ impl AquaBackend {
                 &artifact_path,
                 filename,
                 pkg,
+                minisign,
                 v,
                 &tv.download_path(),
                 Some(ctx.pr.as_ref()),
@@ -2212,7 +2356,7 @@ impl AquaBackend {
                 .set_message("verify GitHub artifact attestations".to_string());
             let artifact_path = tv.download_path().join(filename);
             match self
-                .run_github_attestation_check(&artifact_path, pkg)
+                .run_github_attestation_check(&artifact_path, pkg, github_attestations)
                 .await?
             {
                 GithubAttestationStatus::Verified => {}
@@ -2284,14 +2428,14 @@ impl AquaBackend {
     }
 
     fn record_cosign_provenance(&self, tv: &mut ToolVersion) {
+        self.record_provenance(tv, ProvenanceType::Cosign);
+    }
+
+    fn record_provenance(&self, tv: &mut ToolVersion, provenance: ProvenanceType) {
         let platform_key = self.get_platform_key();
         let pi = tv.lock_platforms.entry(platform_key).or_default();
-        if pi
-            .provenance
-            .as_ref()
-            .is_none_or(|p| *p < ProvenanceType::Cosign)
-        {
-            pi.provenance = Some(ProvenanceType::Cosign);
+        if pi.provenance.as_ref().is_none_or(|p| *p < provenance) {
+            pi.provenance = Some(provenance);
         }
     }
 
