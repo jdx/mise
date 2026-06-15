@@ -33,9 +33,12 @@ impl Default for FuzzyMatcher {
 
 impl FuzzyMatcher {
     pub(crate) fn score_pattern(&mut self, haystack: &str, pattern: &FuzzyPattern) -> Option<u32> {
-        pattern.0.score(
-            Utf32Str::new(haystack, &mut self.haystack_buf),
-            &mut self.matcher,
-        )
+        pattern
+            .0
+            .score(
+                Utf32Str::new(haystack, &mut self.haystack_buf),
+                &mut self.matcher,
+            )
+            .map(u32::from)
     }
 }
