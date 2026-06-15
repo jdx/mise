@@ -909,7 +909,7 @@ mod tests {
         );
 
         for (name, root) in roots {
-            fs::create_dir_all(root)?;
+            fs::create_dir_all(&root)?;
             let target = tempfile::Builder::new()
                 .prefix(&format!("has-linked-version-{name}-"))
                 .tempdir_in(&root)?;
