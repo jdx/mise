@@ -5312,7 +5312,6 @@ dependencies = [
  "filetime",
  "flate2",
  "fslock",
- "fuzzy-matcher",
  "gix",
  "glob",
  "globset",
@@ -5338,6 +5337,7 @@ dependencies = [
  "netrc-rs",
  "nix 0.31.3",
  "nodejs-semver",
+ "nucleo-matcher",
  "num_cpus",
  "once_cell",
  "openssl",
@@ -5409,7 +5409,7 @@ version = "2026.1.12"
 dependencies = [
  "async-trait",
  "console",
- "fuzzy-matcher",
+ "nucleo-matcher",
  "serde_json",
  "tokio",
  "toml_edit 0.25.12+spec-1.1.0",
@@ -5636,6 +5636,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "nucleo-matcher"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf33f538733d1a5a3494b836ba913207f14d9d4a1d3cd67030c5061bdd2cac85"
+dependencies = [
+ "memchr",
+ "unicode-segmentation",
 ]
 
 [[package]]
