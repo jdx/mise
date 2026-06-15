@@ -81,7 +81,6 @@ fn suggest_similar_commands(name: &str) -> Vec<String> {
         .filter_map(|subcmd| {
             matcher
                 .score_pattern(subcmd, &pattern)
-                .filter(|&score| score > 0)
                 .map(|score| (score, subcmd.to_string()))
         })
         .sorted_by_key(|(score, _)| std::cmp::Reverse(*score))
