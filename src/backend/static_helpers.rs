@@ -90,7 +90,7 @@ fn is_checksum_hex(s: &str, algo: &str) -> bool {
         "sha256" | "blake3" => 64,
         "sha512" => 128,
         "md5" => 32,
-        _ => return !s.is_empty() && s.chars().all(|c| c.is_ascii_hexdigit()),
+        _ => return false,
     };
 
     s.len() == expected_len && s.chars().all(|c| c.is_ascii_hexdigit())
@@ -1055,6 +1055,11 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
         let content = "Algorithm : SHA256\nPath      : deno.zip\n";
 
         assert_eq!(parse_checksum_file_content(content, "sha256"), None);
+    }
+
+    #[test]
+    fn test_parse_checksum_file_content_rejects_unknown_algorithms() {
+        assert_eq!(parse_checksum_file_content(SHA256_LOWER, "sha3-256"), None);
     }
 
     #[test]
