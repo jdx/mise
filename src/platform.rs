@@ -273,7 +273,7 @@ fn parse_os_release_value(value: &str) -> String {
 pub fn detect_libc() -> Option<&'static str> {
     use std::sync::LazyLock;
     static DETECTED: LazyLock<Option<&'static str>> = LazyLock::new(|| {
-        if let Some(true) = musl_from_os_release() {
+        if linux_os_release().is_some_and(linux_os_release_is_musl) {
             return Some("musl");
         }
         for dir in ["/lib", "/lib64"] {
@@ -300,11 +300,6 @@ pub fn detect_libc() -> Option<&'static str> {
 #[cfg(not(target_os = "linux"))]
 pub fn detect_libc() -> Option<&'static str> {
     None
-}
-
-#[cfg(target_os = "linux")]
-fn musl_from_os_release() -> Option<bool> {
-    linux_os_release().map(linux_os_release_is_musl)
 }
 
 #[cfg(target_os = "linux")]
