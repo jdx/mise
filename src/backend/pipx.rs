@@ -34,6 +34,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fmt::Debug, sync::Arc};
+use tokio::sync::Mutex as TokioMutex;
 use versions::Versioning;
 use xx::regex;
 
@@ -44,6 +45,8 @@ const UV_MIN_EXCLUDE_NEWER_VERSION: &str = "0.1.15";
 pub struct PIPXBackend {
     ba: Arc<BackendArg>,
     latest_version_cache: CacheManager<Option<String>>,
+    pip_date_filter_cache: TokioMutex<Option<bool>>,
+    uv_date_filter_cache: TokioMutex<Option<bool>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -430,6 +433,8 @@ impl PIPXBackend {
             .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
             .build(),
             ba: Arc::new(ba),
+            pip_date_filter_cache: TokioMutex::new(None),
+            uv_date_filter_cache: TokioMutex::new(None),
         }
     }
 
@@ -557,7 +562,27 @@ impl PIPXBackend {
 
     /// Returns true if the pip available to pipx supports `--uploaded-prior-to`
     /// (requires pip >= 26.0.0).
+    ///
+    /// Note: this probes the pip reachable via the dependency toolset's `python`
+    /// binary, which is the same Python pipx uses to seed new venvs.  In the
+    /// unlikely case where pipx was installed with a different Python whose
+    /// bundled pip is older, the check may produce a false positive and pipx
+    /// will still fail.  The result is cached per-backend-instance so only one
+    /// subprocess is spawned even when many pipx packages are installed in a
+    /// single `mise install` run.
     async fn pip_supports_uploaded_prior_to(&self, config: &Arc<Config>) -> bool {
+        {
+            let cache = self.pip_date_filter_cache.lock().await;
+            if let Some(cached) = *cache {
+                return cached;
+            }
+        }
+        let result = self.probe_pip_supports_uploaded_prior_to(config).await;
+        *self.pip_date_filter_cache.lock().await = Some(result);
+        result
+    }
+
+    async fn probe_pip_supports_uploaded_prior_to(&self, config: &Arc<Config>) -> bool {
         let env = match self.dependency_env(config).await {
             Ok(env) => env,
             Err(e) => {
@@ -590,19 +615,32 @@ impl PIPXBackend {
     }
 
     /// Returns true if the uv available supports `--exclude-newer` in `uv tool install`
-    /// (requires uv >= 0.1.37).
+    /// (requires uv >= 0.1.15).  Result is cached per-backend-instance.
     async fn uv_supports_exclude_newer(&self, config: &Arc<Config>) -> bool {
+        {
+            let cache = self.uv_date_filter_cache.lock().await;
+            if let Some(cached) = *cache {
+                return cached;
+            }
+        }
+        let result = self.probe_uv_supports_exclude_newer(config).await;
+        *self.uv_date_filter_cache.lock().await = Some(result);
+        result
+    }
+
+    async fn probe_uv_supports_exclude_newer(&self, config: &Arc<Config>) -> bool {
         // Fast path: if uv is explicitly managed by mise, read the version from the ToolSet.
         if let Ok(ts) = self.dependency_toolset(config).await {
             for (ba, tvl) in &ts.versions {
-                if ba.short == "uv" 
-                    && let Some(tv) = tvl.versions.first() {
-                        debug!(
-                            "uv version detection: found uv {} in ToolSet, skipping subprocess",
-                            tv.version
-                        );
-                        return semver_is_at_least(&tv.version, UV_MIN_EXCLUDE_NEWER_VERSION)
-                            .unwrap_or(false);
+                if ba.short == "uv"
+                    && let Some(tv) = tvl.versions.first()
+                {
+                    debug!(
+                        "uv version detection: found uv {} in ToolSet, skipping subprocess",
+                        tv.version
+                    );
+                    return semver_is_at_least(&tv.version, UV_MIN_EXCLUDE_NEWER_VERSION)
+                        .unwrap_or(false);
                 }
             }
         }
