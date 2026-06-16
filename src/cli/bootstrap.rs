@@ -66,7 +66,7 @@ pub struct Bootstrap {
     #[clap(long)]
     force_dotfiles: bool,
 
-    /// Refresh system package manager metadata first (apt: `apt-get update`)
+    /// Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
     #[clap(long)]
     update: bool,
 }

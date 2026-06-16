@@ -12,7 +12,7 @@ system package manager. This may elevate with sudo when not running as
 root (see the `system_packages.sudo` setting).
 
 Packages can also be given explicitly in `manager:package` form (e.g.
-`apt:curl`, `brew:jq`); they are installed whether or not they appear in
+`apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
 the config. Explicit packages and `--manager` scope the run to packages
 only.
 
@@ -26,10 +26,11 @@ Packages in `manager:package` form; defaults to everything configured in [bootst
 
 ### `-m --manager <MANAGER>`
 
-Only install packages for this manager, e.g. `apt`, `brew`, `brew-cask`, or `mas`
+Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`
 
 **Choices:**
 
+- `apk`
 - `apt`
 - `brew`
 - `brew-cask`
@@ -47,13 +48,13 @@ Skip the confirmation prompt
 
 ### `--update`
 
-Refresh package manager metadata first (apt: `apt-get update`)
+Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
 
 Examples:
 
 ```
 mise bootstrap packages install
-mise bootstrap packages install apt:curl brew:jq brew-cask:firefox mas:497799835
+mise bootstrap packages install apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835
 mise bootstrap packages install --dry-run
 mise bootstrap packages install --manager apt --yes
 ```

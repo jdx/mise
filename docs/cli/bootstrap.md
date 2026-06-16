@@ -50,7 +50,7 @@ Overwrite existing files that conflict with whole-file dotfile entries
 
 ### `--update`
 
-Refresh system package manager metadata first (apt: `apt-get update`)
+Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
 
 ## Subcommands
 

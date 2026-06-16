@@ -7,8 +7,8 @@ use crate::system;
 /// Upgrade installed bootstrap packages from `[bootstrap.packages]`
 ///
 /// Refreshes package manager metadata and upgrades the configured packages
-/// that are already installed: apt/dnf/pacman upgrade to the newest available
-/// version (apt and dnf honor a version pinned in config), brew pours the
+/// that are already installed: apk/apt/dnf/pacman upgrade to the newest available
+/// version (apk, apt, and dnf honor a version pinned in config), brew pours the
 /// formula's current bottle and replaces the old keg, brew-cask installs
 /// the current cask artifact, and mas upgrades App Store apps. Packages that
 /// are not installed yet are skipped — use `mise bootstrap packages install`
@@ -23,8 +23,8 @@ pub struct SystemUpgrade {
     #[clap(value_name = "PACKAGE")]
     packages: Vec<String>,
 
-    /// Only upgrade packages for this manager, e.g. `apt`, `brew`, `brew-cask`, or `mas`
-    #[clap(long, short, value_parser = ["apt", "brew", "brew-cask", "dnf", "mas", "pacman"])]
+    /// Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`
+    #[clap(long, short, value_parser = ["apk", "apt", "brew", "brew-cask", "dnf", "mas", "pacman"])]
     manager: Option<String>,
 
     /// Print the commands that would run without running them

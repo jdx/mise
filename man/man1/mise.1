@@ -841,7 +841,7 @@ Skip confirmation prompts
 Overwrite existing files that conflict with whole\-file dotfile entries
 .TP
 \fB\-\-update\fR
-Refresh system package manager metadata first (apt: `apt\-get update`)
+Refresh system package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`)
 .SH "MISE BOOTSTRAP LAUNCHD APPLY"
 \fBUsage:\fR mise bootstrap launchd apply [OPTIONS]
 .PP
@@ -939,7 +939,7 @@ system package manager. This may elevate with sudo when not running as
 root (see the `system_packages.sudo` setting).
 
 Packages can also be given explicitly in `manager:package` form (e.g.
-`apt:curl`, `brew:jq`); they are installed whether or not they appear in
+`apk:zlib\-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
 the config. Explicit packages and `\-\-manager` scope the run to packages
 only.
 .PP
@@ -949,7 +949,7 @@ only.
 .PP
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only install packages for this manager, e.g. `apt`, `brew`, `brew\-cask`, or `mas`
+Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, or `mas`
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without running them
@@ -958,7 +958,7 @@ Print the commands that would run without running them
 Skip the confirmation prompt
 .TP
 \fB\-\-update\fR
-Refresh package manager metadata first (apt: `apt\-get update`)
+Refresh package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`)
 \fBArguments:\fR
 .PP
 .TP
@@ -981,8 +981,8 @@ Exit with code 1 if any configured packages are not in their desired state
 Upgrade installed bootstrap packages from `[bootstrap.packages]`
 
 Refreshes package manager metadata and upgrades the configured packages
-that are already installed: apt/dnf/pacman upgrade to the newest available
-version (apt and dnf honor a version pinned in config), brew pours the
+that are already installed: apk/apt/dnf/pacman upgrade to the newest available
+version (apk, apt, and dnf honor a version pinned in config), brew pours the
 formula's current bottle and replaces the old keg, brew\-cask installs
 the current cask artifact, and mas upgrades App Store apps. Packages that
 are not installed yet are skipped — use `mise bootstrap packages install`
@@ -996,7 +996,7 @@ Packages can also be given explicitly in `manager:package` form.
 .PP
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only upgrade packages for this manager, e.g. `apt`, `brew`, `brew\-cask`, or `mas`
+Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, or `mas`
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without running them
