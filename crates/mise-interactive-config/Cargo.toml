@@ -16,7 +16,7 @@ path = "src/lib.rs"
 [dependencies]
 async-trait = "0.1" # Async trait support
 console = "0.16" # Terminal control, key reading
-fuzzy-matcher = "0.3" # Fuzzy matching for tool/setting pickers
+nucleo-matcher = "0.3" # Fuzzy matching for tool/setting pickers
 tokio = { version = "1", features = [
   "rt",
   "sync",

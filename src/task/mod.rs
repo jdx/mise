@@ -9,8 +9,6 @@ use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
 use console::{measure_text_width, truncate_str};
 use eyre::{Result, bail, eyre};
-use fuzzy_matcher::FuzzyMatcher;
-use fuzzy_matcher::skim::SkimMatcherV2;
 use globset::GlobBuilder;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -29,8 +27,6 @@ use std::sync::LazyLock as Lazy;
 use std::{ffi, fmt, path};
 use xx::regex;
 
-static FUZZY_MATCHER: Lazy<SkimMatcherV2> =
-    Lazy::new(|| SkimMatcherV2::default().use_cache(true).smart_case());
 static TASK_VARS_CACHE: Lazy<std::sync::Mutex<IndexMap<PathBuf, IndexMap<String, String>>>> =
     Lazy::new(|| std::sync::Mutex::new(IndexMap::new()));
 
@@ -70,6 +66,7 @@ pub use task_template::TaskTemplate;
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
+use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
 use crate::toolset::{Toolset, serialize_tool_options};
 use crate::ui::style;
 pub use deps::{Deps, TaskKey};
@@ -1865,15 +1862,18 @@ fn match_tasks_with_context(
 
         // In monorepo mode, suggest similar tasks using fuzzy matching
         if resolved_pattern.starts_with("//") {
+            let mut matcher = FuzzyMatcher::default();
+            let resolved_pattern = resolved_pattern.to_lowercase();
+            let pattern = FuzzyPattern::new(&resolved_pattern);
             let similar: Vec<String> = tasks
                 .keys()
                 .filter(|k| k.starts_with("//"))
                 .filter_map(|k| {
-                    FUZZY_MATCHER
-                        .fuzzy_match(&k.to_lowercase(), &resolved_pattern.to_lowercase())
+                    matcher
+                        .score_pattern(&k.to_lowercase(), &pattern)
                         .map(|score| (score, k.clone()))
                 })
-                .sorted_by_key(|(score, _)| -1 * *score)
+                .sorted_by_key(|(score, _)| std::cmp::Reverse(*score))
                 .take(5)
                 .map(|(_, k)| k)
                 .collect();
