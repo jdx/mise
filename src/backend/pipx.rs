@@ -595,15 +595,14 @@ impl PIPXBackend {
         // Fast path: if uv is explicitly managed by mise, read the version from the ToolSet.
         if let Ok(ts) = self.dependency_toolset(config).await {
             for (ba, tvl) in &ts.versions {
-                if ba.short == "uv" {
-                    if let Some(tv) = tvl.versions.first() {
+                if ba.short == "uv" 
+                    && let Some(tv) = tvl.versions.first() {
                         debug!(
                             "uv version detection: found uv {} in ToolSet, skipping subprocess",
                             tv.version
                         );
                         return semver_is_at_least(&tv.version, UV_MIN_EXCLUDE_NEWER_VERSION)
                             .unwrap_or(false);
-                    }
                 }
             }
         }
