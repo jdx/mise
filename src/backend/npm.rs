@@ -541,6 +541,12 @@ impl NPMBackend {
             .package_manager_version_for_release_age(&ctx.config, ctx, tool)
             .await
         else {
+            warn!(
+                "minimum_release_age is set for npm:{} but could not determine {} version required to verify {} support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.en.dev/dev-tools/backends/npm.html",
+                self.tool_name(),
+                tool,
+                flag
+            );
             return;
         };
 
