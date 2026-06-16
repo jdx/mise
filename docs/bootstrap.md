@@ -39,6 +39,7 @@ task runs every time, so keep it idempotent.
 
 ```toml
 [bootstrap.packages]
+"apk:build-base" = "latest"
 "apt:build-essential" = "latest"
 "brew:postgresql@17" = "latest"
 
@@ -132,7 +133,7 @@ place but should not install anything during that check.
 
 | Config                             | Use for                                                       |
 | ---------------------------------- | ------------------------------------------------------------- |
-| `[bootstrap.packages]`             | OS packages from apt, dnf, pacman, or brew                    |
+| `[bootstrap.packages]`             | OS packages from apk, apt, dnf, pacman, or brew               |
 | `[dotfiles]`                       | Whole-file dotfiles and small managed edits to existing files |
 | `[bootstrap.macos.*]`              | Curated macOS preferences for Dock/Finder/keyboard/trackpad   |
 | `[bootstrap.macos.defaults]`       | macOS user preferences written through `defaults write`       |
@@ -194,7 +195,7 @@ mise bootstrap --yes
 ### Add A Package
 
 ```sh
-mise bootstrap packages use apt:libssl-dev
+mise bootstrap packages use apk:zlib-dev apt:libssl-dev
 ```
 
 This writes `[bootstrap.packages]` and installs what is missing.

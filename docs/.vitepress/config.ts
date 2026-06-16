@@ -146,6 +146,7 @@ export default withMermaid(
               link: "/bootstrap/packages/",
               collapsed: true,
               items: [
+                { text: "apk", link: "/bootstrap/packages/apk" },
                 { text: "apt", link: "/bootstrap/packages/apt" },
                 { text: "dnf", link: "/bootstrap/packages/dnf" },
                 { text: "pacman", link: "/bootstrap/packages/pacman" },

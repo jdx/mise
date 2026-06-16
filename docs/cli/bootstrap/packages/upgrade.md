@@ -8,8 +8,8 @@
 Upgrade installed bootstrap packages from `[bootstrap.packages]`
 
 Refreshes package manager metadata and upgrades the configured packages
-that are already installed: apt/dnf/pacman upgrade to the newest available
-version (apt and dnf honor a version pinned in config), brew pours the
+that are already installed: apk/apt/dnf/pacman upgrade to the newest available
+version (apk, apt, and dnf honor a version pinned in config), brew pours the
 formula's current bottle and replaces the old keg, brew-cask installs
 the current cask artifact, and mas upgrades App Store apps. Packages that
 are not installed yet are skipped — use `mise bootstrap packages install`
@@ -27,10 +27,11 @@ Packages in `manager:package` form; defaults to everything configured in [bootst
 
 ### `-m --manager <MANAGER>`
 
-Only upgrade packages for this manager, e.g. `apt`, `brew`, `brew-cask`, or `mas`
+Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`
 
 **Choices:**
 
+- `apk`
 - `apt`
 - `brew`
 - `brew-cask`

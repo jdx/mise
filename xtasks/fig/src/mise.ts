@@ -867,11 +867,12 @@ const completionSpec: Fig.Spec = {
                 {
                   name: ["-m", "--manager"],
                   description:
-                    "Only install packages for this manager, e.g. `apt`, `brew`, `brew-cask`, or `mas`",
+                    "Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`",
                   isRepeatable: false,
                   args: {
                     name: "manager",
                     suggestions: [
+                      "apk",
                       "apt",
                       "brew",
                       "brew-cask",
@@ -895,7 +896,7 @@ const completionSpec: Fig.Spec = {
                 {
                   name: "--update",
                   description:
-                    "Refresh package manager metadata first (apt: `apt-get update`)",
+                    "Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)",
                   isRepeatable: false,
                 },
               ],
@@ -933,11 +934,12 @@ const completionSpec: Fig.Spec = {
                 {
                   name: ["-m", "--manager"],
                   description:
-                    "Only upgrade packages for this manager, e.g. `apt`, `brew`, `brew-cask`, or `mas`",
+                    "Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`",
                   isRepeatable: false,
                   args: {
                     name: "manager",
                     suggestions: [
+                      "apk",
                       "apt",
                       "brew",
                       "brew-cask",
@@ -1115,7 +1117,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--update",
           description:
-            "Refresh system package manager metadata first (apt: `apt-get update`)",
+            "Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)",
           isRepeatable: false,
         },
       ],

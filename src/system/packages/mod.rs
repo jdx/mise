@@ -1,4 +1,4 @@
-//! System package managers (apt, brew, brew-cask, mas) for the `[bootstrap.packages]` config section.
+//! System package managers (apk, apt, brew, brew-cask, mas) for the `[bootstrap.packages]` config section.
 //!
 //! These are machine-global, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -9,6 +9,7 @@ use async_trait::async_trait;
 
 use crate::result::Result;
 
+pub mod apk;
 pub mod apt;
 #[cfg(unix)]
 pub mod brew;
@@ -64,7 +65,7 @@ pub struct PackageStatus {
 pub struct InstallOpts {
     /// print what would be done without doing it
     pub dry_run: bool,
-    /// apt: force `apt-get update` before installing
+    /// force a package manager metadata refresh before installing
     pub update: bool,
 }
 
@@ -112,6 +113,7 @@ pub trait SystemPackageManager: Send + Sync {
 
 pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
     vec![
+        Arc::new(apk::ApkManager::new()),
         Arc::new(apt::AptManager::new()),
         #[cfg(unix)]
         Arc::new(brew::BrewManager::new()),

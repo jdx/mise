@@ -961,6 +961,11 @@ mod tests {
         let (_, req) = parse_use_spec("dnf:bash@latest").unwrap();
         assert_eq!(req.version, None);
 
+        let (mgr, req) = parse_use_spec("apk:zlib-dev@1.3.1-r2").unwrap();
+        assert_eq!(mgr, "apk");
+        assert_eq!(req.name, "zlib-dev");
+        assert_eq!(req.version.as_deref(), Some("1.3.1-r2"));
+
         // apt arch qualifiers stay in the name
         let (_, req) = parse_use_spec("apt:gcc:arm64@13.2").unwrap();
         assert_eq!(req.name, "gcc:arm64");
