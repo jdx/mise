@@ -33,8 +33,12 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fmt::Debug, sync::Arc};
+use crate::semver::semver_is_at_least;
 use versions::Versioning;
 use xx::regex;
+
+const PIP_MIN_UPLOADED_PRIOR_TO_VERSION: &str = "26.0.0";
+const UV_MIN_EXCLUDE_NEWER_VERSION: &str = "0.1.37";
 
 #[derive(Debug)]
 pub struct PIPXBackend {
@@ -287,7 +291,17 @@ impl Backend for PIPXBackend {
                 ctx.pr.as_ref(),
             )
             .await?;
-            cmd = cmd.args(Self::uv_exclude_newer_args(ctx.before_date));
+            if ctx.before_date.is_some() {
+                if self.uv_supports_exclude_newer(&ctx.config).await {
+                    cmd = cmd.args(Self::uv_exclude_newer_args(ctx.before_date));
+                } else {
+                    warn!(
+                        "uv >= {} is required for --exclude-newer; minimum_release_age will not be enforced for {}",
+                        UV_MIN_EXCLUDE_NEWER_VERSION,
+                        self.tool_name()
+                    );
+                }
+            }
             if let Some(args) = options.uvx_args() {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -303,7 +317,17 @@ impl Backend for PIPXBackend {
                 ctx.pr.as_ref(),
             )
             .await?;
-            cmd = cmd.args(Self::pip_uploaded_prior_to_args(ctx.before_date));
+            if ctx.before_date.is_some() {
+                if self.pip_supports_uploaded_prior_to(&ctx.config).await {
+                    cmd = cmd.args(Self::pip_uploaded_prior_to_args(ctx.before_date));
+                } else {
+                    warn!(
+                        "pip >= {} is required for --uploaded-prior-to; minimum_release_age will not be enforced for {}",
+                        PIP_MIN_UPLOADED_PRIOR_TO_VERSION,
+                        self.tool_name()
+                    );
+                }
+            }
             if let Some(args) = options.pipx_args() {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -529,6 +553,88 @@ impl PIPXBackend {
             .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
             .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
+    }
+
+    /// Returns true if the pip available to pipx supports `--uploaded-prior-to`
+    /// (requires pip >= 26.0.0).
+    async fn pip_supports_uploaded_prior_to(&self, config: &Arc<Config>) -> bool {
+        let env = match self.dependency_env(config).await {
+            Ok(env) => env,
+            Err(e) => {
+                debug!(
+                    "pip version detection: dependency_env failed, skipping --uploaded-prior-to: {e:#}"
+                );
+                return false;
+            }
+        };
+        let python = if let Some(p) = self.dependency_which(config, "python").await {
+            p
+        } else if let Some(p) = self.dependency_which(config, "python3").await {
+            p
+        } else {
+            debug!("pip version detection: python not found, skipping --uploaded-prior-to");
+            return false;
+        };
+        let output = match cmd!(python, "-m", "pip", "--version").full_env(env).read() {
+            Ok(s) => s,
+            Err(e) => {
+                debug!(
+                    "pip version detection: `python -m pip --version` failed, skipping --uploaded-prior-to: {e:#}"
+                );
+                return false;
+            }
+        };
+        // Output: "pip 26.0.0 from /path (python 3.12)"
+        let version = output.split_whitespace().nth(1).unwrap_or("");
+        semver_is_at_least(version, PIP_MIN_UPLOADED_PRIOR_TO_VERSION).unwrap_or(false)
+    }
+
+    /// Returns true if the uv available supports `--exclude-newer` in `uv tool install`
+    /// (requires uv >= 0.1.37).
+    async fn uv_supports_exclude_newer(&self, config: &Arc<Config>) -> bool {
+        // Fast path: if uv is explicitly managed by mise, read the version from the ToolSet.
+        if let Ok(ts) = self.dependency_toolset(config).await {
+            for (ba, tvl) in &ts.versions {
+                if ba.short == "uv" {
+                    if let Some(tv) = tvl.versions.first() {
+                        debug!(
+                            "uv version detection: found uv {} in ToolSet, skipping subprocess",
+                            tv.version
+                        );
+                        return semver_is_at_least(&tv.version, UV_MIN_EXCLUDE_NEWER_VERSION)
+                            .unwrap_or(false);
+                    }
+                }
+            }
+        }
+        let env = match self.dependency_env(config).await {
+            Ok(env) => env,
+            Err(e) => {
+                debug!(
+                    "uv version detection: dependency_env failed, skipping --exclude-newer: {e:#}"
+                );
+                return false;
+            }
+        };
+        let uv = match self.dependency_which(config, "uv").await {
+            Some(p) => p,
+            None => {
+                debug!("uv version detection: uv not found, skipping --exclude-newer");
+                return false;
+            }
+        };
+        let output = match cmd!(uv, "--version").full_env(env).read() {
+            Ok(s) => s,
+            Err(e) => {
+                debug!(
+                    "uv version detection: `uv --version` failed, skipping --exclude-newer: {e:#}"
+                );
+                return false;
+            }
+        };
+        // Output: "uv 0.6.0 (abc 2024-01-01)"
+        let version = output.split_whitespace().nth(1).unwrap_or("");
+        semver_is_at_least(version, UV_MIN_EXCLUDE_NEWER_VERSION).unwrap_or(false)
     }
 
     async fn uv_is_installed(&self, config: &Arc<Config>) -> bool {
