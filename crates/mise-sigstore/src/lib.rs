@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use base64::Engine;
@@ -17,6 +18,44 @@ use tokio::io::AsyncReadExt;
 
 const GITHUB_API_URL: &str = "https://api.github.com";
 const USER_AGENT_VALUE: &str = "mise-sigstore/0.1.0";
+
+/// Per-request timeout for attestation API calls. Without this the client would
+/// wait indefinitely on a stalled connection (reqwest has no default timeout).
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Total attempts (1 initial + 3 retries) for transient attestation API failures.
+/// GitHub's attestations API intermittently returns 5xx (e.g. 504 Gateway
+/// Timeout) and 429 under load; a single attempt fails the whole install.
+const MAX_ATTEMPTS: usize = 4;
+/// Base backoff before the first retry. Doubles each attempt: ~0.5s / 1s / 2s.
+const BASE_BACKOFF: Duration = Duration::from_millis(500);
+
+/// Whether an HTTP status warrants a retry. 429 (rate limit) and any 5xx are
+/// transient server-side conditions; everything else (incl. 404) is terminal.
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+/// Whether a transport-level error warrants a retry (timeouts, connection
+/// failures, and incomplete requests are transient; decode/builder errors aren't).
+fn is_retryable_error(err: &reqwest::Error) -> bool {
+    err.is_timeout() || err.is_connect() || err.is_request()
+}
+
+/// Backoff delay for the given attempt (1-based) with "equal jitter" in
+/// `[d/2, d)` to avoid synchronized retries across concurrent installs.
+fn backoff_delay(attempt: usize) -> Duration {
+    let exp = (attempt.saturating_sub(1)).min(16) as u32;
+    let base = BASE_BACKOFF.saturating_mul(1u32 << exp);
+    let half = base / 2;
+    if half.is_zero() {
+        return base;
+    }
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0);
+    half + Duration::from_nanos(nanos % half.as_nanos().max(1) as u64)
+}
 
 #[derive(Debug, Error)]
 pub enum AttestationError {
@@ -189,6 +228,7 @@ impl AttestationClientBuilder {
         headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_VALUE));
         let client = reqwest::Client::builder()
             .default_headers(headers)
+            .timeout(REQUEST_TIMEOUT)
             .build()?;
 
         Ok(AttestationClient {
@@ -270,15 +310,42 @@ impl AttestationClient {
             .map_err(|e| AttestationError::Api(format!("Invalid GitHub attestations URL: {e}")))
     }
 
+    /// Send a request, retrying transient failures (5xx, 429, timeouts,
+    /// connection errors) with exponential backoff. The request must have no
+    /// streaming body so it can be cloned per attempt — true for all GET calls
+    /// here. Non-transient responses (incl. 4xx like 404) are returned as-is for
+    /// the caller to interpret.
+    async fn send_with_retry(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response> {
+        let mut attempt = 1;
+        loop {
+            let req = request
+                .try_clone()
+                .expect("attestation requests must not have a streaming body");
+            let result = req.send().await;
+            let last = attempt >= MAX_ATTEMPTS;
+            match result {
+                Ok(response) if last || !is_retryable_status(response.status()) => {
+                    return Ok(response);
+                }
+                Err(err) if last || !is_retryable_error(&err) => {
+                    return Err(AttestationError::Http(err));
+                }
+                _ => {
+                    tokio::time::sleep(backoff_delay(attempt)).await;
+                    attempt += 1;
+                }
+            }
+        }
+    }
+
     pub async fn fetch_attestations(&self, params: FetchParams) -> Result<Vec<Attestation>> {
         let url = self.attestations_url(&params)?;
 
-        let response = self
+        let request = self
             .client
             .get(url.clone())
-            .headers(self.github_headers(url.as_str())?)
-            .send()
-            .await?;
+            .headers(self.github_headers(url.as_str())?);
+        let response = self.send_with_retry(request).await?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(vec![]);
@@ -311,12 +378,11 @@ impl AttestationClient {
     }
 
     async fn fetch_bundle_url(&self, bundle_url: &str) -> Result<serde_json::Value> {
-        let response = self
+        let request = self
             .client
             .get(bundle_url)
-            .headers(self.github_headers(bundle_url)?)
-            .send()
-            .await?;
+            .headers(self.github_headers(bundle_url)?);
+        let response = self.send_with_retry(request).await?;
         if !response.status().is_success() {
             return Err(AttestationError::Api(format!(
                 "bundle URL returned {}",
@@ -1402,6 +1468,127 @@ mod tests {
         .to_string();
 
         assert!(err.contains("Workflow verification failed"));
+    }
+
+    #[test]
+    fn retryable_status_classification() {
+        use reqwest::StatusCode;
+        // Transient server-side conditions retry.
+        assert!(is_retryable_status(StatusCode::GATEWAY_TIMEOUT)); // 504 — the reported failure
+        assert!(is_retryable_status(StatusCode::BAD_GATEWAY)); // 502
+        assert!(is_retryable_status(StatusCode::SERVICE_UNAVAILABLE)); // 503
+        assert!(is_retryable_status(StatusCode::TOO_MANY_REQUESTS)); // 429
+        // Terminal conditions do not.
+        assert!(!is_retryable_status(StatusCode::OK));
+        assert!(!is_retryable_status(StatusCode::NOT_FOUND));
+        assert!(!is_retryable_status(StatusCode::UNAUTHORIZED));
+        assert!(!is_retryable_status(StatusCode::FORBIDDEN));
+    }
+
+    #[test]
+    fn backoff_grows_and_stays_within_jitter_bounds() {
+        // Each attempt's delay must fall in [base/2, base) where base doubles.
+        for attempt in 1..=4 {
+            let base = BASE_BACKOFF * (1u32 << (attempt - 1));
+            let d = backoff_delay(attempt);
+            assert!(d >= base / 2, "attempt {attempt}: {d:?} < {:?}", base / 2);
+            assert!(d < base, "attempt {attempt}: {d:?} >= {base:?}");
+        }
+    }
+
+    /// Spawn a throwaway HTTP server that replies with each status in
+    /// `statuses` (one per connection, in order) then `200 {body}` for the
+    /// rest. Returns the bound `base_url` and a counter of accepted connections.
+    fn flaky_server(
+        statuses: Vec<u16>,
+        body: &'static str,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::{Read, Write};
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_thread = hits.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = match stream {
+                    Ok(s) => s,
+                    Err(_) => break,
+                };
+                let n = hits_thread.fetch_add(1, Ordering::SeqCst);
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf); // drain the request line/headers
+                let (code, payload) = match statuses.get(n) {
+                    Some(&s) => (s, ""),
+                    None => (200, body),
+                };
+                let response = format!(
+                    "HTTP/1.1 {code} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (format!("http://{addr}"), hits)
+    }
+
+    #[tokio::test]
+    async fn fetch_attestations_retries_on_5xx() {
+        // 504 (the reported failure) then 502, then success — must recover.
+        let (base_url, hits) = flaky_server(vec![504, 502], r#"{"attestations":[]}"#);
+        let client = AttestationClient::builder()
+            .base_url(&base_url)
+            .build()
+            .unwrap();
+        let result = client
+            .fetch_attestations(FetchParams {
+                owner: "EarthBuild".to_string(),
+                repo: Some("EarthBuild/earthbuild".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "expected recovery after retries: {result:?}"
+        );
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            3,
+            "should have taken 2 failed + 1 successful attempt"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_attestations_surfaces_error_after_max_attempts() {
+        // Persistent 504 — exhaust MAX_ATTEMPTS then surface the API error.
+        let (base_url, hits) = flaky_server(vec![504, 504, 504, 504, 504], "");
+        let client = AttestationClient::builder()
+            .base_url(&base_url)
+            .build()
+            .unwrap();
+        let err = client
+            .fetch_attestations(FetchParams {
+                owner: "EarthBuild".to_string(),
+                repo: Some("EarthBuild/earthbuild".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AttestationError::Api(_)), "got {err:?}");
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            MAX_ATTEMPTS,
+            "should stop after MAX_ATTEMPTS"
+        );
     }
 
     /// A genuine `*.intoto.jsonl` produced by slsa-github-generator (sops
