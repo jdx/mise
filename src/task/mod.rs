@@ -2109,6 +2109,14 @@ where
         // Split pattern into path and task parts
         // Pattern format: //path/...:task* or //path:task*
         let parts: Vec<&str> = normalized_pat.splitn(2, ':').collect();
+        if pat.starts_with("//") && parts.len() == 1 {
+            bail!(
+                "missing task name in monorepo path '{}', use '{}:<task>' or '{}:*' to run all tasks in that path",
+                pat,
+                pat,
+                pat
+            );
+        }
         let has_explicit_task_glob = parts.len() > 1;
         let (path_pattern, task_pattern) = match parts.as_slice() {
             [path, task] => (*path, *task),
