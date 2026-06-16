@@ -315,62 +315,76 @@ fn effective_shim_mode(mise_bin: &Path) -> String {
     mode
 }
 
+/// Build the extension-less bash shim used on Windows in "file" mode (for Git
+/// Bash/Cygwin). "exe" mode does not emit this — its native <tool>.exe is found
+/// by those shells via `.exe` magic — so only "file" mode reaches this code.
+///
+/// The shim's directory can leak into WSL via the default Windows-PATH interop
+/// (it is mounted under /mnt/c where every file is treated as executable), so WSL
+/// runs this script natively. Calling the Windows `mise` from there either fails
+/// with `exec: mise: not found` or, with a Linux mise present, recurses forever --
+/// mise's loop guard only recognises its own shims dir, not the Windows one under
+/// /mnt/c. So detect WSL, drop this shim's own directory from PATH, and exec a
+/// native tool instead (or fail with a clear `<tool>: not found`). Outside WSL the
+/// guard is inert, so Git Bash/Cygwin behaviour is unchanged. (#10299)
+#[cfg(windows)]
+fn bash_shim_script(tool: &str) -> String {
+    formatdoc! {r#"
+        #!/bin/bash
+
+        if [ -n "${{WSL_DISTRO_NAME:-}}" ] || [ -n "${{WSL_INTEROP:-}}" ] || [ -e /proc/sys/fs/binfmt_misc/WSLInterop ]; then
+          shim_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)
+          new_path=
+          # disable globbing so a PATH entry containing * ? [ is not expanded
+          set -f
+          IFS=:
+          for p in $PATH; do
+            [ "$p" = "$shim_dir" ] && continue
+            new_path="${{new_path:+$new_path:}}$p"
+          done
+          unset IFS
+          set +f
+          export PATH="$new_path"
+          exec {tool} "$@"
+        fi
+
+        exec mise x -- {tool} "$@"
+        "#}
+}
+
 #[cfg(windows)]
 fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
     match effective_shim_mode(mise_bin).as_ref() {
         "exe" => {
-            if symlink_path.extension().and_then(|s| s.to_str()) == Some("exe") {
-                let mise_shim_bin =
-                    find_mise_shim_bin(mise_bin).ok_or_else(|| eyre!("mise-shim.exe not found"))?;
-                // Copy mise-shim.exe as <tool>.exe
-                fs::copy(&mise_shim_bin, symlink_path).wrap_err_with(|| {
-                    eyre!(
-                        "Failed to copy {} to {}",
-                        display_path(&mise_shim_bin),
-                        display_path(symlink_path)
-                    )
-                })?;
-                Ok(())
-            } else {
-                let shim_name = symlink_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy();
-                // Create extensionless bash script for Git Bash/Cygwin
-                file::write(
-                    symlink_path,
-                    formatdoc! {r#"
-        #!/bin/bash
-
-        exec mise x -- {shim_name} "$@"
-        "#},
+            // In "exe" mode every desired shim is a native <tool>.exe copy of
+            // mise-shim.exe (see get_desired_shims). No extension-less bash shim is
+            // emitted: Git Bash / Cygwin resolve a bare name to the .exe via their
+            // `.exe` magic, so emitting one is redundant and only pollutes WSL via
+            // /mnt/c PATH interop (#10299).
+            let mise_shim_bin =
+                find_mise_shim_bin(mise_bin).ok_or_else(|| eyre!("mise-shim.exe not found"))?;
+            // Copy mise-shim.exe as <tool>.exe
+            fs::copy(&mise_shim_bin, symlink_path).wrap_err_with(|| {
+                eyre!(
+                    "Failed to copy {} to {}",
+                    display_path(&mise_shim_bin),
+                    display_path(symlink_path)
                 )
-                .wrap_err_with(|| {
-                    eyre!(
-                        "Failed to create shim script for {}",
-                        display_path(symlink_path)
-                    )
-                })
-            }
+            })?;
+            Ok(())
         }
         "file" => {
             let shim = shim.trim_end_matches(".cmd");
             // write a shim file without extension for use in Git Bash/Cygwin
-            file::write(
-                symlink_path.with_extension(""),
-                formatdoc! {r#"
-        #!/bin/bash
-
-        exec mise x -- {shim} "$@"
-        "#},
-            )
-            .wrap_err_with(|| {
-                eyre!(
-                    "Failed to create symlink from {} to {}",
-                    display_path(mise_bin),
-                    display_path(symlink_path)
-                )
-            })?;
+            file::write(symlink_path.with_extension(""), bash_shim_script(shim)).wrap_err_with(
+                || {
+                    eyre!(
+                        "Failed to create symlink from {} to {}",
+                        display_path(mise_bin),
+                        display_path(symlink_path)
+                    )
+                },
+            )?;
             file::write(
                 symlink_path.with_extension("cmd"),
                 formatdoc! {r#"
@@ -508,13 +522,17 @@ fn is_hidden_shim_name(name: &std::ffi::OsStr) -> bool {
 }
 
 /// Whether existing shims were generated by a different mise version AND the
-/// current shim mode produces version-dependent shim files (a literal copy of
-/// the mise/mise-shim binary). Script ("file") and "symlink" modes are never
-/// version-stale because their content does not embed the mise binary.
-/// `prev == None` (no `.version` marker yet) heals installs that predate the
-/// marker by forcing a one-time rebuild. See discussion #10022.
+/// current shim mode produces version-dependent shim files. "exe"/"hardlink"
+/// embed a literal copy of the mise/mise-shim binary; "file" writes a bash script
+/// whose contents are baked into the mise binary as well (e.g. the WSL guard added
+/// in #10299), so all three must rebuild on a version change to pick up script
+/// changes — otherwise a normal reshim leaves the old script in place. "symlink"
+/// only points at the mise binary (no embedded content), so it is never
+/// version-stale. `prev == None` (no `.version` marker yet) heals installs that
+/// predate the marker by forcing a one-time rebuild. See discussions #10022 and
+/// #10299.
 fn shim_version_stale(prev: Option<&str>, current: &str, shim_mode: &str) -> bool {
-    if !matches!(shim_mode, "exe" | "hardlink") {
+    if !matches!(shim_mode, "exe" | "hardlink" | "file") {
         return false;
     }
     prev.map(|p| p.trim() != current).unwrap_or(true)
@@ -546,10 +564,15 @@ async fn get_desired_shims(
                         vec![p.with_extension("exe").to_string_lossy().to_string()]
                     }
                     "exe" => {
-                        vec![
-                            p.with_extension("exe").to_string_lossy().to_string(),
-                            p.with_extension("").to_string_lossy().to_string(),
-                        ]
+                        // Only the native <tool>.exe is needed. Git Bash / Cygwin /
+                        // MSYS2 resolve a bare `tool` to `tool.exe` via their `.exe`
+                        // magic, and mise-shim.exe derives the tool from its own file
+                        // name, so it runs correctly however it is invoked. We do NOT
+                        // emit an extension-less bash shim here: that variant is only
+                        // required in "file" mode (no .exe, and Cygwin won't auto-append
+                        // .cmd) and is what leaked into WSL via /mnt/c PATH interop
+                        // (#10299).
+                        vec![p.with_extension("exe").to_string_lossy().to_string()]
                     }
                     "file" => {
                         vec![
@@ -561,7 +584,7 @@ async fn get_desired_shims(
                 }
             }));
         } else if cfg!(macos) {
-            // some bins might be uppercased but on mac APFS is case insensitive
+            // some bins might be uppercased but on mac APFS is case-insensitive
             shims.extend(bins.into_iter().map(|b| b.to_lowercase()));
         } else {
             shims.extend(bins);
@@ -655,6 +678,24 @@ async fn err_no_version_set(
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    #[test]
+    fn bash_shim_script_includes_wsl_guard() {
+        let script = bash_shim_script("gh");
+        assert!(script.starts_with("#!/bin/bash"));
+        // WSL detection
+        assert!(script.contains("WSL_DISTRO_NAME"));
+        assert!(script.contains("WSL_INTEROP"));
+        assert!(script.contains("/proc/sys/fs/binfmt_misc/WSLInterop"));
+        assert!(script.contains(r#"shim_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)"#));
+        // globbing disabled while splitting PATH so wildcard entries are not expanded
+        assert!(script.contains("set -f"));
+        // In WSL: drop the shim dir and run the native tool directly.
+        assert!(script.contains(r#"exec gh "$@""#));
+        // Outside WSL: defer to mise as before.
+        assert!(script.contains(r#"exec mise x -- gh "$@""#));
+    }
+
     #[test]
     fn list_executables_in_dir_skips_dotfiles() {
         let dir = tempfile::tempdir().unwrap();
@@ -703,19 +744,22 @@ mod tests {
             "2026.5.16",
             "hardlink"
         ));
+        // file mode writes a versioned bash script (e.g. the WSL guard, #10299),
+        // so a version change must rebuild it too
+        assert!(shim_version_stale(Some("2026.5.13"), "2026.5.16", "file"));
         // matching version is not stale
         assert!(!shim_version_stale(Some("2026.5.16"), "2026.5.16", "exe"));
+        assert!(!shim_version_stale(Some("2026.5.16"), "2026.5.16", "file"));
         // surrounding whitespace in the marker is ignored
         assert!(!shim_version_stale(Some("2026.5.16\n"), "2026.5.16", "exe"));
         // no marker yet: heal once (covers installs created before this marker)
         assert!(shim_version_stale(None, "2026.5.16", "exe"));
-        // script/symlink shims never embed the binary, so never version-stale
-        assert!(!shim_version_stale(Some("2026.5.13"), "2026.5.16", "file"));
+        assert!(shim_version_stale(None, "2026.5.16", "file"));
+        // symlink shims only point at the mise binary, so never version-stale
         assert!(!shim_version_stale(
             Some("2026.5.13"),
             "2026.5.16",
             "symlink"
         ));
-        assert!(!shim_version_stale(None, "2026.5.16", "file"));
     }
 }

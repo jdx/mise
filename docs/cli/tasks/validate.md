@@ -44,7 +44,7 @@ Validation Checks:
 The validate command performs the following checks:
 
   • Circular Dependencies: Detects dependency cycles
-  • Missing References: Finds references to non-existent tasks
+  • Missing References: Finds references to nonexistent tasks
   • Usage Spec Parsing: Validates #USAGE directives and specs
   • Timeout Format: Checks timeout values are valid durations
   • Alias Conflicts: Detects duplicate aliases across tasks

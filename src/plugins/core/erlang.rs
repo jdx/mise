@@ -7,11 +7,13 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 #[cfg(unix)]
-use crate::file::TarOptions;
+use crate::file::ExtractOptions;
 use crate::file::display_path;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
+use crate::lockfile::PlatformInfo;
+use crate::platform::{Platform, linux_os_release};
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{file, github, plugins};
 use async_trait::async_trait;
@@ -29,6 +31,8 @@ pub struct ErlangPlugin {
 }
 
 const KERL_VERSION: &str = "4.4.0";
+const ERLANG_PRECOMPILED_OPTION: &str = "precompiled";
+const ERLANG_PRECOMPILED_OS_OPTION: &str = "precompiled_os";
 
 impl ErlangPlugin {
     pub fn new() -> Self {
@@ -93,63 +97,159 @@ impl ErlangPlugin {
         Ok(None)
     }
 
+    fn release_tag(version: &str) -> String {
+        format!("OTP-{version}")
+    }
+
+    fn lockfile_url(&self, tv: &ToolVersion) -> Option<String> {
+        tv.lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|p| p.url.clone())
+    }
+
+    fn set_lockfile_info(&self, tv: &mut ToolVersion, url: &str, checksum: Option<String>) {
+        let platform_info = tv
+            .lock_platforms
+            .entry(self.get_platform_key())
+            .or_default();
+        platform_info.url = Some(url.to_string());
+        if let Some(checksum) = checksum {
+            platform_info.checksum.get_or_insert(checksum);
+        }
+    }
+
+    fn linux_precompiled_url(version: &str, target: &PlatformTarget) -> Result<String> {
+        if target.libc() == Some("musl") {
+            bail!("precompiled erlang is not supported on musl linux");
+        }
+        let arch = match target.arch_name() {
+            "x64" => "amd64",
+            "arm64" => "arm64",
+            other => bail!("unsupported architecture: {other}"),
+        };
+        let os_ver = Self::linux_precompiled_os_version()?;
+        Ok(format!(
+            "https://builds.hex.pm/builds/otp/{arch}/{os_ver}/{}.tar.gz",
+            Self::release_tag(version)
+        ))
+    }
+
+    #[cfg(linux)]
+    fn linux_precompiled_cache_name(url: &str) -> String {
+        url.strip_prefix("https://builds.hex.pm/builds/otp/")
+            .unwrap_or(url)
+            .replace('/', "__")
+            .replace(':', "_")
+    }
+
+    fn lockfile_precompiled_os_option(target: &PlatformTarget) -> Option<String> {
+        if target.os_name() == "linux" && target.libc() != Some("musl") {
+            Self::linux_precompiled_os_version().ok()
+        } else {
+            None
+        }
+    }
+
+    fn linux_precompiled_os_version() -> Result<String> {
+        let os_ver = if Platform::current().is_linux() {
+            if let Ok(os) = std::env::var("ImageOS") {
+                match os.as_str() {
+                    "ubuntu24" => "ubuntu-24.04".to_string(),
+                    "ubuntu22" => "ubuntu-22.04".to_string(),
+                    "ubuntu20" => "ubuntu-20.04".to_string(),
+                    _ => os,
+                }
+            } else if let Some(os_release) = linux_os_release() {
+                format!("{}-{}", os_release.id, os_release.version_id)
+            } else {
+                bail!("could not determine OS release");
+            }
+        } else {
+            // Cross-platform Linux lock resolution cannot inspect the target
+            // distro, so use Bob's newest supported Ubuntu build.
+            "ubuntu-24.04".to_string()
+        };
+
+        // Currently, Bob only builds for Ubuntu, so we have to check that we're on Ubuntu,
+        // and on a supported version.
+        if !["ubuntu-20.04", "ubuntu-22.04", "ubuntu-24.04"].contains(&os_ver.as_str()) {
+            bail!("unsupported OS version: {os_ver}");
+        }
+        Ok(os_ver)
+    }
+
+    fn macos_asset_name(target: &PlatformTarget) -> Result<String> {
+        let arch = match target.arch_name() {
+            "x64" => "x86_64",
+            "arm64" => "aarch64",
+            other => bail!("unsupported architecture: {other}"),
+        };
+        Ok(format!("otp-{arch}-apple-darwin.tar.gz"))
+    }
+
+    fn windows_asset_name(version: &str, target: &PlatformTarget) -> Result<String> {
+        let os = match target.arch_name() {
+            "x64" => "win64",
+            "x86" => "win32",
+            other => bail!("unsupported architecture: {other}"),
+        };
+        Ok(format!("otp_{os}_{version}.zip"))
+    }
+
+    async fn github_asset_lock_info(repo: &str, tag: &str, name: &str) -> Result<PlatformInfo> {
+        let release = github::get_release(repo, tag).await?;
+        let asset = release
+            .assets
+            .iter()
+            .find(|a| a.name == name)
+            .ok_or_else(|| eyre::eyre!("no asset found for {name} in {tag}"))?;
+        Ok(PlatformInfo {
+            checksum: asset.digest.clone(),
+            url: Some(asset.browser_download_url.clone()),
+            url_api: Some(asset.url.clone()),
+            ..Default::default()
+        })
+    }
+
     #[cfg(linux)]
     async fn install_precompiled(
         &self,
         ctx: &InstallContext,
-        tv: ToolVersion,
+        mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
         if Settings::get().erlang.compile == Some(true) {
             return Ok(None);
         }
-        let release_tag = format!("OTP-{}", tv.version);
-
-        let settings = Settings::get();
-        let arch: String = match settings.arch() {
-            "x64" => "amd64".to_string(),
-            "arm64" => "arm64".to_string(),
-            other => {
-                return self.precompiled_unavailable(format!("unsupported architecture: {other}"));
+        let url = if let Some(url) = self.lockfile_url(&tv) {
+            url
+        } else {
+            match Self::linux_precompiled_url(&tv.version, &PlatformTarget::from_current()) {
+                Ok(url) => url,
+                Err(e) => {
+                    return self.precompiled_unavailable(e.to_string());
+                }
             }
         };
 
-        let os_ver: String;
-        if let Ok(os) = std::env::var("ImageOS") {
-            os_ver = match os.as_str() {
-                "ubuntu24" => "ubuntu-24.04".to_string(),
-                "ubuntu22" => "ubuntu-22.04".to_string(),
-                "ubuntu20" => "ubuntu-20.04".to_string(),
-                _ => os,
-            };
-        } else if let Ok(os_release) = &*os_release::OS_RELEASE {
-            os_ver = format!("{}-{}", os_release.id, os_release.version_id);
-        } else {
-            return self.precompiled_unavailable("could not determine OS release");
-        };
-
-        // Currently, Bob only builds for Ubuntu, so we have to check that we're on ubuntu, and on a supported version
-        if !["ubuntu-20.04", "ubuntu-22.04", "ubuntu-24.04"].contains(&os_ver.as_str()) {
-            return self.precompiled_unavailable(format!("unsupported OS version: {os_ver}"));
-        }
-
-        let url: String =
-            format!("https://builds.hex.pm/builds/otp/{arch}/{os_ver}/{release_tag}.tar.gz");
-
         let filename = url.split('/').next_back().unwrap();
-        let tarball_path = tv.download_path().join(filename);
+        let tarball_path = tv
+            .download_path()
+            .join(Self::linux_precompiled_cache_name(&url));
 
         ctx.pr.set_message(format!("Downloading {filename}"));
         if !tarball_path.exists() {
             HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
                 .await?;
         }
+        self.set_lockfile_info(&mut tv, &url, None);
         ctx.pr.set_message(format!("Extracting {filename}"));
         file::untar(
             &tarball_path,
             &tv.download_path(),
-            &TarOptions {
+            file::ExtractionFormat::TarGz,
+            &ExtractOptions {
                 pr: Some(ctx.pr.as_ref()),
-                ..TarOptions::new(file::TarFormat::TarGz)
+                ..Default::default()
             },
         )?;
 
@@ -194,49 +294,49 @@ impl ErlangPlugin {
         if Settings::get().erlang.compile == Some(true) {
             return Ok(None);
         }
-        let release_tag = format!("OTP-{}", tv.version);
-        let gh_release = match github::get_release("erlef/otp_builds", &release_tag).await {
-            Ok(release) => release,
-            Err(e) => {
-                return self
-                    .precompiled_unavailable(format!("failed to get release {release_tag}: {e}"));
-            }
+        let release_tag = Self::release_tag(&tv.version);
+        let (url, checksum) = if let Some(url) = self.lockfile_url(&tv) {
+            (url, None)
+        } else {
+            let tarball_name = match Self::macos_asset_name(&PlatformTarget::from_current()) {
+                Ok(tarball_name) => tarball_name,
+                Err(e) => return self.precompiled_unavailable(e.to_string()),
+            };
+            let gh_release = match github::get_release("erlef/otp_builds", &release_tag).await {
+                Ok(release) => release,
+                Err(e) => {
+                    return self.precompiled_unavailable(format!(
+                        "failed to get release {release_tag}: {e}"
+                    ));
+                }
+            };
+            let asset = match gh_release.assets.iter().find(|a| a.name == tarball_name) {
+                Some(asset) => asset,
+                None => {
+                    return self.precompiled_unavailable(format!(
+                        "no asset found for {tarball_name} in {release_tag}"
+                    ));
+                }
+            };
+            (asset.browser_download_url.clone(), asset.digest.clone())
         };
-        let settings = Settings::get();
-        let arch = match settings.arch() {
-            "x64" => "x86_64",
-            "arm64" => "aarch64",
-            other => other,
-        };
-        let os = match settings.os() {
-            "macos" => "apple-darwin",
-            other => other,
-        };
-        let tarball_name = format!("otp-{arch}-{os}.tar.gz");
-        let asset = match gh_release.assets.iter().find(|a| a.name == tarball_name) {
-            Some(asset) => asset,
-            None => {
-                return self.precompiled_unavailable(format!(
-                    "no asset found for {tarball_name} in {release_tag}"
-                ));
-            }
-        };
+        let tarball_name = url.split('/').next_back().unwrap();
         ctx.pr.set_message(format!("Downloading {tarball_name}"));
-        let tarball_path = tv.download_path().join(&tarball_name);
-        HTTP.download_file(
-            &asset.browser_download_url,
-            &tarball_path,
-            Some(ctx.pr.as_ref()),
-        )
-        .await?;
+        let tarball_path = tv.download_path().join(tarball_name);
+        if !tarball_path.exists() {
+            HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
+                .await?;
+        }
+        self.set_lockfile_info(&mut tv, &url, checksum);
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.set_message(format!("Extracting {tarball_name}"));
         file::untar(
             &tarball_path,
             &tv.install_path(),
-            &TarOptions {
+            file::ExtractionFormat::TarGz,
+            &ExtractOptions {
                 pr: Some(ctx.pr.as_ref()),
-                ..TarOptions::new(file::TarFormat::TarGz)
+                ..Default::default()
             },
         )?;
         Ok(Some(tv))
@@ -251,36 +351,41 @@ impl ErlangPlugin {
         if Settings::get().erlang.compile == Some(true) {
             return Ok(None);
         }
-        let release_tag = format!("OTP-{}", tv.version);
-        let gh_release = match github::get_release("erlang/otp", &release_tag).await {
-            Ok(release) => release,
-            Err(e) => {
-                return self
-                    .precompiled_unavailable(format!("failed to get release {release_tag}: {e}"));
-            }
+        let release_tag = Self::release_tag(&tv.version);
+        let (url, checksum) = if let Some(url) = self.lockfile_url(&tv) {
+            (url, None)
+        } else {
+            let zip_name =
+                match Self::windows_asset_name(&tv.version, &PlatformTarget::from_current()) {
+                    Ok(zip_name) => zip_name,
+                    Err(e) => return self.precompiled_unavailable(e.to_string()),
+                };
+            let gh_release = match github::get_release("erlang/otp", &release_tag).await {
+                Ok(release) => release,
+                Err(e) => {
+                    return self.precompiled_unavailable(format!(
+                        "failed to get release {release_tag}: {e}"
+                    ));
+                }
+            };
+            let asset = match gh_release.assets.iter().find(|a| a.name == zip_name) {
+                Some(asset) => asset,
+                None => {
+                    return self.precompiled_unavailable(format!(
+                        "no asset found for {zip_name} in {release_tag}"
+                    ));
+                }
+            };
+            (asset.browser_download_url.clone(), asset.digest.clone())
         };
-        let settings = Settings::get();
-        let os = match settings.os() {
-            "windows" => "win64",
-            other => other,
-        };
-        let zip_name = format!("otp_{os}_{version}.zip", version = tv.version);
-        let asset = match gh_release.assets.iter().find(|a| a.name == zip_name) {
-            Some(asset) => asset,
-            None => {
-                return self.precompiled_unavailable(format!(
-                    "no asset found for {zip_name} in {release_tag}"
-                ));
-            }
-        };
+        let zip_name = url.split('/').next_back().unwrap();
         ctx.pr.set_message(format!("Downloading {}", zip_name));
-        let zip_path = tv.download_path().join(&zip_name);
-        HTTP.download_file(
-            &asset.browser_download_url,
-            &zip_path,
-            Some(ctx.pr.as_ref()),
-        )
-        .await?;
+        let zip_path = tv.download_path().join(zip_name);
+        if !zip_path.exists() {
+            HTTP.download_file(&url, &zip_path, Some(ctx.pr.as_ref()))
+                .await?;
+        }
+        self.set_lockfile_info(&mut tv, &url, checksum);
         self.verify_checksum(ctx, &mut tv, &zip_path)?;
         ctx.pr.set_message(format!("Extracting {}", zip_name));
         file::unzip(&zip_path, &tv.install_path(), &Default::default())?;
@@ -388,25 +493,92 @@ impl Backend for ErlangPlugin {
         self.install_via_kerl(ctx, tv).await
     }
 
+    fn supports_lockfile_url(&self) -> bool {
+        // In default mode, precompiled Erlang is opportunistic and may fall
+        // back to kerl, so locked installs cannot always require a URL.
+        Settings::get().erlang.compile == Some(false)
+    }
+
     fn resolve_lockfile_options(
         &self,
         _request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
-        let is_current_platform = target.is_current();
 
-        // Only include compile option if true (non-default)
-        let compile = if is_current_platform {
-            settings.erlang.compile.unwrap_or(false)
-        } else {
-            false
-        };
-        if compile {
-            opts.insert("compile".to_string(), "true".to_string());
+        match settings.erlang.compile {
+            Some(true) => {
+                opts.insert("compile".to_string(), "true".to_string());
+            }
+            Some(false) => {
+                opts.insert("compile".to_string(), "false".to_string());
+                if let Some(os_version) = Self::lockfile_precompiled_os_option(target) {
+                    opts.insert(ERLANG_PRECOMPILED_OS_OPTION.to_string(), os_version);
+                }
+            }
+            None => {
+                opts.insert(
+                    ERLANG_PRECOMPILED_OPTION.to_string(),
+                    "if_available".to_string(),
+                );
+                if let Some(os_version) = Self::lockfile_precompiled_os_option(target) {
+                    opts.insert(ERLANG_PRECOMPILED_OS_OPTION.to_string(), os_version);
+                }
+            }
         }
 
-        opts
+        Ok(opts)
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let compile = Settings::get().erlang.compile;
+        if compile == Some(true) {
+            return Ok(PlatformInfo::default());
+        }
+
+        let release_tag = Self::release_tag(&tv.version);
+        match target.os_name() {
+            "linux" => match Self::linux_precompiled_url(&tv.version, target) {
+                Ok(url) => Ok(PlatformInfo {
+                    url: Some(url),
+                    ..Default::default()
+                }),
+                Err(err) if compile == Some(false) => Err(err),
+                Err(_) => Ok(PlatformInfo::default()),
+            },
+            "macos" => {
+                let info = match Self::macos_asset_name(target) {
+                    Ok(asset_name) => {
+                        Self::github_asset_lock_info("erlef/otp_builds", &release_tag, &asset_name)
+                            .await
+                    }
+                    Err(err) => Err(err),
+                };
+                match info {
+                    Ok(info) => Ok(info),
+                    Err(err) if compile == Some(false) => Err(err),
+                    Err(_) => Ok(PlatformInfo::default()),
+                }
+            }
+            "windows" => {
+                let info = match Self::windows_asset_name(&tv.version, target) {
+                    Ok(asset_name) => {
+                        Self::github_asset_lock_info("erlang/otp", &release_tag, &asset_name).await
+                    }
+                    Err(err) => Err(err),
+                };
+                match info {
+                    Ok(info) => Ok(info),
+                    Err(err) if compile == Some(false) => Err(err),
+                    Err(_) => Ok(PlatformInfo::default()),
+                }
+            }
+            _ => Ok(PlatformInfo::default()),
+        }
     }
 }

@@ -23,19 +23,36 @@ _mise() {
       return 1
   fi
 
-  local spec_file="${TMPDIR:-/tmp}/usage__usage_spec_mise_2026_6_0.spec"
+  local spec_file="${TMPDIR:-/tmp}/usage__usage_spec_mise_2026_6_11.spec"
   if [[ ! -f "$spec_file" ]]; then
     mise usage >| "$spec_file"
   fi
-  local -a completions=() inserts=()
-  local needs_menu=0 display insert
-  while IFS=$'\t' read -r display insert; do
-    completions+=("$display")
-    inserts+=("$insert")
-    [[ "$insert" == "'"* ]] && needs_menu=1
+  local -a values=() descs=() inserts=()
+  local needs_menu=0 line
+  while IFS= read -r line; do
+    local -a parts=("${(@ps:\t:)line}")
+    values+=("${parts[1]}")
+    descs+=("${parts[2]}")
+    inserts+=("${parts[3]}")
+    [[ "${parts[3]}" == "'"* ]] && needs_menu=1
   done < <(command usage complete-word --shell zsh -f "$spec_file" -- "${(Q)words[@]}")
   (( needs_menu )) && compstate[insert]=menu
-  _describe 'completions' completions inserts -U -Q -S ''
+  if (( ${#inserts[@]} )); then
+    local -a _usage_display=()
+    local _usage_i _usage_max=0 _usage_v _usage_pad
+    for _usage_v in "${values[@]}"; do
+      (( ${#_usage_v} > _usage_max )) && _usage_max=${#_usage_v}
+    done
+    for ((_usage_i=1; _usage_i<=${#values[@]}; _usage_i++)); do
+      if [[ -n "${descs[_usage_i]}" ]]; then
+        _usage_pad=$(( _usage_max - ${#values[_usage_i]} ))
+        _usage_display+=("${values[_usage_i]}${(l:_usage_pad:: :)}  -- ${descs[_usage_i]}")
+      else
+        _usage_display+=("${values[_usage_i]}")
+      fi
+    done
+    compadd -l -d _usage_display -U -Q -S '' -a inserts
+  fi
   return 0
 }
 

@@ -7,7 +7,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file::{TarFormat, TarOptions, display_path};
+use crate::file::{ExtractOptions, ExtractionFormat, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -189,6 +189,23 @@ impl PythonPlugin {
             }
         }
     }
+    fn python_build_definition_created_at(&self) -> eyre::Result<BTreeMap<String, String>> {
+        let output = crate::cmd!(
+            "git",
+            "-C",
+            self.python_build_path(),
+            "-c",
+            format!("safe.directory={}", self.python_build_path().display()),
+            "log",
+            "--format=%cI",
+            "--diff-filter=A",
+            "--name-only",
+            "--",
+            "plugins/python-build/share/python-build",
+        )
+        .read()?;
+        Ok(parse_python_build_definition_created_at(&output))
+    }
 
     async fn fetch_precompiled_remote_versions(
         &self,
@@ -297,7 +314,7 @@ impl PythonPlugin {
                         debug!("no precompiled python found for {}", tv.version);
                     } else {
                         warn!(
-                            "no precompiled python found for {}, force mise to use a precompiled version with `mise settings set python.compile false`",
+                            "no precompiled python found for {}, force mise to use a precompiled version with `mise settings set python.compile=false`",
                             tv.version
                         );
                     }
@@ -353,13 +370,14 @@ impl PythonPlugin {
         }
 
         file::remove_all(&install)?;
-        file::untar(
+        file::extract_archive(
             &tarball_path,
             &install,
-            &TarOptions {
+            ExtractionFormat::from_file_name(filename),
+            &ExtractOptions {
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
-                ..TarOptions::new(TarFormat::from_file_name(filename))
+                ..Default::default()
             },
         )?;
         if !install.join("bin").exists() {
@@ -482,12 +500,6 @@ impl PythonPlugin {
         let raw_opts = tv.request.options();
         let opts = PythonOptions::new(&raw_opts);
         if let Some(virtualenv) = opts.virtualenv() {
-            if !Settings::get().experimental {
-                warn!(
-                    "please enable experimental mode with `mise settings experimental=true` \
-                    to use python virtualenv activation"
-                );
-            }
             let mut virtualenv: PathBuf = file::replace_path(Path::new(virtualenv));
             if !virtualenv.is_absolute() {
                 // TODO: use the path of the config file that specified python, not the top one like this
@@ -726,6 +738,7 @@ impl PythonPlugin {
             "python-build-standalone",
             None, // Accept any workflow from repo
             None,
+            true,
         )
         .await
         {
@@ -763,8 +776,9 @@ impl Backend for PythonPlugin {
                 .fetch_precompiled_remote_versions()
                 .await?
                 .iter()
-                .map(|(v, _, _)| VersionInfo {
+                .map(|(v, date, _)| VersionInfo {
                     version: v.clone(),
+                    created_at: python_precompiled_created_at(date),
                     ..Default::default()
                 })
                 .collect())
@@ -772,6 +786,12 @@ impl Backend for PythonPlugin {
             self.install_or_update_python_build(None)?;
             let python_build_bin = self.python_build_bin();
             let python_build_str = python_build_bin.to_string_lossy().to_string();
+            let definition_created_at = self
+                .python_build_definition_created_at()
+                .inspect_err(|err| {
+                    debug!("failed to get python-build definition timestamps: {err:#}")
+                })
+                .unwrap_or_default();
             plugins::core::run_fetch_task_with_timeout_async(async move || {
                 let output = crate::cmd::cmd_read_async_inherited_env(
                     &python_build_str,
@@ -785,6 +805,7 @@ impl Backend for PythonPlugin {
                     .filter(|s| !regex!(r"\dt(-dev)?$").is_match(s))
                     .map(|s| VersionInfo {
                         version: s.to_string(),
+                        created_at: definition_created_at.get(s).cloned(),
                         ..Default::default()
                     })
                     .sorted_by_cached_key(|v| python_version_sort_key(&v.version))
@@ -904,7 +925,7 @@ impl Backend for PythonPlugin {
         &self,
         request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
         let is_current_platform = target.is_current();
@@ -935,7 +956,7 @@ impl Backend for PythonPlugin {
 
         let raw_opts = request.options();
         opts.extend(PythonOptions::new(&raw_opts).lockfile_options());
-        opts
+        Ok(opts)
     }
 
     async fn resolve_lock_info(
@@ -971,6 +992,42 @@ impl Backend for PythonPlugin {
             ..Default::default()
         })
     }
+}
+
+fn parse_python_build_definition_created_at(output: &str) -> BTreeMap<String, String> {
+    let mut created_at = BTreeMap::new();
+    let mut current_timestamp = None;
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if !line.starts_with("plugins/") && crate::duration::parse_into_timestamp(line).is_ok() {
+            current_timestamp = Some(line.to_string());
+            continue;
+        }
+        if let Some(version) = line.strip_prefix("plugins/python-build/share/python-build/")
+            && !version.contains('/')
+            && let Some(timestamp) = &current_timestamp
+        {
+            created_at
+                .entry(version.to_string())
+                .or_insert_with(|| timestamp.clone());
+        }
+    }
+    created_at
+}
+
+fn python_precompiled_created_at(date: &str) -> Option<String> {
+    if date.len() != 8 || !date.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(format!(
+        "{}-{}-{}T00:00:00Z",
+        &date[..4],
+        &date[4..6],
+        &date[6..]
+    ))
 }
 
 fn python_precompiled_url_path(settings: &Settings) -> String {
@@ -1065,7 +1122,7 @@ fn python_arch_for_target(target: &PlatformTarget) -> &'static str {
 fn ensure_not_windows() -> eyre::Result<()> {
     if cfg!(windows) {
         bail!(
-            "python can not currently be compiled on windows with core:python, use vfox:python instead"
+            "python cannot currently be compiled on windows with core:python, use vfox:python instead"
         );
     }
     Ok(())
@@ -1127,6 +1184,47 @@ mod tests {
 
         let opts = opts_with("patch_sysconfig", "true");
         assert!(PythonOptions::new(&opts).lockfile_options().is_empty());
+    }
+
+    #[test]
+    fn parses_python_build_definition_created_at() {
+        let output = "\
+2026-06-11T12:34:56+00:00
+plugins/python-build/share/python-build/3.14.6
+plugins/python-build/share/python-build/3.13.8
+
+2026-06-01T01:02:03+00:00
+plugins/python-build/share/python-build/3.14.5
+plugins/python-build/share/python-build/patches/3.14.5/foo.patch
+";
+
+        assert_eq!(
+            parse_python_build_definition_created_at(output),
+            BTreeMap::from([
+                (
+                    "3.13.8".to_string(),
+                    "2026-06-11T12:34:56+00:00".to_string()
+                ),
+                (
+                    "3.14.5".to_string(),
+                    "2026-06-01T01:02:03+00:00".to_string()
+                ),
+                (
+                    "3.14.6".to_string(),
+                    "2026-06-11T12:34:56+00:00".to_string()
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn parses_python_precompiled_created_at() {
+        assert_eq!(
+            python_precompiled_created_at("20260611").as_deref(),
+            Some("2026-06-11T00:00:00Z")
+        );
+        assert_eq!(python_precompiled_created_at("2026-06-11"), None);
+        assert_eq!(python_precompiled_created_at("notadate"), None);
     }
 
     #[test]

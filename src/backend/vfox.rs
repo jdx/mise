@@ -93,7 +93,6 @@ impl Backend for VfoxBackend {
 
                 // Use backend methods if the plugin supports them
                 if this.is_backend_plugin() {
-                    Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.get_tool_name()?;
                     let opts = config
@@ -148,13 +147,43 @@ impl Backend for VfoxBackend {
             .into_iter()
             .collect();
         cmd_env.extend(tv.install_env());
+        // Surface `tools = true` `[env]` *value* directives (e.g.
+        // `CLOUDSDK_PYTHON = "{{ tools.python.path }}/bin/python3"`) resolved against
+        // the install toolset, which already has the dependency installed (depends
+        // ordering). Without this, a combined `mise install` would run the plugin's
+        // install hooks (including os.execute) without the resolved value, unlike the
+        // separate-install case where a re-activated shell re-exports it. Uses ctx.ts
+        // — NOT config.get_toolset(), which would re-enter the toolset OnceCell from
+        // backends' version listing and deadlock. Best-effort: env *modules* are
+        // excluded via ToolsFilter::ToolsOnlyVals, errors fall back to the tool-less
+        // env, and PATH is left to dependency_env. (#10282)
+        {
+            let base: EnvMap = cmd_env.clone().into_iter().collect();
+            match ctx.ts.tool_val_env(&ctx.config, &base).await {
+                Ok(vals) => {
+                    for (k, v) in vals {
+                        // PATH stays owned by dependency_env. On Windows env var
+                        // names are case-insensitive, so exclude any casing
+                        // (e.g. a lowercase `path`); on unix only exact `PATH`.
+                        let is_path = if cfg!(windows) {
+                            k.eq_ignore_ascii_case(crate::env::PATH_KEY.as_str())
+                        } else {
+                            k.as_str() == crate::env::PATH_KEY.as_str()
+                        };
+                        if !is_path {
+                            cmd_env.insert(k, v);
+                        }
+                    }
+                }
+                Err(e) => debug!("vfox: skipping tools=true value directives: {e:#}"),
+            }
+        }
         if !cmd_env.is_empty() {
             vfox.cmd_env = Some(cmd_env);
         }
 
         // Use backend methods if the plugin supports them
         if self.is_backend_plugin() {
-            Settings::get().ensure_experimental("custom backends")?;
             let tool_name = self.get_tool_name()?;
             let tool_opts = tv.request.options();
             vfox.backend_install(

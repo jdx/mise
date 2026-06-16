@@ -5,6 +5,10 @@
   "type": "object",
   "unevaluatedProperties": false,
   "properties": {
+    "auto_env": {
+      "description": "Automatically enable platform config environments (unix, {os}, {os}-{arch}).",
+      "type": "boolean"
+    },
     "ceiling_paths": {
       "default": [],
       "description": "Directories where mise stops searching for config files.",

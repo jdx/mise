@@ -3,7 +3,7 @@
 # Tests for `mise tasks info` in a monorepo setup
 
 cat >mise.toml <<EOF
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["lib"]
@@ -22,15 +22,15 @@ echo Hello, World!
 """
 EOF
 
-# Test non-existent task
+# Test nonexistent task
 assert_fail "mise tasks info nonexistent"
 assert_contains "mise tasks info nonexistent 2>&1 || true" "Task not found: nonexistent"
 
-# Test non-existent monorepo task
+# Test nonexistent monorepo task
 assert_fail "mise tasks info //lib:nonexistent"
 assert_contains "mise tasks info //lib:nonexistent 2>&1 || true" "Task not found: //lib:nonexistent"
 
-# Test non-existent alias
+# Test nonexistent alias
 assert_fail "mise tasks info //lib:fake_alias"
 assert_contains "mise tasks info //lib:fake_alias 2>&1 || true" "Task not found: //lib:fake_alias"
 

@@ -33,10 +33,10 @@ run = "echo valid"
 
 [tasks.invalid]
 run = "echo invalid"
-depends = ["non-existent"]
+depends = ["nonexistent"]
 EOF
 
-assert_contains "mise tasks validate 2>&1 || true" "Dependency 'non-existent' not found"
+assert_contains "mise tasks validate 2>&1 || true" "Dependency 'nonexistent' not found"
 assert_contains "mise tasks validate 2>&1 || true" "missing-dependency"
 
 # Test invalid timeout
@@ -252,6 +252,52 @@ assert_contains "mise tasks validate multiple-alias 2>&1 || true" "Cannot define
 
 # Clean up
 rm -rf mise-tasks
+
+# Test monorepo config_root dependency validation matches runtime resolution
+rm -f mise.toml
+mkdir -p monorepo-validate/pkg
+cat <<'EOF' >monorepo-validate/mise.toml
+monorepo_root = true
+
+[settings]
+experimental = true
+
+[monorepo]
+config_roots = ["pkg"]
+EOF
+
+cat <<'EOF' >monorepo-validate/pkg/mise.toml
+[tasks._dep]
+hide = true
+alias = "dep-alias"
+usage = 'arg "<name>"'
+run = 'echo "arg=$usage_name"'
+
+[tasks.w_bare]
+depends = ["_dep bare"]
+
+[tasks.w_colon]
+depends = [":_dep colon"]
+
+[tasks.w_full]
+depends = ["//pkg:_dep full"]
+
+[tasks.w_alias]
+depends = ["dep-alias alias"]
+EOF
+
+(
+  cd monorepo-validate/pkg
+  assert_contains "mise tasks validate" "✓ All 5 task(s) validated successfully"
+)
+
+assert_contains "mise -C monorepo-validate run //pkg:w_bare" "arg=bare"
+assert_contains "mise -C monorepo-validate run //pkg:w_colon" "arg=colon"
+assert_contains "mise -C monorepo-validate run //pkg:w_full" "arg=full"
+assert_contains "mise -C monorepo-validate run //pkg:w_alias" "arg=alias"
+
+# Clean up
+rm -rf monorepo-validate
 
 # Test that run.tasks entries with inline arguments are accepted
 mkdir -p mise-tasks

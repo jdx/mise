@@ -284,6 +284,20 @@ mise uninstall --all
 mise install
 ```
 
+### Ruby Precompiled Build Revision Releases
+
+Precompiled Ruby binaries can have build revision releases for the same Ruby
+version. The lockfile keeps `version = "3.3.11"` but pins the selected build
+revision in the platform `url`:
+
+```toml
+url = "https://github.com/jdx/ruby/releases/download/3.3.11-1/ruby-3.3.11.x86_64_linux.tar.gz"
+```
+
+Here `3.3.11-1` is build revision `1`. See [Ruby precompiled build revisions](/lang/ruby.html#precompiled-build-revisions)
+for details on why revisions exist, how unlocked installs behave, and how to
+update older lockfiles.
+
 ### Lockfile Conflicts
 
 When merging branches with different lockfiles:
@@ -355,17 +369,21 @@ When enabled, every `mise install` will cryptographically verify provenance rega
 
 ## Minimum Release Age
 
-In addition to lockfiles, mise supports the [`minimum_release_age`](/configuration/settings.html#minimum_release_age) setting to limit supply chain risk by only installing versions that have been available for a minimum amount of time:
+In addition to lockfiles, mise uses the [`minimum_release_age`](/configuration/settings.html#minimum_release_age) setting to limit supply chain risk by only installing versions that have been available for a minimum amount of time. It defaults to `24h`:
 
 ```toml
 [settings]
-minimum_release_age = "7d"  # only resolve to versions released more than 7 days ago
+minimum_release_age = "7d"  # override the default 24h delay
 ```
 
 This pairs well with lockfiles — use `minimum_release_age` to avoid picking up brand-new releases, and lockfiles to pin the exact versions you've vetted.
 
-Some package-manager backends also forward this cutoff into transitive dependency resolution during
-install. This includes `npm:` and `pipx:` tools.
+This setting filters top-level fuzzy version resolution for backends that provide release timestamps.
+Versions without timestamps are included by default.
+
+Only `npm:` and `pipx:` currently forward the same cutoff into transitive dependency resolution during
+install. Other backends may select an older top-level tool version, but they do not constrain
+dependencies fetched by the tool's installer/compiler.
 
 ## See Also
 

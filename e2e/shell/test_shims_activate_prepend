@@ -14,3 +14,21 @@ assert_contains "env PATH='$CUSTOM_PATH' $MISE_BIN activate bash --shims" "expor
 
 # Shims not in PATH: should also be emitted as a prepend with shims first
 assert_contains "env PATH='/some/other/bin:/usr/bin' $MISE_BIN activate bash --shims" "export PATH=\"$SHIMS_DIR:"
+
+# Regression #10264: when the dir containing the mise executable is already in
+# PATH (e.g. a deb install at /usr/bin), --shims must NOT re-prepend it, which
+# would reorder PATH (moving /usr/bin ahead of /usr/local/bin). Only the shims
+# dir should be prepended, so exactly one `export PATH=` line is emitted.
+EXE_DIR="$(dirname "$MISE_BIN")"
+if ! out="$(env PATH="$EXE_DIR:/usr/local/bin:/usr/bin" "$MISE_BIN" activate bash --shims 2>&1)"; then
+  echo "FAIL: 'mise activate bash --shims' exited non-zero:"
+  printf '%s\n' "$out"
+  exit 1
+fi
+assert_contains_text "$out" "export PATH=\"$SHIMS_DIR:"
+path_lines="$(printf '%s\n' "$out" | grep -c 'export PATH=' || true)"
+if [[ $path_lines != "1" ]]; then
+  echo "FAIL: expected exactly one 'export PATH=' line (shims only) since the mise dir is already in PATH, got $path_lines:"
+  printf '%s\n' "$out"
+  exit 1
+fi

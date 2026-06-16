@@ -55,18 +55,45 @@ pub async fn fetch_checksum_from_shasums(shasums_url: &str, filename: &str) -> O
 /// * `None` if the checksum file couldn't be fetched
 pub async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
     match HTTP.get_text(checksum_url).await {
-        Ok(content) => {
-            // Format is typically "<hash>  <filename>" or just "<hash>"
-            content
-                .split_whitespace()
-                .next()
-                .map(|h| format!("{algo}:{}", h.trim()))
-        }
+        Ok(content) => parse_checksum_file_content(&content, algo),
         Err(e) => {
             debug!("Failed to fetch checksum from {}: {e}", checksum_url);
             None
         }
     }
+}
+
+fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
+    // PowerShell Get-FileHash output:
+    // Hash      : 7FDD...
+    for line in content.lines() {
+        if let Some((key, value)) = line.split_once(':')
+            && key.trim().eq_ignore_ascii_case("hash")
+        {
+            let hash = value.trim();
+            if is_checksum_hex(hash, algo) {
+                return Some(format!("{algo}:{}", hash.to_lowercase()));
+            }
+        }
+    }
+
+    // Standard formats are typically "<hash>  <filename>" or just "<hash>".
+    content
+        .split_whitespace()
+        .find(|token| is_checksum_hex(token, algo))
+        .map(|hash| format!("{algo}:{}", hash.to_lowercase()))
+}
+
+fn is_checksum_hex(s: &str, algo: &str) -> bool {
+    let expected_len = match algo {
+        "sha1" => 40,
+        "sha256" | "blake3" => 64,
+        "sha512" => 128,
+        "md5" => 32,
+        _ => return false,
+    };
+
+    s.len() == expected_len && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 pub trait VerifiableError: Sized + Send + Sync + 'static {
@@ -399,12 +426,12 @@ pub fn install_artifact(
     file::remove_all(&install_path)?;
     file::create_dir_all(&install_path)?;
 
-    // Use TarFormat for format detection
+    // Use ExtractionFormat for format detection
     // Check for explicit format option first, then fall back to file extension
     let format = if let Some(format_opt) = lookup_with_fallback(opts, "format") {
-        file::TarFormat::from_ext(&format_opt)
+        file::ExtractionFormat::from_ext(&format_opt).unwrap_or(file::ExtractionFormat::Raw)
     } else {
-        file::TarFormat::from_file_name(
+        file::ExtractionFormat::from_file_name(
             &file_path.file_name().unwrap_or_default().to_string_lossy(),
         )
     };
@@ -412,7 +439,7 @@ pub fn install_artifact(
     // Get file extension and detect format
     let file_name = file_path.file_name().unwrap().to_string_lossy();
 
-    if !format.is_archive() && format != file::TarFormat::Raw {
+    if !format.is_archive() && format != file::ExtractionFormat::Raw {
         // Handle compressed single binary
         let ext = Path::new(&*file_name)
             .extension()
@@ -435,17 +462,10 @@ pub fn install_artifact(
             install_path.join(cleaned_name)
         };
 
-        file::untar(
-            file_path,
-            &dest,
-            &file::TarOptions {
-                pr,
-                ..file::TarOptions::new(format)
-            },
-        )?;
+        file::decompress_file(file_path, &dest, format)?;
 
         file::make_executable(&dest)?;
-    } else if format == file::TarFormat::Raw {
+    } else if format == file::ExtractionFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
         if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
             let bin_path = template_string(&bin_path_template, tv);
@@ -479,14 +499,14 @@ pub fn install_artifact(
             debug!("Auto-detected single directory archive, extracting with strip_components=1");
             strip_components = Some(1);
         }
-        let tar_opts = file::TarOptions {
+        let extract_opts = file::ExtractOptions {
             strip_components: strip_components.unwrap_or(0),
             pr,
-            ..file::TarOptions::new(format)
+            ..Default::default()
         };
 
         // Extract with determined strip_components
-        file::untar(file_path, &install_path, &tar_opts)?;
+        file::extract_archive(file_path, &install_path, format, &extract_opts)?;
 
         // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
         let full_tool_name = tv.ba().tool_name.as_str();
@@ -1000,6 +1020,47 @@ mod tests {
     use super::*;
     use crate::toolset::ToolVersionOptions;
     use indexmap::IndexMap;
+
+    const SHA256_LOWER: &str = "7fdd1f42e6b0855421ecf27bb406e2492ade1087c85e30ebf0deab6280ea743c";
+    const SHA256_UPPER: &str = "7FDD1F42E6B0855421ECF27BB406E2492ADE1087C85E30EBF0DEAB6280EA743C";
+
+    #[test]
+    fn test_parse_checksum_file_content_standard_format() {
+        let content = format!("{SHA256_LOWER}  deno-x86_64-unknown-linux-gnu.zip\n");
+
+        assert_eq!(
+            parse_checksum_file_content(&content, "sha256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_parse_checksum_file_content_powershell_get_file_hash_format() {
+        let content = format!(
+            "\
+Algorithm : SHA256
+Hash      : {SHA256_UPPER}
+Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
+"
+        );
+
+        assert_eq!(
+            parse_checksum_file_content(&content, "sha256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_parse_checksum_file_content_rejects_non_hash_tokens() {
+        let content = "Algorithm : SHA256\nPath      : deno.zip\n";
+
+        assert_eq!(parse_checksum_file_content(content, "sha256"), None);
+    }
+
+    #[test]
+    fn test_parse_checksum_file_content_rejects_unknown_algorithms() {
+        assert_eq!(parse_checksum_file_content(SHA256_LOWER, "sha3-256"), None);
+    }
 
     #[test]
     fn test_clean_binary_name() {

@@ -637,7 +637,7 @@ I don't want to turn all file tasks into tera templates just for this feature.
 ## `[task_config]` options
 
 Options available in the top-level `mise.toml` `[task_config]` section. These apply to all tasks which
-are included by that config file or use the same root directory, e.g.: `~/src/myprojec/mise.toml`'s `[task_config]`
+are included by that config file or use the same root directory, e.g.: `~/src/myproject/mise.toml`'s `[task_config]`
 applies to file tasks like `~/src/myproject/mise-tasks/mytask` but not to tasks in `~/src/myproject/subproj/mise.toml`.
 
 ### `task_config.dir`
@@ -649,7 +649,7 @@ Change the default directory tasks are run from.
 dir = "{{cwd}}"
 ```
 
-### `task_config.includes`
+### `task_config.includes` {#task-config-includes}
 
 Set the toml files and file-task directories mise should search when looking for tasks.
 
@@ -722,43 +722,47 @@ If you want auto-completion/validation in included toml tasks files, you can use
 
 #### Remote Git Includes <Badge type="warning" text="experimental" />
 
-You can include directories of tasks from git repositories using the `git::` URL syntax:
+You can include directories or individual task toml files from git repositories using the `git::` URL syntax:
 
 ::: code-group
 
 ```mise-toml [ssh]
 [task_config]
 includes = [
-    "git::ssh://git@github.com/myorg/shared-tasks.git//tasks?ref=v1.0.0"
+    "git::ssh://git@github.com/myorg/shared-tasks.git//tasks?ref=v1.0.0",
+    "git::ssh://git@github.com/myorg/shared-tasks.git//tasks/release.toml?ref=v1.0.0",
 ]
 ```
 
 ```mise-toml [https]
 [task_config]
 includes = [
-    "git::https://github.com/myorg/shared-tasks.git//tasks?ref=main"
+    "git::https://github.com/myorg/shared-tasks.git//tasks?ref=main",
+    "git::https://github.com/myorg/shared-tasks.git//tasks/release.toml?ref=main",
 ]
 ```
 
 :::
 
-URL format: `git::<protocol>://<url>//<path>?<ref>`
+URL format: `git::<protocol>://<url>//<path>?ref=<ref>`
 
 Required fields:
 
 - `protocol`: The git protocol (ssh or https).
 - `url`: The git repository URL.
-- `path`: The path to the directory in the repository.
+- `path`: The path to a directory or a `.toml` task file in the repository.
 
 Optional fields:
 
 - `ref`: The git reference (branch, tag, commit). Defaults to the repository's default branch.
 
-The repository will be cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the included directory will be loaded as if they were local file tasks. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
+When `path` points at a directory, mise loads both executable file tasks and any `.toml` task files inside that directory. When `path` points at a single `.toml` file, only that file is loaded.
 
-## Monorepo Support <Badge type="warning" text="experimental" />
+Included `.toml` files use the [task toml file format](#task-config-includes) (the keys are task names — there is no `[tasks.…]` prefix). The repository will be cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the include will be loaded as if they were local. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
 
-mise supports monorepo-style task organization with target path syntax. Enable it by setting `experimental_monorepo_root = true` in your root `mise.toml`.
+## Monorepo Support
+
+mise supports monorepo-style task organization with target path syntax. Enable it by setting `monorepo_root = true` in your root `mise.toml`.
 
 For complete documentation on monorepo tasks including:
 
@@ -802,6 +806,13 @@ vars = { e2e_args = '--headed' }
 ```
 
 The task-level `vars` override any config-level vars with the same name. In the example above, `e2e_args` resolves to `'--headed'` instead of the config-level `'--headless'`.
+
+Config vars can read from process environment variables when using the `default` form. If a process environment variable with the same name exists and is non-empty, its value is used; otherwise, the default is applied. Values from the `[env]` section are not used for this lookup.
+
+```toml
+[vars]
+e2e_args = { default = "--headless" }
+```
 
 Like `[env]`, vars can also be read in as a file:
 

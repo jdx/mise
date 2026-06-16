@@ -1,3 +1,3 @@
 # Contributing
 
-Please read the full contribution guide at: <https://mise.en.dev/contributing.html>
+See the [contributing guide](https://mise.en.dev/contributing).

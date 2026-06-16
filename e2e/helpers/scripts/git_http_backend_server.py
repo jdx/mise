@@ -119,6 +119,27 @@ def create_test_repo(repo_path):
     ripgrep_file.write_text('#!/usr/bin/env bash\necho "ripgrep task executed"\n')
     ripgrep_file.chmod(0o755)
 
+    # A toml task file colocated with the executable scripts. Keys are task
+    # names; values are the run command (or a table). Used by tests covering
+    # remote toml task includes.
+    tasks_toml = xtasks_dir / 'tasks.toml'
+    tasks_toml.write_text(
+        'toml_task = "echo toml_task executed"\n'
+        '\n'
+        '[toml_table_task]\n'
+        'run = "echo toml_table_task executed"\n'
+        'description = "TOML task with table form"\n'
+    )
+
+    # A standalone toml file in a sibling directory to test the
+    # `git::URL//path/to/file.toml` form.
+    standalone_dir = Path(repo_path) / 'xtasks' / 'standalone'
+    standalone_dir.mkdir(parents=True)
+    standalone_toml = standalone_dir / 'standalone.toml'
+    standalone_toml.write_text(
+        'standalone_task = "echo standalone_task executed"\n'
+    )
+
     # Commit files
     subprocess.run(['git', 'add', '.'], cwd=repo_path, check=True)
     subprocess.run(['git', 'commit', '-m', 'Add test files'], cwd=repo_path, check=True)

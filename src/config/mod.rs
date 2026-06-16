@@ -20,14 +20,14 @@ use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
-use crate::config::config_file::{ConfigFile, config_trust_root};
+use crate::config::config_file::{ConfigFile, config_trust_root, is_path_trusted, trust_check};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
-use crate::task::{Task, TaskTemplate};
+use crate::task::{Task, TaskTemplate, strip_extension};
 use crate::tera::{contains_template_syntax, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
@@ -75,7 +75,6 @@ pub struct Config {
     tasks_cache: Arc<DashMap<crate::task::TaskLoadContext, Arc<BTreeMap<String, Task>>>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
-    vars_loader: Option<Arc<Config>>,
     vars_results: OnceCell<EnvResults>,
 }
 
@@ -158,7 +157,6 @@ impl Config {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         let vars_config = Arc::new(Self {
@@ -178,14 +176,11 @@ impl Config {
             shell_aliases: config.shell_aliases.clone(),
             tera_files: config.tera_files.clone(),
             vars: config.vars.clone(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         });
         let vars_results = measure!("config::load vars_results", {
             let results = load_vars(&vars_config).await?;
-            vars_config.vars_results.set(results.clone()).ok();
             config.vars_results.set(results.clone()).ok();
-            config.vars_loader = Some(vars_config.clone());
             results
         });
         let vars: IndexMap<String, String> = vars_results
@@ -223,6 +218,8 @@ impl Config {
                 debug!("config: {}", display_path(p));
             }
         }
+
+        warn_if_auto_env_files_exist();
 
         time!("load done");
 
@@ -277,17 +274,6 @@ impl Config {
             .await
     }
 
-    pub async fn vars_results(self: &Arc<Self>) -> Result<&EnvResults> {
-        if let Some(loader) = &self.vars_loader
-            && let Some(results) = loader.vars_results.get()
-        {
-            return Ok(results);
-        }
-        self.vars_results
-            .get_or_try_init(|| async move { load_vars(self).await })
-            .await
-    }
-
     pub fn env_results_cached(&self) -> Option<&EnvResults> {
         self.env.get()
     }
@@ -313,23 +299,6 @@ impl Config {
             .await
     }
 
-    pub async fn get_tool_opts(
-        self: &Arc<Self>,
-        backend_arg: &Arc<BackendArg>,
-    ) -> Result<Option<ToolOptions>> {
-        let trs = self.get_tool_request_set().await?;
-        let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
-        let tool_request = short_match.or_else(|| {
-            if !self.has_tool_alias(&backend_arg.short) {
-                return None;
-            }
-
-            let resolved_ba = BackendArg::new(backend_arg.full(), None);
-            trs.iter().find(|tr| tr.0.short == resolved_ba.short)
-        });
-        Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
-    }
-
     fn has_tool_alias(&self, short: &str) -> bool {
         self.all_aliases
             .get(short)
@@ -351,7 +320,17 @@ impl Config {
         self: &Arc<Self>,
         backend_arg: &Arc<BackendArg>,
     ) -> Result<ResolvedToolOptions> {
-        let config_opts = self.get_tool_opts(backend_arg).await?;
+        let trs = self.get_tool_request_set().await?;
+        let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
+        let tool_request = short_match.or_else(|| {
+            if !self.has_tool_alias(&backend_arg.short) {
+                return None;
+            }
+
+            let resolved_ba = BackendArg::new(backend_arg.full(), None);
+            trs.iter().find(|tr| tr.0.short == resolved_ba.short)
+        });
+        let config_opts = tool_request.and_then(|tr| tr.1.first().map(|req| req.options()));
         let alias_opts = self.get_backend_alias_opts(backend_arg);
         let mut resolved = ResolvedToolOptions::default();
         resolved.apply_overrides(&backend_arg.registry_opts(), ToolOptionSource::Registry);
@@ -523,12 +502,7 @@ impl Config {
         let config = Config::get().await?;
         time!("load_all_tasks");
 
-        // Collect all task templates from config hierarchy (experimental feature)
-        let templates = if Settings::get().experimental {
-            collect_task_templates(&config.config_files)
-        } else {
-            IndexMap::new()
-        };
+        let templates = collect_task_templates(&config.config_files);
 
         let local_tasks = load_local_tasks_with_context(&config, ctx, &templates).await?;
         let global_tasks = load_global_tasks(&config, &templates).await?;
@@ -563,7 +537,12 @@ impl Config {
             // to parse for trusted files. Untrusted non-MiseToml files (like
             // .tool-versions) don't need trust and will parse fine regardless.
             let trust_root = config_file::config_trust_root(&path);
-            if !config_file::is_trusted(&trust_root) && !config_file::is_trusted(&path) {
+            if !config_file::is_trusted(&trust_root)
+                && !config_file::is_trusted(&path)
+                // safe mise.toml files load without a trust marker, so a missing
+                // marker doesn't mean they should be skipped here
+                && !MiseToml::path_is_trust_exempt(&path)
+            {
                 debug!("skipping untrusted tracked config: {}", display_path(&path));
                 continue;
             }
@@ -944,15 +923,11 @@ fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
     find_monorepo_config(config_files).and_then(|cf| cf.project_root().map(|p| p.to_path_buf()))
 }
 
-/// Find the config file that has experimental_monorepo_root = true
+/// Find the config file that has monorepo_root = true
 fn find_monorepo_config(config_files: &ConfigMap) -> Option<&Arc<dyn ConfigFile>> {
-    // This feature requires experimental mode
-    if !Settings::get().experimental {
-        return None;
-    }
     config_files
         .values()
-        .find(|cf| cf.experimental_monorepo_root() == Some(true))
+        .find(|cf| cf.monorepo_root() == Some(true))
 }
 
 async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
@@ -1046,24 +1021,32 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
 
     paths
 });
+/// Config filename patterns for a single MISE_ENV environment, in precedence order
+/// (later wins, matching LOCAL_CONFIG_FILENAMES ordering)
+fn env_config_patterns(env: &str) -> Vec<String> {
+    vec![
+        format!(".config/mise/config.{env}.toml"),
+        format!(".config/mise.{env}.toml"),
+        format!("mise/config.{env}.toml"),
+        format!("mise.{env}.toml"),
+        format!(".mise/config.{env}.toml"),
+        format!(".mise.{env}.toml"),
+        format!(".config/mise/config.{env}.local.toml"),
+        format!(".config/mise.{env}.local.toml"),
+        format!("mise/config.{env}.local.toml"),
+        format!("mise.{env}.local.toml"),
+        format!(".mise/config.{env}.local.toml"),
+        format!(".mise.{env}.local.toml"),
+    ]
+}
+
 pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     let mut filenames = LOCAL_CONFIG_FILENAMES
         .iter()
         .map(|f| f.to_string())
         .collect_vec();
-    for env in &*env::MISE_ENV {
-        filenames.push(format!(".config/mise/config.{env}.toml"));
-        filenames.push(format!(".config/mise.{env}.toml"));
-        filenames.push(format!("mise/config.{env}.toml"));
-        filenames.push(format!("mise.{env}.toml"));
-        filenames.push(format!(".mise/config.{env}.toml"));
-        filenames.push(format!(".mise.{env}.toml"));
-        filenames.push(format!(".config/mise/config.{env}.local.toml"));
-        filenames.push(format!(".config/mise.{env}.local.toml"));
-        filenames.push(format!("mise/config.{env}.local.toml"));
-        filenames.push(format!("mise.{env}.local.toml"));
-        filenames.push(format!(".mise/config.{env}.local.toml"));
-        filenames.push(format!(".mise.{env}.local.toml"));
+    for env in &*env::MISE_ENV_WITH_AUTO {
+        filenames.extend(env_config_patterns(env));
     }
     filenames
 });
@@ -1206,6 +1189,114 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
         .collect()
 }
 
+/// Whether to emit the phase-2 auto_env rollout warning. Pure for unit testing.
+/// Warns only when the user hasn't decided (setting unset), auto envs aren't
+/// already active, and the mise version is in the warning window that precedes
+/// the 2027.6.0 default flip.
+fn should_warn_auto_env(
+    version: &versions::Versioning,
+    setting: Option<bool>,
+    auto_envs_active: bool,
+) -> bool {
+    setting.is_none()
+        && !auto_envs_active
+        && *version >= versions::Versioning::new("2026.12.0").unwrap()
+        && !env::auto_env_default_for_version(version)
+}
+
+/// Phase-2 rollout warning for auto_env: starting with 2026.12.0, tell users about
+/// platform-specific config files (e.g. mise.windows.toml) that mise will begin
+/// loading automatically when auto_env defaults to true in 2027.6.0.
+fn warn_if_auto_env_files_exist() {
+    // dead code once the default flips on: the files load, so there is nothing to warn about
+    debug_assert!(
+        !env::auto_env_default_for_version(&version::V),
+        "auto_env is now default-on; remove warn_if_auto_env_files_exist() and should_warn_auto_env()"
+    );
+    if !should_warn_auto_env(
+        &version::V,
+        env::auto_env_setting(),
+        !env::AUTO_ENV_NAMES.is_empty(),
+    ) || *env::IS_RUNNING_AS_SHIM
+    {
+        return;
+    }
+    // Skip hook-env to keep the every-prompt path free of extra filesystem checks.
+    // Match the subcommand anywhere before `--` rather than guessing its positional
+    // slot (flags with separate values like `--cd /path` would shift it); the warning
+    // is advisory, so erring toward skipping it is the safe direction.
+    if env::ARGS
+        .read()
+        .unwrap()
+        .iter()
+        .skip(1)
+        .take_while(|a| *a != "--")
+        .any(|a| a == "hook-env")
+    {
+        return;
+    }
+    let found = detect_auto_env_candidate_files();
+    if !found.is_empty() {
+        warn_once!(
+            "Found platform-specific config file(s) that mise will load automatically starting in 2027.6.0: {}. \
+            Set MISE_AUTO_ENV=true (or `auto_env = true` in .miserc.toml) to enable this now, \
+            or `auto_env = false` to keep the current behavior and silence this warning. \
+            See https://mise.jdx.dev/configuration/environments.html#platform-environments",
+            found.iter().map(display_path).join(", ")
+        );
+    }
+}
+
+/// Config files that exist on disk and would be loaded if auto_env were enabled,
+/// but are not loaded today because their platform env is not in MISE_ENV.
+fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
+    let candidate_envs = env::platform_env_names()
+        .into_iter()
+        .filter(|name| !env::MISE_ENV.contains(name))
+        .collect_vec();
+    // IndexSet: the all_dirs() walk and the global/system dir checks can find the
+    // same file (e.g. ~/.config/mise/config.{env}.toml when cwd is under $HOME)
+    let mut found = IndexSet::new();
+    for dir in all_dirs().unwrap_or_default() {
+        if env::MISE_IGNORED_CONFIG_PATHS
+            .iter()
+            .any(|p| dir.starts_with(p))
+        {
+            continue;
+        }
+        for env_name in &candidate_envs {
+            for pattern in env_config_patterns(env_name) {
+                found.extend(glob(&dir, &pattern).unwrap_or_default());
+            }
+        }
+    }
+    for dir in [*dirs::CONFIG, *dirs::SYSTEM_CONFIG] {
+        for env_name in &candidate_envs {
+            for filename in [
+                format!("config.{env_name}.toml"),
+                format!("mise.{env_name}.toml"),
+                format!("config.{env_name}.local.toml"),
+                format!("mise.{env_name}.local.toml"),
+            ] {
+                let p = dir.join(filename);
+                if p.is_file() {
+                    found.insert(p);
+                }
+            }
+        }
+    }
+    // apply the same filters as load_config_paths so we don't warn about files
+    // that wouldn't be loaded even with auto_env enabled
+    found
+        .into_iter()
+        .filter(|p| {
+            !(is_default_config_dir_override_filtered(p)
+                || config_file::is_ignored(&config_trust_root(p))
+                || config_file::is_ignored(p))
+        })
+        .collect()
+}
+
 /// Load config hierarchy from a specific directory (for monorepo tasks)
 /// This loads all config files from start_dir up through parent directories,
 /// including MISE_ENV-specific configs and idiomatic version files.
@@ -1319,13 +1410,13 @@ pub fn system_config_files() -> IndexSet<PathBuf> {
 
 static CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     let mut filenames = vec!["config.toml".to_string(), "mise.toml".to_string()];
-    for env in &*env::MISE_ENV {
+    for env in &*env::MISE_ENV_WITH_AUTO {
         filenames.push(format!("config.{env}.toml"));
         filenames.push(format!("mise.{env}.toml"));
     }
     filenames.push("config.local.toml".to_string());
     filenames.push("mise.local.toml".to_string());
-    for env in &*env::MISE_ENV {
+    for env in &*env::MISE_ENV_WITH_AUTO {
         filenames.push(format!("config.{env}.local.toml"));
         filenames.push(format!("mise.{env}.local.toml"));
     }
@@ -1490,7 +1581,7 @@ async fn load_all_config_files(
         }
 
         // Mark monorepo roots so descendant configs are implicitly trusted
-        if cf.experimental_monorepo_root() == Some(true)
+        if cf.monorepo_root() == Some(true)
             && let Err(err) = config_file::mark_as_monorepo_root(f)
         {
             warn!("failed to mark monorepo root: {err:#}");
@@ -1694,20 +1785,12 @@ fn collect_task_templates(config_files: &ConfigMap) -> IndexMap<String, TaskTemp
 }
 
 /// Resolve a task template and merge it into the task.
-/// Returns an error if the template is not found or if experimental mode is not enabled.
+/// Returns an error if the template is not found.
 fn resolve_task_template(
     task: &mut Task,
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<()> {
     if let Some(template_name) = &task.extends {
-        if !Settings::get().experimental {
-            bail!(
-                "Task '{}' uses 'extends = \"{}\"' which requires 'experimental = true' in settings",
-                task.name,
-                template_name
-            );
-        }
-
         let template = templates.get(template_name).ok_or_else(|| {
             eyre!(
                 "Task '{}' extends template '{}' which was not found. \
@@ -1765,7 +1848,7 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     let pre_install_platforms = if new_versions.is_empty() {
         Default::default()
     } else {
-        lockfile::snapshot_pre_install_platforms(new_versions)
+        lockfile::snapshot_pre_install_platforms(config, new_versions)
     };
     measure!("updating lockfiles", {
         lockfile::update_lockfiles(config, ts, new_versions, lockfile_update_mode)
@@ -1774,6 +1857,7 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     if !new_versions.is_empty() {
         measure!("auto-locking platforms", {
             lockfile::auto_lock_new_versions(
+                config,
                 new_versions,
                 &pre_install_platforms,
                 lockfile_update_mode,
@@ -1928,10 +2012,12 @@ async fn load_local_tasks_with_context(
 
                     // If no config file exists, still load default task include dirs
                     if !found_config {
-                        let includes = task_includes_for_dir(&subdir, &config.config_files);
+                        let includes = task_includes_for_dir(&subdir, &config.config_files)?;
                         for include in includes {
-                            let mut subdir_tasks =
-                                load_tasks_includes(&config, &include, &subdir, &None).await?;
+                            let mut subdir_tasks = load_tasks_includes(
+                                &config, &include, &subdir, &None, &templates, true,
+                            )
+                            .await?;
                             if is_global_task_include_path(&include) {
                                 mark_tasks_as_global(&mut subdir_tasks);
                             }
@@ -2232,7 +2318,7 @@ async fn load_config_and_file_tasks(
 ) -> Result<Vec<Task>> {
     let config_root = cf.config_root();
     let config_tasks = load_config_tasks(config, cf.clone(), &config_root, templates).await?;
-    let file_tasks = load_file_tasks(config, cf.clone(), &config_root).await?;
+    let file_tasks = load_file_tasks(config, cf.clone(), &config_root, templates).await?;
     Ok(merge_file_and_config_tasks(file_tasks, config_tasks))
 }
 
@@ -2249,7 +2335,7 @@ async fn load_config_and_file_tasks(
 /// `load_tasks_in_dir`.
 fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -> Vec<Task> {
     let mut by_name: IndexMap<String, Task> = IndexMap::new();
-    for t in file_tasks {
+    for t in prefer_windows_file_task_siblings(file_tasks) {
         by_name.insert(t.name.clone(), t);
     }
     for t in config_tasks {
@@ -2260,6 +2346,88 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         }
     }
     by_name.into_values().collect()
+}
+
+fn prefer_windows_file_task_siblings(file_tasks: Vec<Task>) -> Vec<Task> {
+    if !cfg!(windows) {
+        return file_tasks;
+    }
+    prefer_windows_file_task_siblings_inner(file_tasks)
+}
+
+fn prefer_windows_file_task_siblings_inner(file_tasks: Vec<Task>) -> Vec<Task> {
+    let windows_exts = Settings::get()
+        .windows_executable_extensions
+        .iter()
+        .map(|ext| ext.to_lowercase())
+        .collect::<IndexSet<_>>();
+    let extensionless_task_keys = file_tasks
+        .iter()
+        .filter(|task| task.config_source.extension().is_none())
+        .map(|task| (task.config_source.clone(), task.name.clone()))
+        .collect::<IndexSet<_>>();
+    let mut windows_native_task_key_counts = IndexMap::new();
+    for task in &file_tasks {
+        let Some(ext) = task
+            .config_source
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(str::to_lowercase)
+        else {
+            continue;
+        };
+        if windows_exts.contains(&ext) {
+            *windows_native_task_key_counts
+                .entry((
+                    task.config_source.with_extension(""),
+                    strip_task_extension(&task.name).to_string(),
+                ))
+                .or_insert(0) += 1;
+        }
+    }
+    let windows_takeover_keys = extensionless_task_keys
+        .iter()
+        .filter(|key| windows_native_task_key_counts.get(*key) == Some(&1))
+        .cloned()
+        .collect::<IndexSet<_>>();
+
+    file_tasks
+        .into_iter()
+        .filter_map(|mut task| {
+            if task.config_source.extension().is_none()
+                && windows_takeover_keys.contains(&(task.config_source.clone(), task.name.clone()))
+            {
+                return None;
+            }
+            if task
+                .config_source
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| windows_exts.contains(&ext.to_lowercase()))
+            {
+                let stem = strip_task_extension(&task.name);
+                if windows_takeover_keys
+                    .contains(&(task.config_source.with_extension(""), stem.to_string()))
+                {
+                    task.name = stem.to_string();
+                }
+            }
+            Some(task)
+        })
+        .collect()
+}
+
+fn strip_task_extension(name: &str) -> &str {
+    if let Some((prefix, task_part)) = name.rsplit_once(':') {
+        let task_without_ext = strip_extension(task_part);
+        if task_without_ext == task_part {
+            name
+        } else {
+            &name[..prefix.len() + 1 + task_without_ext.len()]
+        }
+    } else {
+        strip_extension(name)
+    }
 }
 
 async fn load_config_tasks(
@@ -2300,11 +2468,14 @@ async fn load_tasks_includes(
     root: &Path,
     config_root: &Path,
     task_config_dir: &Option<String>,
+    templates: &IndexMap<String, TaskTemplate>,
+    require_trust: bool,
 ) -> Result<Vec<Task>> {
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
-        load_task_file(config, root, config_root, task_config_dir).await
+        trust_check_task_include(root, require_trust)?;
+        load_task_file(config, root, config_root, task_config_dir, templates).await
     } else if root.is_dir() {
-        let files = WalkDir::new(root)
+        let all_files = WalkDir::new(root)
             .follow_links(true)
             .into_iter()
             // skip hidden directories (if the root is hidden that's ok)
@@ -2313,7 +2484,6 @@ async fn load_tasks_includes(
             .map_ok(|e| e.path().to_path_buf())
             .try_collect::<_, Vec<PathBuf>, _>()?
             .into_iter()
-            .filter(|p| file::is_executable(p))
             .filter(|p| {
                 !Settings::get()
                     .task
@@ -2322,13 +2492,25 @@ async fn load_tasks_includes(
                     .any(|d| p.starts_with(d))
             })
             .collect::<Vec<_>>();
+        let is_toml = |p: &Path| p.extension().map(|e| e == "toml").unwrap_or(false);
+        let (toml_files, exec_files): (Vec<_>, Vec<_>) = all_files
+            .into_iter()
+            .filter(|p| is_toml(p) || file::is_executable(p))
+            .partition(|p| is_toml(p));
         let mut tasks = vec![];
+        for path in toml_files {
+            trust_check_task_include(&path, require_trust)?;
+            tasks.extend(
+                load_task_file(config, &path, config_root, task_config_dir, templates).await?,
+            );
+        }
         let root = Arc::new(root.to_path_buf());
         let config_root = Arc::new(config_root.to_path_buf());
-        for path in files {
+        for path in exec_files {
             let root = root.clone();
             let config_root = config_root.clone();
             let config = config.clone();
+            trust_check_task_include(&path, require_trust)?;
             let mut task = Task::from_path(&config, &path, &root, &config_root).await?;
             if task.dir.is_none()
                 && let Some(ref dir) = *task_config_dir
@@ -2376,8 +2558,10 @@ fn is_glob_pattern(pattern: &str) -> bool {
 
 /// Expand a task include pattern (which may be a glob) to a list of paths
 fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
-    if is_glob_pattern(pattern) {
-        match glob(dir, pattern) {
+    let pattern = file::replace_path(pattern);
+    let pattern = pattern.to_string_lossy();
+    if is_glob_pattern(&pattern) {
+        match glob(dir, &pattern) {
             Ok(paths) => paths,
             Err(err) => {
                 warn!(
@@ -2391,7 +2575,7 @@ fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
         }
     } else {
         // Literal path
-        let path = PathBuf::from(pattern);
+        let path = PathBuf::from(&*pattern);
         let resolved = if path.is_absolute() {
             path
         } else {
@@ -2409,17 +2593,19 @@ async fn load_file_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
     config_root: &Path,
+    templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let includes = cf
-        .task_config()
-        .includes
-        .clone()
+        .task_config_includes()?
         .unwrap_or_else(default_task_includes);
 
     let mut tasks = vec![];
     let config_root = Arc::new(config_root.to_path_buf());
     let cf_root = cf.config_root();
     let task_config_dir = cf.task_config().dir.clone();
+    // a config can only vouch for task include files when it was actually
+    // trusted — safe configs load without trust and cannot vouch for anything
+    let require_task_include_trust = !is_path_trusted(cf.get_path());
 
     for include in includes {
         let paths = if include.starts_with("git::") {
@@ -2428,8 +2614,15 @@ async fn load_file_tasks(
             expand_task_include(&cf_root, &include)
         };
         for path in paths {
-            let mut loaded =
-                load_tasks_includes(config, &path, &config_root, &task_config_dir).await?;
+            let mut loaded = load_tasks_includes(
+                config,
+                &path,
+                &config_root,
+                &task_config_dir,
+                templates,
+                require_task_include_trust,
+            )
+            .await?;
             if is_global_task_include_path(&path) {
                 mark_tasks_as_global(&mut loaded);
             }
@@ -2439,25 +2632,28 @@ async fn load_file_tasks(
     Ok(tasks)
 }
 
-pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
+pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
     let configs = configs_at_root(dir, config_files);
 
     // Find the highest-precedence config that has explicit task_config.includes
     // and resolve paths relative to that config file's directory
     let (includes, resolve_dir) = configs
         .iter()
-        .find_map(|cf| {
-            cf.task_config().includes.clone().map(|includes| {
+        .find_map(|cf| match cf.task_config_includes() {
+            Ok(Some(includes)) => Some(Ok({
                 // Resolve relative paths from the config root, not the config file's directory
                 (includes, cf.config_root())
-            })
+            })),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
         })
+        .transpose()?
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
             (default_task_includes(), dir.to_path_buf())
         });
 
-    includes
+    Ok(includes
         .into_iter()
         .flat_map(|p| {
             // Git URLs are handled by load_file_tasks, not here
@@ -2467,7 +2663,7 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
             expand_task_include(&resolve_dir, &p)
         })
         .unique()
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>())
 }
 
 pub async fn load_tasks_in_dir(
@@ -2477,15 +2673,18 @@ pub async fn load_tasks_in_dir(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
+    // a config can only vouch for task include files when it was actually
+    // trusted — safe configs load without trust and cannot vouch for anything
+    let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
 
     let (includes, resolve_dir) = configs
         .iter()
-        .find_map(|cf| {
-            cf.task_config()
-                .includes
-                .clone()
-                .map(|includes| (includes, cf.config_root()))
+        .find_map(|cf| match cf.task_config_includes() {
+            Ok(Some(includes)) => Some(Ok((includes, cf.config_root()))),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
         })
+        .transpose()?
         .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf()));
 
     let mut config_tasks = vec![];
@@ -2505,7 +2704,15 @@ pub async fn load_tasks_in_dir(
             expand_task_include(&resolve_dir, include)
         };
         for p in paths {
-            let mut loaded = load_tasks_includes(config, &p, dir, &task_config_dir).await?;
+            let mut loaded = load_tasks_includes(
+                config,
+                &p,
+                dir,
+                &task_config_dir,
+                templates,
+                require_task_include_trust,
+            )
+            .await?;
             if is_global_task_include_path(&p) {
                 mark_tasks_as_global(&mut loaded);
             }
@@ -2528,11 +2735,37 @@ pub async fn load_tasks_in_dir(
     Ok(tasks)
 }
 
+fn trust_check_task_include(path: &Path, require_trust: bool) -> Result<()> {
+    if require_trust && !is_global_task_include_path(path) && task_include_requires_trust(path) {
+        trust_check(path)?;
+    }
+    Ok(())
+}
+
+/// Template-free task files are inert at load time: TOML and `#MISE` headers
+/// are only parsed, and the scripts themselves only run on an explicit
+/// `mise run`. Templates are what can execute code while tasks load (via
+/// exec() etc. when task fields render), so only files containing template
+/// syntax need trust. Paranoid mode keeps requiring trust for everything.
+fn task_include_requires_trust(path: &Path) -> bool {
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+        return true;
+    }
+    let Ok(body) = file::read_to_string(path) else {
+        // can't read it — fall back to requiring trust
+        return true;
+    };
+    // literal delimiters, plus escaped ones (e.g. `{{`) that decode to
+    // templates after TOML parsing and would render at load time
+    contains_template_syntax(&body) || crate::task::file_has_decoded_template(path, &body)
+}
+
 async fn load_task_file(
     config: &Arc<Config>,
     path: &Path,
     config_root: &Path,
     task_config_dir: &Option<String>,
+    templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let raw = file::read_to_string_async(path).await?;
     let mut tasks = toml::from_str::<Tasks>(&raw)
@@ -2549,6 +2782,7 @@ async fn load_task_file(
     let mut out = vec![];
     for (_, mut task) in tasks {
         let config_root = config_root.to_path_buf();
+        resolve_task_template(&mut task, templates)?;
         if let Err(err) = task.render(config, &config_root).await {
             warn!("rendering task: {err:?}");
         }
@@ -2575,6 +2809,229 @@ mod tests {
     async fn test_load() {
         let config = Config::reset().await.unwrap();
         assert_debug_snapshot!(config);
+    }
+
+    #[test]
+    fn test_prefer_windows_file_task_siblings_keeps_windows_native_script() {
+        let file_tasks = vec![
+            Task {
+                name: "pkl:gen".to_string(),
+                config_source: PathBuf::from("mise-tasks/pkl/gen"),
+                ..Default::default()
+            },
+            Task {
+                name: "pkl:gen.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/pkl/gen.ps1"),
+                ..Default::default()
+            },
+        ];
+
+        let names = prefer_windows_file_task_siblings_inner(file_tasks)
+            .into_iter()
+            .map(|task| task.name)
+            .collect_vec();
+
+        assert_eq!(names, vec!["pkl:gen"]);
+    }
+
+    #[test]
+    fn test_prefer_windows_file_task_siblings_ignores_non_windows_extension() {
+        let file_tasks = vec![
+            Task {
+                name: "hello".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello"),
+                ..Default::default()
+            },
+            Task {
+                name: "hello.sh".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello.sh"),
+                ..Default::default()
+            },
+        ];
+
+        let names = prefer_windows_file_task_siblings_inner(file_tasks)
+            .into_iter()
+            .map(|task| task.name)
+            .collect_vec();
+
+        assert_eq!(names, vec!["hello", "hello.sh"]);
+    }
+
+    #[test]
+    fn test_prefer_windows_file_task_siblings_preserves_toml_overlay_stem() {
+        let file_tasks = vec![
+            Task {
+                name: "hello".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello"),
+                ..Default::default()
+            },
+            Task {
+                name: "hello.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello.ps1"),
+                ..Default::default()
+            },
+        ];
+        let config_tasks = vec![Task {
+            name: "hello".to_string(),
+            description: "windows task metadata".to_string(),
+            ..Default::default()
+        }];
+
+        let tasks = merge_file_and_config_tasks(
+            prefer_windows_file_task_siblings_inner(file_tasks),
+            config_tasks,
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello");
+        assert_eq!(
+            tasks[0].config_source,
+            PathBuf::from("mise-tasks/hello.ps1")
+        );
+        assert_eq!(tasks[0].description, "windows task metadata");
+    }
+
+    #[test]
+    fn test_prefer_windows_file_task_siblings_keeps_exact_stem_for_matching() {
+        use crate::task::GetMatchingExt;
+
+        let file_tasks = vec![
+            Task {
+                name: "hello".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello"),
+                ..Default::default()
+            },
+            Task {
+                name: "hello.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello.ps1"),
+                ..Default::default()
+            },
+            Task {
+                name: "hello.sh".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello.sh"),
+                ..Default::default()
+            },
+        ];
+        let tasks = prefer_windows_file_task_siblings_inner(file_tasks)
+            .into_iter()
+            .map(|task| (task.name.clone(), task))
+            .collect::<BTreeMap<_, _>>();
+
+        let matches = tasks.get_matching("hello").unwrap();
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(
+            matches[0].config_source,
+            PathBuf::from("mise-tasks/hello.ps1")
+        );
+    }
+
+    #[test]
+    fn test_prefer_windows_file_task_siblings_keeps_ambiguous_windows_siblings() {
+        let file_tasks = vec![
+            Task {
+                name: "hello".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello"),
+                ..Default::default()
+            },
+            Task {
+                name: "hello.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello.ps1"),
+                ..Default::default()
+            },
+            Task {
+                name: "hello.cmd".to_string(),
+                config_source: PathBuf::from("mise-tasks/hello.cmd"),
+                ..Default::default()
+            },
+        ];
+
+        let tasks = prefer_windows_file_task_siblings_inner(file_tasks);
+        let task_names = tasks.iter().map(|task| task.name.as_str()).collect_vec();
+        let task_sources = tasks
+            .iter()
+            .map(|task| task.config_source.as_path())
+            .collect_vec();
+
+        assert_eq!(task_names, vec!["hello", "hello.ps1", "hello.cmd"]);
+        assert_eq!(
+            task_sources,
+            vec![
+                Path::new("mise-tasks/hello"),
+                Path::new("mise-tasks/hello.ps1"),
+                Path::new("mise-tasks/hello.cmd"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_prefer_windows_file_task_siblings_scopes_to_source_family() {
+        let file_tasks = vec![
+            Task {
+                name: "build".to_string(),
+                config_source: PathBuf::from("included-tasks/build"),
+                ..Default::default()
+            },
+            Task {
+                name: "build.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/build.ps1"),
+                ..Default::default()
+            },
+        ];
+
+        let tasks = prefer_windows_file_task_siblings_inner(file_tasks);
+        let task_names = tasks.iter().map(|task| task.name.as_str()).collect_vec();
+        let task_sources = tasks
+            .iter()
+            .map(|task| task.config_source.as_path())
+            .collect_vec();
+
+        assert_eq!(task_names, vec!["build", "build.ps1"]);
+        assert_eq!(
+            task_sources,
+            vec![
+                Path::new("included-tasks/build"),
+                Path::new("mise-tasks/build.ps1"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_env_config_patterns() {
+        assert_eq!(
+            env_config_patterns("linux"),
+            vec![
+                ".config/mise/config.linux.toml",
+                ".config/mise.linux.toml",
+                "mise/config.linux.toml",
+                "mise.linux.toml",
+                ".mise/config.linux.toml",
+                ".mise.linux.toml",
+                ".config/mise/config.linux.local.toml",
+                ".config/mise.linux.local.toml",
+                "mise/config.linux.local.toml",
+                "mise.linux.local.toml",
+                ".mise/config.linux.local.toml",
+                ".mise.linux.local.toml",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_should_warn_auto_env() {
+        let v = |s: &str| versions::Versioning::new(s).unwrap();
+        // before the warning window: never warn
+        assert!(!should_warn_auto_env(&v("2026.6.2"), None, false));
+        // inside the warning window: warn only when the user hasn't decided
+        assert!(should_warn_auto_env(&v("2026.12.0"), None, false));
+        assert!(should_warn_auto_env(&v("2027.5.9"), None, false));
+        assert!(!should_warn_auto_env(&v("2026.12.0"), Some(false), false));
+        assert!(!should_warn_auto_env(&v("2026.12.0"), Some(true), true));
+        // auto envs already active (e.g. opted in): nothing to warn about
+        assert!(!should_warn_auto_env(&v("2026.12.0"), None, true));
+        // default flipped on: warning is obsolete
+        assert!(!should_warn_auto_env(&v("2027.6.0"), None, true));
+        assert!(!should_warn_auto_env(&v("2027.6.0"), Some(false), false));
     }
 
     #[tokio::test]
@@ -2618,7 +3075,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2696,7 +3152,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2778,7 +3233,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2862,7 +3316,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2921,7 +3374,6 @@ mod tests {
                 shell_aliases: Default::default(),
                 tera_files: Default::default(),
                 vars: Default::default(),
-                vars_loader: None,
                 vars_results: OnceCell::new(),
             };
             config.tool_request_set.set(ToolRequestSet::new()).ok();
@@ -3017,7 +3469,14 @@ vars = { target = "linux" }
 "#,
         )?;
 
-        let tasks = load_task_file(&config, &tasks_toml, temp_dir.path(), &None).await?;
+        let tasks = load_task_file(
+            &config,
+            &tasks_toml,
+            temp_dir.path(),
+            &None,
+            &IndexMap::new(),
+        )
+        .await?;
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].name, "build");
         assert_eq!(tasks[0].description, "linux");

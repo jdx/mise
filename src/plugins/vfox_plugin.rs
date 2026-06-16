@@ -159,13 +159,15 @@ impl VfoxPlugin {
 
         pr.set_message("extracting zip file".to_string());
 
-        let strip_components = file::should_strip_components(&temp_archive, file::TarFormat::Zip)?;
+        let strip_components =
+            file::should_strip_components(&temp_archive, file::ExtractionFormat::Zip)?;
 
         file::unzip(
             &temp_archive,
             &self.plugin_path,
-            &file::ZipOptions {
+            &file::ExtractOptions {
                 strip_components: if strip_components { 1 } else { 0 },
+                ..Default::default()
             },
         )?;
         Ok(())

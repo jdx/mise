@@ -1,4 +1,4 @@
-# Swift <Badge type="warning" text="experimental" />
+# Swift
 
 `mise` can be used to manage multiple versions of [`swift`](https://swift.org/) on the same system. Swift is supported for macos and linux.
 

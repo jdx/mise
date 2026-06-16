@@ -3,9 +3,11 @@ use crate::cli::Cli;
 use crate::cli::args::BackendArg;
 use crate::cmd;
 use crate::config::Config;
+use crate::dirs;
 use crate::env;
 use crate::exit::exit;
 use crate::task::Deps;
+use crate::task::task_source_checker::task_cwd;
 use crate::toolset::ToolsetBuilder;
 use clap::{CommandFactory, ValueEnum, ValueHint};
 use console::style;
@@ -13,7 +15,7 @@ use eyre::bail;
 use itertools::Itertools;
 use std::cmp::PartialEq;
 use std::iter::once;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Run task(s) and watch for changes to rerun it
 ///
@@ -146,6 +148,14 @@ impl Watch {
             args.push("--on-busy-update".to_string());
             args.push(self.watchexec.on_busy_update.to_string());
         }
+        // Forward --wrap-process to watchexec when it differs from watchexec's
+        // default ("group"). Without this the flag is parsed but dropped, so e.g.
+        // `mise watch --wrap-process none` had no effect and a TUI task launched in
+        // the default process group would block on terminal I/O (#10212).
+        if self.watchexec.wrap_process != WrapMode::Group {
+            args.push("--wrap-process".to_string());
+            args.push(self.watchexec.wrap_process.to_string());
+        }
         if !self.watchexec.signal_map.is_empty() {
             for signal_map in &self.watchexec.signal_map {
                 args.push("--map-signal".to_string());
@@ -180,8 +190,12 @@ impl Watch {
             args.push("--watch-file".to_string());
             args.push(watch_file.to_string_lossy().to_string());
         }
-        let (globs, ignores) = if !self.glob.is_empty() {
-            (self.glob.clone(), Vec::new())
+        // Filter anchor: the path that --project-origin is set to and that
+        // every glob filter is made relative to. watchexec interprets -f
+        // patterns relative to the origin and silently rejects absolute
+        // paths, so the anchor must be an ancestor of every task cwd.
+        let (globs, ignores, extra_watch_dirs, filter_anchor) = if !self.glob.is_empty() {
+            (self.glob.clone(), Vec::new(), Vec::new(), None)
         } else {
             let collected: Vec<_> = if self.skip_deps {
                 tasks.to_vec()
@@ -189,8 +203,89 @@ impl Watch {
                 let deps = Deps::new(&config, tasks.clone()).await?;
                 deps.all().cloned().collect()
             };
-            merge_watch_patterns(collected.iter().map(|t| t.sources.as_slice()))
+            let mut task_cwds: Vec<(&_, PathBuf)> = Vec::with_capacity(collected.len());
+            for t in &collected {
+                let cwd = task_cwd(t, &config).await?;
+                task_cwds.push((t, cwd));
+            }
+            // Pre-resolve sources to absolute paths so the anchor can be
+            // widened to cover any source that escapes its task's cwd via
+            // `..` or an absolute path.
+            let parsed: Vec<Vec<(SourceKind, PathBuf)>> = task_cwds
+                .iter()
+                .map(|(t, cwd)| t.sources.iter().map(|s| parse_source(s, cwd)).collect())
+                .collect();
+            // If no task declared any sources, opt out of source-based
+            // watching entirely and let watchexec apply its defaults.
+            if parsed.iter().all(|v| v.is_empty()) {
+                (Vec::new(), Vec::new(), Vec::new(), None)
+            } else {
+                let configured = config
+                    .monorepo_root()
+                    .or_else(|| config.project_root.clone());
+                let common = common_ancestor(
+                    task_cwds
+                        .iter()
+                        .map(|(_, c)| c.as_path())
+                        .chain(parsed.iter().flatten().map(|(_, p)| p.as_path())),
+                );
+                let anchor: PathBuf = match (configured, common) {
+                    (Some(mut cfg), Some(common)) => {
+                        while !common.starts_with(&cfg) {
+                            if !cfg.pop() {
+                                break;
+                            }
+                        }
+                        if cfg.as_os_str().is_empty() {
+                            common
+                        } else {
+                            cfg
+                        }
+                    }
+                    (Some(cfg), None) => cfg,
+                    (None, Some(common)) => common,
+                    (None, None) => dirs::CWD.clone().unwrap_or_default(),
+                };
+                let resolved: Vec<Vec<String>> = parsed
+                    .iter()
+                    .map(|sources| {
+                        sources
+                            .iter()
+                            .map(|(k, abs)| relativize_source(*k, abs, &anchor))
+                            .collect()
+                    })
+                    .collect();
+                let cwds: Vec<PathBuf> =
+                    task_cwds.iter().map(|(_, c)| c.clone()).unique().collect();
+                let mut watch_dirs = cwds.clone();
+                for (kind, abs) in parsed.iter().flatten() {
+                    if matches!(kind, SourceKind::Negation) {
+                        continue;
+                    }
+                    let dir = source_watch_dir(abs);
+                    // Already covered by a recursively-watched cwd.
+                    if cwds.iter().any(|c| dir.starts_with(c)) {
+                        continue;
+                    }
+                    watch_dirs.push(dir);
+                }
+                let watch_dirs: Vec<PathBuf> = watch_dirs.into_iter().unique().collect();
+                let (i, e) = merge_watch_patterns(resolved.iter().map(|v| v.as_slice()));
+                (i, e, watch_dirs, Some(anchor))
+            }
         };
+        if let Some(anchor) = &filter_anchor {
+            args.push("--project-origin".to_string());
+            args.push(anchor.to_string_lossy().to_string());
+        }
+        // Always include each task's cwd as a watch path
+        for path in &extra_watch_dirs {
+            if self.watchexec.recursive_paths.contains(path) {
+                continue;
+            }
+            args.push("--watch".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
         if !globs.is_empty() {
             args.push("-f".to_string());
             args.extend(itertools::intersperse(globs, "-f".to_string()).collect::<Vec<_>>());
@@ -255,6 +350,128 @@ impl Watch {
             .find(|s| s.get_name() == "watch")
             .unwrap()
             .clone()
+    }
+}
+
+/// Longest path that is a prefix of every input path. Returns `None` for
+/// an empty iterator.
+fn common_ancestor<I, P>(paths: I) -> Option<PathBuf>
+where
+    I: IntoIterator<Item = P>,
+    P: AsRef<Path>,
+{
+    let mut iter = paths.into_iter();
+    let first = iter.next()?;
+    let mut acc: Vec<std::ffi::OsString> = first
+        .as_ref()
+        .components()
+        .map(|c| c.as_os_str().to_os_string())
+        .collect();
+    for p in iter {
+        let n = acc
+            .iter()
+            .zip(p.as_ref().components())
+            .take_while(|(a, b)| a.as_os_str() == b.as_os_str())
+            .count();
+        acc.truncate(n);
+    }
+    Some(acc.iter().collect())
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SourceKind {
+    Negation,
+    LiteralBang,
+    Plain,
+}
+
+/// Parse a source pattern into its kind and an absolute path
+fn parse_source(s: &str, cwd: &Path) -> (SourceKind, PathBuf) {
+    let (kind, rest) = if let Some(r) = s.strip_prefix('!') {
+        (SourceKind::Negation, r)
+    } else if s.starts_with("\\!") {
+        (SourceKind::LiteralBang, &s[1..])
+    } else {
+        (SourceKind::Plain, s)
+    };
+    let p = Path::new(rest);
+    let absolute = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        cwd.join(rest)
+    };
+    (kind, normalize_path(&absolute))
+}
+
+/// Resolve `.` and `..` components without touching the FS.
+/// Used so a source like `../shared/src/*.ts` produces a path
+/// we can contain in the anchor.
+fn normalize_path(p: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            Component::CurDir => {}
+            _ => out.push(c.as_os_str()),
+        }
+    }
+    out
+}
+
+/// Extracts the directory that should be watched for a source pattern.
+/// Basically slices up to the first glob-like character.
+fn source_watch_dir(absolute: &Path) -> PathBuf {
+    use std::path::Component;
+    let is_glob = |s: &std::ffi::OsStr| s.to_string_lossy().contains(['*', '?', '[', '{']);
+    let mut dir = PathBuf::new();
+    let mut found_glob = false;
+    for c in absolute.components() {
+        if let Component::Normal(part) = c
+            && is_glob(part)
+        {
+            found_glob = true;
+            break;
+        }
+        dir.push(c.as_os_str());
+    }
+    if found_glob {
+        dir
+    } else {
+        dir.parent().map(|p| p.to_path_buf()).unwrap_or(dir)
+    }
+}
+
+/// Express an already-absolute source path relative to the filter anchor,
+/// re-applying the original negation/literal-bang prefix.
+fn relativize_source(kind: SourceKind, absolute: &Path, anchor: &Path) -> String {
+    let relative = match absolute.strip_prefix(anchor) {
+        Ok(p) => p.to_path_buf(),
+        Err(_) => {
+            warn!(
+                "watch source {} is outside filter anchor {}; watchexec will silently drop it",
+                absolute.display(),
+                anchor.display()
+            );
+            absolute.to_path_buf()
+        }
+    };
+    let relative = relative.to_string_lossy();
+    let relative = if std::path::MAIN_SEPARATOR == '/' {
+        relative.into_owned()
+    } else {
+        relative.replace(std::path::MAIN_SEPARATOR, "/")
+    };
+    match kind {
+        SourceKind::Negation => format!("!{relative}"),
+        SourceKind::LiteralBang | SourceKind::Plain if relative.starts_with('!') => {
+            format!("\\{relative}")
+        }
+        SourceKind::LiteralBang | SourceKind::Plain => relative,
     }
 }
 
@@ -569,14 +786,14 @@ pub struct WatchexecArgs {
     /// Don't load global ignores
     ///
     /// This disables loading of global or user ignore files, like '~/.gitignore',
-    /// '~/.config/watchexec/ignore', or '%APPDATA%\Bazzar\2.0\ignore'. Contrast with
+    /// '~/.config/watchexec/ignore', or '%APPDATA%\Bazaar\2.0\ignore'. Contrast with
     /// '--no-vcs-ignore' and '--no-project-ignore'.
     ///
     /// Supported global ignore files
     ///
     ///   - Git (if core.excludesFile is set): the file at that path
     ///   - Git (otherwise): the first found of $XDG_CONFIG_HOME/git/ignore, %APPDATA%/.gitignore, %USERPROFILE%/.gitignore, $HOME/.config/git/ignore, $HOME/.gitignore.
-    ///   - Bazaar: the first found of %APPDATA%/Bazzar/2.0/ignore, $HOME/.bazaar/ignore.
+    ///   - Bazaar: the first found of %APPDATA%/Bazaar/2.0/ignore, $HOME/.bazaar/ignore.
     ///   - Watchexec: the first found of $XDG_CONFIG_HOME/watchexec/ignore, %APPDATA%/watchexec/ignore, %USERPROFILE%/.watchexec/ignore, $HOME/.watchexec/ignore.
     ///
     /// Like for project files, Git and Bazaar global files will only be used for the corresponding
@@ -1213,7 +1430,8 @@ pub enum OnBusyUpdate {
     Signal,
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub enum WrapMode {
     #[default]
     Group,
@@ -1259,10 +1477,28 @@ pub enum ColourMode {
 
 #[cfg(test)]
 mod tests {
-    use super::merge_watch_patterns;
+    use super::{
+        WrapMode, common_ancestor, merge_watch_patterns, normalize_path, parse_source,
+        relativize_source, source_watch_dir,
+    };
+    use std::path::{Path, PathBuf};
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()
+    }
+
+    fn resolve_source(s: &str, cwd: &Path, anchor: &Path) -> String {
+        let (k, abs) = parse_source(s, cwd);
+        relativize_source(k, &abs, anchor)
+    }
+
+    #[test]
+    fn wrap_mode_serializes_to_watchexec_values() {
+        // These strings are forwarded verbatim to `watchexec --wrap-process`, so
+        // they must match the values watchexec accepts (#10212).
+        assert_eq!(WrapMode::Group.to_string(), "group");
+        assert_eq!(WrapMode::Session.to_string(), "session");
+        assert_eq!(WrapMode::None.to_string(), "none");
     }
 
     #[test]
@@ -1307,5 +1543,105 @@ mod tests {
             !exc.contains(&"src/**/*.test.ts".to_string()),
             "exc should not contain a pattern that any task positively includes; got {exc:?}",
         );
+    }
+
+    #[test]
+    fn resolve_preserves_literal_bang_escape_at_anchor() {
+        let anchor = Path::new("/repo");
+        assert_eq!(resolve_source("\\!keep.txt", anchor, anchor), "\\!keep.txt");
+    }
+
+    #[test]
+    fn resolve_drops_literal_bang_escape_when_no_longer_ambiguous() {
+        let anchor = Path::new("/repo");
+        let cwd = Path::new("/repo/packages/foo");
+        assert_eq!(
+            resolve_source("\\!keep.txt", cwd, anchor),
+            "packages/foo/!keep.txt",
+        );
+    }
+
+    #[test]
+    fn resolve_escapes_plain_source_relativized_to_leading_bang() {
+        let cwd = Path::new("/repo");
+        let anchor = Path::new("/repo/sub");
+        assert_eq!(resolve_source("sub/!gen/*.ts", cwd, anchor), "\\!gen/*.ts");
+    }
+
+    fn pb(s: &str) -> PathBuf {
+        PathBuf::from(s)
+    }
+
+    #[test]
+    fn common_ancestor_of_siblings_is_parent() {
+        let got = common_ancestor([pb("/repo/packages/foo"), pb("/repo/packages/bar")]);
+        assert_eq!(got, Some(pb("/repo/packages")));
+    }
+
+    #[test]
+    fn common_ancestor_of_nested_is_shorter() {
+        let got = common_ancestor([pb("/repo/a"), pb("/repo/a/b/c")]);
+        assert_eq!(got, Some(pb("/repo/a")));
+    }
+
+    #[test]
+    fn common_ancestor_of_disjoint_is_root() {
+        let got = common_ancestor([pb("/x/a"), pb("/y/b")]);
+        assert_eq!(got, Some(pb("/")));
+    }
+
+    #[test]
+    fn normalize_resolves_parent_components() {
+        assert_eq!(
+            normalize_path(Path::new("/repo/pkg/foo/../../shared/src")),
+            pb("/repo/shared/src"),
+        );
+    }
+
+    #[test]
+    fn parse_source_absolutizes_relative_with_parent_escape() {
+        let cwd = Path::new("/repo/packages/foo");
+        let (_, abs) = parse_source("../../shared/src/*.ts", cwd);
+        assert_eq!(abs, pb("/repo/shared/src/*.ts"));
+    }
+
+    #[test]
+    fn anchor_widens_to_cover_source_escaping_cwd() {
+        let cwd = pb("/repo/packages/foo");
+        let (_, abs) = parse_source("../../shared/src/*.ts", &cwd);
+        let common = common_ancestor([cwd.as_path(), abs.as_path()]);
+        assert_eq!(common, Some(pb("/repo")));
+        let rel = relativize_source(super::SourceKind::Plain, &abs, &common.unwrap());
+        assert_eq!(rel, "shared/src/*.ts");
+    }
+
+    #[test]
+    fn source_watch_dir_stops_at_first_glob() {
+        assert_eq!(
+            source_watch_dir(Path::new("/root/shared/src/*.ts")),
+            pb("/root/shared/src"),
+        );
+    }
+
+    #[test]
+    fn source_watch_dir_stops_at_double_star() {
+        assert_eq!(
+            source_watch_dir(Path::new("/root/shared/**/*.ts")),
+            pb("/root/shared"),
+        );
+    }
+
+    #[test]
+    fn source_watch_dir_of_literal_file_is_parent() {
+        assert_eq!(
+            source_watch_dir(Path::new("/root/shared/src/index.ts")),
+            pb("/root/shared/src"),
+        );
+    }
+
+    #[test]
+    fn common_ancestor_empty_is_none() {
+        let got = common_ancestor(std::iter::empty::<PathBuf>());
+        assert_eq!(got, None);
     }
 }

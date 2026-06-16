@@ -1,6 +1,6 @@
 use crate::cli::Cli;
 use crate::file;
-use clap::CommandFactory;
+use clap::{Command, CommandFactory};
 use eyre::Result;
 use indoc::formatdoc;
 use itertools::Itertools;
@@ -47,34 +47,29 @@ fn render_command_ts() -> String {
         .get_subcommands_mut()
         .sorted_by_cached_key(|c| c.get_name().to_string())
     {
-        match command.has_subcommands() {
-            true => {
-                let name = command.get_name().to_string();
-                doc.push_str(&format!(
-                    "  \"{}\": {{\n    hide: {},\n    subcommands: {{\n",
-                    name,
-                    command.is_hide_set()
-                ));
-                for subcommand in command.get_subcommands_mut() {
-                    let output = format!(
-                        "      \"{}\": {{\n        hide: {},\n      }},\n",
-                        subcommand.get_name(),
-                        subcommand.is_hide_set()
-                    );
-                    doc.push_str(&output);
-                }
-                doc.push_str("    },\n  },\n");
-            }
-            false => {
-                let output = format!(
-                    "  \"{}\": {{\n    hide: {},\n  }},\n",
-                    command.get_name(),
-                    command.is_hide_set()
-                );
-                doc.push_str(&output);
-            }
-        }
+        doc.push_str(&render_command(command, 2));
     }
     doc.push_str("};\n");
     doc
+}
+
+fn render_command(command: &mut Command, indent: usize) -> String {
+    let pad = " ".repeat(indent);
+    let mut output = format!(
+        "{pad}\"{}\": {{\n{pad}  hide: {},\n",
+        command.get_name(),
+        command.is_hide_set()
+    );
+    if command.has_subcommands() {
+        output.push_str(&format!("{pad}  subcommands: {{\n"));
+        for subcommand in command
+            .get_subcommands_mut()
+            .sorted_by_cached_key(|c| c.get_name().to_string())
+        {
+            output.push_str(&render_command(subcommand, indent + 4));
+        }
+        output.push_str(&format!("{pad}  }},\n"));
+    }
+    output.push_str(&format!("{pad}}},\n"));
+    output
 }

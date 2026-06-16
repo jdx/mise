@@ -17,9 +17,7 @@ use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::static_helpers::fetch_checksum_from_shasums, platform::detect_libc};
 use crate::{
-    backend::{
-        Backend, GitHubReleaseInfo, ReleaseType, VersionInfo, platform_target::PlatformTarget,
-    },
+    backend::{Backend, GitHubReleaseInfo, VersionInfo, platform_target::PlatformTarget},
     config::{Config, Settings},
     platform::Platform,
 };
@@ -230,12 +228,10 @@ impl Backend for BunPlugin {
         let asset_pattern = Self::bun_asset_filename(target, version);
 
         Ok(Some(GitHubReleaseInfo {
-            repo: "oven-sh/bun".to_string(),
             asset_pattern: Some(asset_pattern),
             api_url: Some(format!(
                 "https://github.com/oven-sh/bun/releases/download/bun-v{version}"
             )),
-            release_type: ReleaseType::GitHub,
         }))
     }
 

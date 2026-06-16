@@ -1,16 +1,28 @@
 Describe 'github token' {
+    BeforeAll {
+        $script:GitHubTokenEnvVars = @(
+            "GITHUB_TOKEN",
+            "GITHUB_API_TOKEN",
+            "MISE_GITHUB_TOKEN",
+            "MISE_GITHUB_ENTERPRISE_TOKEN",
+            "MISE_GITHUB_CREDENTIAL_COMMAND",
+            "MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS"
+        )
+    }
+
     BeforeEach {
-        Remove-Item -Path Env:\GITHUB_TOKEN -ErrorAction SilentlyContinue
-        Remove-Item -Path Env:\GITHUB_API_TOKEN -ErrorAction SilentlyContinue
-        Remove-Item -Path Env:\MISE_GITHUB_TOKEN -ErrorAction SilentlyContinue
-        Remove-Item -Path Env:\MISE_GITHUB_ENTERPRISE_TOKEN -ErrorAction SilentlyContinue
-        Remove-Item -Path Env:\MISE_GITHUB_CREDENTIAL_COMMAND -ErrorAction SilentlyContinue
-        Remove-Item -Path Env:\MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS -ErrorAction SilentlyContinue
+        $script:GitHubTokenEnv = @{}
+        foreach ($name in $script:GitHubTokenEnvVars) {
+            $script:GitHubTokenEnv[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+            [Environment]::SetEnvironmentVariable($name, $null, "Process")
+        }
     }
 
     AfterEach {
-        Remove-Item -Path Env:\MISE_GITHUB_CREDENTIAL_COMMAND -ErrorAction SilentlyContinue
-        Remove-Item -Path Env:\MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS -ErrorAction SilentlyContinue
+        foreach ($name in $script:GitHubTokenEnvVars) {
+            [Environment]::SetEnvironmentVariable($name, $script:GitHubTokenEnv[$name], "Process")
+        }
+        $script:GitHubTokenEnv = $null
     }
 
     It 'runs credential_command with the Windows default inline shell' {

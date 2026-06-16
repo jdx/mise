@@ -10,7 +10,7 @@ For non-interactive setups, consider using shims instead which will route calls 
 directory by looking at `PWD` every time they're executed. You can also call `mise exec` instead of
 expecting things to be directly on PATH. You can also run `mise env` in a non-interactive shell,
 however that
-will only setup the global tools. It won't modify the environment variables when entering into a
+will only set up the global tools. It won't modify the environment variables when entering into a
 different project.
 
 ::: warning
@@ -149,6 +149,28 @@ C:\Windows\System32\where.exe
 operable program or batch file.
 mise ERROR command failed: exit code 1
 mise ERROR Run with --verbose or MISE_VERBOSE=1 for more information
+```
+
+### Shims leaking into WSL
+
+When `windows_shim_mode` is set to `file`, mise writes an extension-less bash
+script next to each `<tool>.cmd` shim (so Git Bash / Cygwin can resolve the
+tool). WSL's default Windows-PATH interop exposes the shims directory at
+`/mnt/c/...`, where every file is treated as executable, so running a shimmed
+tool inside WSL executes that script natively. mise guards the generated script:
+when it detects WSL it drops the shims directory from `PATH` and runs a native
+Linux tool if one is installed, otherwise it fails with a plain `<tool>: not
+found` rather than recursing endlessly or erroring with `mise: not found`.
+
+The default `exe` mode is not affected: it writes only native `<tool>.exe`
+files, which WSL ignores, so nothing leaks into Linux.
+
+To keep the Windows shims out of WSL entirely, either install/manage the tool
+with mise inside WSL, or disable the Windows-PATH interop in `/etc/wsl.conf`:
+
+```ini
+[interop]
+appendWindowsPath = false
 ```
 
 ### `shell = "bash -c"` task fails with `command not found` from PowerShell

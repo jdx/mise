@@ -1,10 +1,6 @@
-# Sandboxing <Badge type="warning" text="experimental" />
+# Sandboxing
 
 Mise supports lightweight process sandboxing for `mise exec` and `mise run`, inspired by [zerobox](https://github.com/afshinm/zerobox). Sandboxing restricts filesystem, network, and environment variable access with granular controls. No Docker required, minimal overhead.
-
-::: warning
-Sandboxing is an experimental feature. Enable it with `mise settings experimental=true`.
-:::
 
 ## Quick Start
 

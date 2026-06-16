@@ -8,6 +8,19 @@ unset GITHUB_TOKEN GITHUB_API_TOKEN MISE_GITHUB_TOKEN MISE_GITHUB_ENTERPRISE_TOK
 # Test 1: No token configured — should return (none)
 assert_contains "mise token github" "(none)"
 
+# Test 1b: local credential_command is ignored and must not execute
+LOCAL_CREDENTIAL_PROOF_DIR="$(mktemp -d)"
+LOCAL_CREDENTIAL_PROOF="$LOCAL_CREDENTIAL_PROOF_DIR/proof"
+trap 'rm -rf "$LOCAL_CREDENTIAL_PROOF_DIR"' EXIT
+cat >.mise.toml <<EOF
+[settings.github]
+credential_command = "echo local-credential-command-ran > '$LOCAL_CREDENTIAL_PROOF'; echo local-credential-token"
+EOF
+assert_contains "mise token github --unmask" "(none)"
+assert_fail "test -f '$LOCAL_CREDENTIAL_PROOF'"
+rm -rf "$LOCAL_CREDENTIAL_PROOF_DIR"
+rm .mise.toml
+
 # --raw with no token should exit non-zero (so $(...) capture fails loudly)
 assert_fail "mise token github --raw"
 
@@ -89,11 +102,8 @@ assert_contains "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS='$HOME/credential-shell -c'
 
 # Test 9a: OAuth configured but no cached token — must not prompt for device flow
 # during normal token resolution (would hang on the unreachable URL otherwise).
-NO_DEVICE_OAUTH="MISE_EXPERIMENTAL=1 MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:1/login MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:1/api"
+NO_DEVICE_OAUTH="MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:1/login MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:1/api"
 assert_contains "$NO_DEVICE_OAUTH mise token github 127.0.0.1" "(none)"
-
-# OAuth is experimental — calling --oauth without experimental enabled must fail
-assert_fail "MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock mise token github --oauth"
 
 # Test 9: native GitHub OAuth device flow via token alias
 MOCK_PORT_FILE="$HOME/mock-github-oauth-port"
@@ -106,7 +116,7 @@ for _ in $(seq 1 30); do
   sleep 0.1
 done
 MOCK_PORT="$(cat "$MOCK_PORT_FILE")"
-OAUTH_ENV="MISE_EXPERIMENTAL=1 MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:$MOCK_PORT/login MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:$MOCK_PORT/api"
+OAUTH_ENV="MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:$MOCK_PORT/login MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:$MOCK_PORT/api"
 assert_contains "$OAUTH_ENV mise token github 127.0.0.1 --oauth --raw" "ghu-native-oauth-token"
 assert_contains "$OAUTH_ENV mise token github 127.0.0.1 --unmask" "GitHub OAuth"
 

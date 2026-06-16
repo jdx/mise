@@ -7,13 +7,13 @@ use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
-use crate::file::{TarFormat, TarOptions};
+use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
-use crate::registry::REGISTRY;
+use crate::registry::{REGISTRY, shorts_for_full};
 use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolRequest, ToolVersion, ToolVersionOptions};
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
     cache::{CacheManager, CacheManagerBuilder},
 };
 use crate::{
-    backend::{Backend, MISE_BINS_DIR, strict_metadata},
+    backend::{Backend, MISE_BINS_DIR, backend_arg_matches_registry_backend, strict_metadata},
     config::Config,
 };
 use crate::{file, github, minisign};
@@ -65,46 +65,66 @@ impl<'a> AquaOptions<'a> {
     }
 
     fn var(&self, name: &str) -> Result<Option<String>> {
-        let opts = self.values.raw();
-        if let Some(toml::Value::Table(vars)) = opts.opts.get("vars")
-            && let Some(value) = vars.get(name)
-        {
-            return toml_string_var(&format!("vars.{name}"), value).map(Some);
-        }
-        opts.opts
+        self.canonical_var_options()?
             .get(name)
-            .map(|value| toml_string_var(name, value).map(Some))
+            .map(|value| toml_string_var(&format!("vars.{name}"), value).map(Some))
             .unwrap_or(Ok(None))
     }
 
-    fn lockfile_options(&self) -> BTreeMap<String, String> {
-        let mut result = BTreeMap::new();
+    fn lockfile_options(&self) -> Result<BTreeMap<String, String>> {
+        Ok(self
+            .canonical_var_options()?
+            .into_iter()
+            .filter_map(|(key, value)| {
+                toml_value_to_string(value).map(|value| (format!("vars.{key}"), value))
+            })
+            .collect())
+    }
+
+    fn canonical_var_options(&self) -> Result<BTreeMap<String, &toml::Value>> {
+        let mut vars = BTreeMap::new();
         for (key, value) in self.values.raw().iter() {
             if key == "symlink_bins" || EPHEMERAL_OPT_KEYS.contains(&key.as_str()) {
                 continue;
             }
+
             if key == "vars" {
                 if let toml::Value::Table(table) = value {
-                    Self::insert_vars_lockfile_options(&mut result, table);
+                    Self::insert_nested_var_options(&mut vars, table)?;
                 }
-            } else if let Some(value) = toml_value_to_string(value) {
-                let key = if key.starts_with("vars.") {
-                    key.clone()
-                } else {
-                    format!("vars.{key}")
-                };
-                result.entry(key).or_insert(value);
+                continue;
             }
+
+            let key = if let Some(key) = key.strip_prefix("vars.") {
+                key.to_string()
+            } else {
+                key.clone()
+            };
+            Self::insert_var_option(&mut vars, key, value)?;
         }
-        result
+        Ok(vars)
     }
 
-    fn insert_vars_lockfile_options(result: &mut BTreeMap<String, String>, table: &toml::Table) {
-        for (key, value) in table {
-            if let Some(value) = toml_value_to_string(value) {
-                result.insert(format!("vars.{key}"), value);
-            }
+    fn insert_var_option<'b>(
+        result: &mut BTreeMap<String, &'b toml::Value>,
+        key: String,
+        value: &'b toml::Value,
+    ) -> Result<()> {
+        if result.contains_key(&key) {
+            bail!("conflicting aqua var `{key}`: use only one spelling");
         }
+        result.insert(key, value);
+        Ok(())
+    }
+
+    fn insert_nested_var_options<'b>(
+        result: &mut BTreeMap<String, &'b toml::Value>,
+        table: &'b toml::Table,
+    ) -> Result<()> {
+        for (key, value) in table {
+            Self::insert_var_option(result, key.clone(), value)?;
+        }
+        Ok(())
     }
 }
 
@@ -139,7 +159,7 @@ impl Backend for AquaBackend {
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let pkg = match self.package_with_options(tv, &[&tv.version]).await {
             Ok(pkg) => pkg,
-            Err(_) => return 3, // fallback to default
+            Err(_) => return 3, // fall back to default
         };
         let format = pkg.format(&tv.version, os(), arch()).unwrap_or_default();
 
@@ -584,7 +604,7 @@ impl Backend for AquaBackend {
             });
         }
 
-        let cache_key = opts.lockfile_options();
+        let cache_key = opts.lockfile_options()?;
         let cache: CacheManager<Vec<PathBuf>> =
             CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
                 .with_fresh_file(install_path.clone())
@@ -622,7 +642,7 @@ impl Backend for AquaBackend {
         &self,
         request: &ToolRequest,
         _target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let request_options = request.options();
         AquaOptions::new(&request_options).lockfile_options()
     }
@@ -1012,7 +1032,7 @@ impl AquaBackend {
         let settings = Settings::get();
 
         // Check for GitHub artifact attestations (highest priority)
-        // The registry metadata (enabled flag, signer_workflow) is sufficient for
+        // The registry metadata (enabled flag, predicate_type, signer_workflow) is sufficient for
         // detection at lock-time. Actual cryptographic verification happens at
         // install time (always when locked_verify_provenance/paranoid is enabled,
         // or on first install when the lockfile doesn't yet have provenance).
@@ -1066,11 +1086,16 @@ impl AquaBackend {
         pkg: &AquaPackage,
         digest: &str,
     ) -> std::result::Result<bool, crate::github::sigstore::DetectError> {
-        crate::github::sigstore::detect_attestations(
+        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        crate::github::sigstore::detect_attestations_with_predicate_type(
             &pkg.repo_owner,
             &pkg.repo_name,
             github::API_URL,
             digest,
+            pkg.github_artifact_attestations
+                .as_ref()
+                .and_then(|att| att.predicate_type.as_deref()),
+            self.use_versions_host_for_github_metadata(&repo),
         )
         .await
     }
@@ -1155,13 +1180,20 @@ impl AquaBackend {
             .github_artifact_attestations
             .as_ref()
             .and_then(|att| att.signer_workflow.as_deref().map(unescape_regex_literal));
+        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        let predicate_type = pkg
+            .github_artifact_attestations
+            .as_ref()
+            .and_then(|att| att.predicate_type.as_deref());
 
-        match crate::github::sigstore::verify_attestation(
+        match crate::github::sigstore::verify_attestation_with_predicate_type(
             artifact_path,
             &pkg.repo_owner,
             &pkg.repo_name,
             signer_workflow.as_deref(),
+            predicate_type,
             None,
+            self.use_versions_host_for_github_metadata(&repo),
         )
         .await
         {
@@ -1270,7 +1302,7 @@ impl AquaBackend {
         v: &str,
     ) -> Result<bool> {
         let format = pkg.format(v, os(), arch())?;
-        let format = TarFormat::from_ext(format);
+        let format = Self::effective_extraction_format(pkg, format)?;
         if !format.is_archive() {
             return Err(eyre!(
                 "SLSA provenance subject mismatch and content-level fallback is only supported for archives"
@@ -1310,13 +1342,14 @@ impl AquaBackend {
 
         let sig_path = match minisign_config._type() {
             AquaMinisignType::GithubRelease => {
-                let asset = minisign_config.asset(pkg, v, os(), arch())?;
+                let asset = minisign_config.asset(pkg, artifact_filename, v, os(), arch())?;
                 let (repo_owner, repo_name) = resolve_repo_info(
                     minisign_config.repo_owner.as_ref(),
                     minisign_config.repo_name.as_ref(),
                     pkg,
                 );
-                let url = github::get_release(&format!("{repo_owner}/{repo_name}"), v)
+                let url = self
+                    .get_github_release(&format!("{repo_owner}/{repo_name}"), v)
                     .await?
                     .assets
                     .into_iter()
@@ -1499,6 +1532,29 @@ impl AquaBackend {
         }
     }
 
+    fn use_versions_host_for_github_metadata(&self, repo: &str) -> bool {
+        let full = self.ba.full_without_opts();
+        if !backend_arg_matches_registry_backend(&self.ba) && shorts_for_full(&full).is_empty() {
+            return false;
+        }
+        let Some(aqua_id) = full.strip_prefix("aqua:") else {
+            return false;
+        };
+        let aqua_id = aqua_id.to_ascii_lowercase();
+        let repo = repo.to_ascii_lowercase();
+        aqua_id == repo || aqua_id.starts_with(&format!("{repo}/"))
+    }
+
+    async fn get_github_release(&self, repo: &str, tag: &str) -> Result<github::GithubRelease> {
+        github::get_release_for_url_with_versions_host(
+            github::API_URL,
+            repo,
+            tag,
+            self.use_versions_host_for_github_metadata(repo),
+        )
+        .await
+    }
+
     async fn latest_marked_release_version(&self) -> Result<Option<String>> {
         if Settings::get().offline() {
             trace!("Skipping latest stable version due to offline mode");
@@ -1526,7 +1582,7 @@ impl AquaBackend {
         }
 
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let release = match github::get_release(&repo, "latest").await {
+        let release = match self.get_github_release(&repo, "latest").await {
             Ok(release) => release,
             Err(e) => {
                 debug!(
@@ -1667,7 +1723,7 @@ impl AquaBackend {
         prefer_musl: bool,
     ) -> Result<(String, Option<String>)> {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let gh_release = github::get_release(&gh_id, v).await?;
+        let gh_release = self.get_github_release(&gh_id, v).await?;
 
         // Prioritize order of asset_strs
         let asset = select_github_release_asset(&gh_release.assets, &asset_strs, prefer_musl)
@@ -2239,6 +2295,23 @@ impl AquaBackend {
         }
     }
 
+    fn effective_extraction_format(pkg: &AquaPackage, format: &str) -> Result<ExtractionFormat> {
+        let extraction_format = ExtractionFormat::from_ext(format);
+        if extraction_format.is_none() && !matches!(format, "" | "dmg" | "pkg") {
+            bail!("unsupported aqua package format: {format}");
+        }
+        let extraction_format = extraction_format.unwrap_or(ExtractionFormat::Raw);
+        if pkg.r#type == AquaPackageType::GithubArchive
+            && extraction_format == ExtractionFormat::Raw
+        {
+            // The aqua registry can omit format for GitHub-generated archive downloads.
+            // Historically Raw reached untar/open_tar, which treated it as gzip-tar.
+            Ok(ExtractionFormat::TarGz)
+        } else {
+            Ok(extraction_format)
+        }
+    }
+
     fn install(
         &self,
         ctx: &InstallContext,
@@ -2280,49 +2353,47 @@ impl AquaBackend {
         let first_bin_path = bin_paths
             .first()
             .expect("at least one bin path should exist");
-        let tar_opts = TarOptions {
+        let extract_opts = ExtractOptions {
             pr: Some(ctx.pr.as_ref()),
-            ..TarOptions::new(TarFormat::from_ext(format))
+            ..Default::default()
         };
+        let extraction_format = Self::effective_extraction_format(pkg, format)?;
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
-            file::untar(&tarball_path, &install_path, &tar_opts)?;
+            file::extract_archive(
+                &tarball_path,
+                &install_path,
+                extraction_format,
+                &extract_opts,
+            )?;
+            make_executable = true;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
-            file::create_dir_all(&install_path)?;
+            if let Some(parent) = first_bin_path.parent() {
+                file::create_dir_all(parent)?;
+            }
             file::copy(&tarball_path, first_bin_path)?;
             make_executable = true;
-        } else if format == "raw" {
-            file::create_dir_all(&install_path)?;
+        } else if matches!(format, "" | "raw") {
+            if let Some(parent) = first_bin_path.parent() {
+                file::create_dir_all(parent)?;
+            }
             file::copy(&tarball_path, first_bin_path)?;
-            make_executable = true;
-        } else if format.starts_with("tar") {
-            file::untar(&tarball_path, &install_path, &tar_opts)?;
-            make_executable = true;
-        } else if format == "zip" {
-            file::unzip(&tarball_path, &install_path, &Default::default())?;
-            make_executable = true;
-        } else if format == "gz" {
-            file::create_dir_all(&install_path)?;
-            file::un_gz(&tarball_path, first_bin_path)?;
-            make_executable = true;
-        } else if format == "xz" {
-            file::create_dir_all(&install_path)?;
-            file::un_xz(&tarball_path, first_bin_path)?;
-            make_executable = true;
-        } else if format == "zst" {
-            file::create_dir_all(&install_path)?;
-            file::un_zst(&tarball_path, first_bin_path)?;
-            make_executable = true;
-        } else if format == "bz2" {
-            file::create_dir_all(&install_path)?;
-            file::un_bz2(&tarball_path, first_bin_path)?;
             make_executable = true;
         } else if format == "dmg" {
             file::un_dmg(&tarball_path, &install_path)?;
         } else if format == "pkg" {
             file::un_pkg(&tarball_path, &install_path)?;
+        } else if extraction_format.is_compressed_file() {
+            file::decompress_file(&tarball_path, first_bin_path, extraction_format)?;
+            make_executable = true;
         } else {
-            bail!("unsupported format: {}", format);
+            file::extract_archive(
+                &tarball_path,
+                &install_path,
+                extraction_format,
+                &extract_opts,
+            )?;
+            make_executable = true;
         }
 
         if make_executable {
@@ -2723,11 +2794,87 @@ mod tests {
     }
 
     #[test]
+    fn test_use_versions_host_for_github_metadata_only_for_registry_tools() {
+        let registry_backend = AquaBackend::from_arg(BackendArg::new(
+            "act".to_string(),
+            Some("aqua:nektos/act".to_string()),
+        ));
+        assert!(registry_backend.use_versions_host_for_github_metadata("nektos/act"));
+        assert!(!registry_backend.use_versions_host_for_github_metadata("sigstore/foreign"));
+
+        let explicit_registry_backend = AquaBackend::from_arg(BackendArg::new(
+            "nektos/act".to_string(),
+            Some("aqua:nektos/act".to_string()),
+        ));
+        assert!(explicit_registry_backend.use_versions_host_for_github_metadata("nektos/act"));
+
+        let subpackage_backend = AquaBackend::from_arg(BackendArg::new(
+            "fly".to_string(),
+            Some("aqua:concourse/concourse/fly".to_string()),
+        ));
+        assert!(subpackage_backend.use_versions_host_for_github_metadata("concourse/concourse"));
+
+        let direct_backend = AquaBackend::from_arg(BackendArg::new(
+            "aws/session-manager-plugin".to_string(),
+            Some("aqua:aws/session-manager-plugin".to_string()),
+        ));
+        assert!(
+            !direct_backend.use_versions_host_for_github_metadata("aws/session-manager-plugin")
+        );
+    }
+
+    #[test]
     fn test_version_with_prefix_does_not_double_prefix() {
         assert_eq!(version_with_prefix("1.0.0", Some("tool-")), "tool-1.0.0");
         assert_eq!(
             version_with_prefix("tool-1.0.0", Some("tool-")),
             "tool-1.0.0"
+        );
+    }
+
+    #[test]
+    fn test_effective_extraction_format_accepts_unsupported_aqua_formats() {
+        let pkg = AquaPackage::default();
+
+        for (format, expected) in [
+            ("tar.br", ExtractionFormat::TarBr),
+            ("tbr", ExtractionFormat::TarBr),
+            ("br", ExtractionFormat::Br),
+            ("tar.lz4", ExtractionFormat::TarLz4),
+            ("tlz4", ExtractionFormat::TarLz4),
+            ("lz4", ExtractionFormat::Lz4),
+            ("tar.sz", ExtractionFormat::TarSz),
+            ("tsz", ExtractionFormat::TarSz),
+            ("sz", ExtractionFormat::Sz),
+            ("rar", ExtractionFormat::Rar),
+        ] {
+            assert_eq!(
+                AquaBackend::effective_extraction_format(&pkg, format).unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_effective_extraction_format_rejects_unknown_aqua_formats() {
+        let pkg = AquaPackage::default();
+
+        let err = AquaBackend::effective_extraction_format(&pkg, "definitely-unknown").unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("unsupported aqua package format: definitely-unknown"),
+            "{err:#}"
+        );
+    }
+
+    #[test]
+    fn test_github_archive_omitted_format_defaults_to_targz() {
+        let mut pkg = AquaPackage::default();
+        pkg.r#type = AquaPackageType::GithubArchive;
+
+        assert_eq!(
+            AquaBackend::effective_extraction_format(&pkg, "").unwrap(),
+            ExtractionFormat::TarGz
         );
     }
 
@@ -2868,7 +3015,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_var_options_prefers_nested_vars() {
+    fn test_apply_var_options_errors_for_duplicate_nested_vars() {
         let mut pkg = AquaPackage::default();
         pkg.asset = "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string();
         pkg.vars = vec![aqua_var("channel", true)];
@@ -2886,11 +3033,83 @@ mod tests {
             .insert("vars".to_string(), toml::Value::Table(vars));
 
         let opts = AquaOptions::new(&opts);
+        let err = AquaBackend::apply_var_options(pkg, &opts).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("conflicting aqua var `channel`: use only one spelling"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_apply_var_options_reads_prefixed_vars() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string();
+        pkg.vars = vec![aqua_var("channel", true)];
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "vars.channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+
+        let opts = AquaOptions::new(&opts);
         let pkg = AquaBackend::apply_var_options(pkg, &opts).unwrap();
 
         assert_eq!(
             pkg.asset("1.0.0", "linux", "amd64").unwrap(),
-            "tool-beta-1.0.0.tar.gz"
+            "tool-stable-1.0.0.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_apply_var_options_errors_for_duplicate_prefixed_vars() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string();
+        pkg.vars = vec![aqua_var("channel", true)];
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "vars.channel".to_string(),
+            toml::Value::String("manifest".to_string()),
+        );
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+
+        let opts = AquaOptions::new(&opts);
+        let err = AquaBackend::apply_var_options(pkg, &opts).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("conflicting aqua var `channel`: use only one spelling"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_apply_var_options_allows_same_spelling_overrides() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string();
+        pkg.vars = vec![aqua_var("channel", true)];
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("manifest".to_string()),
+        );
+        let mut overrides = ToolVersionOptions::default();
+        overrides.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+        opts.apply_overrides(&overrides);
+
+        let opts = AquaOptions::new(&opts);
+        let pkg = AquaBackend::apply_var_options(pkg, &opts).unwrap();
+
+        assert_eq!(
+            pkg.asset("1.0.0", "linux", "amd64").unwrap(),
+            "tool-stable-1.0.0.tar.gz"
         );
     }
 
@@ -2952,7 +3171,7 @@ mod tests {
         opts.opts
             .insert("vars".to_string(), toml::Value::Table(vars));
 
-        let lock_opts = AquaOptions::new(&opts).lockfile_options();
+        let lock_opts = AquaOptions::new(&opts).lockfile_options().unwrap();
 
         assert_eq!(lock_opts.get("vars.channel"), Some(&"stable".to_string()));
         assert_eq!(lock_opts.get("vars.go_version"), Some(&"1.24".to_string()));
@@ -2978,19 +3197,25 @@ mod tests {
             .opts
             .insert("vars".to_string(), toml::Value::Table(vars));
 
+        let mut prefixed = ToolVersionOptions::default();
+        prefixed.opts.insert(
+            "vars.channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+
         assert_eq!(
-            AquaOptions::new(&top_level).lockfile_options(),
-            AquaOptions::new(&nested).lockfile_options()
+            AquaOptions::new(&top_level).lockfile_options().unwrap(),
+            AquaOptions::new(&nested).lockfile_options().unwrap()
+        );
+        assert_eq!(
+            AquaOptions::new(&prefixed).lockfile_options().unwrap(),
+            AquaOptions::new(&nested).lockfile_options().unwrap()
         );
     }
 
     #[test]
-    fn test_lockfile_options_nested_aqua_vars_take_precedence() {
+    fn test_lockfile_options_errors_for_duplicate_nested_vars() {
         let mut opts = ToolVersionOptions::default();
-        opts.opts.insert(
-            "channel".to_string(),
-            toml::Value::String("stable".to_string()),
-        );
         let mut vars = toml::Table::new();
         vars.insert(
             "channel".to_string(),
@@ -2998,10 +3223,39 @@ mod tests {
         );
         opts.opts
             .insert("vars".to_string(), toml::Value::Table(vars));
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
 
-        let lock_opts = AquaOptions::new(&opts).lockfile_options();
+        let err = AquaOptions::new(&opts).lockfile_options().unwrap_err();
 
-        assert_eq!(lock_opts.get("vars.channel"), Some(&"beta".to_string()));
+        assert!(
+            err.to_string()
+                .contains("conflicting aqua var `channel`: use only one spelling"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_lockfile_options_errors_for_duplicate_prefixed_vars() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+        opts.opts.insert(
+            "vars.channel".to_string(),
+            toml::Value::String("manifest".to_string()),
+        );
+
+        let err = AquaOptions::new(&opts).lockfile_options().unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("conflicting aqua var `channel`: use only one spelling"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

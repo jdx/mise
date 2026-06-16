@@ -24,25 +24,41 @@ The code for this is inside the mise repository at [`./src/backend/aqua.rs`](htt
 
 ## Custom Registry
 
-Set [`aqua.registry_url`](/configuration/settings.html#aqua-registry_url) to use a custom aqua
-registry repository:
+Set [`aqua.registries`](/configuration/settings.html#aqua-registries) to check custom aqua
+registry repositories before the baked-in registry:
 
 ```toml
 [settings]
-aqua.registry_url = "https://github.com/my-org/aqua-registry"
+aqua.registries = ["https://github.com/my-org/aqua-registry"]
 ```
 
-mise downloads `registry.yaml` from the repository root, falling back to `registry.yml` if needed.
-Downloaded registry source is cached under `MISE_CACHE_DIR` for
+To check multiple registries before the baked registry, list them in order:
+
+```toml
+[settings]
+aqua.registries = [
+  "https://github.com/my-org/internal-aqua-registry",
+  "https://github.com/partner/aqua-registry",
+]
+```
+
+mise downloads `registry.yaml` from each repository root, falling back to `registry.yml` if needed.
+Downloaded registry sources are cached under `MISE_CACHE_DIR` for
 [`aqua.registry_cache_ttl`](/configuration/settings.html#aqua-registry_cache_ttl), which defaults
-to one week.
+to one week. In `MISE_AQUA_REGISTRIES`, separate multiple registry URLs with commas.
 
 After a refreshed registry source is downloaded, mise hashes the source and uses that hash in the
 compiled registry cache path. When a new compiled cache is successfully loaded or written, older
 compiled caches for the same registry URL are pruned.
 
-When `aqua.baked_registry` is enabled, the baked-in registry remains a fallback for packages missing
-from the custom registry.
+Packages are resolved by checking the configured registries in order. When `aqua.baked_registry` is
+enabled, the baked-in registry remains a fallback for packages missing from all configured
+registries. Aqua registry aliases are local to the registry that defines them; use
+[`[tool_alias]`](/dev-tools/aliases) when you want a mise shorthand or alias to point at an aqua
+package from another registry.
+
+The legacy [`aqua.registry_url`](/configuration/settings.html#aqua-registry_url) setting is still
+supported for a single registry URL, but `aqua.registries` takes precedence when both are set.
 
 ## Usage
 

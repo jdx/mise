@@ -113,6 +113,19 @@
       ],
       "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
     },
+    "env_default": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "fallback value to use when the environment variable is unset or empty"
+        },
+        {
+          "type": "integer",
+          "description": "fallback value to use when the environment variable is unset or empty"
+        }
+      ],
+      "description": "fallback value to use when the environment variable is unset or empty"
+    },
     "env_age": {
       "type": "string",
       "description": "[experimental] age-encrypted value (simplified format)"
@@ -185,6 +198,39 @@
                 "$ref": "#/$defs/env_required"
               }
             },
+            "required": ["value"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "default": {
+                "$ref": "#/$defs/env_default"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["default"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "$ref": "#/$defs/env_required"
+              }
+            },
+            "required": ["required"],
             "unevaluatedProperties": false
           },
           {
@@ -261,16 +307,16 @@
                   "$ref": "#/$defs/env_directive"
                 },
                 {
-                  "description": "dotenv file to load",
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
                   "type": "string"
                 },
                 {
-                  "description": "dotenv files to load",
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "type": "array",
                   "items": {
                     "oneOf": [
                       {
-                        "description": "dotenv file to load",
+                        "description": "environment file to load (dotenv, json, yaml, or toml)",
                         "type": "string"
                       },
                       {
@@ -506,13 +552,21 @@
               "description": "Use minisign to verify aqua tool signatures.",
               "type": "boolean"
             },
+            "registries": {
+              "description": "Aqua registry repositories to fetch before the baked-in registry.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "registry_cache_ttl": {
               "description": "How long to cache downloaded aqua registry source files.",
               "type": "string"
             },
             "registry_url": {
-              "description": "URL of an aqua registry repository to fetch.",
-              "type": "string"
+              "description": "[deprecated] URL of an aqua registry repository to fetch.",
+              "type": "string",
+              "deprecated": true
             },
             "slsa": {
               "default": true,
@@ -529,6 +583,10 @@
           "description": "set to true to ensure .tool-versions will be compatible with asdf",
           "type": "boolean",
           "deprecated": true
+        },
+        "auto_env": {
+          "description": "Automatically enable platform config environments (unix, {os}, {os}-{arch}).",
+          "type": "boolean"
         },
         "auto_install": {
           "default": true,
@@ -653,6 +711,22 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "dotfiles": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "default_mode": {
+              "default": "symlink",
+              "description": "Default mode for dotfile entries when mode is omitted. Options: `symlink`, `symlink-each`, `copy`, `template`.",
+              "type": "string"
+            },
+            "root": {
+              "default": "~/.dotfiles",
+              "description": "Root directory used for implied dotfile sources.",
+              "type": "string"
+            }
           }
         },
         "dotnet": {
@@ -802,7 +876,7 @@
             },
             "oauth_client_id": {
               "default": "",
-              "description": "[experimental] GitHub App client ID for native OAuth device-flow tokens.",
+              "description": "GitHub App client ID for native OAuth device-flow tokens.",
               "type": "string"
             },
             "oauth_export_env": {
@@ -1082,6 +1156,14 @@
         "minimum_release_age": {
           "description": "Minimum release age / supply chain protection — only install versions older than this threshold",
           "type": "string"
+        },
+        "minimum_release_age_excludes": {
+          "default": [],
+          "description": "Tools and backends to exclude from the global/default minimum_release_age setting",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "netrc": {
           "default": true,
@@ -1452,7 +1534,7 @@
           }
         },
         "shared_install_dirs": {
-          "description": "[experimental] Additional read-only directories to search for installed tool versions.",
+          "description": "Additional read-only directories to search for installed tool versions.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1490,7 +1572,7 @@
             },
             "rops": {
               "default": true,
-              "description": "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops.",
+              "description": "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops. Required for TOML SOPS files because the sops CLI does not support TOML.",
               "type": "boolean"
             },
             "strict": {
@@ -1557,6 +1639,24 @@
         "system_config_file": {
           "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
           "type": "string"
+        },
+        "system_packages": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "managers": {
+              "description": "[experimental] Restrict which system package managers mise will use.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "sudo": {
+              "default": true,
+              "description": "[experimental] Allow `mise bootstrap packages install` to elevate with sudo when not running as root.",
+              "type": "boolean"
+            }
+          }
         },
         "task": {
           "type": "object",
@@ -1887,13 +1987,13 @@
             "file": {
               "oneOf": [
                 {
-                  "description": "dotenv file to load",
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
                   "type": "string"
                 },
                 {
-                  "description": "dotenv files to load",
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "items": {
-                    "description": "dotenv file to load",
+                    "description": "environment file to load (dotenv, json, yaml, or toml)",
                     "type": "string"
                   },
                   "type": "array"
@@ -1921,8 +2021,25 @@
         }
       },
       "additionalProperties": {
-        "description": "value of variable",
-        "type": "string"
+        "oneOf": [
+          {
+            "description": "value of variable",
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "default": {
+                "$ref": "#/$defs/env_default"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["default"],
+            "unevaluatedProperties": false
+          }
+        ]
       }
     },
     "task_config": {
@@ -1944,8 +2061,8 @@
         }
       }
     },
-    "experimental_monorepo_root": {
-      "description": "Marks this config as a monorepo root, enabling target path syntax for tasks. Requires MISE_EXPERIMENTAL=1. When enabled, tasks can be referenced with paths like //projects/frontend:build",
+    "monorepo_root": {
+      "description": "Marks this config as a monorepo root, enabling target path syntax for tasks. When enabled, tasks can be referenced with paths like //projects/frontend:build",
       "type": "boolean"
     },
     "monorepo": {
@@ -2062,12 +2179,23 @@
           "description": "inline hook command to run",
           "type": "string"
         },
+        "run_windows": {
+          "description": "inline hook command to run on Windows",
+          "type": "string"
+        },
         "shell": {
           "description": "inline shell command to use for run hooks, such as \"bash -c\"",
           "type": "string"
         }
       },
-      "required": ["run"],
+      "anyOf": [
+        {
+          "required": ["run"]
+        },
+        {
+          "required": ["run_windows"]
+        }
+      ],
       "type": "object"
     },
     "hook_script_value": {
@@ -2604,6 +2732,15 @@
       "allOf": [
         {
           "$ref": "#/$defs/task_props"
+        },
+        {
+          "properties": {
+            "hide": false,
+            "interactive": false,
+            "quiet": false,
+            "raw": false,
+            "raw_args": false
+          }
         }
       ],
       "unevaluatedProperties": false,
@@ -2727,9 +2864,9 @@
         }
       ]
     },
-    "experimental_monorepo_root": {
+    "monorepo_root": {
       "description": "marks this config as a monorepo root for task path syntax",
-      "$ref": "#/$defs/experimental_monorepo_root"
+      "$ref": "#/$defs/monorepo_root"
     },
     "monorepo": {
       "description": "configuration for monorepo task discovery",
@@ -2862,6 +2999,18 @@
           "type": "string",
           "description": "User baked into the image config"
         },
+        "user_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Numeric UID assigned to tar layer entries"
+        },
+        "group_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Numeric GID assigned to tar layer entries. Defaults to user_id when unset"
+        },
         "mount_point": {
           "type": "string",
           "description": "Override where mise installs go in the image (default /mise)"
@@ -2886,6 +3035,393 @@
       "$ref": "#/$defs/settings",
       "description": "mise settings",
       "type": "object"
+    },
+    "dotfiles": {
+      "type": "object",
+      "description": "[experimental] dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "source path for a whole-file dotfile entry"
+          },
+          {
+            "type": "object",
+            "description": "whole-file dotfile entry or file edit entry",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "source file or directory"
+              },
+              "mode": {
+                "type": "string",
+                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode",
+                "anyOf": [
+                  {
+                    "enum": ["symlink", "symlink-each", "copy", "template"]
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "block": {
+                "type": "string",
+                "description": "block content, maintained between marker comments"
+              },
+              "template": {
+                "type": "string",
+                "description": "template engine to render block content with; currently only \"tera\"",
+                "anyOf": [
+                  {
+                    "enum": ["tera"]
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "line": {
+                "type": "string",
+                "description": "exact line to ensure exists (appended if absent)"
+              },
+              "comment": {
+                "type": "string",
+                "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "bootstrap": {
+      "type": "object",
+      "description": "[experimental] machine-global bootstrapping (system packages, macOS defaults, launchd agents, login shell)",
+      "properties": {
+        "packages": {
+          "type": "object",
+          "description": "system packages to install with `mise bootstrap packages install`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_-]+:.+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "description": "version pin in the manager's native format, or \"latest\""
+          }
+        },
+        "macos": {
+          "type": "object",
+          "description": "macOS-specific bootstrap config",
+          "properties": {
+            "dock": {
+              "type": "object",
+              "description": "curated Dock preferences that compile into macOS defaults",
+              "properties": {
+                "autohide": {
+                  "type": "boolean",
+                  "description": "hide and show the Dock automatically"
+                },
+                "orientation": {
+                  "type": "string",
+                  "enum": ["bottom", "left", "right"],
+                  "description": "Dock screen edge"
+                },
+                "tilesize": {
+                  "type": "integer",
+                  "description": "Dock icon size"
+                },
+                "magnification": {
+                  "type": "boolean",
+                  "description": "enable Dock magnification"
+                },
+                "largesize": {
+                  "type": "integer",
+                  "description": "Dock magnified icon size"
+                },
+                "show_recents": {
+                  "type": "boolean",
+                  "description": "show recent applications in the Dock"
+                },
+                "mru_spaces": {
+                  "type": "boolean",
+                  "description": "automatically rearrange Spaces based on most recent use"
+                }
+              },
+              "additionalProperties": false
+            },
+            "finder": {
+              "type": "object",
+              "description": "curated Finder preferences that compile into macOS defaults",
+              "properties": {
+                "show_all_files": {
+                  "type": "boolean",
+                  "description": "show hidden files in Finder"
+                },
+                "show_pathbar": {
+                  "type": "boolean",
+                  "description": "show the Finder path bar"
+                },
+                "show_status_bar": {
+                  "type": "boolean",
+                  "description": "show the Finder status bar"
+                },
+                "show_extensions_warning": {
+                  "type": "boolean",
+                  "description": "show the warning when changing file extensions"
+                },
+                "preferred_view_style": {
+                  "type": "string",
+                  "enum": ["icon", "list", "column", "gallery"],
+                  "description": "Finder preferred view style"
+                }
+              },
+              "additionalProperties": false
+            },
+            "keyboard": {
+              "type": "object",
+              "description": "curated keyboard preferences that compile into macOS defaults",
+              "properties": {
+                "key_repeat": {
+                  "type": "integer",
+                  "description": "keyboard repeat interval"
+                },
+                "initial_key_repeat": {
+                  "type": "integer",
+                  "description": "delay before key repeat starts"
+                },
+                "press_and_hold": {
+                  "type": "boolean",
+                  "description": "enable press-and-hold accent picker"
+                },
+                "fn_state": {
+                  "type": "boolean",
+                  "description": "use F1, F2, etc. as standard function keys"
+                }
+              },
+              "additionalProperties": false
+            },
+            "trackpad": {
+              "type": "object",
+              "description": "curated trackpad preferences that compile into macOS defaults",
+              "properties": {
+                "tap_to_click": {
+                  "type": "boolean",
+                  "description": "enable tap to click for built-in and Bluetooth trackpads"
+                },
+                "three_finger_drag": {
+                  "type": "boolean",
+                  "description": "enable three finger drag for built-in and Bluetooth trackpads"
+                }
+              },
+              "additionalProperties": false
+            },
+            "defaults": {
+              "type": "object",
+              "description": "macOS user defaults to apply with `mise bootstrap macos-defaults apply`, keyed by preferences domain (e.g. \"com.apple.dock\", \"NSGlobalDomain\")",
+              "additionalProperties": {
+                "type": "object",
+                "description": "defaults keys and their desired values for this domain",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ],
+                  "description": "desired value, written with the matching `defaults write` type (-bool, -int, -float, -string)"
+                }
+              }
+            },
+            "launchd": {
+              "type": "object",
+              "description": "macOS launchd bootstrap config",
+              "properties": {
+                "agents": {
+                  "type": "object",
+                  "description": "macOS user LaunchAgents to write and load with `mise bootstrap launchd apply`",
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z0-9._-]+$"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "program": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": ".*\\S.*",
+                        "description": "program path for ProgramArguments[0]"
+                      },
+                      "args": {
+                        "type": "array",
+                        "description": "additional ProgramArguments entries",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "run_at_load": {
+                        "type": "boolean",
+                        "description": "write RunAtLoad"
+                      },
+                      "keep_alive": {
+                        "type": "boolean",
+                        "description": "write KeepAlive"
+                      },
+                      "start_interval": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "write StartInterval in seconds"
+                      },
+                      "environment": {
+                        "type": "object",
+                        "description": "environment variables for EnvironmentVariables",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "working_directory": {
+                        "type": "string",
+                        "description": "write WorkingDirectory"
+                      },
+                      "stdout_path": {
+                        "type": "string",
+                        "description": "write StandardOutPath"
+                      },
+                      "stderr_path": {
+                        "type": "string",
+                        "description": "write StandardErrorPath"
+                      },
+                      "kickstart": {
+                        "type": "boolean",
+                        "description": "run `launchctl kickstart -k` after loading the agent"
+                      }
+                    },
+                    "required": ["program"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "linux": {
+          "type": "object",
+          "description": "Linux-specific bootstrap config",
+          "properties": {
+            "systemd": {
+              "type": "object",
+              "description": "systemd user service bootstrap config",
+              "properties": {
+                "units": {
+                  "type": "object",
+                  "description": "systemd user services to write and start with `mise bootstrap systemd apply`",
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z0-9._@-]+$"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "description": {
+                        "type": "string",
+                        "description": "write Description in the [Unit] section"
+                      },
+                      "after": {
+                        "type": "array",
+                        "description": "write After dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "wants": {
+                        "type": "array",
+                        "description": "write Wants dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "exec_start": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": ".*\\S.*",
+                        "description": "write ExecStart in the [Service] section"
+                      },
+                      "environment": {
+                        "type": "object",
+                        "description": "environment variables for Environment entries",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "working_directory": {
+                        "type": "string",
+                        "description": "write WorkingDirectory in the [Service] section"
+                      },
+                      "restart": {
+                        "type": "string",
+                        "description": "write Restart in the [Service] section"
+                      },
+                      "restart_sec": {
+                        "type": "string",
+                        "description": "write RestartSec in the [Service] section"
+                      },
+                      "standard_output": {
+                        "type": "string",
+                        "description": "write StandardOutput in the [Service] section"
+                      },
+                      "standard_error": {
+                        "type": "string",
+                        "description": "write StandardError in the [Service] section"
+                      },
+                      "start": {
+                        "type": "boolean",
+                        "description": "restart the service after writing it; when false, stop the service after writing it"
+                      },
+                      "wanted_by": {
+                        "type": "array",
+                        "description": "write WantedBy entries in the [Install] section and enable the unit; an empty array disables previous enablement",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": ["exec_start"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "user": {
+          "type": "object",
+          "description": "current-user bootstrap settings",
+          "properties": {
+            "login_shell": {
+              "type": "string",
+              "pattern": "^/",
+              "description": "current user's desired login shell, applied with `chsh -s`; must be an absolute path"
+            }
+          }
+        },
+        "brew": {
+          "type": "object",
+          "description": "Homebrew-specific bootstrap package config",
+          "properties": {
+            "taps": {
+              "type": "object",
+              "description": "Homebrew tap names mapped to custom git URLs",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
     },
     "task_config": {
       "description": "configuration for task execution and management",

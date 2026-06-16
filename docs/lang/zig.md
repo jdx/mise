@@ -32,6 +32,15 @@ command will list available Mach versions:
 curl https://machengine.org/zig/index.json | yq 'keys'
 ```
 
+### `master` (nightly channel)
+
+`zig@master` tracks a moving nightly. mise resolves it to the concrete dev version
+it currently points at (e.g. `0.17.0-dev.836+...`) at install time, so the install
+lands in a versioned directory and `mise upgrade zig` / `mise outdated` pick up
+newer nightlies — instead of the channel staying pinned to the build it was first
+installed from. Run `mise upgrade zig` (or `mise install -f zig@master`) to move to
+the current nightly.
+
 ## zig Language Server
 
 The `zig` language server ([zls](https://github.com/zigtools/zls)) needs to be installed separately.

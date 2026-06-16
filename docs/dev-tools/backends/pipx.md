@@ -27,7 +27,7 @@ This relies on having `uv` (recommended) or `pipx` installed.
 
 If you have `uv` installed, mise will use `uv tool install` under the hood and you don't need to install `pipx` to run the commands containing "pipx:".
 
-When [`minimum_release_age`](/configuration/settings.html#minimum_release_age) is set, mise forwards the cutoff
+mise forwards [`minimum_release_age`](/configuration/settings.html#minimum_release_age)
 to transitive Python dependency resolution during install. The uv install path uses uv's
 `--exclude-newer` flag, and the `pipx` fallback passes pip's `--uploaded-prior-to` flag.
 When using `minimum_release_age` with the `pipx` install path, `pip >= 26.0` is required for pip's `--uploaded-prior-to` support, and you are responsible for ensuring that compatible Python/pip environment is installed.
@@ -93,7 +93,7 @@ Other syntax may work but is unsupported and untested.
 
 ## Settings
 
-Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable listed.
+Set these with `mise settings set [VARIABLE]=[VALUE]` or by setting the environment variable listed.
 
 <script setup>
 import Settings from '/components/settings.vue';

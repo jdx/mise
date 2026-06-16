@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Test that mise does not panic when an argv entry contains invalid UTF-8 (#10056).
+# std::env::args() panics on non-UTF-8 argv, so mise reads arguments via args_safe(),
+# which converts each argument lossily (invalid bytes become U+FFFD). A malformed
+# argument should produce a normal "unknown command" failure instead of a crash.
+
+# 0xC3 alone is an incomplete UTF-8 lead byte. This mirrors the reported repro
+# `mise u$(printf "u\xC3")pgrade`. Both a panic and a graceful error exit non-zero,
+# so the regression marker is the Rust panic text, not the exit status.
+out="$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 mise "u$(printf 'u\xc3')pgrade" 2>&1 || true)"
+assert_not_contains_text "$out" "panicked"
+
+# A malformed flag-shaped argument must not panic either.
+out="$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 mise "$(printf -- '-\xc3')" 2>&1 || true)"
+assert_not_contains_text "$out" "panicked"

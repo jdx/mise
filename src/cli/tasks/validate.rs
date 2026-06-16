@@ -5,8 +5,8 @@ use std::sync::Arc;
 use crate::config::Config;
 use crate::duration;
 use crate::file;
-use crate::task::Task;
 use crate::task::task_fetcher::TaskFetcher;
+use crate::task::{GetMatchingExt, Task, build_task_ref_map, resolve_task_pattern};
 use crate::tera::contains_template_syntax;
 use crate::ui::style;
 use console::style as console_style;
@@ -226,13 +226,15 @@ impl TasksValidate {
         issues
     }
 
-    /// Check if a task exists by name, display_name, or alias
-    fn task_exists(all_tasks: &BTreeMap<String, Task>, task_name: &str) -> bool {
-        all_tasks.contains_key(task_name)
-            || all_tasks.values().any(|t| t.display_name == task_name)
-            || all_tasks
-                .values()
-                .any(|t| t.aliases.contains(&task_name.to_string()))
+    /// Check if a task exists by name, display_name, or alias.
+    /// Monorepo-relative references are resolved the same way runtime task matching resolves them.
+    fn task_exists(all_tasks: &BTreeMap<String, Task>, task_name: &str, parent: &Task) -> bool {
+        let resolved_name = resolve_task_pattern(task_name, Some(parent));
+        let task_refs = build_task_ref_map(all_tasks.iter());
+        task_refs
+            .get_matching(&resolved_name)
+            .is_ok_and(|matches| !matches.is_empty())
+            || all_tasks.values().any(|t| t.display_name == resolved_name)
     }
 
     fn validate_missing_references(
@@ -257,7 +259,7 @@ impl TasksValidate {
             }
 
             // Check if task exists
-            if !Self::task_exists(all_tasks, dep_name) {
+            if !Self::task_exists(all_tasks, dep_name, task) {
                 issues.push(ValidationIssue {
                     task: task.name.clone(),
                     severity: Severity::Error,
@@ -561,7 +563,7 @@ impl TasksValidate {
                 } => {
                     // Strip inline arguments before checking existence, matching runtime behavior
                     let (name, _) = crate::task::task_list::split_task_spec(task_name);
-                    if !Self::task_exists(all_tasks, name) {
+                    if !Self::task_exists(all_tasks, name, task) {
                         issues.push(ValidationIssue {
                             task: task.name.clone(),
                             severity: Severity::Error,
@@ -575,7 +577,7 @@ impl TasksValidate {
                     // Strip inline arguments before checking existence, matching runtime behavior
                     for task_name in tasks {
                         let (name, _) = crate::task::task_list::split_task_spec(task_name);
-                        if !Self::task_exists(all_tasks, name) {
+                        if !Self::task_exists(all_tasks, name, task) {
                             issues.push(ValidationIssue {
                                 task: task.name.clone(),
                                 severity: Severity::Error,
@@ -722,7 +724,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 The validate command performs the following checks:
 
   • <bold>Circular Dependencies</bold>: Detects dependency cycles
-  • <bold>Missing References</bold>: Finds references to non-existent tasks
+  • <bold>Missing References</bold>: Finds references to nonexistent tasks
   • <bold>Usage Spec Parsing</bold>: Validates #USAGE directives and specs
   • <bold>Timeout Format</bold>: Checks timeout values are valid durations
   • <bold>Alias Conflicts</bold>: Detects duplicate aliases across tasks

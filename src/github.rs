@@ -88,6 +88,13 @@ pub static API_URL: &str = "https://api.github.com";
 
 pub static API_PATH: &str = "/api/v3";
 
+/// Without `MISE_LIST_ALL_VERSIONS`, mise normally fetches only the first page of
+/// releases to save API quota. The read path filters out prereleases/drafts by
+/// default, so a repo whose most recent releases are all prereleases (e.g. nightly
+/// builds) would yield zero candidates. `list_releases_` therefore keeps paginating
+/// until at least one stable release is seen, bounded to this many pages. (#10343)
+const MAX_RELEASE_FALLBACK_PAGES: usize = 3;
+
 async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>>> {
     TAGS_CACHE
         .write()
@@ -171,21 +178,32 @@ pub async fn list_releases_including_prereleases_from_url(
 }
 
 async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
-    let url = format!("{api_url}/repos/{repo}/releases");
+    let url = format!("{api_url}/repos/{repo}/releases?per_page=100");
     let headers = get_headers(&url);
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GithubRelease>, _>(url, &headers)
         .await?;
 
-    if *env::MISE_LIST_ALL_VERSIONS {
-        while let Some(next) = next_page(&headers) {
-            headers = get_headers(&next);
-            let (more, h) = crate::http::HTTP_FETCH
-                .json_headers_with_headers::<Vec<GithubRelease>, _>(next, &headers)
-                .await?;
-            releases.extend(more);
-            headers = h;
+    // Fetch additional pages when MISE_LIST_ALL_VERSIONS is set, or (bounded) while
+    // every release seen so far is a prerelease/draft so a stable release is still
+    // discovered on a repo dominated by nightlies. (#10343)
+    // pages_fetched counts the initial page already fetched above, so the cap
+    // applies to the total number of pages rather than to extra requests.
+    let mut pages_fetched = 1;
+    while let Some(next) = next_page(&headers) {
+        if !*env::MISE_LIST_ALL_VERSIONS
+            && (releases.iter().any(|r| !r.prerelease && !r.draft)
+                || pages_fetched >= MAX_RELEASE_FALLBACK_PAGES)
+        {
+            break;
         }
+        headers = get_headers(&next);
+        let (more, h) = crate::http::HTTP_FETCH
+            .json_headers_with_headers::<Vec<GithubRelease>, _>(next, &headers)
+            .await?;
+        releases.extend(more);
+        headers = h;
+        pages_fetched += 1;
     }
     releases.retain(|r| !r.draft);
 
@@ -213,7 +231,7 @@ pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>
 }
 
 async fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
-    let url = format!("{api_url}/repos/{repo}/tags");
+    let url = format!("{api_url}/repos/{repo}/tags?per_page=100");
     let headers = get_headers(&url);
     let (mut tags, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GithubTag>, _>(url, &headers)
@@ -240,7 +258,7 @@ pub async fn list_tags_with_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> 
 }
 
 async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTagWithDate>> {
-    let url = format!("{api_url}/repos/{repo}/tags");
+    let url = format!("{api_url}/repos/{repo}/tags?per_page=100");
     let headers = get_headers(&url);
     let (mut tags, mut response_headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GithubTag>, _>(url, &headers)
@@ -284,27 +302,41 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
 }
 
 pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
-    let key = format!("{repo}-{tag}").to_kebab_case();
+    let key = release_cache_key(API_URL, repo, tag, true);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     cache
         .get_or_try_init_async_if(
-            async || get_release_(API_URL, repo, tag).await,
+            async || get_release_with_options(API_URL, repo, tag, true).await,
             should_cache_release,
         )
         .await
 }
 
-pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
-    let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
+pub async fn get_release_for_url_with_versions_host(
+    api_url: &str,
+    repo: &str,
+    tag: &str,
+    use_versions_host: bool,
+) -> Result<GithubRelease> {
+    let key = release_cache_key(api_url, repo, tag, use_versions_host);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     cache
         .get_or_try_init_async_if(
-            async || get_release_(api_url, repo, tag).await,
+            async || get_release_with_options(api_url, repo, tag, use_versions_host).await,
             should_cache_release,
         )
         .await
+}
+
+fn release_cache_key(api_url: &str, repo: &str, tag: &str, use_versions_host: bool) -> String {
+    let source = if use_versions_host {
+        "hosted"
+    } else {
+        "direct"
+    };
+    format!("{api_url}-{repo}-{tag}-{source}").to_kebab_case()
 }
 
 fn should_cache_release(release: &GithubRelease) -> bool {
@@ -315,7 +347,8 @@ fn should_cache_release(release: &GithubRelease) -> bool {
 ///
 /// Build revisions use the pattern `{version}-{N}` where N is an incrementing integer.
 /// For example, given version "3.3.11", this will prefer tag "3.3.11-2" over "3.3.11-1"
-/// over "3.3.11". Returns the release with the highest build revision.
+/// over "3.3.11". Returns the release with the highest build revision and whether
+/// a numeric build revision tag was found.
 ///
 /// This is used by precompiled binary repos (e.g., jdx/ruby) where binaries may be
 /// rebuilt with different checksums while keeping the same upstream version.
@@ -324,12 +357,41 @@ fn should_cache_release(release: &GithubRelease) -> bool {
 /// when `MISE_LIST_ALL_VERSIONS` is not set. For repos with many releases, older versions
 /// may not be found, falling back to the exact version tag via `get_release`.
 #[cfg_attr(windows, allow(dead_code))]
-pub async fn get_release_with_build_revision(repo: &str, version: &str) -> Result<GithubRelease> {
+pub async fn get_release_with_build_revision_status(
+    repo: &str,
+    version: &str,
+) -> Result<(GithubRelease, bool)> {
     let releases = list_releases(repo).await?;
-    match pick_best_build_revision(releases, version) {
-        Some(release) => Ok(release),
-        None => get_release(repo, version).await,
+    match pick_best_numeric_build_revision(releases.clone(), version) {
+        Some(release) => Ok((release, true)),
+        None => match pick_best_build_revision(releases, version) {
+            Some(release) => Ok((release, false)),
+            None => Ok((get_release(repo, version).await?, false)),
+        },
     }
+}
+
+/// Select the highest numeric build revision for a given version.
+///
+/// Given releases with tags like "3.3.11", "3.3.11-1", "3.3.11-2", picks the
+/// highest numeric `-N` suffix and ignores the base version.
+#[cfg_attr(windows, allow(dead_code))]
+fn pick_best_numeric_build_revision(
+    releases: Vec<GithubRelease>,
+    version: &str,
+) -> Option<GithubRelease> {
+    let prefix = format!("{version}-");
+    releases
+        .into_iter()
+        .filter_map(|r| {
+            let revision = r
+                .tag_name
+                .strip_prefix(&prefix)
+                .and_then(|suffix| suffix.parse::<u32>().ok())?;
+            Some((revision, r))
+        })
+        .max_by_key(|(revision, _)| *revision)
+        .map(|(_, release)| release)
 }
 
 /// Select the release with the highest build revision for a given version.
@@ -356,8 +418,14 @@ fn pick_best_build_revision(releases: Vec<GithubRelease>, version: &str) -> Opti
         })
 }
 
-async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
-    if is_public_github_api_base(api_url)
+async fn get_release_with_options(
+    api_url: &str,
+    repo: &str,
+    tag: &str,
+    use_versions_host: bool,
+) -> Result<GithubRelease> {
+    if use_versions_host
+        && is_public_github_api_base(api_url)
         && let Ok(Some(release)) = crate::versions_host::github_release(repo, tag).await
     {
         trace!("got GitHub release {repo}@{tag} from mise-versions");
@@ -874,6 +942,21 @@ something_else = "value"
     }
 
     #[test]
+    fn test_numeric_build_revision_selects_highest_without_base_fallback() {
+        let releases = vec![
+            make_release("3.3.11"),
+            make_release("3.3.11-1"),
+            make_release("3.3.11-2"),
+            make_release("3.3.10-1"),
+        ];
+        let best = pick_best_numeric_build_revision(releases, "3.3.11").unwrap();
+        assert_eq!(best.tag_name, "3.3.11-2");
+
+        let releases = vec![make_release("3.3.11"), make_release("3.3.10-1")];
+        assert!(pick_best_numeric_build_revision(releases, "3.3.11").is_none());
+    }
+
+    #[test]
     fn test_build_revision_falls_back_to_base() {
         let releases = vec![make_release("3.3.11"), make_release("3.3.10-1")];
         let best = pick_best_build_revision(releases, "3.3.11").unwrap();
@@ -914,7 +997,7 @@ something_else = "value"
         let repo = "owner/empty-assets-cache-test";
         let tag = "v1.0.0";
         let path = format!("/repos/{repo}/releases/tags/{tag}");
-        let key = format!("{}-{repo}-{tag}", server.url()).to_kebab_case();
+        let key = release_cache_key(&server.url(), repo, tag, true);
 
         let cached_empty_release = make_release(tag);
         {
@@ -932,7 +1015,9 @@ something_else = "value"
             .create_async()
             .await;
 
-        let release = get_release_for_url(&server.url(), repo, tag).await.unwrap();
+        let release = get_release_for_url_with_versions_host(&server.url(), repo, tag, true)
+            .await
+            .unwrap();
         assert!(release.assets.is_empty());
         empty_mock.assert_async().await;
         empty_mock.remove_async().await;
@@ -950,12 +1035,211 @@ something_else = "value"
             .create_async()
             .await;
 
-        let release = get_release_for_url(&server.url(), repo, tag).await.unwrap();
+        let release = get_release_for_url_with_versions_host(&server.url(), repo, tag, true)
+            .await
+            .unwrap();
         assert_eq!(release.assets.len(), 1);
         assert_eq!(release.assets[0].name, "tool-v1.0.0-linux-x86_64.tar.gz");
 
-        let release = get_release_for_url(&server.url(), repo, tag).await.unwrap();
+        let release = get_release_for_url_with_versions_host(&server.url(), repo, tag, true)
+            .await
+            .unwrap();
         assert_eq!(release.assets.len(), 1);
         mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_versions_host_flag_splits_release_cache() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let repo = "owner/versions-host-cache-split-test";
+        let tag = "v1.0.0";
+        let path = format!("/repos/{repo}/releases/tags/{tag}");
+        let true_key = release_cache_key(&server.url(), repo, tag, true);
+
+        {
+            let cache_group = get_release_cache(&true_key).await;
+            let cache = cache_group.get(&true_key).unwrap();
+            cache
+                .write(&GithubRelease {
+                    assets: vec![make_asset("cached-from-versions-host.tar.gz")],
+                    ..make_release(tag)
+                })
+                .unwrap();
+        }
+
+        let direct_release = GithubRelease {
+            assets: vec![make_asset("direct-github-api.tar.gz")],
+            ..make_release(tag)
+        };
+        let mock = server
+            .mock("GET", path.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&direct_release).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let release = get_release_for_url_with_versions_host(&server.url(), repo, tag, false)
+            .await
+            .unwrap();
+        assert_eq!(release.assets[0].name, "direct-github-api.tar.gz");
+        mock.assert_async().await;
+    }
+
+    fn make_prerelease(tag: &str) -> GithubRelease {
+        GithubRelease {
+            prerelease: true,
+            ..make_release(tag)
+        }
+    }
+
+    // #10343: a first page made up entirely of prereleases must not yield "no
+    // versions found" -- the fallback follows the Link header to a later page.
+    #[tokio::test]
+    async fn test_list_releases_paginates_past_all_prerelease_first_page() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let repo = "owner/all-prerelease-first-page";
+
+        let page1 = vec![
+            make_prerelease("v2.0.0-alpha.2"),
+            make_prerelease("v2.0.0-alpha.1"),
+        ];
+        let page2 = vec![make_release("v1.0.0")];
+
+        // The first page requests per_page=100 and is entirely prereleases.
+        let page1_mock = server
+            .mock("GET", format!("/repos/{repo}/releases").as_str())
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/page2>; rel=\"next\"").as_str())
+            .with_body(serde_json::to_string(&page1).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        // The fallback follows the Link header to a second page that has a stable release.
+        let page2_mock = server
+            .mock("GET", "/page2")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&page2).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let releases = list_releases_(&base, repo).await.unwrap();
+        page1_mock.assert_async().await;
+        page2_mock.assert_async().await;
+        assert!(
+            releases
+                .iter()
+                .any(|r| r.tag_name == "v1.0.0" && !r.prerelease),
+            "stable release from page 2 should be discovered, got {:?}",
+            releases.iter().map(|r| &r.tag_name).collect::<Vec<_>>()
+        );
+    }
+
+    // #10343: once a stable release is seen the fallback stops (no extra API calls).
+    #[tokio::test]
+    async fn test_list_releases_stops_when_first_page_has_stable() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let repo = "owner/stable-on-first-page";
+
+        let page1 = vec![make_prerelease("v1.1.0-alpha.1"), make_release("v1.0.0")];
+
+        let page1_mock = server
+            .mock("GET", format!("/repos/{repo}/releases").as_str())
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/page2>; rel=\"next\"").as_str())
+            .with_body(serde_json::to_string(&page1).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        // A stable release is already present, so page 2 must NOT be fetched.
+        let page2_mock = server
+            .mock("GET", "/page2")
+            .with_status(200)
+            .with_body("[]")
+            .expect(0)
+            .create_async()
+            .await;
+
+        let releases = list_releases_(&base, repo).await.unwrap();
+        page1_mock.assert_async().await;
+        page2_mock.assert_async().await;
+        assert!(releases.iter().any(|r| r.tag_name == "v1.0.0"));
+    }
+
+    // #10343: the prerelease fallback is bounded to MAX_RELEASE_FALLBACK_PAGES pages.
+    #[tokio::test]
+    async fn test_list_releases_fallback_pagination_is_bounded() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let repo = "owner/all-prerelease-many-pages";
+
+        let body = || serde_json::to_string(&vec![make_prerelease("v9.0.0-alpha")]).unwrap();
+
+        // Three all-prerelease pages, each linking to the next.
+        let p1 = server
+            .mock("GET", format!("/repos/{repo}/releases").as_str())
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/p2>; rel=\"next\"").as_str())
+            .with_body(body())
+            .expect(1)
+            .create_async()
+            .await;
+        let p2 = server
+            .mock("GET", "/p2")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/p3>; rel=\"next\"").as_str())
+            .with_body(body())
+            .expect(1)
+            .create_async()
+            .await;
+        let p3 = server
+            .mock("GET", "/p3")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/p4>; rel=\"next\"").as_str())
+            .with_body(body())
+            .expect(1)
+            .create_async()
+            .await;
+        // The 4th page must never be requested (capped at MAX_RELEASE_FALLBACK_PAGES).
+        let p4 = server
+            .mock("GET", "/p4")
+            .with_status(200)
+            .with_body("[]")
+            .expect(0)
+            .create_async()
+            .await;
+
+        let releases = list_releases_(&base, repo).await.unwrap();
+        p1.assert_async().await;
+        p2.assert_async().await;
+        p3.assert_async().await;
+        p4.assert_async().await;
+        assert_eq!(releases.len(), 3);
     }
 }

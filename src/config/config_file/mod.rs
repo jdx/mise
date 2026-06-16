@@ -75,7 +75,6 @@ pub trait ConfigFile: Debug + Send + Sync {
             None => None,
         }
     }
-    fn config_type(&self) -> ConfigFileType;
     fn config_root(&self) -> PathBuf {
         config_root::config_root(self.get_path())
     }
@@ -113,11 +112,15 @@ pub trait ConfigFile: Debug + Send + Sync {
         &DEFAULT_TASK_CONFIG
     }
 
+    fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
+        Ok(self.task_config().includes.clone())
+    }
+
     fn task_templates(&self) -> IndexMap<String, TaskTemplate> {
         IndexMap::new()
     }
 
-    fn experimental_monorepo_root(&self) -> Option<bool> {
+    fn monorepo_root(&self) -> Option<bool> {
         None
     }
 
@@ -143,6 +146,14 @@ pub trait ConfigFile: Debug + Send + Sync {
     }
 
     fn oci_config(&self) -> Option<crate::oci::OciConfig> {
+        None
+    }
+
+    fn bootstrap_config(&self) -> Option<crate::system::BootstrapTomlConfig> {
+        None
+    }
+
+    fn dotfiles_config(&self) -> Option<crate::system::DotfilesTomlConfig> {
         None
     }
 }
@@ -298,6 +309,14 @@ pub fn config_trust_root(path: &Path) -> PathBuf {
     }
 }
 
+/// Whether the file or its trust root has been trusted.
+///
+/// Unlike a passing [`trust_check`], this is false for files that merely do
+/// not *need* trust (e.g. safe configs loaded without it).
+pub fn is_path_trusted(path: &Path) -> bool {
+    is_trusted(&config_trust_root(path)) || is_trusted(path)
+}
+
 pub fn trust_check(path: &Path) -> eyre::Result<()> {
     static MUTEX: Mutex<()> = Mutex::new(());
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple checks at once so we don't prompt multiple times for the same path
@@ -305,7 +324,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     let default_cmd = String::new();
     let args = env::ARGS.read().unwrap();
     let cmd = args.get(1).unwrap_or(&default_cmd).as_str();
-    if is_trusted(&config_root) || is_trusted(path) || cmd == "trust" || cfg!(test) {
+    if is_path_trusted(path) || cmd == "trust" || cfg!(test) {
         return Ok(());
     }
     if cmd != "hook-env" && !is_ignored(&config_root) && !is_ignored(path) {
@@ -357,9 +376,7 @@ pub fn is_trusted(path: &Path) -> bool {
 
     // Check if this path is within a trusted monorepo root
     // Monorepo roots are marked with a special marker file when trusted
-    if settings.experimental
-        && let Some(parent) = canonicalized_path.parent()
-    {
+    if let Some(parent) = canonicalized_path.parent() {
         let mut current = parent;
         while let Some(dir) = current.parent() {
             let monorepo_marker = with_appended_extension(&trust_path(dir), "monorepo");

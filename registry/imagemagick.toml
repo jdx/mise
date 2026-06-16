@@ -1,3 +1,9 @@
-backends = ["conda:imagemagick", "asdf:mise-plugins/mise-imagemagick"]
+backends = [
+  { full = "aqua:ImageMagick/ImageMagick", platforms = [
+    "windows-x64",
+  ] },
+  "conda:imagemagick",
+  "asdf:mise-plugins/mise-imagemagick",
+]
 description = "ImageMagick is a free, open-source software suite for creating, editing, converting, and displaying images. It supports 200+ formats and offers powerful command-line tools and APIs for automation, scripting, and integration across platforms"
-# test = { cmd = "magick --version", expected = "ImageMagick" }
+test = { cmd = "magick -version", expected = "Version: ImageMagick {{ version | split(pat='_') | join(sep='-') }}" }

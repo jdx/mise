@@ -142,6 +142,76 @@ List built\-in backends
 \fBbin\-paths\fR
 List all the active runtime bin paths
 .TP
+\fBbootstrap\fR
+[experimental] Set up a machine for the current config in one command
+.TP
+\fBbootstrap launchd\fR
+Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
+.TP
+\fBbootstrap launchd apply\fR
+.TP
+\fBbootstrap launchd status\fR
+.TP
+\fBbootstrap macos\-defaults\fR
+Manage macOS defaults from `[bootstrap.macos.defaults]`
+.TP
+\fBbootstrap macos\-defaults apply\fR
+.TP
+\fBbootstrap macos\-defaults status\fR
+.TP
+\fBbootstrap packages\fR
+Manage bootstrap system packages from `[bootstrap.packages]`
+.TP
+\fBbootstrap packages brew\fR
+Manage Homebrew taps used by bootstrap packages
+.TP
+\fBbootstrap packages brew tap\fR
+Add a Homebrew tap URL to [bootstrap.brew.taps]
+.TP
+\fBbootstrap packages brew untap\fR
+Remove Homebrew tap URLs from [bootstrap.brew.taps]
+.RS
+\fIAliases: \fRremove, rm
+.RE
+.TP
+\fBbootstrap packages install\fR
+Install missing system packages from `[bootstrap.packages]`
+.RS
+\fIAliases: \fRi
+.RE
+.TP
+\fBbootstrap packages status\fR
+Show the status of system packages from `[bootstrap.packages]`
+.RS
+\fIAliases: \fRls
+.RE
+.TP
+\fBbootstrap packages upgrade\fR
+Upgrade installed bootstrap packages from `[bootstrap.packages]`
+.RS
+\fIAliases: \fRup
+.RE
+.TP
+\fBbootstrap packages use\fR
+Add bootstrap packages to [bootstrap.packages] and install them
+.RS
+\fIAliases: \fRu
+.RE
+.TP
+\fBbootstrap systemd\fR
+Manage systemd user services from `[bootstrap.linux.systemd.units]`
+.TP
+\fBbootstrap systemd apply\fR
+.TP
+\fBbootstrap systemd status\fR
+.TP
+\fBbootstrap user\fR
+Manage current\-user bootstrap settings from `[bootstrap.user]`
+.TP
+\fBbootstrap user apply\fR
+.TP
+\fBbootstrap user status\fR
+.TP
 \fBcache\fR
 Manage the mise cache
 .TP
@@ -186,6 +256,24 @@ Set the value of a setting in a mise.toml file
 .TP
 \fBdeactivate\fR
 Disable mise for current shell session
+.TP
+\fBdotfiles\fR
+[experimental] Manage dotfiles from `[dotfiles]`
+.TP
+\fBdotfiles add\fR
+Add or update dotfiles in `[dotfiles]`
+.TP
+\fBdotfiles apply\fR
+Apply dotfiles from `[dotfiles]`
+.TP
+\fBdotfiles edit\fR
+Edit a managed dotfile source
+.TP
+\fBdotfiles status\fR
+Show the status of dotfiles from `[dotfiles]`
+.RS
+\fIAliases: \fRls
+.RE
 .TP
 \fBdoctor\fR
 Check mise installation for possible problems
@@ -284,7 +372,7 @@ List installed and active tool versions
 List runtime versions available for install.
 .TP
 \fBmcp\fR
-[experimental] Run Model Context Protocol (MCP) server
+Run Model Context Protocol (MCP) server
 .TP
 \fBoci\fR
 [experimental] Build OCI container images from a mise.toml
@@ -707,6 +795,300 @@ Output executable entries in JSON format (implies \-\-bin\-names)
 \fB<TOOL@VERSION>\fR
 Tool(s) to look up
 e.g.: ruby@3
+.SH "MISE BOOTSTRAP"
+[experimental] Set up a machine for the current config in one command
+
+Runs the bootstrap steps for the current config in order:
+
+0. `[bootstrap.hooks.pre\-packages]` — optional setup hook
+1. `mise bootstrap packages install` — install missing
+   `[bootstrap.packages]`
+   then `[bootstrap.hooks.post\-packages]`
+2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+   surrounded by `pre\-dotfiles`/`post\-dotfiles` hooks
+3. `mise bootstrap macos\-defaults apply` — write
+   `[bootstrap.macos.defaults]` entries (macOS)
+   surrounded by `pre\-defaults`/`post\-defaults` hooks
+4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+5. `mise bootstrap systemd apply` — install/start systemd user services
+   (Linux)
+6. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+   (Unix)
+   surrounded by `pre\-user`/`post\-user` hooks
+7. `mise install` — install missing tools from `[tools]`
+   surrounded by `pre\-tools`/`post\-tools` hooks
+8. `mise run bootstrap` — if a task named `bootstrap` is defined
+9. `[bootstrap.hooks.final]` — optional final hook
+
+The declarative steps converge — anything already in its desired state
+is skipped, so re\-running is safe. The `bootstrap` task runs on every
+invocation; keep it idempotent. Use it for any project\-specific setup
+that doesn't fit the declarative sections (cloning repos, seeding
+databases, etc.) — it runs with the installed tools on PATH.
+.PP
+\fBUsage:\fR mise bootstrap [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print what would happen without installing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip confirmation prompts
+.TP
+\fB\-\-force\-dotfiles\fR
+Overwrite existing files that conflict with whole\-file dotfile entries
+.TP
+\fB\-\-update\fR
+Refresh system package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`)
+.SH "MISE BOOTSTRAP LAUNCHD APPLY"
+\fBUsage:\fR mise bootstrap launchd apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP LAUNCHD STATUS"
+\fBUsage:\fR mise bootstrap launchd status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured LaunchAgent is not in its desired state
+.SH "MISE BOOTSTRAP MACOS-DEFAULTS APPLY"
+\fBUsage:\fR mise bootstrap macos\-defaults apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP MACOS-DEFAULTS STATUS"
+\fBUsage:\fR mise bootstrap macos\-defaults status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured defaults are not in their desired state
+.SH "MISE BOOTSTRAP PACKAGES BREW TAP"
+Add a Homebrew tap URL to [bootstrap.brew.taps]
+.PP
+\fBUsage:\fR mise bootstrap packages brew tap [OPTIONS] <TAP> [<URL>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-l, \-\-local\fR
+Write to the local config instead of the global config
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the config change without writing it
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Write to this config file or directory
+\fBArguments:\fR
+.PP
+.TP
+\fB<TAP>\fR
+Tap name, e.g. `owner/repo`
+.TP
+\fB<URL>\fR
+GitHub URL for the tap. Defaults to https://github.com/<owner>/homebrew\-<repo>.git
+.SH "MISE BOOTSTRAP PACKAGES BREW UNTAP"
+Remove Homebrew tap URLs from [bootstrap.brew.taps]
+.PP
+\fBUsage:\fR mise bootstrap packages brew untap [OPTIONS] <TAPS> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-l, \-\-local\fR
+Write to the local config instead of the global config
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the config change without writing it
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Write to this config file or directory
+\fBArguments:\fR
+.PP
+.TP
+\fB<TAPS>\fR
+Tap name(s), e.g. `owner/repo`
+.SH "MISE BOOTSTRAP PACKAGES INSTALL"
+Install missing system packages from `[bootstrap.packages]`
+
+Checks which configured packages are missing and installs them with the
+system package manager. This may elevate with sudo when not running as
+root (see the `system_packages.sudo` setting).
+
+Packages can also be given explicitly in `manager:package` form (e.g.
+`apk:zlib\-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
+the config. Explicit packages and `\-\-manager` scope the run to packages
+only.
+.PP
+\fBUsage:\fR mise bootstrap packages install [OPTIONS] [<PACKAGE>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
+Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, or `mas`
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.TP
+\fB\-\-update\fR
+Refresh package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`)
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
+.SH "MISE BOOTSTRAP PACKAGES STATUS"
+Show the status of system packages from `[bootstrap.packages]`
+.PP
+\fBUsage:\fR mise bootstrap packages status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured packages are not in their desired state
+.SH "MISE BOOTSTRAP PACKAGES UPGRADE"
+Upgrade installed bootstrap packages from `[bootstrap.packages]`
+
+Refreshes package manager metadata and upgrades the configured packages
+that are already installed: apk/apt/dnf/pacman upgrade to the newest available
+version (apk, apt, and dnf honor a version pinned in config), brew pours the
+formula's current bottle and replaces the old keg, brew\-cask installs
+the current cask artifact, and mas upgrades App Store apps. Packages that
+are not installed yet are skipped — use `mise bootstrap packages install`
+for those.
+
+Packages can also be given explicitly in `manager:package` form.
+.PP
+\fBUsage:\fR mise bootstrap packages upgrade [OPTIONS] [<PACKAGE>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
+Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, or `mas`
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
+.SH "MISE BOOTSTRAP PACKAGES USE"
+Add bootstrap packages to [bootstrap.packages] and install them
+
+Like `mise use` for tools: writes `"manager:package" = "version"` entries
+to mise.toml (the local config by default, the global one with `\-g`) and
+then installs whatever is missing.
+
+Versions are pinned with `@`: `mise bootstrap packages use apt:curl@8.5.0\-2`. Without
+`@` (or with `@latest`) no pin is written. brew formulae and casks
+version through their names instead (for example `brew:postgresql@17`,
+`brew\-cask:temurin@17`), where `@` is part of the Homebrew name rather than
+a mise version selector. mas uses numeric ADAM IDs and does not support pins.
+.PP
+\fBUsage:\fR mise bootstrap packages use [OPTIONS] <PACKAGE> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-e, \-\-env\fR \fI<ENV>\fR
+Write to the config file for this environment (mise.<ENV>.toml)
+.TP
+\fB\-g, \-\-global\fR
+Write to the global config (~/.config/mise/config.toml) instead of the local one
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without writing config or installing
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Write to this config file or directory
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package[@version]` form
+.SH "MISE BOOTSTRAP SYSTEMD APPLY"
+\fBUsage:\fR mise bootstrap systemd apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP SYSTEMD STATUS"
+\fBUsage:\fR mise bootstrap systemd status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured systemd user service is not in its desired state
+.SH "MISE BOOTSTRAP USER APPLY"
+\fBUsage:\fR mise bootstrap user apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP USER STATUS"
+\fBUsage:\fR mise bootstrap user status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured user setting is not in its desired state
 .SH "MISE CACHE CLEAR"
 Deletes all cache files in mise
 .PP
@@ -846,6 +1228,115 @@ The path of the config to display
 .TP
 \fB<VALUE>\fR
 The value to set the key to (optional if provided as KEY=VALUE)
+.SH "MISE DOTFILES ADD"
+Add or update dotfiles in `[dotfiles]`
+
+If the target is already managed, this updates its source from the live
+target. Otherwise it creates a `[dotfiles]` entry and seeds the source
+under `dotfiles.root` unless `\-\-source` is provided.
+.PP
+\fBUsage:\fR mise dotfiles add [OPTIONS] <TARGET> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-f, \-\-force\fR
+Overwrite existing sources without prompting
+.TP
+\fB\-g, \-\-global\fR
+Write to the global config
+.TP
+\fB\-l, \-\-local\fR
+Write to the local config instead of the global config
+.TP
+\fB\-m, \-\-mode\fR \fI<MODE>\fR
+Dotfile mode to write
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the config/source updates without writing anything
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Write to this config file or directory
+.TP
+\fB\-s, \-\-source\fR \fI<PATH>\fR
+Source path to use for a single target
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Targets to add or update
+.SH "MISE DOTFILES APPLY"
+Apply dotfiles from `[dotfiles]`
+
+Applies configured whole\-file entries and edits that aren't in their
+desired state. Whole\-file entries may symlink, copy, or render templates.
+Edit entries manage a marker\-delimited block or a single line in a file
+mise doesn't otherwise own.
+.PP
+\fBUsage:\fR mise dotfiles apply [OPTIONS] [<TARGET>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-f, \-\-force\fR
+Overwrite existing files that conflict with whole\-file dotfile entries
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the actions that would run without writing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Only apply these targets
+.SH "MISE DOTFILES EDIT"
+Edit a managed dotfile source
+.PP
+\fBUsage:\fR mise dotfiles edit [OPTIONS] <TARGET>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-apply\fR
+Apply this target after the editor exits
+.TP
+\fB\-m, \-\-mode\fR \fI<MODE>\fR
+Dotfile mode to use if the target is not yet managed
+.TP
+\fB\-s, \-\-source\fR \fI<PATH>\fR
+Source path to use if the target is not yet managed
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt when adding an unmanaged target
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Target to edit
+.SH "MISE DOTFILES STATUS"
+Show the status of dotfiles from `[dotfiles]`
+.PP
+\fBUsage:\fR mise dotfiles status [OPTIONS] [<TARGET>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured dotfiles are not in their desired
+state (missing, source missing, differs)
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Only show these targets
 .SH "MISE DOCTOR"
 Check mise installation for possible problems
 .PP
@@ -946,33 +1437,33 @@ Number of jobs to run in parallel
 [default: 4]
 .TP
 \fB\-\-allow\-env\fR \fI<VAR>\fR
-[experimental] Allow specific env var through (implies \-\-deny\-env for everything else)
+Allow specific env var through (implies \-\-deny\-env for everything else)
 Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
 .TP
 \fB\-\-allow\-net\fR \fI<HOST>\fR
-[experimental] Allow network to specific host (implies \-\-deny\-net for everything else)
+Allow network to specific host (implies \-\-deny\-net for everything else)
 macOS only in v1; on Linux falls back to allowing all network
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
-[experimental] Allow reads from specific path (implies \-\-deny\-read for everything else)
+Allow reads from specific path (implies \-\-deny\-read for everything else)
 .TP
 \fB\-\-allow\-write\fR \fI<PATH>\fR
-[experimental] Allow writes to specific path (implies \-\-deny\-write for everything else)
+Allow writes to specific path (implies \-\-deny\-write for everything else)
 .TP
 \fB\-\-deny\-all\fR
-[experimental] Block reads, writes, network, and env vars
+Block reads, writes, network, and env vars
 .TP
 \fB\-\-deny\-env\fR
-[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
 .TP
 \fB\-\-deny\-net\fR
-[experimental] Block all network access
+Block all network access
 .TP
 \fB\-\-deny\-read\fR
-[experimental] Block filesystem reads (system libs and tool dirs still accessible)
+Block filesystem reads (system libs and tool dirs still accessible)
 .TP
 \fB\-\-deny\-write\fR
-[experimental] Block all filesystem writes
+Block all filesystem writes
 .TP
 \fB\-\-fresh\-env\fR
 Bypass the environment cache and recompute the environment
@@ -1345,13 +1836,13 @@ Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
 .TP
 \fB\-\-shared\fR \fI<SHARED>\fR
-[experimental] Install tool(s) to a shared directory
+Install tool(s) to a shared directory
 
 Installs to the specified directory instead of the default install location.
 May require elevated permissions depending on the path.
 .TP
 \fB\-\-system\fR
-[experimental] Install tool(s) to the system\-wide shared directory
+Install tool(s) to the system\-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
@@ -1608,6 +2099,11 @@ Where to place tool installs inside the image (default: /mise)
 .TP
 \fB\-\-no\-mise\fR
 Do not embed the currently\-running mise binary at /usr/local/bin/mise
+.TP
+\fB\-\-owner\fR \fI<UID[:GID]>\fR
+UID[:GID] to assign to every tar entry in generated layers
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 .SH "MISE OCI PUSH"
 [experimental] Build an OCI image and push it to a registry
 
@@ -1641,6 +2137,11 @@ Override in\-image mount point (ignored with \-\-image\-dir)
 .TP
 \fB\-\-no\-mise\fR
 Don't embed the mise binary (ignored with \-\-image\-dir)
+.TP
+\fB\-\-owner\fR \fI<UID[:GID]>\fR
+UID[:GID] to assign to every tar entry when building (conflicts with \-\-image\-dir)
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 .TP
 \fB\-\-tool\fR \fI<TOOL>\fR
 Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`
@@ -1695,6 +2196,11 @@ Override in\-image mount point (ignored with \-\-image\-dir)
 .TP
 \fB\-\-no\-mise\fR
 Don't embed the mise binary (ignored with \-\-image\-dir)
+.TP
+\fB\-\-owner\fR \fI<UID[:GID]>\fR
+UID[:GID] to assign to every tar entry when building (conflicts with \-\-image\-dir)
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 .TP
 \fB\-\-volume\fR \fI<HOST:CONTAINER>\fR
 Bind\-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
@@ -1810,7 +2316,7 @@ to show core and user plugins
 .SH "MISE PLUGINS INSTALL"
 Install a plugin
 
-note that mise automatically can install plugins when you install a tool
+note that mise can automatically install plugins when you install a tool
 e.g.: `mise install cmake@3.30` will autoinstall the cmake plugin
 
 This behavior can be modified in ~/.config/mise/config.toml
@@ -2075,7 +2581,7 @@ You can list prunable tools with `mise ls \-\-prunable`
 Do not actually delete anything
 .TP
 \fB\-\-configs\fR
-Prune only tracked and trusted configuration links that point to non\-existent configurations
+Prune only tracked and trusted configuration links that point to nonexistent configurations
 .TP
 \fB\-\-dry\-run\-code\fR
 Like \-\-dry\-run but exits with code 1 if there are tools to prune
@@ -2131,7 +2637,7 @@ other ways to install things (like using yarn or pnpm for node) that mise does
 not know about and so it will be necessary to call this explicitly.
 
 If you think mise should automatically call this for a particular command, please
-open an issue on the mise repo. You can also setup a shell function to reshim
+open an issue on the mise repo. You can also set up a shell function to reshim
 automatically (it's really fast so you don't need to worry about overhead):
 
     npm() {
@@ -2231,32 +2737,32 @@ Don't show any output except for errors
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 .TP
 \fB\-\-allow\-env\fR \fI<VAR>\fR
-[experimental] Allow specific env var through (implies \-\-deny\-env for everything else)
+Allow specific env var through (implies \-\-deny\-env for everything else)
 Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
 .TP
 \fB\-\-allow\-net\fR \fI<HOST>\fR
-[experimental] Allow network to specific host (implies \-\-deny\-net for everything else)
+Allow network to specific host (implies \-\-deny\-net for everything else)
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
-[experimental] Allow reads from specific path (implies \-\-deny\-read for everything else)
+Allow reads from specific path (implies \-\-deny\-read for everything else)
 .TP
 \fB\-\-allow\-write\fR \fI<PATH>\fR
-[experimental] Allow writes to specific path (implies \-\-deny\-write for everything else)
+Allow writes to specific path (implies \-\-deny\-write for everything else)
 .TP
 \fB\-\-deny\-all\fR
-[experimental] Block reads, writes, network, and env vars
+Block reads, writes, network, and env vars
 .TP
 \fB\-\-deny\-env\fR
-[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
 .TP
 \fB\-\-deny\-net\fR
-[experimental] Block all network access
+Block all network access
 .TP
 \fB\-\-deny\-read\fR
-[experimental] Block filesystem reads (system libs and tool dirs still accessible)
+Block filesystem reads (system libs and tool dirs still accessible)
 .TP
 \fB\-\-deny\-write\fR
-[experimental] Block all filesystem writes
+Block all filesystem writes
 .TP
 \fB\-\-fresh\-env\fR
 Bypass the environment cache and recompute the environment
@@ -2993,32 +3499,32 @@ Don't show any output except for errors
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 .TP
 \fB\-\-allow\-env\fR \fI<VAR>\fR
-[experimental] Allow specific env var through (implies \-\-deny\-env for everything else)
+Allow specific env var through (implies \-\-deny\-env for everything else)
 Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
 .TP
 \fB\-\-allow\-net\fR \fI<HOST>\fR
-[experimental] Allow network to specific host (implies \-\-deny\-net for everything else)
+Allow network to specific host (implies \-\-deny\-net for everything else)
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
-[experimental] Allow reads from specific path (implies \-\-deny\-read for everything else)
+Allow reads from specific path (implies \-\-deny\-read for everything else)
 .TP
 \fB\-\-allow\-write\fR \fI<PATH>\fR
-[experimental] Allow writes to specific path (implies \-\-deny\-write for everything else)
+Allow writes to specific path (implies \-\-deny\-write for everything else)
 .TP
 \fB\-\-deny\-all\fR
-[experimental] Block reads, writes, network, and env vars
+Block reads, writes, network, and env vars
 .TP
 \fB\-\-deny\-env\fR
-[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
 .TP
 \fB\-\-deny\-net\fR
-[experimental] Block all network access
+Block all network access
 .TP
 \fB\-\-deny\-read\fR
-[experimental] Block filesystem reads (system libs and tool dirs still accessible)
+Block filesystem reads (system libs and tool dirs still accessible)
 .TP
 \fB\-\-deny\-write\fR
-[experimental] Block all filesystem writes
+Block all filesystem writes
 .TP
 \fB\-\-fresh\-env\fR
 Bypass the environment cache and recompute the environment
@@ -3141,10 +3647,13 @@ GitHub token
 .PP
 .TP
 \fB\-\-oauth\fR
-[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device\-code flow), bypassing other token sources
+Resolve only via the native GitHub OAuth source (cache, refresh, or device\-code flow), bypassing other token sources
 .TP
 \fB\-\-raw\fR
 Print only the token value
+.TP
+\fB\-\-refresh\fR
+Mint a fresh OAuth token even if the cached one has not expired, via the refresh\-token grant or a new device\-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire
 .TP
 \fB\-\-unmask\fR
 Show the full unmasked token
@@ -3247,6 +3756,13 @@ that may execute code or affect the environment. mise checks trust before
 parsing `mise.toml`. Without trust, mise may prompt, skip the config in some
 discovery paths, fail with an untrusted\-config error when it cannot prompt,
 or assume trust in detected CI unless paranoid mode is enabled.
+
+Safe config files do not require trust: files that only contain
+`min_version`, `[tools]` entries with plain version strings (or arrays
+of them), and `[tasks]` (no templates and no tool options) are loaded
+without prompting, since nothing in them executes code at load time —
+tools install and tasks run only on explicit commands like `mise install`
+or `mise run`.
 .PP
 \fBUsage:\fR mise trust [OPTIONS] [<CONFIG_FILE>]
 .PP
@@ -3711,14 +4227,14 @@ repository will be discarded.
 Don't load global ignores
 
 This disables loading of global or user ignore files, like '~/.gitignore',
-\&'~/.config/watchexec/ignore', or '%APPDATA%\\Bazzar\\2.0\\ignore'. Contrast with
+\&'~/.config/watchexec/ignore', or '%APPDATA%\\Bazaar\\2.0\\ignore'. Contrast with
 \&'\-\-no\-vcs\-ignore' and '\-\-no\-project\-ignore'.
 
 Supported global ignore files
 
   \- Git (if core.excludesFile is set): the file at that path
   \- Git (otherwise): the first found of $XDG_CONFIG_HOME/git/ignore, %APPDATA%/.gitignore, %USERPROFILE%/.gitignore, $HOME/.config/git/ignore, $HOME/.gitignore.
-  \- Bazaar: the first found of %APPDATA%/Bazzar/2.0/ignore, $HOME/.bazaar/ignore.
+  \- Bazaar: the first found of %APPDATA%/Bazaar/2.0/ignore, $HOME/.bazaar/ignore.
   \- Watchexec: the first found of $XDG_CONFIG_HOME/watchexec/ignore, %APPDATA%/watchexec/ignore, %USERPROFILE%/.watchexec/ignore, $HOME/.watchexec/ignore.
 
 Like for project files, Git and Bazaar global files will only be used for the corresponding

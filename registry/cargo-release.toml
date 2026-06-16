@@ -1,0 +1,3 @@
+backends = ["github:crate-ci/cargo-release"]
+description = "Cargo subcommand for releasing crates"
+test = { cmd = "cargo release --version", expected = "cargo-release {{version}}" }

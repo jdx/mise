@@ -5,7 +5,7 @@ export MISE_EXPERIMENTAL=1
 
 # Create monorepo root config
 cat <<EOF >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = [
@@ -100,6 +100,10 @@ assert_not_contains "mise run '//projects/...:test'" "shared"
 assert_contains "mise run '//projects/backend:*'" "backend build"
 assert_contains "mise run '//projects/backend:*'" "backend test"
 assert_contains "mise run '//projects/backend:*'" "backend deploy"
+
+# Bare monorepo paths should not implicitly run every task. Use :* explicitly.
+assert_fail "mise run '//projects/backend'" "missing task name in monorepo path"
+assert_fail "mise run '//...'" "missing task name in monorepo path"
 
 # Test asterisk with prefix - match tasks starting with test:
 assert_contains "mise run '//projects/frontend:test:*'" "frontend test:unit"

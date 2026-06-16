@@ -170,4 +170,44 @@ esac
             Remove-Item -Path "$TestDrive\mise.cygdrive_repro.toml" -ErrorAction SilentlyContinue
         }
     }
+
+    It 'forwards args to a bash subshell task without shifting $0' {
+        # Repro for the Windows non-cmd POSIX-shell arg-swallow bug (#9355): with
+        # shell = "bash -c", a forwarded arg used to be passed as a separate argv
+        # to `bash -c`, so the user's first arg became $0. Inline TOML scripts
+        # append args to the command (like Unix), so $0 stays the shell (bash) and
+        # the arg is appended after it — not `using shell myarg`, where the arg had
+        # been swallowed into $0.
+        if (-not (Get-Command bash.exe -ErrorAction SilentlyContinue)) {
+            Set-ItResult -Skipped -Because "bash.exe (Git Bash / MSYS) not on PATH"
+            return
+        }
+
+        @'
+[tasks.args_repro]
+shell = "bash -c"
+run = 'echo "using shell $0"'
+'@ | Out-File -FilePath "mise.args_repro.toml" -Encoding utf8NoBOM
+
+        $oldConfig = $env:MISE_CONFIG_FILE
+        $env:MISE_CONFIG_FILE = "$TestDrive\mise.args_repro.toml"
+        try {
+            # $0 is the shell bash was invoked as: "bash" on some setups, a full
+            # path like "/usr/bin/bash" on Git Bash. Assert on the shape that
+            # proves the fix regardless of that form — $0 still names bash (not
+            # the forwarded arg) and "myarg" is appended as the trailing token,
+            # rather than being swallowed into $0 (the old bug printed
+            # "using shell myarg").
+            $output = mise run args_repro -- myarg 2>&1 | Select -Last 1
+            $output | Should -BeLike '*bash* myarg'
+        }
+        finally {
+            if ($null -eq $oldConfig) {
+                Remove-Item -Path Env:\MISE_CONFIG_FILE -ErrorAction SilentlyContinue
+            } else {
+                $env:MISE_CONFIG_FILE = $oldConfig
+            }
+            Remove-Item -Path "$TestDrive\mise.args_repro.toml" -ErrorAction SilentlyContinue
+        }
+    }
 }

@@ -2,6 +2,65 @@
 
 # Test that os field supports os/arch compound syntax for filtering tools.
 
+case "$(uname -s)" in
+  Darwin) _os="macos" ;;
+  Linux) _os="linux" ;;
+  *) _os="windows" ;;
+esac
+case "$(uname -m)" in
+  x86_64) _arch="x64" ;;
+  aarch64 | arm64) _arch="arm64" ;;
+  *) _arch="$(uname -m)" ;;
+esac
+case "$_arch" in
+  x64) _inactive_arch="arm64" ;;
+  *) _inactive_arch="x64" ;;
+esac
+case "$_os" in
+  linux) _inactive_os="macos" ;;
+  *) _inactive_os="linux" ;;
+esac
+
+# Unknown tools scoped away from the current OS should be skipped before
+# registry resolution.
+cat >mise.toml <<EOF
+[tools]
+nonexistent-os-filtered = { version = "latest", os = ["$_inactive_os"] }
+EOF
+mise i
+
+# Active unknown tools should still fail clearly.
+cat >mise.toml <<EOF
+[tools]
+nonexistent-os-filtered = { version = "latest", os = ["$_os"] }
+EOF
+assert_fail "mise i" "nonexistent-os-filtered not found in mise tool registry"
+
+# Unknown tools scoped away from the current OS/arch pair should also be
+# skipped before registry resolution.
+cat >mise.toml <<EOF
+[tools]
+nonexistent-os-arch-filtered = { version = "latest", os = ["${_os}/${_inactive_arch}"] }
+EOF
+mise i
+
+# Unknown tools scoped to the current OS/arch pair should still fail clearly.
+cat >mise.toml <<EOF
+[tools]
+nonexistent-os-arch-filtered = { version = "latest", os = ["${_os}/${_arch}"] }
+EOF
+assert_fail "mise i" "nonexistent-os-arch-filtered not found in mise tool registry"
+
+# Globally disabled unknown tools should be skipped before registry resolution.
+cat >mise.toml <<'EOF'
+[tools]
+nonexistent-disabled = "latest"
+
+[settings]
+disable_tools = ["nonexistent-disabled"]
+EOF
+mise i
+
 # Tool with a non-matching os/arch should be skipped (not installed).
 # "windows/arm64" won't match any CI runner or dev machine running this test.
 cat >mise.toml <<'EOF'
@@ -21,18 +80,6 @@ assert_contains "mise ls --installed tiny" "tiny"
 mise uninstall --all tiny
 
 # Tool with matching os/arch should install on this platform.
-# Detect current platform to construct a matching entry.
-case "$(uname -s)" in
-  Darwin) _os="macos" ;;
-  Linux) _os="linux" ;;
-  *) _os="windows" ;;
-esac
-case "$(uname -m)" in
-  x86_64) _arch="x64" ;;
-  aarch64 | arm64) _arch="arm64" ;;
-  *) _arch="$(uname -m)" ;;
-esac
-
 cat >mise.toml <<EOF
 [tools]
 tiny = { version = "latest", os = ["${_os}/${_arch}"] }

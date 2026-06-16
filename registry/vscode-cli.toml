@@ -1,0 +1,3 @@
+backends = ["aqua:microsoft/vscode/code"]
+description = "The standalone CLI for Visual Studio Code"
+test = { cmd = "code --version", expected = "code {{version}}" }

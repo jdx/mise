@@ -73,7 +73,7 @@ pub enum HookDef {
     /// Simple run string: `enter = "echo hello"`
     RunString(String),
     /// Table with run: `enter = { run = "echo hello" }`
-    Run { run: String, shell: Option<String> },
+    Run(HookRunTable),
     /// Table with script and optional shell: `enter = { script = "echo hello", shell = "bash" }`
     ScriptTable {
         script: HookScripts,
@@ -90,6 +90,40 @@ pub enum HookDef {
     Array(Vec<HookDef>),
 }
 
+#[derive(Debug, Clone)]
+pub struct HookRunTable {
+    run: Option<String>,
+    run_windows: Option<String>,
+    shell: Option<String>,
+}
+
+impl<'de> serde::Deserialize<'de> for HookRunTable {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Helper {
+            run: Option<String>,
+            run_windows: Option<String>,
+            shell: Option<String>,
+        }
+
+        let helper = <Helper as serde::Deserialize>::deserialize(deserializer)?;
+        if helper.run.is_none() && helper.run_windows.is_none() {
+            return Err(serde::de::Error::custom(
+                "hook run table must define `run` or `run_windows`",
+            ));
+        }
+        Ok(Self {
+            run: helper.run,
+            run_windows: helper.run_windows,
+            shell: helper.shell,
+        })
+    }
+}
+
 impl HookDef {
     /// Convert to a list of Hook structs with the given hook type
     pub fn into_hooks(self, hook_type: Hooks) -> Vec<Hook> {
@@ -97,18 +131,20 @@ impl HookDef {
             HookDef::RunString(script) => vec![Hook {
                 hook: hook_type,
                 action: HookAction::Run {
-                    run: script,
+                    run: Some(script),
+                    run_windows: None,
                     shell: None,
                     legacy_script: false,
                     ignored_shell: None,
                 },
                 global: false,
             }],
-            HookDef::Run { run, shell } => vec![Hook {
+            HookDef::Run(table) => vec![Hook {
                 hook: hook_type,
                 action: HookAction::Run {
-                    run,
-                    shell,
+                    run: table.run,
+                    run_windows: table.run_windows,
+                    shell: table.shell,
                     legacy_script: false,
                     ignored_shell: None,
                 },
@@ -148,7 +184,8 @@ fn script_hook_action(
             HookAction::CurrentShell { script, shell }
         }
         (_, shell) => HookAction::Run {
-            run: script,
+            run: Some(script),
+            run_windows: None,
             shell: None,
             legacy_script,
             ignored_shell: shell,
@@ -167,7 +204,8 @@ pub struct Hook {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum HookAction {
     Run {
-        run: String,
+        run: Option<String>,
+        run_windows: Option<String>,
         shell: Option<String>,
         legacy_script: bool,
         ignored_shell: Option<String>,
@@ -189,16 +227,24 @@ impl Hook {
         match &mut self.action {
             HookAction::Run {
                 run,
+                run_windows,
                 shell,
                 ignored_shell,
                 ..
             } => {
-                *run = render(run)?;
-                if let Some(s) = shell {
+                let run = if cfg!(windows) {
+                    run_windows.as_mut().or(run.as_mut())
+                } else {
+                    run.as_mut()
+                };
+                if let Some(s) = run {
                     *s = render(s)?;
-                }
-                if let Some(s) = ignored_shell {
-                    *s = render(s)?;
+                    if let Some(s) = shell {
+                        *s = render(s)?;
+                    }
+                    if let Some(s) = ignored_shell {
+                        *s = render(s)?;
+                    }
                 }
             }
             HookAction::CurrentShell { script, shell } => {
@@ -434,9 +480,9 @@ async fn execute(
     hook: &Hook,
     installed_tools: Option<&[InstalledToolInfo]>,
 ) -> Result<()> {
-    Settings::get().ensure_experimental("hooks")?;
     let HookAction::Run {
         run,
+        run_windows,
         shell,
         legacy_script,
         ignored_shell,
@@ -459,6 +505,14 @@ async fn execute(
             hook_name
         );
     }
+    let run = if cfg!(windows) {
+        run_windows.as_deref().or(run.as_deref())
+    } else {
+        run.as_deref()
+    };
+    let Some(run) = run else {
+        return Ok(());
+    };
     let shell = shell
         .as_ref()
         .map(|shell| crate::path::split_shell_command(shell))
@@ -528,6 +582,47 @@ async fn execute(
     // Prevent recursive hook execution (e.g. hook runs `mise run` which spawns
     // a shell that activates mise and re-triggers hooks)
     env.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
+
+    // On Windows, when the hook shell is cmd.exe, the rendered command must be
+    // passed to cmd *verbatim*. Going through std/duct's MSVCRT-style quoting
+    // would escape inner `"` as `\"`, which cmd.exe does not understand, so a
+    // hook like `python -c "import x"` is mangled. Unlike tasks, hooks have no
+    // `usage`/shebang/file-based escape hatch, so this is the only fix. duct
+    // can't emit raw args, so spawn std Command directly with raw command-line
+    // args (wrapped in one outer quote pair + `/s`), forwarding stdout to stderr
+    // to match the duct path's `stdout_to_stderr()`. See discussion #9355.
+    #[cfg(windows)]
+    {
+        let runs_command = shell
+            .iter()
+            .skip(1)
+            .any(|f| f.eq_ignore_ascii_case("/c") || f.eq_ignore_ascii_case("/k"));
+        if crate::path::is_cmd_shell_program(Path::new(&shell[0])) && runs_command {
+            use std::os::windows::io::AsHandle;
+            use std::os::windows::process::CommandExt;
+            let cmd_args = crate::path::cmd_verbatim_args(&shell[1..], &rendered_script, &[]);
+            trace!("hook (cmd verbatim): {} {}", shell[0], cmd_args.join(" "));
+            let mut c = std::process::Command::new(&shell[0]);
+            for a in &cmd_args {
+                c.raw_arg(a);
+            }
+            c.env_clear();
+            c.envs(env.iter());
+            // Send the hook's stdout to mise's stderr (matching the duct
+            // `stdout_to_stderr()` the non-cmd path uses) by handing the child a
+            // clone of our stderr handle. Redirecting the descriptor directly —
+            // rather than piping through a reader thread — means a hook that
+            // spawns a background child holding the write end can't block us
+            // waiting for pipe EOF, and stdout/stderr ordering is preserved.
+            c.stdout(std::io::stderr().as_handle().try_clone_to_owned()?);
+            let status = c.status()?;
+            if !status.success() {
+                eyre::bail!("hook command failed: {status}");
+            }
+            return Ok(());
+        }
+    }
+
     cmd(&shell[0], args)
         .stdout_to_stderr()
         // .dir(root)
@@ -544,8 +639,6 @@ async fn execute_task(
     task_name: &str,
     installed_tools: Option<&[InstalledToolInfo]>,
 ) -> Result<()> {
-    Settings::get().ensure_experimental("hooks")?;
-
     let mise_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mise"));
 
     let mut env = if hook.hook == Hooks::Preinstall {
@@ -588,4 +681,41 @@ async fn execute_task(
     .full_env(env)
     .run()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct TestHook {
+        hook: HookDef,
+    }
+
+    #[test]
+    fn run_table_supports_run_windows() {
+        let parsed: TestHook = toml::from_str(
+            r#"
+            hook = { run = "echo unix", run_windows = "echo windows", shell = "bash -c" }
+            "#,
+        )
+        .unwrap();
+        let hooks = parsed.hook.into_hooks(Hooks::Postinstall);
+
+        assert_eq!(hooks.len(), 1);
+        match &hooks[0].action {
+            HookAction::Run {
+                run,
+                run_windows,
+                shell,
+                ..
+            } => {
+                assert_eq!(run.as_deref(), Some("echo unix"));
+                assert_eq!(run_windows.as_deref(), Some("echo windows"));
+                assert_eq!(shell.as_deref(), Some("bash -c"));
+            }
+            action => panic!("expected run hook, got {action:?}"),
+        }
+    }
 }

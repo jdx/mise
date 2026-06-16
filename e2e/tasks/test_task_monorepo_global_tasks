@@ -11,7 +11,7 @@ TOML
 
 # Create monorepo root config
 cat <<'TOML' >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["packages/*"]

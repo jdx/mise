@@ -7,8 +7,6 @@ use crate::cli::args::BackendArg;
 use crate::config::config_file::ConfigFile;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
-use super::ConfigFileType;
-
 pub mod package_json;
 
 #[derive(Debug, Clone)]
@@ -32,10 +30,12 @@ impl IdiomaticVersionFile {
         let mut tools = ToolRequestSet::new();
 
         for plugin in plugins {
-            match plugin.parse_idiomatic_file(&path).await {
+            match plugin.parse_idiomatic_file_with_options(&path).await {
                 Ok(versions) => {
-                    for v in versions {
-                        let tr = ToolRequest::new(plugin.ba().clone(), &v, source.clone())?;
+                    for (version, options) in versions {
+                        let mut tr =
+                            ToolRequest::new(plugin.ba().clone(), &version, source.clone())?;
+                        tr.set_options(options);
                         tools.add_version(tr, &source);
                     }
                 }
@@ -51,10 +51,6 @@ impl IdiomaticVersionFile {
 }
 
 impl ConfigFile for IdiomaticVersionFile {
-    fn config_type(&self) -> ConfigFileType {
-        ConfigFileType::IdiomaticVersion(vec![])
-    }
-
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }

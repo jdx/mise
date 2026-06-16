@@ -13,6 +13,8 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::runtime_symlinks::is_runtime_symlink;
+use crate::toolset::ToolRequest;
 use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
@@ -55,9 +57,15 @@ struct FileInfo {
     /// File extension
     extension: String,
     /// Detected archive format
-    format: file::TarFormat,
+    format: file::ExtractionFormat,
     /// Whether this is a compressed single binary (not a tar archive)
     is_compressed_binary: bool,
+}
+
+struct CachePlan {
+    key: String,
+    file_info: FileInfo,
+    strip_components: usize,
 }
 
 impl FileInfo {
@@ -79,20 +87,17 @@ impl FileInfo {
         };
 
         let file_name = effective_path.file_name().unwrap().to_string_lossy();
-        let format = file::TarFormat::from_file_name(&file_name);
+        let format = file::ExtractionFormat::from_file_name(&file_name);
 
-        let extension = format
-            .extension()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| {
-                effective_path
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_string()
-            });
+        let extension = format.extension().unwrap_or_else(|| {
+            effective_path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string()
+        });
 
-        let is_compressed_binary = !format.is_archive() && format != file::TarFormat::Raw;
+        let is_compressed_binary = !format.is_archive() && format != file::ExtractionFormat::Raw;
 
         Self {
             effective_path,
@@ -223,7 +228,12 @@ impl HttpBackend {
     // -------------------------------------------------------------------------
 
     /// Generate a cache key based on file content and extraction options
-    fn cache_key(&self, file_path: &Path, opts: &HttpOptions<'_>) -> Result<String> {
+    fn cache_key(
+        &self,
+        file_path: &Path,
+        opts: &HttpOptions<'_>,
+        strip_components: usize,
+    ) -> Result<String> {
         let checksum = hash::file_hash_blake3(file_path, None)?;
 
         // Include extraction options that affect output structure
@@ -232,6 +242,8 @@ impl HttpBackend {
 
         if let Some(strip) = opts.strip_components() {
             parts.push(format!("strip_{strip}"));
+        } else if strip_components > 0 {
+            parts.push(format!("strip_{strip_components}"));
         }
 
         // Include rename_exe in cache key since it modifies the extracted content
@@ -247,6 +259,46 @@ impl HttpBackend {
         let key = parts.join("_");
         debug!("Cache key: {}", key);
         Ok(key)
+    }
+
+    fn cache_plan(&self, file_path: &Path, opts: &HttpOptions<'_>) -> Result<CachePlan> {
+        let file_info = FileInfo::new(file_path, opts);
+        let strip_components = self.effective_strip_components(file_path, &file_info, opts)?;
+        let key = self.cache_key(file_path, opts, strip_components)?;
+
+        Ok(CachePlan {
+            key,
+            file_info,
+            strip_components,
+        })
+    }
+
+    fn effective_strip_components(
+        &self,
+        file_path: &Path,
+        file_info: &FileInfo,
+        opts: &HttpOptions<'_>,
+    ) -> Result<usize> {
+        let mut strip_components: Option<usize> = opts
+            .strip_components()
+            .map(|s| {
+                s.parse::<usize>()
+                    .map_err(|_| eyre::eyre!("Invalid strip_components value: {s}"))
+            })
+            .transpose()?;
+
+        // Auto-detect strip_components=1 for single-directory archives
+        if strip_components.is_none()
+            && !file_info.is_compressed_binary
+            && file_info.format != file::ExtractionFormat::Raw
+            && opts.bin_path().is_none()
+            && file::should_strip_components(file_path, file_info.format).unwrap_or(false)
+        {
+            debug!("Auto-detected single directory archive, using strip_components=1");
+            strip_components = Some(1);
+        }
+
+        Ok(strip_components.unwrap_or(0))
     }
 
     // -------------------------------------------------------------------------
@@ -284,7 +336,7 @@ impl HttpBackend {
     /// used different options (e.g., different `bin` name)
     fn extraction_type_from_cache(&self, cache_key: &str, file_info: &FileInfo) -> ExtractionType {
         // For archives, we don't need to detect the filename
-        if !file_info.is_compressed_binary && file_info.format != file::TarFormat::Raw {
+        if !file_info.is_compressed_binary && file_info.format != file::ExtractionFormat::Raw {
             return ExtractionType::Archive;
         }
 
@@ -314,12 +366,12 @@ impl HttpBackend {
         &self,
         tv: &ToolVersion,
         file_path: &Path,
-        cache_key: &str,
+        cache_plan: &CachePlan,
         url: &str,
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
-        let cache_path = self.cache_path(cache_key);
+        let cache_path = self.cache_path(&cache_plan.key);
 
         // Ensure parent directory exists
         file::create_dir_all(Self::tarballs_dir())?;
@@ -327,7 +379,7 @@ impl HttpBackend {
         // Create unique temp directory for atomic extraction
         let tmp_path = Self::tarballs_dir().join(format!(
             "{}.tmp-{}-{}",
-            cache_key,
+            cache_plan.key,
             std::process::id(),
             SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
         ));
@@ -338,7 +390,8 @@ impl HttpBackend {
         }
 
         // Perform extraction
-        let extraction_type = self.extract_artifact(tv, &tmp_path, file_path, opts, pr)?;
+        let extraction_type =
+            self.extract_artifact(tv, &tmp_path, file_path, cache_plan, opts, pr)?;
 
         // Atomic replace
         if cache_path.exists() {
@@ -347,7 +400,7 @@ impl HttpBackend {
         std::fs::rename(&tmp_path, &cache_path)?;
 
         // Write metadata
-        self.write_metadata(cache_key, url, file_path, opts)?;
+        self.write_metadata(&cache_plan.key, url, file_path, opts)?;
 
         Ok(extraction_type)
     }
@@ -358,19 +411,18 @@ impl HttpBackend {
         tv: &ToolVersion,
         dest: &Path,
         file_path: &Path,
+        cache_plan: &CachePlan,
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         file::create_dir_all(dest)?;
 
-        let file_info = FileInfo::new(file_path, opts);
-
-        if file_info.is_compressed_binary {
-            self.extract_compressed_binary(dest, file_path, &file_info, opts, pr)
-        } else if file_info.format == file::TarFormat::Raw {
-            self.extract_raw_file(dest, file_path, &file_info, opts, pr)
+        if cache_plan.file_info.is_compressed_binary {
+            self.extract_compressed_binary(dest, file_path, &cache_plan.file_info, opts, pr)
+        } else if cache_plan.file_info.format == file::ExtractionFormat::Raw {
+            self.extract_raw_file(dest, file_path, &cache_plan.file_info, opts, pr)
         } else {
-            self.extract_archive(tv, dest, file_path, &file_info, opts, pr)
+            self.extract_archive(tv, dest, file_path, cache_plan, opts, pr)
         }
     }
 
@@ -391,14 +443,7 @@ impl HttpBackend {
             pr.set_message(format!("extract {}", file_info.file_name()));
         }
 
-        file::untar(
-            file_path,
-            &dest_file,
-            &file::TarOptions {
-                pr,
-                ..file::TarOptions::new(file_info.format)
-            },
-        )?;
+        file::decompress_file(file_path, &dest_file, file_info.format)?;
 
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })
@@ -433,30 +478,17 @@ impl HttpBackend {
         tv: &ToolVersion,
         dest: &Path,
         file_path: &Path,
-        file_info: &FileInfo,
+        cache_plan: &CachePlan,
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
-        let mut strip_components: Option<usize> =
-            opts.strip_components().and_then(|s| s.parse().ok());
-
-        // Auto-detect strip_components=1 for single-directory archives
-        if strip_components.is_none()
-            && opts.bin_path().is_none()
-            && file::should_strip_components(file_path, file_info.format).unwrap_or(false)
-        {
-            debug!("Auto-detected single directory archive, using strip_components=1");
-            strip_components = Some(1);
-        }
-
-        let tar_opts = file::TarOptions {
-            format: file_info.format,
-            strip_components: strip_components.unwrap_or(0),
+        let extract_opts = file::ExtractOptions {
+            strip_components: cache_plan.strip_components,
             pr,
             preserve_mtime: false,
         };
 
-        file::untar(file_path, dest, &tar_opts)?;
+        file::extract_archive(file_path, dest, cache_plan.file_info.format, &extract_opts)?;
 
         // Handle rename_exe option for archives
         if let Some(rename_to) = opts.rename_exe() {
@@ -506,6 +538,63 @@ impl HttpBackend {
     // Symlink creation
     // -------------------------------------------------------------------------
 
+    /// Return the single path component used for the HTTP install symlink.
+    fn install_version_name(tv: &ToolVersion, cache_key: &str) -> String {
+        if tv.version == "latest" {
+            Self::content_version_name(cache_key)
+        } else if tv.version.is_empty() {
+            "_implicit".to_string()
+        } else {
+            Self::sanitize_install_version_name(&tv.version, tv.tv_pathname())
+        }
+    }
+
+    /// Return the absolute path where the HTTP install symlink should live.
+    fn install_path_for(tv: &ToolVersion, cache_key: &str) -> PathBuf {
+        tv.ba()
+            .installs_path
+            .join(Self::install_version_name(tv, cache_key))
+    }
+
+    /// Return the install path later lookups should check for this HTTP tool.
+    fn lookup_install_path(tv: &ToolVersion) -> PathBuf {
+        if let Some(path) = &tv.install_path {
+            return path.clone();
+        }
+        if tv.version == "latest" {
+            tv.install_path()
+        } else {
+            tv.ba()
+                .installs_path
+                .join(Self::install_version_name(tv, ""))
+        }
+    }
+
+    /// Return a deterministic content-derived version name for `latest` installs.
+    fn content_version_name(cache_key: &str) -> String {
+        let short = &cache_key[..7.min(cache_key.len())];
+        if short.is_empty() {
+            "_implicit".to_string()
+        } else {
+            short.to_string()
+        }
+    }
+
+    /// Sanitize a requested version into a path component without collapsing identities.
+    fn sanitize_install_version_name(raw_version: &str, version_name: String) -> String {
+        let sanitized = match version_name.replace('\\', "-").as_str() {
+            "." => "_".to_string(),
+            ".." => "__".to_string(),
+            name => name.to_string(),
+        };
+        if sanitized == raw_version {
+            sanitized
+        } else {
+            let hash = hash::hash_sha256_to_str(raw_version);
+            format!("{}-{}", sanitized, &hash[..7])
+        }
+    }
+
     /// Create install symlink(s) from install directory to cache
     fn create_install_symlink(
         &self,
@@ -517,13 +606,7 @@ impl HttpBackend {
         let cache_path = self.cache_path(cache_key);
 
         // Determine version name for install path
-        let version_name = if tv.version == "latest" || tv.version.is_empty() {
-            &cache_key[..7.min(cache_key.len())] // Content-based versioning
-        } else {
-            &tv.version
-        };
-
-        let install_path = tv.ba().installs_path.join(version_name);
+        let install_path = Self::install_path_for(tv, cache_key);
 
         // Clean up existing install
         if install_path.exists() {
@@ -552,15 +635,15 @@ impl HttpBackend {
         Ok(())
     }
 
-    /// Create additional symlink for implicit versions (latest, empty)
+    /// Create additional symlink for latest versions
     fn create_version_alias_symlink(&self, tv: &ToolVersion, cache_key: &str) -> Result<()> {
-        if tv.version != "latest" && !tv.version.is_empty() {
+        if tv.version != "latest" {
             return Ok(());
         }
 
-        let content_version = &cache_key[..7.min(cache_key.len())];
+        let content_version = Self::content_version_name(cache_key);
         let original_path = tv.ba().installs_path.join(&tv.version);
-        let content_path = tv.ba().installs_path.join(content_version);
+        let content_path = tv.ba().installs_path.join(&content_version);
 
         if original_path.exists() {
             file::remove_all(&original_path)?;
@@ -752,29 +835,28 @@ impl Backend for HttpBackend {
         verify_artifact(&tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
 
         // Generate cache key
-        let cache_key = self.cache_key(&file_path, &opts)?;
-        let file_info = FileInfo::new(&file_path, &opts);
+        let cache_plan = self.cache_plan(&file_path, &opts)?;
 
         // Acquire lock and extract or reuse cache
-        let cache_path = self.cache_path(&cache_key);
+        let cache_path = self.cache_path(&cache_plan.key);
         let _lock = crate::lock_file::get(&cache_path, ctx.force)?;
 
         // Determine extraction type based on whether we're using cache or extracting fresh
         // On cache hit, we need to detect the actual filename from the cache (which may differ
         // from current options if a previous extraction used different `bin` name)
         ctx.pr.next_operation();
-        let extraction_type = if self.is_cached(&cache_key) {
+        let extraction_type = if self.is_cached(&cache_plan.key) {
             ctx.pr.set_message("using cached tarball".into());
             // Report extraction operation as complete (instant since we're using cache)
             ctx.pr.set_length(1);
             ctx.pr.set_position(1);
-            self.extraction_type_from_cache(&cache_key, &file_info)
+            self.extraction_type_from_cache(&cache_plan.key, &cache_plan.file_info)
         } else {
             ctx.pr.set_message("extracting to cache".into());
             self.extract_to_cache(
                 &tv,
                 &file_path,
-                &cache_key,
+                &cache_plan,
                 &url,
                 &opts,
                 Some(ctx.pr.as_ref()),
@@ -782,8 +864,9 @@ impl Backend for HttpBackend {
         };
 
         // Create symlinks
-        self.create_install_symlink(&tv, &cache_key, &extraction_type, &opts)?;
-        self.create_version_alias_symlink(&tv, &cache_key)?;
+        self.create_install_symlink(&tv, &cache_plan.key, &extraction_type, &opts)?;
+        self.create_version_alias_symlink(&tv, &cache_plan.key)?;
+        tv.install_path = Some(Self::install_path_for(&tv, &cache_plan.key));
 
         // Verify checksum for lockfile
         if lockfile_enabled || has_lockfile_checksum {
@@ -794,6 +877,23 @@ impl Backend for HttpBackend {
         Ok(tv)
     }
 
+    fn is_version_installed(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> bool {
+        match tv.request {
+            ToolRequest::System { .. } => true,
+            _ => {
+                let install_path = Self::lookup_install_path(tv);
+                install_path.exists()
+                    && !self.incomplete_file_path(tv).exists()
+                    && (!check_symlink || !is_runtime_symlink(&install_path))
+            }
+        }
+    }
+
     async fn list_bin_paths(
         &self,
         _config: &Arc<Config>,
@@ -801,18 +901,26 @@ impl Backend for HttpBackend {
     ) -> Result<Vec<PathBuf>> {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
-        let install_path = tv.install_path();
+        let install_path = Self::lookup_install_path(tv);
+        let mut tv = tv.clone();
+        tv.install_path = Some(install_path.clone());
 
         // Check for explicit bin_path
         if let Some(bin_path_template) = opts.bin_path() {
-            let bin_path = template_string(&bin_path_template, tv);
-            return Ok(vec![tv.runtime_path().join(bin_path)]);
+            let bin_path = template_string(&bin_path_template, &tv);
+            return Ok(vec![runtime_path_for_install_path(
+                &tv,
+                install_path.join(bin_path),
+            )]);
         }
 
         // Check for bin directory
         let bin_dir = install_path.join("bin");
         if bin_dir.exists() {
-            return Ok(vec![tv.runtime_path().join("bin")]);
+            return Ok(vec![runtime_path_for_install_path(
+                &tv,
+                install_path.join("bin"),
+            )]);
         }
 
         // Search subdirectories for bin directories
@@ -830,12 +938,150 @@ impl Backend for HttpBackend {
         }
 
         if paths.is_empty() {
-            Ok(vec![tv.runtime_path()])
+            Ok(vec![runtime_path_for_install_path(&tv, install_path)])
         } else {
             Ok(paths
                 .into_iter()
-                .map(|path| runtime_path_for_install_path(tv, path))
+                .map(|path| runtime_path_for_install_path(&tv, path))
                 .collect())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::args::BackendResolution;
+    use crate::toolset::{ToolRequest, ToolSource};
+
+    fn http_test_tv(version: &str) -> ToolVersion {
+        let backend = Arc::new(BackendArg::new_raw(
+            "http-absolute-version".to_string(),
+            Some("http:absolute-version".to_string()),
+            "absolute-version".to_string(),
+            None,
+            BackendResolution::new(true),
+        ));
+        let request = ToolRequest::Version {
+            backend,
+            version: version.to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        ToolVersion::new(request, version.to_string())
+    }
+
+    fn version_hash(version: &str) -> String {
+        crate::hash::hash_sha256_to_str(version)[..7].to_string()
+    }
+
+    #[test]
+    fn install_symlink_path_uses_sanitized_version_pathname() {
+        let version = "/outside-root/mise-http-version-out/selected-prefix";
+        let tv = http_test_tv(version);
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(
+            version_name,
+            format!(
+                "-outside-root-mise-http-version-out-selected-prefix-{}",
+                version_hash(version)
+            )
+        );
+        assert!(!Path::new(&version_name).is_absolute());
+    }
+
+    #[test]
+    fn install_symlink_path_sanitizes_parent_version() {
+        let version = "..";
+        let tv = http_test_tv(version);
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(version_name, format!("__-{}", version_hash(version)));
+        assert!(
+            Path::new(&version_name)
+                .components()
+                .all(|c| matches!(c, std::path::Component::Normal(_)))
+        );
+    }
+
+    #[test]
+    fn install_symlink_path_sanitizes_windows_separators() {
+        let version = r"..\..\outside-root\mise-http-version-out\selected-prefix";
+        let tv = http_test_tv(version);
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(
+            version_name,
+            format!(
+                "..-..-outside-root-mise-http-version-out-selected-prefix-{}",
+                version_hash(version)
+            )
+        );
+        assert!(!version_name.contains('\\'));
+    }
+
+    #[test]
+    fn install_symlink_path_sanitizes_windows_unc_paths() {
+        let version = r"\\server\share";
+        let tv = http_test_tv(version);
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(
+            version_name,
+            format!("--server-share-{}", version_hash(version))
+        );
+        assert!(!version_name.contains('\\'));
+    }
+
+    #[test]
+    fn install_symlink_path_preserves_distinct_sanitized_versions() {
+        let slash = HttpBackend::install_version_name(&http_test_tv("a/b"), "abcdef123456");
+        let colon = HttpBackend::install_version_name(&http_test_tv("a:b"), "abcdef123456");
+        let backslash = HttpBackend::install_version_name(&http_test_tv(r"a\b"), "abcdef123456");
+        let dash = HttpBackend::install_version_name(&http_test_tv("a-b"), "abcdef123456");
+
+        assert_eq!(dash, "a-b");
+        assert_ne!(slash, dash);
+        assert_ne!(colon, dash);
+        assert_ne!(backslash, dash);
+        assert_ne!(slash, colon);
+        assert_ne!(slash, backslash);
+        assert_ne!(colon, backslash);
+    }
+
+    #[test]
+    fn latest_install_symlink_still_uses_content_version() {
+        let tv = http_test_tv("latest");
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(version_name, "abcdef1");
+    }
+
+    #[test]
+    fn empty_install_symlink_uses_implicit_version() {
+        let tv = http_test_tv("");
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(version_name, "_implicit");
+    }
+
+    #[test]
+    fn empty_install_path_uses_implicit_version_path() {
+        let tv = http_test_tv("");
+        let install_path = HttpBackend::install_path_for(&tv, "abcdef123456");
+
+        assert_eq!(install_path, tv.ba().installs_path.join("_implicit"));
+        assert_ne!(install_path, tv.ba().installs_path);
+    }
+
+    #[test]
+    fn lookup_install_path_matches_sanitized_install_path() {
+        let version = "/outside-root/mise-http-version-out/selected-prefix";
+        let tv = http_test_tv(version);
+        let install_path = HttpBackend::install_path_for(&tv, "abcdef123456");
+        let lookup_path = HttpBackend::lookup_install_path(&tv);
+
+        assert_eq!(lookup_path, install_path);
     }
 }

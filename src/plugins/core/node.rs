@@ -9,7 +9,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::DEFAULT_NODE_MIRROR_URL;
 use crate::config::{Config, Settings};
-use crate::file::{TarFormat, TarOptions};
+use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -116,10 +116,11 @@ impl NodePlugin {
                 file::untar(
                     &opts.binary_tarball_path,
                     &opts.install_path,
-                    &TarOptions {
+                    ExtractionFormat::TarGz,
+                    &ExtractOptions {
                         strip_components: 1,
                         pr: Some(ctx.pr.as_ref()),
-                        ..TarOptions::new(TarFormat::TarGz)
+                        ..Default::default()
                     },
                 )?;
                 Ok(())
@@ -187,9 +188,10 @@ impl NodePlugin {
         file::untar(
             &opts.source_tarball_path,
             opts.build_dir.parent().unwrap(),
-            &TarOptions {
+            ExtractionFormat::TarGz,
+            &ExtractOptions {
                 pr: Some(ctx.pr.as_ref()),
-                ..TarOptions::new(TarFormat::TarGz)
+                ..Default::default()
             },
         )?;
         self.exec_configure(ctx, opts, tv)?;
@@ -515,7 +517,7 @@ impl NodePlugin {
                     }
                 }
                 msg.push_str("\nYou can try setting the flavor using:\n");
-                msg.push_str("  mise settings set node.flavor <flavor>\n");
+                msg.push_str("  mise settings set node.flavor=<flavor>\n");
                 return Ok(Some(msg));
             } else {
                 // Fallback: list all files for that version if no arch match
@@ -741,7 +743,7 @@ impl Backend for NodePlugin {
         &self,
         _request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
         let is_current_platform = target.is_current();
@@ -762,7 +764,7 @@ impl Backend for NodePlugin {
             opts.insert("flavor".to_string(), flavor);
         }
 
-        opts
+        Ok(opts)
     }
 
     async fn resolve_lock_info(

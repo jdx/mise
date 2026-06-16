@@ -125,7 +125,7 @@ pub async fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<Git
 
 async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GitlabRelease>> {
     let url = format!(
-        "{}/projects/{}/releases",
+        "{}/projects/{}/releases?per_page=100",
         api_url,
         urlencoding::encode(repo)
     );
@@ -171,7 +171,7 @@ pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>
 
 async fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
     let url = format!(
-        "{}/projects/{}/repository/tags",
+        "{}/projects/{}/repository/tags?per_page=100",
         api_url,
         urlencoding::encode(repo)
     );

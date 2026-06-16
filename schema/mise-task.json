@@ -371,6 +371,39 @@
                 "$ref": "#/$defs/env_required"
               }
             },
+            "required": ["value"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "default": {
+                "$ref": "#/$defs/env_default"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["default"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "$ref": "#/$defs/env_required"
+              }
+            },
+            "required": ["required"],
             "unevaluatedProperties": false
           },
           {
@@ -447,16 +480,16 @@
                   "$ref": "#/$defs/env_directive"
                 },
                 {
-                  "description": "dotenv file to load",
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
                   "type": "string"
                 },
                 {
-                  "description": "dotenv files to load",
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "type": "array",
                   "items": {
                     "oneOf": [
                       {
-                        "description": "dotenv file to load",
+                        "description": "environment file to load (dotenv, json, yaml, or toml)",
                         "type": "string"
                       },
                       {
@@ -623,13 +656,13 @@
             "file": {
               "oneOf": [
                 {
-                  "description": "dotenv file to load",
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
                   "type": "string"
                 },
                 {
-                  "description": "dotenv files to load",
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "items": {
-                    "description": "dotenv file to load",
+                    "description": "environment file to load (dotenv, json, yaml, or toml)",
                     "type": "string"
                   },
                   "type": "array"
@@ -657,8 +690,25 @@
         }
       },
       "additionalProperties": {
-        "description": "value of variable",
-        "type": "string"
+        "oneOf": [
+          {
+            "description": "value of variable",
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "default": {
+                "$ref": "#/$defs/env_default"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["default"],
+            "unevaluatedProperties": false
+          }
+        ]
       }
     },
     "task_run_entry": {
@@ -791,6 +841,19 @@
         }
       ],
       "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+    },
+    "env_default": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "fallback value to use when the environment variable is unset or empty"
+        },
+        {
+          "type": "integer",
+          "description": "fallback value to use when the environment variable is unset or empty"
+        }
+      ],
+      "description": "fallback value to use when the environment variable is unset or empty"
     },
     "env_age": {
       "type": "string",

@@ -49,41 +49,41 @@ pub struct Exec {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
-    /// [experimental] Allow specific env var through (implies --deny-env for everything else)
+    /// Allow specific env var through (implies --deny-env for everything else)
     /// Supports wildcards, e.g. --allow-env='MYAPP_*'
     #[clap(long, value_name = "VAR", verbatim_doc_comment)]
     pub allow_env: Vec<String>,
 
-    /// [experimental] Allow network to specific host (implies --deny-net for everything else)
+    /// Allow network to specific host (implies --deny-net for everything else)
     /// macOS only in v1; on Linux falls back to allowing all network
     #[clap(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
-    /// [experimental] Allow reads from specific path (implies --deny-read for everything else)
+    /// Allow reads from specific path (implies --deny-read for everything else)
     #[clap(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_read: Vec<std::path::PathBuf>,
 
-    /// [experimental] Allow writes to specific path (implies --deny-write for everything else)
+    /// Allow writes to specific path (implies --deny-write for everything else)
     #[clap(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_write: Vec<std::path::PathBuf>,
 
-    /// [experimental] Block reads, writes, network, and env vars
+    /// Block reads, writes, network, and env vars
     #[clap(long, verbatim_doc_comment)]
     pub deny_all: bool,
 
-    /// [experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
     #[clap(long, verbatim_doc_comment)]
     pub deny_env: bool,
 
-    /// [experimental] Block all network access
+    /// Block all network access
     #[clap(long, verbatim_doc_comment)]
     pub deny_net: bool,
 
-    /// [experimental] Block filesystem reads (system libs and tool dirs still accessible)
+    /// Block filesystem reads (system libs and tool dirs still accessible)
     #[clap(long, verbatim_doc_comment)]
     pub deny_read: bool,
 
-    /// [experimental] Block all filesystem writes
+    /// Block all filesystem writes
     #[clap(long, verbatim_doc_comment)]
     pub deny_write: bool,
 
@@ -234,7 +234,7 @@ impl Exec {
             args.insert(0, "-C".into());
         }
 
-        // Build sandbox config from CLI flags (experimental feature)
+        // Build sandbox config from CLI flags.
         let mut sandbox = SandboxConfig {
             deny_read: self.deny_all || self.deny_read,
             deny_write: self.deny_all || self.deny_write,
@@ -247,14 +247,15 @@ impl Exec {
         };
         sandbox.resolve_paths();
 
-        // Check experimental flag if sandbox is being used
         if sandbox.is_active() {
-            Settings::get().ensure_experimental("sandbox")?;
             env = sandbox.filter_env(&env);
         }
 
         time!("exec");
-        exec_program(program, args, env, &sandbox).await
+        // shell_body_mode: true only for the `-c`/`--command` path, where
+        // parse_command synthesized `shell + [flags.., body]`. A positional
+        // command must not be reinterpreted as a shell body.
+        exec_program(program, args, env, &sandbox, self.c.is_some()).await
     }
 }
 
@@ -264,6 +265,7 @@ pub async fn exec_program<T, U>(
     args: U,
     env: BTreeMap<String, String>,
     sandbox: &SandboxConfig,
+    _shell_body_mode: bool,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -349,6 +351,7 @@ pub async fn exec_program<T, U>(
     args: U,
     env: BTreeMap<String, String>,
     sandbox: &SandboxConfig,
+    shell_body_mode: bool,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -408,13 +411,36 @@ where
         std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
     });
     let program = which::which_in(program, lookup_path, cwd)?;
-    let cmd = cmd::cmd(program, args);
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
 
     // Windows does not support exec in the same way as Unix,
     // so we emulate it instead by not handling Ctrl-C and letting
     // the child process deal with it instead.
     win_exec::set_ctrlc_handler()?;
 
+    // `mise exec -c "<cmd>"` spawns the configured shell as `cmd /c <cmd>`. For
+    // cmd, pass the command verbatim so inner double quotes survive (#9355).
+    // Gated on `shell_body_mode` (the `-c`/`--command` path) so a positional
+    // `mise exec -- cmd /c "echo one" two` is not reinterpreted as a shell body.
+    // cwd is intentionally inherited from the process here, matching the duct
+    // fallback below; the resolved `cwd` above governs program lookup only.
+    if shell_body_mode {
+        if let (Some(prog), [.., last]) = (program.to_str(), args.as_slice()) {
+            let flags: Vec<String> = args[..args.len() - 1]
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            let body = last.to_string_lossy();
+            if let Some(mut c) = crate::path::cmd_verbatim_command(prog, &flags, &body) {
+                match c.status()?.code() {
+                    Some(code) => std::process::exit(code),
+                    None => return Err(eyre!("command failed: terminated by signal")),
+                }
+            }
+        }
+    }
+
+    let cmd = cmd::cmd(program, args);
     let res = cmd.unchecked().run()?;
     match res.status.code() {
         Some(code) => {
@@ -430,6 +456,7 @@ pub async fn exec_program<T, U>(
     args: U,
     env: BTreeMap<String, String>,
     _sandbox: &SandboxConfig,
+    _shell_body_mode: bool,
 ) -> Result<()>
 where
     T: IntoExecutablePath,

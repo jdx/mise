@@ -1,21 +1,21 @@
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::{cmp::Ordering, sync::LazyLock};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::{ABackend, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
-use crate::env;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
-use crate::install_before::resolve_before_date;
-use crate::lockfile::{CondaPackageInfo, LockfileTool, PlatformInfo};
+use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_source};
+use crate::lockfile::{CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
+use crate::{dirs, env};
 use console::style;
 use dashmap::DashMap;
 use eyre::{Result, bail};
@@ -44,6 +44,8 @@ pub struct ToolVersion {
     pub install_path: Option<PathBuf>,
     /// Conda packages resolved during installation: (platform, basename) -> CondaPackageInfo
     pub conda_packages: BTreeMap<(String, String), CondaPackageInfo>,
+    /// pkgx packages resolved during installation: (platform, package@version) -> PkgxPackageInfo
+    pub pkgx_packages: BTreeMap<(String, String), PkgxPackageInfo>,
 }
 
 impl ToolVersion {
@@ -68,6 +70,7 @@ impl ToolVersion {
             lock_platforms: Default::default(),
             install_path: None,
             conda_packages: Default::default(),
+            pkgx_packages: Default::default(),
         }
     }
 
@@ -78,7 +81,7 @@ impl ToolVersion {
     ) -> Result<Self> {
         let minimum_release_age = request.options().minimum_release_age().map(str::to_string);
         let mut opts = opts.clone();
-        opts.before_date = resolve_before_date(opts.before_date, minimum_release_age.as_deref())?;
+        opts.apply_before_date_for_tool(request.ba(), minimum_release_age.as_deref())?;
 
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
@@ -116,6 +119,15 @@ impl ToolVersion {
 
     fn with_before_date(mut self, before_date: Option<Timestamp>) -> Self {
         self.before_date = before_date;
+        self
+    }
+
+    /// Returns a copy locked to the exact resolved version, so `runtime_path()`
+    /// resolves to `install_path()` rather than a fuzzy runtime symlink (e.g.
+    /// `installs/python/3`). Used during postinstall so the hook sees the version
+    /// just installed, not a stale symlink target (#10347).
+    pub(crate) fn with_locked(mut self) -> Self {
+        self.locked = true;
         self
     }
 
@@ -240,6 +252,7 @@ impl ToolVersion {
             latest_versions: true,
             use_locked_version: false,
             before_date: base_opts.before_date,
+            before_date_from_default: base_opts.before_date_from_default,
             offline: base_opts.offline,
             refresh_remote_versions: base_opts.refresh_remote_versions,
             inactive: base_opts.inactive,
@@ -358,7 +371,7 @@ impl ToolVersion {
         let is_offline = settings.offline() || opts.offline;
         let prefer_offline = settings.prefer_offline();
         let should_filter_installed_versions =
-            opts.before_date.is_some() && !is_offline && !prefer_offline;
+            opts.filters_installed_versions() && !is_offline && !prefer_offline;
 
         if v == "latest" {
             if !opts.latest_versions
@@ -397,6 +410,36 @@ impl ToolVersion {
                 return build(v);
             }
             return Err(Self::no_versions_found(&backend, opts.before_date));
+        }
+        // Rolling release channels (e.g. zig's "master") are moving pointers that
+        // mise must re-resolve to a concrete version -- like "latest" -- so they are
+        // not pinned forever. Mirror the "latest" fast paths: prefer an installed
+        // concrete version when not explicitly resolving latest (keeps hook-env /
+        // exec network-free), otherwise re-resolve the channel. (#10251)
+        if backend.is_rolling_channel(&v) {
+            // Reuse an installed build of THIS channel (e.g. a -dev nightly for
+            // zig@master), never an unrelated installed release, so we don't
+            // short-circuit zig@master to a stable version that happens to be
+            // installed.
+            if !opts.latest_versions
+                && !should_filter_installed_versions
+                && let Some(installed) = backend.latest_installed_channel_version(&v)
+            {
+                return build(installed);
+            }
+            if !is_offline
+                && let Some(concrete) = backend.resolve_channel_version(config, &v).await?
+            {
+                return build(concrete);
+            }
+            if opts.offline {
+                return build(v);
+            }
+            // Online but the channel did not resolve to a concrete version --
+            // either the index lacked the channel key, or the fetch failed
+            // transiently (resolve_channel_version maps both to Ok(None)). Fall
+            // through to normal resolution, which still matches the literal
+            // channel name in the backend's version list as before.
         }
         if !opts.latest_versions {
             let matches = backend.list_installed_versions_matching(&v);
@@ -540,7 +583,7 @@ impl ToolVersion {
         let settings = Settings::get();
         let is_offline = settings.offline() || opts.offline;
         let should_filter_installed_versions =
-            opts.before_date.is_some() && !is_offline && !settings.prefer_offline();
+            opts.filters_installed_versions() && !is_offline && !settings.prefer_offline();
         if !opts.latest_versions
             && !should_filter_installed_versions
             && let Some(v) = backend.list_installed_versions_matching(prefix).last()
@@ -636,6 +679,12 @@ pub struct ResolveOptions {
     pub use_locked_version: bool,
     /// Only consider versions released before this timestamp
     pub before_date: Option<Timestamp>,
+    /// `before_date` came from the built-in default release age rather than
+    /// explicit configuration (CLI flag, per-tool option, or the
+    /// `minimum_release_age` setting). The default only gates which versions
+    /// remote resolution may pick — it must not disable installed-version
+    /// fast paths (https://github.com/jdx/mise/discussions/10308).
+    pub before_date_from_default: bool,
     /// Additive to `Settings::offline()` — either being true skips remote version listing.
     pub offline: bool,
     /// Ignore cached remote version lists while resolving this request.
@@ -652,6 +701,7 @@ impl Default for ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
             before_date: None,
+            before_date_from_default: false,
             offline: false,
             refresh_remote_versions: false,
             inactive: false,
@@ -659,9 +709,48 @@ impl Default for ResolveOptions {
     }
 }
 
+impl ResolveOptions {
+    /// Merge the effective release-age cutoff for a tool into these options.
+    /// A cutoff pre-resolved by the caller keeps its provenance flag; cutoffs
+    /// resolved here are flagged by source so installed-version fast paths
+    /// can ignore the built-in default.
+    pub fn apply_before_date_for_tool(
+        &mut self,
+        backend_arg: &BackendArg,
+        minimum_release_age: Option<&str>,
+    ) -> Result<()> {
+        match resolve_before_date_for_tool_with_source(
+            backend_arg,
+            self.before_date,
+            minimum_release_age,
+        )? {
+            Some((ts, source)) => {
+                self.before_date = Some(ts);
+                match source {
+                    BeforeDateSource::Provided => {}
+                    BeforeDateSource::Explicit => self.before_date_from_default = false,
+                    BeforeDateSource::Default => self.before_date_from_default = true,
+                }
+            }
+            None => {
+                self.before_date = None;
+                self.before_date_from_default = false;
+            }
+        }
+        Ok(())
+    }
+
+    /// An explicit cutoff means fuzzy requests must resolve date-aware even
+    /// when an installed version matches; the built-in default must not force
+    /// that remote resolution.
+    fn filters_installed_versions(&self) -> bool {
+        self.before_date.is_some() && !self.before_date_from_default
+    }
+}
+
 /// Check if a tool has any user-linked versions (created by `mise link`).
-/// A linked version is an installed version whose path is a symlink to an absolute path,
-/// as opposed to runtime symlinks which point to relative paths (starting with "./").
+/// A linked version is an installed version whose path is a symlink to an external
+/// absolute path, as opposed to runtime symlinks or mise-managed install/cache links.
 fn has_linked_version(ba: &BackendArg) -> bool {
     let installs_dir = &ba.installs_path;
     let Ok(entries) = std::fs::read_dir(installs_dir) else {
@@ -672,12 +761,40 @@ fn has_linked_version(ba: &BackendArg) -> bool {
         if let Ok(Some(target)) = crate::file::resolve_symlink(&path) {
             // Runtime symlinks start with "./" (e.g., latest -> ./1.35.0)
             // User-linked symlinks point to absolute paths (e.g., brew -> /opt/homebrew/opt/hk)
-            if target.is_absolute() {
+            if target.is_absolute() && !is_mise_managed_symlink_target(&target) {
                 return true;
             }
         }
     }
     false
+}
+
+fn is_mise_managed_symlink_target(target: &Path) -> bool {
+    debug_assert!(target.is_absolute(), "caller filters relative targets");
+    let target = normalize_path_components(target);
+
+    [*dirs::DATA, *dirs::CACHE, *dirs::DOWNLOADS, *dirs::INSTALLS]
+        .into_iter()
+        .any(|root| target.starts_with(normalize_path_components(root)))
+        || env::shared_install_dirs()
+            .iter()
+            .any(|root| target.starts_with(normalize_path_components(root)))
+}
+
+fn normalize_path_components(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push("..");
+                }
+            }
+            Component::CurDir => {}
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
 }
 
 impl Display for ResolveOptions {
@@ -690,7 +807,11 @@ impl Display for ResolveOptions {
             opts.push("use_locked_version".to_string());
         }
         if let Some(ts) = &self.before_date {
-            opts.push(format!("before_date={ts}"));
+            if self.before_date_from_default {
+                opts.push(format!("before_date={ts} (default)"));
+            } else {
+                opts.push(format!("before_date={ts}"));
+            }
         }
         if self.offline {
             opts.push("offline".to_string());
@@ -707,6 +828,118 @@ mod tests {
     use super::*;
     use crate::cli::args::BackendResolution;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_name(prefix: &str) -> String {
+        format!(
+            "{}-{}",
+            prefix,
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )
+    }
+
+    fn test_backend(installs_path: PathBuf) -> BackendArg {
+        let short = unique_name("dummy-linked");
+        let mut backend = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short,
+            None,
+            BackendResolution::new(false),
+        );
+        backend.installs_path = installs_path;
+        backend
+    }
+
+    #[test]
+    fn has_linked_version_detects_external_absolute_targets() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
+        fs::create_dir_all(&backend.installs_path)?;
+
+        let external_target = temp_dir.path().join("external").join("tool");
+        fs::create_dir_all(&external_target)?;
+        crate::file::make_symlink_or_file(&external_target, &backend.installs_path.join("brew"))?;
+
+        assert!(has_linked_version(&backend));
+
+        Ok(())
+    }
+
+    #[test]
+    fn has_linked_version_normalizes_absolute_targets_before_managed_check() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
+        fs::create_dir_all(&backend.installs_path)?;
+
+        let escaped_target = dirs::DATA
+            .join("..")
+            .join("has-linked-version-external")
+            .join("tool");
+        if let Some(parent) = escaped_target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        crate::file::make_symlink_or_file(&escaped_target, &backend.installs_path.join("escaped"))?;
+
+        assert!(has_linked_version(&backend));
+
+        Ok(())
+    }
+
+    #[test]
+    fn has_linked_version_ignores_mise_managed_absolute_targets() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
+        fs::create_dir_all(&backend.installs_path)?;
+
+        let mut managed_targets = vec![];
+        let mut roots = vec![
+            ("data".to_string(), dirs::DATA.to_path_buf()),
+            ("cache".to_string(), dirs::CACHE.to_path_buf()),
+            ("downloads".to_string(), dirs::DOWNLOADS.to_path_buf()),
+            ("installs".to_string(), dirs::INSTALLS.to_path_buf()),
+        ];
+        roots.extend(
+            env::shared_install_dirs()
+                .into_iter()
+                .enumerate()
+                .map(|(i, root)| (format!("shared-{i}"), root)),
+        );
+
+        for (name, root) in roots {
+            fs::create_dir_all(&root)?;
+            let target = tempfile::Builder::new()
+                .prefix(&format!("has-linked-version-{name}-"))
+                .tempdir_in(&root)?;
+            crate::file::make_symlink_or_file(
+                target.path(),
+                &backend.installs_path.join(format!("{name}-target")),
+            )?;
+            managed_targets.push(target);
+        }
+
+        assert!(!has_linked_version(&backend));
+
+        Ok(())
+    }
+
+    #[test]
+    fn has_linked_version_ignores_runtime_relative_targets() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
+        fs::create_dir_all(&backend.installs_path)?;
+
+        crate::file::make_symlink_or_file(
+            Path::new("./1.0.0"),
+            &backend.installs_path.join("latest"),
+        )?;
+
+        assert!(!has_linked_version(&backend));
+
+        Ok(())
+    }
 
     #[test]
     fn runtime_path_does_not_return_file_based_runtime_symlink() -> Result<()> {
@@ -744,6 +977,65 @@ mod tests {
         let runtime_path = tv.runtime_path();
         assert_eq!(runtime_path, install_path);
         assert!(runtime_path.is_dir());
+
+        Ok(())
+    }
+
+    #[test]
+    fn with_locked_runtime_path_uses_install_path_for_fuzzy_request() -> Result<()> {
+        reset_install_path_cache();
+
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "dummy-locked-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut backend = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short,
+            None,
+            BackendResolution::new(false),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join("dummy");
+
+        let install_path = backend.installs_path.join("3.14.6");
+        fs::create_dir_all(install_path.join("bin"))?;
+
+        // Reproduce the stale state during `mise up` (#10347): the fuzzy runtime
+        // symlink installs/dummy/3 still points at a previous version (3.13.9) while
+        // 3.14.6 is the version just installed -- runtime symlinks are only rebuilt
+        // after all installs finish. is_runtime_symlink() requires a "./" target; on
+        // Windows runtime symlinks are stored as a file containing the target.
+        let old_path = backend.installs_path.join("3.13.9");
+        fs::create_dir_all(old_path.join("bin"))?;
+        let runtime_link = backend.installs_path.join("3");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("./3.13.9", &runtime_link)?;
+        #[cfg(windows)]
+        fs::write(&runtime_link, "./3.13.9")?;
+
+        // Fuzzy request ("3") resolved to a concrete version ("3.14.6").
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "3".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "3.14.6".into());
+
+        // Without locking, runtime_path() follows the stale fuzzy runtime symlink, so
+        // it does NOT resolve to the version just installed -- the bug behavior. (This
+        // also self-checks the stale-symlink setup above.)
+        assert_ne!(tv.runtime_path(), install_path);
+
+        // with_locked() pins runtime_path() to the exact install just made, not the
+        // fuzzy runtime symlink, so the postinstall hook sees 3.14.6 (#10347).
+        assert_eq!(tv.clone().with_locked().runtime_path(), install_path);
+        assert_eq!(tv.clone().with_locked().runtime_path(), tv.install_path());
 
         Ok(())
     }

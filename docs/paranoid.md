@@ -40,7 +40,7 @@ Note that global and system config files (e.g., `~/.config/mise/config.toml`) ar
 
 ## Community plugins
 
-Community plugins can not be directly installed via short-name under paranoid.
+Community plugins cannot be directly installed via short-name under paranoid.
 You can install plugins that are either core, maintained by the mise team,
 or plugins that mise has marked as "first-party"—meaning plugins developed by
 the same team that builds the tool the plugin installs.

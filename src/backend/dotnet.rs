@@ -12,8 +12,7 @@ use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use eyre::eyre;
 
-/// Dotnet backend requires experimental mode to be enabled
-pub const EXPERIMENTAL: bool = true;
+pub const EXPERIMENTAL: bool = false;
 
 #[derive(Debug)]
 pub struct DotnetBackend {
@@ -60,7 +59,11 @@ impl Backend for DotnetBackend {
 
         let feed: NugetFeedSearch = HTTP_FETCH
             .json(format!(
-                "{}?q={}&packageType=dotnettool&take=1&prerelease={}",
+                // semVerLevel=2.0.0 matches the official dotnet CLI: without it NuGet's
+                // search API hides packages whose versions are all SemVer 2.0.0 (e.g.
+                // roslyn-language-server), and omits SemVer2 versions from the returned
+                // version arrays of packages that are visible.
+                "{}?q={}&packageType=dotnettool&take=1&prerelease={}&semVerLevel=2.0.0",
                 feed_url,
                 &self.tool_name(),
                 true
@@ -93,8 +96,6 @@ impl Backend for DotnetBackend {
         ctx: &crate::install_context::InstallContext,
         tv: crate::toolset::ToolVersion,
     ) -> eyre::Result<crate::toolset::ToolVersion> {
-        Settings::get().ensure_experimental("dotnet backend")?;
-
         // Check if dotnet is available
         self.warn_if_dependency_missing(
             &ctx.config,

@@ -6,34 +6,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  close-stale-prs:
+  pr-closer:
     runs-on: ubuntu-latest
     permissions:
+      issues: write
       pull-requests: write
+      checks: read
+      statuses: read
     steps:
-      - name: Close stale PRs
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          CUTOFF=$(date -u -d '7 days ago' +%Y-%m-%d)
-          gh pr list -R "$REPO" --state open --search "updated:<$CUTOFF -author:jdx -label:keep-open sort:updated-asc" --json number,mergeStateStatus,statusCheckRollup --limit 500 | \
-          jq -r '
-            def failed_check:
-              (.statusCheckRollup | length > 0) and
-              ([.statusCheckRollup[].conclusion // "" | ascii_upcase] | any(. == "FAILURE" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE"));
-
-            .[]
-            | failed_check as $failed
-            | (.mergeStateStatus == "DIRTY") as $conflicted
-            | if $failed and $conflicted then [.number, "failing checks and merge conflicts"]
-              elif $failed then [.number, "failing checks"]
-              elif $conflicted then [.number, "merge conflicts"]
-              else empty
-              end
-            | @tsv
-          ' | \
-          while IFS=$'\t' read -r pr reason; do
-            echo "Closing PR #$pr ($reason)"
-            gh pr close "$pr" -R "$REPO" -c "This PR has had $reason for more than 7 days. Feel free to reopen or create a new PR if you'd like to continue working on this."
-          done
+      - uses: jdx/pr-closer@ddc40dfad5567fc7296a2463880c618344d26055 # v1.1.0

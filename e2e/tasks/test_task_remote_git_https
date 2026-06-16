@@ -90,7 +90,7 @@ assert_directory_not_exists "${MISE_LOCAL_CACHE_DIR}"
 mise cache clear # Clear cache to force redownload
 
 #################################################################################
-# Test remote tasks with with ref
+# Test remote tasks with ref
 #################################################################################
 
 cat <<EOF >mise.toml

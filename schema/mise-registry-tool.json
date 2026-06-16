@@ -39,6 +39,29 @@
       "type": "string",
       "enum": ["freebsd", "linux", "macos", "openbsd", "windows"]
     },
+    "platform": {
+      "type": "string",
+      "pattern": "^(linux|macos|windows)-(x64|arm64|x86|loongarch64|riscv64)$"
+    },
+    "optionPlatform": {
+      "type": "string",
+      "pattern": "^(linux|macos|darwin|windows)-(x64|amd64|x86_64|arm64|aarch64|x86|loongarch64|riscv64)$"
+    },
+    "platformSelector": {
+      "description": "OS, architecture, or platform this backend supports.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/os"
+        },
+        {
+          "type": "string",
+          "enum": ["x64", "arm64", "x86", "loongarch64", "riscv64"]
+        },
+        {
+          "$ref": "#/$defs/platform"
+        }
+      ]
+    },
     "toolId": {
       "type": "string",
       "pattern": "^[a-zA-Z0-9_.-]+$"
@@ -70,9 +93,9 @@
               "platforms": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/$defs/os"
+                  "$ref": "#/$defs/platformSelector"
                 },
-                "description": "Operating systems this backend supports"
+                "description": "Operating systems, architectures, or platforms this backend supports"
               },
               "options": {
                 "type": "object",
@@ -82,7 +105,7 @@
                     "type": "object",
                     "description": "Platform-specific options (e.g., macos-arm64, linux-x64)",
                     "propertyNames": {
-                      "pattern": "^(linux|macos|windows)-(x64|arm64|armv7)$"
+                      "$ref": "#/$defs/optionPlatform"
                     },
                     "additionalProperties": {
                       "type": "object",

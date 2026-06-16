@@ -53,8 +53,10 @@ local_assert_fail "mise install cargo:nonexistent-crate-12345@1.0.0" \
 
 # Test 3: GitHub repository not found
 echo "Test 3: GitHub repository not found"
+# Match up to /releases without the trailing query string (e.g. ?per_page=100) so
+# the assertion does not depend on pagination parameters.
 local_assert_fail "mise install github:nonexistent-org/nonexistent-repo@latest" \
-  "mise ERROR Failed to install github:nonexistent-org/nonexistent-repo@latest: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/nonexistent-org/nonexistent-repo/releases)"
+  "mise ERROR Failed to install github:nonexistent-org/nonexistent-repo@latest: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/nonexistent-org/nonexistent-repo/releases"
 
 # Test 4: Plugin not found
 echo "Test 4: Plugin not found"
@@ -91,8 +93,9 @@ local_assert_fail "mise install cargo:nonexistent-crate-12345@1.0.0" \
 
 # Test 3: GitHub repository not found - check for error format with full chain
 echo "Test 3: GitHub repository not found"
+# Match up to /releases without the trailing query string (see Part 1, Test 3).
 local_assert_fail "mise install github:nonexistent-org/nonexistent-repo@latest" \
-  "0: Failed to install github:nonexistent-org/nonexistent-repo@latest: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/nonexistent-org/nonexistent-repo/releases)"
+  "0: Failed to install github:nonexistent-org/nonexistent-repo@latest: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/nonexistent-org/nonexistent-repo/releases"
 
 # Test 4: Multiple tool failures - check for error format
 echo "Test 4: Multiple tool failures"

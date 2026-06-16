@@ -159,8 +159,25 @@ assert_contains "mise deps --list" "aube"
 assert_contains "mise deps --list" "aube-lock.yaml"
 assert_contains "mise deps --dry-run 2>&1" "aube"
 
-# Test go provider
+# Test deno provider
 rm -f aube-lock.yaml
+cat >deno.lock <<'EOF'
+{
+  "version": "4",
+  "specifiers": {}
+}
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.deno]
+EOF
+
+assert_contains "mise deps --list" "deno"
+assert_contains "mise deps --list" "deno.lock"
+assert_contains "mise deps --dry-run 2>&1" "deno"
+
+# Test go provider
+rm -f deno.lock
 cat >go.mod <<'EOF'
 module test
 go 1.21
@@ -517,7 +534,7 @@ export MISE_EXPERIMENTAL=1
 mkdir -p subapp
 
 cat >mise.toml <<'EOF'
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["subapp"]
@@ -541,7 +558,7 @@ assert_contains "mise run //subapp:check" "SUBAPP_PREPARE_OK"
 
 # Test that prepare steps also run when subtasks are reached via dependencies
 cat >mise.toml <<'EOF'
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["subapp"]

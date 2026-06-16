@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # Test error cases: nested monorepos, malformed configs, circular dependencies
-export MISE_EXPERIMENTAL=1
 
 # Test 1: Malformed config in subdirectory should warn but not break
 echo "=== Test 1: Malformed config in subdirectory ==="
 cat <<'TOML' >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["projects/*"]
@@ -33,13 +32,13 @@ echo "$output" | grep -q "good project built" || (echo "FAIL: Good project shoul
 # Check that warning was issued (optional - depends on log level)
 # echo "$output" | grep -q -i "failed to parse" && echo "Warning correctly issued for malformed config"
 
-# Test 2: Nested monorepo (subdirectory with experimental_monorepo_root)
+# Test 2: Nested monorepo (subdirectory with monorepo_root)
 echo "=== Test 2: Nested monorepo configuration ==="
 rm -rf projects
 mkdir -p projects/nested
 cat <<'TOML' >projects/nested/mise.toml
 # This is potentially problematic - nested monorepo root
-experimental_monorepo_root = true
+monorepo_root = true
 
 [tasks.nested-task]
 run = 'echo "nested task"'
@@ -83,7 +82,7 @@ fi
 echo "=== Test 4: Monorepo syntax without experimental mode ==="
 rm -f mise.toml
 cat <<'TOML' >mise.toml
-# No experimental_monorepo_root flag
+# No monorepo_root flag
 
 [tasks.normal-task]
 run = 'echo "normal"'
@@ -96,17 +95,15 @@ run = 'echo "app build"'
 TOML
 
 # Running with // syntax should fail or warn
-unset MISE_EXPERIMENTAL
 output=$(mise run '//projects/app:build' 2>&1 || true)
 echo "$output"
-# Should require experimental mode
-echo "$output" | grep -q -i "experimental" || echo "Note: May need experimental mode check"
+# Should require a monorepo root
+echo "$output" | grep -q -i "monorepo root" || echo "Note: May need monorepo root check"
 
 # Test 5: Empty subdirectory mise.toml should not cause issues
 echo "=== Test 5: Empty subdirectory config ==="
-export MISE_EXPERIMENTAL=1
 cat <<'TOML' >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["projects/*"]

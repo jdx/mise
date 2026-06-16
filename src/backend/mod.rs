@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -21,7 +21,7 @@ use crate::duration::parse_into_timestamp;
 use crate::file::{
     canonicalize_cached, display_path, remove_all_with_progress, remove_all_with_warning,
 };
-use crate::install_before::resolve_before_date;
+use crate::install_before::resolve_before_date_for_tool;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
@@ -33,8 +33,8 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
-    ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, Toolset, install_state,
-    is_outdated_version,
+    ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, ToolVersionOptions, Toolset,
+    install_state, is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -68,6 +68,7 @@ pub mod jq;
 pub mod npm;
 pub(crate) mod options;
 pub mod pipx;
+pub mod pkgx;
 pub mod platform_target;
 mod platform_tokens;
 pub mod s3;
@@ -80,9 +81,17 @@ pub mod vfox;
 pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
+pub type IdiomaticVersion = (String, Option<ToolVersionOptions>);
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
+
+pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
+    let full = ba.full_without_opts();
+    REGISTRY
+        .get(ba.short.as_str())
+        .is_some_and(|rt| rt.backends().iter().any(|b| *b == full))
+}
 
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
     ToolOptionSource::InstallManifest,
@@ -131,16 +140,8 @@ pub fn strict_metadata() -> bool {
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]
 pub struct GitHubReleaseInfo {
-    pub repo: String,
     pub asset_pattern: Option<String>,
     pub api_url: Option<String>,
-    pub release_type: ReleaseType,
-}
-
-#[derive(Debug, Clone)]
-pub enum ReleaseType {
-    GitHub,
-    GitLab,
 }
 
 /// Information about a tool version including optional metadata like creation time
@@ -172,29 +173,36 @@ fn is_false(v: &bool) -> bool {
 }
 
 impl VersionInfo {
+    fn created_at_timestamp(&self) -> Option<Timestamp> {
+        match &self.created_at {
+            Some(ts) => {
+                let created = parse_into_timestamp(ts);
+                if created.is_err() {
+                    trace!("Failed to parse timestamp: {}", ts);
+                }
+                created.ok()
+            }
+            None => None,
+        }
+    }
+
+    pub fn hidden_by_date(&self, before: Timestamp) -> bool {
+        self.created_at_timestamp()
+            .is_some_and(|created| created >= before)
+    }
+
+    pub fn count_hidden_by_date(versions: &[Self], before: Timestamp) -> usize {
+        versions.iter().filter(|v| v.hidden_by_date(before)).count()
+    }
+
     /// Filter versions to only include those released before the given timestamp.
     /// Versions without a created_at timestamp are included by default.
     pub fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
-        use crate::duration::parse_into_timestamp;
         versions
             .into_iter()
             .filter(|v| {
-                match &v.created_at {
-                    Some(ts) => {
-                        // Parse the timestamp using parse_into_timestamp which handles
-                        // RFC3339, date-only (YYYY-MM-DD), and other formats
-                        match parse_into_timestamp(ts) {
-                            Ok(created) => created < before,
-                            Err(_) => {
-                                // If we can't parse the timestamp, include the version
-                                trace!("Failed to parse timestamp: {}", ts);
-                                true
-                            }
-                        }
-                    }
-                    // Include versions without timestamps
-                    None => true,
-                }
+                v.created_at_timestamp()
+                    .is_none_or(|created| created < before)
             })
             .collect()
     }
@@ -357,6 +365,7 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
+        BackendType::Pkgx => Some(Arc::new(pkgx::PkgxBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::S3 => Some(Arc::new(s3::S3Backend::from_arg(ba))),
@@ -387,6 +396,7 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
         BackendType::Go => go::install_time_option_keys(),
         BackendType::Npm => npm::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
+        BackendType::Pkgx => pkgx::install_time_option_keys(),
         BackendType::Aqua => aqua::install_time_option_keys(),
         BackendType::Spm => spm::install_time_option_keys(),
         _ => vec![],
@@ -541,6 +551,16 @@ mod tests {
             &resolved,
             &["api_url", "version_prefix"],
         ));
+    }
+
+    #[test]
+    fn test_backend_arg_matches_registry_backend_ignores_inline_opts() {
+        let ba = BackendArg::new(
+            "communique".to_string(),
+            Some("github:jdx/communique[asset_pattern=communique-*]".to_string()),
+        );
+
+        assert!(backend_arg_matches_registry_backend(&ba));
     }
 
     #[test]
@@ -921,8 +941,8 @@ pub trait Backend: Debug + Send + Sync {
         &self,
         _request: &ToolRequest,
         _target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
-        BTreeMap::new() // Default: no options affect artifact identity
+    ) -> Result<BTreeMap<String, String>> {
+        Ok(BTreeMap::new()) // Default: no options affect artifact identity
     }
 
     /// Returns all platform variants that should be locked for a given base platform.
@@ -1148,18 +1168,21 @@ pub trait Backend: Debug + Send + Sync {
             // the registry's default. When a user aliases a tool to a different backend
             // (e.g. `php = "github:verzly/php"`), the versions host would return versions
             // from the registry's default backend which may not match the aliased backend.
-            let full = ba.full();
-            if let Some(rt) = REGISTRY.get(ba.short.as_str()) {
-                let is_registry_backend = rt.backends().iter().any(|b| *b == full);
-                if !is_registry_backend {
+            if REGISTRY.contains_key(ba.short.as_str()) {
+                if !backend_arg_matches_registry_backend(&ba) {
                     trace!(
                         "Skipping versions host for {} because backend {} is not the registry default",
-                        ba.short, full
+                        ba.short,
+                        ba.full()
                     );
                 }
-                is_registry_backend
+                backend_arg_matches_registry_backend(&ba)
             } else {
-                true // Not in registry, safe to use versions host
+                trace!(
+                    "Skipping versions host for {} because it is not in the registry",
+                    ba.short
+                );
+                false
             }
         };
 
@@ -1262,12 +1285,57 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// Backend-specific fast path for the absolute latest stable version with
+    /// metadata when the upstream endpoint already provides it.
+    ///
+    /// Backends may keep overriding `latest_stable_version` when they only have
+    /// a version string. This metadata variant lets release-age filtering
+    /// verify fast-path candidates even when the cached full version list is
+    /// stale.
+    async fn latest_stable_version_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> eyre::Result<Option<VersionInfo>> {
+        Ok(None)
+    }
+
     /// Backend-specific fast path for exact version requests.
     ///
     /// Return `Ok(None)` when the backend cannot cheaply prove that `version`
     /// is an exact upstream version. Callers must still fall back to normal
     /// prefix/latest resolution in that case.
     async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        _version: &str,
+    ) -> eyre::Result<Option<String>> {
+        Ok(None)
+    }
+
+    /// Whether `version` names a rolling release channel (e.g. zig's "master")
+    /// rather than a concrete version. Cheap (no network). Channels are re-resolved
+    /// to a concrete version like "latest" so `mise upgrade`/`outdated` can track
+    /// new builds instead of pinning the channel name forever. (#10251)
+    fn is_rolling_channel(&self, _version: &str) -> bool {
+        false
+    }
+
+    /// The latest installed version that belongs to the rolling `channel` (see
+    /// [`Backend::is_rolling_channel`]), or `None`. Lets `mise x` / hook-env reuse
+    /// an installed channel build without a network round-trip, while never falling
+    /// back to an unrelated release (e.g. a stable Zig for `zig@master`). Cheap --
+    /// it filters already-installed versions, no network. (#10251)
+    fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
+        None
+    }
+
+    /// Resolve a rolling channel (see [`Backend::is_rolling_channel`]) to the
+    /// concrete version it currently points at. Returns `Ok(None)` when `version`
+    /// is not a channel or cannot be resolved; callers fall back to normal
+    /// resolution. May hit the network, so it is only called when re-resolving is
+    /// wanted (install/upgrade or first-run exec), never on the prefer-offline
+    /// hook-env path. (#10251)
+    async fn resolve_channel_version(
         &self,
         _config: &Arc<Config>,
         _version: &str,
@@ -1508,6 +1576,30 @@ pub trait Backend: Debug + Send + Sync {
             .await
     }
 
+    /// Get the latest version without applying release-date cutoffs.
+    ///
+    /// This is intended for diagnostics that compare a date-filtered result
+    /// with the absolute latest result. Normal resolution should use
+    /// `latest_version` so global, per-tool, and default release-age cutoffs are
+    /// honored.
+    async fn latest_version_unfiltered(
+        &self,
+        config: &Arc<Config>,
+        query: Option<String>,
+    ) -> eyre::Result<Option<String>> {
+        let resolved_query = query.as_deref().unwrap_or("latest");
+        if resolved_query == "latest" {
+            if let Some(info) = self.latest_stable_version_info(config).await? {
+                return Ok(Some(info.version));
+            }
+            if let Some(version) = self.latest_stable_version(config).await? {
+                return Ok(Some(version));
+            }
+        }
+        self.latest_version_for_query(config, resolved_query, None, false)
+            .await
+    }
+
     /// Like `latest_version` but with explicit refresh control. Pass
     /// `refresh = true` to bypass the cached remote-versions list when falling
     /// back to the full version-list path. The `latest_stable_version` fast
@@ -1526,17 +1618,39 @@ pub trait Backend: Debug + Send + Sync {
         let before_date = effective_latest_before_date(self, config, before_date).await?;
         let resolved_query = query.as_deref().unwrap_or("latest");
         let mut fallback_refresh = refresh;
-        if resolved_query == "latest"
-            && let Some(version) = self.latest_stable_version(config).await?
-        {
+        let latest = if resolved_query == "latest" {
+            match self.latest_stable_version_info(config).await? {
+                Some(info) => Some(info),
+                None => self
+                    .latest_stable_version(config)
+                    .await?
+                    .map(|version| VersionInfo {
+                        version,
+                        ..Default::default()
+                    }),
+            }
+        } else {
+            None
+        };
+        if let Some(latest) = latest {
+            let version = latest.version.clone();
             match before_date {
                 Some(before) => {
-                    let versions = self
-                        .list_remote_versions_with_info_with_refresh(config, refresh)
-                        .await?;
-                    fallback_refresh = false;
-                    let info = versions.iter().find(|v| v.version == version);
-                    if latest_stable_candidate_allowed_by_before_date(&version, info, before) {
+                    let allowed = if latest.created_at.is_some() {
+                        latest_stable_candidate_allowed_by_before_date(
+                            &version,
+                            Some(&latest),
+                            before,
+                        )
+                    } else {
+                        let versions = self
+                            .list_remote_versions_with_info_with_refresh(config, refresh)
+                            .await?;
+                        fallback_refresh = false;
+                        let info = versions.iter().find(|v| v.version == version);
+                        latest_stable_candidate_allowed_by_before_date(&version, info, before)
+                    };
+                    if allowed {
                         return Ok(Some(version));
                     }
                 }
@@ -1630,26 +1744,6 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
 
-    async fn warn_if_dependencies_missing(&self, config: &Arc<Config>) -> eyre::Result<()> {
-        let deps = self
-            .get_all_dependencies(false)?
-            .into_iter()
-            .filter(|ba| &**self.ba() != ba)
-            .map(|ba| ba.short)
-            .collect::<HashSet<_>>();
-        if !deps.is_empty() {
-            trace!("Ensuring dependencies installed for {}", self.id());
-            let ts = config.get_tool_request_set().await?.filter_by_tool(deps);
-            let missing = ts.missing_tools(config).await;
-            if !missing.is_empty() {
-                warn_once!(
-                    "missing dependency: {}",
-                    missing.iter().map(|d| d.to_string()).join(", "),
-                );
-            }
-        }
-        Ok(())
-    }
     fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
         remove_all_with_progress(&self.ba().installs_path, pr)?;
         remove_all_with_progress(&self.ba().cache_path, pr)?;
@@ -1693,6 +1787,52 @@ pub trait Backend: Debug + Send + Sync {
             );
         }
         self._parse_idiomatic_file(path).await
+    }
+
+    /// Parses an idiomatic version file to extract versions plus backend options
+    /// implied by that file.
+    async fn parse_idiomatic_file_with_options(
+        &self,
+        path: &Path,
+    ) -> eyre::Result<Vec<(String, ToolVersionOptions)>> {
+        let versions =
+            if crate::config::config_file::idiomatic_version::package_json::is_package_json(path) {
+                crate::config::config_file::idiomatic_version::package_json::parse(path, self.id())?
+                    .into_iter()
+                    .map(|version| (version, None))
+                    .collect()
+            } else {
+                self._parse_idiomatic_file_with_options(path).await?
+            };
+        let options = self.ba().opts();
+        Ok(versions
+            .into_iter()
+            .map(|(version, file_options)| {
+                let mut options = options.clone();
+                if let Some(file_options) = file_options {
+                    options.apply_overrides(&file_options);
+                }
+                (version, options)
+            })
+            .collect())
+    }
+
+    /// Backend-specific implementation for `parse_idiomatic_file_with_options`.
+    /// Backends overriding this should only parse the file and return options
+    /// implied by the file itself. Return `None` when a parsed version has no
+    /// file-specific options. The public wrapper merges any returned options
+    /// with `self.ba().opts()` so registry, alias, and backend defaults are
+    /// preserved centrally.
+    async fn _parse_idiomatic_file_with_options(
+        &self,
+        path: &Path,
+    ) -> eyre::Result<Vec<IdiomaticVersion>> {
+        Ok(self
+            .parse_idiomatic_file(path)
+            .await?
+            .into_iter()
+            .map(|version| (version, None))
+            .collect())
     }
 
     /// Backend-specific implementation for `parse_idiomatic_file`.
@@ -1869,8 +2009,17 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         script: &str,
     ) -> eyre::Result<()> {
+        // Resolve the hook against the exact version just installed (locked) rather
+        // than the request's runtime symlink: for a fuzzy request (e.g. `version = "3"`)
+        // the runtime symlink (installs/python/3) still points at the previous version
+        // until all installs finish and symlinks are rebuilt. Without this, both the
+        // hook's env (exec_env, e.g. a backend deriving PYTHONHOME/JAVA_HOME from
+        // runtime_path()) and its PATH (list_bin_paths, e.g. `pip`) would resolve to a
+        // stale install (#10347).
+        let tv_exact = tv.clone().with_locked();
+
         // Get pre-tools environment variables from config
-        let mut env_vars = self.exec_env(&ctx.config, &ctx.ts, tv).await?;
+        let mut env_vars = self.exec_env(&ctx.config, &ctx.ts, &tv_exact).await?;
 
         // Add pre-tools environment variables from config if available
         if let Some(config_env) = ctx.config.env_maybe() {
@@ -1882,8 +2031,8 @@ pub trait Backend: Debug + Send + Sync {
 
         // Use the backend's list_bin_paths to get the correct binary directories
         // instead of hardcoding install_path/bin, which may not match the actual
-        // binary location for backends like aqua
-        let bin_paths = self.list_bin_paths(&ctx.config, tv).await?;
+        // binary location for backends like aqua.
+        let bin_paths = self.list_bin_paths(&ctx.config, &tv_exact).await?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
         for p in bin_paths {
             path_env.add(p);
@@ -1912,8 +2061,7 @@ pub trait Backend: Debug + Send + Sync {
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
             .env("MISE_TOOL_VERSION", tv.version.clone())
             .with_pr(ctx.pr.as_ref())
-            .args(shell_args)
-            .arg(&rendered_script)
+            .cmd_body_args(shell_args, &rendered_script)
             .envs(env_vars);
 
         // Set MISE_CONFIG_ROOT and MISE_PROJECT_ROOT from the tool's source config file
@@ -2452,7 +2600,7 @@ async fn effective_latest_before_date<B: Backend + ?Sized>(
     }
 
     let opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
-    resolve_before_date(None, opts.minimum_release_age())
+    resolve_before_date_for_tool(backend.ba(), None, opts.minimum_release_age())
 }
 
 fn latest_stable_candidate_allowed_by_before_date(
@@ -2461,12 +2609,24 @@ fn latest_stable_candidate_allowed_by_before_date(
     before: Timestamp,
 ) -> bool {
     let Some(info) = info else {
+        if before > crate::duration::process_now() {
+            debug!(
+                "Latest stable version {version} is missing from remote version metadata, but the cutoff is in the future"
+            );
+            return true;
+        }
         debug!(
             "Latest stable version {version} is missing from remote version metadata; falling back to full version list"
         );
         return false;
     };
     let Some(created_at) = info.created_at.as_deref() else {
+        if before > crate::duration::process_now() {
+            debug!(
+                "Latest stable version {version} has no release date metadata, but the cutoff is in the future"
+            );
+            return true;
+        }
         debug!(
             "Latest stable version {version} has no release date metadata; falling back to full version list"
         );
@@ -2497,8 +2657,10 @@ mod latest_version_tests {
     struct LatestBackend {
         ba: Arc<BackendArg>,
         stable_result: Option<String>,
+        stable_info: Option<VersionInfo>,
         remote_versions: Vec<VersionInfo>,
         stable_calls: AtomicUsize,
+        stable_info_calls: AtomicUsize,
         list_calls: AtomicUsize,
     }
 
@@ -2507,6 +2669,7 @@ mod latest_version_tests {
             Self {
                 ba: Arc::new(name.into()),
                 stable_result: Some("9.9.9".to_string()),
+                stable_info: None,
                 remote_versions: vec![
                     VersionInfo {
                         version: "1.0.0".to_string(),
@@ -2520,6 +2683,7 @@ mod latest_version_tests {
                     },
                 ],
                 stable_calls: AtomicUsize::new(0),
+                stable_info_calls: AtomicUsize::new(0),
                 list_calls: AtomicUsize::new(0),
             }
         }
@@ -2529,8 +2693,17 @@ mod latest_version_tests {
             self
         }
 
+        fn with_stable_info(mut self, stable_info: VersionInfo) -> Self {
+            self.stable_info = Some(stable_info);
+            self
+        }
+
         fn stable_calls(&self) -> usize {
             self.stable_calls.load(Ordering::SeqCst)
+        }
+
+        fn stable_info_calls(&self) -> usize {
+            self.stable_info_calls.load(Ordering::SeqCst)
         }
 
         fn list_calls(&self) -> usize {
@@ -2558,6 +2731,14 @@ mod latest_version_tests {
         ) -> eyre::Result<Option<String>> {
             self.stable_calls.fetch_add(1, Ordering::SeqCst);
             Ok(self.stable_result.clone())
+        }
+
+        async fn latest_stable_version_info(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Option<VersionInfo>> {
+            self.stable_info_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(self.stable_info.clone())
         }
 
         async fn install_version_(
@@ -2667,6 +2848,90 @@ mod latest_version_tests {
                 .unwrap()
                 .as_deref(),
             Some("1.0.0")
+        );
+        assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_date_filtered_latest_uses_stable_info_when_version_list_is_stale() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-latest-before-date-stale-metadata")
+            .with_stable_info(VersionInfo {
+                version: "3.0.0".to_string(),
+                created_at: Some("2026-01-01".to_string()),
+                ..Default::default()
+            });
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+        let before = crate::duration::parse_into_timestamp("2099-01-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("3.0.0")
+        );
+        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_unfiltered_latest_uses_stable_info_when_version_list_is_stale() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-unfiltered-latest-stale-metadata").with_stable_info(
+            VersionInfo {
+                version: "3.0.0".to_string(),
+                created_at: Some("2026-01-01".to_string()),
+                ..Default::default()
+            },
+        );
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version_unfiltered(&config, Some("latest".to_string()))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("3.0.0")
+        );
+        assert_eq!(backend.stable_info_calls(), 1);
+        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_permissive_cutoff_keeps_canonical_latest_missing_from_metadata() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-latest-before-date-permissive")
+            .with_stable_result(Some("3.0.0"));
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+        let before = crate::duration::parse_into_timestamp("2099-01-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("3.0.0")
         );
         assert_eq!(backend.stable_calls(), 1);
         assert_eq!(backend.list_calls(), 1);
@@ -2825,8 +3090,10 @@ mod latest_version_tests {
         let backend = LatestBackend {
             ba: Arc::new(ba),
             stable_result: Some("9.9.9".to_string()),
+            stable_info: None,
             remote_versions: vec![],
             stable_calls: AtomicUsize::new(0),
+            stable_info_calls: AtomicUsize::new(0),
             list_calls: AtomicUsize::new(0),
         };
 

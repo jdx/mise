@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-/// [experimental] Run Model Context Protocol (MCP) server
+/// Run Model Context Protocol (MCP) server
 ///
 /// This command starts an MCP server that exposes mise functionality
 /// to AI assistants over stdin/stdout using JSON-RPC protocol.
@@ -420,9 +420,6 @@ impl ServerHandler for MiseServer {
 
 impl Mcp {
     pub async fn run(self) -> Result<()> {
-        let settings = crate::config::Settings::get();
-        settings.ensure_experimental("mcp")?;
-
         eprintln!("Starting mise MCP server...");
 
         let server = MiseServer::new();
@@ -455,9 +452,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
         "mise": {
           "command": "mise",
           "args": ["mcp"],
-          "env": {
-            "MISE_EXPERIMENTAL": "1"
-          }
+          "env": {}
         }
       }
     }

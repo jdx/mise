@@ -23,6 +23,11 @@ See available versions with `mise ls-remote erlang`.
 The plugin uses [kerl](https://github.com/kerl/kerl) under the hood to build erlang.
 See kerl's docs for information on configuring kerl.
 
+On GitHub Actions Linux runners, `ImageOS=ubuntu24`, `ImageOS=ubuntu22`, and `ImageOS=ubuntu20`
+map to the precompiled Erlang build targets `ubuntu-24.04`, `ubuntu-22.04`, and
+`ubuntu-20.04`. Unsupported values disable precompiled lockfile URL resolution in the
+default `erlang.compile` mode, so locked installs can fall back to kerl.
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `erlang` backend.
