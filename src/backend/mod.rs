@@ -2029,6 +2029,57 @@ pub trait Backend: Debug + Send + Sync {
         }
         env_vars.extend(tv.request.options().core.install_env);
 
+        // Surface `tools = true` `[env]` *value* directives (e.g. `CLOUDSDK_PYTHON =
+        // "{{ tools.python.path }}/bin/python3"`) for the tool-level `postinstall`
+        // hook, resolved against this tool's already-installed dependencies. The
+        // config env added above is resolved without tools (`NonToolsOnly`), so it
+        // omits these; `install_value_toolset` is fully resolved (offline) so
+        // `{{ tools.<dep>.path }}` maps to a real install path — `ctx.ts` is the raw,
+        // unresolved install toolset during a combined install. PATH stays owned by
+        // `path_env` below. Best-effort: any resolution error leaves the tool-less
+        // env untouched.
+        //
+        // Gated on the tool declaring dependencies. Only a `tools = true` value that
+        // can reference a dependency (installed first, by depends ordering) is
+        // meaningful at this tool's install time. Tools with NO dependencies keep the
+        // prior contract — `tools = true` env stays unavailable in `postinstall`
+        // (#6418, e2e/config/test_hooks_postinstall_env) — since a *static*
+        // `tools = true` value (no `{{ tools.* }}` reference) would otherwise leak in.
+        // (#10282, follow-up to #10432)
+        let declares_deps = self
+            .get_all_dependencies(true)
+            .map(|deps| !deps.is_empty())
+            .unwrap_or(false)
+            || tv_exact
+                .request
+                .options()
+                .core
+                .depends
+                .is_some_and(|deps| !deps.is_empty());
+        if declares_deps {
+            let base = env_vars.clone();
+            let tool_vals = match self.install_value_toolset(&ctx.config, &tv_exact).await {
+                Ok(dep_ts) => dep_ts.tool_val_env(&ctx.config, &base).await,
+                Err(e) => Err(e),
+            };
+            match tool_vals {
+                Ok(vals) => {
+                    for (k, v) in vals {
+                        // PATH is owned by path_env; exclude any casing on Windows.
+                        let is_path = if cfg!(windows) {
+                            k.eq_ignore_ascii_case(env::PATH_KEY.as_str())
+                        } else {
+                            k.as_str() == env::PATH_KEY.as_str()
+                        };
+                        if !is_path {
+                            env_vars.insert(k, v);
+                        }
+                    }
+                }
+                Err(e) => debug!("postinstall: skipping tools=true value directives: {e:#}"),
+            }
+        }
+
         // Use the backend's list_bin_paths to get the correct binary directories
         // instead of hardcoding install_path/bin, which may not match the actual
         // binary location for backends like aqua.
@@ -2255,6 +2306,43 @@ pub trait Backend: Debug + Send + Sync {
         // Dependency envs only need PATH entries for tools that are already
         // available. Resolving offline avoids applying global release-age
         // cutoffs to helper tools like node/npm while querying another backend.
+        ts.resolve_with_opts(
+            config,
+            &ResolveOptions {
+                offline: true,
+                ..Default::default()
+            },
+        )
+        .await?;
+        Ok(ts)
+    }
+
+    /// Like [`Self::dependency_toolset`] but also includes this tool's per-instance
+    /// mise.toml `depends` option (`tv.request.options().depends`). `get_dependencies`
+    /// only covers backend/plugin-metadata deps, so a user-declared
+    /// `gcloud = { depends = ["python"] }` is invisible to `dependency_toolset`. Used
+    /// to resolve `tools = true` `[env]` value templates like `{{ tools.python.path }}`
+    /// at install time. Resolved offline; the declared deps are installed before the
+    /// dependent (depends ordering), so their install paths are present. (#10282)
+    async fn install_value_toolset(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> eyre::Result<Toolset> {
+        let mut names: std::collections::HashSet<String> = self
+            .get_all_dependencies(true)?
+            .into_iter()
+            .map(|ba| ba.short)
+            .collect();
+        let opts = tv.request.options();
+        if let Some(user_deps) = opts.core.depends {
+            names.extend(user_deps);
+        }
+        let mut ts: Toolset = config
+            .get_tool_request_set()
+            .await?
+            .filter_by_tool(names)
+            .into();
         ts.resolve_with_opts(
             config,
             &ResolveOptions {
