@@ -14,6 +14,7 @@ use crate::github::{self, GithubRelease};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::plugins::PEP440_PRERELEASE_REGEX;
+use crate::semver::semver_is_at_least;
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -33,12 +34,11 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fmt::Debug, sync::Arc};
-use crate::semver::semver_is_at_least;
 use versions::Versioning;
 use xx::regex;
 
 const PIP_MIN_UPLOADED_PRIOR_TO_VERSION: &str = "26.0.0";
-const UV_MIN_EXCLUDE_NEWER_VERSION: &str = "0.1.37";
+const UV_MIN_EXCLUDE_NEWER_VERSION: &str = "0.1.15";
 
 #[derive(Debug)]
 pub struct PIPXBackend {
