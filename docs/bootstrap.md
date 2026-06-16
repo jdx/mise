@@ -230,8 +230,10 @@ dotfiles.root = "~/.dotfiles"
 
 [dotfiles]
 "~/.dotfiles" = "~/src/dotfiles"
-"~/.config/mise/config.toml" = "~/.dotfiles/mise/config.toml"
+"~/.config/mise/config.toml" = "~/src/dotfiles/mise/config.toml"
 ```
 
-The repo/source must exist before the first apply. Replacing the active
-global config affects future mise invocations, so use this pattern carefully.
+The repo/source must exist before the first apply. Use the real repo path for
+sources needed during the first run; `~/.dotfiles` does not exist until mise
+creates that symlink. Replacing the active global config affects future mise
+invocations, so use this pattern carefully.
