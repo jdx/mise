@@ -1,5 +1,61 @@
 # Changelog
 
+## [2026.6.11](https://github.com/jdx/mise/compare/v2026.6.10..v2026.6.11) - 2026-06-16
+
+### 🚀 Features
+
+- **(bootstrap)** add apk package support by @jdx in [#10476](https://github.com/jdx/mise/pull/10476)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** render minisign asset templates with package asset by @risu729 in [#10462](https://github.com/jdx/mise/pull/10462)
+- **(aqua)** support format overrides by @risu729 in [#10461](https://github.com/jdx/mise/pull/10461)
+- **(deno)** parse PowerShell checksum files by @risu729 in [#10464](https://github.com/jdx/mise/pull/10464)
+- **(docs)** align removal version of Tera task arguments with the CLI by @reitzig in [#10453](https://github.com/jdx/mise/pull/10453)
+- **(http)** include auto strip in cache key by @risu729 in [#10468](https://github.com/jdx/mise/pull/10468)
+- **(install)** don't treat http cache symlinks as mise link when resolving lockfile by @risu729 in [#10463](https://github.com/jdx/mise/pull/10463)
+- **(rust)** store toolchain options on idiomatic requests by @risu729 in [#10178](https://github.com/jdx/mise/pull/10178)
+- **(shim)** don't create extension-less shims in exe mode on Windows by @JamBalaya56562 in [#10475](https://github.com/jdx/mise/pull/10475)
+- **(task)** reject bare monorepo task paths by @jdx in [#10479](https://github.com/jdx/mise/pull/10479)
+
+### 🚜 Refactor
+
+- remove os-release and sys-info deps by @risu729 in [#10465](https://github.com/jdx/mise/pull/10465)
+
+### 📚 Documentation
+
+- fix relative duration example for months by @sisp in [#10193](https://github.com/jdx/mise/pull/10193)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance lockfile maintenance by @renovate[bot] in [#10448](https://github.com/jdx/mise/pull/10448)
+- replace fuzzy matcher by @risu729 in [#10467](https://github.com/jdx/mise/pull/10467)
+
+### 📦 Registry
+
+- added pinniped by @tony-sol in [#10456](https://github.com/jdx/mise/pull/10456)
+
+### Chore
+
+- **(exec)** Also pass-through the `COLORTERM` environment variable by @sschuberth in [#10451](https://github.com/jdx/mise/pull/10451)
+
+### New Contributors
+
+- @sschuberth made their first contribution in [#10451](https://github.com/jdx/mise/pull/10451)
+- @sisp made their first contribution in [#10193](https://github.com/jdx/mise/pull/10193)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`Latias94/merman`](https://github.com/Latias94/merman)
+- [`bitnami/sealed-secrets`](https://github.com/bitnami/sealed-secrets)
+- [`coder/boo`](https://github.com/coder/boo)
+
+#### Updated Packages (1)
+
+- [`suzuki-shunsuke/ghtkn`](https://github.com/suzuki-shunsuke/ghtkn)
+
 ## [2026.6.10](https://github.com/jdx/mise/compare/v2026.6.9..v2026.6.10) - 2026-06-14
 
 ### 🚀 Features
