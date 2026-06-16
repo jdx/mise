@@ -97,3 +97,44 @@ test_tool_stub "hello-world" '
 url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 [platforms.darwin-arm64]
 url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz"'
+
+# Regression for tool-stub auto-strip when the same HTTP archive was previously
+# cached by an install using bin_path. The cache key must distinguish the
+# effective auto-detected strip_components value.
+rm -rf "$HOME/.local/share/mise/http-tarballs"
+
+mkdir -p server/cache-strip-fixture/package bin
+cat >server/cache-strip-fixture/package/onlybin <<'EOF'
+#!/usr/bin/env bash
+echo onlybin
+EOF
+chmod +x server/cache-strip-fixture/package/onlybin
+tar -czf server/cache-strip-fixture.tgz -C server/cache-strip-fixture package
+
+SERVER_PORT_FILE="$TMPDIR/tool_stub_http_port"
+(cd server && MISE_TOOL_STUB_TEST_PORT_FILE="$SERVER_PORT_FILE" python3 "${TEST_ROOT}/helpers/scripts/tool_stub_test_server.py" 0) &
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+wait_for_file "$SERVER_PORT_FILE" "tool-stub HTTP server port"
+SERVER_PORT="$(cat "$SERVER_PORT_FILE")"
+FIXTURE_URL="http://127.0.0.1:$SERVER_PORT/cache-strip-fixture.tgz"
+
+cat <<EOF >mise.toml
+[tools]
+"http:cache-strip-seed" = { version = "1.0.0", url = "$FIXTURE_URL", bin_path = "package" }
+EOF
+
+mise install
+assert_contains "mise x -- onlybin" "onlybin"
+
+cat >bin/onlybin <<EOF
+#!/usr/bin/env -S mise tool-stub
+tool = "http:cache-strip-stub"
+version = "1.0.0"
+url = "$FIXTURE_URL"
+bin = "onlybin"
+EOF
+chmod +x bin/onlybin
+
+mise uninstall --all
+assert_contains "mise tool-stub bin/onlybin" "onlybin"
