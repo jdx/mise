@@ -537,15 +537,16 @@ impl NPMBackend {
             return;
         };
 
-        let version = match Self::toolset_package_manager_version(&ctx.ts, tool) {
-            Some(version) => Some(version),
-            None => match self.dependency_toolset(&ctx.config).await {
-                Ok(ts) => Self::toolset_package_manager_version(&ts, tool),
-                Err(_) => None,
-            },
-        };
-
-        let Some(version) = version else {
+        let Some(version) = self
+            .package_manager_version_for_release_age(&ctx.config, ctx, tool)
+            .await
+        else {
+            warn!(
+                "minimum_release_age is set for npm:{} but could not determine {} version required to verify {} support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.en.dev/dev-tools/backends/npm.html",
+                self.tool_name(),
+                tool,
+                flag
+            );
             return;
         };
 
@@ -587,18 +588,61 @@ impl NPMBackend {
             .find(|(ba, _)| ba.short == tool)
             .map(|(_, tvl)| tvl)?;
 
-        if let Some(tv) = tvl
+        if let Some(version) = tvl
             .versions
             .iter()
-            .find(|tv| semver_triplet(&tv.version).is_some())
+            .find_map(|tv| Self::normalize_package_manager_version(&tv.version))
         {
-            return Some(tv.version.clone());
+            return Some(version);
         }
 
         tvl.requests
             .iter()
-            .map(|tr| tr.version())
-            .find(|version| semver_triplet(version).is_some())
+            .find_map(|tr| Self::normalize_package_manager_version(&tr.version()))
+    }
+
+    /// Resolve the pnpm/bun version used to check release-age flag support.
+    ///
+    /// Prefers mise-managed versions from the install and dependency toolsets,
+    /// then falls back to `{tool} --version` on PATH.
+    async fn package_manager_version_for_release_age(
+        &self,
+        config: &Arc<Config>,
+        ctx: &InstallContext,
+        tool: &str,
+    ) -> Option<String> {
+        if let Some(version) = Self::toolset_package_manager_version(&ctx.ts, tool) {
+            return Some(version);
+        }
+        if let Ok(ts) = self.dependency_toolset(config).await
+            && let Some(version) = Self::toolset_package_manager_version(&ts, tool)
+        {
+            return Some(version);
+        }
+        self.package_manager_version_from_path(config, tool).await
+    }
+
+    /// Read `{tool} --version` using the npm-backend dependency environment.
+    async fn package_manager_version_from_path(
+        &self,
+        config: &Arc<Config>,
+        tool: &str,
+    ) -> Option<String> {
+        let env = self.dependency_env(config).await.ok()?;
+        let output = cmd!(tool, "--version").full_env(env).read().ok()?;
+        Self::parse_package_manager_version_output(&output)
+    }
+
+    /// Parse the first line of a package manager `--version` response.
+    fn parse_package_manager_version_output(output: &str) -> Option<String> {
+        let version = output.lines().next()?;
+        Self::normalize_package_manager_version(version)
+    }
+
+    fn normalize_package_manager_version(version: &str) -> Option<String> {
+        let version = version.trim().trim_start_matches(['v', 'V']);
+        semver_triplet(version)?;
+        Some(version.to_string())
     }
 
     /// Detect whether the locally installed npm supports --min-release-age.
@@ -1242,6 +1286,38 @@ mod tests {
 
         assert_eq!(
             NPMBackend::toolset_package_manager_version(&ts, "pnpm"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_toolset_package_manager_version_normalizes_v_prefix() {
+        let ba = create_test_backend_arg("pnpm");
+        let request = create_test_tool_request(ba.clone(), "v10.15.0");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            NPMBackend::toolset_package_manager_version(&ts, "pnpm"),
+            Some("10.15.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_package_manager_version_output() {
+        assert_eq!(
+            NPMBackend::parse_package_manager_version_output("10.15.0\n"),
+            Some("10.15.0".to_string())
+        );
+        assert_eq!(
+            NPMBackend::parse_package_manager_version_output("v1.3.0"),
+            Some("1.3.0".to_string())
+        );
+        assert_eq!(
+            NPMBackend::parse_package_manager_version_output("not-a-version"),
             None
         );
     }
