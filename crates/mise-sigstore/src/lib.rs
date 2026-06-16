@@ -26,8 +26,11 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// GitHub's attestations API intermittently returns 5xx (e.g. 504 Gateway
 /// Timeout) and 429 under load; a single attempt fails the whole install.
 const MAX_ATTEMPTS: usize = 4;
-/// Base backoff before the first retry. Doubles each attempt: ~0.5s / 1s / 2s.
-const BASE_BACKOFF: Duration = Duration::from_millis(500);
+/// Default base backoff before the first retry. Doubles each attempt: ~0.5s / 1s / 2s.
+const DEFAULT_BACKOFF_BASE: Duration = Duration::from_millis(500);
+/// Upper bound on a server-supplied `Retry-After` wait, so a hostile or buggy
+/// header can't stall an install for minutes.
+const RETRY_AFTER_MAX: Duration = Duration::from_secs(60);
 
 /// Whether an HTTP status warrants a retry. 429 (rate limit) and any 5xx are
 /// transient server-side conditions; everything else (incl. 404) is terminal.
@@ -35,20 +38,32 @@ fn is_retryable_status(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
 
-/// Whether a transport-level error warrants a retry (timeouts, connection
-/// failures, and incomplete requests are transient; decode/builder errors aren't).
+/// Whether a transport-level error warrants a retry. Limited to timeouts and
+/// connection failures, which are transient; broader classes (TLS handshake,
+/// decode, builder errors) won't recover on retry so they surface immediately.
 fn is_retryable_error(err: &reqwest::Error) -> bool {
-    err.is_timeout() || err.is_connect() || err.is_request()
+    err.is_timeout() || err.is_connect()
+}
+
+/// Honor a `429`'s `Retry-After` header when present and expressed as
+/// delta-seconds (GitHub's form). HTTP-date values are ignored and fall back to
+/// exponential backoff. Capped at [`RETRY_AFTER_MAX`].
+fn retry_after_delay(headers: &HeaderMap) -> Option<Duration> {
+    let raw = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?;
+    let secs: u64 = raw.trim().parse().ok()?;
+    Some(Duration::from_secs(secs).min(RETRY_AFTER_MAX))
 }
 
 /// Backoff delay for the given attempt (1-based) with "equal jitter" in
-/// `[d/2, d)` to avoid synchronized retries across concurrent installs.
-fn backoff_delay(attempt: usize) -> Duration {
+/// `[d/2, d)` to avoid synchronized retries across concurrent installs. `base`
+/// is the attempt-1 delay; it doubles each attempt. A zero base yields no delay
+/// (used by tests to keep the suite fast).
+fn backoff_delay(base: Duration, attempt: usize) -> Duration {
     let exp = (attempt.saturating_sub(1)).min(16) as u32;
-    let base = BASE_BACKOFF.saturating_mul(1u32 << exp);
-    let half = base / 2;
+    let scaled = base.saturating_mul(1u32 << exp);
+    let half = scaled / 2;
     if half.is_zero() {
-        return base;
+        return scaled;
     }
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -204,12 +219,14 @@ pub struct AttestationClient {
     client: reqwest::Client,
     base_url: String,
     github_token: Option<String>,
+    backoff_base: Duration,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct AttestationClientBuilder {
     base_url: Option<String>,
     github_token: Option<String>,
+    backoff_base: Option<Duration>,
 }
 
 impl AttestationClientBuilder {
@@ -220,6 +237,14 @@ impl AttestationClientBuilder {
 
     pub fn github_token(mut self, token: &str) -> Self {
         self.github_token = Some(token.to_string());
+        self
+    }
+
+    /// Override the attempt-1 retry backoff (defaults to [`DEFAULT_BACKOFF_BASE`]).
+    /// Mainly an injection point for tests, which set it to zero so the suite
+    /// doesn't pay real wall-clock backoff between retries.
+    pub fn backoff_base(mut self, base: Duration) -> Self {
+        self.backoff_base = Some(base);
         self
     }
 
@@ -235,6 +260,7 @@ impl AttestationClientBuilder {
             client,
             base_url: self.base_url.unwrap_or_else(|| GITHUB_API_URL.to_string()),
             github_token: self.github_token,
+            backoff_base: self.backoff_base.unwrap_or(DEFAULT_BACKOFF_BASE),
         })
     }
 }
@@ -311,10 +337,11 @@ impl AttestationClient {
     }
 
     /// Send a request, retrying transient failures (5xx, 429, timeouts,
-    /// connection errors) with exponential backoff. The request must have no
-    /// streaming body so it can be cloned per attempt — true for all GET calls
-    /// here. Non-transient responses (incl. 4xx like 404) are returned as-is for
-    /// the caller to interpret.
+    /// connection errors) with exponential backoff. A `429`'s `Retry-After`
+    /// header is honored in preference to the computed backoff. The request must
+    /// have no streaming body so it can be cloned per attempt — true for all GET
+    /// calls here. Non-transient responses (incl. 4xx like 404) are returned
+    /// as-is for the caller to interpret.
     async fn send_with_retry(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response> {
         let mut attempt = 1;
         loop {
@@ -323,17 +350,24 @@ impl AttestationClient {
                 .expect("attestation requests must not have a streaming body");
             let result = req.send().await;
             let last = attempt >= MAX_ATTEMPTS;
-            match result {
-                Ok(response) if last || !is_retryable_status(response.status()) => {
-                    return Ok(response);
+            // Decide the retry delay (if any) while the response is still in hand
+            // so we can read its `Retry-After` header before dropping it.
+            let delay = match &result {
+                Ok(response) if !last && is_retryable_status(response.status()) => Some(
+                    retry_after_delay(response.headers())
+                        .unwrap_or_else(|| backoff_delay(self.backoff_base, attempt)),
+                ),
+                Err(err) if !last && is_retryable_error(err) => {
+                    Some(backoff_delay(self.backoff_base, attempt))
                 }
-                Err(err) if last || !is_retryable_error(&err) => {
-                    return Err(AttestationError::Http(err));
-                }
-                _ => {
-                    tokio::time::sleep(backoff_delay(attempt)).await;
+                _ => None,
+            };
+            match delay {
+                Some(delay) => {
+                    tokio::time::sleep(delay).await;
                     attempt += 1;
                 }
+                None => return result.map_err(AttestationError::Http),
             }
         }
     }
@@ -1489,16 +1523,24 @@ mod tests {
     fn backoff_grows_and_stays_within_jitter_bounds() {
         // Each attempt's delay must fall in [base/2, base) where base doubles.
         for attempt in 1..=4 {
-            let base = BASE_BACKOFF * (1u32 << (attempt - 1));
-            let d = backoff_delay(attempt);
+            let base = DEFAULT_BACKOFF_BASE * (1u32 << (attempt - 1));
+            let d = backoff_delay(DEFAULT_BACKOFF_BASE, attempt);
             assert!(d >= base / 2, "attempt {attempt}: {d:?} < {:?}", base / 2);
             assert!(d < base, "attempt {attempt}: {d:?} >= {base:?}");
         }
     }
 
+    #[test]
+    fn backoff_zero_base_yields_no_delay() {
+        for attempt in 1..=4 {
+            assert_eq!(backoff_delay(Duration::ZERO, attempt), Duration::ZERO);
+        }
+    }
+
     /// Spawn a throwaway HTTP server that replies with each status in
     /// `statuses` (one per connection, in order) then `200 {body}` for the
-    /// rest. Returns the bound `base_url` and a counter of accepted connections.
+    /// rest. A `429` reply carries `Retry-After: 0` so the retry path stays
+    /// fast. Returns the bound `base_url` and a counter of accepted connections.
     fn flaky_server(
         statuses: Vec<u16>,
         body: &'static str,
@@ -1524,8 +1566,13 @@ mod tests {
                     Some(&s) => (s, ""),
                     None => (200, body),
                 };
+                let extra = if code == 429 {
+                    "Retry-After: 0\r\n"
+                } else {
+                    ""
+                };
                 let response = format!(
-                    "HTTP/1.1 {code} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                    "HTTP/1.1 {code} X\r\nContent-Type: application/json\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{payload}",
                     payload.len()
                 );
                 let _ = stream.write_all(response.as_bytes());
@@ -1535,14 +1582,21 @@ mod tests {
         (format!("http://{addr}"), hits)
     }
 
+    /// Build a client pointed at a test server with zero backoff so retries
+    /// don't pay real wall-clock time.
+    fn test_client(base_url: &str) -> AttestationClient {
+        AttestationClient::builder()
+            .base_url(base_url)
+            .backoff_base(Duration::ZERO)
+            .build()
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn fetch_attestations_retries_on_5xx() {
         // 504 (the reported failure) then 502, then success — must recover.
         let (base_url, hits) = flaky_server(vec![504, 502], r#"{"attestations":[]}"#);
-        let client = AttestationClient::builder()
-            .base_url(&base_url)
-            .build()
-            .unwrap();
+        let client = test_client(&base_url);
         let result = client
             .fetch_attestations(FetchParams {
                 owner: "EarthBuild".to_string(),
@@ -1568,10 +1622,7 @@ mod tests {
     async fn fetch_attestations_surfaces_error_after_max_attempts() {
         // Persistent 504 — exhaust MAX_ATTEMPTS then surface the API error.
         let (base_url, hits) = flaky_server(vec![504, 504, 504, 504, 504], "");
-        let client = AttestationClient::builder()
-            .base_url(&base_url)
-            .build()
-            .unwrap();
+        let client = test_client(&base_url);
         let err = client
             .fetch_attestations(FetchParams {
                 owner: "EarthBuild".to_string(),
@@ -1589,6 +1640,57 @@ mod tests {
             MAX_ATTEMPTS,
             "should stop after MAX_ATTEMPTS"
         );
+    }
+
+    #[tokio::test]
+    async fn fetch_attestations_retries_on_429_with_retry_after() {
+        // 429 carrying Retry-After (set by the server), then success.
+        let (base_url, hits) = flaky_server(vec![429], r#"{"attestations":[]}"#);
+        let client = test_client(&base_url);
+        let result = client
+            .fetch_attestations(FetchParams {
+                owner: "EarthBuild".to_string(),
+                repo: Some("EarthBuild/earthbuild".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await;
+
+        assert!(result.is_ok(), "expected recovery after 429: {result:?}");
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "should have taken 1 rate-limited + 1 successful attempt"
+        );
+    }
+
+    #[test]
+    fn retry_after_parses_delta_seconds_and_caps() {
+        fn headers_with(value: Option<&str>) -> HeaderMap {
+            let mut headers = HeaderMap::new();
+            if let Some(value) = value {
+                headers.insert(reqwest::header::RETRY_AFTER, value.parse().unwrap());
+            }
+            headers
+        }
+
+        assert_eq!(
+            retry_after_delay(&headers_with(Some("2"))),
+            Some(Duration::from_secs(2))
+        );
+        // Capped at RETRY_AFTER_MAX.
+        assert_eq!(
+            retry_after_delay(&headers_with(Some("9999"))),
+            Some(RETRY_AFTER_MAX)
+        );
+        // HTTP-date form is not delta-seconds → ignored, falls back to backoff.
+        assert_eq!(
+            retry_after_delay(&headers_with(Some("Wed, 21 Oct 2015 07:28:00 GMT"))),
+            None
+        );
+        // Absent header → no override.
+        assert_eq!(retry_after_delay(&headers_with(None)), None);
     }
 
     /// A genuine `*.intoto.jsonl` produced by slsa-github-generator (sops
