@@ -33,6 +33,10 @@ Describe 'shim_mode' {
         mise x go@1.23.3 -- go version | Should -BeLike "go version go1.23.3 windows/*"
 
         (Get-Item -Path  (Join-Path -Path $shimPath -ChildPath go.cmd)).LinkType | Should -Be $null
+
+        # file mode needs the extension-less shim for Git Bash/Cygwin (no .exe,
+        # and Cygwin does not auto-append .cmd)
+        Test-Path -Path (Join-Path -Path $shimPath -ChildPath go) -PathType Leaf | Should -Be $true
     }
 
     It 'run on exe' {
@@ -46,6 +50,11 @@ Describe 'shim_mode' {
         $goShim = Get-Item -Path (Join-Path -Path $shimPath -ChildPath go.exe)
         $goShim.LinkType | Should -Be $null
         $goShim.Length | Should -BeGreaterThan 0
+
+        # exe mode must NOT create an extension-less shim: it leaks into WSL via
+        # /mnt/c PATH interop (#10299) and is unnecessary because Git Bash/Cygwin
+        # resolve `go` to `go.exe` via their `.exe` magic.
+        Test-Path -Path (Join-Path -Path $shimPath -ChildPath go) -PathType Leaf | Should -Be $false
     }
 
     It 'run on hardlink' {
