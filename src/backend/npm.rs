@@ -537,15 +537,10 @@ impl NPMBackend {
             return;
         };
 
-        let version = match Self::toolset_package_manager_version(&ctx.ts, tool) {
-            Some(version) => Some(version),
-            None => match self.dependency_toolset(&ctx.config).await {
-                Ok(ts) => Self::toolset_package_manager_version(&ts, tool),
-                Err(_) => None,
-            },
-        };
-
-        let Some(version) = version else {
+        let Some(version) = self
+            .package_manager_version_for_release_age(&ctx.config, ctx, tool)
+            .await
+        else {
             return;
         };
 
@@ -599,6 +594,40 @@ impl NPMBackend {
             .iter()
             .map(|tr| tr.version())
             .find(|version| semver_triplet(version).is_some())
+    }
+
+    async fn package_manager_version_for_release_age(
+        &self,
+        config: &Arc<Config>,
+        ctx: &InstallContext,
+        tool: &str,
+    ) -> Option<String> {
+        if let Some(version) = Self::toolset_package_manager_version(&ctx.ts, tool) {
+            return Some(version);
+        }
+        if let Ok(ts) = self.dependency_toolset(config).await
+            && let Some(version) = Self::toolset_package_manager_version(&ts, tool)
+        {
+            return Some(version);
+        }
+        self.package_manager_version_from_path(config, tool).await
+    }
+
+    async fn package_manager_version_from_path(
+        &self,
+        config: &Arc<Config>,
+        tool: &str,
+    ) -> Option<String> {
+        let env = self.dependency_env(config).await.ok()?;
+        let output = cmd!(tool, "--version").full_env(env).read().ok()?;
+        Self::parse_package_manager_version_output(&output)
+    }
+
+    fn parse_package_manager_version_output(output: &str) -> Option<String> {
+        let version = output.lines().next()?.trim().trim_start_matches('v');
+        semver_triplet(version)
+            .is_some()
+            .then(|| version.to_string())
     }
 
     /// Detect whether the locally installed npm supports --min-release-age.
@@ -1242,6 +1271,22 @@ mod tests {
 
         assert_eq!(
             NPMBackend::toolset_package_manager_version(&ts, "pnpm"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_parse_package_manager_version_output() {
+        assert_eq!(
+            NPMBackend::parse_package_manager_version_output("10.15.0\n"),
+            Some("10.15.0".to_string())
+        );
+        assert_eq!(
+            NPMBackend::parse_package_manager_version_output("v1.3.0"),
+            Some("1.3.0".to_string())
+        );
+        assert_eq!(
+            NPMBackend::parse_package_manager_version_output("not-a-version"),
             None
         );
     }
