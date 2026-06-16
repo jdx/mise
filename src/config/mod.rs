@@ -2865,11 +2865,13 @@ mod tests {
             Task {
                 name: "hello".to_string(),
                 config_source: PathBuf::from("mise-tasks/hello"),
+                file: Some(PathBuf::from("mise-tasks/hello")),
                 ..Default::default()
             },
             Task {
                 name: "hello.ps1".to_string(),
                 config_source: PathBuf::from("mise-tasks/hello.ps1"),
+                file: Some(PathBuf::from("mise-tasks/hello.ps1")),
                 ..Default::default()
             },
         ];
