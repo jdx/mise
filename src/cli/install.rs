@@ -5,10 +5,11 @@ use std::sync::Arc;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::config::Settings;
+use crate::errors::split_install_result;
 use crate::hooks::Hooks;
 use crate::install_before::resolve_cli_minimum_release_age;
 use crate::toolset::{
-    InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, Toolset, tool_env_vars,
+    InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset, tool_env_vars,
 };
 use crate::{config, env, exit, hooks};
 use clap::ValueHint;
@@ -260,7 +261,7 @@ impl Install {
             warn!("specify a version with `mise install <TOOL>@<VERSION>`");
             (vec![], Ok(()))
         } else {
-            install_versions_or_successful(
+            split_install_result(
                 ts.install_all_versions(&mut config, tool_versions, &self.install_opts()?)
                     .await,
             )
@@ -433,7 +434,7 @@ impl Install {
         } else {
             let mut ts = Toolset::from(trs.clone());
             measure!("install_all_versions", {
-                install_versions_or_successful(
+                split_install_result(
                     ts.install_all_versions(&mut config, missing, &self.install_opts()?)
                         .await,
                 )
@@ -459,24 +460,6 @@ impl Install {
         }
         install_error?;
         Ok(())
-    }
-}
-
-fn install_versions_or_successful(
-    result: Result<Vec<ToolVersion>>,
-) -> (Vec<ToolVersion>, Result<()>) {
-    match result {
-        Ok(versions) => (versions, Ok(())),
-        Err(err) => {
-            let versions = match err.downcast_ref::<crate::errors::Error>() {
-                Some(crate::errors::Error::InstallFailed {
-                    successful_installations,
-                    ..
-                }) => successful_installations.clone(),
-                _ => vec![],
-            };
-            (versions, Err(err))
-        }
     }
 }
 
