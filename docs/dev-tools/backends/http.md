@@ -127,6 +127,70 @@ linux-x64 = {
 }
 ```
 
+### `checksum_url`
+
+URL of a published checksum source. When set, [`mise lock`](/dev-tools/mise-lock)
+resolves checksums for every target platform — including platforms other than
+the one you are running on — **without downloading the artifacts**. This lets a
+single machine produce a complete, cross-platform lockfile.
+
+`checksum_url` is a template (supports `{{ version }}`, `{{ os() }}`, `{{ arch() }}`
+and is platform-specific via `platforms.<key>.checksum_url`). It may point at any
+of:
+
+- a single-checksum **sidecar** file (e.g. `<artifact>.sha256`), which may contain
+  just the hash or `<hash>  <filename>`;
+- a **SHASUMS**-style file listing `<hash>  <filename>` for many platforms (the row
+  is matched by the artifact's filename);
+- a **manifest** (e.g. JSON), combined with `checksum_expr` below.
+
+```toml
+# Sidecar (one file per artifact)
+[tools."http:my-tool"]
+version = "1.0.0"
+url = "https://example.com/releases/my-tool-{{ version }}-{{ os() }}-{{ arch() }}.tar.gz"
+checksum_url = "https://example.com/releases/my-tool-{{ version }}-{{ os() }}-{{ arch() }}.tar.gz.sha256"
+
+# SHASUMS (one file lists every platform)
+[tools."http:other-tool"]
+version = "1.0.0"
+url = 'https://example.com/{{ version }}/other_{{ version }}_{{ os(macos="darwin") }}_{{ arch(x64="amd64") }}.zip'
+checksum_url = 'https://example.com/{{ version }}/other_{{ version }}_SHASUMS'
+```
+
+### `checksum_expr`
+
+When the checksum lives in a manifest (rather than a plain checksum file), use
+`checksum_expr` to extract it. The manifest body fetched from `checksum_url` is
+evaluated with [expr-lang](https://expr-lang.org) and must return the hash
+string (bare or `sha256:<hash>`). The following variables are available:
+`body` (the raw manifest), `version`, `os`, `arch`, `url` (the resolved artifact
+URL for the target), and `filename`.
+
+```toml
+[tools."http:my-tool"]
+version = "1.10.0"
+checksum_url = "https://example.com/versions.json"
+# Match the file whose url equals the resolved artifact url, return its sha256
+checksum_expr = 'filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256'
+
+[tools."http:my-tool".platforms]
+linux-x64 = { url = "https://example.com/my-tool-{{ version }}-linux-x86_64.tar.gz" }
+macos-arm64 = { url = "https://example.com/my-tool-{{ version }}-macos-arm64.tar.gz" }
+```
+
+::: tip expr-lang gotchas
+The predicate placeholder must be written as `{ #... }` **with a space** after
+`{`, because `{#` is the Tera comment delimiter. To index a map by a runtime
+value, force evaluation with `[version + ""]` — a bare `[version]` is treated as
+the literal key `"version"`.
+:::
+
+### `checksum_algo`
+
+Algorithm prefix used when a checksum source returns a bare hash (no `algo:`
+prefix). Defaults to `sha256`.
+
 ### `size`
 
 Verify the downloaded file size:
