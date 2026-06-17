@@ -66,15 +66,15 @@ pub struct Bootstrap {
     #[clap(long)]
     force_dotfiles: bool,
 
-    /// Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
-    #[clap(long)]
-    update: bool,
-
     /// Skip one or more bootstrap parts
     ///
     /// Can be passed multiple times or as a comma-separated list.
     #[clap(long, value_enum, value_delimiter = ',')]
     skip: Vec<BootstrapPart>,
+
+    /// Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
+    #[clap(long)]
+    update: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, ValueEnum)]
@@ -980,6 +980,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise bootstrap</bold>                    # packages + dotfiles + tools + bootstrap task
     $ <bold>mise bootstrap --force-dotfiles</bold>   # replace conflicting dotfile targets
+    $ <bold>mise bootstrap --skip tools,task</bold>  # skip tool installation and the bootstrap task
     $ <bold>mise bootstrap packages install --yes</bold>
     $ <bold>mise bootstrap macos-defaults status</bold>
     $ <bold>mise bootstrap launchd apply --dry-run</bold>
