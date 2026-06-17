@@ -248,7 +248,11 @@ impl Backend for AquaBackend {
         if has_attestations_config || has_attestations_assets {
             let signer_workflow = all_pkgs
                 .iter()
-                .filter_map(|p| p.github_artifact_attestations.as_ref())
+                .filter_map(|p| {
+                    p.github_artifact_attestations
+                        .as_ref()
+                        .filter(|a| a.enabled != Some(false))
+                })
                 .chain(all_pkgs.iter().filter_map(|p| {
                     Self::checksum_github_attestations_config(p)
                         .map(|(_, attestations)| attestations)
@@ -299,7 +303,7 @@ impl Backend for AquaBackend {
         if has_minisign_config || has_minisign_assets {
             let public_key = all_pkgs
                 .iter()
-                .filter_map(|p| p.minisign.as_ref())
+                .filter_map(|p| p.minisign.as_ref().filter(|m| m.enabled != Some(false)))
                 .chain(
                     all_pkgs
                         .iter()
@@ -887,6 +891,7 @@ impl Backend for AquaBackend {
                     &v,
                     artifact_url,
                     provenance.as_ref().unwrap(),
+                    checksum.as_deref(),
                 )
                 .await
             {
@@ -1155,6 +1160,7 @@ impl AquaBackend {
         v: &str,
         artifact_url: &str,
         detected: &ProvenanceType,
+        expected_checksum: Option<&str>,
     ) -> Result<Option<ProvenanceType>> {
         let tmp_dir = tempfile::tempdir()?;
         let filename = get_filename_from_url(artifact_url);
@@ -1169,7 +1175,11 @@ impl AquaBackend {
 
         match detected {
             ProvenanceType::GithubAttestations => {
-                if let Some(attestations) = &pkg.github_artifact_attestations {
+                if let Some(attestations) = pkg
+                    .github_artifact_attestations
+                    .as_ref()
+                    .filter(|attestations| attestations.enabled != Some(false))
+                {
                     match self
                         .run_github_attestation_check(&artifact_path, pkg, attestations)
                         .await?
@@ -1192,6 +1202,12 @@ impl AquaBackend {
                         .await?
                     {
                         GithubAttestationStatus::Verified => {
+                            self.verify_checksum_file_matches_expected(
+                                checksum_config,
+                                &checksum_path,
+                                &filename,
+                                expected_checksum,
+                            )?;
                             Ok(Some(ProvenanceType::GithubAttestations))
                         }
                         GithubAttestationStatus::Unavailable => Ok(None),
@@ -1207,7 +1223,11 @@ impl AquaBackend {
                 }))
             }
             ProvenanceType::Minisign => {
-                if let Some(minisign) = &pkg.minisign {
+                if let Some(minisign) = pkg
+                    .minisign
+                    .as_ref()
+                    .filter(|minisign| minisign.enabled != Some(false))
+                {
                     self.run_minisign_check(
                         &artifact_path,
                         &filename,
@@ -1241,6 +1261,12 @@ impl AquaBackend {
                         None,
                     )
                     .await?;
+                    self.verify_checksum_file_matches_expected(
+                        checksum_config,
+                        &checksum_path,
+                        &filename,
+                        expected_checksum,
+                    )?;
                 }
                 Ok(Some(ProvenanceType::Minisign))
             }
@@ -1257,6 +1283,12 @@ impl AquaBackend {
                         .await?;
                     self.run_cosign_check(&checksum_path, cosign, pkg, v, tmp_dir.path(), None)
                         .await?;
+                    self.verify_checksum_file_matches_expected(
+                        checksum_config,
+                        &checksum_path,
+                        &filename,
+                        expected_checksum,
+                    )?;
                 }
                 Ok(Some(ProvenanceType::Cosign))
             }
@@ -1422,6 +1454,7 @@ impl AquaBackend {
     }
 
     /// Download minisign signature and verify against an already-downloaded artifact.
+    #[allow(clippy::too_many_arguments)]
     async fn run_minisign_check(
         &self,
         artifact_path: &Path,
@@ -1601,16 +1634,49 @@ impl AquaBackend {
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<PathBuf> {
-        let url = match checksum._type() {
-            AquaChecksumType::GithubRelease => {
-                let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
-                self.github_release_asset(pkg, v, asset_strs).await?.0
-            }
-            AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
-        };
+        let url = self.resolve_checksum_file_url(checksum, pkg, v).await?;
         let path = download_dir.join(get_filename_from_url(&url));
         HTTP.download_file(&url, &path, pr).await?;
         Ok(path)
+    }
+
+    async fn resolve_checksum_file_url(
+        &self,
+        checksum: &AquaChecksum,
+        pkg: &AquaPackage,
+        v: &str,
+    ) -> Result<String> {
+        match checksum._type() {
+            AquaChecksumType::GithubRelease => {
+                let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
+                Ok(self.github_release_asset(pkg, v, asset_strs).await?.0)
+            }
+            AquaChecksumType::Http => checksum.url(pkg, v, os(), arch()),
+        }
+    }
+
+    fn verify_checksum_file_matches_expected(
+        &self,
+        checksum_config: &AquaChecksum,
+        checksum_path: &Path,
+        artifact_filename: &str,
+        expected_checksum: Option<&str>,
+    ) -> Result<()> {
+        let checksum_content = file::read_to_string(checksum_path)?;
+        let checksum_str = self.parse_checksum_from_content(
+            &checksum_content,
+            checksum_config,
+            artifact_filename,
+        )?;
+        let checksum_val = format!("{}:{}", checksum_config.algorithm(), checksum_str);
+        if let Some(expected) = expected_checksum
+            && expected != checksum_val
+        {
+            bail!(
+                "verified checksum file digest does not match expected checksum for {artifact_filename}"
+            );
+        }
+        Ok(())
     }
 
     pub fn from_arg(ba: BackendArg) -> Self {
@@ -2117,7 +2183,6 @@ impl AquaBackend {
         if let Some(checksum) = &pkg.checksum
             && checksum.enabled()
         {
-            let checksum_path = download_path.join(format!("{filename}.checksum"));
             let platform_key = self.get_platform_key();
             let needs_checksum = tv
                 .lock_platforms
@@ -2145,25 +2210,28 @@ impl AquaBackend {
                 || needs_github_attestations
                 || needs_minisign
                 || (needs_cosign && !cosign_already_verified);
+            let checksum_url = if needs_verified_checksum_binding {
+                Some(self.resolve_checksum_file_url(checksum, pkg, v).await?)
+            } else {
+                None
+            };
+            let checksum_path = checksum_url
+                .as_ref()
+                .map(|url| download_path.join(get_filename_from_url(url)))
+                .unwrap_or_else(|| download_path.join(format!("{filename}.checksum")));
             // Re-download only if the checksum file doesn't exist yet. An existing file
             // from a prior attempt is trusted because the download directory is version-specific
             // and the final artifact is independently verified by verify_checksum at the end.
-            if (needs_checksum
-                || needs_github_attestations
-                || needs_minisign
-                || (needs_cosign && !cosign_already_verified))
+            if let Some(url) = checksum_url.as_ref()
                 && !checksum_path.exists()
             {
-                let url = match checksum._type() {
-                    AquaChecksumType::GithubRelease => {
-                        let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
-                        self.github_release_asset(pkg, v, asset_strs).await?.0
-                    }
-                    AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
-                };
-                HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
+                HTTP.download_file(url, &checksum_path, Some(ctx.pr.as_ref()))
                     .await?;
             }
+            let checksum_asset_name = checksum_path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or("checksum");
 
             if let Some(attestations) = checksum_github_attestations
                 && checksum_path.exists()
@@ -2192,10 +2260,7 @@ impl AquaBackend {
                     .and_then(|pi| pi.provenance.as_ref())
                     .is_some_and(|p| p.is_slsa() || p.is_github_attestations())
             {
-                let checksum_filename = checksum_path
-                    .file_name()
-                    .and_then(|f| f.to_str())
-                    .unwrap_or("checksum");
+                let checksum_filename = checksum_asset_name;
                 self.run_minisign_check(
                     &checksum_path,
                     checksum_filename,

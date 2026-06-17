@@ -1224,9 +1224,9 @@ impl AquaChecksum {
 }
 
 fn actual_arch<'a>(pkg: &AquaPackage, os: &str, arch: &'a str) -> &'a str {
-    if os == "darwin" && arch == "arm64" && pkg.rosetta2 {
-        "amd64"
-    } else if os == "windows" && arch == "arm64" && pkg.windows_arm_emulation {
+    if (os == "darwin" && arch == "arm64" && pkg.rosetta2)
+        || (os == "windows" && arch == "arm64" && pkg.windows_arm_emulation)
+    {
         "amd64"
     } else {
         arch
