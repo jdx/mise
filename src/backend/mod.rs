@@ -30,6 +30,7 @@ use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PEP440_PRERELEASE_REGEX, PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, full_to_url, normalize_remote, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
+use crate::semver::semver_triplet;
 use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
@@ -91,6 +92,69 @@ pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
     REGISTRY
         .get(ba.short.as_str())
         .is_some_and(|rt| rt.backends().iter().any(|b| *b == full))
+}
+
+pub(crate) fn toolset_semver_version(ts: &Toolset, tool: &str) -> Option<String> {
+    let tvl = ts
+        .versions
+        .iter()
+        .find(|(ba, _)| ba.short == tool)
+        .map(|(_, tvl)| tvl)?;
+
+    if let Some(version) = tvl.versions.iter().find_map(|tv| {
+        let version = tv.version.trim().trim_start_matches(['v', 'V']);
+        semver_triplet(version)?;
+        Some(version.to_string())
+    }) {
+        return Some(version);
+    }
+
+    tvl.requests.iter().find_map(|tr| {
+        let version = tr.version();
+        let version = version.trim().trim_start_matches(['v', 'V']);
+        semver_triplet(version)?;
+        Some(version.to_string())
+    })
+}
+
+pub(crate) async fn semver_version_from_toolsets_or_path(
+    backend: &dyn Backend,
+    config: &Arc<Config>,
+    ts: &Toolset,
+    tool: &str,
+) -> Option<String> {
+    if let Some(version) = toolset_semver_version(ts, tool) {
+        return Some(version);
+    }
+    if let Ok(ts) = backend.dependency_toolset(config).await
+        && let Some(version) = toolset_semver_version(&ts, tool)
+    {
+        return Some(version);
+    }
+    semver_version_from_path(backend, config, tool).await
+}
+
+async fn semver_version_from_path(
+    backend: &dyn Backend,
+    config: &Arc<Config>,
+    tool: &str,
+) -> Option<String> {
+    let env = backend.dependency_env(config).await.ok()?;
+    let output = cmd!(tool, "--version").full_env(env).read().ok()?;
+    parse_cli_version_output(&output)
+}
+
+pub(crate) fn parse_cli_version_output(output: &str) -> Option<String> {
+    let line = output.lines().next()?;
+    let version = line.trim().trim_start_matches(['v', 'V']);
+    if semver_triplet(version).is_some() {
+        return Some(version.to_string());
+    }
+    line.split_whitespace().find_map(|version| {
+        let version = version.trim().trim_start_matches(['v', 'V']);
+        semver_triplet(version)?;
+        Some(version.to_string())
+    })
 }
 
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
@@ -459,10 +523,30 @@ pub(crate) fn normalize_idiomatic_contents(contents: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendResolution;
-    use crate::toolset::{ToolSource, ToolVersionOptions};
+    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersionList, ToolVersionOptions};
     use std::fs;
+    use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
+        Arc::new(BackendArg::new_raw(
+            tool.to_string(),
+            None,
+            tool.to_string(),
+            None,
+            BackendResolution::new(true),
+        ))
+    }
+
+    fn create_test_tool_request(ba: Arc<BackendArg>, version: &str) -> ToolRequest {
+        ToolRequest::Version {
+            backend: ba,
+            version: version.to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        }
+    }
 
     #[test]
     fn test_normalize_idiomatic_contents() {
@@ -485,6 +569,86 @@ mod tests {
             normalize_idiomatic_contents("# full line comment\n3.14.2 # inline comment\n   \n\n"),
             "3.14.2"
         );
+    }
+
+    #[test]
+    fn test_toolset_semver_version_prefers_resolved_version() {
+        let ba = create_test_backend_arg("bun");
+        let request = create_test_tool_request(ba.clone(), "1.2.0");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request.clone());
+        tvl.versions
+            .push(ToolVersion::new(request, "1.3.0".to_string()));
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            toolset_semver_version(&ts, "bun"),
+            Some("1.3.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_toolset_semver_version_uses_exact_request() {
+        let ba = create_test_backend_arg("pnpm");
+        let request = create_test_tool_request(ba.clone(), "10.15.0");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            toolset_semver_version(&ts, "pnpm"),
+            Some("10.15.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_toolset_semver_version_ignores_unresolved_request() {
+        let ba = create_test_backend_arg("pnpm");
+        let request = create_test_tool_request(ba.clone(), "10");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(toolset_semver_version(&ts, "pnpm"), None);
+    }
+
+    #[test]
+    fn test_toolset_semver_version_normalizes_v_prefix() {
+        let ba = create_test_backend_arg("pnpm");
+        let request = create_test_tool_request(ba.clone(), "v10.15.0");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            toolset_semver_version(&ts, "pnpm"),
+            Some("10.15.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_cli_version_output() {
+        assert_eq!(
+            parse_cli_version_output("10.15.0\n"),
+            Some("10.15.0".to_string())
+        );
+        assert_eq!(
+            parse_cli_version_output("v1.3.0"),
+            Some("1.3.0".to_string())
+        );
+        assert_eq!(
+            parse_cli_version_output("uv 0.2.22"),
+            Some("0.2.22".to_string())
+        );
+        assert_eq!(parse_cli_version_output("not-a-version"), None);
     }
 
     #[test]
