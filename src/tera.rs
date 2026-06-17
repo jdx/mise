@@ -478,17 +478,30 @@ fn reemit_template_fn(
     name: &'static str,
 ) -> impl Fn(&HashMap<String, Value>) -> tera::Result<Value> {
     move |args: &HashMap<String, Value>| {
-        let rendered = if args.is_empty() {
+        let mut parts: Vec<String> = args
+            .iter()
+            .filter_map(|(k, v)| reemit_arg_literal(v).map(|lit| format!("{k}={lit}")))
+            .collect();
+        let rendered = if parts.is_empty() {
             format!("{{{{ {name}() }}}}")
         } else {
-            let mut parts: Vec<String> = args
-                .iter()
-                .map(|(k, v)| format!("{k}=\"{}\"", v.as_str().unwrap_or_default()))
-                .collect();
             parts.sort();
             format!("{{{{ {name}({}) }}}}", parts.join(", "))
         };
         Ok(Value::String(rendered))
+    }
+}
+
+/// Render a Tera function argument value back into its template literal form so
+/// it round-trips through re-emission. Tera string literals are literal (no
+/// escape sequences), so strings are simply re-quoted; numbers/bools render
+/// natively; other types are dropped (os()/arch() ignore non-string remaps).
+fn reemit_arg_literal(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => Some(format!("\"{s}\"")),
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        _ => None,
     }
 }
 
@@ -1041,9 +1054,15 @@ mod tests {
     async fn test_os_family_for_target() {
         let _config = Config::get().await.unwrap();
         // os_family() follows the target, not the host.
-        assert_eq!(render_for_target("{{os_family()}}", "windows", "x64"), "windows");
+        assert_eq!(
+            render_for_target("{{os_family()}}", "windows", "x64"),
+            "windows"
+        );
         assert_eq!(render_for_target("{{os_family()}}", "linux", "x64"), "unix");
-        assert_eq!(render_for_target("{{os_family()}}", "macos", "arm64"), "unix");
+        assert_eq!(
+            render_for_target("{{os_family()}}", "macos", "arm64"),
+            "unix"
+        );
     }
 
     #[tokio::test]
@@ -1054,8 +1073,7 @@ mod tests {
         let mut ctx = BASE_CONTEXT.clone();
         ctx.insert("cwd", "/");
         let mut deferred = get_tera_preserving_os_arch(None);
-        let preserved =
-            render_str(&mut deferred, r#"{{ os(macos="darwin") }}"#, &ctx).unwrap();
+        let preserved = render_str(&mut deferred, r#"{{ os(macos="darwin") }}"#, &ctx).unwrap();
         assert_eq!(preserved, r#"{{ os(macos="darwin") }}"#);
         let mut tera = get_tera_for_target(None, "macos", "arm64");
         assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "darwin");
