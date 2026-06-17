@@ -413,6 +413,42 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
     tera
 }
 
+/// Like [`get_tera`] but with `os()` and `arch()` bound to an explicit target
+/// platform instead of the current host. Used by cross-platform `mise lock` to
+/// render URL/checksum templates for platforms other than the one mise runs on.
+///
+/// `os` should be a platform os name (e.g. "macos", "linux", "windows") and
+/// `arch` a platform arch name (e.g. "x64", "arm64"), matching the values
+/// returned by the host-bound functions. Remap arguments such as
+/// `os(macos="darwin")` and `arch(x64="amd64")` keep the same semantics.
+pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> Tera {
+    let mut tera = get_tera(dir);
+
+    let os = os.to_string();
+    tera.register_function(
+        "os",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            if let Some(remapped) = args.get(&os).and_then(|v| v.as_str()) {
+                return Ok(Value::String(remapped.to_string()));
+            }
+            Ok(Value::String(os.clone()))
+        },
+    );
+
+    let arch = arch.to_string();
+    tera.register_function(
+        "arch",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            if let Some(remapped) = args.get(&arch).and_then(|v| v.as_str()) {
+                return Ok(Value::String(remapped.to_string()));
+            }
+            Ok(Value::String(arch.clone()))
+        },
+    );
+
+    tera
+}
+
 pub fn tera_exec(
     dir: Option<PathBuf>,
     env: EnvMap,
@@ -919,5 +955,42 @@ mod tests {
         tera_ctx.insert("cwd", "/");
         let mut tera = get_tera(Option::from(config_root));
         render_str(&mut tera, s, &tera_ctx).unwrap()
+    }
+
+    fn render_for_target(s: &str, os: &str, arch: &str) -> String {
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("cwd", "/");
+        let mut tera = get_tera_for_target(None, os, arch);
+        render_str(&mut tera, s, &tera_ctx).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_os_arch_for_target() {
+        let _config = Config::get().await.unwrap();
+        // os()/arch() resolve to the requested target, not the host.
+        assert_eq!(
+            render_for_target("{{os()}}-{{arch()}}", "windows", "arm64"),
+            "windows-arm64"
+        );
+        assert_eq!(render_for_target("{{os()}}", "macos", "x64"), "macos");
+    }
+
+    #[tokio::test]
+    async fn test_os_arch_remap_for_target() {
+        let _config = Config::get().await.unwrap();
+        // Remap arguments keep host semantics but apply to the target value.
+        assert_eq!(
+            render_for_target(
+                r#"{{os(macos="darwin")}}_{{arch(x64="amd64")}}"#,
+                "macos",
+                "x64"
+            ),
+            "darwin_amd64"
+        );
+        // A remap that does not match the target value is ignored.
+        assert_eq!(
+            render_for_target(r#"{{arch(x64="amd64")}}"#, "linux", "arm64"),
+            "arm64"
+        );
     }
 }

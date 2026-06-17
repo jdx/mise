@@ -84,6 +84,62 @@ fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
         .map(|hash| format!("{algo}:{}", hash.to_lowercase()))
 }
 
+/// Evaluate a checksum expression (expr-lang) against a manifest body to extract
+/// a single checksum string for a target platform.
+///
+/// The raw manifest is injected as a `body` string; `vars` supplies additional
+/// context such as `version`, `os`, `arch`, `url`, and `filename` so the
+/// expression can select the right entry. The expression must evaluate to a
+/// string; both bare hashes and `algo:hash` forms are accepted and normalized to
+/// `algo:hash`. Returns `None` when evaluation fails or the result is not a
+/// usable hash.
+pub fn eval_checksum_expr(
+    expr_str: &str,
+    body: &str,
+    vars: &[(&str, &str)],
+    algo: &str,
+) -> Option<String> {
+    use expr::{Context, Environment, Value};
+
+    let mut ctx = Context::default();
+    ctx.insert("body".to_string(), Value::String(body.to_string()));
+    for (key, value) in vars {
+        ctx.insert((*key).to_string(), Value::String((*value).to_string()));
+    }
+
+    let env = Environment::new();
+    match env.eval(expr_str, &ctx) {
+        Ok(Value::String(s)) => normalize_checksum(&s, algo),
+        Ok(other) => {
+            debug!("checksum_expr did not evaluate to a string: {other:?}");
+            None
+        }
+        Err(e) => {
+            debug!("failed to evaluate checksum_expr '{expr_str}': {e}");
+            None
+        }
+    }
+}
+
+/// Normalize a checksum string into `algo:hash` form.
+///
+/// Accepts either a bare hex hash (uses `default_algo`) or an already-prefixed
+/// `algo:hash`. Returns `None` if the hash portion is not valid hex for the
+/// resolved algorithm.
+fn normalize_checksum(raw: &str, default_algo: &str) -> Option<String> {
+    let raw = raw.trim();
+    let (algo, hash) = match raw.split_once(':') {
+        Some((algo, hash)) => (algo.trim(), hash.trim()),
+        None => (default_algo, raw),
+    };
+    if is_checksum_hex(hash, algo) {
+        Some(format!("{algo}:{}", hash.to_lowercase()))
+    } else {
+        debug!("checksum value is not valid {algo} hex: {hash}");
+        None
+    }
+}
+
 fn is_checksum_hex(s: &str, algo: &str) -> bool {
     let expected_len = match algo {
         "sha1" => 40,
@@ -361,6 +417,26 @@ pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &s
 }
 
 pub fn template_string(template: &str, tv: &ToolVersion) -> String {
+    // `os()`/`arch()` resolve to the current host platform.
+    render_template(template, &tv.version, crate::tera::get_tera(None))
+}
+
+/// Like [`template_string`] but renders `os()`/`arch()` for an explicit target
+/// platform instead of the current host. Used by cross-platform `mise lock` to
+/// build URLs and checksum-file URLs for platforms other than the one mise runs on.
+pub fn template_string_for_target(
+    template: &str,
+    tv: &ToolVersion,
+    target: &PlatformTarget,
+) -> String {
+    render_template(
+        template,
+        &tv.version,
+        crate::tera::get_tera_for_target(None, target.os_name(), target.arch_name()),
+    )
+}
+
+fn render_template(template: &str, version: &str, mut tera: tera::Tera) -> String {
     // Check for legacy {version} syntax and emit deprecation warning
     if template.contains("{version}") && !template.contains("{{version}}") {
         deprecated_at!(
@@ -370,7 +446,7 @@ pub fn template_string(template: &str, tv: &ToolVersion) -> String {
             "Use {{{{ version }}}} instead of {{version}} in URL templates"
         );
         // Legacy support: replace {version} placeholder
-        return template.replace("{version}", &tv.version);
+        return template.replace("{version}", version);
     }
 
     if !crate::tera::contains_template_syntax(template) {
@@ -380,9 +456,8 @@ pub fn template_string(template: &str, tv: &ToolVersion) -> String {
     // Use Tera rendering for templates
     // Supports {{ version }}, {{ os() }}, {{ arch() }}, etc.
     let mut ctx = crate::tera::BASE_CONTEXT.clone();
-    ctx.insert("version", &tv.version);
+    ctx.insert("version", version);
 
-    let mut tera = crate::tera::get_tera(None);
     match crate::tera::render_str(&mut tera, template, &ctx) {
         Ok(rendered) => rendered,
         Err(e) => {
@@ -1060,6 +1135,52 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
     #[test]
     fn test_parse_checksum_file_content_rejects_unknown_algorithms() {
         assert_eq!(parse_checksum_file_content(SHA256_LOWER, "sha3-256"), None);
+    }
+
+    #[test]
+    fn test_normalize_checksum_bare_hash_uses_default_algo() {
+        assert_eq!(
+            normalize_checksum(SHA256_UPPER, "sha256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_normalize_checksum_prefixed_hash_keeps_algo() {
+        assert_eq!(
+            normalize_checksum(&format!("sha256:{SHA256_UPPER}"), "blake3"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_normalize_checksum_rejects_non_hex() {
+        assert_eq!(normalize_checksum("not-a-hash", "sha256"), None);
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_selects_entry_by_target() {
+        // A julia-style manifest: pick the file matching os/arch and read sha256.
+        let body = format!(
+            r#"{{"files":[
+                {{"os":"linux","arch":"x64","sha256":"{SHA256_LOWER}"}},
+                {{"os":"macos","arch":"arm64","sha256":"{SHA256_UPPER}"}}
+            ]}}"#
+        );
+        let expr = r#"filter(fromJSON(body).files, {#.os == os and #.arch == arch})[0].sha256"#;
+        let vars = [("os", "macos"), ("arch", "arm64")];
+        assert_eq!(
+            eval_checksum_expr(expr, &body, &vars, "sha256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_returns_none_on_no_match() {
+        let body = r#"{"files":[]}"#;
+        let expr = r#"len(fromJSON(body).files) > 0 ? fromJSON(body).files[0].sha256 : """#;
+        let vars: [(&str, &str); 0] = [];
+        assert_eq!(eval_checksum_expr(expr, body, &vars, "sha256"), None);
     }
 
     #[test]
