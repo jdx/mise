@@ -83,6 +83,16 @@ assert_succeed "mise bootstrap --yes --skip dotfiles --skip task"
 assert_fail "test -e ~/.bootstrap-skip-gitconfig"
 assert_fail "test -f bootstrap_ran"
 
+# --skip dotfiles still reloads config written by earlier phases
+rm -f mise.local.toml config_task_ran
+cat <<'EOF' >mise.toml
+[bootstrap.hooks.post-packages]
+run = 'printf "[tasks.bootstrap]\nrun = \"touch config_task_ran\"\n" > mise.local.toml'
+EOF
+assert_succeed "mise bootstrap --yes --skip dotfiles --skip tools"
+assert "test -f config_task_ran"
+rm -f mise.local.toml config_task_ran
+
 # skipped parts also skip their directly associated hooks
 rm -f pre_packages_hook post_packages_hook pre_tools_hook post_tools_hook final_hook
 cat <<'EOF' >mise.toml

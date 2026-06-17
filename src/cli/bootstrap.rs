@@ -300,6 +300,10 @@ impl Bootstrap {
 
         if skip.contains(&BootstrapPart::Dotfiles) {
             debug!("bootstrap: dotfiles skipped");
+            if !self.dry_run {
+                config = Config::reset().await?;
+                hooks = system::hooks_from_config(&config);
+            }
         } else {
             self.run_hooks(&hooks, BootstrapHookPhase::PreDotfiles)
                 .await?;
