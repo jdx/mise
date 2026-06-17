@@ -156,8 +156,10 @@ impl FlutterPlugin {
                 format,
                 &Default::default(),
             )?;
-        } else {
+        } else if matches!(format, file::ExtractionFormat::Zip) {
             file::unzip(&tarball_path, &tv.download_path(), &Default::default())?;
+        } else {
+            bail!("unsupported Flutter archive format for '{filename}'; expected .tar.xz or .zip");
         }
         let extracted = tv.download_path().join("flutter");
         if !extracted.is_dir() {
