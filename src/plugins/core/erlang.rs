@@ -12,7 +12,7 @@ use crate::file::display_path;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{InstallMethod, PlatformInfo};
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{file, github, plugins};
@@ -112,10 +112,18 @@ impl ErlangPlugin {
             .lock_platforms
             .entry(self.get_platform_key())
             .or_default();
+        platform_info.install_method = Some(InstallMethod::Precompiled);
         platform_info.url = Some(url.to_string());
         if let Some(checksum) = checksum {
             platform_info.checksum.get_or_insert(checksum);
         }
+    }
+
+    fn set_lockfile_install_method(&self, tv: &mut ToolVersion, install_method: InstallMethod) {
+        tv.lock_platforms
+            .entry(self.get_platform_key())
+            .or_default()
+            .install_method = Some(install_method);
     }
 
     fn linux_precompiled_url(version: &str, target: &PlatformTarget) -> Result<String> {
@@ -487,9 +495,23 @@ impl Backend for ErlangPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let locked_install_method = if ctx.locked {
+            tv.lock_platforms
+                .get(&self.get_platform_key())
+                .and_then(|pi| pi.install_method)
+        } else {
+            None
+        };
+        if locked_install_method == Some(InstallMethod::Compile) {
+            let mut tv = tv;
+            self.set_lockfile_install_method(&mut tv, InstallMethod::Compile);
+            return self.install_via_kerl(ctx, tv).await;
+        }
         if let Some(tv) = self.install_precompiled(ctx, tv.clone()).await? {
             return Ok(tv);
         }
+        let mut tv = tv;
+        self.set_lockfile_install_method(&mut tv, InstallMethod::Compile);
         self.install_via_kerl(ctx, tv).await
     }
 
@@ -538,18 +560,25 @@ impl Backend for ErlangPlugin {
     ) -> Result<PlatformInfo> {
         let compile = Settings::get().erlang.compile;
         if compile == Some(true) {
-            return Ok(PlatformInfo::default());
+            return Ok(PlatformInfo {
+                install_method: Some(InstallMethod::Compile),
+                ..Default::default()
+            });
         }
 
         let release_tag = Self::release_tag(&tv.version);
         match target.os_name() {
             "linux" => match Self::linux_precompiled_url(&tv.version, target) {
                 Ok(url) => Ok(PlatformInfo {
+                    install_method: Some(InstallMethod::Precompiled),
                     url: Some(url),
                     ..Default::default()
                 }),
                 Err(err) if compile == Some(false) => Err(err),
-                Err(_) => Ok(PlatformInfo::default()),
+                Err(_) => Ok(PlatformInfo {
+                    install_method: Some(InstallMethod::Compile),
+                    ..Default::default()
+                }),
             },
             "macos" => {
                 let info = match Self::macos_asset_name(target) {
@@ -560,9 +589,15 @@ impl Backend for ErlangPlugin {
                     Err(err) => Err(err),
                 };
                 match info {
-                    Ok(info) => Ok(info),
+                    Ok(mut info) => {
+                        info.install_method = Some(InstallMethod::Precompiled);
+                        Ok(info)
+                    }
                     Err(err) if compile == Some(false) => Err(err),
-                    Err(_) => Ok(PlatformInfo::default()),
+                    Err(_) => Ok(PlatformInfo {
+                        install_method: Some(InstallMethod::Compile),
+                        ..Default::default()
+                    }),
                 }
             }
             "windows" => {
@@ -573,12 +608,21 @@ impl Backend for ErlangPlugin {
                     Err(err) => Err(err),
                 };
                 match info {
-                    Ok(info) => Ok(info),
+                    Ok(mut info) => {
+                        info.install_method = Some(InstallMethod::Precompiled);
+                        Ok(info)
+                    }
                     Err(err) if compile == Some(false) => Err(err),
-                    Err(_) => Ok(PlatformInfo::default()),
+                    Err(_) => Ok(PlatformInfo {
+                        install_method: Some(InstallMethod::Compile),
+                        ..Default::default()
+                    }),
                 }
             }
-            _ => Ok(PlatformInfo::default()),
+            _ => Ok(PlatformInfo {
+                install_method: Some(InstallMethod::Compile),
+                ..Default::default()
+            }),
         }
     }
 }
