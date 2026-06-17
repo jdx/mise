@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::backend::configured_toolset_or_path_which;
 use crate::config::{Config, Settings};
 use crate::env;
 use crate::file::replace_path;
@@ -178,15 +179,8 @@ where
             }
         }
     } else {
-        let mut ts = config
-            .get_tool_request_set()
-            .await
-            .cloned()
-            .unwrap_or_default()
-            .filter_by_tool(["sops".into()].into())
-            .into_toolset();
-        Box::pin(ts.resolve(config)).await?;
-        let sops_path = ts.which_bin(config, "sops").await;
+        let sops_path =
+            configured_toolset_or_path_which(config, ["sops".to_string()], "sops").await?;
 
         match sops_path {
             None => {

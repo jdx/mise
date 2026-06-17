@@ -29,9 +29,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::path::Path;
-#[cfg(unix)]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{fmt::Debug, sync::Arc};
 use versions::Versioning;
@@ -256,11 +254,14 @@ impl Backend for PIPXBackend {
         let options = PipxOptions::new(&request_options);
 
         // Check if pipx is available (unless uvx is being used)
-        let use_uvx = self.uv_is_installed(&ctx.config).await
-            && Settings::get().pipx.uvx != Some(false)
-            && !options.uvx_disabled();
+        let uv_program = if Settings::get().pipx.uvx != Some(false) && !options.uvx_disabled() {
+            self.dependency_path_for_install(&ctx.config, Some(&ctx.ts), "uv")
+                .await
+        } else {
+            None
+        };
 
-        if !use_uvx {
+        if uv_program.is_none() {
             self.warn_if_dependency_missing(
                 &ctx.config,
                 "pipx",
@@ -278,11 +279,12 @@ impl Backend for PIPXBackend {
             .parse::<PipxRequest>()?
             .pipx_request(&tv.version, &options);
 
-        if use_uvx {
+        if let Some(uv_program) = uv_program {
             self.warn_if_uv_may_not_support_exclude_newer(ctx).await;
             ctx.pr
                 .set_message(format!("uv tool install {pipx_request}"));
             let mut cmd = Self::uvx_cmd(
+                &uv_program,
                 &ctx.config,
                 &["tool", "install", &pipx_request],
                 self,
@@ -515,6 +517,7 @@ impl PIPXBackend {
     }
 
     async fn uvx_cmd<'a>(
+        uv_program: &Path,
         config: &Arc<Config>,
         args: &[&str],
         b: &dyn Backend,
@@ -522,7 +525,7 @@ impl PIPXBackend {
         ts: &Toolset,
         pr: &'a dyn SingleReport,
     ) -> Result<CmdLineRunner<'a>> {
-        let mut cmd = CmdLineRunner::new("uv");
+        let mut cmd = CmdLineRunner::new(uv_program);
         for arg in args {
             cmd = cmd.arg(arg);
         }
@@ -559,10 +562,6 @@ impl PIPXBackend {
             .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
             .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
-    }
-
-    async fn uv_is_installed(&self, config: &Arc<Config>) -> bool {
-        self.dependency_which(config, "uv").await.is_some()
     }
 
     async fn warn_if_uv_may_not_support_exclude_newer(&self, ctx: &InstallContext) {
