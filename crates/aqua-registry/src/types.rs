@@ -702,16 +702,33 @@ impl AquaPackage {
         os: &str,
         arch: &str,
     ) -> Result<String> {
-        let mut actual_arch = arch;
-        if os == "darwin" && arch == "arm64" && self.rosetta2 {
-            actual_arch = "amd64";
-        }
-        if os == "windows" && arch == "arm64" && self.windows_arm_emulation {
-            actual_arch = "amd64";
-        }
+        let mut ctx = self.template_context(&self.replacements, v, os, arch);
+        ctx.extend(self.vars_ctx()?);
+        ctx.extend(overrides.clone());
 
+        crate::template::render(s, &ctx)
+    }
+
+    fn actual_arch<'a>(&self, os: &str, arch: &'a str) -> &'a str {
+        if (os == "darwin" && arch == "arm64" && self.rosetta2)
+            || (os == "windows" && arch == "arm64" && self.windows_arm_emulation)
+        {
+            "amd64"
+        } else {
+            arch
+        }
+    }
+
+    fn template_context(
+        &self,
+        replacements: &HashMap<String, String>,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> HashMap<String, String> {
+        let actual_arch = self.actual_arch(os, arch);
         let replace = |s: &str| {
-            self.replacements
+            replacements
                 .get(s)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| s.to_string())
@@ -723,18 +740,15 @@ impl AquaPackage {
             v
         };
 
-        let mut ctx = HashMap::new();
-        ctx.insert("Version".to_string(), replace(v));
-        ctx.insert("SemVer".to_string(), replace(semver));
-        ctx.insert("OS".to_string(), replace(os));
-        ctx.insert("GOOS".to_string(), replace(os));
-        ctx.insert("GOARCH".to_string(), replace(actual_arch));
-        ctx.insert("Arch".to_string(), replace(actual_arch));
-        ctx.insert("Format".to_string(), replace(&self.format));
-        ctx.extend(self.vars_ctx()?);
-        ctx.extend(overrides.clone());
-
-        crate::template::render(s, &ctx)
+        HashMap::from([
+            ("Version".to_string(), replace(v)),
+            ("SemVer".to_string(), replace(semver)),
+            ("OS".to_string(), replace(os)),
+            ("GOOS".to_string(), replace(os)),
+            ("GOARCH".to_string(), replace(actual_arch)),
+            ("Arch".to_string(), replace(actual_arch)),
+            ("Format".to_string(), replace(&self.format)),
+        ])
     }
 
     fn vars_ctx(&self) -> Result<HashMap<String, String>> {
@@ -1190,20 +1204,7 @@ impl AquaChecksum {
         os: &str,
         arch: &str,
     ) -> Result<HashMap<String, String>> {
-        let replacements = self.effective_replacements(pkg);
-        let actual_arch = actual_arch(pkg, os, arch);
-        let replace = |s: &str| {
-            replacements
-                .get(s)
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| s.to_string())
-        };
-
-        let mut ctx = HashMap::new();
-        ctx.insert("OS".to_string(), replace(os));
-        ctx.insert("GOOS".to_string(), replace(os));
-        ctx.insert("Arch".to_string(), replace(actual_arch));
-        ctx.insert("GOARCH".to_string(), replace(actual_arch));
+        let mut ctx = pkg.template_context(&self.effective_replacements(pkg), v, os, arch);
         if pkg.r#type == AquaPackageType::Http {
             ctx.insert("AssetURL".to_string(), pkg.url(v, os, arch)?);
         }
@@ -1220,16 +1221,6 @@ impl AquaChecksum {
                 merged
             }
         }
-    }
-}
-
-fn actual_arch<'a>(pkg: &AquaPackage, os: &str, arch: &'a str) -> &'a str {
-    if (os == "darwin" && arch == "arm64" && pkg.rosetta2)
-        || (os == "windows" && arch == "arm64" && pkg.windows_arm_emulation)
-    {
-        "amd64"
-    } else {
-        arch
     }
 }
 
