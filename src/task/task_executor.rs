@@ -901,13 +901,14 @@ impl TaskExecutor {
             .or_else(|| shell_from_shebang(file))
             .or_else(|| shell_from_extension(file))
             .unwrap_or(Settings::get().default_file_shell()?);
+        let (program, _) = task_shell_parts(&shell, "file shell")?;
         trace!("using shell: {}", shell.join(" "));
-        let mut full_args = shell.clone();
+        let mut full_args = shell.to_vec();
         full_args.push(display);
         if !args.is_empty() {
             full_args.extend(args.iter().cloned());
         }
-        Ok((shell[0].clone(), full_args[1..].to_vec()))
+        Ok((program.to_string(), full_args[1..].to_vec()))
     }
 
     /// Build the `(program, args, cmd_verbatim)` for an inline script. When
@@ -922,6 +923,7 @@ impl TaskExecutor {
         args: &[String],
     ) -> Result<(String, Vec<String>, bool)> {
         let shell = task.shell()?.unwrap_or(self.clone_default_inline_shell()?);
+        let (program, _shell_args) = task_shell_parts(&shell, "inline shell")?;
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
 
@@ -936,22 +938,21 @@ impl TaskExecutor {
             // in a single outer quote pair, and use `/s` so cmd strips exactly
             // that pair and runs the rest — inner quotes included — verbatim.
             // See discussion #9355.
-            let runs_command = shell
+            let runs_command = _shell_args
                 .iter()
-                .skip(1)
                 .any(|f| f.eq_ignore_ascii_case("/c") || f.eq_ignore_ascii_case("/k"));
-            if crate::path::is_cmd_shell_program(Path::new(&shell[0])) && runs_command {
-                let cmd_args = crate::path::cmd_verbatim_args(&shell[1..], script, args);
-                return Ok((shell[0].clone(), cmd_args, true));
+            if crate::path::is_cmd_shell_program(Path::new(program)) && runs_command {
+                let cmd_args = crate::path::cmd_verbatim_args(_shell_args, script, args);
+                return Ok((program.to_string(), cmd_args, true));
             }
             // Non-POSIX, non-cmd shells (e.g. `pwsh -Command`) use a different
             // quoting convention than `shell_words` (which is POSIX), so keep
             // passing their forwarded args as separate argv. Only POSIX shells
             // (`bash -c`, `sh -c`, …) fall through to the shared append below.
-            if !crate::path::is_posix_shell_program(Path::new(&shell[0])) {
+            if !crate::path::is_posix_shell_program(Path::new(program)) {
                 full_args.push(script.to_string());
                 full_args.extend(args.iter().cloned());
-                return Ok((full_args[0].clone(), full_args[1..].to_vec(), false));
+                return Ok((program.to_string(), full_args[1..].to_vec(), false));
             }
         }
 
@@ -966,7 +967,7 @@ impl TaskExecutor {
             script = format!("{script} {}", shell_words::join(args));
         }
         full_args.push(script);
-        Ok((full_args[0].clone(), full_args[1..].to_vec(), false))
+        Ok((program.to_string(), full_args[1..].to_vec(), false))
     }
 
     fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
@@ -1418,6 +1419,15 @@ fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
     }
 }
 
+fn task_shell_parts<'a>(shell: &'a [String], shell_kind: &str) -> Result<(&'a str, &'a [String])> {
+    shell
+        .split_first()
+        .map(|(program, args)| (program.as_str(), args))
+        .ok_or_else(|| {
+            eyre!("{shell_kind} is empty; check task shell, --shell, or default shell settings")
+        })
+}
+
 /// On Windows, when about to spawn a POSIX shell whose PATH we are about to
 /// convert to Unix form, resolve the program to its absolute path using the
 /// pre-conversion (Windows-form) PATH from the task env.
@@ -1694,6 +1704,21 @@ mod tests {
         env.insert((*crate::env::PATH_KEY).to_string(), path.to_string());
         env.insert("OTHER".to_string(), "unchanged".to_string());
         env
+    }
+
+    #[test]
+    fn test_task_shell_parts_errors_on_empty_shell() {
+        let shell = Vec::new();
+        let err = task_shell_parts(&shell, "inline shell").unwrap_err();
+        assert!(err.to_string().contains("inline shell is empty"));
+    }
+
+    #[test]
+    fn test_task_shell_parts_splits_program_and_args() {
+        let shell = vec!["cmd".to_string(), "/c".to_string()];
+        let (program, args) = task_shell_parts(&shell, "inline shell").unwrap();
+        assert_eq!(program, "cmd");
+        assert_eq!(args, &["/c"]);
     }
 
     #[test]

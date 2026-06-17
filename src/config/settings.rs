@@ -296,6 +296,11 @@ fn should_warn_ignored_global_only_value(value: &toml::Value) -> bool {
 }
 
 impl Settings {
+    const UNIX_DEFAULT_FILE_SHELL_ARGS: &'static str = "sh";
+    const UNIX_DEFAULT_INLINE_SHELL_ARGS: &'static str = "sh -c -o errexit";
+    const WINDOWS_DEFAULT_FILE_SHELL_ARGS: &'static str = "cmd /c";
+    const WINDOWS_DEFAULT_INLINE_SHELL_ARGS: &'static str = "cmd /c";
+
     pub fn parse_default_package_line(package: &str) -> Option<String> {
         let package = package.split('#').next().unwrap_or_default().trim();
         (!package.is_empty()).then(|| package.to_string())
@@ -778,21 +783,33 @@ impl Settings {
     }
 
     pub fn default_inline_shell(&self) -> Result<Vec<String>> {
-        let sa = if cfg!(windows) {
-            &self.windows_default_inline_shell_args
+        let (sa, fallback) = if cfg!(windows) {
+            (
+                &self.windows_default_inline_shell_args,
+                Self::WINDOWS_DEFAULT_INLINE_SHELL_ARGS,
+            )
         } else {
-            &self.unix_default_inline_shell_args
+            (
+                &self.unix_default_inline_shell_args,
+                Self::UNIX_DEFAULT_INLINE_SHELL_ARGS,
+            )
         };
-        crate::path::split_shell_command(sa)
+        split_default_shell_or_fallback(sa, fallback)
     }
 
     pub fn default_file_shell(&self) -> Result<Vec<String>> {
-        let sa = if cfg!(windows) {
-            &self.windows_default_file_shell_args
+        let (sa, fallback) = if cfg!(windows) {
+            (
+                &self.windows_default_file_shell_args,
+                Self::WINDOWS_DEFAULT_FILE_SHELL_ARGS,
+            )
         } else {
-            &self.unix_default_file_shell_args
+            (
+                &self.unix_default_file_shell_args,
+                Self::UNIX_DEFAULT_FILE_SHELL_ARGS,
+            )
         };
-        crate::path::split_shell_command(sa)
+        split_default_shell_or_fallback(sa, fallback)
     }
 
     pub fn os(&self) -> &str {
@@ -1009,6 +1026,15 @@ fn normalize_tool_names(tools: &BTreeSet<String>) -> BTreeSet<String> {
         .collect()
 }
 
+fn split_default_shell_or_fallback(sa: &str, fallback: &str) -> Result<Vec<String>> {
+    let shell = crate::path::split_shell_command(sa)?;
+    if shell.is_empty() {
+        crate::path::split_shell_command(fallback)
+    } else {
+        Ok(shell)
+    }
+}
+
 /// Parse URL replacements from JSON string format
 /// Expected format: {"source_domain": "replacement_domain", ...}
 pub fn parse_url_replacements(input: &str) -> Result<IndexMap<String, String>, serde_json::Error> {
@@ -1055,6 +1081,31 @@ mod tests {
         root.insert("settings".to_string(), toml::Value::Table(settings));
         let settings_file: SettingsFile = toml::Value::Table(root).try_into().unwrap();
         settings_file.settings
+    }
+
+    fn sv(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn test_split_default_shell_or_fallback_uses_fallback_for_empty_shell() {
+        assert_eq!(
+            split_default_shell_or_fallback("   ", "cmd /c").unwrap(),
+            sv(&["cmd", "/c"])
+        );
+    }
+
+    #[test]
+    fn test_split_default_shell_or_fallback_preserves_custom_shell() {
+        assert_eq!(
+            split_default_shell_or_fallback("pwsh -Command", "cmd /c").unwrap(),
+            sv(&["pwsh", "-Command"])
+        );
+    }
+
+    #[test]
+    fn test_split_default_shell_or_fallback_reports_parse_errors() {
+        assert!(split_default_shell_or_fallback("\"unterminated", "cmd /c").is_err());
     }
 
     #[test]

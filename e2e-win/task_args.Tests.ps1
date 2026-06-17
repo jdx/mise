@@ -23,4 +23,10 @@ run = "type"
         $output = mise run type ".\test dir\file.txt"
         $output | Should -Match "test content"
     }
+
+    It 'errors instead of panicking when inline shell is empty' {
+        $output = mise run --shell "   " type ".\test dir\file.txt" 2>&1 | Out-String
+        $LASTEXITCODE | Should -Not -Be 0
+        $output | Should -Match "inline shell is empty"
+    }
 }
