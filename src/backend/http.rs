@@ -788,8 +788,8 @@ impl HttpBackend {
     /// Resolve a published checksum for a target platform without downloading
     /// the artifact. Tries, in order: a checksum configured directly for the
     /// platform, a manifest evaluated via `checksum_expr`, a SHASUMS file keyed
-    /// by filename, then a single-hash sidecar file. Returns `None` (best-effort)
-    /// when no published checksum is available.
+    /// by filename, then an individual checksum file. Returns `None`
+    /// (best-effort) when no published checksum is available.
     async fn resolve_lock_checksum(
         &self,
         opts: &HttpOptions<'_>,
@@ -805,9 +805,9 @@ impl HttpBackend {
         // 2. Fetch from a declared checksum source.
         let checksum_url_template = opts.checksum_url_for_target(target)?;
         let checksum_url = template_string_for_target(&checksum_url_template, tv, target);
-        let algo = opts.checksum_algo();
 
-        // 2a. Manifest with an extraction expression.
+        // 2a. Manifest with an extraction expression. The algorithm isn't in the
+        // file name here, so it comes from `checksum_algo` (default sha256).
         if let Some(expr) = opts.checksum_expr() {
             let body = match HTTP.get_text(&checksum_url).await {
                 Ok(body) => body,
@@ -824,15 +824,19 @@ impl HttpBackend {
                 ("url", url),
                 ("filename", filename.as_str()),
             ];
-            return eval_checksum_expr(expr, &body, &vars, &algo);
+            return eval_checksum_expr(expr, &body, &vars, &opts.checksum_algo());
         }
 
-        // 2b. Checksum file: SHASUMS (filename match) first, then single-hash sidecar.
+        // 2b. Checksum file: a SHASUMS list (filename match) first, then an
+        // individual checksum file. The algorithm is detected from its name.
         let filename = get_filename_from_url(url);
-        if let Some(checksum) = fetch_checksum_from_shasums(&checksum_url, &filename, &algo).await {
+        if let Some(checksum) = fetch_checksum_from_shasums(&checksum_url, &filename).await {
             return Some(checksum);
         }
-        fetch_checksum_from_file(&checksum_url, &algo).await
+        let file_algo = crate::backend::asset_matcher::detect_checksum_algorithm(
+            &get_filename_from_url(&checksum_url),
+        );
+        fetch_checksum_from_file(&checksum_url, &file_algo).await
     }
 }
 

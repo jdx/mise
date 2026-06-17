@@ -1069,7 +1069,7 @@ impl<'a> ChecksumFetcher<'a> {
 }
 
 /// Detect the checksum algorithm from the filename
-fn detect_checksum_algorithm(filename: &str) -> String {
+pub(crate) fn detect_checksum_algorithm(filename: &str) -> String {
     let lower = filename.to_lowercase();
     if lower.contains("sha512") || lower.ends_with(".sha512") || lower.ends_with(".sha512sum") {
         "sha512".to_string()

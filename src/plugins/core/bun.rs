@@ -253,7 +253,7 @@ impl Backend for BunPlugin {
         let shasums_url = format!(
             "https://github.com/oven-sh/bun/releases/download/bun-v{version}/SHASUMS256.txt"
         );
-        let checksum = fetch_checksum_from_shasums(&shasums_url, &filename, "sha256").await;
+        let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
 
         Ok(PlatformInfo {
             url: Some(url),

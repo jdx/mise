@@ -23,22 +23,24 @@ static VERSION_PATTERN: LazyLock<regex::Regex> =
 /// Fetches a checksum for a specific file from a SHASUMS256.txt-style file.
 /// Uses cached HTTP requests since the same SHASUMS file is fetched for all platforms.
 ///
+/// The algorithm is detected from the SHASUMS file name (e.g. `*.sha512`,
+/// `SHA512SUMS`, defaulting to sha256), since the file lists bare hashes without
+/// declaring it.
+///
 /// # Arguments
 /// * `shasums_url` - URL to the SHASUMS256.txt file
 /// * `filename` - The filename to look up in the SHASUMS file
-/// * `algo` - The algorithm the SHASUMS file uses, used as the `<algo>:` prefix
 ///
 /// # Returns
 /// * `Some("<algo>:<hash>")` if found
 /// * `None` if the SHASUMS file couldn't be fetched or filename not found
-pub async fn fetch_checksum_from_shasums(
-    shasums_url: &str,
-    filename: &str,
-    algo: &str,
-) -> Option<String> {
+pub async fn fetch_checksum_from_shasums(shasums_url: &str, filename: &str) -> Option<String> {
     match HTTP.get_text_cached(shasums_url).await {
         Ok(shasums_content) => {
             let shasums = hash::parse_shasums(&shasums_content);
+            let algo = crate::backend::asset_matcher::detect_checksum_algorithm(
+                &get_filename_from_url(shasums_url),
+            );
             shasums.get(filename).map(|h| format!("{algo}:{h}"))
         }
         Err(e) => {

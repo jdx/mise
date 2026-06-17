@@ -793,7 +793,7 @@ impl Backend for NodePlugin {
 
         // Fetch SHASUMS256.txt to get checksum without downloading the tarball
         let shasums_url = mirror.join(&format!("v{version}/SHASUMS256.txt"))?;
-        let checksum = fetch_checksum_from_shasums(shasums_url.as_str(), &filename, "sha256").await;
+        let checksum = fetch_checksum_from_shasums(shasums_url.as_str(), &filename).await;
 
         Ok(PlatformInfo {
             url: Some(url.to_string()),

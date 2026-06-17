@@ -138,14 +138,18 @@ single machine produce a complete, cross-platform lockfile.
 and is platform-specific via `platforms.<key>.checksum_url`). It may point at any
 of:
 
-- a single-checksum **sidecar** file (e.g. `<artifact>.sha256`), which may contain
+- an **individual checksum file** (e.g. `<artifact>.sha256`), which may contain
   just the hash or `<hash>  <filename>`;
 - a **SHASUMS**-style file listing `<hash>  <filename>` for many platforms (the row
   is matched by the artifact's filename);
 - a **manifest** (e.g. JSON), combined with `checksum_expr` below.
 
+For individual and SHASUMS checksum files, the algorithm is detected from the
+file's name (`*.sha512`, `SHA512SUMS`, `*.md5`, `*.b3`, defaulting to sha256), so
+`checksum_algo` is not needed.
+
 ```toml
-# Sidecar (one file per artifact)
+# Individual checksum file (one per artifact)
 [tools."http:my-tool"]
 version = "1.0.0"
 url = "https://example.com/releases/my-tool-{{ version }}-{{ os() }}-{{ arch() }}.tar.gz"
@@ -188,8 +192,9 @@ the literal key `"version"`.
 
 ### `checksum_algo`
 
-Algorithm prefix used when a checksum source returns a bare hash (no `algo:`
-prefix). Defaults to `sha256`.
+Algorithm for a **manifest** checksum (`checksum_expr`) when it returns a bare
+hash, since the algorithm isn't in a file name there. Defaults to `sha256`.
+Individual and SHASUMS checksum files detect the algorithm from their file name instead.
 
 ### `size`
 
