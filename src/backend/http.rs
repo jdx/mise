@@ -2,9 +2,11 @@ use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
-    clean_binary_name, get_filename_from_url, rename_executable_in_dir, template_string,
+    clean_binary_name, eval_checksum_expr, fetch_checksum_from_file, fetch_checksum_from_shasums,
+    get_filename_from_url, rename_executable_in_dir, template_string, template_string_for_target,
     verify_artifact,
 };
 use crate::backend::version_list;
@@ -13,6 +15,7 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::ToolRequest;
 use crate::toolset::ToolVersion;
@@ -22,6 +25,7 @@ use crate::{dirs, file, hash};
 use async_trait::async_trait;
 use eyre::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -171,6 +175,45 @@ impl<'a> HttpOptions<'a> {
 
     fn bin_path(&self) -> Option<String> {
         self.values.platform_string("bin_path")
+    }
+
+    fn checksum_expr(&self) -> Option<&'a str> {
+        self.values.str("checksum_expr")
+    }
+
+    fn checksum_algo(&self) -> String {
+        self.values
+            .str("checksum_algo")
+            .unwrap_or("sha256")
+            .to_string()
+    }
+
+    // Target-aware accessors for cross-platform `mise lock`. These resolve
+    // `platforms.<key>.<opt>` for an arbitrary target rather than the host.
+    fn url_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("url", target)
+    }
+
+    fn checksum_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("checksum", target)
+    }
+
+    fn checksum_url_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values
+            .platform_string_for_target("checksum_url", target)
+    }
+
+    fn format_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("format", target)
+    }
+
+    fn strip_components_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values
+            .platform_string_for_target("strip_components", target)
+    }
+
+    fn rename_exe_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("rename_exe", target)
     }
 
     fn version_list_url(&self) -> Option<&'a str> {
@@ -723,6 +766,72 @@ impl HttpBackend {
 
         version_list::fetch_versions(&url, regex, json_path, version_expr).await
     }
+
+    // -------------------------------------------------------------------------
+    // Cross-platform lock resolution
+    // -------------------------------------------------------------------------
+
+    /// Resolve the artifact URL for a target platform during `mise lock`.
+    /// Renders `os()`/`arch()` for the target rather than the host.
+    fn lock_url_for_target(
+        &self,
+        opts: &HttpOptions<'_>,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Option<String> {
+        opts.url_for_target(target)
+            .map(|template| template_string_for_target(&template, tv, target))
+    }
+
+    /// Resolve a published checksum for a target platform without downloading
+    /// the artifact. Tries, in order: a checksum configured directly for the
+    /// platform, a manifest evaluated via `checksum_expr`, a SHASUMS file keyed
+    /// by filename, then a single-hash sidecar file. Returns `None` (best-effort)
+    /// when no published checksum is available.
+    async fn resolve_lock_checksum(
+        &self,
+        opts: &HttpOptions<'_>,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+        url: &str,
+    ) -> Option<String> {
+        // 1. Checksum declared directly for this platform.
+        if let Some(checksum) = opts.checksum_for_target(target) {
+            return Some(checksum);
+        }
+
+        // 2. Fetch from a declared checksum source.
+        let checksum_url_template = opts.checksum_url_for_target(target)?;
+        let checksum_url = template_string_for_target(&checksum_url_template, tv, target);
+        let algo = opts.checksum_algo();
+
+        // 2a. Manifest with an extraction expression.
+        if let Some(expr) = opts.checksum_expr() {
+            let body = match HTTP.get_text(&checksum_url).await {
+                Ok(body) => body,
+                Err(e) => {
+                    debug!("failed to fetch checksum manifest {checksum_url}: {e}");
+                    return None;
+                }
+            };
+            let filename = get_filename_from_url(url);
+            let vars = [
+                ("version", tv.version.as_str()),
+                ("os", target.os_name()),
+                ("arch", target.arch_name()),
+                ("url", url),
+                ("filename", filename.as_str()),
+            ];
+            return eval_checksum_expr(expr, &body, &vars, &algo);
+        }
+
+        // 2b. Checksum file: SHASUMS (filename match) first, then single-hash sidecar.
+        let filename = get_filename_from_url(url);
+        if let Some(checksum) = fetch_checksum_from_shasums(&checksum_url, &filename).await {
+            return Some(checksum);
+        }
+        fetch_checksum_from_file(&checksum_url, &algo).await
+    }
 }
 
 /// Returns install-time-only option keys for HTTP backend.
@@ -736,6 +845,9 @@ pub fn install_time_option_keys() -> Vec<String> {
         "version_expr".into(),
         "format".into(),
         "rename_exe".into(),
+        "checksum_url".into(),
+        "checksum_expr".into(),
+        "checksum_algo".into(),
     ]
 }
 
@@ -766,6 +878,58 @@ impl Backend for HttpBackend {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
         super::http_install_operation_count(opts.checksum().is_some(), &self.get_platform_key(), tv)
+    }
+
+    /// Options that affect which artifact is downloaded, resolved for the target
+    /// platform so cross-platform lockfile entries match install-time lookups.
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> Result<BTreeMap<String, String>> {
+        let raw_opts = request.options();
+        let opts = HttpOptions::new(&raw_opts);
+        let mut result = BTreeMap::new();
+        if let Some(format) = opts.format_for_target(target) {
+            result.insert("format".to_string(), format);
+        }
+        if let Some(strip) = opts.strip_components_for_target(target) {
+            result.insert("strip_components".to_string(), strip);
+        }
+        if let Some(rename) = opts.rename_exe_for_target(target) {
+            result.insert("rename_exe".to_string(), rename);
+        }
+        Ok(result)
+    }
+
+    /// Resolve URL + published checksum for a target platform during `mise lock`,
+    /// without downloading the artifact. Best-effort: a platform with no
+    /// resolvable URL is skipped (empty entry); a missing checksum yields a
+    /// url-only entry.
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let raw_opts = tv.request.options();
+        let opts = HttpOptions::new(&raw_opts);
+
+        let Some(url) = self.lock_url_for_target(&opts, tv, target) else {
+            debug!(
+                "no URL for {} on {}; skipping lock entry",
+                self.ba.full(),
+                target.to_key()
+            );
+            return Ok(PlatformInfo::default());
+        };
+
+        let checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
+
+        Ok(PlatformInfo {
+            url: Some(url),
+            checksum,
+            ..Default::default()
+        })
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
