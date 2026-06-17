@@ -196,7 +196,8 @@ impl Git {
             .arg("-o")
             .arg("origin")
             .arg("-c")
-            .arg("core.autocrlf=false");
+            .arg("core.autocrlf=false")
+            .envs(options.envs.iter().map(|(k, v)| (k, v)));
         // `--depth 1` is incompatible with checking out an arbitrary SHA later,
         // so do a full clone when the caller passed a SHA.
         if sha_branch.is_none() {
@@ -383,6 +384,7 @@ impl Debug for Git {
 pub struct CloneOptions<'a> {
     pr: Option<&'a dyn SingleReport>,
     branch: Option<String>,
+    envs: Vec<(String, String)>,
 }
 
 impl<'a> CloneOptions<'a> {
@@ -393,6 +395,14 @@ impl<'a> CloneOptions<'a> {
 
     pub fn branch(mut self, branch: &str) -> Self {
         self.branch = Some(branch.to_string());
+        self
+    }
+
+    /// Extra environment variables for the git subprocess, e.g. proxy settings
+    /// from a tool's `install_env`. Only applied to the git CLI clone path
+    /// (the default); the in-process gix/libgit2 path does not use them.
+    pub fn envs(mut self, envs: impl IntoIterator<Item = (String, String)>) -> Self {
+        self.envs = envs.into_iter().collect();
         self
     }
 }

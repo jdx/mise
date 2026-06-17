@@ -185,7 +185,12 @@ impl FlutterPlugin {
         ctx.pr.set_message(format!("clone {remote} @ {gitref}"));
         let git = Git::new(tv.install_path());
         file::remove_all(tv.install_path())?;
-        let clone_opts = CloneOptions::default().pr(ctx.pr.as_ref()).branch(&gitref);
+        // Forward install_env (e.g. HTTPS_PROXY for an internal mirror) to the
+        // clone subprocess, matching what verify() passes to `flutter --version`.
+        let clone_opts = CloneOptions::default()
+            .pr(ctx.pr.as_ref())
+            .branch(&gitref)
+            .envs(tv.install_env());
         git.clone(&remote, clone_opts)?;
         Ok(())
     }
