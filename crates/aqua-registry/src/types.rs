@@ -314,6 +314,25 @@ where
     }
 }
 
+fn yaml_mapping_to_string_map<D: serde::de::Error>(
+    value: serde_yaml::Value,
+) -> std::result::Result<HashMap<String, String>, D> {
+    let serde_yaml::Value::Mapping(mapping) = value else {
+        return Err(D::custom("invalid type: expected a scalar string map"));
+    };
+
+    mapping
+        .into_iter()
+        .map(|(key, value)| {
+            let key = yaml_scalar_to_string(key)
+                .ok_or_else(|| D::custom("invalid type: expected a scalar string map key"))?;
+            let value = yaml_scalar_to_string(value)
+                .ok_or_else(|| D::custom("invalid type: expected a scalar string map value"))?;
+            Ok((key, value))
+        })
+        .collect()
+}
+
 fn deserialize_string_map<'de, D>(
     deserializer: D,
 ) -> std::result::Result<HashMap<String, String>, D::Error>
@@ -324,28 +343,7 @@ where
     let Some(value) = value else {
         return Ok(HashMap::new());
     };
-    let serde_yaml::Value::Mapping(mapping) = value else {
-        return Err(<D::Error as serde::de::Error>::custom(
-            "invalid type: expected a string map",
-        ));
-    };
-
-    mapping
-        .into_iter()
-        .map(|(key, value)| {
-            let key = yaml_scalar_to_string(key).ok_or_else(|| {
-                <D::Error as serde::de::Error>::custom(
-                    "invalid type: expected a scalar string map key",
-                )
-            })?;
-            let value = yaml_scalar_to_string(value).ok_or_else(|| {
-                <D::Error as serde::de::Error>::custom(
-                    "invalid type: expected a scalar string map value",
-                )
-            })?;
-            Ok((key, value))
-        })
-        .collect()
+    yaml_mapping_to_string_map(value)
 }
 
 fn deserialize_optional_string_map<'de, D>(
@@ -357,28 +355,10 @@ where
     let Some(value) = Option::<serde_yaml::Value>::deserialize(deserializer)? else {
         return Ok(None);
     };
-    let serde_yaml::Value::Mapping(mapping) = value else {
-        return Err(<D::Error as serde::de::Error>::custom(
-            "invalid type: expected a scalar string map",
-        ));
-    };
-    mapping
-        .into_iter()
-        .map(|(key, value)| {
-            let key = yaml_scalar_to_string(key).ok_or_else(|| {
-                <D::Error as serde::de::Error>::custom(
-                    "invalid type: expected a scalar string map key",
-                )
-            })?;
-            let value = yaml_scalar_to_string(value).ok_or_else(|| {
-                <D::Error as serde::de::Error>::custom(
-                    "invalid type: expected a scalar string map value",
-                )
-            })?;
-            Ok((key, value))
-        })
-        .collect::<std::result::Result<HashMap<_, _>, D::Error>>()
-        .map(Some)
+    if matches!(value, serde_yaml::Value::Null) {
+        return Ok(None);
+    }
+    yaml_mapping_to_string_map(value).map(Some)
 }
 
 fn yaml_scalar_to_string(value: serde_yaml::Value) -> Option<String> {
@@ -1172,7 +1152,13 @@ impl AquaChecksum {
             self.file_format = Some(file_format);
         }
         if let Some(replacements) = other.replacements {
-            self.replacements = Some(replacements);
+            if replacements.is_empty() {
+                self.replacements = Some(HashMap::new());
+            } else {
+                self.replacements
+                    .get_or_insert_with(HashMap::new)
+                    .extend(replacements);
+            }
         }
         if let Some(cosign) = other.cosign {
             if self.cosign.is_none() {
@@ -1197,7 +1183,7 @@ impl AquaChecksum {
         }
     }
 
-    fn template_ctx(
+    pub fn template_ctx(
         &self,
         pkg: &AquaPackage,
         v: &str,
@@ -1215,9 +1201,9 @@ impl AquaChecksum {
 
         let mut ctx = HashMap::new();
         ctx.insert("OS".to_string(), replace(os));
-        ctx.insert("GOOS".to_string(), os.to_string());
+        ctx.insert("GOOS".to_string(), replace(os));
         ctx.insert("Arch".to_string(), replace(actual_arch));
-        ctx.insert("GOARCH".to_string(), actual_arch.to_string());
+        ctx.insert("GOARCH".to_string(), replace(actual_arch));
         if pkg.r#type == AquaPackageType::Http {
             ctx.insert("AssetURL".to_string(), pkg.url(v, os, arch)?);
         }
@@ -1610,6 +1596,80 @@ packages:
                 .url(&pkg, "1.0.0", "darwin", "arm64")
                 .unwrap(),
             "https://example.com/tool-macOS-aarch64.tar.gz.mac-arm64.checksums"
+        );
+    }
+
+    #[test]
+    fn test_checksum_replacements_merge_on_version_override() {
+        let mut checksum = first_registry_package(
+            r#"
+packages:
+  - checksum:
+      type: http
+      url: https://example.com/{{.OS}}.checksums
+      replacements:
+        darwin: mac
+"#,
+        )
+        .checksum
+        .unwrap();
+        let override_checksum = first_registry_package(
+            r#"
+packages:
+  - checksum:
+      replacements:
+        arm64: aarch64
+"#,
+        )
+        .checksum
+        .unwrap();
+        checksum.merge(override_checksum);
+        assert_eq!(
+            checksum.replacements,
+            Some(HashMap::from([
+                ("darwin".to_string(), "mac".to_string()),
+                ("arm64".to_string(), "aarch64".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_checksum_replacements_null_deserializes_to_none() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+      replacements: null
+"#,
+        );
+        assert_eq!(pkg.checksum.unwrap().replacements, None);
+    }
+
+    #[test]
+    fn test_checksum_url_applies_replacements_to_goos_and_goarch() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: http
+    url: https://example.com/tool.tar.gz
+    checksum:
+      type: http
+      url: https://example.com/{{.GOOS}}-{{.GOARCH}}.checksums
+      replacements:
+        darwin: mac
+        arm64: aarch64
+"#,
+        );
+        assert_eq!(
+            pkg.checksum
+                .as_ref()
+                .unwrap()
+                .url(&pkg, "1.0.0", "darwin", "arm64")
+                .unwrap(),
+            "https://example.com/mac-aarch64.checksums"
         );
     }
 
