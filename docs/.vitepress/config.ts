@@ -101,6 +101,7 @@ export default withMermaid(
                 { text: "Deno", link: "/lang/deno" },
                 { text: "Elixir", link: "/lang/elixir" },
                 { text: "Erlang", link: "/lang/erlang" },
+                { text: "Flutter", link: "/lang/flutter" },
                 { text: "Go", link: "/lang/go" },
                 { text: "Java", link: "/lang/java" },
                 { text: "Node.js", link: "/lang/node" },

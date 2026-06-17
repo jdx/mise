@@ -1,6 +1,12 @@
 description = "Flutter is an open source framework for building beautiful, natively compiled, multi-platform applications from a single codebase"
 
 [[backends]]
+# Built-in plugin: installs official stable releases (tarball) and supports
+# custom builds via git ref/commit (`flutter@ref:<sha>`) and a custom `remote`
+# (fork / internal mirror).
+full = "core:flutter"
+
+[[backends]]
 full = "http:flutter"
 
 [backends.options]

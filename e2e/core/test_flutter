@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# The core flutter plugin lists official stable releases without the channel
+# suffix (the http backend's `-stable` is stripped by the core plugin).
+assert_contains "mise ls-remote core:flutter" "3.22.1"
+assert_not_contains "mise ls-remote core:flutter" "3.22.1-stable"
+
+# A custom commit (git ref) resolves without needing to be in the version list.
+assert_succeed "mise install core:flutter@ref:abcdef1234567890abcdef1234567890abcdef12 --dry-run"
+
+# A custom remote (fork / internal mirror) is accepted as a tool option and
+# forces the git install path.
+assert_succeed "mise install 'core:flutter[remote=https://github.com/flutter/flutter.git]@ref:abcdef1234567890abcdef1234567890abcdef12' --dry-run"

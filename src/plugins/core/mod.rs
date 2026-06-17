@@ -18,6 +18,7 @@ mod deno;
 mod dotnet;
 mod elixir;
 mod erlang;
+mod flutter;
 mod go;
 mod java;
 mod node;
@@ -36,6 +37,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         Arc::new(dotnet::DotnetPlugin::new()),
         Arc::new(elixir::ElixirPlugin::new()),
         Arc::new(erlang::ErlangPlugin::new()),
+        Arc::new(flutter::FlutterPlugin::new()),
         Arc::new(go::GoPlugin::new()),
         Arc::new(java::JavaPlugin::new()),
         Arc::new(node::NodePlugin::new()),
