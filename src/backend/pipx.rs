@@ -293,6 +293,12 @@ impl Backend for PIPXBackend {
             }
             cmd.execute()?;
         } else {
+            // pipx forwards install `--pip-args` into shared-library bootstrap
+            // (`pip install --upgrade pip>=23.1`), not just the package install. When mise
+            // passes `--uploaded-prior-to`, bootstrap pip from ensurepip may not understand
+            // that flag (see pypa/pipx#544). Run upgrade-shared without release-age flags
+            // first so shared pip is valid; the subsequent install's shared_libs.create()
+            // then no-ops and `--uploaded-prior-to` applies only to the package install.
             if ctx.before_date.is_some() {
                 ctx.pr.set_message("pipx upgrade-shared".to_string());
                 if let Err(err) = Self::pipx_cmd(
@@ -320,6 +326,8 @@ impl Backend for PIPXBackend {
                 ctx.pr.as_ref(),
             )
             .await?;
+            // pipx 1.12+ auto-selects the uv backend when uv is on PATH; uv does not
+            // support `--uploaded-prior-to` in `--pip-args`.
             if ctx.before_date.is_some() {
                 cmd = cmd.env("PIPX_DEFAULT_BACKEND", "pip");
             }
