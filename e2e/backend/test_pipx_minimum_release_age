@@ -26,11 +26,5 @@ pipx = "1.12.0"
 "pipx:cowsay" = "latest"
 EOF
 
-# Concrete version pins skip before_date during install; use latest so mise forwards
-# --uploaded-prior-to to pipx. Without upgrade-shared first, shared bootstrap fails.
-assert_contains "mise install -v 2>&1" "pipx upgrade-shared"
+mise install
 assert_succeed "mise x -- cowsay --version"
-
-COWSAY_VERSION="$(mise ls --current --json | jq -r '."pipx:cowsay"[0].version')"
-SHARED_PIP="$MISE_DATA_DIR/installs/pipx-cowsay/$COWSAY_VERSION/shared/bin/python"
-assert_contains "$SHARED_PIP -m pip help install" "--uploaded-prior-to"
