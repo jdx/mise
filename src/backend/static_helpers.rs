@@ -137,7 +137,9 @@ fn normalize_checksum(raw: &str, default_algo: &str) -> Option<String> {
         Some((algo, hash)) => (algo.trim(), hash.trim()),
         None => (default_algo, raw),
     };
-    if is_checksum_hex(hash, algo) {
+    // Algorithm names are case-insensitive (e.g. "SHA256" from a manifest).
+    let algo = algo.to_ascii_lowercase();
+    if is_checksum_hex(hash, &algo) {
         Some(format!("{algo}:{}", hash.to_lowercase()))
     } else {
         debug!("checksum value is not valid {algo} hex: {hash}");
@@ -1161,6 +1163,19 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
     #[test]
     fn test_normalize_checksum_rejects_non_hex() {
         assert_eq!(normalize_checksum("not-a-hash", "sha256"), None);
+    }
+
+    #[test]
+    fn test_normalize_checksum_accepts_uppercase_algo() {
+        // Uppercase algorithm name (prefix or default) is normalized, not rejected.
+        assert_eq!(
+            normalize_checksum(&format!("SHA256:{SHA256_LOWER}"), "sha256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+        assert_eq!(
+            normalize_checksum(SHA256_LOWER, "SHA256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
     }
 
     #[test]

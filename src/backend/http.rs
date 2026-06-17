@@ -182,10 +182,12 @@ impl<'a> HttpOptions<'a> {
     }
 
     fn checksum_algo(&self) -> String {
+        // Algorithm names are case-insensitive; normalize so downstream hex
+        // validation (which matches lowercase names) accepts e.g. "SHA256".
         self.values
             .str("checksum_algo")
             .unwrap_or("sha256")
-            .to_string()
+            .to_ascii_lowercase()
     }
 
     // Target-aware accessors for cross-platform `mise lock`. These resolve
