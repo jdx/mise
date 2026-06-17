@@ -301,16 +301,19 @@ impl Backend for PIPXBackend {
             // then no-ops and `--uploaded-prior-to` applies only to the package install.
             if ctx.before_date.is_some() {
                 ctx.pr.set_message("pipx upgrade-shared".to_string());
-                if let Err(err) = Self::pipx_cmd(
-                    &ctx.config,
-                    &["upgrade-shared"],
-                    self,
-                    &tv,
-                    &ctx.ts,
-                    ctx.pr.as_ref(),
-                )
-                .await?
-                .execute()
+                if let Err(err) = async {
+                    Self::pipx_cmd(
+                        &ctx.config,
+                        &["upgrade-shared"],
+                        self,
+                        &tv,
+                        &ctx.ts,
+                        ctx.pr.as_ref(),
+                    )
+                    .await?
+                    .execute()
+                }
+                .await
                 {
                     debug!("failed to upgrade pipx shared libraries before install: {err:#}");
                 }
