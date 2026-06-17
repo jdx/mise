@@ -449,6 +449,39 @@ pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> Tera {
     tera
 }
 
+/// Like [`get_tera`] but with `os()` and `arch()` rewritten to re-emit
+/// themselves as template fragments (e.g. `os(macos="darwin")` renders back to
+/// the literal `{{ os(macos="darwin") }}`).
+///
+/// Used when rendering tool option templates at config-load time: env/vars are
+/// resolved, but `os()`/`arch()` are deferred so the backend can re-render them
+/// for the host at install time or for an arbitrary target during cross-platform
+/// `mise lock`. Mirrors how `{{ version }}` is preserved via a placeholder.
+pub fn get_tera_preserving_os_arch(dir: Option<&Path>) -> Tera {
+    let mut tera = get_tera(dir);
+    tera.register_function("os", reemit_template_fn("os"));
+    tera.register_function("arch", reemit_template_fn("arch"));
+    tera
+}
+
+fn reemit_template_fn(
+    name: &'static str,
+) -> impl Fn(&HashMap<String, Value>) -> tera::Result<Value> {
+    move |args: &HashMap<String, Value>| {
+        let rendered = if args.is_empty() {
+            format!("{{{{ {name}() }}}}")
+        } else {
+            let mut parts: Vec<String> = args
+                .iter()
+                .map(|(k, v)| format!("{k}=\"{}\"", v.as_str().unwrap_or_default()))
+                .collect();
+            parts.sort();
+            format!("{{{{ {name}({}) }}}}", parts.join(", "))
+        };
+        Ok(Value::String(rendered))
+    }
+}
+
 pub fn tera_exec(
     dir: Option<PathBuf>,
     env: EnvMap,

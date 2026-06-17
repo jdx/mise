@@ -706,6 +706,27 @@ impl MiseToml {
         })?;
         Ok(output)
     }
+
+    /// Render a tool-option template at config-load time, resolving env/vars but
+    /// deferring `os()`/`arch()` (re-emitted as `{{ os() }}`/`{{ arch() }}`) so
+    /// backends can render them for the host at install time or for an arbitrary
+    /// target during cross-platform `mise lock`.
+    fn parse_tool_option_template(
+        &self,
+        context: &TeraContext,
+        input: &str,
+    ) -> eyre::Result<String> {
+        if !contains_template_syntax(input) {
+            return Ok(input.to_string());
+        }
+        let dir = self.path.parent();
+        let mut tera = crate::tera::get_tera_preserving_os_arch(dir);
+        let output = render_str(&mut tera, input, context).wrap_err_with(|| {
+            let p = display_path(&self.path);
+            eyre!("failed to parse template {input} in {p}")
+        })?;
+        Ok(output)
+    }
 }
 
 impl ConfigFile for MiseToml {
@@ -931,7 +952,7 @@ impl ConfigFile for MiseToml {
                     opts_context.insert("version", "{{ version }}");
                     for v in options.opts.values_mut() {
                         if let toml::Value::String(s) = v {
-                            *s = self.parse_template_with_context(&opts_context, s)?;
+                            *s = self.parse_tool_option_template(&opts_context, s)?;
                         }
                     }
                     let mut ba = ba.clone();
