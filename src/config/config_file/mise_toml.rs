@@ -952,16 +952,20 @@ impl ConfigFile for MiseToml {
                     opts_context.insert("version", "{{ version }}");
                     // The http backend re-renders its url/checksum_url per target
                     // platform (host at install, any target during `mise lock`), so
-                    // its options defer os()/arch() instead of resolving them now.
-                    // Every other backend consumes option values verbatim, so it
-                    // keeps host resolution at config load.
+                    // only those two options defer os()/arch() instead of resolving
+                    // them now. Every other option (here and for other backends) is
+                    // consumed verbatim, so it keeps host resolution at config load —
+                    // deferring it would leak raw `{{ os() }}` fragments into
+                    // consumers that never render again (e.g. checksum_expr).
                     let defer_os_arch = matches!(
                         ba.backend_type(),
                         crate::backend::backend_type::BackendType::Http
                     );
-                    for v in options.opts.values_mut() {
+                    for (k, v) in options.opts.iter_mut() {
                         if let toml::Value::String(s) = v {
-                            *s = if defer_os_arch {
+                            let defer = defer_os_arch
+                                && matches!(k.as_str(), "url" | "checksum_url");
+                            *s = if defer {
                                 self.parse_tool_option_template(&opts_context, s)?
                             } else {
                                 self.parse_template_with_context(&opts_context, s)?
