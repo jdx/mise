@@ -1057,6 +1057,18 @@ static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
         .map(|s| s.to_string())
         .collect()
 });
+static TOML_CONFIG_MATCHERS: Lazy<Vec<globset::GlobMatcher>> = Lazy::new(|| {
+    TOML_CONFIG_FILENAMES
+        .iter()
+        .filter_map(|pattern| {
+            globset::GlobBuilder::new(pattern)
+                .literal_separator(true)
+                .build()
+                .ok()
+                .map(|glob| glob.compile_matcher())
+        })
+        .collect()
+});
 pub static ALL_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
     load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
         .into_iter()
@@ -2500,7 +2512,10 @@ async fn load_tasks_includes(
         let is_toml = |p: &Path| p.extension().map(|e| e == "toml").unwrap_or(false);
         let (toml_files, exec_files): (Vec<_>, Vec<_>) = all_files
             .into_iter()
-            .filter(|p| is_toml(p) || file::is_executable(p))
+            .filter(|p| match is_toml(p) {
+                true => !is_mise_config_file_in_task_include(root, p),
+                false => file::is_executable(p),
+            })
             .partition(|p| is_toml(p));
         let mut tasks = vec![];
         for path in toml_files {
@@ -2534,6 +2549,16 @@ async fn load_tasks_includes(
     } else {
         Ok(vec![])
     }
+}
+
+fn is_mise_config_file_in_task_include(root: &Path, path: &Path) -> bool {
+    let Ok(relative_path) = path.strip_prefix(root) else {
+        return false;
+    };
+    let relative_path = relative_path.to_string_lossy().replace('\\', "/");
+    TOML_CONFIG_MATCHERS
+        .iter()
+        .any(|matcher| matcher.is_match(&relative_path))
 }
 
 async fn resolve_git_url_to_path(git_url: &str) -> Result<PathBuf> {
