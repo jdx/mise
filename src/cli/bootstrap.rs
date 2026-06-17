@@ -414,7 +414,8 @@ impl Bootstrap {
             let tasks = config.tasks().await?;
             if tasks.iter().any(|(_, t)| t.is_match("bootstrap")) {
                 info!("bootstrap: running `bootstrap` task");
-                self.run_task("bootstrap").await?;
+                self.run_task("bootstrap", skip.contains(&BootstrapPart::Tools))
+                    .await?;
             } else {
                 debug!("bootstrap: no `bootstrap` task defined, skipping");
             }
@@ -461,7 +462,7 @@ impl Bootstrap {
         Ok(system::hooks_from_config_files(&config_files))
     }
 
-    async fn run_task(&self, task: &str) -> Result<()> {
+    async fn run_task(&self, task: &str, skip_tools: bool) -> Result<()> {
         run::Run {
             task: task.into(),
             args: vec![],
@@ -488,8 +489,9 @@ impl Bootstrap {
             timeout: None,
             skip_deps: false,
             // a dry run must not auto-install tools before the (not actually
-            // run) task
-            skip_tools: self.dry_run,
+            // run) task, and --skip tools must keep the task runner from
+            // installing them implicitly before bootstrap tasks
+            skip_tools: self.dry_run || skip_tools,
             no_deps: false,
             fresh_env: false,
             deny_all: false,
