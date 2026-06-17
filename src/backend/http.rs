@@ -807,9 +807,10 @@ impl HttpBackend {
         let checksum_url = template_string_for_target(&checksum_url_template, tv, target);
 
         // 2a. Manifest with an extraction expression. The algorithm isn't in the
-        // file name here, so it comes from `checksum_algo` (default sha256).
+        // file name here, so it comes from `checksum_algo` (default sha256). The
+        // manifest is the same across platforms, so use the cached fetch.
         if let Some(expr) = opts.checksum_expr() {
-            let body = match HTTP.get_text(&checksum_url).await {
+            let body = match HTTP.get_text_cached(&checksum_url).await {
                 Ok(body) => body,
                 Err(e) => {
                     debug!("failed to fetch checksum manifest {checksum_url}: {e}");
