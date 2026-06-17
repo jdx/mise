@@ -24,7 +24,7 @@ Package managers (apt, dnf, brew, pacman, etc.) update mise when you update syst
 ::: tip Keep mise up to date
 mise connects to many external registries and backends, such as aqua, GitHub releases, language package registries, and system package managers. Those services change over time, so mise works best when the CLI is kept on a recent version.
 
-Projects and organizations should generally set a [`min_version`](/configuration.html#minimum-mise-version) when they need a newer mise feature instead of locking every user to a specific mise executable. While there are ways to pin or bootstrap a particular mise version, most users should be allowed to float onto the latest version. Pinning mise back can hide deprecation messages and cause bit rot with upstream integrations like aqua-registry. Breaking changes are avoided unless they go through a long deprecation process, so staying current should usually be low risk.
+Projects and organizations should generally set a [`min_version`](/configuration.html#minimum-mise-version) when they need a newer mise feature instead of locking every user to a specific mise executable. While there are ways to pin or bootstrap a particular mise version, most users should be allowed to float onto the latest version. Pinning mise back is like pinning an apt or Homebrew repository in time: it can hide deprecation messages and cause bit rot with upstream integrations like aqua-registry. Breaking changes are avoided unless they go through a long deprecation process, so staying current should usually be low risk.
 :::
 
 ### <https://mise.run>
