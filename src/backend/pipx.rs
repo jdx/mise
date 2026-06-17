@@ -552,6 +552,11 @@ impl PIPXBackend {
         cmd.with_pr(pr)
             .envs(ts.env_with_path_without_tools(config).await?)
             .envs(tv.install_env())
+            // pipx 1.12+ auto-selects the uv backend when uv is on PATH (pypa/pipx#1806).
+            // mise already installs via `uv tool install` when uv is available; the pipx
+            // fallback passes pip-only `--pip-args` (e.g. `--uploaded-prior-to` for
+            // minimum_release_age) which uv rejects — see jdx/mise#10484.
+            .env("PIPX_DEFAULT_BACKEND", "pip")
             .env("PIP_INDEX_URL", Self::get_index_url()?)
             .env_remove("PIPX_SHARED_LIBS")
             .env("PIPX_HOME", tv.install_path())
