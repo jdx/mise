@@ -199,9 +199,24 @@ the literal key `"version"`.
 
 ### `checksum_algo`
 
-Algorithm for a **manifest** checksum (`checksum_expr`) when it returns a bare
-hash, since the algorithm isn't in a file name there. Defaults to `sha256`.
-Individual and SHASUMS checksum files detect the algorithm from their file name instead.
+Applies **only to the manifest path** (`checksum_expr`), and only when the
+expression returns a **bare hash** — there's no file name to infer the algorithm
+from, so this supplies it. Defaults to `sha256`.
+
+It is **not** consulted for:
+
+- **individual checksum files** and **SHASUMS** lists — the algorithm is detected
+  from the checksum file's name (`*.sha512`, `SHA512SUMS`, `*.md5`, `*.b3`,
+  else `sha256`);
+- a `checksum_expr` that returns an `algo:hash` string or a `{ algo, checksum }`
+  map — those carry their own algorithm.
+
+```toml
+# manifest of bare sha512 hashes with no algorithm in the file or the value
+checksum_url  = "https://example.com/versions.json"
+checksum_expr = 'filter(fromJSON(body).files, { #.url == url })[0].hash'
+checksum_algo = "sha512"
+```
 
 ### `size`
 
