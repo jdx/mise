@@ -279,7 +279,7 @@ min_version = { hard = '2024.11.1', soft = '2024.9.0' }
 
 When a soft minimum is not met, mise will print a warning and (if available) show self-update instructions. When a hard minimum is not met, mise errors and shows self-update instructions.
 
-Use `min_version` to communicate the oldest mise version your project supports. In general, users should keep mise up to date because mise integrates with external registries and backends that change over time. Projects and organizations should prefer a minimum version requirement over locking users to a specific mise executable, allowing them to float onto newer mise releases. Pinning users back is like pinning an apt or Homebrew repository in time: it can hide deprecation warnings and let upstream integrations drift out of date.
+Use `min_version` to communicate the oldest mise version your project supports. In general, users should keep mise up to date because mise integrates with external registries and backends that change over time. Projects and organizations should prefer a minimum version requirement over locking users to a specific mise executable; locking users to one mise version is generally discouraged. Pinning users back is like pinning an apt or Homebrew repository in time: it can hide deprecation warnings and let upstream integrations drift out of date.
 
 ### Monorepo root
 
