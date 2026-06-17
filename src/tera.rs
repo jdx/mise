@@ -424,6 +424,9 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
 pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> Tera {
     let mut tera = get_tera(dir);
 
+    // os_family() must follow the target too, not the host.
+    let family = if os == "windows" { "windows" } else { "unix" };
+
     let os = os.to_string();
     tera.register_function(
         "os",
@@ -443,6 +446,13 @@ pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> Tera {
                 return Ok(Value::String(remapped.to_string()));
             }
             Ok(Value::String(arch.clone()))
+        },
+    );
+
+    tera.register_function(
+        "os_family",
+        move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
+            Ok(Value::String(family.to_string()))
         },
     );
 
@@ -1025,5 +1035,29 @@ mod tests {
             render_for_target(r#"{{arch(x64="amd64")}}"#, "linux", "arm64"),
             "arm64"
         );
+    }
+
+    #[tokio::test]
+    async fn test_os_family_for_target() {
+        let _config = Config::get().await.unwrap();
+        // os_family() follows the target, not the host.
+        assert_eq!(render_for_target("{{os_family()}}", "windows", "x64"), "windows");
+        assert_eq!(render_for_target("{{os_family()}}", "linux", "x64"), "unix");
+        assert_eq!(render_for_target("{{os_family()}}", "macos", "arm64"), "unix");
+    }
+
+    #[tokio::test]
+    async fn test_preserving_os_arch_round_trips_through_target() {
+        let _config = Config::get().await.unwrap();
+        // A deferred os(...) remap survives config-load preservation and then
+        // re-renders correctly for a target platform.
+        let mut ctx = BASE_CONTEXT.clone();
+        ctx.insert("cwd", "/");
+        let mut deferred = get_tera_preserving_os_arch(None);
+        let preserved =
+            render_str(&mut deferred, r#"{{ os(macos="darwin") }}"#, &ctx).unwrap();
+        assert_eq!(preserved, r#"{{ os(macos="darwin") }}"#);
+        let mut tera = get_tera_for_target(None, "macos", "arm64");
+        assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "darwin");
     }
 }
