@@ -90,6 +90,15 @@ cat <<'EOF' >projects/colocated/tasks.toml
 run = 'echo "task from colocated toml"'
 EOF
 
+mkdir -p projects/colocated/nested
+cat <<'EOF' >projects/colocated/nested/mise.toml
+[task_config]
+includes = ["."]
+
+[tasks.nested-config-task]
+run = 'echo "task from nested config"'
+EOF
+
 cat <<'EOF' >projects/colocated/file-task
 #!/usr/bin/env bash
 echo "task from colocated file"
@@ -99,6 +108,8 @@ chmod +x projects/colocated/file-task
 assert_contains "mise tasks ls --all" "//projects/colocated:config-task"
 assert_contains "mise tasks ls --all" "//projects/colocated:toml-task"
 assert_contains "mise tasks ls --all" "//projects/colocated:file-task"
+assert_not_contains "mise tasks ls --all" "//projects/colocated:task_config"
+assert_not_contains "mise tasks ls --all" "//projects/colocated:nested-config-task"
 assert_contains "mise run '//projects/colocated:config-task'" "task from config"
 assert_contains "mise run '//projects/colocated:toml-task'" "task from colocated toml"
 assert_contains "mise run '//projects/colocated:file-task'" "task from colocated file"

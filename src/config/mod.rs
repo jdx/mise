@@ -1064,6 +1064,7 @@ static TOML_CONFIG_MATCHERS: Lazy<Vec<globset::GlobMatcher>> = Lazy::new(|| {
             globset::GlobBuilder::new(pattern)
                 .literal_separator(true)
                 .build()
+                .map_err(|e| warn!("failed to compile config glob pattern {pattern}: {e}"))
                 .ok()
                 .map(|glob| glob.compile_matcher())
         })
@@ -2556,9 +2557,12 @@ fn is_mise_config_file_in_task_include(root: &Path, path: &Path) -> bool {
         return false;
     };
     let relative_path = relative_path.to_string_lossy().replace('\\', "/");
-    TOML_CONFIG_MATCHERS
-        .iter()
-        .any(|matcher| matcher.is_match(&relative_path))
+    let file_name = path
+        .file_name()
+        .map(|file_name| file_name.to_string_lossy().replace('\\', "/"));
+    TOML_CONFIG_MATCHERS.iter().any(|matcher| {
+        matcher.is_match(&relative_path) || file_name.as_ref().is_some_and(|f| matcher.is_match(f))
+    })
 }
 
 async fn resolve_git_url_to_path(git_url: &str) -> Result<PathBuf> {
