@@ -3,10 +3,6 @@
 # Full loop: `mise lock` resolves a published checksum (SHASUMS) for the http
 # backend, and a subsequent install verifies the artifact against that locked
 # checksum. A tampered lock checksum must make the install fail.
-#
-# The artifact is a raw (non-archive) file so its bytes — and therefore its
-# sha256 — are deterministic, allowing the expected hashes to be hardcoded like
-# the test_http fixtures (rather than computed at runtime).
 
 export MISE_LOCKFILE=1
 
@@ -16,9 +12,7 @@ PLATFORM="$MISE_PLATFORM"
 SRV="$PWD/srv"
 mkdir -p "$SRV"
 
-# Exact artifact bytes and their precomputed sha256.
-#   printf '#!/bin/sh\necho mytool ok\n'  -> sha256 below
-#   printf 'mismatch'                     -> BAD_SHA below
+# sha256 of the artifact bytes; BAD_SHA is a non-matching hash.
 REAL_SHA="34a3c3a03073287eea9375cd9838e60a3b875715005eb2cc854a4461cf2c428d"
 BAD_SHA="5acbfff1b086e0f920c5857527976199018afe0cbf16e28d42c7eb9c683508e5"
 

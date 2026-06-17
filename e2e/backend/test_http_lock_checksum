@@ -8,8 +8,7 @@
 SRV="$PWD/srv"
 mkdir -p "$SRV"
 
-# Fixed artifact bytes with their precomputed sha256 (sha256 of the exact string
-# written below, no trailing newline). Hardcoded like the test_http fixtures.
+# sha256 of each artifact's bytes (the string written below).
 LINUX_SHA="ae26b73f6db848ed1ccb7c35ec59234cd74ecf9d344f422732058df5be2e6a01"      # "tool linux payload"
 MACOS_SHA="40a3a5cdad86d4833b06b463da7f294fae29b61298aeb729e4e9dbf5e45ba4af"      # "tool macos payload"
 SIDE_LINUX_SHA="dfd72aadf2a7710a3732da57429688d750c5693be73cde4d3e4d7cf15b941484" # "sidecar linux payload"
