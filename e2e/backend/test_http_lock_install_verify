@@ -55,6 +55,5 @@ mise install --locked
 assert_contains "mise x -- mytool" "mytool ok"
 
 # Tamper with the locked checksum: install must now fail on mismatch.
-sed -i.bak "s/${REAL_SHA}/${BAD_SHA}/" mise.lock
-rm -f mise.lock.bak
+sed "s/${REAL_SHA}/${BAD_SHA}/" mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
 assert_fail "mise install --locked -f"
