@@ -6,8 +6,8 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
     clean_binary_name, eval_checksum_expr, fetch_checksum_from_file, fetch_checksum_from_shasums,
-    get_filename_from_url, rename_executable_in_dir, template_string, template_string_for_target,
-    verify_artifact,
+    get_filename_from_url, rename_executable_in_dir, shasums_has_entries, template_string,
+    template_string_for_target, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::cli::args::BackendArg;
@@ -832,6 +832,18 @@ impl HttpBackend {
         // individual checksum file. The algorithm is detected from its name.
         if let Some(checksum) = fetch_checksum_from_shasums(&checksum_url, &filename).await {
             return Some(checksum);
+        }
+        // A SHASUMS list that has entries but none matching our artifact is a
+        // naming mismatch, not an individual checksum file. Falling back to the
+        // individual-file scan would return the first hash in the list — another
+        // platform's checksum — and silently lock it. Bail so the platform is
+        // reported unresolved instead.
+        if shasums_has_entries(&checksum_url).await {
+            debug!(
+                "checksum_url {checksum_url} is a SHASUMS list with no entry for {filename}; \
+                 not falling back to a first-hash scan"
+            );
+            return None;
         }
         let file_algo = crate::backend::asset_matcher::detect_checksum_algorithm(
             &get_filename_from_url(&checksum_url),

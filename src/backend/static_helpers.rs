@@ -50,6 +50,21 @@ pub async fn fetch_checksum_from_shasums(shasums_url: &str, filename: &str) -> O
     }
 }
 
+/// Returns `true` if the file at `shasums_url` parses as a SHASUMS-style list
+/// with at least one `<hash>  <filename>` entry (as opposed to a bare individual
+/// checksum file that has only a hash).
+///
+/// Used to decide whether a [`fetch_checksum_from_shasums`] miss means "this is
+/// an individual checksum file, scan it for the hash" or "this is a SHASUMS list
+/// that simply has no row for our artifact" — in which case falling back to a
+/// first-hash scan would silently pick another platform's checksum.
+pub async fn shasums_has_entries(shasums_url: &str) -> bool {
+    match HTTP.get_text_cached(shasums_url).await {
+        Ok(content) => !hash::parse_shasums(&content).is_empty(),
+        Err(_) => false,
+    }
+}
+
 /// Fetches a checksum from an individual checksum file (e.g., file.tar.gz.sha256).
 /// The checksum file should contain just the hash, optionally followed by filename.
 ///
