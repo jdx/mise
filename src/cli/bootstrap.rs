@@ -17,7 +17,7 @@ use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
 use crate::system::systemd::SystemdState;
 use crate::ui::table::MiseTable;
-use clap::Subcommand;
+use clap::{Subcommand, ValueEnum};
 
 /// [experimental] Set up a machine for the current config in one command
 ///
@@ -69,6 +69,25 @@ pub struct Bootstrap {
     /// Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
     #[clap(long)]
     update: bool,
+
+    /// Skip one or more bootstrap parts
+    ///
+    /// Can be passed multiple times or as a comma-separated list.
+    #[clap(long, value_enum, value_delimiter = ',')]
+    skip: Vec<BootstrapPart>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, ValueEnum)]
+enum BootstrapPart {
+    Packages,
+    Dotfiles,
+    Defaults,
+    Launchd,
+    Systemd,
+    User,
+    Tools,
+    Task,
+    FinalHook,
 }
 
 #[derive(Debug, Subcommand)]
@@ -250,121 +269,161 @@ impl Bootstrap {
         }
         let mut config = Config::get().await?;
         let mut hooks = system::hooks_from_config(&config);
+        let skip = self
+            .skip
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
 
-        self.run_hooks(&hooks, BootstrapHookPhase::PrePackages)
-            .await?;
-        let mgrs = system::packages_from_config(&config);
-        if mgrs.is_empty() {
-            debug!("bootstrap: no [bootstrap.packages] configured, skipping");
+        if skip.contains(&BootstrapPart::Packages) {
+            debug!("bootstrap: system packages skipped");
         } else {
-            info!("bootstrap: system packages");
-            let opts = DriverOpts {
-                manager: None,
-                explicit: false,
-                dry_run: self.dry_run,
-                update: self.update,
-                yes: self.yes,
-            };
-            driver::run(mgrs, Action::Install, &opts).await?;
+            self.run_hooks(&hooks, BootstrapHookPhase::PrePackages)
+                .await?;
+            let mgrs = system::packages_from_config(&config);
+            if mgrs.is_empty() {
+                debug!("bootstrap: no [bootstrap.packages] configured, skipping");
+            } else {
+                info!("bootstrap: system packages");
+                let opts = DriverOpts {
+                    manager: None,
+                    explicit: false,
+                    dry_run: self.dry_run,
+                    update: self.update,
+                    yes: self.yes,
+                };
+                driver::run(mgrs, Action::Install, &opts).await?;
+            }
+            self.run_hooks(&hooks, BootstrapHookPhase::PostPackages)
+                .await?;
         }
-        self.run_hooks(&hooks, BootstrapHookPhase::PostPackages)
-            .await?;
 
-        self.run_hooks(&hooks, BootstrapHookPhase::PreDotfiles)
-            .await?;
-        let files = system::files::files_from_config(&config);
-        if files.is_empty() {
-            debug!("bootstrap: no whole-file [dotfiles] entries configured, skipping");
+        if skip.contains(&BootstrapPart::Dotfiles) {
+            debug!("bootstrap: dotfiles skipped");
         } else {
-            info!("bootstrap: dotfiles");
-            let opts = system::files::ApplyOpts {
-                dry_run: self.dry_run,
-                verbose: false,
-                force: self.force_dotfiles,
-                force_hint: "use --force-dotfiles or run `mise dotfiles apply --force`",
-                yes: self.yes,
-            };
-            system::files::apply(&config, &files, &opts)?;
+            self.run_hooks(&hooks, BootstrapHookPhase::PreDotfiles)
+                .await?;
+            let files = system::files::files_from_config(&config);
+            if files.is_empty() {
+                debug!("bootstrap: no whole-file [dotfiles] entries configured, skipping");
+            } else {
+                info!("bootstrap: dotfiles");
+                let opts = system::files::ApplyOpts {
+                    dry_run: self.dry_run,
+                    verbose: false,
+                    force: self.force_dotfiles,
+                    force_hint: "use --force-dotfiles or run `mise dotfiles apply --force`",
+                    yes: self.yes,
+                };
+                system::files::apply(&config, &files, &opts)?;
+            }
+
+            let edits = system::edits::edits_from_config(&config);
+            if edits.is_empty() {
+                debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
+            } else {
+                info!("bootstrap: dotfile edits");
+                let opts = system::edits::ApplyOpts {
+                    dry_run: self.dry_run,
+                    verbose: false,
+                    yes: self.yes,
+                };
+                system::edits::apply(&config, &edits, &opts)?;
+            }
+            if self.dry_run {
+                hooks = self.hooks_after_dotfiles_dry_run(&config, &files)?;
+            } else {
+                config = Config::reset().await?;
+                hooks = system::hooks_from_config(&config);
+            }
+            self.run_hooks(&hooks, BootstrapHookPhase::PostDotfiles)
+                .await?;
         }
 
-        let edits = system::edits::edits_from_config(&config);
-        if edits.is_empty() {
-            debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
+        if skip.contains(&BootstrapPart::Defaults) {
+            debug!("bootstrap: system defaults skipped");
         } else {
-            info!("bootstrap: dotfile edits");
-            let opts = system::edits::ApplyOpts {
-                dry_run: self.dry_run,
-                verbose: false,
-                yes: self.yes,
-            };
-            system::edits::apply(&config, &edits, &opts)?;
+            self.run_hooks(&hooks, BootstrapHookPhase::PreDefaults)
+                .await?;
+            let defaults = system::defaults_from_config(&config);
+            if defaults.is_empty() {
+                debug!("bootstrap: no [bootstrap.macos.defaults] configured, skipping");
+            } else {
+                info!("bootstrap: system defaults");
+                install::apply_defaults(defaults, self.dry_run, self.yes).await?;
+            }
+            self.run_hooks(&hooks, BootstrapHookPhase::PostDefaults)
+                .await?;
         }
-        if self.dry_run {
-            hooks = self.hooks_after_dotfiles_dry_run(&config, &files)?;
+
+        if skip.contains(&BootstrapPart::Launchd) {
+            debug!("bootstrap: launchd agents skipped");
         } else {
-            config = Config::reset().await?;
-            hooks = system::hooks_from_config(&config);
+            let agents = system::launchd_from_config(&config);
+            if agents.is_empty() {
+                debug!("bootstrap: no [bootstrap.macos.launchd.agents] configured, skipping");
+            } else {
+                info!("bootstrap: launchd agents");
+                install::apply_launchd(agents, self.dry_run, self.yes).await?;
+            }
         }
-        self.run_hooks(&hooks, BootstrapHookPhase::PostDotfiles)
-            .await?;
 
-        self.run_hooks(&hooks, BootstrapHookPhase::PreDefaults)
-            .await?;
-        let defaults = system::defaults_from_config(&config);
-        if defaults.is_empty() {
-            debug!("bootstrap: no [bootstrap.macos.defaults] configured, skipping");
+        if skip.contains(&BootstrapPart::Systemd) {
+            debug!("bootstrap: systemd user services skipped");
         } else {
-            info!("bootstrap: system defaults");
-            install::apply_defaults(defaults, self.dry_run, self.yes).await?;
+            let units = system::systemd_from_config(&config);
+            if units.is_empty() {
+                debug!("bootstrap: no [bootstrap.linux.systemd.units] configured, skipping");
+            } else {
+                info!("bootstrap: systemd user services");
+                install::apply_systemd(units, self.dry_run, self.yes).await?;
+            }
         }
-        self.run_hooks(&hooks, BootstrapHookPhase::PostDefaults)
-            .await?;
 
-        let agents = system::launchd_from_config(&config);
-        if agents.is_empty() {
-            debug!("bootstrap: no [bootstrap.macos.launchd.agents] configured, skipping");
+        if skip.contains(&BootstrapPart::User) {
+            debug!("bootstrap: login shell skipped");
         } else {
-            info!("bootstrap: launchd agents");
-            install::apply_launchd(agents, self.dry_run, self.yes).await?;
+            self.run_hooks(&hooks, BootstrapHookPhase::PreUser).await?;
+            let login_shell = system::login_shell_from_config(&config);
+            if login_shell.is_none() {
+                debug!("bootstrap: no [bootstrap.user].login_shell configured, skipping");
+            } else {
+                info!("bootstrap: login shell");
+                install::apply_login_shell(login_shell, self.dry_run, self.yes)?;
+            }
+            self.run_hooks(&hooks, BootstrapHookPhase::PostUser).await?;
         }
 
-        let units = system::systemd_from_config(&config);
-        if units.is_empty() {
-            debug!("bootstrap: no [bootstrap.linux.systemd.units] configured, skipping");
+        if skip.contains(&BootstrapPart::Tools) {
+            debug!("bootstrap: tools skipped");
         } else {
-            info!("bootstrap: systemd user services");
-            install::apply_systemd(units, self.dry_run, self.yes).await?;
+            self.run_hooks(&hooks, BootstrapHookPhase::PreTools).await?;
+            info!("bootstrap: tools");
+            Install::new_bare(self.dry_run).run().await?;
+            if !self.dry_run {
+                config = Config::reset().await?;
+                hooks = system::hooks_from_config(&config);
+            }
+            self.run_hooks(&hooks, BootstrapHookPhase::PostTools)
+                .await?;
         }
 
-        self.run_hooks(&hooks, BootstrapHookPhase::PreUser).await?;
-
-        let login_shell = system::login_shell_from_config(&config);
-        if login_shell.is_none() {
-            debug!("bootstrap: no [bootstrap.user].login_shell configured, skipping");
+        if skip.contains(&BootstrapPart::Task) {
+            debug!("bootstrap: `bootstrap` task skipped");
         } else {
-            info!("bootstrap: login shell");
-            install::apply_login_shell(login_shell, self.dry_run, self.yes)?;
+            let tasks = config.tasks().await?;
+            if tasks.iter().any(|(_, t)| t.is_match("bootstrap")) {
+                info!("bootstrap: running `bootstrap` task");
+                self.run_task("bootstrap").await?;
+            } else {
+                debug!("bootstrap: no `bootstrap` task defined, skipping");
+            }
         }
-        self.run_hooks(&hooks, BootstrapHookPhase::PostUser).await?;
-
-        self.run_hooks(&hooks, BootstrapHookPhase::PreTools).await?;
-        info!("bootstrap: tools");
-        Install::new_bare(self.dry_run).run().await?;
-        if !self.dry_run {
-            config = Config::reset().await?;
-            hooks = system::hooks_from_config(&config);
-        }
-        self.run_hooks(&hooks, BootstrapHookPhase::PostTools)
-            .await?;
-
-        let tasks = config.tasks().await?;
-        if tasks.iter().any(|(_, t)| t.is_match("bootstrap")) {
-            info!("bootstrap: running `bootstrap` task");
-            self.run_task("bootstrap").await?;
+        if skip.contains(&BootstrapPart::FinalHook) {
+            debug!("bootstrap: final hook skipped");
         } else {
-            debug!("bootstrap: no `bootstrap` task defined, skipping");
+            self.run_hooks(&hooks, BootstrapHookPhase::Final).await?;
         }
-        self.run_hooks(&hooks, BootstrapHookPhase::Final).await?;
         Ok(())
     }
 
