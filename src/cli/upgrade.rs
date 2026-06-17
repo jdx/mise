@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, config_file};
+use crate::errors::split_install_result;
 use crate::file::display_path;
 use crate::install_before::resolve_cli_minimum_release_age;
 use crate::semver::split_version_prefix;
@@ -294,16 +295,7 @@ impl Upgrade {
 
         // Install all tools in parallel
         let (mut successful_versions, install_error) =
-            match ts.install_all_versions(config, tool_requests, &opts).await {
-                Ok(versions) => (versions, eyre::Result::Ok(())),
-                Err(e) => match e.downcast_ref::<crate::errors::Error>() {
-                    Some(crate::errors::Error::InstallFailed {
-                        successful_installations,
-                        ..
-                    }) => (successful_installations.clone(), eyre::Result::Err(e)),
-                    _ => (vec![], eyre::Result::Err(e)),
-                },
-            };
+            split_install_result(ts.install_all_versions(config, tool_requests, &opts).await);
 
         // Only update config files for tools that were successfully installed
         for (o, cf) in config_file_updates {

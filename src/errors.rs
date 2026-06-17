@@ -87,6 +87,25 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
     output.join("\n")
 }
 
+/// Split an install result into successful versions and a result preserving any error.
+pub fn split_install_result(
+    result: Result<Vec<ToolVersion>, Report>,
+) -> (Vec<ToolVersion>, Result<(), Report>) {
+    match result {
+        Ok(versions) => (versions, Ok(())),
+        Err(err) => {
+            let versions = match err.downcast_ref::<Error>() {
+                Some(Error::InstallFailed {
+                    successful_installations,
+                    ..
+                }) => successful_installations.clone(),
+                _ => vec![],
+            };
+            (versions, Err(err))
+        }
+    }
+}
+
 impl Error {
     pub fn get_exit_status(err: &Report) -> Option<i32> {
         if let Some(Error::ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
