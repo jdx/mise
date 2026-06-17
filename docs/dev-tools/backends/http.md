@@ -166,10 +166,17 @@ checksum_url = 'https://example.com/{{ version }}/other_{{ version }}_SHASUMS'
 
 When the checksum lives in a manifest (rather than a plain checksum file), use
 `checksum_expr` to extract it. The manifest body fetched from `checksum_url` is
-evaluated with [expr-lang](https://expr-lang.org) and must return the hash
-string (bare or `sha256:<hash>`). The following variables are available:
-`body` (the raw manifest), `version`, `os`, `arch`, `url` (the resolved artifact
-URL for the target), and `filename`.
+evaluated with [expr-lang](https://expr-lang.org). The following variables are
+available: `body` (the raw manifest), `version`, `os`, `arch`, `url` (the
+resolved artifact URL for the target), and `filename`.
+
+The expression may return either:
+
+- a **string** — a bare hash (prefixed with `checksum_algo`) or an already
+  qualified `sha256:<hash>`; or
+- a **map** with `checksum` (and optional `algo`) fields, e.g.
+  `{ algo: "sha512", checksum: "..." }` — useful when the algorithm varies by
+  version or platform within the manifest.
 
 ```toml
 [tools."http:my-tool"]
