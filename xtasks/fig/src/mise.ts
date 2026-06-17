@@ -1115,6 +1115,25 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--skip",
+          description: "Skip one or more bootstrap parts",
+          isRepeatable: true,
+          args: {
+            name: "skip",
+            suggestions: [
+              "packages",
+              "dotfiles",
+              "defaults",
+              "launchd",
+              "systemd",
+              "user",
+              "tools",
+              "task",
+              "final-hook",
+            ],
+          },
+        },
+        {
           name: "--update",
           description:
             "Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)",
