@@ -9,6 +9,14 @@ BAR = "$FOO-world"
 EOF
 MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep BAR" "export BAR=hello-world"
 
+# Test $$ escapes a literal $
+cat <<'EOF' >mise.toml
+[env]
+SOME_VAR = "$$x"
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash 2>&1" "export SOME_VAR='\$x'"
+MISE_ENV_SHELL_EXPAND=true assert_not_contains "mise env -s bash 2>&1" "env var 'x' is not defined"
+
 # Test ${VAR} brace syntax
 cat <<'EOF' >mise.toml
 [env]
