@@ -75,8 +75,12 @@ pub async fn shasums_has_entries(shasums_url: &str) -> bool {
 /// # Returns
 /// * `Some("<algo>:<hash>")` if found
 /// * `None` if the checksum file couldn't be fetched
+///
+/// Uses the in-process cache so that resolving an individual checksum file
+/// doesn't re-fetch the same URL already probed by [`fetch_checksum_from_shasums`]
+/// / [`shasums_has_entries`] for that platform.
 pub async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
-    match HTTP.get_text(checksum_url).await {
+    match HTTP.get_text_cached(checksum_url).await {
         Ok(content) => parse_checksum_file_content(&content, algo),
         Err(e) => {
             debug!("Failed to fetch checksum from {}: {e}", checksum_url);
