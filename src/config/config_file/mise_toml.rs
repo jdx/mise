@@ -950,9 +950,22 @@ impl ConfigFile for MiseToml {
                     // This preserves {{ version }} in the output for install-time rendering
                     let mut opts_context = context.clone();
                     opts_context.insert("version", "{{ version }}");
+                    // The http backend re-renders its url/checksum_url per target
+                    // platform (host at install, any target during `mise lock`), so
+                    // its options defer os()/arch() instead of resolving them now.
+                    // Every other backend consumes option values verbatim, so it
+                    // keeps host resolution at config load.
+                    let defer_os_arch = matches!(
+                        ba.backend_type(),
+                        crate::backend::backend_type::BackendType::Http
+                    );
                     for v in options.opts.values_mut() {
                         if let toml::Value::String(s) = v {
-                            *s = self.parse_tool_option_template(&opts_context, s)?;
+                            *s = if defer_os_arch {
+                                self.parse_tool_option_template(&opts_context, s)?
+                            } else {
+                                self.parse_template_with_context(&opts_context, s)?
+                            };
                         }
                     }
                     let mut ba = ba.clone();
