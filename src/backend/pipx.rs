@@ -329,11 +329,6 @@ impl Backend for PIPXBackend {
                 ctx.pr.as_ref(),
             )
             .await?;
-            // pipx 1.12+ auto-selects the uv backend when uv is on PATH; uv does not
-            // support `--uploaded-prior-to` in `--pip-args`.
-            if ctx.before_date.is_some() {
-                cmd = cmd.env("PIPX_DEFAULT_BACKEND", "pip");
-            }
             cmd = cmd.args(Self::pip_uploaded_prior_to_args(ctx.before_date));
             if let Some(args) = options.pipx_args() {
                 cmd = cmd.args(shell_words::split(args)?);
