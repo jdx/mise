@@ -102,11 +102,14 @@ impl FlutterPlugin {
             .releases
             .iter()
             .filter(|r| r.version == version)
-            // macOS publishes both x64 and arm64 archives for a version; match
-            // arch when present. Other platforms expose a single archive.
+            // macOS publishes both x64 and arm64 archives with an explicit
+            // `dart_sdk_arch`. Linux omits the field on its (x64-only) archives
+            // and publishes no arm64 build, so treat a missing field as x64
+            // rather than "any arch" — otherwise an arm64 Linux host would be
+            // handed an x64 archive it can't run instead of a clean error.
             .find(|r| match &r.dart_sdk_arch {
                 Some(a) => a == arch,
-                None => true,
+                None => arch == "x64",
             })
     }
 
@@ -132,10 +135,14 @@ impl FlutterPlugin {
         HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
             .await?;
 
-        if let Some(expected) = &release.sha256 {
-            ctx.pr.set_message(format!("verify {filename}"));
-            hash::ensure_checksum(&tarball_path, expected, Some(ctx.pr.as_ref()), "sha256")?;
-        }
+        // Every official stable archive ships a sha256 in the releases JSON, so
+        // a missing checksum means something is wrong upstream — fail closed
+        // rather than install an unverified archive.
+        let expected = release.sha256.as_deref().ok_or_else(|| {
+            eyre!("missing sha256 for Flutter archive '{}'", release.archive)
+        })?;
+        ctx.pr.set_message(format!("verify {filename}"));
+        hash::ensure_checksum(&tarball_path, expected, Some(ctx.pr.as_ref()), "sha256")?;
 
         ctx.pr.set_message(format!("extract {filename}"));
         // Flutter archives contain a single top-level `flutter/` directory:
