@@ -963,8 +963,8 @@ impl ConfigFile for MiseToml {
                     );
                     for (k, v) in options.opts.iter_mut() {
                         if let toml::Value::String(s) = v {
-                            let defer = defer_os_arch
-                                && matches!(k.as_str(), "url" | "checksum_url");
+                            let defer =
+                                defer_os_arch && matches!(k.as_str(), "url" | "checksum_url");
                             *s = if defer {
                                 self.parse_tool_option_template(&opts_context, s)?
                             } else {
