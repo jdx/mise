@@ -134,7 +134,7 @@ resolves checksums for every target platform — including platforms other than
 the one you are running on — **without downloading the artifacts**. This lets a
 single machine produce a complete, cross-platform lockfile.
 
-`checksum_url` is a template (supports `{{ version }}`, `{{ os() }}`, `{{ arch() }}`
+`checksum_url` is a template (supports <code v-pre>{{ version }}</code>, <code v-pre>{{ os() }}</code>, <code v-pre>{{ arch() }}</code>
 and is platform-specific via `platforms.<key>.checksum_url`). It may point at any
 of:
 
