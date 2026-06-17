@@ -1176,6 +1176,28 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
     }
 
     #[test]
+    fn test_eval_checksum_expr_julia_shaped_version_keyed_manifest() {
+        // julia versions.json shape: top-level keyed by version, files[] with url+sha256.
+        let body = format!(
+            r#"{{"1.10.0":{{"files":[
+                {{"url":"https://x/julia-1.10.0-linux-x86_64.tar.gz","sha256":"{SHA256_LOWER}"}},
+                {{"url":"https://x/julia-1.10.0-macaarch64.tar.gz","sha256":"{SHA256_UPPER}"}}
+            ]}}}}"#
+        );
+        // expr-lang treats a bare identifier in `[]` as a literal key, so a
+        // runtime version must be forced to evaluate via `version + ""`.
+        let expr = r#"filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256"#;
+        let vars = [
+            ("version", "1.10.0"),
+            ("url", "https://x/julia-1.10.0-linux-x86_64.tar.gz"),
+        ];
+        assert_eq!(
+            eval_checksum_expr(expr, &body, &vars, "sha256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
     fn test_eval_checksum_expr_returns_none_on_no_match() {
         let body = r#"{"files":[]}"#;
         let expr = r#"len(fromJSON(body).files) > 0 ? fromJSON(body).files[0].sha256 : """#;

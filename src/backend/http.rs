@@ -1140,6 +1140,23 @@ mod tests {
     }
 
     #[test]
+    fn template_string_for_target_renders_target_os_arch() {
+        let tv = http_test_tv("0.40.0");
+        let template =
+            r#"sentinel_{{ version }}_{{ os(macos="darwin") }}_{{ arch(x64="amd64") }}.zip"#;
+        let linux = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        assert_eq!(
+            template_string_for_target(template, &tv, &linux),
+            "sentinel_0.40.0_linux_amd64.zip"
+        );
+        let win = PlatformTarget::new(crate::platform::Platform::parse("windows-x64").unwrap());
+        assert_eq!(
+            template_string_for_target(template, &tv, &win),
+            "sentinel_0.40.0_windows_amd64.zip"
+        );
+    }
+
+    #[test]
     fn install_symlink_path_uses_sanitized_version_pathname() {
         let version = "/outside-root/mise-http-version-out/selected-prefix";
         let tv = http_test_tv(version);
