@@ -20,7 +20,7 @@ use crate::github::{self, GithubRelease};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
-use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::lockfile::{InstallMethod, PlatformInfo, ProvenanceType};
 use crate::plugins::PluginSource;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
@@ -775,6 +775,10 @@ impl RubyPlugin {
 
         // Check lockfile provenance expectation before verification
         let platform_key = PlatformTarget::from_current().to_key();
+        tv.lock_platforms
+            .entry(platform_key.clone())
+            .or_default()
+            .install_method = Some(InstallMethod::Precompiled);
         let locked_provenance = tv
             .lock_platforms
             .get_mut(&platform_key)
@@ -1006,7 +1010,15 @@ impl Backend for RubyPlugin {
         }
 
         // Try precompiled if compile=false or experimental + not opted out
-        if self.should_try_precompiled()
+        let locked_install_method = if ctx.locked {
+            tv.lock_platforms
+                .get(&self.get_platform_key())
+                .and_then(|pi| pi.install_method)
+        } else {
+            None
+        };
+        if locked_install_method != Some(InstallMethod::Compile)
+            && self.should_try_precompiled()
             && let Some(installed_tv) = self.install_precompiled(ctx, &mut tv).await?
         {
             hint!(
@@ -1034,6 +1046,10 @@ impl Backend for RubyPlugin {
         self.install_cmd(&ctx.config, &tv, ctx.pr.as_ref())
             .await?
             .execute()?;
+        tv.lock_platforms
+            .entry(self.get_platform_key())
+            .or_default()
+            .install_method = Some(InstallMethod::Compile);
 
         self.install_rubygems_hook(&tv)?;
         if let Err(err) = self
@@ -1137,6 +1153,7 @@ impl Backend for RubyPlugin {
             // Detect provenance for precompiled binaries
             let provenance = self.detect_precompiled_provenance();
             return Ok(PlatformInfo {
+                install_method: Some(InstallMethod::Precompiled),
                 url: Some(url),
                 checksum,
                 provenance,
@@ -1147,6 +1164,7 @@ impl Backend for RubyPlugin {
         // Default: source tarball
         match self.get_ruby_download_info(&tv.version).await? {
             Some((url, checksum)) => Ok(PlatformInfo {
+                install_method: Some(InstallMethod::Compile),
                 url: Some(url),
                 checksum: Some(checksum),
                 size: None,
@@ -1154,7 +1172,10 @@ impl Backend for RubyPlugin {
                 conda_deps: None,
                 ..Default::default()
             }),
-            None => Ok(PlatformInfo::default()),
+            None => Ok(PlatformInfo {
+                install_method: Some(InstallMethod::Compile),
+                ..Default::default()
+            }),
         }
     }
 }
@@ -1402,6 +1423,7 @@ mod tests {
             info.url.as_deref(),
             Some("https://example.com/ruby-3.3.0-arm64_linux.tar.gz")
         );
+        assert_eq!(info.install_method, Some(InstallMethod::Precompiled));
     }
 
     #[test]

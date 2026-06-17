@@ -1,5 +1,5 @@
 use crate::github;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{InstallMethod, PlatformInfo};
 use eyre::Result;
 
 const RUBYINSTALLER_REPO: &str = "oneclick/rubyinstaller2";
@@ -44,6 +44,7 @@ pub async fn resolve_rubyinstaller_lock_info(version: &str) -> Result<PlatformIn
         && let Some(asset) = release.assets.iter().find(|a| a.name == asset_name)
     {
         return Ok(PlatformInfo {
+            install_method: Some(InstallMethod::Precompiled),
             url: Some(asset.browser_download_url.clone()),
             checksum: asset.digest.clone(),
             size: None,
@@ -55,6 +56,7 @@ pub async fn resolve_rubyinstaller_lock_info(version: &str) -> Result<PlatformIn
 
     // Fallback: construct URL without checksum
     Ok(PlatformInfo {
+        install_method: Some(InstallMethod::Precompiled),
         url: Some(rubyinstaller_url(version)),
         checksum: None,
         size: None,
