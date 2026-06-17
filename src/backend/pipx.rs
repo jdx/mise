@@ -293,6 +293,32 @@ impl Backend for PIPXBackend {
             }
             cmd.execute()?;
         } else {
+            // pipx forwards install `--pip-args` into shared-library bootstrap
+            // (`pip install --upgrade pip>=23.1`), not just the package install. When mise
+            // passes `--uploaded-prior-to`, bootstrap pip from ensurepip may not understand
+            // that flag (see pypa/pipx#544). Run upgrade-shared without release-age flags
+            // first so shared pip is valid; the subsequent install's shared_libs.create()
+            // then no-ops and `--uploaded-prior-to` applies only to the package install.
+            if ctx.before_date.is_some() {
+                ctx.pr.set_message("pipx upgrade-shared".to_string());
+                if let Err(err) = async {
+                    Self::pipx_cmd(
+                        &ctx.config,
+                        &["upgrade-shared"],
+                        self,
+                        &tv,
+                        &ctx.ts,
+                        ctx.pr.as_ref(),
+                    )
+                    .await?
+                    .execute()
+                }
+                .await
+                {
+                    debug!("failed to upgrade pipx shared libraries before install: {err:#}");
+                }
+            }
+
             ctx.pr.set_message(format!("pipx install {pipx_request}"));
             let mut cmd = Self::pipx_cmd(
                 &ctx.config,
