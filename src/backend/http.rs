@@ -910,8 +910,9 @@ impl Backend for HttpBackend {
 
     /// Resolve URL + published checksum for a target platform during `mise lock`,
     /// without downloading the artifact. Best-effort: a platform with no
-    /// resolvable URL is skipped (empty entry); a missing checksum yields a
-    /// url-only entry.
+    /// resolvable URL fails closed (`Err`) so the lock run reports it as skipped
+    /// rather than writing nothing under a success count; a missing checksum
+    /// yields a url-only entry.
     async fn resolve_lock_info(
         &self,
         tv: &ToolVersion,
@@ -920,13 +921,15 @@ impl Backend for HttpBackend {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
 
+        // Fail closed when the platform can't be resolved so the lock
+        // orchestration reports it as skipped, rather than returning an empty
+        // entry that is miscounted as a successful platform (see #7113).
         let Some(url) = self.lock_url_for_target(&opts, tv, target) else {
-            debug!(
-                "no URL for {} on {}; skipping lock entry",
+            return Err(eyre::eyre!(
+                "no URL configured for {} on {}; skipping",
                 self.ba.full(),
                 target.to_key()
-            );
-            return Ok(PlatformInfo::default());
+            ));
         };
 
         let checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
