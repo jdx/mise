@@ -471,6 +471,10 @@ pub fn get_tera_preserving_os_arch(dir: Option<&Path>) -> Tera {
     let mut tera = get_tera(dir);
     tera.register_function("os", reemit_template_fn("os"));
     tera.register_function("arch", reemit_template_fn("arch"));
+    // os_family() must be deferred too: it derives from the target OS, so
+    // resolving it against the host here would bake e.g. "unix" into a template
+    // that is later rendered for a windows target.
+    tera.register_function("os_family", reemit_template_fn("os_family"));
     tera
 }
 
@@ -1077,5 +1081,20 @@ mod tests {
         assert_eq!(preserved, r#"{{ os(macos="darwin") }}"#);
         let mut tera = get_tera_for_target(None, "macos", "arm64");
         assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "darwin");
+    }
+
+    #[tokio::test]
+    async fn test_preserving_os_family_round_trips_through_target() {
+        let _config = Config::get().await.unwrap();
+        // os_family() must be deferred at config-load time and resolve against
+        // the lock target, not the host — otherwise a windows target locked from
+        // a unix host would get "unix" baked in.
+        let mut ctx = BASE_CONTEXT.clone();
+        ctx.insert("cwd", "/");
+        let mut deferred = get_tera_preserving_os_arch(None);
+        let preserved = render_str(&mut deferred, r#"{{ os_family() }}"#, &ctx).unwrap();
+        assert_eq!(preserved, r#"{{ os_family() }}"#);
+        let mut tera = get_tera_for_target(None, "windows", "x64");
+        assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "windows");
     }
 }
