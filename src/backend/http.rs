@@ -827,7 +827,7 @@ impl HttpBackend {
 
         // 2b. Checksum file: SHASUMS (filename match) first, then single-hash sidecar.
         let filename = get_filename_from_url(url);
-        if let Some(checksum) = fetch_checksum_from_shasums(&checksum_url, &filename).await {
+        if let Some(checksum) = fetch_checksum_from_shasums(&checksum_url, &filename, &algo).await {
             return Some(checksum);
         }
         fetch_checksum_from_file(&checksum_url, &algo).await

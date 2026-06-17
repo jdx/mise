@@ -980,7 +980,7 @@ impl Backend for PythonPlugin {
         let shasums_url = format!(
             "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/SHA256SUMS"
         );
-        let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
+        let checksum = fetch_checksum_from_shasums(&shasums_url, &filename, "sha256").await;
 
         // Detect provenance for precompiled binaries
         let provenance = self.detect_precompiled_provenance();

@@ -26,15 +26,20 @@ static VERSION_PATTERN: LazyLock<regex::Regex> =
 /// # Arguments
 /// * `shasums_url` - URL to the SHASUMS256.txt file
 /// * `filename` - The filename to look up in the SHASUMS file
+/// * `algo` - The algorithm the SHASUMS file uses, used as the `<algo>:` prefix
 ///
 /// # Returns
-/// * `Some("sha256:<hash>")` if found
+/// * `Some("<algo>:<hash>")` if found
 /// * `None` if the SHASUMS file couldn't be fetched or filename not found
-pub async fn fetch_checksum_from_shasums(shasums_url: &str, filename: &str) -> Option<String> {
+pub async fn fetch_checksum_from_shasums(
+    shasums_url: &str,
+    filename: &str,
+    algo: &str,
+) -> Option<String> {
     match HTTP.get_text_cached(shasums_url).await {
         Ok(shasums_content) => {
             let shasums = hash::parse_shasums(&shasums_content);
-            shasums.get(filename).map(|h| format!("sha256:{h}"))
+            shasums.get(filename).map(|h| format!("{algo}:{h}"))
         }
         Err(e) => {
             debug!("Failed to fetch SHASUMS from {}: {e}", shasums_url);
