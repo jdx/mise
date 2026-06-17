@@ -805,6 +805,7 @@ impl HttpBackend {
         // 2. Fetch from a declared checksum source.
         let checksum_url_template = opts.checksum_url_for_target(target)?;
         let checksum_url = template_string_for_target(&checksum_url_template, tv, target);
+        let filename = get_filename_from_url(url);
 
         // 2a. Manifest with an extraction expression. The algorithm isn't in the
         // file name here, so it comes from `checksum_algo` (default sha256). The
@@ -817,7 +818,6 @@ impl HttpBackend {
                     return None;
                 }
             };
-            let filename = get_filename_from_url(url);
             let vars = [
                 ("version", tv.version.as_str()),
                 ("os", target.os_name()),
@@ -830,7 +830,6 @@ impl HttpBackend {
 
         // 2b. Checksum file: a SHASUMS list (filename match) first, then an
         // individual checksum file. The algorithm is detected from its name.
-        let filename = get_filename_from_url(url);
         if let Some(checksum) = fetch_checksum_from_shasums(&checksum_url, &filename).await {
             return Some(checksum);
         }
