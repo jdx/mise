@@ -8,9 +8,17 @@
 SRV="$PWD/srv"
 mkdir -p "$SRV"
 
-LINUX_SHA="1111111111111111111111111111111111111111111111111111111111111111"
-MACOS_SHA="2222222222222222222222222222222222222222222222222222222222222222"
-SIDECAR_SHA="3333333333333333333333333333333333333333333333333333333333333333"
+# Fixed artifact bytes with their precomputed sha256 (sha256 of the exact string
+# written below, no trailing newline). Hardcoded like the test_http fixtures.
+LINUX_SHA="ae26b73f6db848ed1ccb7c35ec59234cd74ecf9d344f422732058df5be2e6a01"      # "tool linux payload"
+MACOS_SHA="40a3a5cdad86d4833b06b463da7f294fae29b61298aeb729e4e9dbf5e45ba4af"      # "tool macos payload"
+SIDE_LINUX_SHA="dfd72aadf2a7710a3732da57429688d750c5693be73cde4d3e4d7cf15b941484" # "sidecar linux payload"
+SIDE_MACOS_SHA="385ac4b312c2d10c6df57f2f0407a0475de47f48d7d8385c76196f1c6e95058f" # "sidecar macos payload"
+
+printf '%s' "tool linux payload" >"$SRV/tool_1.0.0_linux.tar.gz"
+printf '%s' "tool macos payload" >"$SRV/tool_1.0.0_macos.tar.gz"
+printf '%s' "sidecar linux payload" >"$SRV/side_1.0.0_linux.tar.gz"
+printf '%s' "sidecar macos payload" >"$SRV/side_1.0.0_macos.tar.gz"
 
 # SHASUMS file listing both platform artifacts (HashiCorp/OpenShift style)
 cat >"$SRV/tool_1.0.0_SHASUMS" <<EOF
@@ -18,9 +26,9 @@ ${LINUX_SHA}  tool_1.0.0_linux.tar.gz
 ${MACOS_SHA}  tool_1.0.0_macos.tar.gz
 EOF
 
-# Single-checksum sidecar (neo4j/dart style): just the raw hash
-echo "$SIDECAR_SHA" >"$SRV/side_1.0.0_linux.tar.gz.sha256"
-echo "$SIDECAR_SHA" >"$SRV/side_1.0.0_macos.tar.gz.sha256"
+# Single-checksum sidecars (neo4j/dart style): just the raw hash per artifact
+echo "$SIDE_LINUX_SHA" >"$SRV/side_1.0.0_linux.tar.gz.sha256"
+echo "$SIDE_MACOS_SHA" >"$SRV/side_1.0.0_macos.tar.gz.sha256"
 
 # Start a static file server on an ephemeral port
 PORT_FILE="$TMPDIR/mise_lock_http_port"
@@ -63,6 +71,7 @@ assert_contains "cat mise.lock" "tool_1.0.0_linux.tar.gz"
 assert_contains "cat mise.lock" "tool_1.0.0_macos.tar.gz"
 
 # Sidecar form: raw-hash sidecar resolved per platform
-assert_contains "cat mise.lock" "sha256:${SIDECAR_SHA}"
+assert_contains "cat mise.lock" "sha256:${SIDE_LINUX_SHA}"
+assert_contains "cat mise.lock" "sha256:${SIDE_MACOS_SHA}"
 assert_contains "cat mise.lock" "side_1.0.0_linux.tar.gz"
 assert_contains "cat mise.lock" "side_1.0.0_macos.tar.gz"

@@ -3,6 +3,10 @@
 # Full loop: `mise lock` resolves a published checksum (SHASUMS) for the http
 # backend, and a subsequent install verifies the artifact against that locked
 # checksum. A tampered lock checksum must make the install fail.
+#
+# The artifact is a raw (non-archive) file so its bytes — and therefore its
+# sha256 — are deterministic, allowing the expected hashes to be hardcoded like
+# the test_http fixtures (rather than computed at runtime).
 
 export MISE_LOCKFILE=1
 
@@ -10,19 +14,16 @@ detect_platform
 PLATFORM="$MISE_PLATFORM"
 
 SRV="$PWD/srv"
-mkdir -p "$SRV/pkg/bin"
+mkdir -p "$SRV"
 
-# Build a real artifact: a tarball containing bin/mytool
-cat >"$SRV/pkg/bin/mytool" <<'EOF'
-#!/usr/bin/env bash
-echo "mytool ok"
-EOF
-chmod +x "$SRV/pkg/bin/mytool"
-tar -czf "$SRV/mytool-1.0.0.tar.gz" -C "$SRV/pkg" bin
+# Exact artifact bytes and their precomputed sha256.
+#   printf '#!/bin/sh\necho mytool ok\n'  -> sha256 below
+#   printf 'mismatch'                     -> BAD_SHA below
+REAL_SHA="34a3c3a03073287eea9375cd9838e60a3b875715005eb2cc854a4461cf2c428d"
+BAD_SHA="5acbfff1b086e0f920c5857527976199018afe0cbf16e28d42c7eb9c683508e5"
 
-# Publish a SHASUMS file with the artifact's real sha256 (computed with python)
-REAL_SHA=$(python3 -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "$SRV/mytool-1.0.0.tar.gz")
-echo "${REAL_SHA}  mytool-1.0.0.tar.gz" >"$SRV/mytool-1.0.0_SHASUMS"
+printf '#!/bin/sh\necho mytool ok\n' >"$SRV/mytool"
+printf '%s  mytool\n' "$REAL_SHA" >"$SRV/mytool_SHASUMS"
 
 # Serve the directory on an ephemeral port
 PORT_FILE="$TMPDIR/mise_lock_verify_port"
@@ -46,9 +47,9 @@ PORT=$(cat "$PORT_FILE")
 cat >mise.toml <<EOF
 [tools."http:mytool-lock-verify"]
 version = "1.0.0"
-url = "http://127.0.0.1:${PORT}/mytool-{{ version }}.tar.gz"
-checksum_url = "http://127.0.0.1:${PORT}/mytool-{{ version }}_SHASUMS"
-strip_components = "1"
+bin = "mytool"
+url = "http://127.0.0.1:${PORT}/mytool"
+checksum_url = "http://127.0.0.1:${PORT}/mytool_SHASUMS"
 EOF
 
 # Lock resolves the published checksum for the current platform.
@@ -60,7 +61,6 @@ mise install --locked
 assert_contains "mise x -- mytool" "mytool ok"
 
 # Tamper with the locked checksum: install must now fail on mismatch.
-BAD_SHA="0000000000000000000000000000000000000000000000000000000000000000"
 sed -i.bak "s/${REAL_SHA}/${BAD_SHA}/" mise.lock
 rm -f mise.lock.bak
 assert_fail "mise install --locked -f"
