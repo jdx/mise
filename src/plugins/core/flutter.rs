@@ -138,9 +138,10 @@ impl FlutterPlugin {
         // Every official stable archive ships a sha256 in the releases JSON, so
         // a missing checksum means something is wrong upstream — fail closed
         // rather than install an unverified archive.
-        let expected = release.sha256.as_deref().ok_or_else(|| {
-            eyre!("missing sha256 for Flutter archive '{}'", release.archive)
-        })?;
+        let expected = release
+            .sha256
+            .as_deref()
+            .ok_or_else(|| eyre!("missing sha256 for Flutter archive '{}'", release.archive))?;
         ctx.pr.set_message(format!("verify {filename}"));
         hash::ensure_checksum(&tarball_path, expected, Some(ctx.pr.as_ref()), "sha256")?;
 
