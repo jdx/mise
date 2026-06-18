@@ -20,7 +20,7 @@ assert_contains "cat mise.lock" 'url = "https://nodejs.org/dist/v24.16.0/node-v2
 assert_contains "cat mise.lock" 'checksum = "sha256:'
 assert_contains "cat mise.lock" '[tools.node."platforms.linux-riscv64"]'
 assert_not_contains "cat mise.lock" "node-v24.16.0-linux-riscv64.tar.gz"
-assert_not_contains "cat mise.lock" 'compile = "if_available"'
+assert_not_contains "cat mise.lock" "compile ="
 assert_not_contains "cat mise.lock" "install_method"
 
 echo "=== compile=true records source compile outcomes for both platforms ==="
