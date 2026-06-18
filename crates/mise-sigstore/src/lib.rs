@@ -19,15 +19,41 @@ use tokio::io::AsyncReadExt;
 const GITHUB_API_URL: &str = "https://api.github.com";
 const USER_AGENT_VALUE: &str = "mise-sigstore/0.1.0";
 
-/// Per-request timeout for attestation API calls. Without this the client would
-/// wait indefinitely on a stalled connection (reqwest has no default timeout).
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-/// Total attempts (1 initial + 3 retries) for transient attestation API failures.
-/// GitHub's attestations API intermittently returns 5xx (e.g. 504 Gateway
-/// Timeout) and 429 under load; a single attempt fails the whole install.
-const MAX_ATTEMPTS: usize = 4;
+/// Default per-request timeout for attestation API calls. Without this the
+/// client would wait indefinitely on a stalled connection (reqwest has no
+/// default timeout). Mirrors mise's `http_timeout` default; the embedding crate
+/// overrides it via [`RetryConfig`] to honor `MISE_HTTP_TIMEOUT`.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+/// Default number of retries on transient failures. GitHub's attestations API
+/// intermittently returns 5xx (e.g. 504 Gateway Timeout) and 429 under load; a
+/// single attempt fails the whole install. Mirrors mise's `http_retries`
+/// default; the embedding crate overrides it to honor `MISE_HTTP_RETRIES`.
+const DEFAULT_RETRIES: usize = 3;
 /// Default base backoff before the first retry. Doubles each attempt: ~0.5s / 1s / 2s.
 const DEFAULT_BACKOFF_BASE: Duration = Duration::from_millis(500);
+
+/// HTTP retry/timeout policy for the attestation client. Lets the embedding
+/// crate (mise) pass its `http_retries` / `http_timeout` settings through
+/// instead of the attestation path using a hardcoded policy of its own.
+#[derive(Debug, Clone)]
+pub struct RetryConfig {
+    /// Per-request timeout.
+    pub timeout: Duration,
+    /// Number of retries on transient failures (total attempts = `retries + 1`).
+    pub retries: usize,
+    /// Attempt-1 backoff; doubles each subsequent attempt, with equal jitter.
+    pub backoff_base: Duration,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            timeout: DEFAULT_TIMEOUT,
+            retries: DEFAULT_RETRIES,
+            backoff_base: DEFAULT_BACKOFF_BASE,
+        }
+    }
+}
 /// Upper bound on a server-supplied `Retry-After` wait, so a hostile or buggy
 /// header can't stall an install for minutes.
 const RETRY_AFTER_MAX: Duration = Duration::from_secs(60);
@@ -219,6 +245,7 @@ pub struct AttestationClient {
     client: reqwest::Client,
     base_url: String,
     github_token: Option<String>,
+    max_attempts: usize,
     backoff_base: Duration,
 }
 
@@ -226,6 +253,8 @@ pub struct AttestationClient {
 pub struct AttestationClientBuilder {
     base_url: Option<String>,
     github_token: Option<String>,
+    timeout: Option<Duration>,
+    retries: Option<usize>,
     backoff_base: Option<Duration>,
 }
 
@@ -240,6 +269,19 @@ impl AttestationClientBuilder {
         self
     }
 
+    /// Per-request timeout (defaults to [`DEFAULT_TIMEOUT`]).
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Number of retries on transient failures (defaults to [`DEFAULT_RETRIES`];
+    /// total attempts = `retries + 1`). Set to 0 to disable retries.
+    pub fn retries(mut self, retries: usize) -> Self {
+        self.retries = Some(retries);
+        self
+    }
+
     /// Override the attempt-1 retry backoff (defaults to [`DEFAULT_BACKOFF_BASE`]).
     /// Mainly an injection point for tests, which set it to zero so the suite
     /// doesn't pay real wall-clock backoff between retries.
@@ -248,18 +290,27 @@ impl AttestationClientBuilder {
         self
     }
 
+    /// Apply a full [`RetryConfig`] (timeout + retries + backoff) at once. Used
+    /// by the embedding crate to pass through mise's `http_*` settings.
+    pub fn retry_config(self, config: RetryConfig) -> Self {
+        self.timeout(config.timeout)
+            .retries(config.retries)
+            .backoff_base(config.backoff_base)
+    }
+
     pub fn build(self) -> Result<AttestationClient> {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_VALUE));
         let client = reqwest::Client::builder()
             .default_headers(headers)
-            .timeout(REQUEST_TIMEOUT)
+            .timeout(self.timeout.unwrap_or(DEFAULT_TIMEOUT))
             .build()?;
 
         Ok(AttestationClient {
             client,
             base_url: self.base_url.unwrap_or_else(|| GITHUB_API_URL.to_string()),
             github_token: self.github_token,
+            max_attempts: self.retries.unwrap_or(DEFAULT_RETRIES) + 1,
             backoff_base: self.backoff_base.unwrap_or(DEFAULT_BACKOFF_BASE),
         })
     }
@@ -349,7 +400,7 @@ impl AttestationClient {
                 .try_clone()
                 .expect("attestation requests must not have a streaming body");
             let result = req.send().await;
-            let last = attempt >= MAX_ATTEMPTS;
+            let last = attempt >= self.max_attempts;
             // Decide the retry delay (if any) while the response is still in hand
             // so we can read its `Retry-After` header before dropping it.
             let delay = match &result {
@@ -441,6 +492,7 @@ pub async fn verify_github_attestation(
     repo: &str,
     token: Option<&str>,
     signer_workflow: Option<&str>,
+    retry_config: RetryConfig,
 ) -> Result<bool> {
     verify_github_attestation_inner(
         artifact_path,
@@ -450,6 +502,7 @@ pub async fn verify_github_attestation(
         signer_workflow,
         None,
         None,
+        retry_config,
     )
     .await
 }
@@ -461,6 +514,7 @@ pub async fn verify_github_attestation_with_base_url(
     token: Option<&str>,
     signer_workflow: Option<&str>,
     base_url: &str,
+    retry_config: RetryConfig,
 ) -> Result<bool> {
     verify_github_attestation_inner(
         artifact_path,
@@ -470,10 +524,12 @@ pub async fn verify_github_attestation_with_base_url(
         signer_workflow,
         Some(base_url),
         None,
+        retry_config,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn verify_github_attestation_with_base_url_and_digest(
     artifact_path: &Path,
     owner: &str,
@@ -482,6 +538,7 @@ pub async fn verify_github_attestation_with_base_url_and_digest(
     signer_workflow: Option<&str>,
     base_url: &str,
     digest: &str,
+    retry_config: RetryConfig,
 ) -> Result<bool> {
     verify_github_attestation_inner(
         artifact_path,
@@ -491,6 +548,7 @@ pub async fn verify_github_attestation_with_base_url_and_digest(
         signer_workflow,
         Some(base_url),
         Some(digest),
+        retry_config,
     )
     .await
 }
@@ -509,6 +567,7 @@ pub async fn verify_github_attestation_with_attestations(
     verify_attestation_bundles(attestations, &artifact, signer_workflow, &mut trust_roots).await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn verify_github_attestation_inner(
     artifact_path: &Path,
     owner: &str,
@@ -517,8 +576,9 @@ async fn verify_github_attestation_inner(
     signer_workflow: Option<&str>,
     base_url: Option<&str>,
     digest: Option<&str>,
+    retry_config: RetryConfig,
 ) -> Result<bool> {
-    let mut builder = AttestationClient::builder();
+    let mut builder = AttestationClient::builder().retry_config(retry_config);
     if let Some(token) = token {
         builder = builder.github_token(token);
     }
@@ -1619,8 +1679,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fetch_attestations_surfaces_error_after_max_attempts() {
-        // Persistent 504 — exhaust MAX_ATTEMPTS then surface the API error.
+    async fn fetch_attestations_surfaces_error_after_exhausting_retries() {
+        // Persistent 504 — exhaust all attempts then surface the API error.
         let (base_url, hits) = flaky_server(vec![504, 504, 504, 504, 504], "");
         let client = test_client(&base_url);
         let err = client
@@ -1637,8 +1697,37 @@ mod tests {
         assert!(matches!(err, AttestationError::Api(_)), "got {err:?}");
         assert_eq!(
             hits.load(std::sync::atomic::Ordering::SeqCst),
-            MAX_ATTEMPTS,
-            "should stop after MAX_ATTEMPTS"
+            DEFAULT_RETRIES + 1,
+            "should stop after retries + 1 attempts"
+        );
+    }
+
+    #[tokio::test]
+    async fn retries_setting_controls_attempt_count() {
+        // retries(0) disables retries: a single 504 surfaces immediately.
+        let (base_url, hits) = flaky_server(vec![504, 504], "");
+        let client = AttestationClient::builder()
+            .base_url(&base_url)
+            .retries(0)
+            .backoff_base(Duration::ZERO)
+            .build()
+            .unwrap();
+        let err = client
+            .fetch_attestations(FetchParams {
+                owner: "EarthBuild".to_string(),
+                repo: Some("EarthBuild/earthbuild".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AttestationError::Api(_)), "got {err:?}");
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "retries(0) should make exactly one attempt"
         );
     }
 
