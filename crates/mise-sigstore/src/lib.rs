@@ -64,11 +64,32 @@ fn is_retryable_status(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
 
-/// Whether a transport-level error warrants a retry. Limited to timeouts and
-/// connection failures, which are transient; broader classes (TLS handshake,
-/// decode, builder errors) won't recover on retry so they surface immediately.
+/// Whether a transport-level error warrants a retry: timeouts, connection
+/// failures, and mid-stream body drops, which are all transient. Broader classes
+/// (TLS handshake, genuine decode errors, builder errors) won't recover on retry
+/// so they surface immediately. Matches the transient classification used by
+/// mise's main HTTP client and vfox.
 fn is_retryable_error(err: &reqwest::Error) -> bool {
-    err.is_timeout() || err.is_connect()
+    err.is_timeout() || err.is_connect() || err.is_body() || is_incomplete_body(err)
+}
+
+/// A buffered body read (`.bytes()`) of a truncated response surfaces as a
+/// `Decode` error wrapping an `io::ErrorKind::UnexpectedEof` (rather than the
+/// `is_body()` kind a streamed read would yield). Detect that specific case so a
+/// connection dropped mid-body is retried, without retrying genuine decode
+/// errors.
+fn is_incomplete_body(err: &reqwest::Error) -> bool {
+    use std::error::Error;
+    let mut source: Option<&(dyn Error + 'static)> = err.source();
+    while let Some(e) = source {
+        if let Some(io_err) = e.downcast_ref::<std::io::Error>()
+            && io_err.kind() == std::io::ErrorKind::UnexpectedEof
+        {
+            return true;
+        }
+        source = e.source();
+    }
+    false
 }
 
 /// Honor a `429`'s `Retry-After` header when present and expressed as
@@ -316,6 +337,15 @@ impl AttestationClientBuilder {
     }
 }
 
+/// A fully-read HTTP response. The body is buffered inside the retry loop so a
+/// transient failure mid-body-read is retried like a failed send, rather than
+/// surfacing after the retry boundary.
+struct HttpResponse {
+    status: reqwest::StatusCode,
+    headers: HeaderMap,
+    body: Vec<u8>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct FetchParams {
     pub owner: String,
@@ -387,39 +417,59 @@ impl AttestationClient {
             .map_err(|e| AttestationError::Api(format!("Invalid GitHub attestations URL: {e}")))
     }
 
-    /// Send a request, retrying transient failures (5xx, 429, timeouts,
-    /// connection errors) with exponential backoff. A `429`'s `Retry-After`
-    /// header is honored in preference to the computed backoff. The request must
-    /// have no streaming body so it can be cloned per attempt — true for all GET
-    /// calls here. Non-transient responses (incl. 4xx like 404) are returned
-    /// as-is for the caller to interpret.
-    async fn send_with_retry(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response> {
+    /// Send a request and read its body, retrying transient failures (5xx, 429,
+    /// timeouts, connection errors, and mid-body-read errors) with exponential
+    /// backoff. A `429`'s `Retry-After` header is honored in preference to the
+    /// computed backoff. The body is buffered here so a transient failure during
+    /// the body read is retried too, rather than escaping the retry boundary.
+    ///
+    /// The request must have no streaming body so it can be cloned per attempt —
+    /// true for all GET calls here. Non-transient responses (incl. 4xx like 404)
+    /// are returned as-is for the caller to interpret.
+    async fn send_with_retry(&self, request: reqwest::RequestBuilder) -> Result<HttpResponse> {
         let mut attempt = 1;
         loop {
             let req = request
                 .try_clone()
                 .expect("attestation requests must not have a streaming body");
-            let result = req.send().await;
             let last = attempt >= self.max_attempts;
-            // Decide the retry delay (if any) while the response is still in hand
-            // so we can read its `Retry-After` header before dropping it.
-            let delay = match &result {
-                Ok(response) if !last && is_retryable_status(response.status()) => Some(
-                    retry_after_delay(response.headers())
-                        .unwrap_or_else(|| backoff_delay(self.backoff_base, attempt)),
-                ),
-                Err(err) if !last && is_retryable_error(err) => {
-                    Some(backoff_delay(self.backoff_base, attempt))
+
+            // A labeled block so the `reqwest::Response` is dropped before the
+            // backoff sleep — holding it would pin its body/connection for the
+            // whole delay. Each attempt either returns, errors out, or breaks
+            // with the delay to wait before the next attempt.
+            let delay = 'attempt: {
+                match req.send().await {
+                    Ok(response) => {
+                        let status = response.status();
+                        if !last && is_retryable_status(status) {
+                            break 'attempt retry_after_delay(response.headers())
+                                .unwrap_or_else(|| backoff_delay(self.backoff_base, attempt));
+                        }
+                        let headers = response.headers().clone();
+                        match response.bytes().await {
+                            Ok(body) => {
+                                return Ok(HttpResponse {
+                                    status,
+                                    headers,
+                                    body: body.to_vec(),
+                                });
+                            }
+                            Err(err) if !last && is_retryable_error(&err) => {
+                                break 'attempt backoff_delay(self.backoff_base, attempt);
+                            }
+                            Err(err) => return Err(AttestationError::Http(err)),
+                        }
+                    }
+                    Err(err) if !last && is_retryable_error(&err) => {
+                        break 'attempt backoff_delay(self.backoff_base, attempt);
+                    }
+                    Err(err) => return Err(AttestationError::Http(err)),
                 }
-                _ => None,
             };
-            match delay {
-                Some(delay) => {
-                    tokio::time::sleep(delay).await;
-                    attempt += 1;
-                }
-                None => return result.map_err(AttestationError::Http),
-            }
+
+            tokio::time::sleep(delay).await;
+            attempt += 1;
         }
     }
 
@@ -432,23 +482,20 @@ impl AttestationClient {
             .headers(self.github_headers(url.as_str())?);
         let response = self.send_with_retry(request).await?;
 
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
+        if response.status == reqwest::StatusCode::NOT_FOUND {
             return Ok(vec![]);
         }
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
+        if !response.status.is_success() {
+            let body = String::from_utf8_lossy(&response.body);
             return Err(AttestationError::Api(format!(
-                "GitHub API returned {status}: {body}"
+                "GitHub API returned {}: {body}",
+                response.status
             )));
         }
 
-        let response: AttestationsResponse = response.json().await?;
+        let parsed: AttestationsResponse = serde_json::from_slice(&response.body)?;
         let mut attestations = Vec::new();
-        for attestation in response.attestations {
+        for attestation in parsed.attestations {
             if attestation.bundle.is_some() {
                 attestations.push(attestation);
             } else if let Some(bundle_url) = &attestation.bundle_url {
@@ -468,20 +515,19 @@ impl AttestationClient {
             .get(bundle_url)
             .headers(self.github_headers(bundle_url)?);
         let response = self.send_with_retry(request).await?;
-        if !response.status().is_success() {
+        if !response.status.is_success() {
             return Err(AttestationError::Api(format!(
                 "bundle URL returned {}",
-                response.status()
+                response.status
             )));
         }
-        if is_snappy_content_type(&response) {
-            let bytes = response.bytes().await?;
+        if is_snappy_content_type(&response.headers) {
             let decompressed = snap::raw::Decoder::new()
-                .decompress_vec(&bytes)
+                .decompress_vec(&response.body)
                 .map_err(|e| AttestationError::Api(format!("Snappy decompression failed: {e}")))?;
             serde_json::from_slice(&decompressed).map_err(AttestationError::Json)
         } else {
-            response.json().await.map_err(AttestationError::Http)
+            serde_json::from_slice(&response.body).map_err(AttestationError::Json)
         }
     }
 }
@@ -1153,9 +1199,8 @@ async fn verify_attestation_bundles(
     )))
 }
 
-fn is_snappy_content_type(response: &reqwest::Response) -> bool {
-    response
-        .headers()
+fn is_snappy_content_type(headers: &HeaderMap) -> bool {
+    headers
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .and_then(|content_type| content_type.split(';').next())
@@ -1780,6 +1825,72 @@ mod tests {
         );
         // Absent header → no override.
         assert_eq!(retry_after_delay(&headers_with(None)), None);
+    }
+
+    /// Spawn a server whose first connection sends a `200` with a `Content-Length`
+    /// larger than the bytes actually written, then closes — making the body read
+    /// fail mid-stream (a transient `is_body()` error). Later connections serve a
+    /// full `200 {body}`. Returns the `base_url` and a connection counter.
+    fn body_drop_then_ok_server(
+        body: &'static str,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::{Read, Write};
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_thread = hits.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = match stream {
+                    Ok(s) => s,
+                    Err(_) => break,
+                };
+                let n = hits_thread.fetch_add(1, Ordering::SeqCst);
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let response = if n == 0 {
+                    // Promise 1024 bytes, send 4, then drop the connection.
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n{ \"".to_string()
+                } else {
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                };
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (format!("http://{addr}"), hits)
+    }
+
+    #[tokio::test]
+    async fn fetch_attestations_retries_on_body_read_failure() {
+        // First attempt drops mid-body (transient is_body error); second succeeds.
+        let (base_url, hits) = body_drop_then_ok_server(r#"{"attestations":[]}"#);
+        let client = test_client(&base_url);
+        let result = client
+            .fetch_attestations(FetchParams {
+                owner: "EarthBuild".to_string(),
+                repo: Some("EarthBuild/earthbuild".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "expected recovery after body-read failure: {result:?}"
+        );
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "should have taken 1 body-drop + 1 successful attempt"
+        );
     }
 
     /// A genuine `*.intoto.jsonl` produced by slsa-github-generator (sops

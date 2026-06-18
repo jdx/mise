@@ -33,6 +33,20 @@ pub(crate) fn http_retry_attempts() -> usize {
     http_retries().saturating_add(1)
 }
 
+/// Retry policy for the attestation client (`mise-sigstore`), so vfox's
+/// attestation traffic honors `MISE_HTTP_RETRIES` like the rest of vfox's HTTP
+/// rather than hardcoding a default at the call site. Timeout and backoff use
+/// `mise-sigstore`'s defaults: vfox applies no HTTP timeout elsewhere, and
+/// parsing `MISE_HTTP_TIMEOUT` here would duplicate mise's duration parser
+/// (vfox has no access to mise's Settings layer — the env var is the only shared
+/// signal, and vfox already mirrors only the retries knob).
+pub(crate) fn sigstore_retry_config() -> mise_sigstore::RetryConfig {
+    mise_sigstore::RetryConfig {
+        retries: http_retries(),
+        ..Default::default()
+    }
+}
+
 pub(crate) fn should_retry_status(status: StatusCode) -> bool {
     let code = status.as_u16();
     code == 408 || code == 429 || (500..600).contains(&code)
