@@ -111,6 +111,11 @@ pub struct EnvDirectiveOptions {
     pub(crate) redact: Option<bool>,
     #[serde(default)]
     pub(crate) required: RequiredValue,
+    /// The profile this directive belongs to, if any.  Set programmatically
+    /// when parsing `[env.profiles.<name>]` / `[vars.profiles.<name>]` sub-tables
+    /// with experimental mode enabled.  Never read from TOML.
+    #[serde(skip)]
+    pub(crate) profile: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -149,6 +154,24 @@ pub enum EnvDirective {
 
 impl EnvDirective {
     pub fn options(&self) -> &EnvDirectiveOptions {
+        match self {
+            EnvDirective::Val(_, _, opts)
+            | EnvDirective::Default(_, _, opts)
+            | EnvDirective::Rm(_, opts)
+            | EnvDirective::Required(_, opts)
+            | EnvDirective::File(_, opts)
+            | EnvDirective::Path(_, opts)
+            | EnvDirective::Source(_, opts)
+            | EnvDirective::Age { options: opts, .. }
+            | EnvDirective::PythonVenv { options: opts, .. }
+            | EnvDirective::Module(_, _, opts) => opts,
+        }
+    }
+
+    /// Returns a mutable reference to the directive's options.
+    /// Used by the parser to set the `profile` tag on directives parsed from
+    /// `[env.profiles.<name>]` / `[vars.profiles.<name>]` sub-tables.
+    pub fn options_mut(&mut self) -> &mut EnvDirectiveOptions {
         match self {
             EnvDirective::Val(_, _, opts)
             | EnvDirective::Default(_, _, opts)

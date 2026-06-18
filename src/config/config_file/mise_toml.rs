@@ -45,6 +45,32 @@ use super::min_version::MinVersionSpec;
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
 
+// Thread-local override for the experimental flag used in [env.profiles.*]
+// / [vars.profiles.*] parsing.  Only ever set in tests.
+//
+// WHY THIS EXISTS: `Settings::get().experimental` is forced to `true` inside
+// `cfg!(test)` (see src/config/settings.rs, the `impl Default for Settings`
+// block), which means unit tests cannot exercise the experimental-OFF path
+// through the normal settings machinery.  This `#[cfg(test)]`-only thread-local
+// lets an individual test temporarily force the feature flag off (or on) so the
+// two code paths can both be tested.  In production this value is always `None`
+// and `env_profiles_experimental()` falls through to `Settings::get().experimental`.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static ENV_PROFILES_EXPERIMENTAL_OVERRIDE: std::cell::Cell<Option<bool>> =
+        std::cell::Cell::new(None);
+}
+
+/// Returns whether the experimental `[env/vars.profiles.*]` feature is active.
+/// In test mode a thread-local can override `Settings::get()`.
+fn env_profiles_experimental() -> bool {
+    #[cfg(test)]
+    if let Some(v) = ENV_PROFILES_EXPERIMENTAL_OVERRIDE.with(|c| c.get()) {
+        return v;
+    }
+    Settings::get().experimental
+}
+
 /// Convert a `toml::Value` to a `toml_edit::Value` for serialization.
 fn toml_value_to_edit(v: toml::Value) -> Value {
     match v {
@@ -1411,9 +1437,31 @@ impl<'de> de::Deserialize<'de> for EnvList {
             where
                 M: de::MapAccess<'de>,
             {
+                // Base directives (profile == None) and profile-tagged directives
+                // are accumulated separately so that base always precedes profiles
+                // in the final EnvList, regardless of TOML key order.
                 let mut env = vec![];
+                let mut profile_env: Vec<EnvDirective> = vec![];
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
+                        "profiles" if env_profiles_experimental() => {
+                            // Parse value as BTreeMap<profile_name, EnvList>.
+                            // We reuse EnvList's own Deserialize impl so every
+                            // sub-table gets the full directive parsing for free.
+                            //
+                            // NOTE: BTreeMap yields keys in alphabetical order, so profile
+                            // groups are emitted into `profile_env` alphabetically here.
+                            // This is NOT a precedence contract — active-profile selection
+                            // and final ordering are applied later by the resolver using the
+                            // `profile` tag on each directive.
+                            let profiles = map.next_value::<BTreeMap<String, EnvList>>()?;
+                            for (profile_name, list) in profiles {
+                                for mut directive in list.0 {
+                                    directive.options_mut().profile = Some(profile_name.clone());
+                                    profile_env.push(directive);
+                                }
+                            }
+                        }
                         "_" | "mise" => {
                             #[derive(Deserialize)]
                             #[serde(untagged)]
@@ -1603,6 +1651,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         tools: true,
                                         redact: Some(false),
                                         required: RequiredValue::False,
+                                        profile: None,
                                     },
                                 });
                             }
@@ -1771,6 +1820,8 @@ impl<'de> de::Deserialize<'de> for EnvList {
                         }
                     }
                 }
+                // Emit base directives first, then all profile-tagged directives.
+                env.extend(profile_env);
                 Ok(EnvList(env))
             }
         }
@@ -3272,5 +3323,392 @@ run = 'echo "template"'
             Some(["default.target".to_string()].as_slice())
         );
         file::remove_file(&p).unwrap();
+    }
+
+    // ── inline env profiles (Phase 1: parsing + tagging) ──────────────────
+
+    /// With experimental ON (which is always the case in test mode), a config
+    /// containing base [env] vars plus [env.profiles.dev] and [env.profiles.prod]
+    /// must be parsed into an EnvList where:
+    ///   - base vars have `profile == None`
+    ///   - profile vars are tagged with their profile name
+    ///   - ALL base directives appear before ANY profile-tagged directive
+    ///
+    /// NOTE: Inter-profile ordering (dev vs prod) is NOT asserted here because
+    /// the BTreeMap traversal order is an implementation detail, not a contract —
+    /// active-profile selection/ordering is applied later by the resolver.
+    #[test]
+    fn test_env_profiles_experimental_on_parsed_and_tagged() {
+        // Settings::get().experimental is always true in cfg!(test).
+        let toml = indoc! {r#"
+        [env]
+        BASE_VAR = "base"
+
+        [env.profiles.dev]
+        DEV_VAR = "dev_value"
+
+        [env.profiles.prod]
+        PROD_VAR = "prod_value"
+        "#}
+        .to_string();
+        let directives = {
+            #[derive(Debug, Deserialize)]
+            struct TestCfg {
+                env: EnvList,
+            }
+            toml::from_str::<TestCfg>(&toml).unwrap().env.0
+        };
+
+        assert_eq!(
+            directives.len(),
+            3,
+            "expected 3 directives, got {directives:?}"
+        );
+
+        // Invariant 1: every base directive (profile == None) precedes every
+        // profile-tagged directive — regardless of TOML key order.
+        let last_base_idx = directives
+            .iter()
+            .rposition(|d| d.options().profile.is_none());
+        let first_profile_idx = directives
+            .iter()
+            .position(|d| d.options().profile.is_some());
+        if let (Some(base), Some(profile)) = (last_base_idx, first_profile_idx) {
+            assert!(
+                base < profile,
+                "all base directives must come before all profile directives; \
+                 last base at {base}, first profile at {profile}: {directives:?}"
+            );
+        }
+
+        // Invariant 2: the base var is untagged.
+        match &directives[0] {
+            EnvDirective::Val(k, v, opts) => {
+                assert_eq!(k, "BASE_VAR");
+                assert_eq!(v, "base");
+                assert_eq!(opts.profile, None, "base var must have no profile tag");
+            }
+            d => panic!("expected Val for BASE_VAR at index 0, got {d:?}"),
+        }
+
+        // Invariant 3: each profile var is tagged with the correct profile name.
+        // We do NOT assert a specific ordering between "dev" and "prod".
+        let dev_dir = directives
+            .iter()
+            .find(|d| matches!(d, EnvDirective::Val(k, _, _) if k == "DEV_VAR"));
+        let prod_dir = directives
+            .iter()
+            .find(|d| matches!(d, EnvDirective::Val(k, _, _) if k == "PROD_VAR"));
+        match dev_dir {
+            Some(EnvDirective::Val(_, v, opts)) => {
+                assert_eq!(v, "dev_value");
+                assert_eq!(
+                    opts.profile.as_deref(),
+                    Some("dev"),
+                    "DEV_VAR must be tagged with profile 'dev'"
+                );
+            }
+            _ => panic!("DEV_VAR directive not found in {directives:?}"),
+        }
+        match prod_dir {
+            Some(EnvDirective::Val(_, v, opts)) => {
+                assert_eq!(v, "prod_value");
+                assert_eq!(
+                    opts.profile.as_deref(),
+                    Some("prod"),
+                    "PROD_VAR must be tagged with profile 'prod'"
+                );
+            }
+            _ => panic!("PROD_VAR directive not found in {directives:?}"),
+        }
+    }
+
+    /// Base directives must appear before profile-tagged directives, even when
+    /// the `profiles` sub-table is written before the base keys in TOML.
+    #[test]
+    fn test_env_profiles_base_before_profile_directives() {
+        // profiles key appears before the base key in the TOML document
+        let toml = indoc! {r#"
+        [env.profiles.dev]
+        DEV_VAR = "dev_value"
+
+        [env]
+        BASE_VAR = "base"
+        "#}
+        .to_string();
+        let directives = {
+            #[derive(Debug, Deserialize)]
+            struct TestCfg {
+                env: EnvList,
+            }
+            toml::from_str::<TestCfg>(&toml).unwrap().env.0
+        };
+
+        assert_eq!(
+            directives.len(),
+            2,
+            "expected 2 directives, got {directives:?}"
+        );
+        // Base var must come first regardless of TOML order
+        match &directives[0] {
+            EnvDirective::Val(k, _, opts) => {
+                assert_eq!(k, "BASE_VAR");
+                assert_eq!(opts.profile, None);
+            }
+            d => panic!("expected Val for BASE_VAR first, got {d:?}"),
+        }
+        match &directives[1] {
+            EnvDirective::Val(k, _, opts) => {
+                assert_eq!(k, "DEV_VAR");
+                assert_eq!(opts.profile.as_deref(), Some("dev"));
+            }
+            d => panic!("expected Val for DEV_VAR second, got {d:?}"),
+        }
+    }
+
+    /// [vars.profiles.*] must also be parsed and tagged correctly.
+    #[test]
+    fn test_vars_profiles_parsed_and_tagged() {
+        let toml = indoc! {r#"
+        [vars]
+        BASE_VAR = "base"
+
+        [vars.profiles.staging]
+        STAGING_VAR = "staging_value"
+        "#}
+        .to_string();
+        let directives = {
+            #[derive(Debug, Deserialize)]
+            struct TestCfg {
+                vars: EnvList,
+            }
+            toml::from_str::<TestCfg>(&toml).unwrap().vars.0
+        };
+
+        assert_eq!(
+            directives.len(),
+            2,
+            "expected 2 directives, got {directives:?}"
+        );
+        match &directives[0] {
+            EnvDirective::Val(k, v, opts) => {
+                assert_eq!(k, "BASE_VAR");
+                assert_eq!(v, "base");
+                assert_eq!(opts.profile, None);
+            }
+            d => panic!("expected Val for BASE_VAR, got {d:?}"),
+        }
+        match &directives[1] {
+            EnvDirective::Val(k, v, opts) => {
+                assert_eq!(k, "STAGING_VAR");
+                assert_eq!(v, "staging_value");
+                assert_eq!(opts.profile.as_deref(), Some("staging"));
+            }
+            d => panic!("expected Val for STAGING_VAR, got {d:?}"),
+        }
+    }
+
+    /// With experimental OFF, the `profiles` key MUST NOT be treated as a
+    /// profile table.  It falls through to the normal env-var arm which tries
+    /// to deserialise the nested sub-table as a primitive/options value — that
+    /// fails, so `toml::from_str` returns an `Err` whose message mentions
+    /// `"profiles"`.  We assert this concrete outcome rather than swallowing
+    /// the error into an empty Vec.
+    ///
+    /// A paired positive assertion (experimental ON → same input succeeds and
+    /// produces profile-tagged directives) proves the toggle actually flips
+    /// behaviour.
+    ///
+    /// WHY WE USE A THREAD-LOCAL: `Settings::get().experimental` is forced to
+    /// `true` inside `cfg!(test)` (src/config/settings.rs ~424), so normal
+    /// settings cannot exercise the OFF path from a unit test.
+    #[test]
+    fn test_env_profiles_experimental_off_is_unchanged() {
+        const TOML_INPUT: &str = indoc! {r#"
+        [env]
+        BASE_VAR = "base"
+
+        [env.profiles.dev]
+        DEV_VAR = "dev_value"
+        "#};
+
+        #[derive(Debug, Deserialize)]
+        struct TestCfg {
+            env: EnvList,
+        }
+
+        // ── Part A: experimental OFF → parse must FAIL with a message about "profiles" ──
+        super::ENV_PROFILES_EXPERIMENTAL_OVERRIDE.with(|c| c.set(Some(false)));
+        let off_result = toml::from_str::<TestCfg>(TOML_INPUT);
+        super::ENV_PROFILES_EXPERIMENTAL_OVERRIDE.with(|c| c.set(None));
+
+        let err = off_result.expect_err(
+            "experimental OFF: expected parse error for [env.profiles.dev], but got Ok",
+        );
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("profiles"),
+            "experimental OFF: error message should mention 'profiles', got: {err_msg:?}"
+        );
+
+        // ── Part B: experimental ON → SAME input succeeds and produces profile-tagged directives ──
+        super::ENV_PROFILES_EXPERIMENTAL_OVERRIDE.with(|c| c.set(Some(true)));
+        let on_result = toml::from_str::<TestCfg>(TOML_INPUT);
+        super::ENV_PROFILES_EXPERIMENTAL_OVERRIDE.with(|c| c.set(None));
+
+        let directives = on_result
+            .expect("experimental ON: same input should parse successfully")
+            .env
+            .0;
+
+        let has_profile_tagged = directives
+            .iter()
+            .any(|d| d.options().profile.as_deref() == Some("dev"));
+        assert!(
+            has_profile_tagged,
+            "experimental ON: expected a directive tagged with profile 'dev', got {directives:?}"
+        );
+        for d in &directives {
+            if d.options().profile.is_some() {
+                assert_eq!(
+                    d.options().profile.as_deref(),
+                    Some("dev"),
+                    "only 'dev' profile directives expected, got {d:?}"
+                );
+            }
+        }
+    }
+
+    /// A profile body containing `_.path` produces a `Path` directive tagged
+    /// with the correct profile name, and `_.source` produces a `Source`
+    /// directive tagged with the correct profile name.
+    #[test]
+    fn test_env_profiles_non_val_directives_are_tagged() {
+        let toml = indoc! {r#"
+        [env.profiles.ci]
+        _.path = "/ci/bin"
+        _.source = "/ci/env.sh"
+        CI_VAR = "ci_value"
+        "#}
+        .to_string();
+        let directives = {
+            #[derive(Debug, Deserialize)]
+            struct TestCfg {
+                env: EnvList,
+            }
+            toml::from_str::<TestCfg>(&toml).unwrap().env.0
+        };
+
+        assert_eq!(
+            directives.len(),
+            3,
+            "expected 3 directives (Path + Source + Val), got {directives:?}"
+        );
+
+        // All directives from a profile body must be tagged with that profile.
+        for d in &directives {
+            assert_eq!(
+                d.options().profile.as_deref(),
+                Some("ci"),
+                "every directive in [env.profiles.ci] must be tagged 'ci', got {d:?}"
+            );
+        }
+
+        // Check that Path and Source directive types are produced.
+        let has_path = directives
+            .iter()
+            .any(|d| matches!(d, EnvDirective::Path(p, _) if p == "/ci/bin"));
+        let has_source = directives
+            .iter()
+            .any(|d| matches!(d, EnvDirective::Source(s, _) if s == "/ci/env.sh"));
+        let has_val = directives
+            .iter()
+            .any(|d| matches!(d, EnvDirective::Val(k, v, _) if k == "CI_VAR" && v == "ci_value"));
+
+        assert!(
+            has_path,
+            "expected a Path('/ci/bin') directive in {directives:?}"
+        );
+        assert!(
+            has_source,
+            "expected a Source('/ci/env.sh') directive in {directives:?}"
+        );
+        assert!(
+            has_val,
+            "expected a Val('CI_VAR', 'ci_value') directive in {directives:?}"
+        );
+    }
+
+    /// A base var and a same-named profile var must BOTH produce directives —
+    /// the parser must not deduplicate or drop either one.  The base directive
+    /// must appear before the profile-tagged directive.
+    #[test]
+    fn test_env_profiles_collision_base_and_profile_both_emitted() {
+        let toml = indoc! {r#"
+        [env]
+        SHARED_VAR = "base_value"
+
+        [env.profiles.dev]
+        SHARED_VAR = "dev_value"
+        "#}
+        .to_string();
+        let directives = {
+            #[derive(Debug, Deserialize)]
+            struct TestCfg {
+                env: EnvList,
+            }
+            toml::from_str::<TestCfg>(&toml).unwrap().env.0
+        };
+
+        // Both the base and profile directive must be present — no dedup at parse time.
+        let shared_indices: Vec<usize> = directives
+            .iter()
+            .enumerate()
+            .filter_map(|(i, d)| {
+                if matches!(d, EnvDirective::Val(k, _, _) if k == "SHARED_VAR") {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            shared_indices.len(),
+            2,
+            "expected 2 directives for SHARED_VAR (one base, one profile), got {directives:?}"
+        );
+
+        // Identify base (profile == None) and profile-tagged by scanning both indices.
+        let (base_idx, profile_idx) = {
+            let i0 = shared_indices[0];
+            let i1 = shared_indices[1];
+            if directives[i0].options().profile.is_none() {
+                (i0, i1)
+            } else {
+                (i1, i0)
+            }
+        };
+
+        // The base one must come before the profile-tagged one.
+        assert!(
+            base_idx < profile_idx,
+            "base SHARED_VAR (idx {base_idx}) must come before profile SHARED_VAR (idx {profile_idx})"
+        );
+
+        // Verify the values are preserved.
+        match &directives[base_idx] {
+            EnvDirective::Val(_, v, opts) => {
+                assert_eq!(v, "base_value");
+                assert_eq!(opts.profile, None);
+            }
+            d => panic!("unexpected base directive type: {d:?}"),
+        }
+        match &directives[profile_idx] {
+            EnvDirective::Val(_, v, opts) => {
+                assert_eq!(v, "dev_value");
+                assert_eq!(opts.profile.as_deref(), Some("dev"));
+            }
+            d => panic!("unexpected profile directive type: {d:?}"),
+        }
     }
 }
