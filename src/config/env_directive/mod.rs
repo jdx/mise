@@ -295,7 +295,7 @@ pub struct EnvResolveOptions {
 
 /// Filter and reorder a flat directive stream for active-profile evaluation.
 ///
-/// This is the Phase 2 "later-wins" ordering logic for inline environment profiles
+/// Implements the "later-wins" ordering for inline environment profiles
 /// (`[env.profiles.<name>]` / `[vars.profiles.<name>]`).
 ///
 /// ## Ordering contract (mirrors separate-file "later wins")

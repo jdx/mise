@@ -3325,7 +3325,7 @@ run = 'echo "template"'
         file::remove_file(&p).unwrap();
     }
 
-    // ── inline env profiles (Phase 1: parsing + tagging) ──────────────────
+    // ── inline env profiles: parsing + tagging ────────────────────────────
 
     /// With experimental ON (which is always the case in test mode), a config
     /// containing base [env] vars plus [env.profiles.dev] and [env.profiles.prod]
@@ -3639,33 +3639,19 @@ run = 'echo "template"'
         );
     }
 
-    /// Nested profiles are NOT supported by the parser.  When a profile body
-    /// itself contains a `profiles` key, the inner `profiles` key is parsed as
-    /// a plain `EnvList` (re-entering `EnvListVisitor`).  Because the visitor
-    /// unconditionally overwrites `.profile = Some(<outer name>)` on every
-    /// directive it collects, the inner profile name is silently lost and all
-    /// inner directives end up tagged with the OUTER profile name.
+    /// Nested profiles (`[env.profiles.a.profiles.b]`) are not supported. A
+    /// profile body is parsed as an ordinary env table, so an inner `profiles`
+    /// key is parsed recursively and its directives are re-tagged with the
+    /// OUTER profile name — the inner profile name is silently discarded.
     ///
-    /// This test pins that behavior so it cannot change silently.  The schema
-    /// documents the same constraint by defining `env_body` / `vars_body`
-    /// without a `profiles` property, preventing validators from accepting
-    /// nested profile tables.
+    /// The JSON schema reflects the same constraint: `env_body`/`vars_body`
+    /// omit the `profiles` property, so validators reject nested profile tables.
     ///
-    /// Note: we force experimental ON via the thread-local because `cfg!(test)`
-    /// forces `Settings::get().experimental == true` globally and we rely on
-    /// that for the successful parse — no override needed here.  What we DO need
-    /// to verify is what the parser yields for the nested structure.
+    /// This test pins the behavior so it cannot change silently. Either outcome
+    /// is acceptable: the config parses with inner directives flattened onto the
+    /// outer profile, or it fails to deserialize outright.
     #[test]
     fn test_env_profiles_nesting_is_unsupported_and_flattened() {
-        // [env.profiles.outer] contains a `profiles` sub-key whose value is
-        // treated as a regular env var map by the parser (since the `profiles`
-        // arm only fires at the top level of an EnvList). The inner `profiles`
-        // key is fed through the normal `key => value` arm which tries to parse
-        // the nested table as an env var — this will fail deserialization because
-        // the value is a table, not a scalar, string, or valid options object.
-        //
-        // We document the ACTUAL outcome: a parse error when the inner
-        // `profiles` value is a table that doesn't match any env-var shape.
         const TOML_NESTED: &str = indoc! {r#"
         [env.profiles.outer]
         OUTER_VAR = "outer_value"
@@ -3679,17 +3665,6 @@ run = 'echo "template"'
             env: EnvList,
         }
 
-        // The parser processes [env.profiles.outer] as an EnvList.
-        // Inside that EnvList, it finds a `profiles` key.
-        // Because cfg!(test) makes experimental always true, the `profiles` arm
-        // fires AGAIN (recursively), parsing [env.profiles.outer.profiles.inner]
-        // as another BTreeMap<String, EnvList>. The inner directives (INNER_VAR)
-        // then have their .profile set to "inner" by the inner loop, but then
-        // the OUTER loop overwrites .profile = Some("outer") on ALL directives
-        // it collects from the inner EnvList.
-        //
-        // Net result: both OUTER_VAR and INNER_VAR are tagged with profile
-        // "outer". The "inner" profile name is silently discarded.
         let result = toml::from_str::<TestCfg>(TOML_NESTED);
         match result {
             Ok(cfg) => {

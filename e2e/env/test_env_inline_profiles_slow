@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# E2E tests for inline environment profiles (Phase 2)
+# E2E tests for inline environment profiles.
 # Tests the [env.profiles.<name>] / [vars.profiles.<name>] feature.
 # MISE_EXPERIMENTAL=1 is set by the e2e harness (e2e/run_test).
 #
