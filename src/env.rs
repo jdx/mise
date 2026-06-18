@@ -717,6 +717,17 @@ fn warn_on_missing_required_env(args: &[String]) -> bool {
         .unwrap_or_default()
 }
 
+/// Split a comma-separated environment-name string, trimming whitespace from
+/// each token and dropping empty tokens.  Used by both the CLI-args path and
+/// the env-var path in `environment()` so the two cannot drift apart.
+fn parse_env_list(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(|t| t.trim())
+        .filter(|t| !t.is_empty())
+        .map(String::from)
+        .collect()
+}
+
 fn environment(args: &[String]) -> Vec<String> {
     let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
@@ -767,13 +778,7 @@ fn environment(args: &[String]) -> Vec<String> {
         }
         values
             .into_iter()
-            .flat_map(|s| {
-                s.split(',')
-                    .map(|t| t.trim())
-                    .filter(|s| !s.is_empty())
-                    .map(String::from)
-                    .collect::<Vec<_>>()
-            })
+            .flat_map(|s| parse_env_list(&s))
             .collect()
     };
     if !from_args.is_empty() {
@@ -783,13 +788,7 @@ fn environment(args: &[String]) -> Vec<String> {
         .ok()
         .or_else(|| var("MISE_PROFILE").ok())
         .or_else(|| var("MISE_ENVIRONMENT").ok())
-        .map(|s| {
-            s.split(',')
-                .map(|t| t.trim())
-                .filter(|s| !s.is_empty())
-                .map(String::from)
-                .collect()
-        })
+        .map(|s| parse_env_list(&s))
         .or_else(|| miserc::get_env().cloned())
         .unwrap_or_default()
 }
@@ -1036,46 +1035,36 @@ mod tests {
     }
 
     /// FIX 2: MISE_ENV values with whitespace around commas must be trimmed.
-    /// `MISE_ENV="prod, ci"` must produce ["prod", "ci"], not ["prod", " ci"].
+    /// `--env " prod , ci "` must produce ["prod", "ci"], not [" prod ", " ci "].
+    ///
+    /// This test exercises `environment()` directly via the CLI-args path (using
+    /// `--env`) so it genuinely tests the production code path, not a duplicate of
+    /// the split/trim logic.  The env-var path (reading `MISE_ENV` from the process
+    /// environment) is not tested here because `environment()` relies on global
+    /// `std::env::var` state, which would require process-wide locks to avoid test
+    /// races — the CLI-args path is sufficient to verify the shared `parse_env_list`
+    /// helper that both paths now call.
     #[test]
     fn test_environment_trims_whitespace_around_commas() {
-        // Call environment() directly (it's in the same module as tests).
-        // Pass an empty args slice so it reads from the env var path.
-        // We temporarily set MISE_ENV for this test, using a unique variable
-        // name to avoid collisions with other tests.
-        //
-        // Since environment() reads MISE_ENV from the process environment via
-        // std::env::var, we simulate the trimming logic directly to avoid
-        // global state mutation issues with the Lazy statics.
-        //
-        // Test the splitting + trimming logic directly:
-        let raw = "prod, ci";
-        let result: Vec<String> = raw
-            .split(',')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect();
-        assert_eq!(result, vec!["prod", "ci"]);
+        // Single --env arg with embedded whitespace around the comma.
+        let args: Vec<String> = vec!["mise".into(), "--env".into(), " prod , ci ".into()];
+        assert_eq!(environment(&args), vec!["prod", "ci"]);
 
-        let raw = " prod ,  ci , staging ";
-        let result: Vec<String> = raw
-            .split(',')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect();
-        assert_eq!(result, vec!["prod", "ci", "staging"]);
+        // Multiple tokens including a whitespace-only segment (should be dropped).
+        let args: Vec<String> = vec![
+            "mise".into(),
+            "--env".into(),
+            " prod ,  ci , staging ".into(),
+        ];
+        assert_eq!(environment(&args), vec!["prod", "ci", "staging"]);
 
-        // Spaces-only token after trim must be dropped (empty after trim)
-        let raw = "prod,   ,ci";
-        let result: Vec<String> = raw
-            .split(',')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect();
-        assert_eq!(result, vec!["prod", "ci"]);
+        // Spaces-only token between commas must be dropped.
+        let args: Vec<String> = vec!["mise".into(), "--env".into(), "prod,   ,ci".into()];
+        assert_eq!(environment(&args), vec!["prod", "ci"]);
+
+        // Short form -E also works.
+        let args: Vec<String> = vec!["mise".into(), "-E".into(), " prod , ci ".into()];
+        assert_eq!(environment(&args), vec!["prod", "ci"]);
     }
 
     #[test]

@@ -322,6 +322,12 @@ pub struct EnvResolveOptions {
 /// the path's first occurrence in the stream.
 ///
 /// ## Call sites
+/// Per-file grouping bucket: base entries + profile entries keyed by active_envs index.
+type FileBlock = (
+    Vec<(EnvDirective, PathBuf)>,                  // base entries
+    BTreeMap<usize, Vec<(EnvDirective, PathBuf)>>, // profile buckets keyed by active_envs index
+);
+
 /// All top-level evaluation sites pass `&env::MISE_ENV_WITH_AUTO` directly as
 /// `active_envs` (not a snapshot), so the result varies with the active env
 /// list at call time.  Sub-resolvers do not call `resolve_for_config` (they
@@ -340,33 +346,34 @@ pub fn filter_and_order_by_profiles(
         .map(|(i, name)| (name.as_str(), i))
         .collect();
 
-    // Group entries by source PathBuf using stable first-seen order.
-    // `file_order` maps each PathBuf to its index of first appearance.
-    // `file_blocks` accumulates (base_entries, profile_buckets) per path.
-    let mut file_order: HashMap<&PathBuf, usize> = HashMap::new();
-    let mut file_blocks: Vec<(
-        Vec<(EnvDirective, PathBuf)>,                  // base entries
-        BTreeMap<usize, Vec<(EnvDirective, PathBuf)>>, // profile buckets keyed by active_envs index
-    )> = Vec::new();
+    // Pre-pass: record the first-seen index for each unique PathBuf.
+    // We clone PathBuf keys here so that `file_order` does not borrow from
+    // `directives`, allowing us to consume `directives` by value in the main
+    // pass below (avoiding per-item clones of EnvDirective).
+    let mut file_order: HashMap<PathBuf, usize> = HashMap::new();
+    let mut num_files: usize = 0;
+    for (_, path) in &directives {
+        if !file_order.contains_key(path) {
+            file_order.insert(path.clone(), num_files);
+            num_files += 1;
+        }
+    }
 
-    for item in &directives {
-        let path = &item.1;
-        let block_idx = match file_order.get(path) {
-            Some(&idx) => idx,
-            None => {
-                let idx = file_blocks.len();
-                file_order.insert(path, idx);
-                file_blocks.push((Vec::new(), BTreeMap::new()));
-                idx
-            }
-        };
+    // Allocate one block per unique source file, in first-seen order.
+    let mut file_blocks: Vec<FileBlock> = (0..num_files)
+        .map(|_| (Vec::new(), BTreeMap::new()))
+        .collect();
+
+    // Main pass: consume directives by value into their respective blocks.
+    for item in directives {
+        let block_idx = *file_order.get(&item.1).expect("path seen in pre-pass");
         let (base, profile_buckets) = &mut file_blocks[block_idx];
         match item.0.options().profile.as_deref() {
-            None => base.push(item.clone()),
+            None => base.push(item),
             Some(name) => {
                 // Drop directives for inactive profiles.
                 if let Some(&idx) = profile_index.get(name) {
-                    profile_buckets.entry(idx).or_default().push(item.clone());
+                    profile_buckets.entry(idx).or_default().push(item);
                 }
             }
         }
@@ -374,7 +381,7 @@ pub fn filter_and_order_by_profiles(
 
     // Emit blocks in first-seen order: base entries first, then profiles ordered
     // by their index in active_envs (BTreeMap iteration is ascending by key).
-    let mut result: Vec<(EnvDirective, PathBuf)> = Vec::with_capacity(directives.len());
+    let mut result: Vec<(EnvDirective, PathBuf)> = Vec::new();
     for (base, profile_buckets) in file_blocks {
         result.extend(base);
         for (_idx, bucket) in profile_buckets {

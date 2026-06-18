@@ -188,18 +188,21 @@ impl TaskContextBuilder {
             None
         };
 
-        // Get env entries - load the FULL config hierarchy for monorepo tasks
+        // Get env entries - load the FULL config hierarchy for monorepo tasks.
+        // Errors from env_entries() are propagated (not silently dropped) so that
+        // parse errors — including the new reserved-`profiles` error — are surfaced.
         let all_config_env_entries_raw: Vec<(EnvDirective, PathBuf)> =
             if let Some(ref task_config_files) = task_config_files {
                 // Extract env entries from all config files in the task's hierarchy
                 task_config_files
                     .iter()
                     .rev()
-                    .filter_map(|(source, cf)| {
+                    .map(|(source, cf)| {
                         cf.env_entries()
-                            .ok()
                             .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
                     })
+                    .collect::<Result<Vec<_>>>()?
+                    .into_iter()
                     .flatten()
                     .collect()
             } else {
@@ -210,11 +213,12 @@ impl TaskContextBuilder {
                     .config_files
                     .iter()
                     .rev()
-                    .filter_map(|(source, cf)| {
+                    .map(|(source, cf)| {
                         cf.env_entries()
-                            .ok()
                             .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
                     })
+                    .collect::<Result<Vec<_>>>()?
+                    .into_iter()
                     .flatten()
                     .collect()
             };

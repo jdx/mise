@@ -58,7 +58,7 @@ const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
 #[cfg(test)]
 thread_local! {
     pub(crate) static ENV_PROFILES_EXPERIMENTAL_OVERRIDE: std::cell::Cell<Option<bool>> =
-        std::cell::Cell::new(None);
+        const { std::cell::Cell::new(None) };
 }
 
 /// Returns whether the experimental `[env/vars.profiles.*]` feature is active.
@@ -706,10 +706,10 @@ impl MiseToml {
         for e in &self.env.0 {
             // Skip directives that belong to an inactive profile.
             let profile = e.options().profile.as_deref();
-            if let Some(p) = profile {
-                if !active_envs.contains(p) {
-                    continue;
-                }
+            if let Some(p) = profile
+                && !active_envs.contains(p)
+            {
+                continue;
             }
             match e {
                 EnvDirective::Val(key, value, _) => {
@@ -1473,6 +1473,30 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     ));
                                 }
                             };
+                            // Validate each profile entry before deserializing:
+                            // - each profile body must be a table (not a scalar like
+                            //   `profiles = { value = "x" }`).
+                            // - no nested `profiles` key is allowed inside a profile body.
+                            for (profile_name, body) in &profiles_table {
+                                match body {
+                                    toml::Value::Table(t) => {
+                                        if t.contains_key("profiles") {
+                                            return Err(de::Error::custom(format!(
+                                                "nested `profiles` tables are not supported \
+                                                 (under profile `{profile_name}`)"
+                                            )));
+                                        }
+                                    }
+                                    _ => {
+                                        return Err(de::Error::custom(
+                                            "`profiles` is a reserved key under `[env]`/`[vars]` \
+                                             when the `experimental` setting is enabled; it cannot \
+                                             be used as a variable name",
+                                        ));
+                                    }
+                                }
+                            }
+
                             // Deserialize each per-profile sub-table as an EnvList.
                             // We reuse EnvList's own Deserialize impl so every sub-table
                             // gets the full directive parsing for free.
@@ -3678,17 +3702,10 @@ run = 'echo "template"'
         );
     }
 
-    /// Nested profiles (`[env.profiles.a.profiles.b]`) are not supported. A
-    /// profile body is parsed as an ordinary env table, so an inner `profiles`
-    /// key is parsed recursively and its directives are re-tagged with the
-    /// OUTER profile name — the inner profile name is silently discarded.
-    ///
-    /// The JSON schema reflects the same constraint: `env_body`/`vars_body`
-    /// omit the `profiles` property, so validators reject nested profile tables.
-    ///
-    /// This test pins the behavior so it cannot change silently. Either outcome
-    /// is acceptable: the config parses with inner directives flattened onto the
-    /// outer profile, or it fails to deserialize outright.
+    /// Nested profiles (`[env.profiles.a.profiles.b]`) are explicitly rejected.
+    /// The parser detects the inner `profiles` key and returns an error whose
+    /// message contains "nested", rather than silently flattening inner directives
+    /// onto the outer profile.
     #[test]
     fn test_env_profiles_nesting_is_unsupported_and_flattened() {
         const TOML_NESTED: &str = indoc! {r#"
@@ -3700,40 +3717,43 @@ run = 'echo "template"'
         "#};
 
         #[derive(Debug, Deserialize)]
+        #[allow(dead_code)]
         struct TestCfg {
             env: EnvList,
         }
 
         let result = toml::from_str::<TestCfg>(TOML_NESTED);
-        match result {
-            Ok(cfg) => {
-                let directives = cfg.env.0;
-                // Every directive that was emitted must be tagged "outer" —
-                // the inner profile name "inner" must NOT appear anywhere.
-                for d in &directives {
-                    assert_eq!(
-                        d.options().profile.as_deref(),
-                        Some("outer"),
-                        "nested profile name 'inner' leaked through — parser behavior changed: {d:?}"
-                    );
-                }
-                // At minimum OUTER_VAR must be present.
-                let has_outer = directives
-                    .iter()
-                    .any(|d| matches!(d, EnvDirective::Val(k, v, _) if k == "OUTER_VAR" && v == "outer_value"));
-                assert!(
-                    has_outer,
-                    "expected OUTER_VAR = 'outer_value' tagged 'outer', got {directives:?}"
-                );
-            }
-            Err(_) => {
-                // A parse error is also an acceptable outcome — it means the
-                // parser rejected the nested structure rather than silently
-                // mishandling it, which is strictly better behavior. We just
-                // document that nesting is unsupported; we do NOT mandate a
-                // specific failure mode.
-            }
+        let err = result.expect_err("nested profiles must be rejected with a parse error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("nested"),
+            "error message should contain 'nested', got: {msg:?}"
+        );
+    }
+
+    /// Using `profiles = {{ value = "x" }}` (a table literal whose entry looks
+    /// like a variable assignment) must be rejected with the "reserved" message,
+    /// not silently accepted as a profile named "value".
+    #[test]
+    fn test_env_profiles_table_body_non_profile_errors_with_reserved() {
+        const TOML: &str = indoc! {r#"
+        [env]
+        profiles = { value = "us-east-1" }
+        "#};
+
+        #[derive(Debug, Deserialize)]
+        #[allow(dead_code)]
+        struct TestCfg {
+            env: EnvList,
         }
+
+        let err = toml::from_str::<TestCfg>(TOML)
+            .expect_err("profiles = { value = ... } should fail when experimental is ON");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("reserved"),
+            "error message should contain 'reserved', got: {msg:?}"
+        );
     }
 
     /// A base var and a same-named profile var must BOTH produce directives —
