@@ -1,0 +1,4 @@
+description = "Aspire is the tool for code-first, extensible, observable dev and deploy."
+test = { cmd = "aspire --version", expected = "{{version}}" }
+
+backends = ["github:microsoft/aspire"]
