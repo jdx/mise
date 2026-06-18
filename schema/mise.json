@@ -179,6 +179,299 @@
         }
       ]
     },
+    "env_body": {
+      "description": "environment variable directives without the `profiles` key (used inside profile bodies to prevent nested profiles)",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/env_value"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "$ref": "#/$defs/env_required"
+              }
+            },
+            "required": ["value"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "default": {
+                "$ref": "#/$defs/env_default"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["default"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "$ref": "#/$defs/env_required"
+              }
+            },
+            "required": ["required"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "$ref": "#/$defs/env_age"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "$ref": "#/$defs/env_required"
+              }
+            },
+            "required": ["age"],
+            "unevaluatedProperties": false,
+            "description": "[experimental] age-encrypted environment variable"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "$ref": "#/$defs/env_age_value"
+                  },
+                  "format": {
+                    "$ref": "#/$defs/env_age_format"
+                  },
+                  "tools": {
+                    "$ref": "#/$defs/env_tools"
+                  },
+                  "redact": {
+                    "$ref": "#/$defs/env_redact"
+                  },
+                  "required": {
+                    "$ref": "#/$defs/env_required"
+                  }
+                },
+                "required": ["value"],
+                "unevaluatedProperties": false,
+                "description": "[experimental] age-encrypted value (complex format)"
+              }
+            },
+            "required": ["age"],
+            "unevaluatedProperties": false,
+            "description": "[experimental] age-encrypted environment variable"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "properties": {
+        "_": {
+          "description": "environment modules",
+          "additionalProperties": true,
+          "properties": {
+            "file": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/env_directive"
+                },
+                {
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
+                  "type": "string"
+                },
+                {
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "description": "environment file to load (dotenv, json, yaml, or toml)",
+                        "type": "string"
+                      },
+                      {
+                        "$ref": "#/$defs/env_directive"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "path": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "$ref": "#/$defs/env_path"
+                    },
+                    "paths": {
+                      "$ref": "#/$defs/env_paths"
+                    },
+                    "tools": {
+                      "$ref": "#/$defs/env_tools"
+                    }
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "$ref": "#/$defs/env_path"
+                        }
+                      },
+                      "required": ["path"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "paths": {
+                          "$ref": "#/$defs/env_paths"
+                        }
+                      },
+                      "required": ["paths"]
+                    }
+                  ]
+                },
+                {
+                  "description": "PATH entry to add",
+                  "type": "string"
+                },
+                {
+                  "description": "PATH entries to add",
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "description": "PATH entry to add",
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "$ref": "#/$defs/env_path"
+                          },
+                          "tools": {
+                            "$ref": "#/$defs/env_tools"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "python": {
+              "description": "python environment",
+              "properties": {
+                "venv": {
+                  "oneOf": [
+                    {
+                      "description": "path to python virtual environment to use",
+                      "type": "string"
+                    },
+                    {
+                      "description": "virtualenv options",
+                      "properties": {
+                        "create": {
+                          "default": false,
+                          "description": "create a new virtual environment if one does not exist",
+                          "type": "boolean"
+                        },
+                        "path": {
+                          "description": "path to python virtual environment to use",
+                          "type": "string"
+                        },
+                        "python": {
+                          "description": "python version to use",
+                          "type": "string"
+                        },
+                        "python_create_args": {
+                          "description": "additional arguments to pass to python when creating a virtual environment",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "uv_create_args": {
+                          "description": "additional arguments to pass to uv when creating a virtual environment",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": ["path"],
+                      "type": "object"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "source": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/env_directive"
+                },
+                {
+                  "description": "bash script to load",
+                  "type": "string"
+                },
+                {
+                  "description": "bash scripts to load",
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "description": "bash script to load",
+                        "type": "string"
+                      },
+                      {
+                        "$ref": "#/$defs/env_directive"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "env": {
       "additionalProperties": {
         "oneOf": [
@@ -468,6 +761,13 @@
             }
           },
           "type": "object"
+        },
+        "profiles": {
+          "description": "[experimental] inline environment profiles — each key is a profile name that is activated when it appears in MISE_ENV. Note: `profiles` is a reserved key and cannot be used as an environment variable name when experimental is enabled.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/env_body"
+          }
         }
       },
       "type": "object"
@@ -1976,6 +2276,72 @@
         }
       ]
     },
+    "vars_body": {
+      "description": "variable directives without the `profiles` key (used inside profile bodies to prevent nested profiles)",
+      "type": "object",
+      "properties": {
+        "_": {
+          "description": "vars modules",
+          "additionalProperties": true,
+          "properties": {
+            "file": {
+              "oneOf": [
+                {
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
+                  "type": "string"
+                },
+                {
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
+                  "items": {
+                    "description": "environment file to load (dotenv, json, yaml, or toml)",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "source": {
+              "oneOf": [
+                {
+                  "description": "bash script to load",
+                  "type": "string"
+                },
+                {
+                  "description": "bash scripts to load",
+                  "items": {
+                    "description": "bash script to load",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "description": "value of variable",
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "default": {
+                "$ref": "#/$defs/env_default"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["default"],
+            "unevaluatedProperties": false
+          }
+        ]
+      }
+    },
     "vars": {
       "description": "variables to set",
       "type": "object",
@@ -2018,6 +2384,13 @@
             }
           },
           "type": "object"
+        },
+        "profiles": {
+          "description": "[experimental] inline variable profiles — each key is a profile name that is activated when it appears in MISE_ENV. Note: `profiles` is a reserved key and cannot be used as a variable name when experimental is enabled.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/vars_body"
+          }
         }
       },
       "additionalProperties": {

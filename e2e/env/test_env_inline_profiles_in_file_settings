@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# E2E test: inline profiles enabled via [settings] experimental = true in mise.toml
+# (not via MISE_EXPERIMENTAL env var).
+#
+# The harness sets MISE_EXPERIMENTAL=1 globally; we unset it here so that mise
+# must fall back to the in-file [settings] block to enable the feature.
+# This proves the self-enabling path parses and activates correctly.
+
+unset MISE_EXPERIMENTAL
+
+cat >mise.toml <<'EOF'
+[settings]
+experimental = true
+
+[env]
+PROFILE_TEST_BASE = "base_value"
+
+[env.profiles.myenv]
+PROFILE_TEST_BASE = "myenv_value"
+PROFILE_ONLY_VAR  = "only_in_myenv"
+EOF
+
+# Without MISE_ENV → base value, profile var absent
+assert "mise env --json | jq -r .PROFILE_TEST_BASE" "base_value"
+assert "mise env --json | jq -r '.PROFILE_ONLY_VAR // \"absent\"'" "absent"
+
+# With MISE_ENV=myenv → profile value wins, profile-only var present
+MISE_ENV=myenv assert "mise env --json | jq -r .PROFILE_TEST_BASE" "myenv_value"
+MISE_ENV=myenv assert "mise env --json | jq -r .PROFILE_ONLY_VAR" "only_in_myenv"

@@ -77,6 +77,80 @@ the docs for [`mise use`](/cli/use.html) for more information.
 
 Multiple environments can be specified, e.g. `MISE_ENV=ci,test` with the last one taking precedence.
 
+## Inline profiles (experimental)
+
+Instead of creating separate `mise.<env>.toml` files, you can define per-environment overrides directly inside a single `mise.toml` using `[env.profiles.<name>]` and `[vars.profiles.<name>]` sub-tables.
+
+This feature is **experimental**. To enable it, set `experimental = true` in the `[settings]` block of your `mise.toml`, or export `MISE_EXPERIMENTAL=1` in your shell:
+
+```toml
+# mise.toml
+[settings]
+experimental = true
+```
+
+### Syntax
+
+```toml
+# mise.toml
+[settings]
+experimental = true
+
+[env]
+APP_ENV = "development"
+API_URL  = "https://dev.example.com"
+
+[env.profiles.production]
+APP_ENV = "production"
+API_URL  = "https://api.example.com"
+
+[env.profiles.staging]
+APP_ENV = "staging"
+API_URL  = "https://staging.example.com"
+```
+
+`[vars.profiles.<name>]` works the same way for template variables:
+
+```toml
+[vars]
+greeting = "hello from base"
+
+[vars.profiles.ci]
+greeting = "hello from CI"
+```
+
+### Activation
+
+A profile is active when its name appears in `MISE_ENV` (including platform auto-environments if
+`auto_env` is enabled). For example:
+
+```bash
+MISE_ENV=production mise env   # uses [env.profiles.production] overrides
+MISE_ENV=staging    mise env   # uses [env.profiles.staging] overrides
+mise env                       # uses only base [env] — no profile active
+```
+
+When multiple profiles are active (`MISE_ENV=ci,production`), they are applied in order and the **later entry wins** within the same file:
+
+```toml
+# MISE_ENV=ci,production → "production" value wins for SHARED
+[env.profiles.ci]
+SHARED = "ci"
+
+[env.profiles.production]
+SHARED = "production"
+```
+
+Profile values override the base `[env]` values within the same file only. Normal load order (child directory overrides parent directory) is unchanged.
+
+### Relationship to separate `mise.<env>.toml` files
+
+Inline `[env.profiles.*]` and separate `mise.<env>.toml` files respond to the **same** `MISE_ENV`/`--env` (`-E`) value and can be used together in the same project. When both define the same variable, normal load order applies: the separate `mise.<env>.toml` file is loaded **after** the base `mise.toml`, so its values win. Cross-directory precedence (child overrides parent) is unchanged.
+
+> **Reserved key:** `profiles` is a reserved key under `[env]` and `[vars]` when experimental is enabled. It cannot be used as a literal environment variable or variable name.
+
+Use `mise config` to see exactly which files and profiles are in effect.
+
 ## Platform environments
 
 With the [`auto_env` setting](/configuration/settings.html#auto_env) enabled, mise automatically

@@ -2,6 +2,9 @@
 # E2E tests for inline environment profiles (Phase 2)
 # Tests the [env.profiles.<name>] / [vars.profiles.<name>] feature.
 # MISE_EXPERIMENTAL=1 is set by the e2e harness (e2e/run_test).
+#
+# Test 10 covers profile-scoped _.source: when the profile is inactive the
+# source script must not be applied; when active it must be.
 
 # ── Test 1: Basic profile override ──────────────────────────────────────────
 # With MISE_ENV set to "prod", the [env.profiles.prod] var must win over the
@@ -166,3 +169,21 @@ EOF
 assert "mise run profile-task 2>/dev/null" "absent"
 # Profile "staging" active → var must be visible
 MISE_ENV=staging assert "mise run profile-task 2>/dev/null" "staging_value"
+
+# ── Test 10: profile-scoped _.source ──────────────────────────────────────────
+# When a profile is INACTIVE the source script must NOT be applied.
+# When the profile is ACTIVE the source script must be applied and its exported
+# var must be visible.
+cat >env_from_source.sh <<'SRCEOF'
+export SOURCE_PROFILE_VAR="sourced_in_ci"
+SRCEOF
+
+cat >mise.toml <<'EOF'
+[env.profiles.ci]
+_.source = "./env_from_source.sh"
+EOF
+
+# No profile active → var must be absent
+assert "mise env --json | jq -r '.SOURCE_PROFILE_VAR // \"absent\"'" "absent"
+# Profile "ci" active → var must be present with value from script
+MISE_ENV=ci assert "mise env --json | jq -r .SOURCE_PROFILE_VAR" "sourced_in_ci"
