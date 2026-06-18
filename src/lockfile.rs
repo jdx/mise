@@ -2291,7 +2291,20 @@ impl LockfileTool {
             table.insert("options".to_string(), toml::Value::Table(opts_table));
         }
         if !self.platforms.is_empty() {
-            table.insert("platforms".to_string(), self.platforms.clone().into());
+            let mut platforms = BTreeMap::new();
+            for (platform, platform_info) in self.platforms {
+                if platform_info.is_empty() {
+                    table.insert(
+                        format!("platforms.{platform}"),
+                        toml::Value::Table(toml::Table::new()),
+                    );
+                } else {
+                    platforms.insert(platform, platform_info);
+                }
+            }
+            if !platforms.is_empty() {
+                table.insert("platforms".to_string(), platforms.into());
+            }
         }
         table.into()
     }
@@ -3505,6 +3518,34 @@ backend = "conda:jq"
 
         assert!(
             !lockfile.tools["node"][0]
+                .platforms
+                .contains_key("linux-riscv64")
+        );
+    }
+
+    #[test]
+    fn test_empty_platform_info_serializes_as_lock_marker() {
+        let mut lockfile = Lockfile::default();
+        lockfile.set_platform_info(
+            "node",
+            "24.0.0",
+            Some("core:node"),
+            &BTreeMap::new(),
+            "linux-riscv64",
+            PlatformInfo::default(),
+        );
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_lockfile = temp_dir.path().join("empty-platform-marker.lock");
+        lockfile.write(&test_lockfile).unwrap();
+        let serialized = file::read_to_string(&test_lockfile).unwrap();
+
+        assert!(serialized.contains("platforms.linux-riscv64"));
+        assert!(!serialized.contains("node-v24.0.0-linux-riscv64.tar.gz"));
+
+        let reloaded = Lockfile::read(&test_lockfile).unwrap();
+        assert!(
+            reloaded.tools["node"][0]
                 .platforms
                 .contains_key("linux-riscv64")
         );

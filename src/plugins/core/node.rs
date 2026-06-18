@@ -977,7 +977,7 @@ impl BuildOpts {
         let default_binary_tarball_url = mirror_url_for(&settings.node, &binary_tarball_name)
             .join(&format!("v{v}/{binary_tarball_name}"))?;
         let platform_key = Platform::current().to_key();
-        let binary_tarball_url = if ctx.locked {
+        let binary_tarball_url = if ctx.locked || settings.locked {
             tv.lock_platforms
                 .get(&platform_key)
                 .and_then(|pi| pi.url.as_deref())
