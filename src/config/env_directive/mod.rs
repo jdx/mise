@@ -321,11 +321,17 @@ pub struct EnvResolveOptions {
 /// list at call time.  Sub-resolvers do not call `resolve_for_config` (they
 /// call raw `resolve` internally) and must not call this function again.
 ///
-/// **Caller precondition:** all entries from the same source `PathBuf` MUST be
-/// contiguous in `directives`.  Non-contiguous interleaving (e.g. `[A, B, A]`)
-/// causes each contiguous run to be treated as an independent block, which
-/// produces incorrect per-file profile ordering.  The `debug_assert!` below
-/// fires in debug builds if this precondition is violated.
+/// # Panics
+///
+/// In debug builds, panics if entries from the same source `PathBuf` are not
+/// contiguous (the per-file blocking relies on this).  In release builds the
+/// assertion is compiled out; a violation would instead yield incorrect
+/// per-file ordering rather than a panic.
+///
+/// Callers must ensure that all entries originating from the same source
+/// `PathBuf` appear in one contiguous run in `directives`.  Non-contiguous
+/// interleaving (e.g. `[A, B, A]`) causes each contiguous run to be treated
+/// as an independent block, which produces incorrect per-file profile ordering.
 ///
 /// The function is intentionally pure (no global state), making it trivially
 /// unit-testable without touching global env vars.

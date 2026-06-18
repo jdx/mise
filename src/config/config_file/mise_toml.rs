@@ -1445,16 +1445,31 @@ impl<'de> de::Deserialize<'de> for EnvList {
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "profiles" if env_profiles_experimental() => {
-                            // Parse value as BTreeMap<profile_name, EnvList>.
-                            // We reuse EnvList's own Deserialize impl so every
-                            // sub-table gets the full directive parsing for free.
+                            // Read the raw value first so we can emit a clear error if the
+                            // user accidentally wrote `profiles = "some-string"` (a scalar)
+                            // instead of the expected sub-table form.
+                            let raw = map.next_value::<toml::Value>()?;
+                            let profiles_table = match raw {
+                                toml::Value::Table(t) => t,
+                                _ => {
+                                    return Err(de::Error::custom(
+                                        "`profiles` is a reserved key under `[env]`/`[vars]` \
+                                         when the `experimental` setting is enabled; it cannot \
+                                         be used as a variable name",
+                                    ));
+                                }
+                            };
+                            // Deserialize each per-profile sub-table as an EnvList.
+                            // We reuse EnvList's own Deserialize impl so every sub-table
+                            // gets the full directive parsing for free.
                             //
                             // NOTE: BTreeMap yields keys in alphabetical order, so profile
                             // groups are emitted into `profile_env` alphabetically here.
                             // This is NOT a precedence contract — active-profile selection
                             // and final ordering are applied later by the resolver using the
                             // `profile` tag on each directive.
-                            let profiles = map.next_value::<BTreeMap<String, EnvList>>()?;
+                            let profiles: BTreeMap<String, EnvList> =
+                                profiles_table.try_into().map_err(de::Error::custom)?;
                             for (profile_name, list) in profiles {
                                 for mut directive in list.0 {
                                     directive.options_mut().profile = Some(profile_name.clone());
@@ -3768,5 +3783,52 @@ run = 'echo "template"'
             }
             d => panic!("unexpected profile directive type: {d:?}"),
         }
+    }
+
+    /// With experimental ON, using `profiles` as a plain string variable (e.g.
+    /// `profiles = "us-east-1"`) must produce a clear parse error whose message
+    /// contains "reserved".  Using it as a proper sub-table (the intended usage)
+    /// must still succeed and produce correctly tagged directives.
+    #[test]
+    fn test_env_profiles_reserved_key_error_on_scalar() {
+        #[derive(Debug, Deserialize)]
+        struct TestCfg {
+            env: EnvList,
+        }
+
+        // ── Part A: scalar value → must fail with a "reserved" message ──
+        // NOTE: Settings::get().experimental is always true in cfg!(test),
+        // so no thread-local override is needed for the ON path.
+        let err_toml = indoc! {r#"
+        [env]
+        profiles = "us-east-1"
+        "#};
+        let err = toml::from_str::<TestCfg>(err_toml)
+            .expect_err("profiles = \"...\" should fail to parse when experimental is ON");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("reserved"),
+            "error message should contain 'reserved', got: {msg:?}"
+        );
+
+        // ── Part B: proper sub-table → must succeed and produce tagged directives ──
+        let ok_toml = indoc! {r#"
+        [env]
+        BASE_VAR = "base"
+
+        [env.profiles.dev]
+        DEV_VAR = "dev_value"
+        "#};
+        let directives = toml::from_str::<TestCfg>(ok_toml)
+            .expect("valid [env.profiles.dev] table should parse successfully")
+            .env
+            .0;
+        let dev_tagged = directives
+            .iter()
+            .any(|d| d.options().profile.as_deref() == Some("dev"));
+        assert!(
+            dev_tagged,
+            "expected a directive tagged with profile 'dev', got {directives:?}"
+        );
     }
 }

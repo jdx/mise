@@ -27,7 +27,11 @@ type EnvResolutionResult = (
 pub struct TaskContextBuilder {
     toolset_cache: RwLock<IndexMap<PathBuf, Arc<Toolset>>>,
     tool_request_set_cache: RwLock<IndexMap<PathBuf, Arc<crate::toolset::ToolRequestSet>>>,
-    env_resolution_cache: RwLock<IndexMap<PathBuf, EnvResolutionResult>>,
+    /// Keyed by `(config_path, active_env_list)` so that cached env cannot bleed
+    /// across MISE_ENV values (e.g. in long-lived watch mode where MISE_ENV may
+    /// change between invocations).  The active env list is joined with ","
+    /// and appended as the second tuple element.
+    env_resolution_cache: RwLock<IndexMap<(PathBuf, String), EnvResolutionResult>>,
 }
 
 impl Clone for TaskContextBuilder {
@@ -226,6 +230,10 @@ impl TaskContextBuilder {
         }
 
         let config_path = canonicalize_path(task_cf.get_path());
+        // Include the active env list in the cache key so that cached env cannot
+        // bleed across MISE_ENV values (e.g. in long-lived watch mode).
+        let active_env_key = env::MISE_ENV_WITH_AUTO.join(",");
+        let cache_key = (config_path.clone(), active_env_key);
 
         // Check cache first if task has no task-specific env directives or tools
         if task.env.0.is_empty()
@@ -237,7 +245,7 @@ impl TaskContextBuilder {
                 .env_resolution_cache
                 .read()
                 .expect("env_resolution_cache RwLock poisoned");
-            if let Some(cached) = cache.get(&config_path) {
+            if let Some(cached) = cache.get(&cache_key) {
                 trace!(
                     "task {} using cached env resolution from {}",
                     task.name,
@@ -291,7 +299,7 @@ impl TaskContextBuilder {
                 .write()
                 .expect("env_resolution_cache RwLock poisoned");
             // Double-check: another thread may have populated while we were resolving
-            cache.entry(config_path.clone()).or_insert_with(|| {
+            cache.entry(cache_key).or_insert_with(|| {
                 trace!(
                     "task {} cached env resolution to {}",
                     task.name,
