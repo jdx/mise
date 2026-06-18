@@ -293,6 +293,121 @@ pub struct EnvResolveOptions {
     pub warn_on_missing_required: bool,
 }
 
+/// Filter and reorder a flat directive stream for active-profile evaluation.
+///
+/// This is the Phase 2 "later-wins" ordering logic for inline environment profiles
+/// (`[env.profiles.<name>]` / `[vars.profiles.<name>]`).
+///
+/// ## Ordering contract (mirrors separate-file "later wins")
+///
+/// The reorder is performed **per source file** (contiguous block of entries
+/// sharing the same `PathBuf`).  Cross-file order is preserved so that
+/// child-directory config files keep higher precedence than parent-directory
+/// files regardless of profile tags.  Within each per-file block:
+///
+/// 1. Directives with `profile == None` (base directives) are kept in their
+///    original relative order and placed FIRST.
+/// 2. Directives with `profile == Some(name)` where `name` is NOT present in
+///    `active_envs` are DROPPED entirely.
+/// 3. Remaining profile-tagged directives are grouped by profile name and
+///    appended AFTER the base directives, ordered by their profile name's
+///    position in `active_envs` (earlier index → emitted first → lower
+///    precedence under a later-wins resolver).
+/// 4. Within the same profile, original relative order is preserved.
+///
+/// ## Call sites
+/// All top-level evaluation sites pass `&env::MISE_ENV_WITH_AUTO` directly as
+/// `active_envs` (not a snapshot), so the result varies with the active env
+/// list at call time.  Sub-resolvers do not call `resolve_for_config` (they
+/// call raw `resolve` internally) and must not call this function again.
+///
+/// **Caller precondition:** all entries from the same source `PathBuf` MUST be
+/// contiguous in `directives`.  Non-contiguous interleaving (e.g. `[A, B, A]`)
+/// causes each contiguous run to be treated as an independent block, which
+/// produces incorrect per-file profile ordering.  The `debug_assert!` below
+/// fires in debug builds if this precondition is violated.
+///
+/// The function is intentionally pure (no global state), making it trivially
+/// unit-testable without touching global env vars.
+pub fn filter_and_order_by_profiles(
+    directives: Vec<(EnvDirective, PathBuf)>,
+    active_envs: &[String],
+) -> Vec<(EnvDirective, PathBuf)> {
+    // Guard: ensure each PathBuf appears in exactly one contiguous run.
+    // Fires only in debug builds; zero cost in release.
+    debug_assert!(
+        {
+            let mut seen: HashMap<&PathBuf, usize> = HashMap::new();
+            let mut last_path: Option<&PathBuf> = None;
+            let mut ok = true;
+            for (_, p) in &directives {
+                if last_path != Some(p) {
+                    // Entering a new (or first) path — check we haven't seen it before.
+                    if seen.contains_key(p) {
+                        ok = false;
+                        break;
+                    }
+                    seen.insert(p, 0);
+                    last_path = Some(p);
+                }
+            }
+            ok
+        },
+        "filter_and_order_by_profiles: caller precondition violated — \
+         entries for the same PathBuf must be contiguous (no A-B-A interleaving)"
+    );
+
+    // Build a fast lookup: profile_name -> index in active_envs.
+    let profile_index: HashMap<&str, usize> = active_envs
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.as_str(), i))
+        .collect();
+
+    // Process the input in contiguous file-blocks, preserving inter-file order.
+    // A "block" is a maximal run of consecutive entries sharing the same PathBuf.
+    let mut result: Vec<(EnvDirective, PathBuf)> = Vec::with_capacity(directives.len());
+
+    // We iterate with a manual index so we can consume entire blocks at once.
+    let mut i = 0;
+    while i < directives.len() {
+        // Determine the extent of the current block (same source path).
+        let block_path = &directives[i].1;
+        let block_end = directives[i..]
+            .iter()
+            .take_while(|(_, p)| p == block_path)
+            .count();
+        let block = &directives[i..i + block_end];
+
+        // Within this block, partition into base (profile==None) and per-profile buckets.
+        let mut base: Vec<(EnvDirective, PathBuf)> = Vec::new();
+        let mut profile_buckets: BTreeMap<usize, Vec<(EnvDirective, PathBuf)>> = BTreeMap::new();
+
+        for item in block {
+            match item.0.options().profile.as_deref() {
+                None => base.push(item.clone()),
+                Some(name) => {
+                    // Drop directives for inactive profiles.
+                    if let Some(&idx) = profile_index.get(name) {
+                        profile_buckets.entry(idx).or_default().push(item.clone());
+                    }
+                }
+            }
+        }
+
+        // Emit: base first, then profiles ordered by their index in active_envs
+        // (BTreeMap iteration is ascending by key).
+        result.extend(base);
+        for (_idx, bucket) in profile_buckets {
+            result.extend(bucket);
+        }
+
+        i += block_end;
+    }
+
+    result
+}
+
 impl EnvResults {
     pub async fn resolve(
         config: &Arc<Config>,
@@ -801,6 +916,35 @@ impl EnvResults {
         Ok(output)
     }
 
+    /// Top-level evaluation entry point for config-file and task-level directive
+    /// streams.  This wrapper applies `filter_and_order_by_profiles` with the
+    /// currently active env list (`&env::MISE_ENV_WITH_AUTO`) before delegating
+    /// to `resolve`.
+    ///
+    /// **All top-level evaluation sites** (config load_env, resolve_vars, toolset
+    /// env, and every task env/vars evaluation path) MUST route through this
+    /// function rather than calling `resolve` directly.  Sub-resolvers (e.g. the
+    /// path, venv, and file directive handlers) invoke `resolve` internally via
+    /// recursion or helper calls, and must NOT call this function again
+    /// (double-filtering is incorrect).
+    ///
+    /// The `active_envs` slice is read at call time from `env::MISE_ENV_WITH_AUTO`
+    /// (not a snapshot), so the result naturally varies when MISE_ENV changes
+    /// between calls.
+    pub async fn resolve_for_config(
+        config: &Arc<Config>,
+        ctx: tera::Context,
+        initial: &EnvMap,
+        input: Vec<(EnvDirective, PathBuf)>,
+        resolve_opts: EnvResolveOptions,
+    ) -> eyre::Result<Self> {
+        // Apply active-profile filtering and per-file reordering so that
+        // child-directory config files retain higher precedence than parent-directory
+        // files even when profile-tagged directives are present.
+        let filtered = filter_and_order_by_profiles(input, &env::MISE_ENV_WITH_AUTO);
+        Self::resolve(config, ctx, initial, filtered, resolve_opts).await
+    }
+
     pub fn is_empty(&self) -> bool {
         self.env.is_empty()
             && self.vars.is_empty()
@@ -1039,5 +1183,270 @@ mod tests {
         let keys: Vec<String> = results.env.keys().cloned().collect();
         assert_eq!(keys, vec!["TOOLS_VAL".to_string()]);
         assert!(results.env_paths.is_empty());
+    }
+
+    // ── filter_and_order_by_profiles unit tests ───────────────────────────
+
+    /// Helper to build a Val directive optionally tagged with a profile.
+    fn val(key: &str, value: &str, profile: Option<&str>) -> (EnvDirective, PathBuf) {
+        let opts = EnvDirectiveOptions {
+            profile: profile.map(|s| s.to_string()),
+            ..Default::default()
+        };
+        (
+            EnvDirective::Val(key.to_string(), value.to_string(), opts),
+            PathBuf::from("/config"),
+        )
+    }
+
+    /// Extract (key, value) pairs from the output for easy assertions.
+    fn kv(items: &[(EnvDirective, PathBuf)]) -> Vec<(&str, &str)> {
+        items
+            .iter()
+            .map(|(d, _)| match d {
+                EnvDirective::Val(k, v, _) => (k.as_str(), v.as_str()),
+                _ => ("?", "?"),
+            })
+            .collect()
+    }
+
+    /// With no active envs the output must be exactly the base directives in
+    /// their original order; any profile-tagged directives are dropped.
+    #[test]
+    fn test_profiles_empty_active_list_drops_profile_directives() {
+        let input = vec![
+            val("BASE1", "b1", None),
+            val("BASE2", "b2", None),
+            val("PROFILE_VAR", "pv", Some("prod")),
+        ];
+        let result = filter_and_order_by_profiles(input, &[]);
+        assert_eq!(kv(&result), vec![("BASE1", "b1"), ("BASE2", "b2")]);
+    }
+
+    /// Profile-tagged directive for an INACTIVE profile must be dropped.
+    #[test]
+    fn test_profiles_inactive_profile_dropped() {
+        let input = vec![
+            val("BASE", "base_val", None),
+            val("CI_VAR", "ci_val", Some("ci")),       // inactive
+            val("PROD_VAR", "prod_val", Some("prod")), // active
+        ];
+        let result = filter_and_order_by_profiles(input, &["prod".to_string()]);
+        assert_eq!(
+            kv(&result),
+            vec![("BASE", "base_val"), ("PROD_VAR", "prod_val")]
+        );
+    }
+
+    /// Base directives must always precede profile directives in the output.
+    #[test]
+    fn test_profiles_base_always_before_profiles() {
+        let input = vec![
+            val("PROFILE_FIRST", "pf", Some("dev")), // profile appears before base in input
+            val("BASE", "base_val", None),
+        ];
+        let result = filter_and_order_by_profiles(input, &["dev".to_string()]);
+        let pairs = kv(&result);
+        // BASE must come first regardless of input order
+        assert_eq!(pairs[0], ("BASE", "base_val"));
+        assert_eq!(pairs[1], ("PROFILE_FIRST", "pf"));
+    }
+
+    /// With active envs ["ci", "prod"], a var defined in both profiles must end
+    /// up with the "prod" entry LAST (higher index wins under later-wins semantics).
+    #[test]
+    fn test_profiles_multi_env_last_wins_ordering() {
+        let active: Vec<String> = vec!["ci".to_string(), "prod".to_string()];
+        let input = vec![
+            val("SHARED", "ci_value", Some("ci")),
+            val("SHARED", "prod_value", Some("prod")),
+        ];
+        let result = filter_and_order_by_profiles(input, &active);
+        // "ci" has index 0, "prod" has index 1 → ci emitted first, prod last
+        let pairs = kv(&result);
+        assert_eq!(
+            pairs,
+            vec![("SHARED", "ci_value"), ("SHARED", "prod_value")]
+        );
+    }
+
+    /// Within a single profile, original relative order of directives must be
+    /// preserved.
+    #[test]
+    fn test_profiles_within_profile_order_preserved() {
+        let active = vec!["dev".to_string()];
+        let input = vec![
+            val("A", "1", Some("dev")),
+            val("B", "2", Some("dev")),
+            val("C", "3", Some("dev")),
+        ];
+        let result = filter_and_order_by_profiles(input, &active);
+        assert_eq!(kv(&result), vec![("A", "1"), ("B", "2"), ("C", "3")]);
+    }
+
+    /// Pure-base input (no profile tags at all) must pass through unchanged.
+    #[test]
+    fn test_profiles_no_profile_tags_passthrough() {
+        let input = vec![val("X", "1", None), val("Y", "2", None)];
+        let result = filter_and_order_by_profiles(input.clone(), &["any".to_string()]);
+        assert_eq!(kv(&result), kv(&input));
+    }
+
+    /// Three active envs: ordering must follow index position, not alphabetical
+    /// order of profile names.
+    #[test]
+    fn test_profiles_three_active_envs_ordering() {
+        // "c", "a", "b" — deliberately non-alphabetical to ensure we use index
+        let active: Vec<String> = vec!["c".to_string(), "a".to_string(), "b".to_string()];
+        let input = vec![
+            val("BASE", "base", None),
+            val("VAR", "b_val", Some("b")), // index 2
+            val("VAR", "a_val", Some("a")), // index 1
+            val("VAR", "c_val", Some("c")), // index 0
+        ];
+        let result = filter_and_order_by_profiles(input, &active);
+        // Expected: BASE, then c (idx=0), then a (idx=1), then b (idx=2)
+        assert_eq!(
+            kv(&result),
+            vec![
+                ("BASE", "base"),
+                ("VAR", "c_val"),
+                ("VAR", "a_val"),
+                ("VAR", "b_val"),
+            ]
+        );
+    }
+
+    // Helper: like val() but with a specific source path (to simulate multi-file streams).
+    fn val_at(
+        key: &str,
+        value: &str,
+        profile: Option<&str>,
+        path: &str,
+    ) -> (EnvDirective, PathBuf) {
+        let opts = EnvDirectiveOptions {
+            profile: profile.map(|s| s.to_string()),
+            ..Default::default()
+        };
+        (
+            EnvDirective::Val(key.to_string(), value.to_string(), opts),
+            PathBuf::from(path),
+        )
+    }
+
+    /// CROSS-FILE: a child-file base directive must still come AFTER a parent-file
+    /// active-profile directive in the output so the later-wins resolver picks the
+    /// child base value.
+    ///
+    /// Scenario (MISE_ENV=prod):
+    ///   parent file block: [env] FOO=parent_base, [env.profiles.prod] FOO=parent_prod
+    ///   child  file block: [env] FOO=child_base
+    ///
+    /// load_env emits parent before child (child later = higher precedence).
+    /// After filter_and_order_by_profiles the stream should be:
+    ///   parent_base, parent_prod, child_base
+    /// so that the later-wins resolver ends up with child_base for FOO.
+    #[test]
+    fn test_profiles_cross_file_child_base_wins_over_parent_profile() {
+        let active = vec!["prod".to_string()];
+        let parent = "/project/mise.toml";
+        let child = "/project/sub/mise.toml";
+
+        // Entries as emitted by load_env (parent block first, child block last):
+        let input = vec![
+            val_at("FOO", "parent_base", None, parent),
+            val_at("FOO", "parent_prod", Some("prod"), parent),
+            val_at("FOO", "child_base", None, child),
+        ];
+
+        let result = filter_and_order_by_profiles(input, &active);
+
+        // Per-file reorder:
+        //   parent block: [parent_base] ++ [parent_prod]
+        //   child  block: [child_base]  ++ (no active profiles)
+        // Full output: parent_base, parent_prod, child_base
+        let pairs = kv(&result);
+        assert_eq!(
+            pairs,
+            vec![
+                ("FOO", "parent_base"),
+                ("FOO", "parent_prod"),
+                ("FOO", "child_base"),
+            ],
+            "child base must appear last so it wins under later-wins semantics"
+        );
+    }
+
+    /// CROSS-FILE: a child-file active-profile directive must win over a parent-file
+    /// base directive.
+    ///
+    /// Scenario (MISE_ENV=prod):
+    ///   parent file block: [env] FOO=parent_base
+    ///   child  file block: [env] FOO=child_base, [env.profiles.prod] FOO=child_prod
+    ///
+    /// Expected output order: parent_base, child_base, child_prod
+    /// (child_prod is last → wins).
+    #[test]
+    fn test_profiles_cross_file_child_profile_wins_over_parent_base() {
+        let active = vec!["prod".to_string()];
+        let parent = "/project/mise.toml";
+        let child = "/project/sub/mise.toml";
+
+        let input = vec![
+            val_at("FOO", "parent_base", None, parent),
+            val_at("FOO", "child_base", None, child),
+            val_at("FOO", "child_prod", Some("prod"), child),
+        ];
+
+        let result = filter_and_order_by_profiles(input, &active);
+
+        // Per-file reorder:
+        //   parent block: [parent_base]
+        //   child  block: [child_base, child_prod]
+        let pairs = kv(&result);
+        assert_eq!(
+            pairs,
+            vec![
+                ("FOO", "parent_base"),
+                ("FOO", "child_base"),
+                ("FOO", "child_prod"),
+            ],
+            "child active-profile must be last so it wins under later-wins semantics"
+        );
+    }
+
+    /// CROSS-FILE: within-file base-before-profile and profile ordering by index
+    /// must both hold even in a multi-file stream.
+    #[test]
+    fn test_profiles_cross_file_within_file_ordering_preserved() {
+        let active = vec!["ci".to_string(), "prod".to_string()];
+        let parent = "/project/mise.toml";
+        let child = "/project/sub/mise.toml";
+
+        // parent block: base + prod profile
+        // child  block: ci profile + base  (interleaved to stress the reorder)
+        let input = vec![
+            val_at("A", "parent_base", None, parent),
+            val_at("A", "parent_prod", Some("prod"), parent),
+            val_at("A", "child_ci", Some("ci"), child),
+            val_at("A", "child_base", None, child),
+        ];
+
+        let result = filter_and_order_by_profiles(input, &active);
+
+        // Per-file reorder:
+        //   parent block: [parent_base(base)] ++ [parent_prod(prod, idx=1)]
+        //   child  block: [child_base(base)]  ++ [child_ci(ci, idx=0)]
+        // Full stream: parent_base, parent_prod, child_base, child_ci
+        let pairs = kv(&result);
+        assert_eq!(
+            pairs,
+            vec![
+                ("A", "parent_base"),
+                ("A", "parent_prod"),
+                ("A", "child_base"),
+                ("A", "child_ci"),
+            ]
+        );
     }
 }

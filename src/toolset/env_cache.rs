@@ -144,6 +144,7 @@ impl CachedEnv {
         settings_hash: &str,
         base_path: &str,
     ) -> String {
+        use crate::env;
         let mut hasher = Hasher::new();
 
         // mise version
@@ -166,6 +167,14 @@ impl CachedEnv {
 
         // base PATH
         hasher.update(base_path.as_bytes());
+
+        // active env list — ensures different MISE_ENV values get distinct cache
+        // entries so inline profile directives don't cross-contaminate.
+        // join(",") is collision-free: env names are guaranteed non-empty and
+        // comma-free by the `environment()` parser in src/env.rs (splits on ","
+        // and filters empty strings), so no two distinct lists can produce the
+        // same joined string.
+        hasher.update(env::MISE_ENV_WITH_AUTO.join(",").as_bytes());
 
         let hash = hasher.finalize();
         hex::encode(hash.as_bytes())
@@ -306,6 +315,7 @@ impl CachedNonToolEnv {
         settings_hash: &str,
         base_path: &str,
     ) -> String {
+        use crate::env;
         let mut hasher = Hasher::new();
 
         // scope to non-tool env cache
@@ -325,6 +335,11 @@ impl CachedNonToolEnv {
 
         // base PATH
         hasher.update(base_path.as_bytes());
+
+        // active env list — ensures different MISE_ENV values get distinct cache
+        // entries so inline profile directives don't cross-contaminate.
+        // join(",") is collision-free: see the comment in CachedEnv::compute_cache_key.
+        hasher.update(env::MISE_ENV_WITH_AUTO.join(",").as_bytes());
 
         let hash = hasher.finalize();
         hex::encode(hash.as_bytes())

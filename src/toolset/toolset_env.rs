@@ -446,7 +446,9 @@ impl Toolset {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let env_results = EnvResults::resolve(
+        // resolve_for_config applies active-profile filtering (filter_and_order_by_profiles)
+        // before evaluating directives — this is the toolset tools-env evaluation site.
+        let env_results = EnvResults::resolve_for_config(
             config,
             ctx,
             env,

@@ -681,7 +681,9 @@ impl Config {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let mut env_results = EnvResults::resolve(
+        // resolve_for_config applies active-profile filtering (filter_and_order_by_profiles)
+        // before evaluating directives — this is the main config-level evaluation site.
+        let mut env_results = EnvResults::resolve_for_config(
             self,
             self.tera_ctx.clone(),
             &env::PRISTINE_ENV,
@@ -1700,8 +1702,9 @@ pub(crate) async fn resolve_vars_from_config_files(
         .into_iter()
         .flatten()
         .collect();
-
-    EnvResults::resolve(
+    // resolve_for_config applies active-profile filtering (filter_and_order_by_profiles)
+    // before evaluating directives — this is the vars evaluation site.
+    EnvResults::resolve_for_config(
         config,
         config.tera_ctx.clone(),
         &env::PRISTINE_ENV,

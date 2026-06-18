@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# E2E tests for inline environment profiles (Phase 2)
+# Tests the [env.profiles.<name>] / [vars.profiles.<name>] feature.
+# MISE_EXPERIMENTAL=1 is set by the e2e harness (e2e/run_test).
+
+# ── Test 1: Basic profile override ──────────────────────────────────────────
+# With MISE_ENV set to "prod", the [env.profiles.prod] var must win over the
+# base [env] var.
+cat >mise.toml <<'EOF'
+[env]
+MY_VAR = "base_value"
+
+[env.profiles.prod]
+MY_VAR = "prod_value"
+EOF
+
+assert "mise env --json | jq -r .MY_VAR" "base_value"
+MISE_ENV=prod assert "mise env --json | jq -r .MY_VAR" "prod_value"
+
+# ── Test 2: Inactive profile vars must not appear ────────────────────────────
+# With no MISE_ENV, the profile var for "ci" must not be visible.
+cat >mise.toml <<'EOF'
+[env]
+BASE = "yes"
+
+[env.profiles.ci]
+CI_ONLY = "ci_value"
+EOF
+
+assert "mise env --json | jq -r '.CI_ONLY // \"absent\"'" "absent"
+MISE_ENV=ci assert "mise env --json | jq -r .CI_ONLY" "ci_value"
+
+# ── Test 3: Multi-env "last wins" semantics ──────────────────────────────────
+# With MISE_ENV=ci,prod both defining SHARED, the "prod" entry must win because
+# it appears later in the list.
+cat >mise.toml <<'EOF'
+[env]
+SHARED = "base"
+
+[env.profiles.ci]
+SHARED = "ci_wins"
+
+[env.profiles.prod]
+SHARED = "prod_wins"
+EOF
+
+MISE_ENV=ci assert "mise env --json | jq -r .SHARED" "ci_wins"
+MISE_ENV=prod assert "mise env --json | jq -r .SHARED" "prod_wins"
+MISE_ENV=ci,prod assert "mise env --json | jq -r .SHARED" "prod_wins"
+# Reverse order: ci is later → ci wins
+MISE_ENV=prod,ci assert "mise env --json | jq -r .SHARED" "ci_wins"
+
+# ── Test 4: _.path directive inside an active profile ───────────────────────
+# A path directive in a profile should prepend PATH when the profile is active.
+cat >mise.toml <<'EOF'
+[env.profiles.myprofile]
+_.path = "/custom/bin"
+EOF
+
+MISE_ENV=myprofile assert_contains "mise env -s bash" "/custom/bin"
+assert_fail "mise env -s bash | grep '/custom/bin'"
+
+# ── Test 5: Switching MISE_ENV yields different env (cache-key coverage) ─────
+# Two consecutive calls with different MISE_ENV values must produce different
+# results even when env caching is enabled.
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+cat >mise.toml <<'EOF'
+[env]
+CACHE_VAR = "base"
+
+[env.profiles.alpha]
+CACHE_VAR = "alpha"
+
+[env.profiles.beta]
+CACHE_VAR = "beta"
+EOF
+
+# Prime the cache with alpha
+MISE_ENV=alpha assert "mise env --json | jq -r .CACHE_VAR" "alpha"
+# Switch to beta — must NOT return the alpha-keyed cached result
+MISE_ENV=beta assert "mise env --json | jq -r .CACHE_VAR" "beta"
+# No MISE_ENV — must return base
+assert "mise env --json | jq -r .CACHE_VAR" "base"
+
+unset MISE_ENV_CACHE
+unset __MISE_ENV_CACHE_KEY
+
+# ── Test 6: vars profiles ─────────────────────────────────────────────────────
+# [vars.profiles.<name>] must work the same way as [env.profiles.<name>].
+# Vars are accessed in tasks via the {{vars.<name>}} template syntax.
+cat >mise.toml <<'EOF'
+[vars]
+MY_VAR = "base_var"
+
+[vars.profiles.staging]
+MY_VAR = "staging_var"
+
+[tasks.show-var]
+run = "echo {{vars.MY_VAR}}"
+EOF
+
+MISE_ENV=staging assert "mise run show-var 2>/dev/null" "staging_var"
+assert "mise run show-var 2>/dev/null" "base_var"
+
+# ── Test 7: cross-file precedence — child base beats parent profile ───────────
+# Scenario (MISE_ENV=prod):
+#   parent mise.toml: [env] FOO=parent_base  [env.profiles.prod] FOO=parent_prod
+#   child  mise.toml: [env] FOO=child_base
+#
+# Without the per-file reorder fix, the old helper moved ALL base directives
+# before ALL profile directives across the whole stream, so parent_prod ended
+# up last and won.  The fixed helper reorders per source file, so the stream
+# becomes: parent_base, parent_prod, child_base — and child_base wins.
+mkdir -p subdir
+
+cat >mise.toml <<'EOF'
+[env]
+CROSS_FOO = "parent_base"
+
+[env.profiles.prod]
+CROSS_FOO = "parent_prod"
+EOF
+
+cat >subdir/mise.toml <<'EOF'
+[env]
+CROSS_FOO = "child_base"
+EOF
+
+MISE_ENV=prod assert "mise --cd subdir env --json | jq -r .CROSS_FOO" "child_base"
+
+# ── Test 8: cross-file — child profile beats parent base ─────────────────────
+# Scenario (MISE_ENV=prod):
+#   parent mise.toml: [env] FOO=parent_base
+#   child  mise.toml: [env] FOO=child_base  [env.profiles.prod] FOO=child_prod
+#
+# Expected: child_prod wins (it is last within child's block).
+cat >mise.toml <<'EOF'
+[env]
+CROSS_FOO = "parent_base"
+EOF
+
+cat >subdir/mise.toml <<'EOF'
+[env]
+CROSS_FOO = "child_base"
+
+[env.profiles.prod]
+CROSS_FOO = "child_prod"
+EOF
+
+MISE_ENV=prod assert "mise --cd subdir env --json | jq -r .CROSS_FOO" "child_prod"
+
+# ── Test 9: task-level inactive profile directive is dropped ─────────────────
+# A task that sets an env var only in an inactive profile must not expose
+# that var when the profile is not active.
+cat >mise.toml <<'EOF'
+[tasks.profile-task]
+run = 'echo "${TASK_PROF_VAR:-absent}"'
+
+[tasks.profile-task.env.profiles.staging]
+TASK_PROF_VAR = "staging_value"
+EOF
+
+# Profile "staging" inactive → var must be absent
+assert "mise run profile-task 2>/dev/null" "absent"
+# Profile "staging" active → var must be visible
+MISE_ENV=staging assert "mise run profile-task 2>/dev/null" "staging_value"

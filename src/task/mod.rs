@@ -1251,7 +1251,9 @@ impl Task {
             .get("env")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_else(|| env::PRISTINE_ENV.clone());
-        let results = EnvResults::resolve(
+        // Apply active-profile filtering so inactive profile vars/directives in
+        // [tasks.X.vars.profiles.*] are dropped before evaluation.
+        let results = EnvResults::resolve_for_config(
             config,
             tera_ctx.clone(),
             &template_env,
@@ -1683,8 +1685,10 @@ impl Task {
         // `_.file = ".env"` resolve relative to the overlay's config file.
         env_directives.extend(self.overlay_env.iter().cloned());
 
-        // Resolve environment directives using the same system as global env
-        let env_results = EnvResults::resolve(
+        // Apply active-profile filtering so inactive [tasks.X.env.profiles.*]
+        // directives (including _.source, _.file, PythonVenv, Age) are dropped
+        // before evaluation.
+        let env_results = EnvResults::resolve_for_config(
             config,
             tera_ctx.clone(),
             &env,

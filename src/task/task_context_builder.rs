@@ -185,7 +185,7 @@ impl TaskContextBuilder {
         };
 
         // Get env entries - load the FULL config hierarchy for monorepo tasks
-        let all_config_env_entries: Vec<(EnvDirective, PathBuf)> =
+        let all_config_env_entries_raw: Vec<(EnvDirective, PathBuf)> =
             if let Some(ref task_config_files) = task_config_files {
                 // Extract env entries from all config files in the task's hierarchy
                 task_config_files
@@ -214,6 +214,8 @@ impl TaskContextBuilder {
                     .flatten()
                     .collect()
             };
+        // Profile filtering is applied inside resolve_env_directives via resolve_for_config.
+        let all_config_env_entries = all_config_env_entries_raw;
 
         // Early return if no special context needed
         // Check using task_cf entries for compatibility with existing logic
@@ -343,7 +345,7 @@ impl TaskContextBuilder {
         let mut resolved_vars = None;
         // If we have task-specific config files, resolve vars from them
         if let Some(task_config_files) = task_config_files {
-            let vars_entries: Vec<(EnvDirective, PathBuf)> = task_config_files
+            let vars_entries_raw: Vec<(EnvDirective, PathBuf)> = task_config_files
                 .iter()
                 .rev()
                 .map(|(source, cf)| {
@@ -354,13 +356,14 @@ impl TaskContextBuilder {
                 .into_iter()
                 .flatten()
                 .collect();
-
-            if !vars_entries.is_empty() {
-                let vars_results = EnvResults::resolve(
+            if !vars_entries_raw.is_empty() {
+                // resolve_for_config applies active-profile filtering before evaluating
+                // directives — this is the task-context vars evaluation site.
+                let vars_results = EnvResults::resolve_for_config(
                     config,
                     tera_ctx.clone(),
                     &env::PRISTINE_ENV,
-                    vars_entries,
+                    vars_entries_raw,
                     EnvResolveOptions {
                         vars: true,
                         tools: ToolsFilter::NonToolsOnly,
@@ -397,7 +400,14 @@ impl TaskContextBuilder {
         directives
     }
 
-    /// Resolve env directives using EnvResults
+    /// Resolve env directives using EnvResults.
+    ///
+    /// Uses `resolve_for_config` so active-profile filtering is applied before
+    /// evaluation.  This covers both the config-level entries AND the task-level
+    /// entries (inherited_env + env + overlay_env) that are built by
+    /// `build_task_env_directives` — inactive-profile directives in tasks are
+    /// dropped before any side-effectful directive (_.source, _.file, PythonVenv, Age)
+    /// can execute.
     async fn resolve_env_directives(
         &self,
         config: &Arc<Config>,
@@ -405,7 +415,7 @@ impl TaskContextBuilder {
         env: &BTreeMap<String, String>,
         directives: Vec<(EnvDirective, PathBuf)>,
     ) -> Result<EnvResults> {
-        EnvResults::resolve(
+        EnvResults::resolve_for_config(
             config,
             tera_ctx.clone(),
             env,
