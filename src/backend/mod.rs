@@ -2034,7 +2034,7 @@ pub trait Backend: Debug + Send + Sync {
                 hint: Remove `lockfile = false` or set `lockfile = true`, or disable locked mode"
             );
         }
-        if ctx.locked && !tv.request.source().is_tool_stub() {
+        if (ctx.locked || settings.locked) && !tv.request.source().is_tool_stub() {
             let platform_key = self.get_platform_key();
             let platform_info = tv.lock_platforms.get(&platform_key);
             let requires_lockfile_url = match platform_info.and_then(|p| p.install_method) {

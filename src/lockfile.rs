@@ -293,7 +293,6 @@ impl PlatformInfo {
             && self.pkgx_provides.is_none()
             && self.pkgx_runtime_env.is_none()
             && self.provenance.is_none()
-            && self.github_attestations.is_none()
     }
 
     /// True when the lockfile has checksum-backed, successfully verified provenance.
@@ -310,11 +309,15 @@ impl PlatformInfo {
     ///   changes.
     pub fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
         let url_changed = self.url.is_some() && other.url.is_some() && self.url != other.url;
+        let install_method_changed = self.install_method.is_some()
+            && other.install_method.is_some()
+            && self.install_method != other.install_method;
+        let artifact_changed = url_changed || install_method_changed;
 
         // For checksums, prefer sha256 over blake3 since sha256 comes from
-        // official releases and is more portable/verifiable. If URLs disagree,
+        // official releases and is more portable/verifiable. If artifacts disagree,
         // ignore the other side's artifact-bound fields entirely.
-        let checksum = if url_changed {
+        let checksum = if artifact_changed {
             self.checksum.clone()
         } else {
             match (&self.checksum, &other.checksum) {
@@ -332,13 +335,13 @@ impl PlatformInfo {
             }
         };
 
-        let size = if url_changed {
+        let size = if artifact_changed {
             self.size
         } else {
             self.size.or(other.size)
         };
 
-        let url_api = if url_changed {
+        let url_api = if artifact_changed {
             self.url_api.clone()
         } else {
             self.url_api.clone().or_else(|| other.url_api.clone())
@@ -352,7 +355,11 @@ impl PlatformInfo {
             install_method: self.install_method.or(other.install_method),
             checksum,
             size,
-            url: self.url.clone().or_else(|| other.url.clone()),
+            url: if artifact_changed {
+                self.url.clone()
+            } else {
+                self.url.clone().or_else(|| other.url.clone())
+            },
             url_api,
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
             pkgx_deps: self.pkgx_deps.clone().or_else(|| other.pkgx_deps.clone()),
@@ -1051,7 +1058,10 @@ impl Lockfile {
                 let url_changed = platform_info.url.is_some()
                     && existing.url.is_some()
                     && platform_info.url != existing.url;
-                let preserve_artifact_fields = !url_changed;
+                let install_method_changed = platform_info.install_method.is_some()
+                    && existing.install_method.is_some()
+                    && platform_info.install_method != existing.install_method;
+                let preserve_artifact_fields = !url_changed && !install_method_changed;
                 let provenance = match (
                     platform_info.provenance.clone(),
                     existing.provenance.clone(),
@@ -1073,7 +1083,13 @@ impl Lockfile {
                     } else {
                         None
                     }),
-                    url: platform_info.url.or_else(|| existing.url.clone()),
+                    url: platform_info.url.or_else(|| {
+                        if preserve_artifact_fields {
+                            existing.url.clone()
+                        } else {
+                            None
+                        }
+                    }),
                     url_api: platform_info.url_api.or_else(|| {
                         if preserve_artifact_fields {
                             existing.url_api.clone()
@@ -3086,6 +3102,29 @@ backend = "conda:jq"
     }
 
     #[test]
+    fn test_platform_info_merge_drops_stale_artifact_fields_on_install_method_change() {
+        let new_info = PlatformInfo {
+            install_method: Some(InstallMethod::Compile),
+            ..Default::default()
+        };
+        let stale_info = PlatformInfo {
+            install_method: Some(InstallMethod::Precompiled),
+            checksum: Some("sha256:OLD".to_string()),
+            size: Some(123),
+            url: Some("https://example.com/binary.tar.gz".to_string()),
+            url_api: Some("https://api.example.com/binary".to_string()),
+            ..Default::default()
+        };
+
+        let merged = new_info.merge_with(&stale_info);
+        assert_eq!(merged.install_method, Some(InstallMethod::Compile));
+        assert_eq!(merged.checksum, None);
+        assert_eq!(merged.size, None);
+        assert_eq!(merged.url, None);
+        assert_eq!(merged.url_api, None);
+    }
+
+    #[test]
     fn test_provenance_fields_roundtrip() {
         let info = PlatformInfo {
             checksum: Some("sha256:abc123".to_string()),
@@ -3406,6 +3445,44 @@ backend = "conda:jq"
             }
             other => panic!("expected Slsa provenance with URL, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_set_platform_info_drops_stale_artifact_fields_on_install_method_change() {
+        let mut lockfile = Lockfile::default();
+        lockfile.set_platform_info(
+            "node",
+            "24.0.0",
+            Some("core:node"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                install_method: Some(InstallMethod::Precompiled),
+                checksum: Some("sha256:OLD".to_string()),
+                size: Some(123),
+                url: Some("https://example.com/binary.tar.gz".to_string()),
+                url_api: Some("https://api.example.com/binary".to_string()),
+                ..Default::default()
+            },
+        );
+        lockfile.set_platform_info(
+            "node",
+            "24.0.0",
+            Some("core:node"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                install_method: Some(InstallMethod::Compile),
+                ..Default::default()
+            },
+        );
+
+        let info = &lockfile.tools["node"][0].platforms["linux-x64"];
+        assert_eq!(info.install_method, Some(InstallMethod::Compile));
+        assert_eq!(info.checksum, None);
+        assert_eq!(info.size, None);
+        assert_eq!(info.url, None);
+        assert_eq!(info.url_api, None);
     }
 
     #[test]

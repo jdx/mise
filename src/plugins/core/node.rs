@@ -875,7 +875,10 @@ impl Backend for NodePlugin {
                         ..Default::default()
                     });
                 }
-                None => None,
+                None => bail!(
+                    "precompiled node archive {filename} not found in {} and compilation is disabled",
+                    shasums_url
+                ),
             },
             Err(e) => {
                 debug!("Failed to fetch SHASUMS from {}: {e}", shasums_url);
@@ -1129,11 +1132,11 @@ mod tests {
         configure_settings: impl FnOnce(&mut SettingsPartial),
     ) -> BTreeMap<String, String> {
         let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _guard = SettingsResetGuard { _lock: lock };
         let _env_guard = NodeEnvResetGuard::clear();
         let mut settings = SettingsPartial::empty();
         configure_settings(&mut settings);
         Settings::reset(Some(settings));
-        let _guard = SettingsResetGuard { _lock: lock };
 
         let backend = NodePlugin::new();
         let request = ToolRequest::new(backend.ba().clone(), "22.0.0", ToolSource::Unknown)
