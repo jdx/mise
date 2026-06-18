@@ -513,17 +513,17 @@ impl TryFrom<toml::Value> for PlatformInfo {
 impl From<PlatformInfo> for toml::Value {
     fn from(platform_info: PlatformInfo) -> Self {
         let mut table = toml::Table::new();
-        if let Some(install_method) = platform_info.install_method {
-            table.insert(
-                "install_method".to_string(),
-                install_method.to_string().into(),
-            );
-        }
         if let Some(checksum) = platform_info.checksum {
             table.insert("checksum".to_string(), checksum.into());
         }
         if let Some(url) = platform_info.url {
             table.insert("url".to_string(), url.into());
+        }
+        if let Some(install_method) = platform_info.install_method {
+            table.insert(
+                "install_method".to_string(),
+                install_method.to_string().into(),
+            );
         }
         if let Some(url_api) = platform_info.url_api {
             table.insert("url_api".to_string(), url_api.into());
