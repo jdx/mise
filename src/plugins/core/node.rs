@@ -11,7 +11,7 @@ use crate::config::{Config, Settings};
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::lockfile::{InstallMethod, PlatformInfo};
+use crate::lockfile::PlatformInfo;
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
@@ -62,7 +62,7 @@ impl NodePlugin {
                 &opts.binary_tarball_url,
                 &opts.binary_tarball_path,
                 &opts.version,
-                InstallMethod::Precompiled,
+                true,
             )
             .await
         {
@@ -169,7 +169,7 @@ impl NodePlugin {
                 &opts.source_tarball_url,
                 &opts.source_tarball_path,
                 &opts.version,
-                InstallMethod::Compile,
+                false,
             )
             .await
         {
@@ -209,7 +209,7 @@ impl NodePlugin {
         url: &Url,
         local: &Path,
         version: &str,
-        install_method: InstallMethod,
+        record_url: bool,
     ) -> Result<()> {
         let settings = Settings::get();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
@@ -233,8 +233,7 @@ impl NodePlugin {
             None
         };
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        platform_info.install_method = Some(install_method);
-        if install_method == InstallMethod::Precompiled {
+        if record_url {
             platform_info.url = Some(url.to_string());
         }
         if let Some(checksum) = checksum {
@@ -559,6 +558,10 @@ impl Backend for NodePlugin {
         features
     }
 
+    fn locked_platform_requires_url(&self, platform_info: Option<&PlatformInfo>) -> bool {
+        !platform_info.is_some_and(|pi| pi.url.is_none())
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let settings = Settings::get();
         let base = settings.node.mirror_url();
@@ -659,19 +662,17 @@ impl Backend for NodePlugin {
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx, &tv).await?;
         trace!("node build opts: {:#?}", opts);
-        let locked_install_method = if ctx.locked {
+        let locked_source_compile = if ctx.locked || settings.locked {
             tv.lock_platforms
                 .get(&self.get_platform_key())
-                .and_then(|pi| pi.install_method)
+                .is_some_and(|pi| pi.url.is_none())
         } else {
-            None
+            false
         };
 
         if cfg!(windows) {
             self.install_windows(ctx, &mut tv, &opts).await?;
-        } else if locked_install_method == Some(InstallMethod::Compile)
-            || settings.node.compile == Some(true)
-        {
+        } else if locked_source_compile || settings.node.compile == Some(true) {
             self.install_compiling(ctx, &mut tv, &opts).await?;
         } else {
             self.install_precompiled(ctx, &mut tv, &opts).await?;
@@ -775,9 +776,7 @@ impl Backend for NodePlugin {
             Some(false) => {
                 opts.insert("compile".to_string(), "false".to_string());
             }
-            None => {
-                opts.insert("compile".to_string(), "if_available".to_string());
-            }
+            None => {}
         }
 
         if compile != Some(false) {
@@ -856,10 +855,7 @@ impl Backend for NodePlugin {
             .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
 
         if settings.node.compile == Some(true) && target.os_name() != "windows" {
-            return Ok(PlatformInfo {
-                install_method: Some(InstallMethod::Compile),
-                ..Default::default()
-            });
+            return Ok(PlatformInfo::default());
         }
 
         // Fetch SHASUMS256.txt to get checksum without downloading the tarball.
@@ -870,15 +866,15 @@ impl Backend for NodePlugin {
             Ok(shasums_content) => match hash::parse_shasums(&shasums_content).get(&filename) {
                 Some(shasum) => Some(format!("sha256:{shasum}")),
                 None if settings.node.compile != Some(false) => {
-                    return Ok(PlatformInfo {
-                        install_method: Some(InstallMethod::Compile),
-                        ..Default::default()
-                    });
+                    return Ok(PlatformInfo::default());
                 }
-                None => bail!(
-                    "precompiled node archive {filename} not found in {} and compilation is disabled",
-                    shasums_url
-                ),
+                None => {
+                    debug!(
+                        "precompiled node archive {filename} not found in {} and compilation is disabled",
+                        shasums_url
+                    );
+                    return Ok(PlatformInfo::default());
+                }
             },
             Err(e) => {
                 debug!("Failed to fetch SHASUMS from {}: {e}", shasums_url);
@@ -887,7 +883,6 @@ impl Backend for NodePlugin {
         };
 
         Ok(PlatformInfo {
-            install_method: Some(InstallMethod::Precompiled),
             url: Some(url.to_string()),
             checksum,
             size: None,
@@ -1178,10 +1173,7 @@ mod tests {
     fn test_node_lockfile_options_omit_default_precompiled_settings() {
         let opts = resolve_node_lockfile_options(|_| {});
 
-        assert_eq!(
-            opts,
-            BTreeMap::from([("compile".to_string(), "if_available".to_string())])
-        );
+        assert_eq!(opts, BTreeMap::new());
     }
 
     #[test]
@@ -1243,7 +1235,6 @@ mod tests {
         assert_eq!(
             opts,
             BTreeMap::from([
-                ("compile".to_string(), "if_available".to_string()),
                 ("configure_opts".to_string(), "--openssl-no-asm".to_string()),
                 ("make_opts".to_string(), "-s".to_string()),
             ])

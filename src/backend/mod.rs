@@ -23,7 +23,7 @@ use crate::file::{
 };
 use crate::install_before::resolve_before_date_for_tool;
 use crate::install_context::InstallContext;
-use crate::lockfile::{InstallMethod, PlatformInfo, ProvenanceType};
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
 use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
@@ -1134,6 +1134,11 @@ pub trait Backend: Debug + Send + Sync {
         true
     }
 
+    /// Whether a locked platform entry must contain a URL before installation.
+    fn locked_platform_requires_url(&self, _platform_info: Option<&PlatformInfo>) -> bool {
+        self.supports_lockfile_url()
+    }
+
     async fn description(&self) -> Option<String> {
         None
     }
@@ -2037,11 +2042,7 @@ pub trait Backend: Debug + Send + Sync {
         if (ctx.locked || settings.locked) && !tv.request.source().is_tool_stub() {
             let platform_key = self.get_platform_key();
             let platform_info = tv.lock_platforms.get(&platform_key);
-            let requires_lockfile_url = match platform_info.and_then(|p| p.install_method) {
-                Some(InstallMethod::Precompiled) => true,
-                Some(InstallMethod::Compile) => false,
-                None => self.supports_lockfile_url(),
-            };
+            let requires_lockfile_url = self.locked_platform_requires_url(platform_info);
             let has_lockfile_url = platform_info.and_then(|p| p.url.as_ref()).is_some();
             if requires_lockfile_url && !has_lockfile_url {
                 bail!(
