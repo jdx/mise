@@ -6,6 +6,10 @@
 # Test 10 covers profile-scoped _.source: when the profile is inactive the
 # source script must not be applied; when active it must be.
 
+# Clear any inherited MISE_ENV so the "no profile active" baseline assertions
+# are deterministic regardless of the ambient environment.
+unset MISE_ENV
+
 # ── Test 1: Basic profile override ──────────────────────────────────────────
 # With MISE_ENV set to "prod", the [env.profiles.prod] var must win over the
 # base [env] var.

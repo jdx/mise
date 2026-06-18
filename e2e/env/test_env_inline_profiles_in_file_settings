@@ -7,6 +7,8 @@
 # This proves the self-enabling path parses and activates correctly.
 
 unset MISE_EXPERIMENTAL
+# Clear any inherited MISE_ENV so the "no profile active" assertions are deterministic.
+unset MISE_ENV
 
 cat >mise.toml <<'EOF'
 [settings]
