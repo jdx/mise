@@ -13,6 +13,7 @@ _usage_mise_cache_policy() {
 }
 
 _mise() {
+  emulate -L zsh
   typeset -A opt_args
   local curcontext="$curcontext" cache_policy
 

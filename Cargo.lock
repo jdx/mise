@@ -5312,6 +5312,7 @@ dependencies = [
  "filetime",
  "flate2",
  "fslock",
+ "futures-util",
  "gix",
  "glob",
  "globset",
@@ -9582,9 +9583,9 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-lib"
-version = "3.5.0"
+version = "3.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc055ae0a824bf9e409ee8e175ec224d5e1b79325557f51967eea0f103e5dc03"
+checksum = "fd4e84470f848f8cea3efba8d1245cf6c2051d0fe2fe9ddd29b5977d0e906844"
 dependencies = [
  "clap",
  "heck",

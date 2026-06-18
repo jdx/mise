@@ -317,6 +317,7 @@ Examples:
 
     $ mise bootstrap                    # packages + dotfiles + tools + bootstrap task
     $ mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
+    $ mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
     $ mise bootstrap packages install --yes
     $ mise bootstrap macos-defaults status
     $ mise bootstrap launchd apply --dry-run
@@ -327,6 +328,16 @@ Examples:
     flag "-n --dry-run" help="Print what would happen without installing anything"
     flag "-y --yes" help="Skip confirmation prompts"
     flag --force-dotfiles help="Overwrite existing files that conflict with whole-file dotfile entries"
+    flag --skip help="Skip one or more bootstrap parts" var=#true {
+        long_help #"""
+Skip one or more bootstrap parts
+
+Can be passed multiple times or as a comma-separated list.
+"""#
+        arg <SKIP> {
+            choices packages dotfiles defaults launchd systemd user tools task final-hook
+        }
+    }
     flag --update help="Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
     cmd launchd subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" {
         cmd apply {

@@ -48,6 +48,24 @@ Skip confirmation prompts
 
 Overwrite existing files that conflict with whole-file dotfile entries
 
+### `--skip… <SKIP>`
+
+Skip one or more bootstrap parts
+
+Can be passed multiple times or as a comma-separated list.
+
+**Choices:**
+
+- `packages`
+- `dotfiles`
+- `defaults`
+- `launchd`
+- `systemd`
+- `user`
+- `tools`
+- `task`
+- `final-hook`
+
 ### `--update`
 
 Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
@@ -65,6 +83,7 @@ Examples:
 ```
 mise bootstrap                    # packages + dotfiles + tools + bootstrap task
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
+mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap packages install --yes
 mise bootstrap macos-defaults status
 mise bootstrap launchd apply --dry-run
