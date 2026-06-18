@@ -695,8 +695,22 @@ impl MiseToml {
     // Merge base OS env vars with env sections from this file,
     // so they are available for templating.
     // Note this only merges regular key-value variables; referenced files are not resolved.
+    //
+    // Only directives that are active (profile == None, or profile is in
+    // MISE_ENV_WITH_AUTO) are inserted into the context.  This prevents
+    // inactive-profile secrets (e.g. [env.profiles.prod] DB_PASSWORD=...)
+    // from leaking into aliases, hooks, and tool-version templates.
     fn update_context_env(&mut self, mut base_env: EnvMap) {
+        let active_envs: std::collections::HashSet<&str> =
+            env::MISE_ENV_WITH_AUTO.iter().map(|s| s.as_str()).collect();
         for e in &self.env.0 {
+            // Skip directives that belong to an inactive profile.
+            let profile = e.options().profile.as_deref();
+            if let Some(p) = profile {
+                if !active_envs.contains(p) {
+                    continue;
+                }
+            }
             match e {
                 EnvDirective::Val(key, value, _) => {
                     base_env.insert(key.clone(), value.clone());
@@ -1471,8 +1485,18 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             let profiles: BTreeMap<String, EnvList> =
                                 profiles_table.try_into().map_err(de::Error::custom)?;
                             for (profile_name, list) in profiles {
+                                // A profile name containing ',' can never match because
+                                // MISE_ENV is comma-split; warn the user.
+                                if profile_name.contains(',') {
+                                    warn!(
+                                        "profile name {:?} contains a comma — MISE_ENV is \
+                                         comma-separated so this profile can never be activated. \
+                                         Use a name without commas.",
+                                        profile_name
+                                    );
+                                }
                                 for mut directive in list.0 {
-                                    directive.options_mut().profile = Some(profile_name.clone());
+                                    directive.set_profile(profile_name.clone());
                                     profile_env.push(directive);
                                 }
                             }

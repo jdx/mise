@@ -191,3 +191,65 @@ EOF
 assert "mise env --json | jq -r '.SOURCE_PROFILE_VAR // \"absent\"'" "absent"
 # Profile "ci" active → var must be present with value from script
 MISE_ENV=ci assert "mise env --json | jq -r .SOURCE_PROFILE_VAR" "sourced_in_ci"
+
+# ── Test 11: inactive-profile var must NOT leak into env ─────────────────────
+# Security: a var defined only in [env.profiles.prod] must NOT be accessible
+# when "prod" is not active.
+cat >mise.toml <<'EOF'
+[env.profiles.prod]
+INACTIVE_SECRET = "should_not_leak"
+EOF
+
+# Profile "prod" inactive → var must NOT appear in env
+assert "mise env --json | jq -r '.INACTIVE_SECRET // \"absent\"'" "absent"
+# When prod is active → variable must be visible in env
+MISE_ENV=prod assert "mise env --json | jq -r '.INACTIVE_SECRET // \"absent\"'" "should_not_leak"
+
+# ── Test 11b: inactive-profile var must not appear in Tera alias template ────
+# A var defined only in an inactive profile must NOT be visible to Tera templates
+# (e.g. aliases) even before env resolution, because update_context_env must
+# filter it out.
+cat >mise.toml <<'EOF'
+[env.profiles.prod]
+ALIAS_SECRET = "should_not_leak"
+
+[alias.show-secret]
+run = "echo {{ env.ALIAS_SECRET | default(value='absent') }}"
+EOF
+
+# Profile "prod" inactive → alias template must see ALIAS_SECRET as absent
+assert_contains "mise alias ls 2>/dev/null" "absent"
+assert_fail "mise alias ls 2>/dev/null | grep -q 'should_not_leak'"
+# When prod is active → ALIAS_SECRET must be visible in the alias
+MISE_ENV=prod assert_contains "mise alias ls 2>/dev/null" "should_not_leak"
+
+# ── Test 12: MISE_ENV whitespace around commas is trimmed ─────────────────────
+# "prod, ci" must activate both "prod" AND "ci" profiles (not " ci").
+cat >mise.toml <<'EOF'
+[env]
+SHARED = "base"
+
+[env.profiles.ci]
+SHARED = "ci_wins"
+
+[env.profiles.prod]
+PROD_ONLY = "prod_value"
+EOF
+
+# Space after comma: both profiles must activate
+MISE_ENV="prod, ci" assert "mise env --json | jq -r .SHARED" "ci_wins"
+MISE_ENV="prod, ci" assert "mise env --json | jq -r .PROD_ONLY" "prod_value"
+# Leading/trailing whitespace too
+MISE_ENV=" prod , ci " assert "mise env --json | jq -r .SHARED" "ci_wins"
+
+# ── Test 13: redact-marked var in inactive profile does not leak ───────────────
+# A var with redact=true in an inactive profile must not appear in env output.
+cat >mise.toml <<'EOF'
+[env.profiles.secret-profile]
+REDACTED_SECRET = { value = "top_secret", redact = true }
+EOF
+
+# Profile inactive → var must be absent from env
+assert "mise env --json | jq -r '.REDACTED_SECRET // \"absent\"'" "absent"
+# Profile active → var is set (redacted in display but present in env)
+MISE_ENV=secret-profile assert "mise env --json | jq -r '.REDACTED_SECRET // \"absent\"'" "top_secret"

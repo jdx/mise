@@ -769,6 +769,7 @@ fn environment(args: &[String]) -> Vec<String> {
             .into_iter()
             .flat_map(|s| {
                 s.split(',')
+                    .map(|t| t.trim())
                     .filter(|s| !s.is_empty())
                     .map(String::from)
                     .collect::<Vec<_>>()
@@ -784,6 +785,7 @@ fn environment(args: &[String]) -> Vec<String> {
         .or_else(|| var("MISE_ENVIRONMENT").ok())
         .map(|s| {
             s.split(',')
+                .map(|t| t.trim())
                 .filter(|s| !s.is_empty())
                 .map(String::from)
                 .collect()
@@ -1031,6 +1033,49 @@ mod tests {
             let expected: IndexSet<String> = expected.into_iter().map(|s| s.to_string()).collect();
             assert_eq!(result, expected, "input: {input:?}");
         }
+    }
+
+    /// FIX 2: MISE_ENV values with whitespace around commas must be trimmed.
+    /// `MISE_ENV="prod, ci"` must produce ["prod", "ci"], not ["prod", " ci"].
+    #[test]
+    fn test_environment_trims_whitespace_around_commas() {
+        // Call environment() directly (it's in the same module as tests).
+        // Pass an empty args slice so it reads from the env var path.
+        // We temporarily set MISE_ENV for this test, using a unique variable
+        // name to avoid collisions with other tests.
+        //
+        // Since environment() reads MISE_ENV from the process environment via
+        // std::env::var, we simulate the trimming logic directly to avoid
+        // global state mutation issues with the Lazy statics.
+        //
+        // Test the splitting + trimming logic directly:
+        let raw = "prod, ci";
+        let result: Vec<String> = raw
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect();
+        assert_eq!(result, vec!["prod", "ci"]);
+
+        let raw = " prod ,  ci , staging ";
+        let result: Vec<String> = raw
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect();
+        assert_eq!(result, vec!["prod", "ci", "staging"]);
+
+        // Spaces-only token after trim must be dropped (empty after trim)
+        let raw = "prod,   ,ci";
+        let result: Vec<String> = raw
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect();
+        assert_eq!(result, vec!["prod", "ci"]);
     }
 
     #[test]

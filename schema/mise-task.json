@@ -810,6 +810,7 @@
       ]
     },
     "env_body": {
+      "$comment": "MAINTAINER NOTE: env_body MUST mirror the shape of the top-level `env` table minus the `profiles` property. Whenever a new directive option is added to `env` it must also be added here, and vice versa.",
       "description": "environment variable directives without the `profiles` key (used inside profile bodies to prevent nested profiles)",
       "additionalProperties": {
         "oneOf": [
@@ -1103,6 +1104,7 @@
       "type": "object"
     },
     "vars_body": {
+      "$comment": "MAINTAINER NOTE: vars_body MUST mirror the shape of the top-level `vars` table minus the `profiles` property. Whenever a new directive option is added to `vars` it must also be added here, and vice versa.",
       "description": "variable directives without the `profiles` key (used inside profile bodies to prevent nested profiles)",
       "type": "object",
       "properties": {

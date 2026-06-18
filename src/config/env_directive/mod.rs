@@ -168,10 +168,10 @@ impl EnvDirective {
         }
     }
 
-    /// Returns a mutable reference to the directive's options.
-    /// Used by the parser to set the `profile` tag on directives parsed from
+    /// Sets the `profile` tag on this directive.
+    /// Used by the parser to tag directives parsed from
     /// `[env.profiles.<name>]` / `[vars.profiles.<name>]` sub-tables.
-    pub fn options_mut(&mut self) -> &mut EnvDirectiveOptions {
+    pub fn set_profile(&mut self, profile: String) {
         match self {
             EnvDirective::Val(_, _, opts)
             | EnvDirective::Default(_, _, opts)
@@ -182,7 +182,7 @@ impl EnvDirective {
             | EnvDirective::Source(_, opts)
             | EnvDirective::Age { options: opts, .. }
             | EnvDirective::PythonVenv { options: opts, .. }
-            | EnvDirective::Module(_, _, opts) => opts,
+            | EnvDirective::Module(_, _, opts) => opts.profile = Some(profile),
         }
     }
 }
@@ -300,10 +300,12 @@ pub struct EnvResolveOptions {
 ///
 /// ## Ordering contract (mirrors separate-file "later wins")
 ///
-/// The reorder is performed **per source file** (contiguous block of entries
-/// sharing the same `PathBuf`).  Cross-file order is preserved so that
-/// child-directory config files keep higher precedence than parent-directory
-/// files regardless of profile tags.  Within each per-file block:
+/// The reorder is performed **per source file**, grouping by `PathBuf` using
+/// stable **first-seen** order (a path's block is anchored at its first
+/// occurrence; later entries with the same path join that block).
+/// Cross-file order is preserved so that child-directory config files keep
+/// higher precedence than parent-directory files regardless of profile tags.
+/// Within each per-file block:
 ///
 /// 1. Directives with `profile == None` (base directives) are kept in their
 ///    original relative order and placed FIRST.
@@ -315,23 +317,15 @@ pub struct EnvResolveOptions {
 ///    precedence under a later-wins resolver).
 /// 4. Within the same profile, original relative order is preserved.
 ///
+/// Non-contiguous interleaving (e.g. `[A, B, A]`) is handled correctly: all
+/// entries for a path are merged into that path's block, which is anchored at
+/// the path's first occurrence in the stream.
+///
 /// ## Call sites
 /// All top-level evaluation sites pass `&env::MISE_ENV_WITH_AUTO` directly as
 /// `active_envs` (not a snapshot), so the result varies with the active env
 /// list at call time.  Sub-resolvers do not call `resolve_for_config` (they
 /// call raw `resolve` internally) and must not call this function again.
-///
-/// # Panics
-///
-/// In debug builds, panics if entries from the same source `PathBuf` are not
-/// contiguous (the per-file blocking relies on this).  In release builds the
-/// assertion is compiled out; a violation would instead yield incorrect
-/// per-file ordering rather than a panic.
-///
-/// Callers must ensure that all entries originating from the same source
-/// `PathBuf` appear in one contiguous run in `directives`.  Non-contiguous
-/// interleaving (e.g. `[A, B, A]`) causes each contiguous run to be treated
-/// as an independent block, which produces incorrect per-file profile ordering.
 ///
 /// The function is intentionally pure (no global state), making it trivially
 /// unit-testable without touching global env vars.
@@ -339,30 +333,6 @@ pub fn filter_and_order_by_profiles(
     directives: Vec<(EnvDirective, PathBuf)>,
     active_envs: &[String],
 ) -> Vec<(EnvDirective, PathBuf)> {
-    // Guard: ensure each PathBuf appears in exactly one contiguous run.
-    // Fires only in debug builds; zero cost in release.
-    debug_assert!(
-        {
-            let mut seen: HashMap<&PathBuf, usize> = HashMap::new();
-            let mut last_path: Option<&PathBuf> = None;
-            let mut ok = true;
-            for (_, p) in &directives {
-                if last_path != Some(p) {
-                    // Entering a new (or first) path — check we haven't seen it before.
-                    if seen.contains_key(p) {
-                        ok = false;
-                        break;
-                    }
-                    seen.insert(p, 0);
-                    last_path = Some(p);
-                }
-            }
-            ok
-        },
-        "filter_and_order_by_profiles: caller precondition violated — \
-         entries for the same PathBuf must be contiguous (no A-B-A interleaving)"
-    );
-
     // Build a fast lookup: profile_name -> index in active_envs.
     let profile_index: HashMap<&str, usize> = active_envs
         .iter()
@@ -370,45 +340,46 @@ pub fn filter_and_order_by_profiles(
         .map(|(i, name)| (name.as_str(), i))
         .collect();
 
-    // Process the input in contiguous file-blocks, preserving inter-file order.
-    // A "block" is a maximal run of consecutive entries sharing the same PathBuf.
-    let mut result: Vec<(EnvDirective, PathBuf)> = Vec::with_capacity(directives.len());
+    // Group entries by source PathBuf using stable first-seen order.
+    // `file_order` maps each PathBuf to its index of first appearance.
+    // `file_blocks` accumulates (base_entries, profile_buckets) per path.
+    let mut file_order: HashMap<&PathBuf, usize> = HashMap::new();
+    let mut file_blocks: Vec<(
+        Vec<(EnvDirective, PathBuf)>,                  // base entries
+        BTreeMap<usize, Vec<(EnvDirective, PathBuf)>>, // profile buckets keyed by active_envs index
+    )> = Vec::new();
 
-    // We iterate with a manual index so we can consume entire blocks at once.
-    let mut i = 0;
-    while i < directives.len() {
-        // Determine the extent of the current block (same source path).
-        let block_path = &directives[i].1;
-        let block_end = directives[i..]
-            .iter()
-            .take_while(|(_, p)| p == block_path)
-            .count();
-        let block = &directives[i..i + block_end];
-
-        // Within this block, partition into base (profile==None) and per-profile buckets.
-        let mut base: Vec<(EnvDirective, PathBuf)> = Vec::new();
-        let mut profile_buckets: BTreeMap<usize, Vec<(EnvDirective, PathBuf)>> = BTreeMap::new();
-
-        for item in block {
-            match item.0.options().profile.as_deref() {
-                None => base.push(item.clone()),
-                Some(name) => {
-                    // Drop directives for inactive profiles.
-                    if let Some(&idx) = profile_index.get(name) {
-                        profile_buckets.entry(idx).or_default().push(item.clone());
-                    }
+    for item in &directives {
+        let path = &item.1;
+        let block_idx = match file_order.get(path) {
+            Some(&idx) => idx,
+            None => {
+                let idx = file_blocks.len();
+                file_order.insert(path, idx);
+                file_blocks.push((Vec::new(), BTreeMap::new()));
+                idx
+            }
+        };
+        let (base, profile_buckets) = &mut file_blocks[block_idx];
+        match item.0.options().profile.as_deref() {
+            None => base.push(item.clone()),
+            Some(name) => {
+                // Drop directives for inactive profiles.
+                if let Some(&idx) = profile_index.get(name) {
+                    profile_buckets.entry(idx).or_default().push(item.clone());
                 }
             }
         }
+    }
 
-        // Emit: base first, then profiles ordered by their index in active_envs
-        // (BTreeMap iteration is ascending by key).
+    // Emit blocks in first-seen order: base entries first, then profiles ordered
+    // by their index in active_envs (BTreeMap iteration is ascending by key).
+    let mut result: Vec<(EnvDirective, PathBuf)> = Vec::with_capacity(directives.len());
+    for (base, profile_buckets) in file_blocks {
         result.extend(base);
         for (_idx, bucket) in profile_buckets {
             result.extend(bucket);
         }
-
-        i += block_end;
     }
 
     result
@@ -1457,6 +1428,100 @@ mod tests {
                 ("A", "child_base"),
                 ("A", "child_ci"),
             ]
+        );
+    }
+
+    // ── FIX 4: non-contiguous input ──────────────────────────────────────────
+
+    /// NON-CONTIGUOUS: a stream [A, B, A] (path A reappears after path B) must
+    /// not panic and must group all entries for path A into A's block (anchored at
+    /// first occurrence) and keep B after A.
+    ///
+    /// Input: A_base, B_base, A_prod  (A reappears after B)
+    /// active_envs = ["prod"]
+    /// Expected output: A_base, A_prod, B_base
+    ///   — A's block is anchored at its first occurrence (position 0), B follows.
+    #[test]
+    fn test_profiles_non_contiguous_aba_grouped_at_first_occurrence() {
+        let path_a = "/project/a.toml";
+        let path_b = "/project/b.toml";
+        let active = vec!["prod".to_string()];
+
+        // Non-contiguous: A, B, A
+        let input = vec![
+            val_at("A_BASE", "a_base", None, path_a),
+            val_at("B_BASE", "b_base", None, path_b),
+            val_at("A_PROD", "a_prod", Some("prod"), path_a), // A reappears after B
+        ];
+
+        // Must not panic (no debug_assert contiguity guard)
+        let result = filter_and_order_by_profiles(input, &active);
+
+        // A's block (anchored at first occurrence): [A_BASE, A_PROD]
+        // B's block: [B_BASE]
+        // Full output: A_BASE, A_PROD, B_BASE
+        assert_eq!(
+            kv(&result),
+            vec![
+                ("A_BASE", "a_base"),
+                ("A_PROD", "a_prod"),
+                ("B_BASE", "b_base")
+            ],
+            "non-contiguous A entries must be grouped into A's block (anchored at first occurrence)"
+        );
+    }
+
+    // ── FIX 8: platform auto-env profile activates when in active_envs ────────
+
+    /// A profile whose name matches a platform auto-env name (e.g. "linux")
+    /// must be kept and ordered correctly when that name appears in active_envs.
+    /// This test is platform-independent because it passes active_envs explicitly.
+    #[test]
+    fn test_profiles_platform_autoenv_name_activates() {
+        let active = vec!["linux".to_string()];
+        let input = vec![
+            val("BASE", "base_val", None),
+            val("LINUX_VAR", "linux_val", Some("linux")), // matches platform auto-env name
+            val("OTHER_VAR", "other_val", Some("macos")), // inactive platform name
+        ];
+
+        let result = filter_and_order_by_profiles(input, &active);
+
+        // Only base + linux (active) should remain
+        assert_eq!(
+            kv(&result),
+            vec![("BASE", "base_val"), ("LINUX_VAR", "linux_val")],
+            "platform auto-env profile 'linux' must activate when present in active_envs"
+        );
+    }
+
+    /// Multiple platform auto-env names in active_envs: ordering must follow
+    /// their index position in active_envs, not profile name order.
+    #[test]
+    fn test_profiles_platform_autoenv_ordering_by_index() {
+        // Simulate unix + macos + macos-aarch64 auto-envs
+        let active = vec![
+            "unix".to_string(),
+            "macos".to_string(),
+            "macos-aarch64".to_string(),
+        ];
+        let input = vec![
+            val("VAR", "macos_aarch64_val", Some("macos-aarch64")), // index 2
+            val("VAR", "unix_val", Some("unix")),                   // index 0
+            val("VAR", "macos_val", Some("macos")),                 // index 1
+        ];
+
+        let result = filter_and_order_by_profiles(input, &active);
+
+        // Ordered by active_envs index: unix(0), macos(1), macos-aarch64(2)
+        assert_eq!(
+            kv(&result),
+            vec![
+                ("VAR", "unix_val"),
+                ("VAR", "macos_val"),
+                ("VAR", "macos_aarch64_val"),
+            ],
+            "platform auto-env profiles must be ordered by their index in active_envs"
         );
     }
 }
