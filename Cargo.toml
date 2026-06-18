@@ -105,6 +105,7 @@ expr-lang = "1"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
+futures-util = "0.3.32"
 mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 fslock = "0.2.1"
 gix = { version = "<1", features = ["worktree-mutation"] }
