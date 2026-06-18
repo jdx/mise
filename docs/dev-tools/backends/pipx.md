@@ -29,7 +29,8 @@ If you have `uv` installed, mise will use `uv tool install` under the hood and y
 
 mise forwards [`minimum_release_age`](/configuration/settings.html#minimum_release_age)
 to transitive Python dependency resolution during install. The uv install path uses uv's
-`--exclude-newer` flag, and the `pipx` fallback passes pip's `--uploaded-prior-to` flag.
+`--exclude-newer` flag and requires `uv >= 0.2.22`. The `pipx` fallback passes pip's
+`--uploaded-prior-to` flag.
 
 In case you need `pipx` for other reasons, you can install it with or without mise.
 Here is how to install `pipx` with mise:
