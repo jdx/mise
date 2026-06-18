@@ -804,6 +804,10 @@ fn shell_expand_env(
         }
 
         match chars.peek().copied() {
+            Some((_, '$')) => {
+                chars.next();
+                output.push('$');
+            }
             Some((_, '{')) => {
                 chars.next();
                 if let Some((end, expr)) = read_braced_expr(input, idx + 2) {
