@@ -206,11 +206,13 @@ dotfiles.root = "~/.dotfiles"
 
 [dotfiles]
 "~/.dotfiles" = "~/src/dotfiles"
-"~/.config/mise/config.toml" = "~/.dotfiles/mise/config.toml"
+"~/.config/mise/config.toml" = "~/src/dotfiles/mise/config.toml"
 ```
 
 This is a bootstrap pattern: clone the real repo (for example
 `~/src/dotfiles`) before the first `mise dotfiles apply` or `mise bootstrap`.
+Use the real repo path for sources needed during the first run; `~/.dotfiles`
+does not exist until mise creates that symlink.
 Replacing `~/.config/mise/config.toml` affects future mise invocations, so
 make sure the source contains a valid config before applying it.
 

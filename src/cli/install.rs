@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::config::Settings;
+use crate::errors::split_install_result;
 use crate::hooks::Hooks;
 use crate::install_before::resolve_cli_minimum_release_age;
 use crate::toolset::{
@@ -255,13 +256,15 @@ impl Install {
             .collect();
         let mut ts: Toolset = trs.filter_by_tool(tools).into();
         let tool_versions = self.get_requested_tool_versions(&ts, &expanded_runtimes)?;
-        let mut versions = if tool_versions.is_empty() {
+        let (mut versions, install_error) = if tool_versions.is_empty() {
             warn!("no runtimes to install");
             warn!("specify a version with `mise install <TOOL>@<VERSION>`");
-            vec![]
+            (vec![], Ok(()))
         } else {
-            ts.install_all_versions(&mut config, tool_versions, &self.install_opts()?)
-                .await?
+            split_install_result(
+                ts.install_all_versions(&mut config, tool_versions, &self.install_opts()?)
+                    .await,
+            )
         };
         // In dry-run mode, check if any tools would be installed before filtering
         if self.is_dry_run() {
@@ -277,27 +280,29 @@ impl Install {
                     exit::exit(1);
                 }
             }
-            return Ok(());
+            return install_error;
         }
 
-        // because we may be installing a tool that is not in config, we need to restore the original tool args and reset everything
-        env::TOOL_ARGS
-            .write()
-            .unwrap()
-            .clone_from(&original_tool_args);
-        let config = Config::reset().await?;
-        let ts = config.get_toolset().await?;
-        let current_versions = ts.list_current_versions();
-        // ensure that only current versions are sent to lockfile rebuild
-        versions.retain(|tv| current_versions.iter().any(|(_, cv)| tv == cv));
+        if install_error.is_ok() || !versions.is_empty() {
+            // because we may be installing a tool that is not in config, we need to restore the original tool args and reset everything
+            env::TOOL_ARGS
+                .write()
+                .unwrap()
+                .clone_from(&original_tool_args);
+            let config = Config::reset().await?;
+            let ts = config.get_toolset().await?;
+            let current_versions = ts.list_current_versions();
+            // ensure that only current versions are sent to lockfile rebuild
+            versions.retain(|tv| current_versions.iter().any(|(_, cv)| tv == cv));
 
-        config::rebuild_shims_and_runtime_symlinks(
-            &config,
-            ts,
-            &versions,
-            crate::lockfile::LockfileUpdateMode::Normal,
-        )
-        .await?;
+            config::rebuild_shims_and_runtime_symlinks(
+                &config,
+                ts,
+                &versions,
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await?;
+        }
 
         // Warn about tools that were installed but not in any config file
         if !inactive_tools.is_empty() {
@@ -317,6 +322,7 @@ impl Install {
             );
         }
 
+        install_error?;
         Ok(())
     }
 
@@ -413,7 +419,7 @@ impl Install {
                 .collect_vec()
         });
         let has_missing = !missing.is_empty();
-        let versions = if missing.is_empty() {
+        let (versions, install_error) = if missing.is_empty() {
             measure!("run_postinstall_hook", {
                 info!("all tools are installed");
                 hooks::run_one_hook(
@@ -423,31 +429,36 @@ impl Install {
                     None,
                 )
                 .await;
-                vec![]
+                (vec![], Ok(()))
             })
         } else {
             let mut ts = Toolset::from(trs.clone());
             measure!("install_all_versions", {
-                ts.install_all_versions(&mut config, missing, &self.install_opts()?)
-                    .await?
+                split_install_result(
+                    ts.install_all_versions(&mut config, missing, &self.install_opts()?)
+                        .await,
+                )
             })
         };
         if self.is_dry_run() {
             if self.dry_run_code && has_missing {
                 exit::exit(1);
             }
-            return Ok(());
+            return install_error;
         }
-        measure!("rebuild_shims_and_runtime_symlinks", {
-            let ts = config.get_toolset().await?;
-            config::rebuild_shims_and_runtime_symlinks(
-                &config,
-                ts,
-                &versions,
-                crate::lockfile::LockfileUpdateMode::Normal,
-            )
-            .await?;
-        });
+        if install_error.is_ok() || !versions.is_empty() {
+            measure!("rebuild_shims_and_runtime_symlinks", {
+                let ts = config.get_toolset().await?;
+                config::rebuild_shims_and_runtime_symlinks(
+                    &config,
+                    ts,
+                    &versions,
+                    crate::lockfile::LockfileUpdateMode::Normal,
+                )
+                .await?;
+            });
+        }
+        install_error?;
         Ok(())
     }
 }

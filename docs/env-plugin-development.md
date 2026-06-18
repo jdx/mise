@@ -4,11 +4,11 @@ Environment plugins are a special type of mise plugin that provide environment v
 
 Unlike [tool plugins](tool-plugin-development.md) and [backend plugins](backend-plugin-development.md), environment plugins:
 
-- ✅ Don't implement version management (`Available`, `PreInstall`, `PostInstall` hooks)
-- ✅ Only implement environment hooks (`MiseEnv`, `MisePath`)
-- ✅ Are configured via `env._.<plugin-name>` syntax
-- ✅ Can accept configuration options as TOML values
-- ✅ Execute on every environment activation
+- Don't implement version management (`Available`, `PreInstall`, `PostInstall` hooks)
+- Only implement environment hooks (`MiseEnv`, `MisePath`)
+- Are configured via `env._.<plugin-name>` syntax
+- Can accept configuration options as TOML values
+- Execute on every environment activation
 
 ## Quick Start
 

@@ -30,11 +30,12 @@ use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PEP440_PRERELEASE_REGEX, PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, full_to_url, normalize_remote, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
+use crate::semver::semver_triplet;
 use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
-    ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, Toolset, install_state,
-    is_outdated_version,
+    ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, ToolVersionOptions, Toolset,
+    install_state, is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -81,6 +82,7 @@ pub mod vfox;
 pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
+pub type IdiomaticVersion = (String, Option<ToolVersionOptions>);
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
@@ -90,6 +92,69 @@ pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
     REGISTRY
         .get(ba.short.as_str())
         .is_some_and(|rt| rt.backends().iter().any(|b| *b == full))
+}
+
+pub(crate) fn toolset_semver_version(ts: &Toolset, tool: &str) -> Option<String> {
+    let tvl = ts
+        .versions
+        .iter()
+        .find(|(ba, _)| ba.short == tool)
+        .map(|(_, tvl)| tvl)?;
+
+    if let Some(version) = tvl.versions.iter().find_map(|tv| {
+        let version = tv.version.trim().trim_start_matches(['v', 'V']);
+        semver_triplet(version)?;
+        Some(version.to_string())
+    }) {
+        return Some(version);
+    }
+
+    tvl.requests.iter().find_map(|tr| {
+        let version = tr.version();
+        let version = version.trim().trim_start_matches(['v', 'V']);
+        semver_triplet(version)?;
+        Some(version.to_string())
+    })
+}
+
+pub(crate) async fn semver_version_from_toolsets_or_path(
+    backend: &dyn Backend,
+    config: &Arc<Config>,
+    ts: &Toolset,
+    tool: &str,
+) -> Option<String> {
+    if let Some(version) = toolset_semver_version(ts, tool) {
+        return Some(version);
+    }
+    if let Ok(ts) = backend.dependency_toolset(config).await
+        && let Some(version) = toolset_semver_version(&ts, tool)
+    {
+        return Some(version);
+    }
+    semver_version_from_path(backend, config, tool).await
+}
+
+async fn semver_version_from_path(
+    backend: &dyn Backend,
+    config: &Arc<Config>,
+    tool: &str,
+) -> Option<String> {
+    let env = backend.dependency_env(config).await.ok()?;
+    let output = cmd!(tool, "--version").full_env(env).read().ok()?;
+    parse_cli_version_output(&output)
+}
+
+pub(crate) fn parse_cli_version_output(output: &str) -> Option<String> {
+    let line = output.lines().next()?;
+    let version = line.trim().trim_start_matches(['v', 'V']);
+    if semver_triplet(version).is_some() {
+        return Some(version.to_string());
+    }
+    line.split_whitespace().find_map(|version| {
+        let version = version.trim().trim_start_matches(['v', 'V']);
+        semver_triplet(version)?;
+        Some(version.to_string())
+    })
 }
 
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
@@ -458,10 +523,30 @@ pub(crate) fn normalize_idiomatic_contents(contents: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendResolution;
-    use crate::toolset::{ToolSource, ToolVersionOptions};
+    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersionList, ToolVersionOptions};
     use std::fs;
+    use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
+        Arc::new(BackendArg::new_raw(
+            tool.to_string(),
+            None,
+            tool.to_string(),
+            None,
+            BackendResolution::new(true),
+        ))
+    }
+
+    fn create_test_tool_request(ba: Arc<BackendArg>, version: &str) -> ToolRequest {
+        ToolRequest::Version {
+            backend: ba,
+            version: version.to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        }
+    }
 
     #[test]
     fn test_normalize_idiomatic_contents() {
@@ -484,6 +569,86 @@ mod tests {
             normalize_idiomatic_contents("# full line comment\n3.14.2 # inline comment\n   \n\n"),
             "3.14.2"
         );
+    }
+
+    #[test]
+    fn test_toolset_semver_version_prefers_resolved_version() {
+        let ba = create_test_backend_arg("bun");
+        let request = create_test_tool_request(ba.clone(), "1.2.0");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request.clone());
+        tvl.versions
+            .push(ToolVersion::new(request, "1.3.0".to_string()));
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            toolset_semver_version(&ts, "bun"),
+            Some("1.3.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_toolset_semver_version_uses_exact_request() {
+        let ba = create_test_backend_arg("pnpm");
+        let request = create_test_tool_request(ba.clone(), "10.15.0");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            toolset_semver_version(&ts, "pnpm"),
+            Some("10.15.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_toolset_semver_version_ignores_unresolved_request() {
+        let ba = create_test_backend_arg("pnpm");
+        let request = create_test_tool_request(ba.clone(), "10");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(toolset_semver_version(&ts, "pnpm"), None);
+    }
+
+    #[test]
+    fn test_toolset_semver_version_normalizes_v_prefix() {
+        let ba = create_test_backend_arg("pnpm");
+        let request = create_test_tool_request(ba.clone(), "v10.15.0");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            toolset_semver_version(&ts, "pnpm"),
+            Some("10.15.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_cli_version_output() {
+        assert_eq!(
+            parse_cli_version_output("10.15.0\n"),
+            Some("10.15.0".to_string())
+        );
+        assert_eq!(
+            parse_cli_version_output("v1.3.0"),
+            Some("1.3.0".to_string())
+        );
+        assert_eq!(
+            parse_cli_version_output("uv 0.2.22"),
+            Some("0.2.22".to_string())
+        );
+        assert_eq!(parse_cli_version_output("not-a-version"), None);
     }
 
     #[test]
@@ -1788,6 +1953,52 @@ pub trait Backend: Debug + Send + Sync {
         self._parse_idiomatic_file(path).await
     }
 
+    /// Parses an idiomatic version file to extract versions plus backend options
+    /// implied by that file.
+    async fn parse_idiomatic_file_with_options(
+        &self,
+        path: &Path,
+    ) -> eyre::Result<Vec<(String, ToolVersionOptions)>> {
+        let versions =
+            if crate::config::config_file::idiomatic_version::package_json::is_package_json(path) {
+                crate::config::config_file::idiomatic_version::package_json::parse(path, self.id())?
+                    .into_iter()
+                    .map(|version| (version, None))
+                    .collect()
+            } else {
+                self._parse_idiomatic_file_with_options(path).await?
+            };
+        let options = self.ba().opts();
+        Ok(versions
+            .into_iter()
+            .map(|(version, file_options)| {
+                let mut options = options.clone();
+                if let Some(file_options) = file_options {
+                    options.apply_overrides(&file_options);
+                }
+                (version, options)
+            })
+            .collect())
+    }
+
+    /// Backend-specific implementation for `parse_idiomatic_file_with_options`.
+    /// Backends overriding this should only parse the file and return options
+    /// implied by the file itself. Return `None` when a parsed version has no
+    /// file-specific options. The public wrapper merges any returned options
+    /// with `self.ba().opts()` so registry, alias, and backend defaults are
+    /// preserved centrally.
+    async fn _parse_idiomatic_file_with_options(
+        &self,
+        path: &Path,
+    ) -> eyre::Result<Vec<IdiomaticVersion>> {
+        Ok(self
+            .parse_idiomatic_file(path)
+            .await?
+            .into_iter()
+            .map(|version| (version, None))
+            .collect())
+    }
+
     /// Backend-specific implementation for `parse_idiomatic_file`.
     /// Default implementation reads the file and treats each whitespace-separated token as a version.
     /// Override to provide format-specific parsing; return `Err` on real failures so the plugin is skipped.
@@ -1981,6 +2192,57 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
         env_vars.extend(tv.request.options().core.install_env);
+
+        // Surface `tools = true` `[env]` *value* directives (e.g. `CLOUDSDK_PYTHON =
+        // "{{ tools.python.path }}/bin/python3"`) for the tool-level `postinstall`
+        // hook, resolved against this tool's already-installed dependencies. The
+        // config env added above is resolved without tools (`NonToolsOnly`), so it
+        // omits these; `install_value_toolset` is fully resolved (offline) so
+        // `{{ tools.<dep>.path }}` maps to a real install path — `ctx.ts` is the raw,
+        // unresolved install toolset during a combined install. PATH stays owned by
+        // `path_env` below. Best-effort: any resolution error leaves the tool-less
+        // env untouched.
+        //
+        // Gated on the tool declaring dependencies. Only a `tools = true` value that
+        // can reference a dependency (installed first, by depends ordering) is
+        // meaningful at this tool's install time. Tools with NO dependencies keep the
+        // prior contract — `tools = true` env stays unavailable in `postinstall`
+        // (#6418, e2e/config/test_hooks_postinstall_env) — since a *static*
+        // `tools = true` value (no `{{ tools.* }}` reference) would otherwise leak in.
+        // (#10282, follow-up to #10432)
+        let declares_deps = self
+            .get_all_dependencies(true)
+            .map(|deps| !deps.is_empty())
+            .unwrap_or(false)
+            || tv_exact
+                .request
+                .options()
+                .core
+                .depends
+                .is_some_and(|deps| !deps.is_empty());
+        if declares_deps {
+            let base = env_vars.clone();
+            let tool_vals = match self.install_value_toolset(&ctx.config, &tv_exact).await {
+                Ok(dep_ts) => dep_ts.tool_val_env(&ctx.config, &base).await,
+                Err(e) => Err(e),
+            };
+            match tool_vals {
+                Ok(vals) => {
+                    for (k, v) in vals {
+                        // PATH is owned by path_env; exclude any casing on Windows.
+                        let is_path = if cfg!(windows) {
+                            k.eq_ignore_ascii_case(env::PATH_KEY.as_str())
+                        } else {
+                            k.as_str() == env::PATH_KEY.as_str()
+                        };
+                        if !is_path {
+                            env_vars.insert(k, v);
+                        }
+                    }
+                }
+                Err(e) => debug!("postinstall: skipping tools=true value directives: {e:#}"),
+            }
+        }
 
         // Use the backend's list_bin_paths to get the correct binary directories
         // instead of hardcoding install_path/bin, which may not match the actual
@@ -2208,6 +2470,43 @@ pub trait Backend: Debug + Send + Sync {
         // Dependency envs only need PATH entries for tools that are already
         // available. Resolving offline avoids applying global release-age
         // cutoffs to helper tools like node/npm while querying another backend.
+        ts.resolve_with_opts(
+            config,
+            &ResolveOptions {
+                offline: true,
+                ..Default::default()
+            },
+        )
+        .await?;
+        Ok(ts)
+    }
+
+    /// Like [`Self::dependency_toolset`] but also includes this tool's per-instance
+    /// mise.toml `depends` option (`tv.request.options().depends`). `get_dependencies`
+    /// only covers backend/plugin-metadata deps, so a user-declared
+    /// `gcloud = { depends = ["python"] }` is invisible to `dependency_toolset`. Used
+    /// to resolve `tools = true` `[env]` value templates like `{{ tools.python.path }}`
+    /// at install time. Resolved offline; the declared deps are installed before the
+    /// dependent (depends ordering), so their install paths are present. (#10282)
+    async fn install_value_toolset(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> eyre::Result<Toolset> {
+        let mut names: std::collections::HashSet<String> = self
+            .get_all_dependencies(true)?
+            .into_iter()
+            .map(|ba| ba.short)
+            .collect();
+        let opts = tv.request.options();
+        if let Some(user_deps) = opts.core.depends {
+            names.extend(user_deps);
+        }
+        let mut ts: Toolset = config
+            .get_tool_request_set()
+            .await?
+            .filter_by_tool(names)
+            .into();
         ts.resolve_with_opts(
             config,
             &ResolveOptions {

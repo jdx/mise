@@ -1059,6 +1059,19 @@ static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
         .map(|s| s.to_string())
         .collect()
 });
+static TOML_CONFIG_MATCHERS: Lazy<Vec<globset::GlobMatcher>> = Lazy::new(|| {
+    TOML_CONFIG_FILENAMES
+        .iter()
+        .filter_map(|pattern| {
+            globset::GlobBuilder::new(pattern)
+                .literal_separator(true)
+                .build()
+                .map_err(|e| warn!("failed to compile config glob pattern {pattern}: {e}"))
+                .ok()
+                .map(|glob| glob.compile_matcher())
+        })
+        .collect()
+});
 pub static ALL_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
     load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
         .into_iter()
@@ -2326,14 +2339,17 @@ async fn load_config_and_file_tasks(
 }
 
 /// Combine file tasks (auto-discovered executable scripts and included TOML
-/// files) with inline `[tasks.*]` blocks from the same config file.
+/// files) with inline `[tasks.*]` blocks.
 ///
-/// When a name appears in both: the file task stays as the base and the TOML
-/// block is overlaid via [`Task::merge_toml_overlay`]. Otherwise both are kept.
-///
+/// `config_tasks` are collected in config-file precedence order (highest first;
+/// see [`configs_at_root`]). When a name appears in both a script file task
+/// (`file.is_some()`) and an inline block, the script stays as the base and the
+/// TOML block is overlaid via [`Task::merge_toml_overlay`]. When the same name
+/// appears in multiple inline blocks (e.g. `.config/mise.toml` and
+/// `.mise/config.toml`), the first entry wins and later ones are skipped.
 /// When the same name appears in more than one file task (e.g. a local
-/// `.mise/tasks` script and a same-named task from a `git::` include), the
-/// last one wins. Callers load `file_tasks` in declared `task_config.includes`
+/// `.mise/tasks` script and a same-named task from a `git::` include), the last
+/// one wins. Callers load `file_tasks` in declared `task_config.includes`
 /// order, so the later include in the list takes precedence — see
 /// `load_tasks_in_dir`.
 fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -> Vec<Task> {
@@ -2343,7 +2359,9 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
     }
     for t in config_tasks {
         if let Some(existing) = by_name.get_mut(&t.name) {
-            existing.merge_toml_overlay(t);
+            if existing.file.is_some() {
+                existing.merge_toml_overlay(t);
+            }
         } else {
             by_name.insert(t.name.clone(), t);
         }
@@ -2498,7 +2516,10 @@ async fn load_tasks_includes(
         let is_toml = |p: &Path| p.extension().map(|e| e == "toml").unwrap_or(false);
         let (toml_files, exec_files): (Vec<_>, Vec<_>) = all_files
             .into_iter()
-            .filter(|p| is_toml(p) || file::is_executable(p))
+            .filter(|p| match is_toml(p) {
+                true => !is_mise_config_file_in_task_include(root, p),
+                false => file::is_executable(p),
+            })
             .partition(|p| is_toml(p));
         let mut tasks = vec![];
         for path in toml_files {
@@ -2532,6 +2553,19 @@ async fn load_tasks_includes(
     } else {
         Ok(vec![])
     }
+}
+
+fn is_mise_config_file_in_task_include(root: &Path, path: &Path) -> bool {
+    let Ok(relative_path) = path.strip_prefix(root) else {
+        return false;
+    };
+    let relative_path = relative_path.to_string_lossy().replace('\\', "/");
+    let file_name = path
+        .file_name()
+        .map(|file_name| file_name.to_string_lossy().replace('\\', "/"));
+    TOML_CONFIG_MATCHERS.iter().any(|matcher| {
+        matcher.is_match(&relative_path) || file_name.as_ref().is_some_and(|f| matcher.is_match(f))
+    })
 }
 
 async fn resolve_git_url_to_path(git_url: &str) -> Result<PathBuf> {
@@ -2866,11 +2900,13 @@ mod tests {
             Task {
                 name: "hello".to_string(),
                 config_source: PathBuf::from("mise-tasks/hello"),
+                file: Some(PathBuf::from("mise-tasks/hello")),
                 ..Default::default()
             },
             Task {
                 name: "hello.ps1".to_string(),
                 config_source: PathBuf::from("mise-tasks/hello.ps1"),
+                file: Some(PathBuf::from("mise-tasks/hello.ps1")),
                 ..Default::default()
             },
         ];

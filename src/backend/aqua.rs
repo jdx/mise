@@ -1342,7 +1342,7 @@ impl AquaBackend {
 
         let sig_path = match minisign_config._type() {
             AquaMinisignType::GithubRelease => {
-                let asset = minisign_config.asset(pkg, v, os(), arch())?;
+                let asset = minisign_config.asset(pkg, artifact_filename, v, os(), arch())?;
                 let (repo_owner, repo_name) = resolve_repo_info(
                     minisign_config.repo_owner.as_ref(),
                     minisign_config.repo_name.as_ref(),

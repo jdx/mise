@@ -1,7 +1,7 @@
 //! Picker: Fuzzy-searchable list picker UI component
 
-use fuzzy_matcher::FuzzyMatcher;
-use fuzzy_matcher::skim::SkimMatcherV2;
+use nucleo_matcher::pattern::{Atom, AtomKind, CaseMatching, Normalization};
+use nucleo_matcher::{Config, Matcher, Utf32Str};
 
 /// An item that can be displayed in the picker
 #[derive(Debug, Clone)]
@@ -64,7 +64,7 @@ pub struct PickerState {
     /// Height of visible area (number of items)
     visible_height: usize,
     /// Fuzzy matcher instance (created fresh, not stored for Clone/Debug)
-    matcher: SkimMatcherV2,
+    matcher: Matcher,
 }
 
 impl std::fmt::Debug for PickerState {
@@ -89,7 +89,7 @@ impl Clone for PickerState {
             cursor: self.cursor,
             scroll_offset: self.scroll_offset,
             visible_height: self.visible_height,
-            matcher: SkimMatcherV2::default(),
+            matcher: Matcher::new(Config::DEFAULT),
         }
     }
 }
@@ -114,7 +114,7 @@ impl PickerState {
             cursor: 0,
             scroll_offset: 0,
             visible_height: 10,
-            matcher: SkimMatcherV2::default(),
+            matcher: Matcher::new(Config::DEFAULT),
         }
     }
 
@@ -221,17 +221,19 @@ impl PickerState {
                 .collect();
         } else {
             // Apply fuzzy matching
-            self.filtered = self
+            let pattern = fuzzy_pattern(&self.filter);
+            let mut haystack_buf = Vec::new();
+            let filtered = self
                 .items
                 .iter()
                 .enumerate()
                 .filter_map(|(i, item)| {
                     // Match against name and description
-                    let name_match = self.matcher.fuzzy_indices(&item.name, &self.filter);
-                    let desc_match = item
-                        .description
-                        .as_ref()
-                        .and_then(|d| self.matcher.fuzzy_match(d, &self.filter));
+                    let name_match =
+                        fuzzy_indices(&mut self.matcher, &mut haystack_buf, &item.name, &pattern);
+                    let desc_match = item.description.as_ref().and_then(|d| {
+                        fuzzy_match(&mut self.matcher, &mut haystack_buf, d, &pattern)
+                    });
 
                     // Take the best score
                     match (name_match, desc_match) {
@@ -254,6 +256,7 @@ impl PickerState {
                     }
                 })
                 .collect();
+            self.filtered = filtered;
 
             // Sort by score (highest first)
             self.filtered
@@ -273,6 +276,46 @@ impl PickerState {
             self.scroll_offset = self.cursor.saturating_sub(self.visible_height - 1);
         }
     }
+}
+
+fn fuzzy_pattern(needle: &str) -> Atom {
+    Atom::new(
+        needle,
+        CaseMatching::Smart,
+        Normalization::Smart,
+        AtomKind::Fuzzy,
+        false,
+    )
+}
+
+fn fuzzy_match(
+    matcher: &mut Matcher,
+    haystack_buf: &mut Vec<char>,
+    haystack: &str,
+    pattern: &Atom,
+) -> Option<i64> {
+    pattern
+        .score(Utf32Str::new(haystack, haystack_buf), matcher)
+        .map(i64::from)
+}
+
+fn fuzzy_indices(
+    matcher: &mut Matcher,
+    haystack_buf: &mut Vec<char>,
+    haystack: &str,
+    pattern: &Atom,
+) -> Option<(i64, Vec<usize>)> {
+    let mut indices = Vec::new();
+    pattern
+        .indices(Utf32Str::new(haystack, haystack_buf), matcher, &mut indices)
+        .map(|score| {
+            indices.sort_unstable();
+            indices.dedup();
+            (
+                i64::from(score),
+                indices.into_iter().map(|index| index as usize).collect(),
+            )
+        })
 }
 
 /// A visible item in the picker with display metadata

@@ -26,6 +26,11 @@ one-time machine setup.
 8. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
 9. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
+Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
+`packages`, `dotfiles`, `defaults`, `launchd`, `systemd`, `user`, `tools`,
+`task`, and `final-hook`. The flag can be repeated or comma-separated, for
+example `mise bootstrap --skip tools,task`.
+
 Hook phases can also run before and after the built-in steps:
 `pre-packages`, `post-packages`, `pre-dotfiles`, `post-dotfiles`,
 `pre-defaults`, `post-defaults`, `pre-user`, `post-user`, `pre-tools`, and
@@ -39,6 +44,7 @@ task runs every time, so keep it idempotent.
 
 ```toml
 [bootstrap.packages]
+"apk:build-base" = "latest"
 "apt:build-essential" = "latest"
 "brew:postgresql@17" = "latest"
 
@@ -132,7 +138,7 @@ place but should not install anything during that check.
 
 | Config                             | Use for                                                       |
 | ---------------------------------- | ------------------------------------------------------------- |
-| `[bootstrap.packages]`             | OS packages from apt, dnf, pacman, or brew                    |
+| `[bootstrap.packages]`             | OS packages from apk, apt, dnf, pacman, or brew               |
 | `[dotfiles]`                       | Whole-file dotfiles and small managed edits to existing files |
 | `[bootstrap.macos.*]`              | Curated macOS preferences for Dock/Finder/keyboard/trackpad   |
 | `[bootstrap.macos.defaults]`       | macOS user preferences written through `defaults write`       |
@@ -194,7 +200,7 @@ mise bootstrap --yes
 ### Add A Package
 
 ```sh
-mise bootstrap packages use apt:libssl-dev
+mise bootstrap packages use apk:zlib-dev apt:libssl-dev
 ```
 
 This writes `[bootstrap.packages]` and installs what is missing.
@@ -230,8 +236,10 @@ dotfiles.root = "~/.dotfiles"
 
 [dotfiles]
 "~/.dotfiles" = "~/src/dotfiles"
-"~/.config/mise/config.toml" = "~/.dotfiles/mise/config.toml"
+"~/.config/mise/config.toml" = "~/src/dotfiles/mise/config.toml"
 ```
 
-The repo/source must exist before the first apply. Replacing the active
-global config affects future mise invocations, so use this pattern carefully.
+The repo/source must exist before the first apply. Use the real repo path for
+sources needed during the first run; `~/.dotfiles` does not exist until mise
+creates that symlink. Replacing the active global config affects future mise
+invocations, so use this pattern carefully.

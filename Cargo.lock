@@ -5271,7 +5271,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.6.10"
+version = "2026.6.11"
 dependencies = [
  "age",
  "aho-corasick",
@@ -5312,7 +5312,7 @@ dependencies = [
  "filetime",
  "flate2",
  "fslock",
- "fuzzy-matcher",
+ "futures-util",
  "gix",
  "glob",
  "globset",
@@ -5338,10 +5338,10 @@ dependencies = [
  "netrc-rs",
  "nix 0.31.3",
  "nodejs-semver",
+ "nucleo-matcher",
  "num_cpus",
  "once_cell",
  "openssl",
- "os-release",
  "path-absolutize",
  "petgraph",
  "phf 0.13.1",
@@ -5375,7 +5375,6 @@ dependencies = [
  "siphasher",
  "strum 0.28.0",
  "supports-hyperlinks",
- "sys-info",
  "tabled",
  "taplo",
  "tar",
@@ -5409,7 +5408,7 @@ version = "2026.1.12"
 dependencies = [
  "async-trait",
  "console",
- "fuzzy-matcher",
+ "nucleo-matcher",
  "serde_json",
  "tokio",
  "toml_edit 0.25.12+spec-1.1.0",
@@ -5639,6 +5638,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nucleo-matcher"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf33f538733d1a5a3494b836ba913207f14d9d4a1d3cd67030c5061bdd2cac85"
+dependencies = [
+ "memchr",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "num"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5838,15 +5847,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
 dependencies = [
  "num-traits",
-]
-
-[[package]]
-name = "os-release"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82f29ae2f71b53ec19cc23385f8e4f3d90975195aa3d09171ba3bef7159bec27"
-dependencies = [
- "lazy_static",
 ]
 
 [[package]]
@@ -8660,16 +8660,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sys-info"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b3a0d0aba8bf96a0e1ddfdc352fc53b3df7f39318c71854910c3c4b024ae52c"
-dependencies = [
- "cc",
- "libc",
-]
-
-[[package]]
 name = "sysctl"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9593,9 +9583,9 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-lib"
-version = "3.5.0"
+version = "3.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc055ae0a824bf9e409ee8e175ec224d5e1b79325557f51967eea0f103e5dc03"
+checksum = "fd4e84470f848f8cea3efba8d1245cf6c2051d0fe2fe9ddd29b5977d0e906844"
 dependencies = [
  "clap",
  "heck",

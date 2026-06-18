@@ -5,6 +5,7 @@ mise can ensure machine-global system packages are installed via the
 
 ```toml
 [bootstrap.packages]
+"apk:build-base" = "latest"
 "apt:libssl-dev" = "latest"
 "apt:build-essential" = "latest"
 "brew:postgresql@17" = "latest"
@@ -43,6 +44,7 @@ applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html
 
 | Manager     | Platform                                                       | Page                                      |
 | ----------- | -------------------------------------------------------------- | ----------------------------------------- |
+| `apk`       | Alpine Linux                                                   | [apk](/bootstrap/packages/apk.html)       |
 | `apt`       | Debian, Ubuntu                                                 | [apt](/bootstrap/packages/apt.html)       |
 | `dnf`       | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/bootstrap/packages/dnf.html)       |
 | `pacman`    | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html) |
@@ -91,7 +93,7 @@ mise bootstrap packages install --yes     # skip the confirmation prompt
 mise bootstrap packages install --manager apt
 mise bootstrap packages install --update  # refresh package manager metadata first
 
-mise bootstrap packages use apt:curl brew:jq brew-cask:firefox mas:497799835
+mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835
 mise bootstrap packages use -g brew:ffmpeg                      # write globally
 mise bootstrap packages use apt:curl@8.5.0-2   # pin a version (brew pins via the
                                    # formula name: brew:postgresql@17)
@@ -111,7 +113,7 @@ Mac.
 
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available
-version — apt and dnf also honor a version pinned in config (pacman, brew,
+version — apk, apt, and dnf also honor a version pinned in config (pacman, brew,
 brew-cask, and mas [can't install pins](/bootstrap/packages/pacman.html), so
 pinned entries are skipped with a warning). Packages that aren't installed
 yet are skipped — that's `mise bootstrap packages install`'s job. For brew

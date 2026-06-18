@@ -62,6 +62,12 @@ struct FileInfo {
     is_compressed_binary: bool,
 }
 
+struct CachePlan {
+    key: String,
+    file_info: FileInfo,
+    strip_components: usize,
+}
+
 impl FileInfo {
     /// Analyze a file path and options to determine format information
     fn new(file_path: &Path, opts: &HttpOptions<'_>) -> Self {
@@ -222,7 +228,12 @@ impl HttpBackend {
     // -------------------------------------------------------------------------
 
     /// Generate a cache key based on file content and extraction options
-    fn cache_key(&self, file_path: &Path, opts: &HttpOptions<'_>) -> Result<String> {
+    fn cache_key(
+        &self,
+        file_path: &Path,
+        opts: &HttpOptions<'_>,
+        strip_components: usize,
+    ) -> Result<String> {
         let checksum = hash::file_hash_blake3(file_path, None)?;
 
         // Include extraction options that affect output structure
@@ -231,6 +242,8 @@ impl HttpBackend {
 
         if let Some(strip) = opts.strip_components() {
             parts.push(format!("strip_{strip}"));
+        } else if strip_components > 0 {
+            parts.push(format!("strip_{strip_components}"));
         }
 
         // Include rename_exe in cache key since it modifies the extracted content
@@ -246,6 +259,46 @@ impl HttpBackend {
         let key = parts.join("_");
         debug!("Cache key: {}", key);
         Ok(key)
+    }
+
+    fn cache_plan(&self, file_path: &Path, opts: &HttpOptions<'_>) -> Result<CachePlan> {
+        let file_info = FileInfo::new(file_path, opts);
+        let strip_components = self.effective_strip_components(file_path, &file_info, opts)?;
+        let key = self.cache_key(file_path, opts, strip_components)?;
+
+        Ok(CachePlan {
+            key,
+            file_info,
+            strip_components,
+        })
+    }
+
+    fn effective_strip_components(
+        &self,
+        file_path: &Path,
+        file_info: &FileInfo,
+        opts: &HttpOptions<'_>,
+    ) -> Result<usize> {
+        let mut strip_components: Option<usize> = opts
+            .strip_components()
+            .map(|s| {
+                s.parse::<usize>()
+                    .map_err(|_| eyre::eyre!("Invalid strip_components value: {s}"))
+            })
+            .transpose()?;
+
+        // Auto-detect strip_components=1 for single-directory archives
+        if strip_components.is_none()
+            && !file_info.is_compressed_binary
+            && file_info.format != file::ExtractionFormat::Raw
+            && opts.bin_path().is_none()
+            && file::should_strip_components(file_path, file_info.format).unwrap_or(false)
+        {
+            debug!("Auto-detected single directory archive, using strip_components=1");
+            strip_components = Some(1);
+        }
+
+        Ok(strip_components.unwrap_or(0))
     }
 
     // -------------------------------------------------------------------------
@@ -313,12 +366,12 @@ impl HttpBackend {
         &self,
         tv: &ToolVersion,
         file_path: &Path,
-        cache_key: &str,
+        cache_plan: &CachePlan,
         url: &str,
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
-        let cache_path = self.cache_path(cache_key);
+        let cache_path = self.cache_path(&cache_plan.key);
 
         // Ensure parent directory exists
         file::create_dir_all(Self::tarballs_dir())?;
@@ -326,7 +379,7 @@ impl HttpBackend {
         // Create unique temp directory for atomic extraction
         let tmp_path = Self::tarballs_dir().join(format!(
             "{}.tmp-{}-{}",
-            cache_key,
+            cache_plan.key,
             std::process::id(),
             SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
         ));
@@ -337,7 +390,8 @@ impl HttpBackend {
         }
 
         // Perform extraction
-        let extraction_type = self.extract_artifact(tv, &tmp_path, file_path, opts, pr)?;
+        let extraction_type =
+            self.extract_artifact(tv, &tmp_path, file_path, cache_plan, opts, pr)?;
 
         // Atomic replace
         if cache_path.exists() {
@@ -346,7 +400,7 @@ impl HttpBackend {
         std::fs::rename(&tmp_path, &cache_path)?;
 
         // Write metadata
-        self.write_metadata(cache_key, url, file_path, opts)?;
+        self.write_metadata(&cache_plan.key, url, file_path, opts)?;
 
         Ok(extraction_type)
     }
@@ -357,19 +411,18 @@ impl HttpBackend {
         tv: &ToolVersion,
         dest: &Path,
         file_path: &Path,
+        cache_plan: &CachePlan,
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         file::create_dir_all(dest)?;
 
-        let file_info = FileInfo::new(file_path, opts);
-
-        if file_info.is_compressed_binary {
-            self.extract_compressed_binary(dest, file_path, &file_info, opts, pr)
-        } else if file_info.format == file::ExtractionFormat::Raw {
-            self.extract_raw_file(dest, file_path, &file_info, opts, pr)
+        if cache_plan.file_info.is_compressed_binary {
+            self.extract_compressed_binary(dest, file_path, &cache_plan.file_info, opts, pr)
+        } else if cache_plan.file_info.format == file::ExtractionFormat::Raw {
+            self.extract_raw_file(dest, file_path, &cache_plan.file_info, opts, pr)
         } else {
-            self.extract_archive(tv, dest, file_path, &file_info, opts, pr)
+            self.extract_archive(tv, dest, file_path, cache_plan, opts, pr)
         }
     }
 
@@ -425,29 +478,17 @@ impl HttpBackend {
         tv: &ToolVersion,
         dest: &Path,
         file_path: &Path,
-        file_info: &FileInfo,
+        cache_plan: &CachePlan,
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
-        let mut strip_components: Option<usize> =
-            opts.strip_components().and_then(|s| s.parse().ok());
-
-        // Auto-detect strip_components=1 for single-directory archives
-        if strip_components.is_none()
-            && opts.bin_path().is_none()
-            && file::should_strip_components(file_path, file_info.format).unwrap_or(false)
-        {
-            debug!("Auto-detected single directory archive, using strip_components=1");
-            strip_components = Some(1);
-        }
-
         let extract_opts = file::ExtractOptions {
-            strip_components: strip_components.unwrap_or(0),
+            strip_components: cache_plan.strip_components,
             pr,
             preserve_mtime: false,
         };
 
-        file::extract_archive(file_path, dest, file_info.format, &extract_opts)?;
+        file::extract_archive(file_path, dest, cache_plan.file_info.format, &extract_opts)?;
 
         // Handle rename_exe option for archives
         if let Some(rename_to) = opts.rename_exe() {
@@ -794,29 +835,28 @@ impl Backend for HttpBackend {
         verify_artifact(&tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
 
         // Generate cache key
-        let cache_key = self.cache_key(&file_path, &opts)?;
-        let file_info = FileInfo::new(&file_path, &opts);
+        let cache_plan = self.cache_plan(&file_path, &opts)?;
 
         // Acquire lock and extract or reuse cache
-        let cache_path = self.cache_path(&cache_key);
+        let cache_path = self.cache_path(&cache_plan.key);
         let _lock = crate::lock_file::get(&cache_path, ctx.force)?;
 
         // Determine extraction type based on whether we're using cache or extracting fresh
         // On cache hit, we need to detect the actual filename from the cache (which may differ
         // from current options if a previous extraction used different `bin` name)
         ctx.pr.next_operation();
-        let extraction_type = if self.is_cached(&cache_key) {
+        let extraction_type = if self.is_cached(&cache_plan.key) {
             ctx.pr.set_message("using cached tarball".into());
             // Report extraction operation as complete (instant since we're using cache)
             ctx.pr.set_length(1);
             ctx.pr.set_position(1);
-            self.extraction_type_from_cache(&cache_key, &file_info)
+            self.extraction_type_from_cache(&cache_plan.key, &cache_plan.file_info)
         } else {
             ctx.pr.set_message("extracting to cache".into());
             self.extract_to_cache(
                 &tv,
                 &file_path,
-                &cache_key,
+                &cache_plan,
                 &url,
                 &opts,
                 Some(ctx.pr.as_ref()),
@@ -824,9 +864,9 @@ impl Backend for HttpBackend {
         };
 
         // Create symlinks
-        self.create_install_symlink(&tv, &cache_key, &extraction_type, &opts)?;
-        self.create_version_alias_symlink(&tv, &cache_key)?;
-        tv.install_path = Some(Self::install_path_for(&tv, &cache_key));
+        self.create_install_symlink(&tv, &cache_plan.key, &extraction_type, &opts)?;
+        self.create_version_alias_symlink(&tv, &cache_plan.key)?;
+        tv.install_path = Some(Self::install_path_for(&tv, &cache_plan.key));
 
         // Verify checksum for lockfile
         if lockfile_enabled || has_lockfile_checksum {

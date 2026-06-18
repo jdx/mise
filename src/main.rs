@@ -48,6 +48,7 @@ mod exit;
 mod fake_asdf;
 mod file;
 pub(crate) mod forgejo;
+mod fuzzy;
 mod git;
 pub(crate) mod github;
 pub(crate) mod gitlab;

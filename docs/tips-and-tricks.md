@@ -83,7 +83,8 @@ defaults, then LaunchAgents, then login shell, then tools, then a
 `bootstrap` task if you define one:
 
 ```toml
-[bootstrap.packages]                      # OS packages (apt/dnf/pacman/brew)
+[bootstrap.packages]                      # OS packages (apk/apt/dnf/pacman/brew)
+"apk:build-base" = "latest"
 "apt:build-essential" = "latest"
 "brew:postgresql@17" = "latest"
 

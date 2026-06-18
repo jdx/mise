@@ -27,7 +27,7 @@ pub struct SandboxConfig {
 }
 
 /// Minimal env vars inherited when deny_env is active.
-const DEFAULT_ENV_KEYS: &[&str] = &["PATH", "HOME", "USER", "SHELL", "TERM", "LANG"];
+const DEFAULT_ENV_KEYS: &[&str] = &["PATH", "HOME", "USER", "SHELL", "TERM", "COLORTERM", "LANG"];
 
 /// Check if an env var name matches an allow_env pattern.
 /// Patterns can contain `*` as a wildcard (e.g., `MYAPP_*` matches `MYAPP_FOO`).
