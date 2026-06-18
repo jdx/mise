@@ -1013,44 +1013,44 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"
 
 [[tools.usage]]
-version = "3.5.0"
+version = "3.5.2"
 backend = "aqua:jdx/usage"
 
 [tools.usage."platforms.linux-arm64"]
-checksum = "sha256:a0aab1ecbae1bc48aa3aac6ebb508f5df44a77122bb8d6ea23b86ee9fd699518"
-url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:ef4b872c9c371e8c200c53f0610295d6318d7281bf73e211e6d9eb865a19d98e"
+url = "https://github.com/jdx/usage/releases/download/v3.5.2/usage-aarch64-unknown-linux-musl.tar.gz"
 
 [tools.usage."platforms.linux-arm64-musl"]
-checksum = "sha256:a0aab1ecbae1bc48aa3aac6ebb508f5df44a77122bb8d6ea23b86ee9fd699518"
-url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:ef4b872c9c371e8c200c53f0610295d6318d7281bf73e211e6d9eb865a19d98e"
+url = "https://github.com/jdx/usage/releases/download/v3.5.2/usage-aarch64-unknown-linux-musl.tar.gz"
 
 [tools.usage."platforms.linux-x64"]
-checksum = "sha256:d686d7acff1fc5ffd04be2fefccd342564648d353609fab81e22a3672446c4f0"
-url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:be7d66c000940a604001fc0dbe2e340ade00d949b46ae41a434853c1873d7f1d"
+url = "https://github.com/jdx/usage/releases/download/v3.5.2/usage-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.usage."platforms.linux-x64-baseline"]
-checksum = "sha256:d686d7acff1fc5ffd04be2fefccd342564648d353609fab81e22a3672446c4f0"
-url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:be7d66c000940a604001fc0dbe2e340ade00d949b46ae41a434853c1873d7f1d"
+url = "https://github.com/jdx/usage/releases/download/v3.5.2/usage-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.usage."platforms.linux-x64-musl"]
-checksum = "sha256:d686d7acff1fc5ffd04be2fefccd342564648d353609fab81e22a3672446c4f0"
-url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:be7d66c000940a604001fc0dbe2e340ade00d949b46ae41a434853c1873d7f1d"
+url = "https://github.com/jdx/usage/releases/download/v3.5.2/usage-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.usage."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:d686d7acff1fc5ffd04be2fefccd342564648d353609fab81e22a3672446c4f0"
-url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:be7d66c000940a604001fc0dbe2e340ade00d949b46ae41a434853c1873d7f1d"
+url = "https://github.com/jdx/usage/releases/download/v3.5.2/usage-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.usage."platforms.macos-arm64"]
-checksum = "sha256:dcb1022d2e6cbe0070e3259a48a5e058ca64ecc707b6901b929b388b95bb322c"
-url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-universal-apple-darwin.tar.gz"
+checksum = "sha256:e2a6380f037cdf25f4b355d1ae2387bef12c2b624b7901d284d42a57d12212e6"
+url = "https://github.com/jdx/usage/releases/download/v3.5.2/usage-universal-apple-darwin.tar.gz"
 
 [tools.usage."platforms.windows-x64"]
-checksum = "sha256:4647b8894520c4ab8d8424950fd7bddd2b76aa6c71bdedc90b2464985ab3b8cd"
-url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:709843742514bd0bb669568d87c4dc5261ef7465e48bbeaad4de9084be3d735a"
+url = "https://github.com/jdx/usage/releases/download/v3.5.2/usage-x86_64-pc-windows-msvc.zip"
 
 [tools.usage."platforms.windows-x64-baseline"]
-checksum = "sha256:4647b8894520c4ab8d8424950fd7bddd2b76aa6c71bdedc90b2464985ab3b8cd"
-url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:709843742514bd0bb669568d87c4dc5261ef7465e48bbeaad4de9084be3d735a"
+url = "https://github.com/jdx/usage/releases/download/v3.5.2/usage-x86_64-pc-windows-msvc.zip"
 
 [[tools.wait-for-gh-rate-limit]]
 version = "1.1.1"

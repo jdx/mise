@@ -7,10 +7,12 @@
 
 # dry-run prints what would be written without creating the file
 assert_contains "mise bootstrap packages use --dry-run apt:zlib1g-dev" '"apt:zlib1g-dev" = "latest"'
+assert_contains "mise bootstrap packages use --dry-run apk:zlib-dev" '"apk:zlib-dev" = "latest"'
 assert_fail "cat mise.toml"
 
 # version pins use @, like mise use
 assert_contains "mise bootstrap packages use --dry-run apt:curl@8.5.0-2" '"apt:curl" = "8.5.0-2"'
+assert_contains "mise bootstrap packages use --dry-run apk:zlib-dev@1.3.1-r2" '"apk:zlib-dev" = "1.3.1-r2"'
 
 # mas uses numeric ADAM IDs
 assert_contains "mise bootstrap packages use --dry-run mas:497799835" '"mas:497799835" = "latest"'

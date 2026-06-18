@@ -798,10 +798,7 @@ fn log_file_level() -> Option<LevelFilter> {
 }
 
 fn linux_distro() -> Option<String> {
-    match sys_info::linux_os_release() {
-        Ok(release) => release.id,
-        _ => None,
-    }
+    crate::platform::linux_os_release().map(|release| release.id.clone())
 }
 
 #[cfg(target_os = "linux")]

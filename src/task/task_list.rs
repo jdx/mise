@@ -9,12 +9,13 @@ use crate::{dirs, file};
 use console::Term;
 use demand::{DemandOption, Select};
 use eyre::{Result, bail, ensure, eyre};
-use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
 
 const MAX_AVAILABLE_TASKS_IN_ERROR: usize = 20;
 
@@ -73,16 +74,16 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
 fn suggest_similar_commands(name: &str) -> Vec<String> {
     use clap::CommandFactory;
     let cmd = crate::cli::Cli::command();
-    let matcher = SkimMatcherV2::default().use_cache(true).smart_case();
+    let mut matcher = FuzzyMatcher::default();
+    let pattern = FuzzyPattern::new(name);
     cmd.get_subcommands()
         .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
         .filter_map(|subcmd| {
             matcher
-                .fuzzy_match(subcmd, name)
-                .filter(|&score| score > 0)
+                .score_pattern(subcmd, &pattern)
                 .map(|score| (score, subcmd.to_string()))
         })
-        .sorted_by_key(|(score, _)| -1 * *score)
+        .sorted_by_key(|(score, _)| std::cmp::Reverse(*score))
         .take(3)
         .map(|(_, subcmd)| subcmd)
         .collect()

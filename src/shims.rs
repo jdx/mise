@@ -315,7 +315,9 @@ fn effective_shim_mode(mise_bin: &Path) -> String {
     mode
 }
 
-/// Build the extension-less bash shim used on Windows (for Git Bash/Cygwin).
+/// Build the extension-less bash shim used on Windows in "file" mode (for Git
+/// Bash/Cygwin). "exe" mode does not emit this — its native <tool>.exe is found
+/// by those shells via `.exe` magic — so only "file" mode reaches this code.
 ///
 /// The shim's directory can leak into WSL via the default Windows-PATH interop
 /// (it is mounted under /mnt/c where every file is treated as executable), so WSL
@@ -354,31 +356,22 @@ fn bash_shim_script(tool: &str) -> String {
 fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
     match effective_shim_mode(mise_bin).as_ref() {
         "exe" => {
-            if symlink_path.extension().and_then(|s| s.to_str()) == Some("exe") {
-                let mise_shim_bin =
-                    find_mise_shim_bin(mise_bin).ok_or_else(|| eyre!("mise-shim.exe not found"))?;
-                // Copy mise-shim.exe as <tool>.exe
-                fs::copy(&mise_shim_bin, symlink_path).wrap_err_with(|| {
-                    eyre!(
-                        "Failed to copy {} to {}",
-                        display_path(&mise_shim_bin),
-                        display_path(symlink_path)
-                    )
-                })?;
-                Ok(())
-            } else {
-                let shim_name = symlink_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy();
-                // Create extensionless bash script for Git Bash/Cygwin
-                file::write(symlink_path, bash_shim_script(&shim_name)).wrap_err_with(|| {
-                    eyre!(
-                        "Failed to create shim script for {}",
-                        display_path(symlink_path)
-                    )
-                })
-            }
+            // In "exe" mode every desired shim is a native <tool>.exe copy of
+            // mise-shim.exe (see get_desired_shims). No extension-less bash shim is
+            // emitted: Git Bash / Cygwin resolve a bare name to the .exe via their
+            // `.exe` magic, so emitting one is redundant and only pollutes WSL via
+            // /mnt/c PATH interop (#10299).
+            let mise_shim_bin =
+                find_mise_shim_bin(mise_bin).ok_or_else(|| eyre!("mise-shim.exe not found"))?;
+            // Copy mise-shim.exe as <tool>.exe
+            fs::copy(&mise_shim_bin, symlink_path).wrap_err_with(|| {
+                eyre!(
+                    "Failed to copy {} to {}",
+                    display_path(&mise_shim_bin),
+                    display_path(symlink_path)
+                )
+            })?;
+            Ok(())
         }
         "file" => {
             let shim = shim.trim_end_matches(".cmd");
@@ -571,10 +564,15 @@ async fn get_desired_shims(
                         vec![p.with_extension("exe").to_string_lossy().to_string()]
                     }
                     "exe" => {
-                        vec![
-                            p.with_extension("exe").to_string_lossy().to_string(),
-                            p.with_extension("").to_string_lossy().to_string(),
-                        ]
+                        // Only the native <tool>.exe is needed. Git Bash / Cygwin /
+                        // MSYS2 resolve a bare `tool` to `tool.exe` via their `.exe`
+                        // magic, and mise-shim.exe derives the tool from its own file
+                        // name, so it runs correctly however it is invoked. We do NOT
+                        // emit an extension-less bash shim here: that variant is only
+                        // required in "file" mode (no .exe, and Cygwin won't auto-append
+                        // .cmd) and is what leaked into WSL via /mnt/c PATH interop
+                        // (#10299).
+                        vec![p.with_extension("exe").to_string_lossy().to_string()]
                     }
                     "file" => {
                         vec![

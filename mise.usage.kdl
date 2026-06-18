@@ -317,6 +317,7 @@ Examples:
 
     $ mise bootstrap                    # packages + dotfiles + tools + bootstrap task
     $ mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
+    $ mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
     $ mise bootstrap packages install --yes
     $ mise bootstrap macos-defaults status
     $ mise bootstrap launchd apply --dry-run
@@ -327,7 +328,17 @@ Examples:
     flag "-n --dry-run" help="Print what would happen without installing anything"
     flag "-y --yes" help="Skip confirmation prompts"
     flag --force-dotfiles help="Overwrite existing files that conflict with whole-file dotfile entries"
-    flag --update help="Refresh system package manager metadata first (apt: `apt-get update`)"
+    flag --skip help="Skip one or more bootstrap parts" var=#true {
+        long_help #"""
+Skip one or more bootstrap parts
+
+Can be passed multiple times or as a comma-separated list.
+"""#
+        arg <SKIP> {
+            choices packages dotfiles defaults launchd systemd user tools task final-hook
+        }
+    }
+    flag --update help="Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
     cmd launchd subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" {
         cmd apply {
             flag "-n --dry-run" help="Print the commands that would run without running them"
@@ -398,7 +409,7 @@ system package manager. This may elevate with sudo when not running as
 root (see the `system_packages.sudo` setting).
 
 Packages can also be given explicitly in `manager:package` form (e.g.
-`apt:curl`, `brew:jq`); they are installed whether or not they appear in
+`apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
 the config. Explicit packages and `--manager` scope the run to packages
 only.
 """#
@@ -406,19 +417,19 @@ only.
 Examples:
 
     $ mise bootstrap packages install
-    $ mise bootstrap packages install apt:curl brew:jq brew-cask:firefox mas:497799835
+    $ mise bootstrap packages install apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835
     $ mise bootstrap packages install --dry-run
     $ mise bootstrap packages install --manager apt --yes
 
 """#
-            flag "-m --manager" help="Only install packages for this manager, e.g. `apt`, `brew`, `brew-cask`, or `mas`" {
+            flag "-m --manager" help="Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`" {
                 arg <MANAGER> {
-                    choices apt brew brew-cask dnf mas pacman
+                    choices apk apt brew brew-cask dnf mas pacman
                 }
             }
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
-            flag --update help="Refresh package manager metadata first (apt: `apt-get update`)"
+            flag --update help="Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
             arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
         }
         cmd status help="Show the status of system packages from `[bootstrap.packages]`" {
@@ -440,8 +451,8 @@ Examples:
 Upgrade installed bootstrap packages from `[bootstrap.packages]`
 
 Refreshes package manager metadata and upgrades the configured packages
-that are already installed: apt/dnf/pacman upgrade to the newest available
-version (apt and dnf honor a version pinned in config), brew pours the
+that are already installed: apk/apt/dnf/pacman upgrade to the newest available
+version (apk, apt, and dnf honor a version pinned in config), brew pours the
 formula's current bottle and replaces the old keg, brew-cask installs
 the current cask artifact, and mas upgrades App Store apps. Packages that
 are not installed yet are skipped — use `mise bootstrap packages install`
@@ -460,9 +471,9 @@ Examples:
     $ mise bootstrap packages upgrade --dry-run
 
 """#
-            flag "-m --manager" help="Only upgrade packages for this manager, e.g. `apt`, `brew`, `brew-cask`, or `mas`" {
+            flag "-m --manager" help="Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`" {
                 arg <MANAGER> {
-                    choices apt brew brew-cask dnf mas pacman
+                    choices apk apt brew brew-cask dnf mas pacman
                 }
             }
             flag "-n --dry-run" help="Print the commands that would run without running them"
@@ -487,7 +498,7 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
             after_long_help #"""
 Examples:
 
-    $ mise bootstrap packages use apt:curl brew:jq brew-cask:firefox mas:497799835
+    $ mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835
     $ mise bootstrap packages use -g brew:postgresql@17
     $ mise bootstrap packages use apt:curl@8.5.0-2
 

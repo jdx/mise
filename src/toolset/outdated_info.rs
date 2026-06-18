@@ -56,6 +56,23 @@ impl OutdatedInfo {
             return Ok(Some(tv.version.clone()));
         }
         if matches!(&tv.request, ToolRequest::Version { version, .. } if version == "latest") {
+            if tv.request.version() == tv.version {
+                // "latest" was not resolved to a concrete version (e.g. plugin not
+                // installed yet). Don't try to infer an installed version; the
+                // generic path below would treat "latest" as a fuzzy prefix and
+                // incorrectly match any installed numeric version.
+                return Ok(None);
+            }
+            // When minimum_release_age causes "latest" to resolve to a version not yet
+            // installed on disk, fall back to finding the highest installed version.
+            // Otherwise to_remove in `mise up` won't know which old version to uninstall.
+            let Some(current) = backend.latest_installed_version(None)? else {
+                return Ok(None);
+            };
+            let current_tv = ToolVersion::new(tv.request.clone(), current);
+            if backend.is_version_installed(config, &current_tv, true) {
+                return Ok(Some(current_tv.version));
+            }
             return Ok(None);
         }
 
@@ -618,7 +635,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn current_version_does_not_infer_latest_alias() {
+    async fn current_version_falls_back_to_installed_when_latest_not_installed() {
         let config = Config::get().await.unwrap();
         let temp_dir = tempfile::tempdir().unwrap();
         let short = "summary-current-latest-test";
@@ -643,7 +660,7 @@ mod tests {
         let tv = ToolVersion::new(request, "1.25.10".into());
         let info = OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap();
 
-        assert_eq!(info.current, None);
+        assert_eq!(info.current.as_deref(), Some("1.25.9"));
     }
 
     #[tokio::test]

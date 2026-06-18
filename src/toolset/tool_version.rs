@@ -1,14 +1,13 @@
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::{cmp::Ordering, sync::LazyLock};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::{ABackend, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
-use crate::env;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
@@ -16,6 +15,7 @@ use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_
 use crate::lockfile::{CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
+use crate::{dirs, env};
 use console::style;
 use dashmap::DashMap;
 use eyre::{Result, bail};
@@ -749,8 +749,8 @@ impl ResolveOptions {
 }
 
 /// Check if a tool has any user-linked versions (created by `mise link`).
-/// A linked version is an installed version whose path is a symlink to an absolute path,
-/// as opposed to runtime symlinks which point to relative paths (starting with "./").
+/// A linked version is an installed version whose path is a symlink to an external
+/// absolute path, as opposed to runtime symlinks or mise-managed install/cache links.
 fn has_linked_version(ba: &BackendArg) -> bool {
     let installs_dir = &ba.installs_path;
     let Ok(entries) = std::fs::read_dir(installs_dir) else {
@@ -761,12 +761,40 @@ fn has_linked_version(ba: &BackendArg) -> bool {
         if let Ok(Some(target)) = crate::file::resolve_symlink(&path) {
             // Runtime symlinks start with "./" (e.g., latest -> ./1.35.0)
             // User-linked symlinks point to absolute paths (e.g., brew -> /opt/homebrew/opt/hk)
-            if target.is_absolute() {
+            if target.is_absolute() && !is_mise_managed_symlink_target(&target) {
                 return true;
             }
         }
     }
     false
+}
+
+fn is_mise_managed_symlink_target(target: &Path) -> bool {
+    debug_assert!(target.is_absolute(), "caller filters relative targets");
+    let target = normalize_path_components(target);
+
+    [*dirs::DATA, *dirs::CACHE, *dirs::DOWNLOADS, *dirs::INSTALLS]
+        .into_iter()
+        .any(|root| target.starts_with(normalize_path_components(root)))
+        || env::shared_install_dirs()
+            .iter()
+            .any(|root| target.starts_with(normalize_path_components(root)))
+}
+
+fn normalize_path_components(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push("..");
+                }
+            }
+            Component::CurDir => {}
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
 }
 
 impl Display for ResolveOptions {
@@ -800,6 +828,118 @@ mod tests {
     use super::*;
     use crate::cli::args::BackendResolution;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_name(prefix: &str) -> String {
+        format!(
+            "{}-{}",
+            prefix,
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )
+    }
+
+    fn test_backend(installs_path: PathBuf) -> BackendArg {
+        let short = unique_name("dummy-linked");
+        let mut backend = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short,
+            None,
+            BackendResolution::new(false),
+        );
+        backend.installs_path = installs_path;
+        backend
+    }
+
+    #[test]
+    fn has_linked_version_detects_external_absolute_targets() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
+        fs::create_dir_all(&backend.installs_path)?;
+
+        let external_target = temp_dir.path().join("external").join("tool");
+        fs::create_dir_all(&external_target)?;
+        crate::file::make_symlink_or_file(&external_target, &backend.installs_path.join("brew"))?;
+
+        assert!(has_linked_version(&backend));
+
+        Ok(())
+    }
+
+    #[test]
+    fn has_linked_version_normalizes_absolute_targets_before_managed_check() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
+        fs::create_dir_all(&backend.installs_path)?;
+
+        let escaped_target = dirs::DATA
+            .join("..")
+            .join("has-linked-version-external")
+            .join("tool");
+        if let Some(parent) = escaped_target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        crate::file::make_symlink_or_file(&escaped_target, &backend.installs_path.join("escaped"))?;
+
+        assert!(has_linked_version(&backend));
+
+        Ok(())
+    }
+
+    #[test]
+    fn has_linked_version_ignores_mise_managed_absolute_targets() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
+        fs::create_dir_all(&backend.installs_path)?;
+
+        let mut managed_targets = vec![];
+        let mut roots = vec![
+            ("data".to_string(), dirs::DATA.to_path_buf()),
+            ("cache".to_string(), dirs::CACHE.to_path_buf()),
+            ("downloads".to_string(), dirs::DOWNLOADS.to_path_buf()),
+            ("installs".to_string(), dirs::INSTALLS.to_path_buf()),
+        ];
+        roots.extend(
+            env::shared_install_dirs()
+                .into_iter()
+                .enumerate()
+                .map(|(i, root)| (format!("shared-{i}"), root)),
+        );
+
+        for (name, root) in roots {
+            fs::create_dir_all(&root)?;
+            let target = tempfile::Builder::new()
+                .prefix(&format!("has-linked-version-{name}-"))
+                .tempdir_in(&root)?;
+            crate::file::make_symlink_or_file(
+                target.path(),
+                &backend.installs_path.join(format!("{name}-target")),
+            )?;
+            managed_targets.push(target);
+        }
+
+        assert!(!has_linked_version(&backend));
+
+        Ok(())
+    }
+
+    #[test]
+    fn has_linked_version_ignores_runtime_relative_targets() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
+        fs::create_dir_all(&backend.installs_path)?;
+
+        crate::file::make_symlink_or_file(
+            Path::new("./1.0.0"),
+            &backend.installs_path.join("latest"),
+        )?;
+
+        assert!(!has_linked_version(&backend));
+
+        Ok(())
+    }
 
     #[test]
     fn runtime_path_does_not_return_file_based_runtime_symlink() -> Result<()> {

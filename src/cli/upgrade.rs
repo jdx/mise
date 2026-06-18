@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, config_file};
+use crate::errors::split_install_result;
 use crate::file::display_path;
 use crate::install_before::resolve_cli_minimum_release_age;
 use crate::semver::split_version_prefix;
@@ -294,16 +295,7 @@ impl Upgrade {
 
         // Install all tools in parallel
         let (mut successful_versions, install_error) =
-            match ts.install_all_versions(config, tool_requests, &opts).await {
-                Ok(versions) => (versions, eyre::Result::Ok(())),
-                Err(e) => match e.downcast_ref::<crate::errors::Error>() {
-                    Some(crate::errors::Error::InstallFailed {
-                        successful_installations,
-                        ..
-                    }) => (successful_installations.clone(), eyre::Result::Err(e)),
-                    _ => (vec![], eyre::Result::Err(e)),
-                },
-            };
+            split_install_result(ts.install_all_versions(config, tool_requests, &opts).await);
 
         // Only update config files for tools that were successfully installed
         for (o, cf) in config_file_updates {
@@ -409,27 +401,29 @@ impl Upgrade {
 
         // Only uninstall old versions of tools that were successfully upgraded
         // and are not needed by any tracked config
-        for (o, tv) in to_remove {
+        for (o, old_version) in to_remove {
             if successful_versions
                 .iter()
                 .any(|v| v.ba() == o.tool_version.ba())
             {
-                // Check if this version is still needed by another tracked config
-                let version_key = (
-                    o.tool_version.ba().short.to_string(),
-                    o.tool_version.tv_pathname(),
-                );
+                // Build a ToolVersion that targets the actual installed old version
+                // (e.g., "1.0.0"), not the resolved latest (e.g., "2.0.0").
+                // When minimum_release_age forces a remote lookup for "latest",
+                // the toolset resolves to the remote version, and tv_pathname()
+                // on the toolset version would give the wrong key.
+                let old_tv = ToolVersion::new(o.tool_version.request.clone(), old_version.clone());
+                let version_key = (old_tv.ba().short.to_string(), old_tv.tv_pathname());
                 if versions_needed_by_tracked.contains(&version_key) {
                     debug!(
                         "Keeping {}@{} because it's still needed by a tracked config",
-                        o.name, tv
+                        o.name, old_version
                     );
                     continue;
                 }
 
-                let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
+                let pr = mpr.add(&format!("uninstall {}@{}", o.name, old_version));
                 if let Err(e) = self
-                    .uninstall_old_version(config, &o.tool_version, pr.as_ref())
+                    .uninstall_old_version(config, &old_tv, pr.as_ref())
                     .await
                 {
                     warn!("Failed to uninstall old version of {}: {}", o.name, e);
