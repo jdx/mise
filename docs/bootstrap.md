@@ -26,6 +26,11 @@ one-time machine setup.
 8. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
 9. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
+Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
+`packages`, `dotfiles`, `defaults`, `launchd`, `systemd`, `user`, `tools`,
+`task`, and `final-hook`. The flag can be repeated or comma-separated, for
+example `mise bootstrap --skip tools,task`.
+
 Hook phases can also run before and after the built-in steps:
 `pre-packages`, `post-packages`, `pre-dotfiles`, `post-dotfiles`,
 `pre-defaults`, `post-defaults`, `pre-user`, `post-user`, `pre-tools`, and
@@ -231,8 +236,10 @@ dotfiles.root = "~/.dotfiles"
 
 [dotfiles]
 "~/.dotfiles" = "~/src/dotfiles"
-"~/.config/mise/config.toml" = "~/.dotfiles/mise/config.toml"
+"~/.config/mise/config.toml" = "~/src/dotfiles/mise/config.toml"
 ```
 
-The repo/source must exist before the first apply. Replacing the active
-global config affects future mise invocations, so use this pattern carefully.
+The repo/source must exist before the first apply. Use the real repo path for
+sources needed during the first run; `~/.dotfiles` does not exist until mise
+creates that symlink. Replacing the active global config affects future mise
+invocations, so use this pattern carefully.

@@ -250,3 +250,21 @@ assert_contains "cat $MISE_CONFIG_DIR/mise.lock" "2.0.0"
 assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock" "1.0.0"
 rm -f "$MISE_CONFIG_DIR/config.toml" "$MISE_CONFIG_DIR/mise.lock"
 unset MISE_LOCKFILE
+
+# Test: upgrade removes old version when minimum_release_age is set and "latest" resolves
+# to a version not yet installed on disk.
+# Regression test for https://github.com/jdx/mise/issues/7991
+mise settings set minimum_release_age "7d"
+mise uninstall dummy --all
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "latest"
+EOF
+mise install dummy@1.0.0
+assert_contains "mise ls --installed dummy" "1.0.0"
+# upgrade should install 2.0.0 and uninstall 1.0.0
+mise upgrade dummy
+assert_contains "mise ls --installed dummy" "2.0.0"
+assert_not_contains "mise ls --installed dummy" "1.0.0"
+rm -f mise.toml
+mise settings unset minimum_release_age

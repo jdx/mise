@@ -148,18 +148,29 @@ impl Backend for VfoxBackend {
             .collect();
         cmd_env.extend(tv.install_env());
         // Surface `tools = true` `[env]` *value* directives (e.g.
-        // `CLOUDSDK_PYTHON = "{{ tools.python.path }}/bin/python3"`) resolved against
-        // the install toolset, which already has the dependency installed (depends
-        // ordering). Without this, a combined `mise install` would run the plugin's
-        // install hooks (including os.execute) without the resolved value, unlike the
-        // separate-install case where a re-activated shell re-exports it. Uses ctx.ts
-        // — NOT config.get_toolset(), which would re-enter the toolset OnceCell from
-        // backends' version listing and deadlock. Best-effort: env *modules* are
-        // excluded via ToolsFilter::ToolsOnlyVals, errors fall back to the tool-less
-        // env, and PATH is left to dependency_env. (#10282)
+        // `CLOUDSDK_PYTHON = "{{ tools.python.path }}/bin/python3"`) so the plugin's
+        // install hooks (including os.execute) see the resolved value during a
+        // combined `mise install`, mirroring the separate-install case where a
+        // re-activated shell re-exports it.
+        //
+        // Resolve against a fully-resolved toolset of this tool's dependencies, NOT
+        // ctx.ts: ctx.ts is the raw install toolset (`Toolset::from(ToolRequestSet)`)
+        // whose `.versions` are empty until `resolve()` runs *after* installs, so its
+        // `tools.*` tera map is empty and `{{ tools.python.path }}` would render "".
+        // `install_value_toolset` is resolved offline and includes both backend deps
+        // and the per-tool mise.toml `depends` option (`gcloud = { depends =
+        // ["python"] }`) with real install paths, and is install-safe (it uses
+        // `get_tool_request_set()`, not the deadlock-prone `config.get_toolset()`).
+        // Best-effort: env *modules* are excluded via `ToolsFilter::ToolsOnlyVals`,
+        // any resolution error falls back to the tool-less env, and PATH is left to
+        // `dependency_env`. (#10282, follow-up to #10432)
         {
             let base: EnvMap = cmd_env.clone().into_iter().collect();
-            match ctx.ts.tool_val_env(&ctx.config, &base).await {
+            let tool_vals = match self.install_value_toolset(&ctx.config, &tv).await {
+                Ok(dep_ts) => dep_ts.tool_val_env(&ctx.config, &base).await,
+                Err(e) => Err(e),
+            };
+            match tool_vals {
                 Ok(vals) => {
                     for (k, v) in vals {
                         // PATH stays owned by dependency_env. On Windows env var
