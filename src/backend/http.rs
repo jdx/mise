@@ -181,15 +181,6 @@ impl<'a> HttpOptions<'a> {
         self.values.str("checksum_expr")
     }
 
-    fn checksum_algo(&self) -> String {
-        // Algorithm names are case-insensitive; normalize so downstream hex
-        // validation (which matches lowercase names) accepts e.g. "SHA256".
-        self.values
-            .str("checksum_algo")
-            .unwrap_or("sha256")
-            .to_ascii_lowercase()
-    }
-
     // Target-aware accessors for cross-platform `mise lock`. These resolve
     // `platforms.<key>.<opt>` for an arbitrary target rather than the host.
     fn url_for_target(&self, target: &PlatformTarget) -> Option<String> {
@@ -807,8 +798,8 @@ impl HttpBackend {
         let checksum_url = template_string_for_target(&checksum_url_template, tv, target);
         let filename = get_filename_from_url(url);
 
-        // 2a. Manifest with an extraction expression. The algorithm isn't in the
-        // file name here, so it comes from `checksum_algo` (default sha256). The
+        // 2a. Manifest with an extraction expression. The expression returns an
+        // `algo:hash` string, or a bare hash that's assumed to be sha256. The
         // manifest is the same across platforms, so use the cached fetch.
         if let Some(expr) = opts.checksum_expr() {
             let body = match HTTP.get_text_cached(&checksum_url).await {
@@ -825,7 +816,7 @@ impl HttpBackend {
                 ("url", url),
                 ("filename", filename.as_str()),
             ];
-            return eval_checksum_expr(expr, &body, &vars, &opts.checksum_algo());
+            return eval_checksum_expr(expr, &body, &vars, "sha256");
         }
 
         // 2b. Checksum file: a SHASUMS list (filename match) first, then an
@@ -865,7 +856,6 @@ pub fn install_time_option_keys() -> Vec<String> {
         "rename_exe".into(),
         "checksum_url".into(),
         "checksum_expr".into(),
-        "checksum_algo".into(),
     ]
 }
 

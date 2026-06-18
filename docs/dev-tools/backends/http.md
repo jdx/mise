@@ -145,8 +145,7 @@ of:
 - a **manifest** (e.g. JSON), combined with `checksum_expr` below.
 
 For individual and SHASUMS checksum files, the algorithm is detected from the
-file's name (`*.sha512`, `SHA512SUMS`, `*.md5`, `*.b3`, defaulting to sha256), so
-`checksum_algo` is not needed.
+file's name (`*.sha512`, `SHA512SUMS`, `*.md5`, `*.b3`, defaulting to sha256).
 
 ```toml
 # Individual checksum file (one per artifact)
@@ -170,13 +169,11 @@ evaluated with [expr-lang](https://expr-lang.org). The following variables are
 available: `body` (the raw manifest), `version`, `os`, `arch`, `url` (the
 resolved artifact URL for the target), and `filename`.
 
-The expression may return either:
-
-- a **string** — a bare hash (prefixed with `checksum_algo`) or an already
-  qualified `sha256:<hash>`; or
-- a **map** with `checksum` (and optional `algo`) fields, e.g.
-  `{ algo: "sha512", checksum: "..." }` — useful when the algorithm varies by
-  version or platform within the manifest.
+The expression must evaluate to a **string**: either an already-qualified
+`sha256:<hash>` (or `sha512:<hash>`, etc.), or a bare hash, which is assumed to
+be `sha256`. If the manifest stores the algorithm in a separate field and it
+isn't sha256, build the prefix in the expression itself, e.g.
+`entry.algo + ":" + entry.hash`.
 
 ```toml
 [tools."http:my-tool"]
@@ -196,27 +193,6 @@ The predicate placeholder must be written as `{ #... }` **with a space** after
 value, force evaluation with `[version + ""]` — a bare `[version]` is treated as
 the literal key `"version"`.
 :::
-
-### `checksum_algo`
-
-Applies **only to the manifest path** (`checksum_expr`), and only when the
-expression returns a **bare hash** — there's no file name to infer the algorithm
-from, so this supplies it. Defaults to `sha256`.
-
-It is **not** consulted for:
-
-- **individual checksum files** and **SHASUMS** lists — the algorithm is detected
-  from the checksum file's name (`*.sha512`, `SHA512SUMS`, `*.md5`, `*.b3`,
-  else `sha256`);
-- a `checksum_expr` that returns an `algo:hash` string or a `{ algo, checksum }`
-  map — those carry their own algorithm.
-
-```toml
-# manifest of bare sha512 hashes with no algorithm in the file or the value
-checksum_url  = "https://example.com/versions.json"
-checksum_expr = 'filter(fromJSON(body).files, { #.url == url })[0].hash'
-checksum_algo = "sha512"
-```
 
 ### `size`
 

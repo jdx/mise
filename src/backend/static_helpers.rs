@@ -115,12 +115,12 @@ fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
 ///
 /// The raw manifest is injected as a `body` string; `vars` supplies additional
 /// context such as `version`, `os`, `arch`, `url`, and `filename` so the
-/// expression can select the right entry. The result may be either:
-/// - a string — a bare hash (prefixed with `default_algo`) or an `algo:hash`;
-/// - a map with `checksum` (and optional `algo`) fields, for manifests where the
-///   algorithm varies by version/platform.
+/// expression can select the right entry. The expression must evaluate to a
+/// string: either an `algo:hash` (used as-is) or a bare hash (assumed to be
+/// `default_algo`). Manifests that publish the algorithm in a separate field can
+/// build the prefix in the expression itself, e.g. `entry.algo + ":" + entry.hash`.
 ///
-/// All forms are normalized to `algo:hash`. Returns `None` when evaluation fails
+/// The result is normalized to `algo:hash`. Returns `None` when evaluation fails
 /// or the result is not a usable hash.
 pub fn eval_checksum_expr(
     expr_str: &str,
@@ -139,19 +139,8 @@ pub fn eval_checksum_expr(
     let env = Environment::new();
     match env.eval(expr_str, &ctx) {
         Ok(Value::String(s)) => normalize_checksum(&s, default_algo),
-        Ok(Value::Map(map)) => {
-            let Some(checksum) = map.get("checksum").and_then(|v| v.as_string()) else {
-                debug!("checksum_expr map result has no string `checksum` field: {map:?}");
-                return None;
-            };
-            let algo = map
-                .get("algo")
-                .and_then(|v| v.as_string())
-                .unwrap_or(default_algo);
-            normalize_checksum(&format!("{algo}:{checksum}"), default_algo)
-        }
         Ok(other) => {
-            debug!("checksum_expr did not evaluate to a string or map: {other:?}");
+            debug!("checksum_expr did not evaluate to a string: {other:?}");
             None
         }
         Err(e) => {
@@ -1262,29 +1251,18 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
     }
 
     #[test]
-    fn test_eval_checksum_expr_map_result_uses_its_algo() {
-        // A manifest entry that carries its own algorithm: returning the whole
-        // map lets the algorithm vary per entry.
+    fn test_eval_checksum_expr_honors_explicit_algo_prefix() {
+        // When the algorithm varies, the expression builds the `algo:hash`
+        // string itself; the prefix is used as-is rather than the default.
         let body = format!(
             r#"{{"files":[{{"os":"linux","algo":"sha512","checksum":"{SHA512_LOWER}"}}]}}"#
         );
-        let expr = r#"filter(fromJSON(body).files, { #.os == os })[0]"#;
+        let expr =
+            r#"let f = filter(fromJSON(body).files, { #.os == os })[0]; f.algo + ":" + f.checksum"#;
         let vars = [("os", "linux")];
         assert_eq!(
             eval_checksum_expr(expr, &body, &vars, "sha256"),
             Some(format!("sha512:{SHA512_LOWER}"))
-        );
-    }
-
-    #[test]
-    fn test_eval_checksum_expr_map_result_falls_back_to_default_algo() {
-        // No `algo` field → use the default.
-        let body = format!(r#"{{"files":[{{"os":"linux","checksum":"{SHA256_LOWER}"}}]}}"#);
-        let expr = r#"filter(fromJSON(body).files, { #.os == os })[0]"#;
-        let vars = [("os", "linux")];
-        assert_eq!(
-            eval_checksum_expr(expr, &body, &vars, "sha256"),
-            Some(format!("sha256:{SHA256_LOWER}"))
         );
     }
 
