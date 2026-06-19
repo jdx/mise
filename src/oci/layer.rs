@@ -322,13 +322,15 @@ fn build_layer_from_entries(
                     apply_owner(&mut header, e.owner);
                     header.set_size(0);
                     header.set_mtime(0);
-                    header
-                        .set_link_name(target)
-                        .wrap_err_with(|| format!("symlink target {}", target.display()))?;
-                    header.set_cksum();
+                    // append_link emits a GNU @LongLink extension when the target
+                    // exceeds the ustar 100-byte linkname limit (aube/npm deep store
+                    // paths) and sets the checksum; set_link_name() alone errors on
+                    // long targets (#10416).
                     builder
-                        .append_data(&mut header, &path_in_tar, std::io::empty())
-                        .wrap_err_with(|| format!("writing symlink {path_in_tar}"))?;
+                        .append_link(&mut header, &path_in_tar, target)
+                        .wrap_err_with(|| {
+                            format!("writing symlink {path_in_tar} -> {}", target.display())
+                        })?;
                 }
             }
         }
@@ -786,5 +788,43 @@ mod tests {
             EntryKind::Symlink(t) => assert_eq!(t, &PathBuf::from("/usr/bin/false")),
             k => panic!("expected symlink, got {k:?}"),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn long_symlink_target_written_via_gnu_longlink() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let src = dir.path();
+        fs::create_dir_all(src.join("bin")).unwrap();
+
+        // A relative symlink target well over tar's 100-byte linkname limit,
+        // mirroring aube/npm deep node_modules store paths (#10416). With the old
+        // manual set_link_name() this aborted the whole layer build.
+        let long_target = format!("../{}cli.js", "node_modules/.aube/pkg/".repeat(8));
+        assert!(
+            long_target.len() > 100,
+            "target must exceed the tar linkname limit"
+        );
+        symlink(&long_target, src.join("bin/cli")).unwrap();
+
+        let entries = collect_sorted_entries(src, false, LayerOwner::default()).unwrap();
+        let blob = build_layer_from_entries(&entries, "mise", LayerOwner::default()).unwrap();
+
+        // The GNU @LongLink extension must round-trip back to the full target.
+        let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
+        let mut archive = tar::Archive::new(decoder);
+        let mut found = false;
+        for entry in archive.entries().unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path().unwrap().to_string_lossy().into_owned();
+            if path == "mise/bin/cli" {
+                let link = entry.link_name().unwrap().unwrap();
+                assert_eq!(&*link, Path::new(&long_target));
+                found = true;
+            }
+        }
+        assert!(found, "symlink entry mise/bin/cli not found in layer");
     }
 }
