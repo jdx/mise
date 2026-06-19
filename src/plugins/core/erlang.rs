@@ -493,7 +493,7 @@ impl Backend for ErlangPlugin {
         self.install_via_kerl(ctx, tv).await
     }
 
-    fn supports_lockfile_url(&self) -> bool {
+    fn supports_lockfile_url(&self, _platform_info: Option<&PlatformInfo>) -> bool {
         // In default mode, precompiled Erlang is opportunistic and may fall
         // back to kerl, so locked installs cannot always require a URL.
         Settings::get().erlang.compile == Some(false)

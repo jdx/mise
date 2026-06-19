@@ -69,7 +69,10 @@ impl Backend for GoBackend {
         Ok(vec!["go"])
     }
 
-    fn supports_lockfile_url(&self) -> bool {
+    fn supports_lockfile_url(
+        &self,
+        _platform_info: Option<&crate::lockfile::PlatformInfo>,
+    ) -> bool {
         false
     }
 

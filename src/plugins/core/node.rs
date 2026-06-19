@@ -558,7 +558,7 @@ impl Backend for NodePlugin {
         features
     }
 
-    fn locked_platform_requires_url(&self, platform_info: Option<&PlatformInfo>) -> bool {
+    fn supports_lockfile_url(&self, platform_info: Option<&PlatformInfo>) -> bool {
         if cfg!(windows) {
             return true;
         }

@@ -254,7 +254,10 @@ impl Backend for AsdfBackend {
 
     /// ASDF plugins handle their own downloads through plugin scripts.
     /// Lockfile URLs are not applicable since installation is delegated to plugin scripts.
-    fn supports_lockfile_url(&self) -> bool {
+    fn supports_lockfile_url(
+        &self,
+        _platform_info: Option<&crate::lockfile::PlatformInfo>,
+    ) -> bool {
         false
     }
 

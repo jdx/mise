@@ -78,7 +78,7 @@ impl Backend for PkgxBackend {
         &self.ba
     }
 
-    fn supports_lockfile_url(&self) -> bool {
+    fn supports_lockfile_url(&self, _platform_info: Option<&PlatformInfo>) -> bool {
         true
     }
 
