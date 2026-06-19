@@ -14,6 +14,7 @@ use crate::github::{self, GithubRelease};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::plugins::PEP440_PRERELEASE_REGEX;
+use crate::semver::semver_is_older_than;
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -35,6 +36,8 @@ use std::str::FromStr;
 use std::{fmt::Debug, sync::Arc};
 use versions::Versioning;
 use xx::regex;
+
+const UV_EXCLUDE_NEWER_VERSION: &str = "0.2.22";
 
 #[derive(Debug)]
 pub struct PIPXBackend {
@@ -276,6 +279,7 @@ impl Backend for PIPXBackend {
             .pipx_request(&tv.version, &options);
 
         if use_uvx {
+            self.warn_if_uv_may_not_support_exclude_newer(ctx).await;
             ctx.pr
                 .set_message(format!("uv tool install {pipx_request}"));
             let mut cmd = Self::uvx_cmd(
@@ -293,6 +297,32 @@ impl Backend for PIPXBackend {
             }
             cmd.execute()?;
         } else {
+            // pipx forwards install `--pip-args` into shared-library bootstrap
+            // (`pip install --upgrade pip>=23.1`), not just the package install. When mise
+            // passes `--uploaded-prior-to`, bootstrap pip from ensurepip may not understand
+            // that flag (see pypa/pipx#544). Run upgrade-shared without release-age flags
+            // first so shared pip is valid; the subsequent install's shared_libs.create()
+            // then no-ops and `--uploaded-prior-to` applies only to the package install.
+            if ctx.before_date.is_some() {
+                ctx.pr.set_message("pipx upgrade-shared".to_string());
+                if let Err(err) = async {
+                    Self::pipx_cmd(
+                        &ctx.config,
+                        &["upgrade-shared"],
+                        self,
+                        &tv,
+                        &ctx.ts,
+                        ctx.pr.as_ref(),
+                    )
+                    .await?
+                    .execute()
+                }
+                .await
+                {
+                    debug!("failed to upgrade pipx shared libraries before install: {err:#}");
+                }
+            }
+
             ctx.pr.set_message(format!("pipx install {pipx_request}"));
             let mut cmd = Self::pipx_cmd(
                 &ctx.config,
@@ -522,6 +552,8 @@ impl PIPXBackend {
         cmd.with_pr(pr)
             .envs(ts.env_with_path_without_tools(config).await?)
             .envs(tv.install_env())
+            // pipx 1.12+ auto-picks uv on PATH; this path passes pip-only --pip-args.
+            .env("PIPX_DEFAULT_BACKEND", "pip")
             .env("PIP_INDEX_URL", Self::get_index_url()?)
             .env_remove("PIPX_SHARED_LIBS")
             .env("PIPX_HOME", tv.install_path())
@@ -533,6 +565,32 @@ impl PIPXBackend {
 
     async fn uv_is_installed(&self, config: &Arc<Config>) -> bool {
         self.dependency_which(config, "uv").await.is_some()
+    }
+
+    async fn warn_if_uv_may_not_support_exclude_newer(&self, ctx: &InstallContext) {
+        if ctx.before_date.is_none() {
+            return;
+        }
+
+        let Some(version) =
+            crate::backend::semver_version_from_toolsets_or_path(self, &ctx.config, &ctx.ts, "uv")
+                .await
+        else {
+            warn!(
+                "minimum_release_age is set for pipx:{} but could not determine uv version required to verify --exclude-newer support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.en.dev/dev-tools/backends/pipx.html",
+                self.tool_name(),
+            );
+            return;
+        };
+
+        if semver_is_older_than(&version, UV_EXCLUDE_NEWER_VERSION).unwrap_or(false) {
+            warn!(
+                "minimum_release_age is set for pipx:{} but uv@{} is older than the documented minimum uv@{} required for --exclude-newer. Older versions may fail while processing the forwarded argument. See https://mise.en.dev/dev-tools/backends/pipx.html",
+                self.tool_name(),
+                version,
+                UV_EXCLUDE_NEWER_VERSION,
+            );
+        }
     }
 }
 
@@ -756,7 +814,7 @@ fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use super::{PIPXBackend, PypiPackage, PypiRelease};
+    use super::{PIPXBackend, PypiPackage, PypiRelease, UV_EXCLUDE_NEWER_VERSION};
     use crate::github::GithubRelease;
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
@@ -893,6 +951,19 @@ mod tests {
         assert_eq!(
             PIPXBackend::uv_exclude_newer_args(None),
             Vec::<OsString>::new()
+        );
+    }
+
+    #[test]
+    fn test_uv_exclude_newer_version_requirement() {
+        assert_eq!(UV_EXCLUDE_NEWER_VERSION, "0.2.22");
+        assert_eq!(
+            crate::semver::semver_is_at_least("0.2.22", UV_EXCLUDE_NEWER_VERSION),
+            Some(true)
+        );
+        assert_eq!(
+            crate::semver::semver_is_at_least("0.2.21", UV_EXCLUDE_NEWER_VERSION),
+            Some(false)
         );
     }
 

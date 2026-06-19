@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+require_cmd python3
+
+export MISE_PYTHON_COMPILE=0
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
+export MISE_PIPX_UVX=0
+
+cat >.mise.toml <<EOF
+[settings]
+minimum_release_age = "7d"
+
+[tools]
+python = "3.12"
+pipx = "1.12.0"
+"pipx:cowsay" = "latest"
+EOF
+
+mise install
+assert_succeed "mise x -- cowsay --version"
