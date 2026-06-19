@@ -559,6 +559,9 @@ impl Backend for NodePlugin {
     }
 
     fn locked_platform_requires_url(&self, platform_info: Option<&PlatformInfo>) -> bool {
+        if cfg!(windows) {
+            return true;
+        }
         !platform_info.is_some_and(|pi| pi.url.is_none())
     }
 

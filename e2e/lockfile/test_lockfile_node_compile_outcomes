@@ -38,6 +38,7 @@ assert_contains "cat mise.lock" '[tools.node."platforms.linux-x64"]'
 assert_contains "cat mise.lock" '[tools.node."platforms.linux-riscv64"]'
 assert_not_contains "cat mise.lock" "node-v24.16.0-linux-x64.tar.gz"
 assert_not_contains "cat mise.lock" "node-v24.16.0-linux-riscv64.tar.gz"
+assert_not_contains "cat mise.lock" 'url_api = "'
 assert_not_contains "cat mise.lock" "install_method"
 
 echo "=== compile=false keeps supported binaries and skips unsupported platforms ==="
