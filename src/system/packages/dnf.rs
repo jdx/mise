@@ -17,12 +17,8 @@ impl DnfManager {
     }
 }
 
-// rpm package names never begin with a hyphen and dnf accepts bare
-// positional operands, so no `--` separator is needed (and must not be
-// added: DNF5 — the parser on Fedora 41+ and RHEL/CentOS Stream 9+ —
-// rejects `--` as an argument to subcommands like install/upgrade with
-// `Unknown argument "--"`). Pins render to rpm's native
-// name-version(-release) NEVRA syntax, which dnf accepts positionally.
+// Never add `--` here: DNF5 rejects it on subcommands like install/upgrade.
+// Pins use rpm NEVRA syntax (name-version) which dnf accepts positionally.
 fn pkg_operand(p: &PackageRequest) -> String {
     match &p.version {
         Some(v) => format!("{}-{v}", p.name),
@@ -182,7 +178,7 @@ mod tests {
         };
         let args = install_args(&pkgs, &opts);
         // DNF5 rejects a bare `--` on subcommands; it must never appear
-        assert!(!args.contains(&"--".to_string()));
+        assert!(args.iter().all(|a| a != "--"));
         assert_eq!(args, vec!["install", "-y", "ripgrep", "bat-0.24.0"]);
     }
 
@@ -194,7 +190,7 @@ mod tests {
             update: true,
         };
         let args = install_args(&pkgs, &opts);
-        assert!(!args.contains(&"--".to_string()));
+        assert!(args.iter().all(|a| a != "--"));
         // --refresh precedes the operands, after the subcommand flags
         assert_eq!(args, vec!["install", "-y", "--refresh", "ripgrep"]);
     }
@@ -203,7 +199,7 @@ mod tests {
     fn test_upgrade_args_no_separator() {
         let pkgs = vec![req("ripgrep", None), req("bat", Some("0.24.0"))];
         let args = upgrade_args(&pkgs);
-        assert!(!args.contains(&"--".to_string()));
+        assert!(args.iter().all(|a| a != "--"));
         assert_eq!(
             args,
             vec!["upgrade", "-y", "--refresh", "ripgrep", "bat-0.24.0"]
