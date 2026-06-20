@@ -89,10 +89,7 @@ impl Backend for DotnetPlugin {
         &self.ba
     }
 
-    fn supports_lockfile_url(
-        &self,
-        _platform_info: Option<&crate::lockfile::PlatformInfo>,
-    ) -> bool {
+    fn supports_lockfile_url(&self) -> bool {
         false
     }
 

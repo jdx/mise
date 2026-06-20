@@ -153,10 +153,7 @@ impl Backend for RustPlugin {
 
     /// Rust uses rustup for installation, which handles its own downloads.
     /// Lockfile URLs are not applicable since we don't download artifacts directly.
-    fn supports_lockfile_url(
-        &self,
-        _platform_info: Option<&crate::lockfile::PlatformInfo>,
-    ) -> bool {
+    fn supports_lockfile_url(&self) -> bool {
         false
     }
 
