@@ -63,7 +63,7 @@ assert_not_contains "cat mise.lock" "platforms.linux-riscv64"
 assert_not_contains "cat mise.lock" "node-v24.16.0-linux-riscv64.tar.gz"
 assert_not_contains "cat mise.lock" "install_method"
 
-echo "=== locked source outcome requires url ==="
+echo "=== locked source outcome without url is missing a lockfile url ==="
 cat <<EOF >mise.lock
 $LOCKFILE_HEADER
 
@@ -75,4 +75,4 @@ backend = "core:node"
 install = "source"
 EOF
 
-assert_fail "mise install --locked --dry-run node@24.16.0" 'install = "source" requires url'
+assert_fail "mise install --locked --dry-run node@24.16.0" "No lockfile URL found"
