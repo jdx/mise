@@ -793,30 +793,17 @@ impl Backend for NodePlugin {
             if let Some(cflags) = node.cflags().filter(|cflags| !cflags.is_empty()) {
                 opts.insert("cflags".to_string(), cflags);
             }
-            if let Some(configure_opts) = node
-                .configure_opts
-                .clone()
-                .or_else(|| env::var("NODE_CONFIGURE_OPTS").ok())
-                .filter(|configure_opts| !configure_opts.is_empty())
-            {
+            if let Some(configure_opts) = node.configure_opts().filter(|opts| !opts.is_empty()) {
                 opts.insert("configure_opts".to_string(), configure_opts);
             }
             if let Some(make) = node.make.clone().filter(|make| make != "make") {
                 opts.insert("make".to_string(), make);
             }
-            if let Some(make_opts) = node
-                .make_opts
-                .clone()
-                .or_else(|| env::var("NODE_MAKE_OPTS").ok())
-                .filter(|make_opts| !make_opts.is_empty())
-            {
+            if let Some(make_opts) = node.make_opts().filter(|opts| !opts.is_empty()) {
                 opts.insert("make_opts".to_string(), make_opts);
             }
-            if let Some(make_install_opts) = node
-                .make_install_opts
-                .clone()
-                .or_else(|| env::var("NODE_MAKE_INSTALL_OPTS").ok())
-                .filter(|make_install_opts| !make_install_opts.is_empty())
+            if let Some(make_install_opts) =
+                node.make_install_opts().filter(|opts| !opts.is_empty())
             {
                 opts.insert("make_install_opts".to_string(), make_install_opts);
             }
@@ -1315,6 +1302,35 @@ mod tests {
             opts,
             BTreeMap::from([
                 ("configure_opts".to_string(), "--openssl-no-asm".to_string()),
+                ("make_opts".to_string(), "-s".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_node_lockfile_options_include_legacy_source_build_env() {
+        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _guard = SettingsResetGuard { _lock: lock };
+        let _env_guard = NodeEnvResetGuard::clear();
+        unsafe {
+            std::env::set_var("NODE_CONFIGURE_OPTS", "--openssl-no-asm");
+            std::env::set_var("NODE_MAKE_OPTS", "-s");
+            std::env::set_var("NODE_MAKE_INSTALL_OPTS", "--no-strip");
+        }
+        Settings::reset(Some(SettingsPartial::empty()));
+
+        let backend = NodePlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "22.0.0", ToolSource::Unknown)
+            .expect("valid node request");
+        let opts = backend
+            .resolve_lockfile_options(&request, &PlatformTarget::from_current())
+            .expect("node lockfile options");
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                ("configure_opts".to_string(), "--openssl-no-asm".to_string()),
+                ("make_install_opts".to_string(), "--no-strip".to_string()),
                 ("make_opts".to_string(), "-s".to_string()),
             ])
         );
