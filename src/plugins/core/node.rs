@@ -38,21 +38,6 @@ enum FetchOutcome {
     NotFound,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum TarballInstall {
-    Precompiled,
-    Source,
-}
-
-impl TarballInstall {
-    fn lockfile_install(self) -> Option<String> {
-        match self {
-            Self::Precompiled => None,
-            Self::Source => Some("source".to_string()),
-        }
-    }
-}
-
 impl NodePlugin {
     pub fn new() -> Self {
         Self {
@@ -76,7 +61,7 @@ impl NodePlugin {
                 &opts.binary_tarball_url,
                 &opts.binary_tarball_path,
                 &opts.version,
-                TarballInstall::Precompiled,
+                None,
             )
             .await
         {
@@ -182,7 +167,7 @@ impl NodePlugin {
                 &opts.source_tarball_url,
                 &opts.source_tarball_path,
                 &opts.version,
-                TarballInstall::Source,
+                Some("source"),
             )
             .await
         {
@@ -221,7 +206,7 @@ impl NodePlugin {
         url: &Url,
         local: &Path,
         version: &str,
-        install: TarballInstall,
+        lockfile_install: Option<&str>,
     ) -> Result<()> {
         let settings = Settings::get();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
@@ -236,7 +221,6 @@ impl NodePlugin {
         ctx.pr.next_operation();
         let platform_key = self.get_platform_key();
         let url = url.to_string();
-        let lockfile_install = install.lockfile_install();
         let needs_checksum = settings.node.verify
             && tv
                 .lock_platforms
@@ -244,7 +228,7 @@ impl NodePlugin {
                 .map(|platform_info| {
                     platform_info.checksum.is_none()
                         || platform_info.url.as_deref() != Some(url.as_str())
-                        || platform_info.install != lockfile_install
+                        || platform_info.install.as_deref() != lockfile_install
                 })
                 .unwrap_or(true);
         let checksum = if needs_checksum {
@@ -254,7 +238,7 @@ impl NodePlugin {
         };
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
         let artifact_changed = platform_info.url.as_deref() != Some(url.as_str())
-            || platform_info.install != lockfile_install;
+            || platform_info.install.as_deref() != lockfile_install;
         if artifact_changed {
             platform_info.checksum = None;
             platform_info.size = None;
@@ -262,7 +246,7 @@ impl NodePlugin {
             platform_info.provenance = None;
             platform_info.github_attestations = None;
         }
-        platform_info.install = lockfile_install;
+        platform_info.install = lockfile_install.map(str::to_string);
         platform_info.url = Some(url);
         if let Some(checksum) = checksum {
             platform_info.checksum = Some(checksum);
