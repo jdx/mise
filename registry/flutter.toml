@@ -4,20 +4,27 @@ description = "Flutter is an open source framework for building beautiful, nativ
 full = "http:flutter"
 
 [backends.options]
+# Each platform's sha256 lives in its OS-specific releases manifest, matched by
+# the resolved artifact's archive path (checksum_url is set per platform below).
+checksum_expr = '"sha256:" + filter(fromJSON(body).releases, { #.archive endsWith filename })[0].sha256'
 version_expr = 'fromJSON(body).releases | filter({ #.channel == "stable" }) | map({ replace(#.version, "-stable", "") }) | sortVersions()'
 version_list_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json"
 
 # Linux uses .tar.xz instead of .zip
 [backends.options.platforms.linux-x64]
+checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json"
 url = 'https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{{ version }}-stable.tar.xz'
 
 [backends.options.platforms.macos-x64]
+checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_macos.json"
 url = 'https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_{{ version }}-stable.zip'
 
 [backends.options.platforms.macos-arm64]
+checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_macos.json"
 url = 'https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_arm64_{{ version }}-stable.zip'
 
 [backends.options.platforms.windows-x64]
+checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_windows.json"
 url = 'https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_{{ version }}-stable.zip'
 
 [[backends]]
