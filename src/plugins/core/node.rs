@@ -561,7 +561,7 @@ impl Backend for NodePlugin {
         if cfg!(windows) {
             return true;
         }
-        platform_info.is_none_or(|pi| pi.url.is_some())
+        platform_info.is_none_or(|pi| pi.install.as_deref() != Some("source"))
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
@@ -667,7 +667,7 @@ impl Backend for NodePlugin {
         let locked_source_compile = if ctx.locked || settings.locked {
             tv.lock_platforms
                 .get(&self.get_platform_key())
-                .is_some_and(|pi| pi.url.is_none())
+                .is_some_and(|pi| pi.install.as_deref() == Some("source"))
         } else {
             false
         };
@@ -857,7 +857,10 @@ impl Backend for NodePlugin {
             .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
 
         if settings.node.compile == Some(true) && target.os_name() != "windows" {
-            return Ok(PlatformInfo::default());
+            return Ok(PlatformInfo {
+                install: Some("source".to_string()),
+                ..Default::default()
+            });
         }
 
         // Fetch SHASUMS256.txt to get checksum without downloading the tarball.
@@ -868,7 +871,10 @@ impl Backend for NodePlugin {
             Ok(shasums_content) => match hash::parse_shasums(&shasums_content).get(&filename) {
                 Some(shasum) => Some(format!("sha256:{shasum}")),
                 None if settings.node.compile != Some(false) => {
-                    return Ok(PlatformInfo::default());
+                    return Ok(PlatformInfo {
+                        install: Some("source".to_string()),
+                        ..Default::default()
+                    });
                 }
                 None => {
                     debug!(

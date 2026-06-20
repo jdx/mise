@@ -227,6 +227,8 @@ pub enum GithubAttestationsStatus {
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub install: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
     /// Size in bytes (read-only field, preserved from existing lockfiles but not written)
     #[serde(skip_serializing, default)]
@@ -272,7 +274,8 @@ impl<'de> Deserialize<'de> for PlatformInfo {
 impl PlatformInfo {
     /// Returns true if this PlatformInfo has no meaningful data (for serde skip)
     pub fn is_empty(&self) -> bool {
-        self.checksum.is_none()
+        self.install.is_none()
+            && self.checksum.is_none()
             && self.url.is_none()
             && self.url_api.is_none()
             && self.conda_deps.is_none()
@@ -296,7 +299,8 @@ impl PlatformInfo {
     ///   changes.
     pub fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
         let url_changed = self.url.is_some() && other.url.is_some() && self.url != other.url;
-        let artifact_changed = url_changed;
+        let install_changed = self.install.is_some() && self.install != other.install;
+        let artifact_changed = url_changed || install_changed;
 
         // For checksums, prefer sha256 over blake3 since sha256 comes from
         // official releases and is more portable/verifiable. If artifacts disagree,
@@ -331,11 +335,16 @@ impl PlatformInfo {
             self.url_api.clone().or_else(|| other.url_api.clone())
         };
 
-        let provenance = match (self.provenance.clone(), other.provenance.clone()) {
-            (Some(a), Some(b)) => Some(a.merge(b)),
-            (a, b) => a.or(b),
+        let provenance = if artifact_changed {
+            self.provenance.clone()
+        } else {
+            match (self.provenance.clone(), other.provenance.clone()) {
+                (Some(a), Some(b)) => Some(a.merge(b)),
+                (a, b) => a.or(b),
+            }
         };
         PlatformInfo {
+            install: self.install.clone().or_else(|| other.install.clone()),
             checksum,
             size,
             url: if artifact_changed {
@@ -369,6 +378,13 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 ..Default::default()
             }),
             toml::Value::Table(mut t) => {
+                let install = match t.remove("install") {
+                    Some(toml::Value::String(s)) if s == "source" => Some(s),
+                    Some(toml::Value::String(s)) => {
+                        bail!("unrecognized install {s:?} in lockfile")
+                    }
+                    _ => None,
+                };
                 let checksum = match t.remove("checksum") {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
@@ -468,6 +484,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     github_attestations
                 };
                 Ok(PlatformInfo {
+                    install,
                     checksum,
                     size,
                     url,
@@ -488,6 +505,9 @@ impl TryFrom<toml::Value> for PlatformInfo {
 impl From<PlatformInfo> for toml::Value {
     fn from(platform_info: PlatformInfo) -> Self {
         let mut table = toml::Table::new();
+        if let Some(install) = platform_info.install {
+            table.insert("install".to_string(), install.into());
+        }
         if let Some(checksum) = platform_info.checksum {
             table.insert("checksum".to_string(), checksum.into());
         }
@@ -1014,44 +1034,39 @@ impl Lockfile {
         platform_key: &str,
         platform_info: PlatformInfo,
     ) {
-        let keep_empty_platform_info = backend == Some("core:node")
-            && platform_info.is_empty()
-            && options
-                .get("compile")
-                .is_none_or(|compile| compile != "false");
-        let drop_empty_platform_info = backend == Some("core:node")
-            && platform_info.is_empty()
-            && options
-                .get("compile")
-                .is_some_and(|compile| compile == "false");
         let tools = self.tools.entry(short.to_string()).or_default();
         // Find existing tool version with matching options or create new one
         if let Some(tool) = tools
             .iter_mut()
             .find(|t| t.version == version && &t.options == options)
         {
-            if drop_empty_platform_info {
+            if platform_info.is_empty() {
                 tool.platforms.remove(platform_key);
                 return;
             }
             // Merge with existing platform info, preferring new values when present.
             // When the URL changes, drop existing checksum/size/url_api — those fields
             // describe a specific artifact and are stale once the URL points elsewhere.
-            let merged = if keep_empty_platform_info {
-                platform_info
-            } else if let Some(existing) = tool.platforms.get(platform_key) {
+            let merged = if let Some(existing) = tool.platforms.get(platform_key) {
                 let url_changed = platform_info.url.is_some()
                     && existing.url.is_some()
                     && platform_info.url != existing.url;
-                let preserve_artifact_fields = !url_changed;
-                let provenance = match (
-                    platform_info.provenance.clone(),
-                    existing.provenance.clone(),
-                ) {
-                    (Some(a), Some(b)) => Some(a.merge(b)),
-                    (a, b) => a.or(b),
+                let install_changed =
+                    platform_info.install.is_some() && platform_info.install != existing.install;
+                let preserve_artifact_fields = !url_changed && !install_changed;
+                let provenance = if preserve_artifact_fields {
+                    match (
+                        platform_info.provenance.clone(),
+                        existing.provenance.clone(),
+                    ) {
+                        (Some(a), Some(b)) => Some(a.merge(b)),
+                        (a, b) => a.or(b),
+                    }
+                } else {
+                    platform_info.provenance.clone()
                 };
                 PlatformInfo {
+                    install: platform_info.install.or_else(|| existing.install.clone()),
                     checksum: platform_info.checksum.or_else(|| {
                         if preserve_artifact_fields {
                             existing.checksum.clone()
@@ -1090,14 +1105,14 @@ impl Lockfile {
             } else {
                 platform_info
             };
-            // Only insert empty platform info for Node source-compile lock outcomes.
-            if keep_empty_platform_info || !merged.is_empty() {
+            if merged.is_empty() {
+                tool.platforms.remove(platform_key);
+            } else {
                 tool.platforms.insert(platform_key.to_string(), merged);
             }
         } else {
             let mut platforms = BTreeMap::new();
-            // Only insert empty platform info for Node source-compile lock outcomes.
-            if keep_empty_platform_info || !platform_info.is_empty() {
+            if !platform_info.is_empty() {
                 platforms.insert(platform_key.to_string(), platform_info);
             }
             tools.push(LockfileTool {
@@ -3419,7 +3434,7 @@ backend = "conda:jq"
     }
 
     #[test]
-    fn test_set_platform_info_keeps_empty_node_compile_platform() {
+    fn test_set_platform_info_replaces_artifact_with_source_outcome() {
         let mut lockfile = Lockfile::default();
         lockfile.set_platform_info(
             "node",
@@ -3441,10 +3456,14 @@ backend = "conda:jq"
             Some("core:node"),
             &BTreeMap::new(),
             "linux-x64",
-            PlatformInfo::default(),
+            PlatformInfo {
+                install: Some("source".to_string()),
+                ..Default::default()
+            },
         );
 
         let info = &lockfile.tools["node"][0].platforms["linux-x64"];
+        assert_eq!(info.install.as_deref(), Some("source"));
         assert_eq!(info.checksum, None);
         assert_eq!(info.size, None);
         assert_eq!(info.url, None);
@@ -3484,7 +3503,7 @@ backend = "conda:jq"
     }
 
     #[test]
-    fn test_empty_platform_info_serializes_as_lock_marker() {
+    fn test_source_platform_info_serializes_as_lock_marker() {
         let mut lockfile = Lockfile::default();
         lockfile.set_platform_info(
             "node",
@@ -3492,22 +3511,27 @@ backend = "conda:jq"
             Some("core:node"),
             &BTreeMap::new(),
             "linux-riscv64",
-            PlatformInfo::default(),
+            PlatformInfo {
+                install: Some("source".to_string()),
+                ..Default::default()
+            },
         );
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let test_lockfile = temp_dir.path().join("empty-platform-marker.lock");
+        let test_lockfile = temp_dir.path().join("source-platform-marker.lock");
         lockfile.write(&test_lockfile).unwrap();
         let serialized = file::read_to_string(&test_lockfile).unwrap();
 
         assert!(serialized.contains("platforms.linux-riscv64"));
+        assert!(serialized.contains("install = \"source\""));
         assert!(!serialized.contains("node-v24.0.0-linux-riscv64.tar.gz"));
 
         let reloaded = Lockfile::read(&test_lockfile).unwrap();
-        assert!(
-            reloaded.tools["node"][0]
-                .platforms
-                .contains_key("linux-riscv64")
+        assert_eq!(
+            reloaded.tools["node"][0].platforms["linux-riscv64"]
+                .install
+                .as_deref(),
+            Some("source")
         );
     }
 
