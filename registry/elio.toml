@@ -1,0 +1,3 @@
+backends = ["github:elio-fm/elio"]
+description = "Snappy, batteries-included terminal file manager with rich previews, inline images, bulk actions, and trash support."
+test = { cmd = "elio --version", expected = "elio {{version}}" }
