@@ -1,0 +1,3 @@
+backends = ["cargo:whitman"]
+description = "Interactive profile picker for project AGENTS.md files"
+test = { cmd = "whitman --version", expected = "whitman {{version}}" }
