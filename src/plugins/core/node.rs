@@ -58,7 +58,6 @@ impl NodePlugin {
             .fetch_tarball(
                 ctx,
                 tv,
-                ctx.pr.as_ref(),
                 &opts.binary_tarball_url,
                 &opts.binary_tarball_path,
                 &opts.version,
@@ -165,7 +164,6 @@ impl NodePlugin {
             .fetch_tarball(
                 ctx,
                 tv,
-                ctx.pr.as_ref(),
                 &opts.source_tarball_url,
                 &opts.source_tarball_path,
                 &opts.version,
@@ -205,7 +203,6 @@ impl NodePlugin {
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
-        pr: &dyn SingleReport,
         url: &Url,
         local: &Path,
         version: &str,
@@ -214,10 +211,12 @@ impl NodePlugin {
         let settings = Settings::get();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
         if local.exists() {
-            pr.set_message(format!("using previously downloaded {tarball_name}"));
+            ctx.pr
+                .set_message(format!("using previously downloaded {tarball_name}"));
         } else {
-            pr.set_message(format!("download {tarball_name}"));
-            HTTP.download_file(url.clone(), local, Some(pr)).await?;
+            ctx.pr.set_message(format!("download {tarball_name}"));
+            HTTP.download_file(url.clone(), local, Some(ctx.pr.as_ref()))
+                .await?;
         }
         ctx.pr.next_operation();
         let platform_key = self.get_platform_key();
@@ -562,7 +561,7 @@ impl Backend for NodePlugin {
         if cfg!(windows) {
             return true;
         }
-        !platform_info.is_some_and(|pi| pi.url.is_none())
+        platform_info.is_none_or(|pi| pi.url.is_some())
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
