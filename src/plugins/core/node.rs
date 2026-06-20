@@ -688,7 +688,7 @@ impl Backend for NodePlugin {
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx, &tv).await?;
         trace!("node build opts: {:#?}", opts);
-        let locked_source_compile = if ctx.locked || settings.locked {
+        let locked_source_compile = if ctx.locked {
             tv.lock_platforms
                 .get(&self.get_platform_key())
                 .is_some_and(|pi| pi.install.as_deref() == Some("source"))
@@ -1042,7 +1042,7 @@ impl BuildOpts {
         let default_binary_tarball_url = mirror_url_for(&settings.node, &binary_tarball_name)
             .join(&format!("v{v}/{binary_tarball_name}"))?;
         let platform_key = Platform::current().to_key();
-        let locked_platform_info = if ctx.locked || settings.locked {
+        let locked_platform_info = if ctx.locked {
             tv.lock_platforms.get(&platform_key)
         } else {
             None
