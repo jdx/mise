@@ -2039,6 +2039,15 @@ pub trait Backend: Debug + Send + Sync {
             let platform_info = tv.lock_platforms.get(&platform_key);
             let requires_lockfile_url = self.supports_lockfile_url(platform_info);
             let has_lockfile_url = platform_info.and_then(|p| p.url.as_ref()).is_some();
+            if platform_info
+                .is_some_and(|p| p.install.as_deref() == Some("source") && p.url.is_none())
+            {
+                bail!(
+                    "Invalid lockfile entry for {} on platform {}: install = \"source\" requires url",
+                    tv.style(),
+                    platform_key
+                );
+            }
             if requires_lockfile_url && !has_lockfile_url {
                 bail!(
                     "No lockfile URL found for {} on platform {} (--locked mode)\n\

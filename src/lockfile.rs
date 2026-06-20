@@ -346,11 +346,13 @@ impl PlatformInfo {
             }
         };
         PlatformInfo {
-            install: if self.url.is_some() {
-                None
-            } else {
-                self.install.clone().or_else(|| other.install.clone())
-            },
+            install: self.install.clone().or_else(|| {
+                if self.url.is_some() {
+                    None
+                } else {
+                    other.install.clone()
+                }
+            }),
             checksum,
             size,
             url: if artifact_changed {
@@ -1059,8 +1061,9 @@ impl Lockfile {
                     && platform_info.url != existing.url;
                 let install_changed =
                     platform_info.install.is_some() && platform_info.install != existing.install;
-                let source_to_url =
-                    platform_info.url.is_some() && existing.install.as_deref() == Some("source");
+                let source_to_url = platform_info.url.is_some()
+                    && platform_info.install.is_none()
+                    && existing.install.as_deref() == Some("source");
                 let preserve_artifact_fields = !url_changed && !install_changed && !source_to_url;
                 let provenance = if preserve_artifact_fields {
                     match (
@@ -1074,11 +1077,13 @@ impl Lockfile {
                     platform_info.provenance.clone()
                 };
                 PlatformInfo {
-                    install: if platform_info.url.is_some() {
-                        None
-                    } else {
-                        platform_info.install.or_else(|| existing.install.clone())
-                    },
+                    install: platform_info.install.or_else(|| {
+                        if platform_info.url.is_some() {
+                            None
+                        } else {
+                            existing.install.clone()
+                        }
+                    }),
                     checksum: platform_info.checksum.or_else(|| {
                         if preserve_artifact_fields {
                             existing.checksum.clone()
@@ -3131,6 +3136,8 @@ backend = "conda:jq"
         };
         let stale_source = PlatformInfo {
             install: Some("source".to_string()),
+            checksum: Some("sha256:OLD".to_string()),
+            url: Some("https://example.com/source.tar.gz".to_string()),
             ..Default::default()
         };
 
@@ -3488,15 +3495,20 @@ backend = "conda:jq"
             "linux-x64",
             PlatformInfo {
                 install: Some("source".to_string()),
+                checksum: Some("sha256:NEW".to_string()),
+                url: Some("https://example.com/source.tar.gz".to_string()),
                 ..Default::default()
             },
         );
 
         let info = &lockfile.tools["node"][0].platforms["linux-x64"];
         assert_eq!(info.install.as_deref(), Some("source"));
-        assert_eq!(info.checksum, None);
+        assert_eq!(info.checksum.as_deref(), Some("sha256:NEW"));
         assert_eq!(info.size, None);
-        assert_eq!(info.url, None);
+        assert_eq!(
+            info.url.as_deref(),
+            Some("https://example.com/source.tar.gz")
+        );
         assert_eq!(info.url_api, None);
     }
 
@@ -3511,6 +3523,8 @@ backend = "conda:jq"
             "linux-x64",
             PlatformInfo {
                 install: Some("source".to_string()),
+                checksum: Some("sha256:OLD".to_string()),
+                url: Some("https://example.com/source.tar.gz".to_string()),
                 ..Default::default()
             },
         );
@@ -3579,6 +3593,8 @@ backend = "conda:jq"
             "linux-riscv64",
             PlatformInfo {
                 install: Some("source".to_string()),
+                checksum: Some("sha256:SOURCE".to_string()),
+                url: Some("https://example.com/node-v24.0.0.tar.gz".to_string()),
                 ..Default::default()
             },
         );
@@ -3590,14 +3606,17 @@ backend = "conda:jq"
 
         assert!(serialized.contains("platforms.linux-riscv64"));
         assert!(serialized.contains("install = \"source\""));
+        assert!(serialized.contains("checksum = \"sha256:SOURCE\""));
+        assert!(serialized.contains("url = \"https://example.com/node-v24.0.0.tar.gz\""));
         assert!(!serialized.contains("node-v24.0.0-linux-riscv64.tar.gz"));
 
         let reloaded = Lockfile::read(&test_lockfile).unwrap();
+        let info = &reloaded.tools["node"][0].platforms["linux-riscv64"];
+        assert_eq!(info.install.as_deref(), Some("source"));
+        assert_eq!(info.checksum.as_deref(), Some("sha256:SOURCE"));
         assert_eq!(
-            reloaded.tools["node"][0].platforms["linux-riscv64"]
-                .install
-                .as_deref(),
-            Some("source")
+            info.url.as_deref(),
+            Some("https://example.com/node-v24.0.0.tar.gz")
         );
     }
 

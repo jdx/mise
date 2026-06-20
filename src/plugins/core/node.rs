@@ -38,6 +38,21 @@ enum FetchOutcome {
     NotFound,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TarballInstall {
+    Precompiled,
+    Source,
+}
+
+impl TarballInstall {
+    fn lockfile_install(self) -> Option<String> {
+        match self {
+            Self::Precompiled => None,
+            Self::Source => Some("source".to_string()),
+        }
+    }
+}
+
 impl NodePlugin {
     pub fn new() -> Self {
         Self {
@@ -61,7 +76,7 @@ impl NodePlugin {
                 &opts.binary_tarball_url,
                 &opts.binary_tarball_path,
                 &opts.version,
-                true,
+                TarballInstall::Precompiled,
             )
             .await
         {
@@ -167,7 +182,7 @@ impl NodePlugin {
                 &opts.source_tarball_url,
                 &opts.source_tarball_path,
                 &opts.version,
-                false,
+                TarballInstall::Source,
             )
             .await
         {
@@ -206,7 +221,7 @@ impl NodePlugin {
         url: &Url,
         local: &Path,
         version: &str,
-        record_url: bool,
+        install: TarballInstall,
     ) -> Result<()> {
         let settings = Settings::get();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
@@ -220,11 +235,17 @@ impl NodePlugin {
         }
         ctx.pr.next_operation();
         let platform_key = self.get_platform_key();
+        let url = url.to_string();
+        let lockfile_install = install.lockfile_install();
         let needs_checksum = settings.node.verify
             && tv
                 .lock_platforms
                 .get(&platform_key)
-                .map(|platform_info| platform_info.checksum.is_none())
+                .map(|platform_info| {
+                    platform_info.checksum.is_none()
+                        || platform_info.url.as_deref() != Some(url.as_str())
+                        || platform_info.install != lockfile_install
+                })
                 .unwrap_or(true);
         let checksum = if needs_checksum {
             Some(self.get_checksum(ctx, tv, local, version).await?)
@@ -232,11 +253,19 @@ impl NodePlugin {
             None
         };
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        if record_url {
-            platform_info.url = Some(url.to_string());
+        let artifact_changed = platform_info.url.as_deref() != Some(url.as_str())
+            || platform_info.install != lockfile_install;
+        if artifact_changed {
+            platform_info.checksum = None;
+            platform_info.size = None;
+            platform_info.url_api = None;
+            platform_info.provenance = None;
+            platform_info.github_attestations = None;
         }
+        platform_info.install = lockfile_install;
+        platform_info.url = Some(url);
         if let Some(checksum) = checksum {
-            platform_info.checksum.get_or_insert(checksum);
+            platform_info.checksum = Some(checksum);
         }
         self.verify_checksum(ctx, tv, local)?;
         Ok(())
@@ -304,7 +333,9 @@ impl NodePlugin {
         }
         let shasums = file::read_to_string(&shasums_file)?;
         let shasums = hash::parse_shasums(&shasums);
-        let shasum = shasums.get(&tarball_name).unwrap();
+        let shasum = shasums
+            .get(&tarball_name)
+            .ok_or_else(|| eyre::eyre!("{tarball_name} not found in SHASUMS256.txt"))?;
         Ok(format!("sha256:{shasum}"))
     }
 
@@ -555,13 +586,6 @@ impl Backend for NodePlugin {
         }
 
         features
-    }
-
-    fn supports_lockfile_url(&self, platform_info: Option<&PlatformInfo>) -> bool {
-        if cfg!(windows) {
-            return true;
-        }
-        platform_info.is_none_or(|pi| pi.install.as_deref() != Some("source"))
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
@@ -857,35 +881,29 @@ impl Backend for NodePlugin {
             .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
 
         if settings.node.compile == Some(true) && target.os_name() != "windows" {
-            return Ok(PlatformInfo {
-                install: Some("source".to_string()),
-                ..Default::default()
-            });
+            return self.resolve_source_lock_info(version).await;
         }
 
         // Fetch SHASUMS256.txt to get checksum without downloading the tarball.
         // If the file is absent from SHASUMS in fallback mode, lock the source
         // compile outcome instead of recording a binary URL that install would 404.
-        let shasums_url = mirror.join(&format!("v{version}/SHASUMS256.txt"))?;
-        let checksum = match HTTP.get_text_cached(shasums_url.as_str()).await {
-            Ok(shasums_content) => match hash::parse_shasums(&shasums_content).get(&filename) {
-                Some(shasum) => Some(format!("sha256:{shasum}")),
-                None if settings.node.compile != Some(false) => {
-                    return Ok(PlatformInfo {
-                        install: Some("source".to_string()),
-                        ..Default::default()
-                    });
+        let checksum = match self.resolve_shasum(&mirror, version, &filename).await {
+            Ok(Some(shasum)) => Some(shasum),
+            Ok(None) => {
+                if settings.node.compile != Some(false) && target.os_name() != "windows" {
+                    return self.resolve_source_lock_info(version).await;
                 }
-                None => {
-                    debug!(
-                        "precompiled node archive {filename} not found in {} and compilation is disabled",
-                        shasums_url
-                    );
-                    return Ok(PlatformInfo::default());
-                }
-            },
+                debug!(
+                    "precompiled node archive {filename} not found in {} and compilation is disabled",
+                    mirror.join(&format!("v{version}/SHASUMS256.txt"))?
+                );
+                return Ok(PlatformInfo::default());
+            }
             Err(e) => {
-                debug!("Failed to fetch SHASUMS from {}: {e}", shasums_url);
+                debug!(
+                    "Failed to fetch SHASUMS from {}: {e}",
+                    mirror.join(&format!("v{version}/SHASUMS256.txt"))?
+                );
                 None
             }
         };
@@ -902,6 +920,45 @@ impl Backend for NodePlugin {
 }
 
 impl NodePlugin {
+    async fn resolve_source_lock_info(&self, version: &str) -> Result<PlatformInfo> {
+        let settings = Settings::get();
+        let filename = source_tarball_name(version);
+        let mirror = settings.node.mirror_url();
+        let url = mirror
+            .join(&format!("v{version}/{filename}"))
+            .map_err(|e| eyre::eyre!("Failed to construct Node.js source URL: {e}"))?;
+        let checksum = match self.resolve_shasum(&mirror, version, &filename).await {
+            Ok(checksum) => checksum,
+            Err(e) => {
+                debug!(
+                    "Failed to fetch source SHASUMS from {}: {e}",
+                    mirror.join(&format!("v{version}/SHASUMS256.txt"))?
+                );
+                None
+            }
+        };
+
+        Ok(PlatformInfo {
+            install: Some("source".to_string()),
+            checksum,
+            url: Some(url.to_string()),
+            ..Default::default()
+        })
+    }
+
+    async fn resolve_shasum(
+        &self,
+        mirror: &Url,
+        version: &str,
+        filename: &str,
+    ) -> Result<Option<String>> {
+        let shasums_url = mirror.join(&format!("v{version}/SHASUMS256.txt"))?;
+        let shasums_content = HTTP.get_text_cached(shasums_url.as_str()).await?;
+        Ok(hash::parse_shasums(&shasums_content)
+            .get(filename)
+            .map(|shasum| format!("sha256:{shasum}")))
+    }
+
     /// Map OS name from Platform to Node.js convention
     fn map_os(os_name: &str) -> &str {
         match os_name {
@@ -973,7 +1030,7 @@ impl BuildOpts {
     async fn new(ctx: &InstallContext, tv: &ToolVersion) -> Result<Self> {
         let v = &tv.version;
         let install_path = tv.install_path();
-        let source_tarball_name = format!("node-v{v}.tar.gz");
+        let default_source_tarball_name = source_tarball_name(v);
 
         let slug = slug(v);
         #[cfg(windows)]
@@ -985,21 +1042,50 @@ impl BuildOpts {
         let default_binary_tarball_url = mirror_url_for(&settings.node, &binary_tarball_name)
             .join(&format!("v{v}/{binary_tarball_name}"))?;
         let platform_key = Platform::current().to_key();
-        let binary_tarball_url = if ctx.locked || settings.locked {
-            tv.lock_platforms
-                .get(&platform_key)
+        let locked_platform_info = if ctx.locked || settings.locked {
+            tv.lock_platforms.get(&platform_key)
+        } else {
+            None
+        };
+        let locked_source_compile =
+            locked_platform_info.is_some_and(|pi| pi.install.as_deref() == Some("source"));
+        let binary_tarball_url = if locked_source_compile {
+            default_binary_tarball_url
+        } else {
+            locked_platform_info
                 .and_then(|pi| pi.url.as_deref())
                 .map(Url::parse)
                 .transpose()?
-                .unwrap_or_else(|| default_binary_tarball_url.clone())
-        } else {
-            default_binary_tarball_url
+                .unwrap_or(default_binary_tarball_url)
         };
         let binary_tarball_name = binary_tarball_url
             .path_segments()
             .and_then(|mut segments| segments.next_back())
             .filter(|name| !name.is_empty())
             .unwrap_or(&binary_tarball_name)
+            .to_string();
+        let default_source_tarball_url = settings
+            .node
+            .mirror_url()
+            .join(&format!("v{v}/{default_source_tarball_name}"))?;
+        let source_tarball_url = if locked_source_compile {
+            locked_platform_info
+                .and_then(|pi| pi.url.as_deref())
+                .map(Url::parse)
+                .transpose()?
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "Invalid lockfile entry for node@{v} on platform {platform_key}: install = \"source\" requires url"
+                    )
+                })?
+        } else {
+            default_source_tarball_url
+        };
+        let source_tarball_name = source_tarball_url
+            .path_segments()
+            .and_then(|mut segments| segments.next_back())
+            .filter(|name| !name.is_empty())
+            .unwrap_or(&default_source_tarball_name)
             .to_string();
         Ok(Self {
             version: v.clone(),
@@ -1009,10 +1095,7 @@ impl BuildOpts {
             make_cmd: settings.node.make_cmd(),
             make_install_cmd: settings.node.make_install_cmd(),
             source_tarball_path: tv.download_path().join(&source_tarball_name),
-            source_tarball_url: settings
-                .node
-                .mirror_url()
-                .join(&format!("v{v}/{source_tarball_name}"))?,
+            source_tarball_url,
             source_tarball_name,
             binary_tarball_path: tv.download_path().join(&binary_tarball_name),
             binary_tarball_url,
@@ -1066,6 +1149,10 @@ fn slug(v: &str) -> String {
     } else {
         format!("node-v{v}-{}-{}", os(), arch(&settings))
     }
+}
+
+fn source_tarball_name(v: &str) -> String {
+    format!("node-v{v}.tar.gz")
 }
 
 #[derive(Debug, Deserialize)]

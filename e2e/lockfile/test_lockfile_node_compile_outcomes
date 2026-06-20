@@ -20,6 +20,7 @@ assert_contains "cat mise.lock" 'url = "https://nodejs.org/dist/v24.16.0/node-v2
 assert_contains "cat mise.lock" 'checksum = "sha256:'
 assert_contains "cat mise.lock" '[tools.node."platforms.linux-riscv64"]'
 assert_contains "cat mise.lock" 'install = "source"'
+assert_contains "cat mise.lock" 'url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0.tar.gz"'
 assert_not_contains "cat mise.lock" "node-v24.16.0-linux-riscv64.tar.gz"
 assert_not_contains "cat mise.lock" "compile ="
 assert_not_contains "cat mise.lock" "install_method"
@@ -38,6 +39,7 @@ assert_contains "cat mise.lock" 'make_opts = "-s"'
 assert_contains "cat mise.lock" '[tools.node."platforms.linux-x64"]'
 assert_contains "cat mise.lock" '[tools.node."platforms.linux-riscv64"]'
 assert_contains "cat mise.lock" 'install = "source"'
+assert_contains "cat mise.lock" 'url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0.tar.gz"'
 assert_not_contains "cat mise.lock" "node-v24.16.0-linux-x64.tar.gz"
 assert_not_contains "cat mise.lock" "node-v24.16.0-linux-riscv64.tar.gz"
 assert_not_contains "cat mise.lock" 'url_api = "'
@@ -60,3 +62,17 @@ assert_contains "cat mise.lock" 'checksum = "sha256:'
 assert_not_contains "cat mise.lock" "platforms.linux-riscv64"
 assert_not_contains "cat mise.lock" "node-v24.16.0-linux-riscv64.tar.gz"
 assert_not_contains "cat mise.lock" "install_method"
+
+echo "=== locked source outcome requires url ==="
+cat <<EOF >mise.lock
+$LOCKFILE_HEADER
+
+[[tools.node]]
+version = "24.16.0"
+backend = "core:node"
+
+[tools.node."platforms.linux-x64"]
+install = "source"
+EOF
+
+assert_fail "mise install --locked --dry-run node@24.16.0" 'install = "source" requires url'
