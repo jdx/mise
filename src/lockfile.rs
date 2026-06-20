@@ -300,7 +300,9 @@ impl PlatformInfo {
     pub fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
         let url_changed = self.url.is_some() && other.url.is_some() && self.url != other.url;
         let install_changed = self.install.is_some() && self.install != other.install;
-        let artifact_changed = url_changed || install_changed;
+        let artifact_changed = url_changed
+            || install_changed
+            || (self.url.is_some() && other.install.as_deref() == Some("source"));
 
         // For checksums, prefer sha256 over blake3 since sha256 comes from
         // official releases and is more portable/verifiable. If artifacts disagree,
@@ -344,7 +346,11 @@ impl PlatformInfo {
             }
         };
         PlatformInfo {
-            install: self.install.clone().or_else(|| other.install.clone()),
+            install: if self.url.is_some() {
+                None
+            } else {
+                self.install.clone().or_else(|| other.install.clone())
+            },
             checksum,
             size,
             url: if artifact_changed {
@@ -1053,7 +1059,9 @@ impl Lockfile {
                     && platform_info.url != existing.url;
                 let install_changed =
                     platform_info.install.is_some() && platform_info.install != existing.install;
-                let preserve_artifact_fields = !url_changed && !install_changed;
+                let source_to_url =
+                    platform_info.url.is_some() && existing.install.as_deref() == Some("source");
+                let preserve_artifact_fields = !url_changed && !install_changed && !source_to_url;
                 let provenance = if preserve_artifact_fields {
                     match (
                         platform_info.provenance.clone(),
@@ -1066,7 +1074,11 @@ impl Lockfile {
                     platform_info.provenance.clone()
                 };
                 PlatformInfo {
-                    install: platform_info.install.or_else(|| existing.install.clone()),
+                    install: if platform_info.url.is_some() {
+                        None
+                    } else {
+                        platform_info.install.or_else(|| existing.install.clone())
+                    },
                     checksum: platform_info.checksum.or_else(|| {
                         if preserve_artifact_fields {
                             existing.checksum.clone()
@@ -3111,6 +3123,24 @@ backend = "conda:jq"
     }
 
     #[test]
+    fn test_platform_info_merge_clears_stale_source_marker_on_url() {
+        let new_info = PlatformInfo {
+            checksum: Some("sha256:NEW".to_string()),
+            url: Some("https://example.com/v2.tar.gz".to_string()),
+            ..Default::default()
+        };
+        let stale_source = PlatformInfo {
+            install: Some("source".to_string()),
+            ..Default::default()
+        };
+
+        let merged = new_info.merge_with(&stale_source);
+        assert_eq!(merged.install, None);
+        assert_eq!(merged.url.as_deref(), Some("https://example.com/v2.tar.gz"));
+        assert_eq!(merged.checksum.as_deref(), Some("sha256:NEW"));
+    }
+
+    #[test]
     fn test_provenance_fields_roundtrip() {
         let info = PlatformInfo {
             checksum: Some("sha256:abc123".to_string()),
@@ -3468,6 +3498,42 @@ backend = "conda:jq"
         assert_eq!(info.size, None);
         assert_eq!(info.url, None);
         assert_eq!(info.url_api, None);
+    }
+
+    #[test]
+    fn test_set_platform_info_replaces_source_outcome_with_artifact() {
+        let mut lockfile = Lockfile::default();
+        lockfile.set_platform_info(
+            "node",
+            "24.0.0",
+            Some("core:node"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                install: Some("source".to_string()),
+                ..Default::default()
+            },
+        );
+        lockfile.set_platform_info(
+            "node",
+            "24.0.0",
+            Some("core:node"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:NEW".to_string()),
+                url: Some("https://example.com/binary.tar.gz".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let info = &lockfile.tools["node"][0].platforms["linux-x64"];
+        assert_eq!(info.install, None);
+        assert_eq!(info.checksum.as_deref(), Some("sha256:NEW"));
+        assert_eq!(
+            info.url.as_deref(),
+            Some("https://example.com/binary.tar.gz")
+        );
     }
 
     #[test]
