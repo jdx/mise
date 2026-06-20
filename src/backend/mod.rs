@@ -2034,12 +2034,14 @@ pub trait Backend: Debug + Send + Sync {
                 hint: Remove `lockfile = false` or set `lockfile = true`, or disable locked mode"
             );
         }
-        if ctx.locked && !tv.request.source().is_tool_stub() {
+        if ctx.locked && !tv.request.source().is_tool_stub() && self.supports_lockfile_url() {
             let platform_key = self.get_platform_key();
-            let platform_info = tv.lock_platforms.get(&platform_key);
-            let requires_lockfile_url = self.supports_lockfile_url();
-            let has_lockfile_url = platform_info.and_then(|p| p.url.as_ref()).is_some();
-            if requires_lockfile_url && !has_lockfile_url {
+            let has_lockfile_url = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|p| p.url.as_ref())
+                .is_some();
+            if !has_lockfile_url {
                 bail!(
                     "No lockfile URL found for {} on platform {} (--locked mode)\n\
                     hint: Run `mise lock` to generate lockfile URLs, or disable locked mode",

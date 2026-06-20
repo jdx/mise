@@ -1048,10 +1048,6 @@ impl Lockfile {
             .iter_mut()
             .find(|t| t.version == version && &t.options == options)
         {
-            if platform_info.is_empty() {
-                tool.platforms.remove(platform_key);
-                return;
-            }
             // Merge with existing platform info, preferring new values when present.
             // When the URL changes, drop existing checksum/size/url_api — those fields
             // describe a specific artifact and are stale once the URL points elsewhere.
@@ -1122,13 +1118,13 @@ impl Lockfile {
             } else {
                 platform_info
             };
-            if merged.is_empty() {
-                tool.platforms.remove(platform_key);
-            } else {
+            // Only insert non-empty platform info to avoid `"platforms.linux-x64" = {}`
+            if !merged.is_empty() {
                 tool.platforms.insert(platform_key.to_string(), merged);
             }
         } else {
             let mut platforms = BTreeMap::new();
+            // Only insert non-empty platform info
             if !platform_info.is_empty() {
                 platforms.insert(platform_key.to_string(), platform_info);
             }
@@ -2311,20 +2307,7 @@ impl LockfileTool {
             table.insert("options".to_string(), toml::Value::Table(opts_table));
         }
         if !self.platforms.is_empty() {
-            let mut platforms = BTreeMap::new();
-            for (platform, platform_info) in self.platforms {
-                if platform_info.is_empty() {
-                    table.insert(
-                        format!("platforms.{platform}"),
-                        toml::Value::Table(toml::Table::new()),
-                    );
-                } else {
-                    platforms.insert(platform, platform_info);
-                }
-            }
-            if !platforms.is_empty() {
-                table.insert("platforms".to_string(), platforms.into());
-            }
+            table.insert("platforms".to_string(), self.platforms.clone().into());
         }
         table.into()
     }
@@ -3547,38 +3530,6 @@ backend = "conda:jq"
         assert_eq!(
             info.url.as_deref(),
             Some("https://example.com/binary.tar.gz")
-        );
-    }
-
-    #[test]
-    fn test_set_platform_info_drops_empty_node_binary_platform() {
-        let mut lockfile = Lockfile::default();
-        let options = BTreeMap::from([("compile".to_string(), "false".to_string())]);
-        lockfile.set_platform_info(
-            "node",
-            "24.0.0",
-            Some("core:node"),
-            &options,
-            "linux-riscv64",
-            PlatformInfo {
-                checksum: Some("sha256:OLD".to_string()),
-                url: Some("https://example.com/binary.tar.gz".to_string()),
-                ..Default::default()
-            },
-        );
-        lockfile.set_platform_info(
-            "node",
-            "24.0.0",
-            Some("core:node"),
-            &options,
-            "linux-riscv64",
-            PlatformInfo::default(),
-        );
-
-        assert!(
-            !lockfile.tools["node"][0]
-                .platforms
-                .contains_key("linux-riscv64")
         );
     }
 
