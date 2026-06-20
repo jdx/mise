@@ -369,14 +369,6 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 ..Default::default()
             }),
             toml::Value::Table(mut t) => {
-                let legacy_compile_method = match t.remove("install_method") {
-                    Some(toml::Value::String(s)) if s == "compile" => true,
-                    Some(toml::Value::String(s)) if s == "precompiled" => false,
-                    Some(toml::Value::String(s)) => {
-                        bail!("unrecognized install_method {s:?} in lockfile")
-                    }
-                    _ => false,
-                };
                 let checksum = match t.remove("checksum") {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
@@ -476,14 +468,10 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     github_attestations
                 };
                 Ok(PlatformInfo {
-                    checksum: if legacy_compile_method {
-                        None
-                    } else {
-                        checksum
-                    },
-                    size: if legacy_compile_method { None } else { size },
-                    url: if legacy_compile_method { None } else { url },
-                    url_api: if legacy_compile_method { None } else { url_api },
+                    checksum,
+                    size,
+                    url,
+                    url_api,
                     conda_deps,
                     pkgx_deps,
                     pkgx_provides,
@@ -3105,34 +3093,6 @@ backend = "conda:jq"
         let merged = same_url.merge_with(&stale_info);
         assert_eq!(merged.checksum.as_deref(), Some("sha256:OLD"));
         assert_eq!(merged.size, Some(123));
-    }
-
-    #[test]
-    fn test_legacy_compile_install_method_parses_as_no_url_platform() {
-        let info = PlatformInfo::try_from(toml::Value::Table(toml::Table::from_iter([
-            (
-                "install_method".to_string(),
-                toml::Value::String("compile".to_string()),
-            ),
-            (
-                "checksum".to_string(),
-                toml::Value::String("sha256:OLD".to_string()),
-            ),
-            (
-                "url".to_string(),
-                toml::Value::String("https://example.com/binary.tar.gz".to_string()),
-            ),
-            (
-                "url_api".to_string(),
-                toml::Value::String("https://api.example.com/binary".to_string()),
-            ),
-        ])))
-        .unwrap();
-
-        assert_eq!(info.checksum, None);
-        assert_eq!(info.size, None);
-        assert_eq!(info.url, None);
-        assert_eq!(info.url_api, None);
     }
 
     #[test]
