@@ -796,9 +796,6 @@ impl Backend for NodePlugin {
             if let Some(configure_opts) = node.configure_opts().filter(|opts| !opts.is_empty()) {
                 opts.insert("configure_opts".to_string(), configure_opts);
             }
-            if let Some(make) = node.make.clone().filter(|make| make != "make") {
-                opts.insert("make".to_string(), make);
-            }
             if let Some(make_opts) = node.make_opts().filter(|opts| !opts.is_empty()) {
                 opts.insert("make_opts".to_string(), make_opts);
             }
@@ -806,15 +803,6 @@ impl Backend for NodePlugin {
                 node.make_install_opts().filter(|opts| !opts.is_empty())
             {
                 opts.insert("make_install_opts".to_string(), make_install_opts);
-            }
-            if let Some(ninja) = node.ninja {
-                opts.insert("ninja".to_string(), ninja.to_string());
-            }
-            if let Some(concurrency) = node
-                .concurrency
-                .map(|concurrency| std::cmp::max(concurrency, 1))
-            {
-                opts.insert("concurrency".to_string(), concurrency.to_string());
             }
         }
 
@@ -1281,12 +1269,9 @@ mod tests {
             BTreeMap::from([
                 ("cflags".to_string(), "-O2".to_string()),
                 ("compile".to_string(), "true".to_string()),
-                ("concurrency".to_string(), "16".to_string()),
                 ("configure_opts".to_string(), "--openssl-no-asm".to_string()),
-                ("make".to_string(), "gmake".to_string()),
                 ("make_install_opts".to_string(), "--no-strip".to_string()),
                 ("make_opts".to_string(), "-s".to_string()),
-                ("ninja".to_string(), "false".to_string()),
             ])
         );
     }
