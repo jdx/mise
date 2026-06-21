@@ -936,6 +936,18 @@ impl Backend for HttpBackend {
 
         let checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
 
+        // A checksum source was configured but produced nothing for this target
+        // (manifest miss, SHASUMS naming mismatch, unreachable file, ...). The
+        // url-only entry is still written, but surface it so it isn't a silent
+        // drop of checksum verification.
+        if checksum.is_none() && opts.checksum_url_for_target(target).is_some() {
+            warn!(
+                "could not resolve a checksum for {} on {}; locking the URL without checksum verification",
+                self.ba.full(),
+                target.to_key()
+            );
+        }
+
         Ok(PlatformInfo {
             url: Some(url),
             checksum,
