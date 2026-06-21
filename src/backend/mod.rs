@@ -520,6 +520,48 @@ pub(crate) fn normalize_idiomatic_contents(contents: &str) -> String {
         .join("\n")
 }
 
+fn executable_names(bin: &str) -> Vec<String> {
+    let mut names = vec![bin.to_string()];
+    if cfg!(target_os = "windows") && Path::new(bin).extension().is_none() {
+        for ext in &Settings::get().windows_executable_extensions {
+            let name = if ext.is_empty() {
+                bin.to_string()
+            } else {
+                format!("{bin}.{ext}")
+            };
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    }
+    names
+}
+
+fn which_non_pristine_executable(bin: &str) -> Option<PathBuf> {
+    executable_names(bin)
+        .into_iter()
+        .find_map(file::which_non_pristine)
+}
+
+pub(crate) async fn configured_toolset_or_path_which(
+    config: &Arc<Config>,
+    tools: impl IntoIterator<Item = String>,
+    bin: &str,
+) -> Result<Option<PathBuf>> {
+    let filtered = config
+        .get_tool_request_set()
+        .await?
+        .filter_by_tool(tools.into_iter().collect::<std::collections::HashSet<_>>());
+    if !filtered.tools.is_empty() {
+        let mut ts = filtered.into_toolset();
+        Box::pin(ts.resolve(config)).await?;
+        if let Some(bin) = ts.which_bin(config, bin).await {
+            return Ok(Some(bin));
+        }
+    }
+    Ok(which_non_pristine_executable(bin))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2371,18 +2413,10 @@ pub trait Backend: Debug + Send + Sync {
             .into_iter()
             .filter(|p| p.parent().is_some());
         for bin_path in bin_paths {
-            let paths_with_ext = if cfg!(windows) {
-                vec![
-                    bin_path.clone(),
-                    bin_path.join(bin_name).with_extension("exe"),
-                    bin_path.join(bin_name).with_extension("cmd"),
-                    bin_path.join(bin_name).with_extension("bat"),
-                    bin_path.join(bin_name).with_extension("ps1"),
-                ]
-            } else {
-                vec![bin_path.join(bin_name)]
-            };
-            for bin_path in paths_with_ext {
+            for bin_path in executable_names(bin_name)
+                .into_iter()
+                .map(|bin| bin_path.join(bin))
+            {
                 if bin_path.exists() && file::is_executable(&bin_path) {
                     return Ok(Some(bin_path));
                 }
@@ -2519,7 +2553,7 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn dependency_which(&self, config: &Arc<Config>, bin: &str) -> Option<PathBuf> {
-        if let Some(bin) = file::which_non_pristine(bin) {
+        if let Some(bin) = which_non_pristine_executable(bin) {
             return Some(bin);
         }
         let Ok(ts) = self.dependency_toolset(config).await else {
@@ -2527,6 +2561,20 @@ pub trait Backend: Debug + Send + Sync {
         };
         let (b, tv) = ts.which(config, bin).await?;
         b.which(config, &tv, bin).await.ok().flatten()
+    }
+
+    async fn dependency_path_for_install(
+        &self,
+        config: &Arc<Config>,
+        ts: Option<&Toolset>,
+        bin: &str,
+    ) -> Option<PathBuf> {
+        if let Some(ts) = ts
+            && let Some(bin) = ts.which_bin(config, bin).await
+        {
+            return Some(bin);
+        }
+        self.dependency_which(config, bin).await
     }
 
     /// Check if a required dependency is available and show a warning if not.
@@ -2541,26 +2589,7 @@ pub trait Backend: Debug + Send + Sync {
         provided_by: &[&str],
         install_instructions: &str,
     ) {
-        let found = if self.dependency_which(config, program).await.is_some() {
-            true
-        } else if cfg!(windows) {
-            // On Windows, also check for program with Windows executable extensions
-            let settings = Settings::get();
-            let mut found = false;
-            for ext in &settings.windows_executable_extensions {
-                if self
-                    .dependency_which(config, &format!("{}.{}", program, ext))
-                    .await
-                    .is_some()
-                {
-                    found = true;
-                    break;
-                }
-            }
-            found
-        } else {
-            false
-        };
+        let found = self.dependency_which(config, program).await.is_some();
 
         if !found {
             // Check if a tool that provides this program is configured in the toolset
