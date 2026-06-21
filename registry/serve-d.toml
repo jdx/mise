@@ -1,0 +1,10 @@
+backends = [
+  { full = "github:Pure-D/serve-d", platforms = [
+    "linux-x86_64",
+    "macos-x86_64",
+    "windows-x86_64",
+    "windows-x86",
+  ] },
+]
+description = "D language server"
+test = { cmd = "serve-d --version", expected = "{{version}}" }
