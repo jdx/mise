@@ -799,8 +799,8 @@ impl HttpBackend {
         let filename = get_filename_from_url(url);
 
         // 2a. Manifest with an extraction expression. The expression returns an
-        // `algo:hash` string, or a bare hash that's assumed to be sha256. The
-        // manifest is the same across platforms, so use the cached fetch.
+        // `algo:hash` string. The manifest is the same across platforms, so use
+        // the cached fetch.
         if let Some(expr) = opts.checksum_expr() {
             let body = match HTTP.get_text_cached(&checksum_url).await {
                 Ok(body) => body,
@@ -816,7 +816,7 @@ impl HttpBackend {
                 ("url", url),
                 ("filename", filename.as_str()),
             ];
-            return eval_checksum_expr(expr, &body, &vars, "sha256");
+            return eval_checksum_expr(expr, &body, &vars);
         }
 
         // 2b. Checksum file: a SHASUMS list (filename match) first, then an

@@ -115,19 +115,14 @@ fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
 ///
 /// The raw manifest is injected as a `body` string; `vars` supplies additional
 /// context such as `version`, `os`, `arch`, `url`, and `filename` so the
-/// expression can select the right entry. The expression must evaluate to a
-/// string: either an `algo:hash` (used as-is) or a bare hash (assumed to be
-/// `default_algo`). Manifests that publish the algorithm in a separate field can
-/// build the prefix in the expression itself, e.g. `entry.algo + ":" + entry.hash`.
+/// expression can select the right entry. The expression must evaluate to an
+/// `algo:hash` string. Manifests that store the hash and algorithm separately
+/// build the prefix in the expression itself, e.g. `entry.algo + ":" + entry.hash`
+/// (or a literal `"sha256:" + entry.hash` when the algorithm is fixed).
 ///
 /// The result is normalized to `algo:hash`. Returns `None` when evaluation fails
-/// or the result is not a usable hash.
-pub fn eval_checksum_expr(
-    expr_str: &str,
-    body: &str,
-    vars: &[(&str, &str)],
-    default_algo: &str,
-) -> Option<String> {
+/// or the result is not a usable `algo:hash`.
+pub fn eval_checksum_expr(expr_str: &str, body: &str, vars: &[(&str, &str)]) -> Option<String> {
     use expr::{Context, Environment, Value};
 
     let mut ctx = Context::default();
@@ -138,7 +133,7 @@ pub fn eval_checksum_expr(
 
     let env = Environment::new();
     match env.eval(expr_str, &ctx) {
-        Ok(Value::String(s)) => normalize_checksum(&s, default_algo),
+        Ok(Value::String(s)) => normalize_checksum(&s),
         Ok(other) => {
             debug!("checksum_expr did not evaluate to a string: {other:?}");
             None
@@ -150,19 +145,21 @@ pub fn eval_checksum_expr(
     }
 }
 
-/// Normalize a checksum string into `algo:hash` form.
+/// Normalize an `algo:hash` checksum string. The algorithm name is
+/// case-insensitive (e.g. `SHA256` from a manifest). Returns `None` when the
+/// value has no `algo:` prefix or the hash isn't valid hex for that algorithm.
 ///
-/// Accepts either a bare hex hash (uses `default_algo`) or an already-prefixed
-/// `algo:hash`. Returns `None` if the hash portion is not valid hex for the
-/// resolved algorithm.
-fn normalize_checksum(raw: &str, default_algo: &str) -> Option<String> {
+/// mise stores and verifies checksums as `algo:hash` everywhere, so a bare hash
+/// is rejected rather than guessed — the expression must qualify it (e.g.
+/// `"sha256:" + entry.hash`).
+fn normalize_checksum(raw: &str) -> Option<String> {
     let raw = raw.trim();
-    let (algo, hash) = match raw.split_once(':') {
-        Some((algo, hash)) => (algo.trim(), hash.trim()),
-        None => (default_algo, raw),
+    let Some((algo, hash)) = raw.split_once(':') else {
+        debug!("checksum_expr result is not in algo:hash form: {raw}");
+        return None;
     };
-    // Algorithm names are case-insensitive (e.g. "SHA256" from a manifest).
-    let algo = algo.to_ascii_lowercase();
+    let algo = algo.trim().to_ascii_lowercase();
+    let hash = hash.trim();
     if is_checksum_hex(hash, &algo) {
         Some(format!("{algo}:{}", hash.to_lowercase()))
     } else {
@@ -1170,35 +1167,30 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
     }
 
     #[test]
-    fn test_normalize_checksum_bare_hash_uses_default_algo() {
-        assert_eq!(
-            normalize_checksum(SHA256_UPPER, "sha256"),
-            Some(format!("sha256:{SHA256_LOWER}"))
-        );
+    fn test_normalize_checksum_rejects_bare_hash() {
+        // A bare hash with no `algo:` prefix is rejected; the expression must
+        // qualify it (e.g. `"sha256:" + hash`).
+        assert_eq!(normalize_checksum(SHA256_LOWER), None);
     }
 
     #[test]
     fn test_normalize_checksum_prefixed_hash_keeps_algo() {
         assert_eq!(
-            normalize_checksum(&format!("sha256:{SHA256_UPPER}"), "blake3"),
+            normalize_checksum(&format!("sha256:{SHA256_UPPER}")),
             Some(format!("sha256:{SHA256_LOWER}"))
         );
     }
 
     #[test]
     fn test_normalize_checksum_rejects_non_hex() {
-        assert_eq!(normalize_checksum("not-a-hash", "sha256"), None);
+        assert_eq!(normalize_checksum("sha256:not-a-hash"), None);
     }
 
     #[test]
     fn test_normalize_checksum_accepts_uppercase_algo() {
-        // Uppercase algorithm name (prefix or default) is normalized, not rejected.
+        // Uppercase algorithm name in the prefix is normalized, not rejected.
         assert_eq!(
-            normalize_checksum(&format!("SHA256:{SHA256_LOWER}"), "sha256"),
-            Some(format!("sha256:{SHA256_LOWER}"))
-        );
-        assert_eq!(
-            normalize_checksum(SHA256_LOWER, "SHA256"),
+            normalize_checksum(&format!("SHA256:{SHA256_LOWER}")),
             Some(format!("sha256:{SHA256_LOWER}"))
         );
     }
@@ -1212,10 +1204,10 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
                 {{"os":"macos","arch":"arm64","sha256":"{SHA256_UPPER}"}}
             ]}}"#
         );
-        let expr = r#"filter(fromJSON(body).files, {#.os == os and #.arch == arch})[0].sha256"#;
+        let expr = r#""sha256:" + filter(fromJSON(body).files, {#.os == os and #.arch == arch})[0].sha256"#;
         let vars = [("os", "macos"), ("arch", "arm64")];
         assert_eq!(
-            eval_checksum_expr(expr, &body, &vars, "sha256"),
+            eval_checksum_expr(expr, &body, &vars),
             Some(format!("sha256:{SHA256_LOWER}"))
         );
     }
@@ -1231,13 +1223,14 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
         );
         // expr-lang treats a bare identifier in `[]` as a literal key, so a
         // runtime version must be forced to evaluate via `version + ""`.
-        let expr = r#"filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256"#;
+        let expr =
+            r#""sha256:" + filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256"#;
         let vars = [
             ("version", "1.10.0"),
             ("url", "https://x/julia-1.10.0-linux-x86_64.tar.gz"),
         ];
         assert_eq!(
-            eval_checksum_expr(expr, &body, &vars, "sha256"),
+            eval_checksum_expr(expr, &body, &vars),
             Some(format!("sha256:{SHA256_LOWER}"))
         );
     }
@@ -1247,7 +1240,16 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
         let body = r#"{"files":[]}"#;
         let expr = r#"len(fromJSON(body).files) > 0 ? fromJSON(body).files[0].sha256 : """#;
         let vars: [(&str, &str); 0] = [];
-        assert_eq!(eval_checksum_expr(expr, body, &vars, "sha256"), None);
+        assert_eq!(eval_checksum_expr(expr, body, &vars), None);
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_rejects_bare_hash_result() {
+        // A bare hash (no algo: prefix) is rejected rather than assumed sha256.
+        let body = format!(r#"{{"files":[{{"os":"linux","sha256":"{SHA256_LOWER}"}}]}}"#);
+        let expr = r#"filter(fromJSON(body).files, { #.os == os })[0].sha256"#;
+        let vars = [("os", "linux")];
+        assert_eq!(eval_checksum_expr(expr, &body, &vars), None);
     }
 
     #[test]
@@ -1261,7 +1263,7 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
             r#"let f = filter(fromJSON(body).files, { #.os == os })[0]; f.algo + ":" + f.checksum"#;
         let vars = [("os", "linux")];
         assert_eq!(
-            eval_checksum_expr(expr, &body, &vars, "sha256"),
+            eval_checksum_expr(expr, &body, &vars),
             Some(format!("sha512:{SHA512_LOWER}"))
         );
     }

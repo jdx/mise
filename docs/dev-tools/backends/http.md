@@ -169,18 +169,17 @@ evaluated with [expr-lang](https://expr-lang.org). The following variables are
 available: `body` (the raw manifest), `version`, `os`, `arch`, `url` (the
 resolved artifact URL for the target), and `filename`.
 
-The expression must evaluate to a **string**: either an already-qualified
-`sha256:<hash>` (or `sha512:<hash>`, etc.), or a bare hash, which is assumed to
-be `sha256`. If the manifest stores the algorithm in a separate field and it
-isn't sha256, build the prefix in the expression itself, e.g.
-`entry.algo + ":" + entry.hash`.
+The expression must evaluate to a qualified `algo:hash` **string** (e.g.
+`sha256:<hash>`, `sha512:<hash>`). Build the prefix in the expression: prepend a
+literal when the algorithm is fixed (`"sha256:" + entry.hash`), or read it from
+the manifest when it varies (`entry.algo + ":" + entry.hash`).
 
 ```toml
 [tools."http:my-tool"]
 version = "1.10.0"
 checksum_url = "https://example.com/versions.json"
-# Match the file whose url equals the resolved artifact url, return its sha256
-checksum_expr = 'filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256'
+# Match the file whose url equals the resolved artifact url, return sha256:<hash>
+checksum_expr = '"sha256:" + filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256'
 
 [tools."http:my-tool".platforms]
 linux-x64 = { url = "https://example.com/my-tool-{{ version }}-linux-x86_64.tar.gz" }
