@@ -68,9 +68,9 @@ printf '#!/bin/sh\necho exprtool ok\n' >"$SRV/exprtool"
 os="${PLATFORM%%-*}"
 arch="${PLATFORM#*-}"
 case "$os" in
-macos) mapped_os="darwin" ;;
-windows) mapped_os="win32" ;;
-*) mapped_os="linux" ;;
+  macos) mapped_os="darwin" ;;
+  windows) mapped_os="win32" ;;
+  *) mapped_os="linux" ;;
 esac
 cat >"$SRV/expr_manifest.json" <<JSON
 { "platforms": { "${mapped_os}-${arch}": { "checksum": "${EXPR_SHA}" } } }

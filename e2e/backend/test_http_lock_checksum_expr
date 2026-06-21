@@ -20,16 +20,22 @@ mkdir -p "$SRV"
 # Published sha256/sha512 values embedded in the served manifests. `mise lock`
 # only fetches the manifest (checksum_url) and evaluates the expression; it never
 # downloads the artifact, so these are manifest data, not artifact hashes.
-A_LINUX="90cf53c033071b194c3dd79d00c390afb8b79faadc486b6fd50101409134fdc4" # platform-keyed, linux-x64
-A_MACOS="de494e8d180cc5ee5d67c4d2c39b383dd4f3261620c99c3c8a2e9e3e3768a368" # platform-keyed, macos-x64 (darwin-x64 key)
-B_LINUX="13bbd2c8c52d1724f8036c3e36b4a134f3c9d130ce8aa2ed54df55d3c946faf4" # filename filter, linux
-B_MACOS="790617f1a756760762e2e73f92c28b412b031c65bf4e9e02d5ee7f9d19f0e3c5" # filename filter, macos
-C_LINUX="4140664dfd1d31f89f4114e45c4956be36d9b59e10da978489d3e08839b01ca5" # version-keyed + url match, linux-x64
-C_MACOS="a583fafff7ee5ac0a056f1e90001c8d7e8c5d9341b42ded610f692ce81acbfee" # version-keyed + url match, macos-x64
-BARE_SHA="678eee372a3e8e207b3780d258e14e5c46fb7c7b28340b35ecc896ca9b3dd18b" # bare-hash negative case
-UPPER_LOWER="69b59884ac4d802179d77dbcd43b3d475e2d0a4f82afd0dc43f7b2301ba40259" # uppercase normalization (lowercased form)
-UPPER_UPPER="69B59884AC4D802179D77DBCD43B3D475E2D0A4F82AFD0DC43F7B2301BA40259" # same value, as stored in the manifest
-ALGO512="f073412a6d4865a42afcfd465fa0d60d7fca7c37ef2d0c4f602e0411f0ba5c10dba925ffa1b6f67a5d696194a64eb04f739b33e4beb55c68c998e4dbda92529e" # algo from manifest (sha512)
+# platform-keyed object (claude shape), linux-x64 / macos-x64 (darwin-x64 key)
+A_LINUX="90cf53c033071b194c3dd79d00c390afb8b79faadc486b6fd50101409134fdc4"
+A_MACOS="de494e8d180cc5ee5d67c4d2c39b383dd4f3261620c99c3c8a2e9e3e3768a368"
+# filename filter (flutter shape), linux / macos
+B_LINUX="13bbd2c8c52d1724f8036c3e36b4a134f3c9d130ce8aa2ed54df55d3c946faf4"
+B_MACOS="790617f1a756760762e2e73f92c28b412b031c65bf4e9e02d5ee7f9d19f0e3c5"
+# version-keyed + url match (julia shape), linux-x64 / macos-x64
+C_LINUX="4140664dfd1d31f89f4114e45c4956be36d9b59e10da978489d3e08839b01ca5"
+C_MACOS="a583fafff7ee5ac0a056f1e90001c8d7e8c5d9341b42ded610f692ce81acbfee"
+# bare-hash negative case
+BARE_SHA="678eee372a3e8e207b3780d258e14e5c46fb7c7b28340b35ecc896ca9b3dd18b"
+# uppercase normalization: same value stored uppercase, expected lowercased
+UPPER_LOWER="69b59884ac4d802179d77dbcd43b3d475e2d0a4f82afd0dc43f7b2301ba40259"
+UPPER_UPPER="69B59884AC4D802179D77DBCD43B3D475E2D0A4F82AFD0DC43F7B2301BA40259"
+# algorithm taken from the manifest (sha512)
+ALGO512="f073412a6d4865a42afcfd465fa0d60d7fca7c37ef2d0c4f602e0411f0ba5c10dba925ffa1b6f67a5d696194a64eb04f739b33e4beb55c68c998e4dbda92529e"
 
 # Start a static file server on an ephemeral port
 PORT_FILE="$TMPDIR/mise_lock_expr_port"
