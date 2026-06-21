@@ -128,7 +128,7 @@ pub fn is_available() -> bool {
     cfg!(target_os = "linux")
         && crate::file::which("systemctl").is_some()
         && sudo_invoking_user().is_none()
-        && user_bus_available()
+        && user_manager_available()
 }
 
 pub fn unavailable_reason() -> String {
@@ -138,8 +138,8 @@ pub fn unavailable_reason() -> String {
         "`systemctl` not found".to_string()
     } else if sudo_invoking_user().is_some() {
         "`systemctl --user` cannot target SUDO_USER; run mise as the target user".to_string()
-    } else if !user_bus_available() {
-        "systemd user bus not available".to_string()
+    } else if !user_manager_available() {
+        "systemd user manager not available".to_string()
     } else {
         "systemd unavailable".to_string()
     }
@@ -360,13 +360,17 @@ fn normalize(value: &str) -> String {
     value.replace("\r\n", "\n").trim_end().to_string()
 }
 
-fn user_bus_available() -> bool {
+fn user_manager_available() -> bool {
     if crate::env::var("DBUS_SESSION_BUS_ADDRESS").is_ok_and(|v| !v.is_empty()) {
         return true;
     }
     crate::env::var("XDG_RUNTIME_DIR")
-        .map(|dir| Path::new(&dir).join("bus").exists())
+        .map(|dir| user_manager_socket_available(Path::new(&dir)))
         .unwrap_or(false)
+}
+
+fn user_manager_socket_available(runtime_dir: &Path) -> bool {
+    runtime_dir.join("systemd/private").exists() || runtime_dir.join("bus").exists()
 }
 
 fn sudo_invoking_user() -> Option<String> {
@@ -564,5 +568,18 @@ mod tests {
             state: SystemdState::Inactive,
         };
         assert!(inactive_stopped.is_desired());
+    }
+
+    #[test]
+    fn test_user_manager_socket_available() {
+        let runtime_dir = tempfile::tempdir().unwrap();
+        assert!(!user_manager_socket_available(runtime_dir.path()));
+
+        crate::file::create_dir_all(runtime_dir.path().join("systemd/private")).unwrap();
+        assert!(user_manager_socket_available(runtime_dir.path()));
+
+        crate::file::remove_file_or_dir(runtime_dir.path().join("systemd/private")).unwrap();
+        std::fs::write(runtime_dir.path().join("bus"), "").unwrap();
+        assert!(user_manager_socket_available(runtime_dir.path()));
     }
 }
