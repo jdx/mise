@@ -552,6 +552,8 @@ impl PIPXBackend {
         cmd.with_pr(pr)
             .envs(ts.env_with_path_without_tools(config).await?)
             .envs(tv.install_env())
+            // pipx 1.12+ auto-picks uv on PATH; this path passes pip-only --pip-args.
+            .env("PIPX_DEFAULT_BACKEND", "pip")
             .env("PIP_INDEX_URL", Self::get_index_url()?)
             .env_remove("PIPX_SHARED_LIBS")
             .env("PIPX_HOME", tv.install_path())

@@ -247,6 +247,10 @@ pub struct AquaChecksum {
     pub algorithm: Option<AquaChecksumAlgorithm>,
     pub pattern: Option<AquaChecksumPattern>,
     pub cosign: Option<AquaCosign>,
+    pub minisign: Option<AquaMinisign>,
+    pub github_artifact_attestations: Option<AquaGithubArtifactAttestations>,
+    #[serde(default, deserialize_with = "deserialize_optional_string_map")]
+    replacements: Option<HashMap<String, String>>,
     file_format: Option<String>,
     enabled: Option<bool>,
     asset: Option<String>,
@@ -310,6 +314,25 @@ where
     }
 }
 
+fn yaml_mapping_to_string_map<D: serde::de::Error>(
+    value: serde_yaml::Value,
+) -> std::result::Result<HashMap<String, String>, D> {
+    let serde_yaml::Value::Mapping(mapping) = value else {
+        return Err(D::custom("invalid type: expected a scalar string map"));
+    };
+
+    mapping
+        .into_iter()
+        .map(|(key, value)| {
+            let key = yaml_scalar_to_string(key)
+                .ok_or_else(|| D::custom("invalid type: expected a scalar string map key"))?;
+            let value = yaml_scalar_to_string(value)
+                .ok_or_else(|| D::custom("invalid type: expected a scalar string map value"))?;
+            Ok((key, value))
+        })
+        .collect()
+}
+
 fn deserialize_string_map<'de, D>(
     deserializer: D,
 ) -> std::result::Result<HashMap<String, String>, D::Error>
@@ -320,28 +343,22 @@ where
     let Some(value) = value else {
         return Ok(HashMap::new());
     };
-    let serde_yaml::Value::Mapping(mapping) = value else {
-        return Err(<D::Error as serde::de::Error>::custom(
-            "invalid type: expected a string map",
-        ));
-    };
+    yaml_mapping_to_string_map(value)
+}
 
-    mapping
-        .into_iter()
-        .map(|(key, value)| {
-            let key = yaml_scalar_to_string(key).ok_or_else(|| {
-                <D::Error as serde::de::Error>::custom(
-                    "invalid type: expected a scalar string map key",
-                )
-            })?;
-            let value = yaml_scalar_to_string(value).ok_or_else(|| {
-                <D::Error as serde::de::Error>::custom(
-                    "invalid type: expected a scalar string map value",
-                )
-            })?;
-            Ok((key, value))
-        })
-        .collect()
+fn deserialize_optional_string_map<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<HashMap<String, String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(value) = Option::<serde_yaml::Value>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    if matches!(value, serde_yaml::Value::Null) {
+        return Ok(None);
+    }
+    yaml_mapping_to_string_map(value).map(Some)
 }
 
 fn yaml_scalar_to_string(value: serde_yaml::Value) -> Option<String> {
@@ -685,16 +702,33 @@ impl AquaPackage {
         os: &str,
         arch: &str,
     ) -> Result<String> {
-        let mut actual_arch = arch;
-        if os == "darwin" && arch == "arm64" && self.rosetta2 {
-            actual_arch = "amd64";
-        }
-        if os == "windows" && arch == "arm64" && self.windows_arm_emulation {
-            actual_arch = "amd64";
-        }
+        let mut ctx = self.template_context(&self.replacements, v, os, arch);
+        ctx.extend(self.vars_ctx()?);
+        ctx.extend(overrides.clone());
 
+        crate::template::render(s, &ctx)
+    }
+
+    fn actual_arch<'a>(&self, os: &str, arch: &'a str) -> &'a str {
+        if (os == "darwin" && arch == "arm64" && self.rosetta2)
+            || (os == "windows" && arch == "arm64" && self.windows_arm_emulation)
+        {
+            "amd64"
+        } else {
+            arch
+        }
+    }
+
+    fn template_context(
+        &self,
+        replacements: &HashMap<String, String>,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> HashMap<String, String> {
+        let actual_arch = self.actual_arch(os, arch);
         let replace = |s: &str| {
-            self.replacements
+            replacements
                 .get(s)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| s.to_string())
@@ -706,18 +740,15 @@ impl AquaPackage {
             v
         };
 
-        let mut ctx = HashMap::new();
-        ctx.insert("Version".to_string(), replace(v));
-        ctx.insert("SemVer".to_string(), replace(semver));
-        ctx.insert("OS".to_string(), replace(os));
-        ctx.insert("GOOS".to_string(), replace(os));
-        ctx.insert("GOARCH".to_string(), replace(actual_arch));
-        ctx.insert("Arch".to_string(), replace(actual_arch));
-        ctx.insert("Format".to_string(), replace(&self.format));
-        ctx.extend(self.vars_ctx()?);
-        ctx.extend(overrides.clone());
-
-        crate::template::render(s, &ctx)
+        HashMap::from([
+            ("Version".to_string(), replace(v)),
+            ("SemVer".to_string(), replace(semver)),
+            ("OS".to_string(), replace(os)),
+            ("GOOS".to_string(), replace(os)),
+            ("GOARCH".to_string(), replace(actual_arch)),
+            ("Arch".to_string(), replace(actual_arch)),
+            ("Format".to_string(), replace(&self.format)),
+        ])
     }
 
     fn vars_ctx(&self) -> Result<HashMap<String, String>> {
@@ -1083,7 +1114,7 @@ impl AquaChecksum {
         let mut asset_strs = IndexSet::new();
         for asset in pkg.asset_strs(v, os, arch)? {
             let checksum_asset = self.asset.as_ref().unwrap();
-            let mut ctx = HashMap::new();
+            let mut ctx = self.template_ctx(pkg, v, os, arch)?;
             ctx.insert("Asset".to_string(), asset.to_string());
             asset_strs.insert(pkg.parse_aqua_str(checksum_asset, v, &ctx, os, arch)?);
         }
@@ -1103,7 +1134,13 @@ impl AquaChecksum {
     }
 
     pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
-        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
+        pkg.parse_aqua_str(
+            self.url.as_ref().unwrap(),
+            v,
+            &self.template_ctx(pkg, v, os, arch)?,
+            os,
+            arch,
+        )
     }
 
     fn merge(&mut self, other: Self) {
@@ -1128,11 +1165,61 @@ impl AquaChecksum {
         if let Some(file_format) = other.file_format {
             self.file_format = Some(file_format);
         }
+        if let Some(replacements) = other.replacements {
+            if replacements.is_empty() {
+                self.replacements = Some(HashMap::new());
+            } else {
+                self.replacements
+                    .get_or_insert_with(HashMap::new)
+                    .extend(replacements);
+            }
+        }
         if let Some(cosign) = other.cosign {
             if self.cosign.is_none() {
                 self.cosign = Some(cosign.clone());
             }
             self.cosign.as_mut().unwrap().merge(cosign);
+        }
+        if let Some(minisign) = other.minisign {
+            if self.minisign.is_none() {
+                self.minisign = Some(minisign.clone());
+            }
+            self.minisign.as_mut().unwrap().merge(minisign);
+        }
+        if let Some(attestations) = other.github_artifact_attestations {
+            if self.github_artifact_attestations.is_none() {
+                self.github_artifact_attestations = Some(attestations.clone());
+            }
+            self.github_artifact_attestations
+                .as_mut()
+                .unwrap()
+                .merge(attestations);
+        }
+    }
+
+    pub fn template_ctx(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<HashMap<String, String>> {
+        let mut ctx = pkg.template_context(&self.effective_replacements(pkg), v, os, arch);
+        if pkg.r#type == AquaPackageType::Http {
+            ctx.insert("AssetURL".to_string(), pkg.url(v, os, arch)?);
+        }
+        Ok(ctx)
+    }
+
+    fn effective_replacements(&self, pkg: &AquaPackage) -> HashMap<String, String> {
+        match &self.replacements {
+            None => pkg.replacements.clone(),
+            Some(replacements) if replacements.is_empty() => HashMap::new(),
+            Some(replacements) => {
+                let mut merged = pkg.replacements.clone();
+                merged.extend(replacements.clone());
+                merged
+            }
         }
     }
 }
@@ -1421,6 +1508,159 @@ packages:
         assert_eq!(
             attestations.signer_workflow.as_deref(),
             Some("canonical-workflow.yml")
+        );
+    }
+
+    #[test]
+    fn test_checksum_nested_verification_fields_are_deserialized() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+      replacements:
+        darwin: mac
+      minisign:
+        type: github_release
+        asset: checksums.txt.minisig
+        public_key: minisign-public-key
+      github_artifact_attestations:
+        enabled: true
+        predicate_type: https://slsa.dev/provenance/v1
+        signer_workflow: checksum-workflow.yml
+"#,
+        );
+
+        let checksum = pkg.checksum.unwrap();
+        assert_eq!(
+            checksum.replacements.as_ref().and_then(|r| r.get("darwin")),
+            Some(&"mac".to_string())
+        );
+        assert_eq!(
+            checksum
+                .minisign
+                .as_ref()
+                .and_then(|m| m.public_key.as_deref()),
+            Some("minisign-public-key")
+        );
+        let attestations = checksum.github_artifact_attestations.unwrap();
+        assert_eq!(attestations.enabled, Some(true));
+        assert_eq!(
+            attestations.predicate_type.as_deref(),
+            Some("https://slsa.dev/provenance/v1")
+        );
+        assert_eq!(
+            attestations.signer_workflow.as_deref(),
+            Some("checksum-workflow.yml")
+        );
+    }
+
+    #[test]
+    fn test_checksum_replacements_override_package_replacements() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: http
+    url: https://example.com/tool-{{.OS}}-{{.Arch}}.tar.gz
+    replacements:
+      darwin: macOS
+      arm64: aarch64
+    checksum:
+      type: http
+      url: "{{.AssetURL}}.{{.OS}}-{{.Arch}}.checksums"
+      replacements:
+        darwin: mac
+        arm64: arm64
+"#,
+        );
+
+        assert_eq!(
+            pkg.url("1.0.0", "darwin", "arm64").unwrap(),
+            "https://example.com/tool-macOS-aarch64.tar.gz"
+        );
+        assert_eq!(
+            pkg.checksum
+                .as_ref()
+                .unwrap()
+                .url(&pkg, "1.0.0", "darwin", "arm64")
+                .unwrap(),
+            "https://example.com/tool-macOS-aarch64.tar.gz.mac-arm64.checksums"
+        );
+    }
+
+    #[test]
+    fn test_checksum_replacements_merge_on_version_override() {
+        let mut checksum = first_registry_package(
+            r#"
+packages:
+  - checksum:
+      type: http
+      url: https://example.com/{{.OS}}.checksums
+      replacements:
+        darwin: mac
+"#,
+        )
+        .checksum
+        .unwrap();
+        let override_checksum = first_registry_package(
+            r#"
+packages:
+  - checksum:
+      replacements:
+        arm64: aarch64
+"#,
+        )
+        .checksum
+        .unwrap();
+        checksum.merge(override_checksum);
+        assert_eq!(
+            checksum.replacements,
+            Some(HashMap::from([
+                ("darwin".to_string(), "mac".to_string()),
+                ("arm64".to_string(), "aarch64".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_checksum_replacements_null_deserializes_to_none() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+      replacements: null
+"#,
+        );
+        assert_eq!(pkg.checksum.unwrap().replacements, None);
+    }
+
+    #[test]
+    fn test_checksum_url_applies_replacements_to_goos_and_goarch() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: http
+    url: https://example.com/tool.tar.gz
+    checksum:
+      type: http
+      url: https://example.com/{{.GOOS}}-{{.GOARCH}}.checksums
+      replacements:
+        darwin: mac
+        arm64: aarch64
+"#,
+        );
+        assert_eq!(
+            pkg.checksum
+                .as_ref()
+                .unwrap()
+                .url(&pkg, "1.0.0", "darwin", "arm64")
+                .unwrap(),
+            "https://example.com/mac-aarch64.checksums"
         );
     }
 
