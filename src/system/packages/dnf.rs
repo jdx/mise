@@ -17,6 +17,38 @@ impl DnfManager {
     }
 }
 
+// Never add `--` here: DNF5 rejects it on subcommands like install/upgrade.
+// Pins use rpm NEVRA syntax (name-version) which dnf accepts positionally.
+fn pkg_operand(p: &PackageRequest) -> String {
+    match &p.version {
+        Some(v) => format!("{}-{v}", p.name),
+        None => p.name.clone(),
+    }
+}
+
+fn install_args(pkgs: &[PackageRequest], opts: &InstallOpts) -> Vec<String> {
+    let mut args = vec!["install".to_string(), "-y".to_string()];
+    if opts.update {
+        args.push("--refresh".to_string());
+    }
+    args.extend(pkgs.iter().map(pkg_operand));
+    args
+}
+
+fn upgrade_args(pkgs: &[PackageRequest]) -> Vec<String> {
+    // --refresh: expire cached metadata so "upgrade" actually sees new
+    // versions; `dnf upgrade <pkg>` only touches already-installed
+    // packages (a pin downgrade would need `dnf install name-version`,
+    // which the install path already provides)
+    let mut args = vec![
+        "upgrade".to_string(),
+        "-y".to_string(),
+        "--refresh".to_string(),
+    ];
+    args.extend(pkgs.iter().map(pkg_operand));
+    args
+}
+
 fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStatus> {
     let mut installed: HashMap<&str, &str> = HashMap::new();
     for line in output.lines() {
@@ -107,17 +139,7 @@ impl SystemPackageManager for DnfManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        let mut args = vec!["install".to_string(), "-y".to_string()];
-        if opts.update {
-            args.push("--refresh".to_string());
-        }
-        // `--` keeps package operands from being parsed as dnf options;
-        // pins render to rpm's native name-version(-release) syntax
-        args.push("--".to_string());
-        args.extend(pkgs.iter().map(|p| match &p.version {
-            Some(v) => format!("{}-{v}", p.name),
-            None => p.name.clone(),
-        }));
+        let args = install_args(pkgs, opts);
         if opts.dry_run {
             miseprintln!("{}", sudo::argv("dnf", &args).join(" "));
             return Ok(());
@@ -126,20 +148,7 @@ impl SystemPackageManager for DnfManager {
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        // --refresh: expire cached metadata so "upgrade" actually sees new
-        // versions; `dnf upgrade <pkg>` only touches already-installed
-        // packages (a pin downgrade would need `dnf install name-version`,
-        // which the install path already provides)
-        let mut args = vec![
-            "upgrade".to_string(),
-            "-y".to_string(),
-            "--refresh".to_string(),
-            "--".to_string(),
-        ];
-        args.extend(pkgs.iter().map(|p| match &p.version {
-            Some(v) => format!("{}-{v}", p.name),
-            None => p.name.clone(),
-        }));
+        let args = upgrade_args(pkgs);
         if opts.dry_run {
             miseprintln!("{}", sudo::argv("dnf", &args).join(" "));
             return Ok(());
@@ -158,6 +167,43 @@ mod tests {
             version: version.map(str::to_string),
             tap_url: None,
         }
+    }
+
+    #[test]
+    fn test_install_args_no_separator() {
+        let pkgs = vec![req("ripgrep", None), req("bat", Some("0.24.0"))];
+        let opts = InstallOpts {
+            dry_run: false,
+            update: false,
+        };
+        let args = install_args(&pkgs, &opts);
+        // DNF5 rejects a bare `--` on subcommands; it must never appear
+        assert!(args.iter().all(|a| a != "--"));
+        assert_eq!(args, vec!["install", "-y", "ripgrep", "bat-0.24.0"]);
+    }
+
+    #[test]
+    fn test_install_args_update_adds_refresh() {
+        let pkgs = vec![req("ripgrep", None)];
+        let opts = InstallOpts {
+            dry_run: false,
+            update: true,
+        };
+        let args = install_args(&pkgs, &opts);
+        assert!(args.iter().all(|a| a != "--"));
+        // --refresh precedes the operands, after the subcommand flags
+        assert_eq!(args, vec!["install", "-y", "--refresh", "ripgrep"]);
+    }
+
+    #[test]
+    fn test_upgrade_args_no_separator() {
+        let pkgs = vec![req("ripgrep", None), req("bat", Some("0.24.0"))];
+        let args = upgrade_args(&pkgs);
+        assert!(args.iter().all(|a| a != "--"));
+        assert_eq!(
+            args,
+            vec!["upgrade", "-y", "--refresh", "ripgrep", "bat-0.24.0"]
+        );
     }
 
     #[test]
