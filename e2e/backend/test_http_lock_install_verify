@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+# Full loop: `mise lock` resolves a published checksum (SHASUMS) for the http
+# backend, and a subsequent install verifies the artifact against that locked
+# checksum. A tampered lock checksum must make the install fail.
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+SRV="$PWD/srv"
+mkdir -p "$SRV"
+
+# sha256 of the artifact bytes; BAD_SHA is a non-matching hash.
+REAL_SHA="34a3c3a03073287eea9375cd9838e60a3b875715005eb2cc854a4461cf2c428d"
+BAD_SHA="5acbfff1b086e0f920c5857527976199018afe0cbf16e28d42c7eb9c683508e5"
+
+printf '#!/bin/sh\necho mytool ok\n' >"$SRV/mytool"
+printf '%s  mytool\n' "$REAL_SHA" >"$SRV/mytool_SHASUMS"
+
+# Serve the directory on an ephemeral port
+PORT_FILE="$TMPDIR/mise_lock_verify_port"
+python3 - "$SRV" "$PORT_FILE" <<'PY' &
+import http.server, socketserver, sys, os
+srv, port_file = sys.argv[1], sys.argv[2]
+os.chdir(srv)
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
+    with open(port_file, "w") as f:
+        f.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "lock verify port file" 30 "$SERVER_PID"
+PORT=$(cat "$PORT_FILE")
+
+cat >mise.toml <<EOF
+[tools."http:mytool-lock-verify"]
+version = "1.0.0"
+bin = "mytool"
+url = "http://127.0.0.1:${PORT}/mytool"
+checksum_url = "http://127.0.0.1:${PORT}/mytool_SHASUMS"
+EOF
+
+# Lock resolves the published checksum for the current platform.
+mise lock --platform "$PLATFORM"
+assert_contains "cat mise.lock" "sha256:${REAL_SHA}"
+
+# Install verifies the downloaded artifact against the locked checksum.
+mise install --locked
+assert_contains "mise x -- mytool" "mytool ok"
+
+# Tamper with the locked checksum: install must now fail on mismatch.
+sed "s/${REAL_SHA}/${BAD_SHA}/" mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
+assert_fail "mise install --locked -f"
