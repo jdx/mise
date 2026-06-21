@@ -6,10 +6,12 @@ use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
-#[cfg(unix)]
+#[cfg(any(linux, macos))]
 use crate::file::ExtractOptions;
 use crate::file::display_path;
-use crate::http::{HTTP, HTTP_FETCH};
+#[cfg(any(linux, macos, windows))]
+use crate::http::HTTP;
+use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::lockfile::PlatformInfo;
@@ -101,12 +103,14 @@ impl ErlangPlugin {
         format!("OTP-{version}")
     }
 
+    #[cfg(any(linux, macos, windows))]
     fn lockfile_url(&self, tv: &ToolVersion) -> Option<String> {
         tv.lock_platforms
             .get(&self.get_platform_key())
             .and_then(|p| p.url.clone())
     }
 
+    #[cfg(any(linux, macos, windows))]
     fn set_lockfile_info(&self, tv: &mut ToolVersion, url: &str, checksum: Option<String>) {
         let platform_info = tv
             .lock_platforms
