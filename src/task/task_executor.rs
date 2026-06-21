@@ -855,8 +855,14 @@ impl TaskExecutor {
         let script = script.trim_start();
         // For display, skip leading shebang/blank/`set ...` boilerplate and join
         // backslash-continued lines so the header shows the first real command as a
-        // single logical line (see display_first_command).
-        let display_script = display_first_command(script);
+        // single logical line (see display_first_command). When show_full_cmd is set,
+        // keep the whole script instead — the reduction would otherwise discard every
+        // line past the first command, making the setting a no-op (#10469, #9844).
+        let display_script = if Settings::get().task.show_full_cmd {
+            script.to_string()
+        } else {
+            display_first_command(script)
+        };
         let args_str = args.join(" ");
         let cmd = match (display_script.is_empty(), args_str.is_empty()) {
             (true, true) => "$".to_string(),
