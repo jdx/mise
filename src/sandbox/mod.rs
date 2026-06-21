@@ -84,26 +84,17 @@ impl SandboxConfig {
     }
 
     /// Compute effective deny flags, accounting for allow_* implying deny_*.
-    #[cfg_attr(
-        not(any(target_os = "linux", target_os = "macos")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
     pub fn effective_deny_read(&self) -> bool {
         self.deny_read || !self.allow_read.is_empty()
     }
 
-    #[cfg_attr(
-        not(any(target_os = "linux", target_os = "macos")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
     pub fn effective_deny_write(&self) -> bool {
         self.deny_write || !self.allow_write.is_empty()
     }
 
-    #[cfg_attr(
-        not(any(target_os = "linux", target_os = "macos")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
     pub fn effective_deny_net(&self) -> bool {
         self.deny_net || !self.allow_net.is_empty()
     }
