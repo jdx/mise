@@ -359,6 +359,20 @@ impl NodePlugin {
         }
     }
 
+    async fn npm<'a>(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        pr: &'a dyn SingleReport,
+    ) -> Result<CmdLineRunner<'a>> {
+        Ok(CmdLineRunner::new(self.npm_path(tv))
+            .with_pr(pr)
+            .envs(config.env().await?)
+            .envs(tv.install_env())
+            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
+            .env("NPM_CONFIG_UPDATE_NOTIFIER", "false"))
+    }
+
     fn corepack_path(&self, tv: &ToolVersion) -> PathBuf {
         if cfg!(windows) {
             tv.install_path().join("corepack.cmd")
@@ -388,15 +402,11 @@ impl NodePlugin {
         }
         for package in packages {
             pr.set_message(format!("install default package: {package}"));
-            let npm = self.npm_path(tv);
-            CmdLineRunner::new(npm)
-                .with_pr(pr)
+            self.npm(config, tv, pr)
+                .await?
                 .arg("install")
                 .arg("--global")
                 .arg(package)
-                .envs(config.env().await?)
-                .envs(tv.install_env())
-                .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
         Ok(())
@@ -457,13 +467,7 @@ impl NodePlugin {
         pr: &dyn SingleReport,
     ) -> Result<()> {
         pr.set_message("npm -v".into());
-        CmdLineRunner::new(self.npm_path(tv))
-            .with_pr(pr)
-            .arg("-v")
-            .envs(config.env().await?)
-            .envs(tv.install_env())
-            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
-            .execute()
+        self.npm(config, tv, pr).await?.arg("-v").execute()
     }
 
     fn shasums_url(&self, v: &str, tarball_name: &str) -> Result<Url> {
