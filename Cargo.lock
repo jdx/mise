@@ -75,7 +75,7 @@ dependencies = [
  "base64 0.21.7",
  "bcrypt-pbkdf",
  "bech32",
- "cbc",
+ "cbc 0.1.2",
  "chacha20poly1305",
  "cipher 0.4.4",
  "cookie-factory",
@@ -1158,6 +1158,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "block-padding"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "710f1dd022ef4e93f8a438b4ba958de7f64308434fa6a87104481645cc30068b"
+dependencies = [
+ "hybrid-array",
+]
+
+[[package]]
 name = "blowfish"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1319,6 +1328,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26b52a9543ae338f279b96b0b9fed9c8093744685043739079ce85cd58f289a6"
 dependencies = [
  "cipher 0.4.4",
+]
+
+[[package]]
+name = "cbc"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce2dc9ee5f88d11e0beb842c88b33c8a5cf0d1329c4b19494af42b07dbfe8896"
+dependencies = [
+ "cipher 0.5.2",
 ]
 
 [[package]]
@@ -4603,7 +4621,7 @@ version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "879f10e63c20629ecabbb64a8010319738c66a5cd0c29b02d63d272b03751d01"
 dependencies = [
- "block-padding",
+ "block-padding 0.3.3",
  "generic-array",
 ]
 
@@ -4613,6 +4631,7 @@ version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4250ce6452e92010fdf7268ccc5d14faa80bb12fc741938534c58f16804e03c7"
 dependencies = [
+ "block-padding 0.4.2",
  "hybrid-array",
 ]
 
@@ -5366,7 +5385,7 @@ dependencies = [
  "serde_ignored",
  "serde_json",
  "serde_yaml",
- "sevenz-rust2",
+ "sevenz-rust2 0.21.0",
  "sha1 0.11.0",
  "sha2 0.11.0",
  "shell-escape",
@@ -8034,15 +8053,27 @@ version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29225600349ef74beda5a9fffb36ac660a24613c0bde9315d0c49be1d51e9c24"
 dependencies = [
- "aes 0.8.4",
+ "crc32fast",
+ "js-sys",
+ "lzma-rust2",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "sevenz-rust2"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbbd24232798280d6bc896e3429a3469174de008ec8b1b591a96618b46664195"
+dependencies = [
+ "aes 0.9.1",
  "bzip2 0.6.1",
- "cbc",
+ "cbc 0.2.1",
  "crc32fast",
  "getrandom 0.4.2",
  "js-sys",
  "lzma-rust2",
  "ppmd-rust",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "wasm-bindgen",
 ]
 
@@ -9391,7 +9422,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
- "sevenz-rust2",
+ "sevenz-rust2 0.20.2",
  "strum 0.27.2",
  "tempfile",
  "thiserror 2.0.18",
