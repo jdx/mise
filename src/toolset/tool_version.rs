@@ -374,6 +374,12 @@ impl ToolVersion {
             opts.filters_installed_versions() && !is_offline && !prefer_offline;
 
         if v == "latest" {
+            if prefer_offline && !opts.latest_versions {
+                if let Some(v) = backend.latest_installed_version(None)? {
+                    return build(v);
+                }
+                return build(v);
+            }
             if !opts.latest_versions
                 && !should_filter_installed_versions
                 && let Some(v) = backend.latest_installed_version(None)?
@@ -421,6 +427,12 @@ impl ToolVersion {
             // zig@master), never an unrelated installed release, so we don't
             // short-circuit zig@master to a stable version that happens to be
             // installed.
+            if prefer_offline && !opts.latest_versions {
+                if let Some(installed) = backend.latest_installed_channel_version(&v) {
+                    return build(installed);
+                }
+                return build(v);
+            }
             if !opts.latest_versions
                 && !should_filter_installed_versions
                 && let Some(installed) = backend.latest_installed_channel_version(&v)
@@ -456,6 +468,16 @@ impl ToolVersion {
                 if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
         ) && crate::semver::is_npm_semver_range_query(&v)
         {
+            if prefer_offline && !opts.latest_versions {
+                let installed_versions = backend.list_installed_versions();
+                if let Some(matches) =
+                    crate::semver::npm_semver_range_filter(&installed_versions, &v)
+                    && let Some(v) = matches.last()
+                {
+                    return build(v.clone());
+                }
+                return build(v);
+            }
             if !opts.latest_versions && !should_filter_installed_versions {
                 let installed_versions = backend.list_installed_versions();
                 if let Some(matches) =
@@ -584,6 +606,12 @@ impl ToolVersion {
         let is_offline = settings.offline() || opts.offline;
         let should_filter_installed_versions =
             opts.filters_installed_versions() && !is_offline && !settings.prefer_offline();
+        if settings.prefer_offline() && !opts.latest_versions {
+            if let Some(v) = backend.list_installed_versions_matching(prefix).last() {
+                return Ok(Self::new(request, v.to_string()));
+            }
+            return Ok(Self::new(request, prefix.to_string()));
+        }
         if !opts.latest_versions
             && !should_filter_installed_versions
             && let Some(v) = backend.list_installed_versions_matching(prefix).last()
