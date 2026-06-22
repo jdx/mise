@@ -842,7 +842,7 @@ impl BootstrapMacosDefaultsStatus {
                         json_entries.push(json!({
                             "domain": s.request.domain,
                             "key": s.request.key,
-                            "value": s.request.value.to_json(),
+                            "value": s.request.value,
                             "current": current,
                             "state": state,
                         }));

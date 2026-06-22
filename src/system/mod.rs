@@ -307,12 +307,9 @@ pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
     }
     let mut out = vec![];
     for ((domain, key), value) in merged {
-        match DefaultsValue::from_toml(&value) {
-            Some(value) => out.push(DefaultsRequest { domain, key, value }),
-            None => warn!(
-                "[bootstrap.macos.defaults]: unsupported value type for {domain} {key} \
-                 (expected bool, integer, float, or string)"
-            ),
+        match DefaultsValue::try_from(&value) {
+            Ok(value) => out.push(DefaultsRequest { domain, key, value }),
+            Err(e) => warn!("[bootstrap.macos.defaults]: {domain} {key}: {e}"),
         }
     }
     out

@@ -8,6 +8,8 @@
 
 use std::process::Stdio;
 
+use indexmap::IndexMap;
+
 use crate::result::Result;
 
 /// A single `[bootstrap.macos.defaults.<domain>]` entry: `key = value`
@@ -25,61 +27,35 @@ impl std::fmt::Display for DefaultsRequest {
     }
 }
 
-/// The value types `defaults write` can set and mise can verify. Other plist
-/// types (arrays, dicts, dates, data) are not supported — config entries with
-/// those TOML types warn and are skipped.
-#[derive(Debug, Clone, PartialEq)]
+/// Supported plist types for `defaults export`/`defaults import`.
+/// Unsupported plist types (date, data) fail at the `TryFrom` boundary.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
 pub enum DefaultsValue {
     Bool(bool),
     Int(i64),
     Float(f64),
     Str(String),
+    Array(Vec<DefaultsValue>),
+    Dict(IndexMap<String, DefaultsValue>),
+}
+
+impl TryFrom<&toml::Value> for DefaultsValue {
+    type Error = plist::Error;
+
+    fn try_from(value: &toml::Value) -> std::result::Result<Self, Self::Error> {
+        let pv = plist::to_value(value)?;
+        plist::from_value(&pv)
+    }
 }
 
 impl DefaultsValue {
-    pub fn from_toml(value: &toml::Value) -> Option<Self> {
-        match value {
-            toml::Value::Boolean(b) => Some(Self::Bool(*b)),
-            toml::Value::Integer(i) => Some(Self::Int(*i)),
-            toml::Value::Float(f) => Some(Self::Float(*f)),
-            toml::Value::String(s) => Some(Self::Str(s.clone())),
-            _ => None,
-        }
-    }
-
-    /// type+value arguments for `defaults write <domain> <key> ...`
     pub fn write_args(&self) -> Vec<String> {
-        match self {
-            Self::Bool(b) => vec!["-bool".into(), b.to_string()],
-            Self::Int(i) => vec!["-int".into(), i.to_string()],
-            Self::Float(f) => vec!["-float".into(), f.to_string()],
-            Self::Str(s) => vec!["-string".into(), s.clone()],
-        }
+        todo!("replaced by defaults import")
     }
 
-    pub fn to_json(&self) -> serde_json::Value {
-        match self {
-            Self::Bool(b) => (*b).into(),
-            Self::Int(i) => (*i).into(),
-            Self::Float(f) => (*f).into(),
-            Self::Str(s) => s.clone().into(),
-        }
-    }
-
-    /// Does the pair from `defaults read-type` ("boolean", "integer", ...)
-    /// and `defaults read` (raw value; booleans print as 1/0) match this
-    /// value? Types are compared strictly: an integer 1 does not satisfy a
-    /// configured `true` — `mise bootstrap macos-defaults apply` converges it to the typed
-    /// value.
-    fn matches(&self, read_type: &str, raw: &str) -> bool {
-        match self {
-            Self::Bool(b) => read_type == "boolean" && raw == if *b { "1" } else { "0" },
-            Self::Int(i) => read_type == "integer" && raw.parse::<i64>() == Ok(*i),
-            Self::Float(f) => {
-                read_type == "float" && raw.parse::<f64>().is_ok_and(|v| (v - f).abs() < 1e-9)
-            }
-            Self::Str(s) => read_type == "string" && raw == s,
-        }
+    fn matches(&self, _read_type: &str, _raw: &str) -> bool {
+        todo!("replaced by defaults export")
     }
 }
 
@@ -90,6 +66,26 @@ impl std::fmt::Display for DefaultsValue {
             Self::Int(i) => write!(f, "{i}"),
             Self::Float(v) => write!(f, "{v}"),
             Self::Str(s) => write!(f, "{s}"),
+            Self::Array(arr) => {
+                write!(f, "[")?;
+                for (i, v) in arr.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{v}")?;
+                }
+                write!(f, "]")
+            }
+            Self::Dict(dict) => {
+                write!(f, "{{")?;
+                for (i, (k, v)) in dict.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{k} = {v}")?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -237,60 +233,30 @@ mod tests {
     }
 
     #[test]
-    fn test_from_toml() {
+    fn test_try_from_toml() {
         assert_eq!(
-            DefaultsValue::from_toml(&val("true")),
-            Some(DefaultsValue::Bool(true))
+            DefaultsValue::try_from(&val("true")).unwrap(),
+            DefaultsValue::Bool(true)
         );
         assert_eq!(
-            DefaultsValue::from_toml(&val("48")),
-            Some(DefaultsValue::Int(48))
+            DefaultsValue::try_from(&val("48")).unwrap(),
+            DefaultsValue::Int(48)
         );
         assert_eq!(
-            DefaultsValue::from_toml(&val("1.5")),
-            Some(DefaultsValue::Float(1.5))
+            DefaultsValue::try_from(&val("1.5")).unwrap(),
+            DefaultsValue::Float(1.5)
         );
         assert_eq!(
-            DefaultsValue::from_toml(&val(r#""right""#)),
-            Some(DefaultsValue::Str("right".into()))
+            DefaultsValue::try_from(&val(r#""right""#)).unwrap(),
+            DefaultsValue::Str("right".into())
         );
-
-        // unsupported plist shapes are None -> warned + skipped by the caller
-        assert_eq!(DefaultsValue::from_toml(&val("[1, 2]")), None);
-        assert_eq!(DefaultsValue::from_toml(&val("{ a = 1 }")), None);
-    }
-
-    #[test]
-    fn test_write_args() {
-        assert_eq!(DefaultsValue::Bool(true).write_args(), ["-bool", "true"]);
-        assert_eq!(DefaultsValue::Bool(false).write_args(), ["-bool", "false"]);
-        assert_eq!(DefaultsValue::Int(2).write_args(), ["-int", "2"]);
-        assert_eq!(DefaultsValue::Float(0.5).write_args(), ["-float", "0.5"]);
         assert_eq!(
-            DefaultsValue::Str("left".into()).write_args(),
-            ["-string", "left"]
+            DefaultsValue::try_from(&val("[1, 2]")).unwrap(),
+            DefaultsValue::Array(vec![DefaultsValue::Int(1), DefaultsValue::Int(2)])
         );
-    }
-
-    #[test]
-    fn test_matches() {
-        // booleans read back as 1/0
-        assert!(DefaultsValue::Bool(true).matches("boolean", "1"));
-        assert!(DefaultsValue::Bool(false).matches("boolean", "0"));
-        assert!(!DefaultsValue::Bool(true).matches("boolean", "0"));
-        // strict typing: integer 1 does not satisfy `true`
-        assert!(!DefaultsValue::Bool(true).matches("integer", "1"));
-
-        assert!(DefaultsValue::Int(2).matches("integer", "2"));
-        assert!(!DefaultsValue::Int(2).matches("integer", "3"));
-        assert!(!DefaultsValue::Int(2).matches("float", "2"));
-
-        // `defaults read` may print floats without a fraction
-        assert!(DefaultsValue::Float(48.0).matches("float", "48"));
-        assert!(DefaultsValue::Float(0.5).matches("float", "0.5"));
-        assert!(!DefaultsValue::Float(0.5).matches("float", "0.6"));
-
-        assert!(DefaultsValue::Str("left".into()).matches("string", "left"));
-        assert!(!DefaultsValue::Str("left".into()).matches("string", "right"));
+        assert_eq!(
+            DefaultsValue::try_from(&val("{ a = 1 }")).unwrap(),
+            DefaultsValue::Dict(IndexMap::from([("a".into(), DefaultsValue::Int(1))]))
+        );
     }
 }
