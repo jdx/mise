@@ -1670,6 +1670,7 @@ impl AquaBackend {
         )?;
         let checksum_val = format!("{}:{}", checksum_config.algorithm(), checksum_str);
         if let Some(expected) = expected_checksum
+            && same_checksum_algorithm(expected, &checksum_val)
             && expected != checksum_val
         {
             bail!(
@@ -2291,6 +2292,7 @@ impl AquaBackend {
                 let platform_key = self.get_platform_key();
                 let platform_info = tv.lock_platforms.entry(platform_key).or_default();
                 if let Some(existing_checksum) = &platform_info.checksum
+                    && same_checksum_algorithm(existing_checksum, &checksum_val)
                     && existing_checksum != &checksum_val
                 {
                     bail!(
@@ -2839,6 +2841,13 @@ fn same_disk_entry(a: &Path, b: &Path) -> bool {
             (Ok(ac), Ok(bc)) => ac == bc,
             _ => false,
         }
+    }
+}
+
+fn same_checksum_algorithm(a: &str, b: &str) -> bool {
+    match (a.split_once(':'), b.split_once(':')) {
+        (Some((a_algo, _)), Some((b_algo, _))) => a_algo.eq_ignore_ascii_case(b_algo),
+        _ => true,
     }
 }
 
@@ -4050,6 +4059,13 @@ mod lock_candidate_tests {
         let (v, candidates) = build_lock_candidates("10.20.0", None, None);
         assert_eq!(v, "10.20.0");
         assert_eq!(candidates, vec!["v10.20.0", "10.20.0"]);
+    }
+
+    #[test]
+    fn test_same_checksum_algorithm() {
+        assert!(same_checksum_algorithm("sha256:abc", "SHA256:def"));
+        assert!(!same_checksum_algorithm("sha256:abc", "sha512:def"));
+        assert!(same_checksum_algorithm("abc", "sha256:def"));
     }
 
     #[test]
