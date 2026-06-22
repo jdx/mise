@@ -45,6 +45,13 @@ impl Backend for GemBackend {
         true
     }
 
+    /// Gem installs packages from rubygems.org via `gem install <name> --version`.
+    /// It doesn't download a single lockable artifact URL, so lockfile URLs are not
+    /// applicable and `--locked` mode should not require one.
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Get the gem source URL using the mise-managed Ruby environment
         let source_url = self.get_gem_source(config).await;
