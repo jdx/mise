@@ -621,11 +621,13 @@ impl Backend for AquaBackend {
 
         let cache_key = opts.lockfile_options()?;
         let cache: CacheManager<Vec<PathBuf>> =
-            // `bin_paths_v2`: the cached value changed meaning (now the
-            // unfiltered candidate dirs, existence checked live below), so old
-            // `bin_paths` caches — including ones poisoned with `[]` before this
-            // fix — are ignored rather than trusted (#6468).
-            CacheManagerBuilder::new(tv.cache_path().join("bin_paths_v2.msgpack.z"))
+            // The cached value now holds the unfiltered candidate dirs (existence
+            // checked live below), so pre-fix caches poisoned with `[]` (#6468)
+            // must not be trusted. No filename version bump is needed for that:
+            // `CacheManagerBuilder` folds `built_info::PKG_VERSION` into the cache
+            // key, so old caches are ignored automatically once this ships in a
+            // new mise version.
+            CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
                 .with_fresh_file(install_path.clone())
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .with_cache_key(format!("{cache_key:?}"))
