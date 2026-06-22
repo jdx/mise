@@ -71,6 +71,14 @@ get_arch() {
   fi
 }
 
+get_tls_suffix() {
+  if [ "${MISE_INSTALL_NATIVETLS-}" = "1" ] || [ "${MISE_INSTALL_NATIVETLS-}" = "true" ]; then
+    echo "-nativetls"
+  else
+    echo ""
+  fi
+}
+
 get_ext() {
   if [ -n "${MISE_INSTALL_EXT:-}" ]; then
     echo "$MISE_INSTALL_EXT"
@@ -118,6 +126,8 @@ get_checksum() {
   os=$2
   arch=$3
   ext=$4
+  tls_suffix=${5:-}
+  use_latest=${6:-0}
   url="https://github.com/jdx/mise/releases/download/v${version}/SHASUMS256.txt"
   current_version="$MISE_CURRENT_VERSION"
   current_version="${current_version#v}"
@@ -141,64 +151,72 @@ get_checksum() {
     checksum_linux_armv7_musl_zstd="$MISE_CHECKSUM_LINUX_ARMV7_MUSL_ZSTD"
     checksum_macos_x86_64_zstd="$MISE_CHECKSUM_MACOS_X86_64_ZSTD"
     checksum_macos_arm64_zstd="$MISE_CHECKSUM_MACOS_ARM64_ZSTD"
+    checksum_linux_x86_64_nativetls="$MISE_CHECKSUM_LINUX_X86_64_NATIVETLS"
+    checksum_linux_x86_64_musl_nativetls="$MISE_CHECKSUM_LINUX_X86_64_MUSL_NATIVETLS"
+    checksum_linux_arm64_nativetls="$MISE_CHECKSUM_LINUX_ARM64_NATIVETLS"
+    checksum_linux_arm64_musl_nativetls="$MISE_CHECKSUM_LINUX_ARM64_MUSL_NATIVETLS"
+    checksum_linux_armv7_nativetls="$MISE_CHECKSUM_LINUX_ARMV7_NATIVETLS"
+    checksum_linux_armv7_musl_nativetls="$MISE_CHECKSUM_LINUX_ARMV7_MUSL_NATIVETLS"
+    checksum_macos_x86_64_nativetls="$MISE_CHECKSUM_MACOS_X86_64_NATIVETLS"
+    checksum_macos_arm64_nativetls="$MISE_CHECKSUM_MACOS_ARM64_NATIVETLS"
+    checksum_linux_x86_64_nativetls_zstd="$MISE_CHECKSUM_LINUX_X86_64_NATIVETLS_ZSTD"
+    checksum_linux_x86_64_musl_nativetls_zstd="$MISE_CHECKSUM_LINUX_X86_64_MUSL_NATIVETLS_ZSTD"
+    checksum_linux_arm64_nativetls_zstd="$MISE_CHECKSUM_LINUX_ARM64_NATIVETLS_ZSTD"
+    checksum_linux_arm64_musl_nativetls_zstd="$MISE_CHECKSUM_LINUX_ARM64_MUSL_NATIVETLS_ZSTD"
+    checksum_linux_armv7_nativetls_zstd="$MISE_CHECKSUM_LINUX_ARMV7_NATIVETLS_ZSTD"
+    checksum_linux_armv7_musl_nativetls_zstd="$MISE_CHECKSUM_LINUX_ARMV7_MUSL_NATIVETLS_ZSTD"
+    checksum_macos_x86_64_nativetls_zstd="$MISE_CHECKSUM_MACOS_X86_64_NATIVETLS_ZSTD"
+    checksum_macos_arm64_nativetls_zstd="$MISE_CHECKSUM_MACOS_ARM64_NATIVETLS_ZSTD"
+    checksum_latest_linux_x86_64_nativetls="$MISE_CHECKSUM_LATEST_LINUX_X64_NATIVETLS"
+    checksum_latest_linux_x86_64_musl_nativetls="$MISE_CHECKSUM_LATEST_LINUX_X64_MUSL_NATIVETLS"
+    checksum_latest_linux_arm64_nativetls="$MISE_CHECKSUM_LATEST_LINUX_ARM64_NATIVETLS"
+    checksum_latest_linux_arm64_musl_nativetls="$MISE_CHECKSUM_LATEST_LINUX_ARM64_MUSL_NATIVETLS"
+    checksum_latest_linux_armv7_nativetls="$MISE_CHECKSUM_LATEST_LINUX_ARMV7_NATIVETLS"
+    checksum_latest_linux_armv7_musl_nativetls="$MISE_CHECKSUM_LATEST_LINUX_ARMV7_MUSL_NATIVETLS"
+    checksum_latest_macos_x86_64_nativetls="$MISE_CHECKSUM_LATEST_MACOS_X64_NATIVETLS"
+    checksum_latest_macos_arm64_nativetls="$MISE_CHECKSUM_LATEST_MACOS_ARM64_NATIVETLS"
+    checksum_latest_linux_x86_64_nativetls_zstd="$MISE_CHECKSUM_LATEST_LINUX_X64_NATIVETLS_ZSTD"
+    checksum_latest_linux_x86_64_musl_nativetls_zstd="$MISE_CHECKSUM_LATEST_LINUX_X64_MUSL_NATIVETLS_ZSTD"
+    checksum_latest_linux_arm64_nativetls_zstd="$MISE_CHECKSUM_LATEST_LINUX_ARM64_NATIVETLS_ZSTD"
+    checksum_latest_linux_arm64_musl_nativetls_zstd="$MISE_CHECKSUM_LATEST_LINUX_ARM64_MUSL_NATIVETLS_ZSTD"
+    checksum_latest_linux_armv7_nativetls_zstd="$MISE_CHECKSUM_LATEST_LINUX_ARMV7_NATIVETLS_ZSTD"
+    checksum_latest_linux_armv7_musl_nativetls_zstd="$MISE_CHECKSUM_LATEST_LINUX_ARMV7_MUSL_NATIVETLS_ZSTD"
+    checksum_latest_macos_x86_64_nativetls_zstd="$MISE_CHECKSUM_LATEST_MACOS_X64_NATIVETLS_ZSTD"
+    checksum_latest_macos_arm64_nativetls_zstd="$MISE_CHECKSUM_LATEST_MACOS_ARM64_NATIVETLS_ZSTD"
 
     # TODO: refactor this, it's a bit messy
+    latest_var=""
+    if [ "$use_latest" = "1" ]; then
+      latest_var="latest_"
+    fi
+    tls_var=""
+    if [ "$tls_suffix" = "-nativetls" ]; then
+      tls_var="_nativetls"
+    fi
+    ext_var=""
     if [ "$ext" = "tar.zst" ]; then
-      if [ "$os" = "linux" ]; then
-        if [ "$arch" = "x64" ]; then
-          echo "$checksum_linux_x86_64_zstd"
-        elif [ "$arch" = "x64-musl" ]; then
-          echo "$checksum_linux_x86_64_musl_zstd"
-        elif [ "$arch" = "arm64" ]; then
-          echo "$checksum_linux_arm64_zstd"
-        elif [ "$arch" = "arm64-musl" ]; then
-          echo "$checksum_linux_arm64_musl_zstd"
-        elif [ "$arch" = "armv7" ]; then
-          echo "$checksum_linux_armv7_zstd"
-        elif [ "$arch" = "armv7-musl" ]; then
-          echo "$checksum_linux_armv7_musl_zstd"
-        else
-          warn "no checksum for $os-$arch"
-        fi
-      elif [ "$os" = "macos" ]; then
-        if [ "$arch" = "x64" ]; then
-          echo "$checksum_macos_x86_64_zstd"
-        elif [ "$arch" = "arm64" ]; then
-          echo "$checksum_macos_arm64_zstd"
-        else
-          warn "no checksum for $os-$arch"
-        fi
-      else
-        warn "no checksum for $os-$arch"
-      fi
+      ext_var="_zstd"
+    fi
+    checksum_key=""
+    if [ "$os" = "linux" ]; then
+      case "$arch" in
+      x64) checksum_key="linux_x86_64" ;;
+      x64-musl) checksum_key="linux_x86_64_musl" ;;
+      arm64) checksum_key="linux_arm64" ;;
+      arm64-musl) checksum_key="linux_arm64_musl" ;;
+      armv7) checksum_key="linux_armv7" ;;
+      armv7-musl) checksum_key="linux_armv7_musl" ;;
+      esac
+    elif [ "$os" = "macos" ]; then
+      case "$arch" in
+      x64) checksum_key="macos_x86_64" ;;
+      arm64) checksum_key="macos_arm64" ;;
+      esac
+    fi
+    if [ -z "$checksum_key" ]; then
+      warn "no checksum for $os-$arch$tls_suffix"
     else
-      if [ "$os" = "linux" ]; then
-        if [ "$arch" = "x64" ]; then
-          echo "$checksum_linux_x86_64"
-        elif [ "$arch" = "x64-musl" ]; then
-          echo "$checksum_linux_x86_64_musl"
-        elif [ "$arch" = "arm64" ]; then
-          echo "$checksum_linux_arm64"
-        elif [ "$arch" = "arm64-musl" ]; then
-          echo "$checksum_linux_arm64_musl"
-        elif [ "$arch" = "armv7" ]; then
-          echo "$checksum_linux_armv7"
-        elif [ "$arch" = "armv7-musl" ]; then
-          echo "$checksum_linux_armv7_musl"
-        else
-          warn "no checksum for $os-$arch"
-        fi
-      elif [ "$os" = "macos" ]; then
-        if [ "$arch" = "x64" ]; then
-          echo "$checksum_macos_x86_64"
-        elif [ "$arch" = "arm64" ]; then
-          echo "$checksum_macos_arm64"
-        else
-          warn "no checksum for $os-$arch"
-        fi
-      else
-        warn "no checksum for $os-$arch"
-      fi
+      eval "echo \"\$checksum_${latest_var}${checksum_key}${tls_var}${ext_var}\""
     fi
   else
     if command -v curl >/dev/null 2>&1; then
@@ -214,9 +232,9 @@ get_checksum() {
     fi
     # TODO: verify with minisign or gpg if available
 
-    checksum="$(echo "$checksums" | grep "$os-$arch.$ext")"
+    checksum="$(echo "$checksums" | grep "$os-$arch$tls_suffix.$ext")"
     if ! echo "$checksum" | grep -Eq "^([0-9a-f]{32}|[0-9a-f]{64})"; then
-      warn "no checksum for mise $version and $os-$arch"
+      warn "no checksum for mise $version and $os-$arch$tls_suffix"
     else
       echo "$checksum"
     fi
@@ -258,13 +276,18 @@ install_mise() {
   os="${MISE_INSTALL_OS:-$(get_os)}"
   arch="${MISE_INSTALL_ARCH:-$(get_arch)}"
   ext="${MISE_INSTALL_EXT:-$(get_ext)}"
+  tls_suffix="$(get_tls_suffix)"
   install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
   install_dir="$(dirname "$install_path")"
   install_from_github="${MISE_INSTALL_FROM_GITHUB:-}"
+  use_latest_checksum=0
   if [ "$version" != "$current_version" ] || [ "$install_from_github" = "1" ] || [ "$install_from_github" = "true" ]; then
-    tarball_url="https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-${os}-${arch}.${ext}"
+    tarball_url="https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-${os}-${arch}${tls_suffix}.${ext}"
   elif [ -n "${MISE_TARBALL_URL-}" ]; then
     tarball_url="$MISE_TARBALL_URL"
+  elif [ -n "$tls_suffix" ]; then
+    tarball_url="https://mise.en.dev/mise-latest-${os}-${arch}${tls_suffix}.${ext}"
+    use_latest_checksum=1
   else
     tarball_url="https://mise.en.dev/v${version}/mise-v${version}-${os}-${arch}.${ext}"
   fi
@@ -274,7 +297,7 @@ install_mise() {
   debug "mise-setup: tarball=$cache_file"
 
   debug "validating checksum"
-  cd "$(dirname "$cache_file")" && get_checksum "$version" "$os" "$arch" "$ext" | "$(shasum_bin)" -c >/dev/null
+  cd "$(dirname "$cache_file")" && get_checksum "$version" "$os" "$arch" "$ext" "$tls_suffix" "$use_latest_checksum" | "$(shasum_bin)" -c >/dev/null
 
   # extract tarball
   if [ -d "$install_path" ]; then

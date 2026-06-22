@@ -70,7 +70,14 @@ linux-arm*)
 	;;
 esac
 
-features="rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored"
+features="self_update,vfox/vendored-lua,openssl/vendored"
+if [[ $MISE_BUILD_TLS == "nativetls" || $MISE_BUILD_TLS == "native-tls" ]]; then
+	basename=$basename-nativetls
+	features="$features,native-tls"
+else
+	features="$features,rustls-native-roots"
+fi
+
 if [[ $os == "linux" ]] && [[ $arch == "armv7" ]]; then
 	features="$features,aws-lc-rs"
 fi

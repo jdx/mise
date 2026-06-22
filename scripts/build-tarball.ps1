@@ -4,9 +4,15 @@ Set-StrictMode -Version Latest
 $Target = $args[0]
 $Version = ./scripts/get-version.ps1
 $BaseName = "mise-v$Version-$Env:OS-$Env:ARCH"
+if ($env:MISE_BUILD_TLS -in "nativetls", "native-tls") {
+	$BaseName = "$BaseName-nativetls"
+	$Features = "openssl/vendored"
+} else {
+	$Features = "rustls-native-roots,openssl/vendored"
+}
 
 # TODO: use "serious" feature
-cargo build --release --features rustls-native-roots,openssl/vendored --target "$Target"
+cargo build --release --features $Features --target "$Target"
 cargo build --release -p mise-shim --target "$Target"
 mkdir -p dist/mise/bin
 cp "target/$Target/release/mise.exe" dist/mise/bin/mise.exe

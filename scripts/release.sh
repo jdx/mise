@@ -23,37 +23,43 @@ platforms=(
 	macos-x64
 	macos-arm64
 )
-for platform in "${platforms[@]}"; do
-	cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
-	cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz"
-	cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.zst" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.zst"
-	zipsign sign tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" ~/.zipsign/mise.priv
-	zipsign verify tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$BASE_DIR/zipsign.pub"
-	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/mise-latest-$platform.tar.gz"
-	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/mise-latest-$platform.tar.xz"
-	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.zst" "$RELEASE_DIR/mise-latest-$platform.tar.zst"
-	tar -xvzf "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
-	cp -v mise/bin/mise "$RELEASE_DIR/mise-latest-$platform"
-	cp -v mise/bin/mise "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform"
+for tls_suffix in "" "-nativetls"; do
+	for platform in "${platforms[@]}"; do
+		cp artifacts/*/"mise-$MISE_VERSION-${platform}${tls_suffix}.tar.gz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.tar.gz"
+		cp artifacts/*/"mise-$MISE_VERSION-${platform}${tls_suffix}.tar.xz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.tar.xz"
+		cp artifacts/*/"mise-$MISE_VERSION-${platform}${tls_suffix}.tar.zst" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.tar.zst"
+		zipsign sign tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.tar.gz" ~/.zipsign/mise.priv
+		zipsign verify tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.tar.gz" "$BASE_DIR/zipsign.pub"
+		cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.tar.gz" "$RELEASE_DIR/mise-latest-${platform}${tls_suffix}.tar.gz"
+		cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.tar.xz" "$RELEASE_DIR/mise-latest-${platform}${tls_suffix}.tar.xz"
+		cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.tar.zst" "$RELEASE_DIR/mise-latest-${platform}${tls_suffix}.tar.zst"
+		tar -xvzf "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.tar.gz"
+		cp -v mise/bin/mise "$RELEASE_DIR/mise-latest-${platform}${tls_suffix}"
+		cp -v mise/bin/mise "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}"
+	done
 done
 
 windows_platforms=(
 	windows-arm64
 	windows-x64
 )
-for platform in "${windows_platforms[@]}"; do
-	cp artifacts/*/"mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip"
-	zipsign sign zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" ~/.zipsign/mise.priv
-	zipsign verify zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$BASE_DIR/zipsign.pub"
-	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/mise-latest-$platform.zip"
-	unzip -p "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" mise/bin/mise.exe >"$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.exe"
-	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.exe" "$RELEASE_DIR/mise-latest-$platform.exe"
+for tls_suffix in "" "-nativetls"; do
+	for platform in "${windows_platforms[@]}"; do
+		cp artifacts/*/"mise-$MISE_VERSION-${platform}${tls_suffix}.zip" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.zip"
+		zipsign sign zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.zip" ~/.zipsign/mise.priv
+		zipsign verify zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.zip" "$BASE_DIR/zipsign.pub"
+		cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.zip" "$RELEASE_DIR/mise-latest-${platform}${tls_suffix}.zip"
+		unzip -p "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.zip" mise/bin/mise.exe >"$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.exe"
+		cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-${platform}${tls_suffix}.exe" "$RELEASE_DIR/mise-latest-${platform}${tls_suffix}.exe"
+	done
 done
 
 echo "::group::Checksums"
 pushd "$RELEASE_DIR"
 cp mise-latest-linux-x64 mise-latest-linux-amd64
 cp mise-latest-macos-x64 mise-latest-macos-amd64
+cp mise-latest-linux-x64-nativetls mise-latest-linux-amd64-nativetls
+cp mise-latest-macos-x64-nativetls mise-latest-macos-amd64-nativetls
 sha256sum ./mise-latest-* >SHASUMS256.txt
 sha512sum ./mise-latest-* >SHASUMS512.txt
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS256.txt >SHASUMS256.asc

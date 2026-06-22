@@ -159,6 +159,8 @@ impl SelfUpdate {
         let target = format!("{}-{}", *OS, *ARCH);
         #[cfg(target_env = "musl")]
         let target = format!("{target}-musl");
+        #[cfg(all(feature = "native-tls", not(feature = "rustls-native-roots")))]
+        let target = format!("{target}-nativetls");
         // Always set target_version_tag to ensure we download the correct release
         // (fixes semver mismatch across year boundaries, e.g. 2025.x -> 2026.x)
         update.target_version_tag(&v);
@@ -201,7 +203,12 @@ impl SelfUpdate {
         use std::io::Read;
 
         let version = version.strip_prefix('v').unwrap_or(version);
-        let archive_name = format!("mise-v{version}-{}-{}.zip", *OS, *ARCH);
+        let target = format!("{}-{}", *OS, *ARCH);
+        #[cfg(target_env = "musl")]
+        let target = format!("{target}-musl");
+        #[cfg(all(feature = "native-tls", not(feature = "rustls-native-roots")))]
+        let target = format!("{target}-nativetls");
+        let archive_name = format!("mise-v{version}-{target}.zip");
         let url =
             format!("https://github.com/jdx/mise/releases/download/v{version}/{archive_name}",);
         debug!("Downloading mise-shim.exe from {url}");
