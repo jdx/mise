@@ -45,9 +45,9 @@ impl Backend for GemBackend {
         true
     }
 
-    /// Gem installs packages from rubygems.org via `gem install <name> --version`.
-    /// It doesn't download a single lockable artifact URL, so lockfile URLs are not
-    /// applicable and `--locked` mode should not require one.
+    /// Gem installs via `gem install`, delegating fetch/resolve to RubyGems rather
+    /// than downloading an artifact mise verifies, so a lockfile URL can't be
+    /// enforced even though rubygems.org exposes one. Opt out of `--locked`.
     fn supports_lockfile_url(&self) -> bool {
         false
     }
