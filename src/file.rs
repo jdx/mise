@@ -1783,9 +1783,7 @@ mod tests {
             r"\\?\UNC\wsl.localhost\DistroName\github\verzly\mise-php"
         )));
 
-        assert!(!is_unc_path(Path::new(
-            r"D:\github\verzly\mise-php"
-        )));
+        assert!(!is_unc_path(Path::new(r"D:\github\verzly\mise-php")));
     }
 
     #[test]
