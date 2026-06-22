@@ -111,9 +111,19 @@ fn main() -> eyre::Result<()> {
     // Installing `ring` as the process-wide default first means every
     // rustls connection -- including the AWS SDK's -- uses it instead;
     // first-install-wins, so this must run before anything else touches
-    // rustls. `ring` is otherwise unused dead code if this fails, which
-    // only happens if something already installed a provider before us.
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    // rustls. This only fails if something else (e.g. a transitive dep's
+    // static initializer) already installed a provider before us, which
+    // would silently reintroduce the segfault on affected platforms --
+    // eprintln! rather than warn!/debug! since logger::init() hasn't run
+    // yet this early in main().
+    if rustls::crypto::ring::default_provider()
+        .install_default()
+        .is_err()
+    {
+        eprintln!(
+            "mise: a rustls crypto provider was already installed before main() could set ring as the default; this may reintroduce a crash on platforms aws-lc-rs doesn't support (e.g. the BSDs)"
+        );
+    }
 
     let nprocs = std::thread::available_parallelism()
         .map(|n| n.get())
