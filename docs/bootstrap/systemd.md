@@ -57,8 +57,8 @@ and enable without keeping the unit running.
 - **User services only** — mise writes to `~/.config/systemd/user` and uses
   `systemctl --user`. System services in `/etc/systemd/system` are not
   supported.
-- **Target user only** — run mise as the user that owns the services, with an
-  active systemd user bus. `sudo mise` is skipped because `systemctl --user`
+- **Target user only** — run mise as the user who owns the services, with a
+  reachable systemd user manager. `sudo mise` is skipped because `systemctl --user`
   would target the wrong user manager.
 - **Manual application only** — mise never writes or starts systemd services
   implicitly; only `mise bootstrap systemd apply` and `mise bootstrap` do.

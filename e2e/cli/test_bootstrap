@@ -138,8 +138,9 @@ description = "sync files"
 exec_start = "~/.local/bin/my-sync --watch"
 restart = "on-failure"
 EOF
-DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/mise-test-bus assert_succeed "mise bootstrap --dry-run"
-DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/mise-test-bus assert_contains "mise bootstrap systemd status" "my-sync"
+mkdir -p runtime/systemd/private
+XDG_RUNTIME_DIR="$PWD/runtime" assert_succeed "mise bootstrap --dry-run"
+XDG_RUNTIME_DIR="$PWD/runtime" assert_contains "mise bootstrap systemd status" "my-sync"
 
 # unavailable system package managers are skipped, not errors
 cat <<EOF >mise.toml
