@@ -369,7 +369,8 @@ impl ToolVersion {
 
         let settings = Settings::get();
         let is_offline = settings.offline() || opts.offline;
-        let prefer_offline = settings.prefer_offline();
+        let prefer_offline =
+            settings.prefer_offline() && !matches!(request.source(), ToolSource::Argument);
         let prefer_offline_without_offline = prefer_offline && !is_offline;
         let should_filter_installed_versions =
             opts.filters_installed_versions() && !is_offline && !prefer_offline;
@@ -379,7 +380,6 @@ impl ToolVersion {
                 if let Some(v) = backend.latest_installed_version(None)? {
                     return build(v);
                 }
-                return build(v);
             }
             if !opts.latest_versions
                 && !should_filter_installed_versions
@@ -432,7 +432,6 @@ impl ToolVersion {
                 if let Some(installed) = backend.latest_installed_channel_version(&v) {
                     return build(installed);
                 }
-                return build(v);
             }
             if !opts.latest_versions
                 && !should_filter_installed_versions
@@ -477,7 +476,6 @@ impl ToolVersion {
                 {
                     return build(v.clone());
                 }
-                return build(v);
             }
             if !opts.latest_versions && !should_filter_installed_versions {
                 let installed_versions = backend.list_installed_versions();
@@ -605,13 +603,14 @@ impl ToolVersion {
         let backend = request.backend()?;
         let settings = Settings::get();
         let is_offline = settings.offline() || opts.offline;
+        let prefer_offline =
+            settings.prefer_offline() && !matches!(request.source(), ToolSource::Argument);
         let should_filter_installed_versions =
-            opts.filters_installed_versions() && !is_offline && !settings.prefer_offline();
-        if settings.prefer_offline() && !opts.latest_versions {
+            opts.filters_installed_versions() && !is_offline && !prefer_offline;
+        if prefer_offline && !opts.latest_versions {
             if let Some(v) = backend.list_installed_versions_matching(prefix).last() {
                 return Ok(Self::new(request, v.to_string()));
             }
-            return Ok(Self::new(request, prefix.to_string()));
         }
         if !opts.latest_versions
             && !should_filter_installed_versions
