@@ -621,34 +621,38 @@ impl Backend for AquaBackend {
 
         let cache_key = opts.lockfile_options()?;
         let cache: CacheManager<Vec<PathBuf>> =
-            CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
+            // `bin_paths_v2`: the cached value changed meaning (now the
+            // unfiltered candidate dirs, existence checked live below), so old
+            // `bin_paths` caches — including ones poisoned with `[]` before this
+            // fix — are ignored rather than trusted (#6468).
+            CacheManagerBuilder::new(tv.cache_path().join("bin_paths_v2.msgpack.z"))
                 .with_fresh_file(install_path.clone())
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .with_cache_key(format!("{cache_key:?}"))
                 .build();
 
-        let paths = cache
+        let candidates = cache
             .get_or_try_init_async(async || {
                 let pkg = self.package_with_options(tv, &[&tv.version]).await?;
-
-                let srcs = Self::srcs(&pkg, tv)?;
-                let paths = if srcs.is_empty() {
-                    vec![install_path.clone()]
-                } else {
-                    srcs.iter()
-                        .map(|link| link.dst.parent().unwrap().to_path_buf())
-                        .collect()
-                };
-                Ok(paths
-                    .into_iter()
-                    .unique()
-                    .filter(|p| p.exists())
-                    .filter_map(|p| p.strip_prefix(&install_path).ok().map(|p| p.to_path_buf()))
-                    .collect())
+                // Pure: no filesystem reads, so a mid-install call can never
+                // cache a transient-empty result.
+                Self::candidate_bin_paths_for_platform(
+                    &pkg,
+                    &tv.version,
+                    &install_path,
+                    os(),
+                    arch(),
+                )
             })
-            .await?
+            .await?;
+
+        let paths = candidates
             .iter()
-            .map(|p| p.mount(&runtime_path))
+            // Existence checked LIVE, on the install_path basis (matches the
+            // original pre-`strip_prefix` filter). Returned paths are
+            // runtime_path-based, exactly as before.
+            .filter(|rel| install_path.join(rel).exists())
+            .map(|rel| rel.mount(&runtime_path))
             .collect();
         Ok(paths)
     }
@@ -1792,45 +1796,52 @@ impl AquaBackend {
         }
     }
 
-    async fn get_version_tags(&self) -> Result<&Vec<(String, String)>> {
+    async fn get_version_tags(&self) -> Result<Vec<(String, String)>> {
         self.version_tags_cache
-            .get_or_try_init_async(|| async {
-                let pkg = AQUA_REGISTRY.package(&self.id).await?;
-                let mut versions = Vec::new();
-                if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
-                    // Always fetch the superset; install/lock resolution needs
-                    // every tag (including pre-releases) regardless of the
-                    // current `prerelease` opt, since the user may have pinned
-                    // a pre-release version under a project-local override.
-                    let tags = get_tags(&pkg).await?;
-                    let target = PlatformTarget::from_current();
-                    let (target_os, target_arch) = Self::to_aqua_platform(&target);
-                    let target_libc = Self::target_variant_libc(&target);
-                    for tag in tags.into_iter().rev() {
-                        let (version, _) = match versioned_package_from_tag(
-                            &pkg,
-                            &tag,
-                            target_os,
-                            target_arch,
-                            target_libc.as_deref(),
-                        ) {
-                            Ok(Some(versioned)) => versioned,
-                            Ok(None) => continue,
-                            Err(e) => {
-                                warn!("[{}] aqua version filter error: {e}", self.ba());
-                                continue;
-                            }
-                        };
-                        versions.push((version, tag));
+            .get_or_try_init_async_if(
+                || async {
+                    let pkg = AQUA_REGISTRY.package(&self.id).await?;
+                    let mut versions = Vec::new();
+                    if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
+                        // Always fetch the superset; install/lock resolution needs
+                        // every tag (including pre-releases) regardless of the
+                        // current `prerelease` opt, since the user may have pinned
+                        // a pre-release version under a project-local override.
+                        let tags = get_tags(&pkg).await?;
+                        let target = PlatformTarget::from_current();
+                        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+                        let target_libc = Self::target_variant_libc(&target);
+                        for tag in tags.into_iter().rev() {
+                            let (version, _) = match versioned_package_from_tag(
+                                &pkg,
+                                &tag,
+                                target_os,
+                                target_arch,
+                                target_libc.as_deref(),
+                            ) {
+                                Ok(Some(versioned)) => versioned,
+                                Ok(None) => continue,
+                                Err(e) => {
+                                    warn!("[{}] aqua version filter error: {e}", self.ba());
+                                    continue;
+                                }
+                            };
+                            versions.push((version, tag));
+                        }
+                    } else {
+                        bail!(
+                            "aqua package {} does not have repo_owner and/or repo_name.",
+                            self.id
+                        );
                     }
-                } else {
-                    bail!(
-                        "aqua package {} does not have repo_owner and/or repo_name.",
-                        self.id
-                    );
-                }
-                Ok(versions)
-            })
+                    Ok(versions)
+                },
+                // Don't cache an empty tag list: the all-filtered happy path can
+                // produce `[]` (valid repo, but no platform-matching release), and
+                // a transient registry blip could too. Caching it would persist a
+                // miss — same class as #9444 "don't cache empty version lists".
+                |versions| !versions.is_empty(),
+            )
             .await
     }
 
@@ -2688,8 +2699,34 @@ impl AquaBackend {
         Ok(())
     }
 
-    fn srcs(pkg: &AquaPackage, tv: &ToolVersion) -> Result<Vec<AquaFileLink>> {
-        Self::srcs_for_platform(pkg, &tv.version, &tv.install_path(), os(), arch())
+    /// Candidate bin-path *directories* for a package, relative to `install_path`.
+    ///
+    /// Pure with respect to install state: depends only on the package
+    /// definition and the target platform, NEVER on whether the paths currently
+    /// exist on disk. Callers (and the shim layer) filter existence live.
+    /// Keeping `.exists()` out of this function is what makes the result safe to
+    /// cache across processes — caching an existence-filtered value computed
+    /// mid-install is what dropped shims in #6468.
+    fn candidate_bin_paths_for_platform(
+        pkg: &AquaPackage,
+        version: &str,
+        install_path: &Path,
+        os: &str,
+        arch: &str,
+    ) -> Result<Vec<PathBuf>> {
+        let srcs = Self::srcs_for_platform(pkg, version, install_path, os, arch)?;
+        let paths: Vec<PathBuf> = if srcs.is_empty() {
+            vec![install_path.to_path_buf()]
+        } else {
+            srcs.iter()
+                .map(|link| link.dst.parent().unwrap().to_path_buf())
+                .collect()
+        };
+        Ok(paths
+            .into_iter()
+            .unique()
+            .filter_map(|p| p.strip_prefix(install_path).ok().map(|p| p.to_path_buf()))
+            .collect())
     }
 
     fn srcs_for_platform(
@@ -3542,6 +3579,37 @@ mod tests {
                 explicit_link: true,
             }]
         );
+    }
+
+    #[test]
+    fn test_candidate_bin_paths_independent_of_filesystem() {
+        // A package whose binary lives in a subdir of the install dir.
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![AquaFile {
+            name: "uv".to_string(),
+            src: Some("uv-bin/uv".to_string()),
+            ..Default::default()
+        }];
+
+        // An install path that does NOT exist on disk (simulates a mid-install
+        // call, before the binaries have been extracted).
+        let install_path = Path::new("/definitely/not/here/installs/uv/0.8.21");
+
+        let candidates = AquaBackend::candidate_bin_paths_for_platform(
+            &pkg,
+            "0.8.21",
+            install_path,
+            "linux",
+            "amd64",
+        )
+        .unwrap();
+
+        // The candidate dir is derived purely from the package definition; the
+        // fact that nothing exists on disk does NOT empty the result. This is
+        // the property that makes the cached value safe to persist — the old
+        // code's `.filter(|p| p.exists())` here is exactly what poisoned the
+        // cache mid-install (#6468).
+        assert_eq!(candidates, vec![PathBuf::from("uv-bin")]);
     }
 
     #[test]

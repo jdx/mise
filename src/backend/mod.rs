@@ -2381,6 +2381,15 @@ pub trait Backend: Debug + Send + Sync {
     ) -> Result<()> {
         Ok(())
     }
+    /// Return the candidate bin directories for this tool version.
+    ///
+    /// Return *candidates*: do NOT filter on whether they currently exist, and
+    /// do NOT cache an existence-filtered result. Existence is checked live by
+    /// the callers that need it (shim generation in `shims::list_tool_bins`, and
+    /// `which`); PATH-building callers tolerate missing dirs. Caching a
+    /// `.exists()`-filtered value computed mid-install is what dropped shims in
+    /// <https://github.com/jdx/mise/discussions/6468>: the cached value should be
+    /// a pure function of the tool definition, not of transient install state.
     async fn list_bin_paths(
         &self,
         _config: &Arc<Config>,

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Regression test for #6468: aqua list_bin_paths must not cache transient
+# filesystem state. The old code cached the result of `.filter(|p| p.exists())`
+# computed inside the cache closure; if the binary dir was not on disk yet
+# (mid-install during a concurrent `mise upgrade`), it cached an empty list and
+# every later reshim trusted that empty snapshot, so the uv/uvx shims were
+# never (re)created — and `mise reshim` could not repair it.
+#
+# This reproduces the poisoning deterministically (no concurrency race):
+#   1. install uv (shims present; cache holds the real bin dir)
+#   2. drop the bin_paths cache and move uv's binary dir aside so it "doesn't exist"
+#   3. reshim -> recomputes list_bin_paths with the dir absent
+#        buggy code: caches []  (the .exists() filter strips everything)
+#        fixed code: caches the registry-derived candidate dir (no .exists())
+#   4. restore the dir, then freeze the install dir's mtime into the past so the
+#      freshly-written cache stays "fresh" (a normal mtime bump would invalidate
+#      the cache and mask the bug)
+#   5. reshim again -> consumes the cached value
+#        buggy code: cached [] -> uv shim NOT created  (this test fails = RED)
+#        fixed code: cached candidate -> live .exists() now passes -> shim created (GREEN)
+
+export MISE_AQUA_GITHUB_ATTESTATIONS=0
+
+mise use -g "aqua:astral-sh/uv@0.8.21"
+mise reshim
+assert "test -f \"$MISE_DATA_DIR/shims/uv\""
+
+# Locate the install from the executable itself. The install short-name for the
+# explicit `aqua:astral-sh/uv` backend is `aqua-astral-sh-uv` (not `uv`), and the
+# binary lives in a per-platform subdir (e.g. uv-aarch64-apple-darwin/uv), so we
+# derive both the bin dir and the version dir (= tv.install_path()) from the exe.
+uv_exe="$(find "$MISE_DATA_DIR/installs" -type f -name uv | head -n1)"
+# Fail clearly if the executable wasn't located, so an empty result can't make
+# the dirname calls below fall back to "." and have the later mv/touch operate
+# on the current directory instead of the install.
+assert "test -n \"$uv_exe\""
+uv_bin_dir="$(dirname "$uv_exe")"         # .../<version>/uv-<triple>
+uv_version_dir="$(dirname "$uv_bin_dir")" # .../<version>  (== tv.install_path())
+
+# drop the cached bin paths so the next reshim recomputes (and re-caches) them
+find "$MISE_CACHE_DIR" -name 'bin_paths*.msgpack.z' -delete
+
+# make the candidate dir "not exist" at recompute time
+mv "$uv_bin_dir" "${uv_bin_dir}.bak"
+
+# recompute + cache list_bin_paths while the dir is absent
+mise reshim
+
+# restore the dir, then freeze the install dir mtime in the past so the cache
+# written above is still considered fresh on the next reshim
+mv "${uv_bin_dir}.bak" "$uv_bin_dir"
+touch -t 200001010000 "$uv_version_dir"
+
+# consume the cached value written while the dir was absent
+mise reshim
+
+# fixed: candidate was cached + dir now present -> shims exist
+# buggy: empty was cached -> shims missing (asserts fail = RED)
+assert "test -f \"$MISE_DATA_DIR/shims/uv\""
+assert "test -f \"$MISE_DATA_DIR/shims/uvx\""
