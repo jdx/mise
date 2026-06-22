@@ -530,11 +530,33 @@ pub fn make_symlink_or_copy(target: &Path, link: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
+fn is_unc_path(path: &Path) -> bool {
+    matches!(
+        path.components().next(),
+        Some(std::path::Component::Prefix(prefix))
+            if matches!(
+                prefix.kind(),
+                std::path::Prefix::UNC(..) | std::path::Prefix::VerbatimUNC(..)
+            )
+    )
+}
+
+#[cfg(windows)]
+fn create_windows_dir_link(target: &Path, link: &Path) -> std::io::Result<()> {
+    if is_unc_path(target) {
+        std::os::windows::fs::symlink_dir(target, link)
+    } else {
+        junction::create(target, link)
+    }
+}
+
+#[cfg(windows)]
 pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
-    if let Err(err) = junction::create(target, link) {
+    if let Err(err) = create_windows_dir_link(target, link) {
         if err.kind() == std::io::ErrorKind::AlreadyExists {
             let _ = fs::remove_file(link);
-            junction::create(target, link)
+            let _ = fs::remove_dir(link);
+            create_windows_dir_link(target, link)
         } else {
             Err(err)
         }
@@ -1746,6 +1768,24 @@ mod tests {
             leftovers.is_empty(),
             "temp symlink left behind: {leftovers:?}"
         );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_unc_path() {
+        assert!(is_unc_path(Path::new(
+            r"\\wsl.localhost\DistroName\github\verzly\mise-php"
+        )));
+        assert!(is_unc_path(Path::new(
+            r"\\wsl$\DistroName\github\verzly\mise-php"
+        )));
+        assert!(is_unc_path(Path::new(
+            r"\\?\UNC\wsl.localhost\DistroName\github\verzly\mise-php"
+        )));
+
+        assert!(!is_unc_path(Path::new(
+            r"D:\github\verzly\mise-php"
+        )));
     }
 
     #[test]
