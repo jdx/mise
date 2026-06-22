@@ -209,6 +209,17 @@ impl Backend for SwiftPlugin {
         &self.ba
     }
 
+    /// Swift download URLs are derived from the build host: OS, arch, and—on
+    /// Linux—the specific distro (e.g. `ubuntu24.04`, `amazonlinux2`,
+    /// `fedora39`, `ubi9`). The generic `<os>-<arch>` lock platform key can't
+    /// encode the distro, so a foreign-platform URL can't be resolved or
+    /// persisted to the lockfile from another host. Opt out of the `--locked`
+    /// URL requirement so installs don't hard-fail on platforms missing from
+    /// the lockfile; checksums are still verified at install time.
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
         use crate::backend::SecurityFeature;
 
