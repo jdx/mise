@@ -147,6 +147,15 @@ rattler_package_streaming = { version = "0.26", default-features = false }
 rattler_virtual_packages = { version = "3", default-features = false }
 regex = "1"
 plist = "1"
+# explicit dep (not just transitive) so the `ring` feature is compiled into
+# the unified rustls instance across the dependency graph -- see the
+# install_default() call in main.rs for why
+rustls = { version = "0.23", default-features = false, features = [
+  "ring",
+  "std",
+  "tls12",
+  "logging",
+] }
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "form",

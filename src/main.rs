@@ -103,6 +103,18 @@ pub(crate) use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 fn main() -> eyre::Result<()> {
+    // aws-config/aws-sdk-s3 pull in rustls with the aws-lc-rs crypto
+    // provider unconditionally (independent of this crate's own
+    // native-tls/rustls feature choice) via their `default-https-client`
+    // feature. aws-lc-rs's hand-written assembly only supports
+    // Linux/macOS/Windows and segfaults on other platforms (e.g. the BSDs).
+    // Installing `ring` as the process-wide default first means every
+    // rustls connection -- including the AWS SDK's -- uses it instead;
+    // first-install-wins, so this must run before anything else touches
+    // rustls. `ring` is otherwise unused dead code if this fails, which
+    // only happens if something already installed a provider before us.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let nprocs = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or_default();
