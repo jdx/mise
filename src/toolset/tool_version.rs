@@ -370,11 +370,12 @@ impl ToolVersion {
         let settings = Settings::get();
         let is_offline = settings.offline() || opts.offline;
         let prefer_offline = settings.prefer_offline();
+        let prefer_offline_without_offline = prefer_offline && !is_offline;
         let should_filter_installed_versions =
             opts.filters_installed_versions() && !is_offline && !prefer_offline;
 
         if v == "latest" {
-            if prefer_offline && !opts.latest_versions {
+            if prefer_offline_without_offline && !opts.latest_versions {
                 if let Some(v) = backend.latest_installed_version(None)? {
                     return build(v);
                 }
