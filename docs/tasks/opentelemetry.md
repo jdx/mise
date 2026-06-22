@@ -234,7 +234,8 @@ Now run any mise task and open `http://localhost:16686`.
 
 mise propagates trace context to child processes using the
 [OpenTelemetry Environment Carriers](https://opentelemetry.io/docs/specs/otel/context/env-carriers/)
-spec via the `TRACEPARENT` env var (W3C Traceparent format). This means:
+spec via the `TRACEPARENT` and `TRACESTATE` env vars (W3C Trace Context
+format). This means:
 
 - **Nested `mise run`** invocations automatically join the parent trace.
 - **Any OTEL-instrumented tool** a task invokes (Node.js, Go, Python, etc.)

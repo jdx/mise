@@ -358,6 +358,11 @@ impl TaskExecutor {
             // invokes automatically join this distributed trace.
             // https://opentelemetry.io/docs/specs/otel/context/env-carriers/
             crate::otel::task_run_telemetry::inject_otel_context(&mut env, ctx);
+            // Keep the W3C carrier vars out of __MISE_DIFF so a nested
+            // `mise hook-env` doesn't treat them as mise-managed env and
+            // unset/overwrite the trace context we're propagating.
+            nested_mise_diff_exclude_keys.insert("TRACEPARENT".to_string());
+            nested_mise_diff_exclude_keys.insert("TRACESTATE".to_string());
         }
         if let Some(cwd) = &*crate::dirs::CWD {
             Self::insert_env_excluded_from_nested_mise_diff(
