@@ -6,7 +6,7 @@ $Version = ./scripts/get-version.ps1
 $BaseName = "mise-v$Version-$Env:OS-$Env:ARCH"
 if ($env:MISE_BUILD_TLS -in "nativetls", "native-tls") {
 	$BaseName = "$BaseName-nativetls"
-	$Features = "openssl/vendored"
+	$Features = "native-tls,openssl/vendored"
 } else {
 	$Features = "rustls-native-roots,openssl/vendored"
 }
