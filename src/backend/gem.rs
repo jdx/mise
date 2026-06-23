@@ -45,6 +45,13 @@ impl Backend for GemBackend {
         true
     }
 
+    /// Gem installs via `gem install`, delegating fetch/resolve to RubyGems rather
+    /// than downloading an artifact mise verifies, so a lockfile URL can't be
+    /// enforced even though rubygems.org exposes one. Opt out of `--locked`.
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Get the gem source URL using the mise-managed Ruby environment
         let source_url = self.get_gem_source(config).await;
