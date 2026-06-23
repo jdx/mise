@@ -1,5 +1,53 @@
 # Changelog
 
+## [2026.6.13](https://github.com/jdx/mise/compare/v2026.6.12..v2026.6.13) - 2026-06-23
+
+### 🚀 Features
+
+- **(bootstrap)** support brew cask pkg artifacts by @jdx in [#10587](https://github.com/jdx/mise/pull/10587)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** allow verified checksum algorithm upgrades by @jdx in [#10569](https://github.com/jdx/mise/pull/10569)
+- **(aqua)** don't cache transient filesystem state in list_bin_paths by @devnulled in [#10559](https://github.com/jdx/mise/pull/10559)
+- **(aqua)** require config for attestation badge by @jdx in [#10588](https://github.com/jdx/mise/pull/10588)
+- **(file)** support Windows plugin symlinks for UNC paths by @rozsazoltan in [#10566](https://github.com/jdx/mise/pull/10566)
+- **(gem)** opt out of --locked URL check by @itochan in [#10578](https://github.com/jdx/mise/pull/10578)
+- **(lock)** fail when active tools cannot resolve by @jdx in [#10586](https://github.com/jdx/mise/pull/10586)
+- **(node)** suppress npm update notices by @risu729 in [#10557](https://github.com/jdx/mise/pull/10557)
+- **(node)** save source lock outcomes by @risu729 in [#10547](https://github.com/jdx/mise/pull/10547)
+- **(oci)** write long symlink targets via GNU @LongLink extension by @JamBalaya56562 in [#10519](https://github.com/jdx/mise/pull/10519)
+- **(sigstore)** retry transient GitHub attestation API failures by @afreyermuth98 in [#10482](https://github.com/jdx/mise/pull/10482)
+- **(swift)** opt out of --locked URL check by @AllDmeat in [#10575](https://github.com/jdx/mise/pull/10575)
+- **(task)** avoid remote resolution during task startup by @jdx in [#10571](https://github.com/jdx/mise/pull/10571)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance lockfile maintenance by @renovate[bot] in [#10560](https://github.com/jdx/mise/pull/10560)
+- In a pub workspace, look for package config in workspace root by @tjarvstrand in [#10521](https://github.com/jdx/mise/pull/10521)
+
+### 📦 Registry
+
+- add checksums for http-backend tools by @itochan in [#10552](https://github.com/jdx/mise/pull/10552)
+- add lore by @ggoggam in [#10558](https://github.com/jdx/mise/pull/10558)
+
+### New Contributors
+
+- @afreyermuth98 made their first contribution in [#10482](https://github.com/jdx/mise/pull/10482)
+- @AllDmeat made their first contribution in [#10575](https://github.com/jdx/mise/pull/10575)
+- @rozsazoltan made their first contribution in [#10566](https://github.com/jdx/mise/pull/10566)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`masasuzu/clrnd`](https://github.com/masasuzu/clrnd)
+
+#### Updated Packages (2)
+
+- [`apache/maven`](https://github.com/apache/maven)
+- [`nao1215/gup`](https://github.com/nao1215/gup)
+
 ## [2026.6.12](https://github.com/jdx/mise/compare/v2026.6.11..v2026.6.12) - 2026-06-21
 
 ### 🚀 Features

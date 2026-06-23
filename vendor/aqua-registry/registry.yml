@@ -13721,6 +13721,13 @@ packages:
       - version_constraint: semver("<= 3.2.5")
         url: https://archive.apache.org/dist/maven/maven-{{(semver .SemVer).Major}}/{{.SemVer}}/binaries/apache-maven-{{.SemVer}}-bin.{{.Format}}
         format: tar.gz
+        checksum:
+          type: http
+          url: https://archive.apache.org/dist/maven/maven-{{(semver .SemVer).Major}}/{{.SemVer}}/binaries/apache-maven-{{.SemVer}}-bin.{{.Format}}.sha1
+          file_format: regexp
+          algorithm: sha1
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{40}\b)
         files:
           - name: mvn
             src: apache-maven-{{.SemVer}}/bin/mvn
@@ -13729,9 +13736,34 @@ packages:
             files:
               - name: mvn
                 src: apache-maven-{{.SemVer}}/bin/mvn.bat
+      - version_constraint: semver("<= 3.3.1")
+        url: https://archive.apache.org/dist/maven/maven-{{(semver .SemVer).Major}}/{{.SemVer}}/binaries/apache-maven-{{.SemVer}}-bin.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: http
+          url: https://archive.apache.org/dist/maven/maven-{{(semver .SemVer).Major}}/{{.SemVer}}/binaries/apache-maven-{{.SemVer}}-bin.{{.Format}}.sha1
+          file_format: regexp
+          algorithm: sha1
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{40}\b)
+        files:
+          - name: mvn
+            src: apache-maven-{{.SemVer}}/bin/mvn
+        overrides:
+          - goos: windows
+            files:
+              - name: mvn
+                src: apache-maven-{{.SemVer}}/bin/mvn.cmd
       - version_constraint: "true"
         url: https://archive.apache.org/dist/maven/maven-{{(semver .SemVer).Major}}/{{.SemVer}}/binaries/apache-maven-{{.SemVer}}-bin.{{.Format}}
         format: tar.gz
+        checksum:
+          type: http
+          url: https://archive.apache.org/dist/maven/maven-{{(semver .SemVer).Major}}/{{.SemVer}}/binaries/apache-maven-{{.SemVer}}-bin.{{.Format}}.sha512
+          file_format: regexp
+          algorithm: sha512
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{128}\b)
         files:
           - name: mvn
             src: apache-maven-{{.SemVer}}/bin/mvn
@@ -62274,6 +62306,24 @@ packages:
         supported_envs:
           - darwin
   - type: github_release
+    repo_owner: masasuzu
+    repo_name: clrnd
+    description: a command-line tool for deploying services to Google Cloud Run
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        no_asset: true
+      - version_constraint: "true"
+        asset: clrnd_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: mashiike
     repo_name: acrun
     description: acrun is a deployment tool for AWS Bedrock AgentCore Runtime
@@ -66970,6 +67020,28 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: semver("<= 1.3.0")
+        asset: gup_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.4.0")
+        asset: gup_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: nao1215/gup/.github/workflows/release.yml
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: gup_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -66977,6 +67049,18 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/nao1215/gup/releases/download/{{.Version}}/checksums.txt.pem
+              - --signature
+              - https://github.com/nao1215/gup/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate-identity
+              - https://github.com/nao1215/gup/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        github_artifact_attestations:
+          signer_workflow: nao1215/gup/.github/workflows/release.yml
         overrides:
           - goos: windows
             format: zip
