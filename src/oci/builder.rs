@@ -8,16 +8,19 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use eyre::{Context, Result, bail};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 
 use crate::backend::backend_type::BackendType;
 use crate::config::{Config, Settings};
 use crate::file;
 use crate::oci::OciConfig;
-use crate::oci::layer::{self, LayerBlob};
+use crate::oci::layer::{self, LayerBlob, LayerOwner};
 use crate::oci::layout::ImageLayout;
 use crate::oci::manifest::{self, Descriptor, ImageConfig, ImageManifest, Platform, RootFs};
+use crate::oci::packages;
 use crate::oci::registry;
+use crate::system::ManagerPackages;
+use crate::system::files::{FileMode, FileRequest};
 use crate::toolset::{ToolVersion, Toolset};
 
 /// Options passed to the builder from the CLI.
@@ -31,6 +34,8 @@ pub struct BuildOptions {
     pub tag: Option<String>,
     /// Where mise tools get installed inside the image.
     pub mount_point: Option<String>,
+    /// Numeric owner assigned to every tar entry in generated layers.
+    pub owner: Option<LayerOwner>,
     /// Embed the current mise binary at /usr/local/bin/mise.
     pub include_mise: bool,
 }
@@ -40,6 +45,8 @@ pub struct Builder {
     pub ts: Toolset,
     pub oci: OciConfig,
     pub opts: BuildOptions,
+    pub dotfiles: Vec<FileRequest>,
+    pub system_packages: Vec<ManagerPackages>,
 }
 
 /// Output summary returned to the CLI.
@@ -58,7 +65,24 @@ pub struct ToolLayerInfo {
 
 impl Builder {
     pub fn new(cfg: Arc<Config>, ts: Toolset, oci: OciConfig, opts: BuildOptions) -> Self {
-        Self { cfg, ts, oci, opts }
+        Self {
+            cfg,
+            ts,
+            oci,
+            opts,
+            dotfiles: vec![],
+            system_packages: vec![],
+        }
+    }
+
+    pub fn with_dotfiles(mut self, dotfiles: Vec<FileRequest>) -> Self {
+        self.dotfiles = dotfiles;
+        self
+    }
+
+    pub fn with_system_packages(mut self, system_packages: Vec<ManagerPackages>) -> Self {
+        self.system_packages = system_packages;
+        self
     }
 
     /// Build the image and write it to the output directory.
@@ -89,6 +113,8 @@ impl Builder {
                  depend on the working directory and mis-resolve tools."
             );
         }
+
+        let owner = resolve_layer_owner(self.opts.owner, &self.oci);
 
         // --- 1. Base image (optional) ---
         let from_ref = self
@@ -164,7 +190,7 @@ impl Builder {
             base_config_json = Some(pull.config_json);
         }
 
-        // --- 2. Per-tool layers ---
+        // --- 2. Validate tool installs before any package work ---
         // Tool installs are host-native binaries. On non-linux hosts they'll
         // fail at runtime inside the linux container with `Exec format error`
         // — emit a single warning up front so the user isn't surprised after
@@ -180,7 +206,6 @@ impl Builder {
                 n = versions.len()
             );
         }
-        let mut tool_layers: Vec<(String, String, LayerBlob)> = Vec::new();
         for (_, tv) in &versions {
             let install_path = tv.install_path();
             if !install_path.is_dir() {
@@ -190,13 +215,30 @@ impl Builder {
                     install_path.display()
                 );
             }
+        }
+
+        // --- 3. System package layer (optional) ---
+        let system_packages_layer = packages::build_system_packages_layer(
+            &layout,
+            &base_layers,
+            &self.system_packages,
+            platform
+                .as_ref()
+                .map(|p| p.architecture.as_str())
+                .unwrap_or_else(|| crate::oci::normalize_arch(std::env::consts::ARCH)),
+        )?;
+
+        // --- 4. Per-tool layers ---
+        let mut tool_layers: Vec<(String, String, LayerBlob)> = Vec::new();
+        for (_, tv) in &versions {
+            let install_path = tv.install_path();
             let tv_prefix = tool_tar_prefix(&mount_point, tv);
-            let blob = layer::build_layer_from_dir(&install_path, &tv_prefix)
+            let blob = layer::build_layer_from_dir(&install_path, &tv_prefix, owner)
                 .wrap_err_with(|| format!("building layer for {}", tv.style()))?;
             tool_layers.push((tv.ba().short.clone(), tv.version.clone(), blob));
         }
 
-        // --- 3. mise binary layer (optional) ---
+        // --- 5. mise binary layer (optional) ---
         let mut mise_layer: Option<LayerBlob> = None;
         if self.opts.include_mise {
             // OCI images are linux-targeted in v1 (we normalize `os` to
@@ -215,7 +257,7 @@ impl Builder {
                     let bytes = std::fs::read(&exe)
                         .wrap_err_with(|| format!("reading mise binary at {}", exe.display()))?;
                     let files = vec![("usr/local/bin/mise".to_string(), bytes, 0o755u32)];
-                    mise_layer = Some(layer::build_layer_from_files(&files)?);
+                    mise_layer = Some(layer::build_layer_from_files(&files, owner)?);
                 }
                 Err(e) => {
                     warn!("could not locate mise binary to embed in image: {e}");
@@ -223,7 +265,14 @@ impl Builder {
             }
         }
 
-        // --- 4. Config layer: /etc/mise/config.toml ---
+        // --- 5. Dotfiles layer (optional) ---
+        let dotfiles_layer = if self.dotfiles.is_empty() {
+            None
+        } else {
+            Some(build_dotfiles_layer(&self.cfg, &self.dotfiles, owner)?)
+        };
+
+        // --- 6. Config layer: /etc/mise/config.toml ---
         let config_layer = {
             let config_toml = synthesize_embedded_config_toml(&versions, &mount_point);
             let files = vec![(
@@ -231,10 +280,10 @@ impl Builder {
                 config_toml.into_bytes(),
                 0o644u32,
             )];
-            layer::build_layer_from_files(&files)?
+            layer::build_layer_from_files(&files, owner)?
         };
 
-        // --- 5. Write all layer blobs into the layout ---
+        // --- 7. Write all layer blobs into the layout ---
         let mut tool_layer_infos = Vec::new();
         let mut manifest_layers: Vec<Descriptor> = base_layers.clone();
         let mut all_diff_ids: Vec<String> = base_diff_ids.clone();
@@ -249,6 +298,20 @@ impl Builder {
                 platform: None,
             });
             all_diff_ids.push(m.diff_id.clone());
+        }
+
+        if let Some(blob) = &system_packages_layer {
+            layout.write_blob_with_digest(&blob.digest, &blob.bytes)?;
+            let mut annotations = IndexMap::new();
+            annotations.insert("dev.mise.system.packages".to_string(), "apt".to_string());
+            manifest_layers.push(Descriptor {
+                media_type: manifest::MEDIA_TYPE_OCI_LAYER_GZIP.to_string(),
+                size: blob.size,
+                digest: blob.digest.clone(),
+                annotations,
+                platform: None,
+            });
+            all_diff_ids.push(blob.diff_id.clone());
         }
 
         for (short, version, blob) in &tool_layers {
@@ -272,6 +335,20 @@ impl Builder {
             });
         }
 
+        if let Some(blob) = &dotfiles_layer {
+            layout.write_blob_with_digest(&blob.digest, &blob.bytes)?;
+            let mut annotations = IndexMap::new();
+            annotations.insert("dev.mise.dotfiles".to_string(), "true".to_string());
+            manifest_layers.push(Descriptor {
+                media_type: manifest::MEDIA_TYPE_OCI_LAYER_GZIP.to_string(),
+                size: blob.size,
+                digest: blob.digest.clone(),
+                annotations,
+                platform: None,
+            });
+            all_diff_ids.push(blob.diff_id.clone());
+        }
+
         {
             layout.write_blob_with_digest(&config_layer.digest, &config_layer.bytes)?;
             manifest_layers.push(Descriptor {
@@ -284,7 +361,7 @@ impl Builder {
             all_diff_ids.push(config_layer.diff_id.clone());
         }
 
-        // --- 6. Image config ---
+        // --- 8. Image config ---
         let image_config = self
             .build_image_config(
                 &versions,
@@ -306,7 +383,7 @@ impl Builder {
             platform: None,
         };
 
-        // --- 7. Manifest ---
+        // --- 9. Manifest ---
         let image_manifest = ImageManifest {
             schema_version: 2,
             media_type: manifest::MEDIA_TYPE_OCI_MANIFEST.to_string(),
@@ -316,7 +393,7 @@ impl Builder {
         };
         let (manifest_digest, manifest_size) = layout.write_manifest(&image_manifest)?;
 
-        // --- 8. index.json ---
+        // --- 10. index.json ---
         let tag = self.opts.tag.clone().or_else(|| self.oci.tag.clone());
         layout.write_index(&manifest_digest, manifest_size, platform, tag.as_deref())?;
 
@@ -567,6 +644,199 @@ impl Builder {
     }
 }
 
+fn resolve_layer_owner(opts_owner: Option<LayerOwner>, oci: &OciConfig) -> LayerOwner {
+    opts_owner.unwrap_or_else(|| {
+        let uid = oci.user_id.unwrap_or(0);
+        let gid = oci.group_id.unwrap_or(uid);
+        LayerOwner::new(uid, gid)
+    })
+}
+
+fn build_dotfiles_layer(
+    cfg: &Config,
+    requests: &[FileRequest],
+    owner: LayerOwner,
+) -> Result<LayerBlob> {
+    let mut entries = DotfilesLayerEntries::default();
+
+    for req in requests {
+        if !req.source.exists() {
+            bail!(
+                "[dotfiles].\"{}\": source does not exist: {}",
+                req.target_raw,
+                req.source.display()
+            );
+        }
+
+        match req.mode {
+            FileMode::Symlink | FileMode::Copy => {
+                collect_source_as_files(&req.source, &oci_target_path(req)?, &mut entries)
+                    .wrap_err_with(|| {
+                        format!("adding [dotfiles].\"{}\" to OCI image", req.target_raw)
+                    })?;
+            }
+            FileMode::SymlinkEach => {
+                if !req.source.is_dir() {
+                    bail!(
+                        "[dotfiles].\"{}\": mode symlink-each requires a directory source: {}",
+                        req.target_raw,
+                        req.source.display()
+                    );
+                }
+                let target = oci_target_path(req)?;
+                entries.add_dir(target.clone())?;
+                for entry in walkdir::WalkDir::new(&req.source).sort_by_file_name() {
+                    let entry = entry?;
+                    let ft = entry.file_type();
+                    if !(ft.is_file() || ft.is_symlink()) {
+                        continue;
+                    }
+                    let rel = entry.path().strip_prefix(&req.source)?;
+                    let path = format!("{target}/{}", rel.to_string_lossy().replace('\\', "/"));
+                    entries.add_file(
+                        path,
+                        file::read(entry.path())?,
+                        source_mode(entry.path())?,
+                    )?;
+                }
+            }
+            FileMode::Template => {
+                let rendered = crate::system::files::render_template(cfg, req)?;
+                entries.add_file(
+                    oci_target_path(req)?,
+                    rendered.into_bytes(),
+                    source_mode(&req.source)?,
+                )?;
+            }
+        }
+    }
+
+    info!("oci: adding {} [dotfiles] entries", requests.len());
+    let (files, dirs) = entries.into_layer_inputs();
+    layer::build_layer_from_files_and_dirs(&files, &dirs, owner)
+}
+
+fn collect_source_as_files(
+    source: &std::path::Path,
+    target: &str,
+    entries: &mut DotfilesLayerEntries,
+) -> Result<()> {
+    if source.is_dir() {
+        entries.add_dir(target.to_string())?;
+        for entry in walkdir::WalkDir::new(source).sort_by_file_name() {
+            let entry = entry?;
+            if entry.file_type().is_dir() {
+                let rel = entry.path().strip_prefix(source)?;
+                if !rel.as_os_str().is_empty() {
+                    entries.add_dir(format!(
+                        "{target}/{}",
+                        rel.to_string_lossy().replace('\\', "/")
+                    ))?;
+                }
+                continue;
+            }
+            let ft = entry.file_type();
+            if !(ft.is_file() || ft.is_symlink()) {
+                warn!(
+                    "oci: skipping non-file [dotfiles] source entry {}",
+                    entry.path().display()
+                );
+                continue;
+            }
+            let rel = entry.path().strip_prefix(source)?;
+            let path = format!("{target}/{}", rel.to_string_lossy().replace('\\', "/"));
+            entries.add_file(path, file::read(entry.path())?, source_mode(entry.path())?)?;
+        }
+    } else {
+        entries.add_file(
+            target.to_string(),
+            file::read(source)?,
+            source_mode(source)?,
+        )?;
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+struct DotfilesLayerEntries {
+    files: IndexMap<String, (Vec<u8>, u32)>,
+    dirs: IndexSet<String>,
+}
+
+type DotfilesLayerFile = (String, Vec<u8>, u32);
+type DotfilesLayerFiles = Vec<DotfilesLayerFile>;
+type DotfilesLayerDirs = Vec<String>;
+
+impl DotfilesLayerEntries {
+    fn add_file(&mut self, path: String, contents: Vec<u8>, mode: u32) -> Result<()> {
+        if self.dirs.contains(&path) {
+            bail!("[dotfiles]: duplicate OCI path {path:?} as both file and directory");
+        }
+        if let Some((existing_contents, existing_mode)) = self.files.get(&path) {
+            if existing_contents != &contents || *existing_mode != mode {
+                bail!("[dotfiles]: duplicate OCI file path {path:?}");
+            }
+            return Ok(());
+        }
+        self.files.insert(path, (contents, mode));
+        Ok(())
+    }
+
+    fn add_dir(&mut self, path: String) -> Result<()> {
+        if self.files.contains_key(&path) {
+            bail!("[dotfiles]: duplicate OCI path {path:?} as both file and directory");
+        }
+        self.dirs.insert(path);
+        Ok(())
+    }
+
+    fn into_layer_inputs(self) -> (DotfilesLayerFiles, DotfilesLayerDirs) {
+        let files = self
+            .files
+            .into_iter()
+            .map(|(path, (contents, mode))| (path, contents, mode))
+            .collect();
+        let dirs = self.dirs.into_iter().collect();
+        (files, dirs)
+    }
+}
+
+fn oci_target_path(req: &FileRequest) -> Result<String> {
+    let raw = req.target_raw.as_str();
+    let path = if raw == "~" {
+        "root".to_string()
+    } else if let Some(rest) = raw.strip_prefix("~/") {
+        format!("root/{rest}")
+    } else {
+        req.target
+            .strip_prefix("/")
+            .map_err(|_| eyre::eyre!("dotfile target must be absolute: {}", req.target_raw))?
+            .to_string_lossy()
+            .replace('\\', "/")
+    };
+    if path.is_empty() || path.split('/').any(|p| p == "..") {
+        bail!(
+            "[dotfiles].\"{}\": target is not a safe OCI path",
+            req.target_raw
+        );
+    }
+    Ok(path)
+}
+
+fn source_mode(path: &std::path::Path) -> Result<u32> {
+    let md = path.metadata()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        Ok(md.permissions().mode() & 0o7777)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = md;
+        Ok(0o644)
+    }
+}
+
 fn reject_unsupported_backends(
     versions: &[(Arc<dyn crate::backend::Backend>, ToolVersion)],
 ) -> Result<()> {
@@ -714,4 +984,78 @@ fn days_to_ymd(days: i64) -> (i64, u32, u32) {
 
 fn sanitize_label(s: &str) -> String {
     s.replace([':', '/'], ".")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_layer_owner_defaults_to_root() {
+        assert_eq!(
+            resolve_layer_owner(None, &OciConfig::default()),
+            LayerOwner::new(0, 0)
+        );
+    }
+
+    #[test]
+    fn resolve_layer_owner_uses_config_with_uid_as_gid_default() {
+        let oci = OciConfig {
+            user_id: Some(1000),
+            ..Default::default()
+        };
+
+        assert_eq!(resolve_layer_owner(None, &oci), LayerOwner::new(1000, 1000));
+    }
+
+    #[test]
+    fn resolve_layer_owner_uses_config_group_id_when_present() {
+        let oci = OciConfig {
+            user_id: Some(1000),
+            group_id: Some(1001),
+            ..Default::default()
+        };
+
+        assert_eq!(resolve_layer_owner(None, &oci), LayerOwner::new(1000, 1001));
+    }
+
+    #[test]
+    fn resolve_layer_owner_uses_merged_config_group_id_from_same_layer() {
+        let mut oci = OciConfig::default();
+        oci.fill_defaults_from(OciConfig {
+            user_id: Some(1000),
+            group_id: Some(1001),
+            ..Default::default()
+        });
+
+        assert_eq!(resolve_layer_owner(None, &oci), LayerOwner::new(1000, 1001));
+    }
+
+    #[test]
+    fn resolve_layer_owner_does_not_inherit_less_specific_group_after_user_override() {
+        let mut oci = OciConfig {
+            user_id: Some(1000),
+            ..Default::default()
+        };
+        oci.fill_defaults_from(OciConfig {
+            group_id: Some(2000),
+            ..Default::default()
+        });
+
+        assert_eq!(resolve_layer_owner(None, &oci), LayerOwner::new(1000, 1000));
+    }
+
+    #[test]
+    fn resolve_layer_owner_cli_value_wins_over_config() {
+        let oci = OciConfig {
+            user_id: Some(1000),
+            group_id: Some(1001),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            resolve_layer_owner(Some(LayerOwner::new(2000, 2001)), &oci),
+            LayerOwner::new(2000, 2001)
+        );
+    }
 }

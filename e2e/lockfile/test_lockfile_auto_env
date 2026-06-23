@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# Test that auto platform environments (auto_env) select matching
+# mise.<env>.lock lockfiles, and explicit MISE_ENV lockfiles still win
+
+export MISE_LOCKFILE=1
+
+os="$(uname -s)"
+case "$os" in
+  Darwin) os=macos ;;
+  Linux) os=linux ;;
+esac
+
+cat >"mise.$os.toml" <<'EOF'
+[tools]
+tiny = "2"
+EOF
+
+touch "mise.$os.lock"
+
+assert "mise install tiny@2.1.0"
+
+# with auto_env enabled, mise.$os.toml is active and its lockfile is written
+assert "MISE_AUTO_ENV=true mise use tiny@2"
+assert_contains "cat mise.$os.lock" '[[tools.tiny]]'
+assert_contains "cat mise.$os.lock" 'version = "2.1.0"'
+
+# the locked version is honored when resolving with auto_env enabled
+assert "MISE_AUTO_ENV=true mise ls tiny --json | jq -r '.[0].version'" "2.1.0"
+
+# explicit env lockfile takes precedence over the auto platform one
+cat >mise.prod.toml <<'EOF'
+[tools]
+tiny = "1"
+EOF
+touch mise.prod.lock
+assert "mise install tiny@1.0.1"
+assert "MISE_ENV=prod mise use tiny@1"
+assert_contains "cat mise.prod.lock" 'version = "1.0.1"'
+assert "MISE_AUTO_ENV=true MISE_ENV=prod mise ls tiny --json | jq -r '.[0].version'" "1.0.1"

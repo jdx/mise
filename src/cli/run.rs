@@ -21,7 +21,9 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, info, style};
 use clap::{CommandFactory, ValueHint};
 use eyre::{Result, bail, eyre};
+use futures_util::FutureExt;
 use itertools::Itertools;
+use std::panic::AssertUnwindSafe;
 use tokio::sync::Mutex;
 
 /// Run task(s)
@@ -134,40 +136,40 @@ pub struct Run {
     #[clap(skip)]
     pub is_linear: bool,
 
-    /// [experimental] Allow specific env var through (implies --deny-env for everything else)
+    /// Allow specific env var through (implies --deny-env for everything else)
     /// Supports wildcards, e.g. --allow-env='MYAPP_*'
     #[clap(long, value_name = "VAR", verbatim_doc_comment)]
     pub allow_env: Vec<String>,
 
-    /// [experimental] Allow network to specific host (implies --deny-net for everything else)
+    /// Allow network to specific host (implies --deny-net for everything else)
     #[clap(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
-    /// [experimental] Allow reads from specific path (implies --deny-read for everything else)
+    /// Allow reads from specific path (implies --deny-read for everything else)
     #[clap(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_read: Vec<std::path::PathBuf>,
 
-    /// [experimental] Allow writes to specific path (implies --deny-write for everything else)
+    /// Allow writes to specific path (implies --deny-write for everything else)
     #[clap(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_write: Vec<std::path::PathBuf>,
 
-    /// [experimental] Block reads, writes, network, and env vars
+    /// Block reads, writes, network, and env vars
     #[clap(long, verbatim_doc_comment)]
     pub deny_all: bool,
 
-    /// [experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
     #[clap(long, verbatim_doc_comment)]
     pub deny_env: bool,
 
-    /// [experimental] Block all network access
+    /// Block all network access
     #[clap(long, verbatim_doc_comment)]
     pub deny_net: bool,
 
-    /// [experimental] Block filesystem reads (system libs and tool dirs still accessible)
+    /// Block filesystem reads (system libs and tool dirs still accessible)
     #[clap(long, verbatim_doc_comment)]
     pub deny_read: bool,
 
-    /// [experimental] Block all filesystem writes
+    /// Block all filesystem writes
     #[clap(long, verbatim_doc_comment)]
     pub deny_write: bool,
 
@@ -566,17 +568,24 @@ impl Run {
                 let deps = deps_for_remove.lock().await;
                 (deps.handled_task_keys(), deps.any_dep_ran(&task))
             };
-            let result = this
-                .run_task_sched(
-                    &task,
-                    &ctx.config,
-                    ctx.sched_tx.clone(),
-                    completed,
-                    dep_ran,
-                    semaphore,
-                    &mut permit,
-                )
-                .await;
+            let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(
+                &task,
+                &ctx.config,
+                ctx.sched_tx.clone(),
+                completed,
+                dep_ran,
+                semaphore,
+                &mut permit,
+            ))
+            .catch_unwind()
+            .await
+            {
+                Ok(result) => (result, false),
+                Err(payload) => (
+                    Err(eyre!("task panicked: {}", panic_payload_message(&payload))),
+                    true,
+                ),
+            };
             // If the task actually ran (not skipped) and has sources defined,
             // mark it so dependents' source freshness checks are invalidated.
             // Tasks without sources always run and should not trigger invalidation.
@@ -586,8 +595,12 @@ impl Run {
                 deps_for_remove.lock().await.mark_ran(&task);
             }
             if let Err(err) = &result {
-                let status = Error::get_exit_status(err);
-                if !this.is_stopping() && status.is_none() {
+                let status = if panicked {
+                    Some(1)
+                } else {
+                    Error::get_exit_status(err)
+                };
+                if !this.is_stopping() && (panicked || status.is_none()) {
                     let prefix = task.estyled_prefix();
                     if Settings::get().verbose {
                         this.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
@@ -815,6 +828,16 @@ impl Run {
     }
 }
 
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    if let Some(message) = payload.downcast_ref::<&'static str>() {
+        message
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.as_str()
+    } else {
+        "unknown panic payload"
+    }
+}
+
 fn display_task_help(task: &Task) -> Result<()> {
     let name = if task.display_name.is_empty() {
         &task.name
@@ -869,3 +892,26 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_panic_payload_message_from_static_str() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new("panic message");
+        assert_eq!(panic_payload_message(&*payload), "panic message");
+    }
+
+    #[test]
+    fn test_panic_payload_message_from_string() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new(String::from("panic message"));
+        assert_eq!(panic_payload_message(&*payload), "panic message");
+    }
+
+    #[test]
+    fn test_panic_payload_message_from_unknown_payload() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new(123usize);
+        assert_eq!(panic_payload_message(&*payload), "unknown panic payload");
+    }
+}

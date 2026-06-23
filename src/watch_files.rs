@@ -77,7 +77,6 @@ async fn execute(
     shell: Option<&str>,
     files: Vec<&PathBuf>,
 ) -> Result<()> {
-    Settings::get().ensure_experimental("watch_file_hooks")?;
     let modified_files_var = files
         .iter()
         .map(|f| f.to_string_lossy().replace(':', "\\:"))
@@ -111,6 +110,24 @@ async fn execute(
     );
     // TODO: this should be different but I don't have easy access to it
     // env.insert("MISE_CONFIG_ROOT".to_string(), root.to_string_lossy().to_string());
+    // On Windows, `cmd /c <run>` must receive the command verbatim so inner
+    // double quotes survive (#9355). Mirror the hook path: spawn a raw Command
+    // with stdout redirected to our stderr handle (duct's stdout_to_stderr) and
+    // the full env. Non-cmd shells / Unix fall through to the duct path below.
+    #[cfg(windows)]
+    {
+        if let Some(mut c) = crate::path::cmd_verbatim_command(program, shell_args, run) {
+            use std::os::windows::io::AsHandle;
+            c.env_clear();
+            c.envs(env.iter());
+            c.stdout(std::io::stderr().as_handle().try_clone_to_owned()?);
+            let status = c.status()?;
+            if !status.success() {
+                eyre::bail!("watch_files command failed: {status}");
+            }
+            return Ok(());
+        }
+    }
     cmd(program, args)
         .stdout_to_stderr()
         // .dir(root)
@@ -126,7 +143,6 @@ async fn execute_task(
     task_name: &str,
     files: Vec<&PathBuf>,
 ) -> Result<()> {
-    Settings::get().ensure_experimental("watch_file_hooks")?;
     let modified_files_var = files
         .iter()
         .map(|f| f.to_string_lossy().replace(':', "\\:"))

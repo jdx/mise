@@ -93,7 +93,6 @@ impl Backend for VfoxBackend {
 
                 // Use backend methods if the plugin supports them
                 if this.is_backend_plugin() {
-                    Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.get_tool_name()?;
                     let opts = config
@@ -148,13 +147,54 @@ impl Backend for VfoxBackend {
             .into_iter()
             .collect();
         cmd_env.extend(tv.install_env());
+        // Surface `tools = true` `[env]` *value* directives (e.g.
+        // `CLOUDSDK_PYTHON = "{{ tools.python.path }}/bin/python3"`) so the plugin's
+        // install hooks (including os.execute) see the resolved value during a
+        // combined `mise install`, mirroring the separate-install case where a
+        // re-activated shell re-exports it.
+        //
+        // Resolve against a fully-resolved toolset of this tool's dependencies, NOT
+        // ctx.ts: ctx.ts is the raw install toolset (`Toolset::from(ToolRequestSet)`)
+        // whose `.versions` are empty until `resolve()` runs *after* installs, so its
+        // `tools.*` tera map is empty and `{{ tools.python.path }}` would render "".
+        // `install_value_toolset` is resolved offline and includes both backend deps
+        // and the per-tool mise.toml `depends` option (`gcloud = { depends =
+        // ["python"] }`) with real install paths, and is install-safe (it uses
+        // `get_tool_request_set()`, not the deadlock-prone `config.get_toolset()`).
+        // Best-effort: env *modules* are excluded via `ToolsFilter::ToolsOnlyVals`,
+        // any resolution error falls back to the tool-less env, and PATH is left to
+        // `dependency_env`. (#10282, follow-up to #10432)
+        {
+            let base: EnvMap = cmd_env.clone().into_iter().collect();
+            let tool_vals = match self.install_value_toolset(&ctx.config, &tv).await {
+                Ok(dep_ts) => dep_ts.tool_val_env(&ctx.config, &base).await,
+                Err(e) => Err(e),
+            };
+            match tool_vals {
+                Ok(vals) => {
+                    for (k, v) in vals {
+                        // PATH stays owned by dependency_env. On Windows env var
+                        // names are case-insensitive, so exclude any casing
+                        // (e.g. a lowercase `path`); on unix only exact `PATH`.
+                        let is_path = if cfg!(windows) {
+                            k.eq_ignore_ascii_case(crate::env::PATH_KEY.as_str())
+                        } else {
+                            k.as_str() == crate::env::PATH_KEY.as_str()
+                        };
+                        if !is_path {
+                            cmd_env.insert(k, v);
+                        }
+                    }
+                }
+                Err(e) => debug!("vfox: skipping tools=true value directives: {e:#}"),
+            }
+        }
         if !cmd_env.is_empty() {
             vfox.cmd_env = Some(cmd_env);
         }
 
         // Use backend methods if the plugin supports them
         if self.is_backend_plugin() {
-            Settings::get().ensure_experimental("custom backends")?;
             let tool_name = self.get_tool_name()?;
             let tool_opts = tv.request.options();
             vfox.backend_install(

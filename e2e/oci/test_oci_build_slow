@@ -100,7 +100,41 @@ mf_oci="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-oci-scope/ind
 config_oci_digest="$(jq -r '.config.digest | ltrimstr("sha256:")' "./out-oci-scope/blobs/sha256/$mf_oci")"
 assert_not_contains "jq -r '.config.Env | join(\"\n\")' ./out-oci-scope/blobs/sha256/$config_oci_digest" "/should-not-appear"
 
-# --- 9. No project config + no --include-global → clear error ---
+# --- 9. [dotfiles] is baked into its own image layer ---
+cat >profile.sh <<EOF
+export PROJECT_READY=1
+EOF
+cat >app.tmpl <<EOF
+tool={{env.MISE_ENV | default(value="dev")}}
+EOF
+cat >mise.toml <<EOF
+[tools]
+jq = "1.8.1"
+
+[dotfiles]
+"/etc/profile.d/project.sh" = { source = "profile.sh", mode = "copy" }
+"~/.config/app/config.toml" = { source = "app.tmpl", mode = "template" }
+EOF
+export MISE_ENV=dev
+assert_succeed "mise oci build -o ./out-files --from scratch"
+unset MISE_ENV
+mf_files="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-files/index.json)"
+files_layer="$(jq -r '.layers[] | select(.annotations."dev.mise.dotfiles" == "true") | .digest | ltrimstr("sha256:")' ./out-files/blobs/sha256/"$mf_files")"
+assert_contains "tar -tzf ./out-files/blobs/sha256/$files_layer" "etc/profile.d/project.sh"
+assert_contains "tar -tzf ./out-files/blobs/sha256/$files_layer" "root/.config/app/config.toml"
+assert_contains "tar -xOzf ./out-files/blobs/sha256/$files_layer etc/profile.d/project.sh" "PROJECT_READY=1"
+assert_contains "tar -xOzf ./out-files/blobs/sha256/$files_layer root/.config/app/config.toml" "tool=dev"
+
+# --- 10. [bootstrap.packages] participates in OCI builds ---
+# scratch has no apt metadata, so this exercises the OCI package path without
+# requiring network access in the e2e test environment.
+cat >mise.toml <<EOF
+[bootstrap.packages]
+"apt:curl" = "latest"
+EOF
+assert_fail "mise oci build -o ./out-system-packages --from scratch" "requires an apt-based base image"
+
+# --- 11. No project config + no --include-global → clear error ---
 # Error message is shared between build/run/push, so it must NOT name a
 # specific subcommand (just "mise oci").
 rm -f mise.toml

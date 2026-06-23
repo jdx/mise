@@ -12,6 +12,10 @@ full = "http:claude"
 
 [backends.options]
 bin = "claude"
+# Per-version manifest.json carries each platform's sha256 under platforms.<os>-<arch>
+# (os: darwin/linux/win32), so map mise's os/arch onto that key.
+checksum_expr = '"sha256:" + fromJSON(body).platforms[(os == "macos" ? "darwin" : (os == "windows" ? "win32" : "linux")) + "-" + arch].checksum'
+checksum_url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/manifest.json"
 # NOTE: upstream `/stable` is often stale; prefer `/latest` for correct `mise latest claude`
 # See: https://github.com/jdx/mise/discussions/7329
 url = 'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/{{ os(macos="darwin") }}-{{ arch() }}/claude'

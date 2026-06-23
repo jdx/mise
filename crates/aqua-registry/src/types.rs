@@ -81,6 +81,7 @@ pub struct AquaPackage {
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     pub minisign: Option<AquaMinisign>,
     pub github_artifact_attestations: Option<AquaGithubArtifactAttestations>,
+    format_overrides: Vec<AquaFormatOverride>,
     #[rkyv(omit_bounds)]
     overrides: Vec<AquaOverride>,
     version_constraint: String,
@@ -102,7 +103,16 @@ struct AquaOverride {
     goos: Option<String>,
     goarch: Option<String>,
     #[serde(default)]
+    envs: Vec<String>,
+    #[serde(default)]
     variants: Vec<AquaVariant>,
+}
+
+/// Format override for a specific GOOS.
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+struct AquaFormatOverride {
+    goos: String,
+    format: String,
 }
 
 /// Runtime variant selector for an override.
@@ -226,6 +236,7 @@ pub struct AquaMinisign {
 #[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaGithubArtifactAttestations {
     pub enabled: Option<bool>,
+    pub predicate_type: Option<String>,
     pub signer_workflow: Option<String>,
 }
 
@@ -236,6 +247,10 @@ pub struct AquaChecksum {
     pub algorithm: Option<AquaChecksumAlgorithm>,
     pub pattern: Option<AquaChecksumPattern>,
     pub cosign: Option<AquaCosign>,
+    pub minisign: Option<AquaMinisign>,
+    pub github_artifact_attestations: Option<AquaGithubArtifactAttestations>,
+    #[serde(default, deserialize_with = "deserialize_optional_string_map")]
+    replacements: Option<HashMap<String, String>>,
     file_format: Option<String>,
     enabled: Option<bool>,
     asset: Option<String>,
@@ -299,6 +314,25 @@ where
     }
 }
 
+fn yaml_mapping_to_string_map<D: serde::de::Error>(
+    value: serde_yaml::Value,
+) -> std::result::Result<HashMap<String, String>, D> {
+    let serde_yaml::Value::Mapping(mapping) = value else {
+        return Err(D::custom("invalid type: expected a scalar string map"));
+    };
+
+    mapping
+        .into_iter()
+        .map(|(key, value)| {
+            let key = yaml_scalar_to_string(key)
+                .ok_or_else(|| D::custom("invalid type: expected a scalar string map key"))?;
+            let value = yaml_scalar_to_string(value)
+                .ok_or_else(|| D::custom("invalid type: expected a scalar string map value"))?;
+            Ok((key, value))
+        })
+        .collect()
+}
+
 fn deserialize_string_map<'de, D>(
     deserializer: D,
 ) -> std::result::Result<HashMap<String, String>, D::Error>
@@ -309,28 +343,22 @@ where
     let Some(value) = value else {
         return Ok(HashMap::new());
     };
-    let serde_yaml::Value::Mapping(mapping) = value else {
-        return Err(<D::Error as serde::de::Error>::custom(
-            "invalid type: expected a string map",
-        ));
-    };
+    yaml_mapping_to_string_map(value)
+}
 
-    mapping
-        .into_iter()
-        .map(|(key, value)| {
-            let key = yaml_scalar_to_string(key).ok_or_else(|| {
-                <D::Error as serde::de::Error>::custom(
-                    "invalid type: expected a scalar string map key",
-                )
-            })?;
-            let value = yaml_scalar_to_string(value).ok_or_else(|| {
-                <D::Error as serde::de::Error>::custom(
-                    "invalid type: expected a scalar string map value",
-                )
-            })?;
-            Ok((key, value))
-        })
-        .collect()
+fn deserialize_optional_string_map<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<HashMap<String, String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(value) = Option::<serde_yaml::Value>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    if matches!(value, serde_yaml::Value::Null) {
+        return Ok(None);
+    }
+    yaml_mapping_to_string_map(value).map(Some)
 }
 
 fn yaml_scalar_to_string(value: serde_yaml::Value) -> Option<String> {
@@ -371,6 +399,7 @@ impl Default for AquaPackage {
             slsa_provenance: None,
             minisign: None,
             github_artifact_attestations: None,
+            format_overrides: Vec::new(),
             overrides: Vec::new(),
             version_constraint: String::new(),
             version_overrides: Vec::new(),
@@ -413,6 +442,7 @@ impl AquaPackage {
         {
             self = apply_override(self, &version_override);
         }
+        self.apply_format_override(os);
         if let Some(pkg) = self
             .overrides
             .iter()
@@ -422,6 +452,16 @@ impl AquaPackage {
             self = apply_override(self, &pkg)
         }
         self
+    }
+
+    fn apply_format_override(&mut self, os: &str) {
+        if let Some(format_override) = self
+            .format_overrides
+            .iter()
+            .find(|format_override| format_override.matches(os))
+        {
+            self.format = format_override.format.clone();
+        }
     }
 
     /// Apply user-provided variable values used by aqua `vars` templates.
@@ -462,20 +502,9 @@ impl AquaPackage {
 
     /// Detect the format of an archive based on its filename
     fn detect_format(&self, asset_name: &str) -> &'static str {
-        let formats = [
-            "tar.br", "tar.bz2", "tar.gz", "tar.lz4", "tar.sz", "tar.xz", "tbr", "tbz", "tbz2",
-            "tgz", "tlz4", "tsz", "txz", "tar.zst", "zip", "7z", "gz", "bz2", "lz4", "sz", "xz",
-            "zst", "dmg", "pkg", "rar", "tar",
-        ];
-
-        for format in formats {
+        for &format in AQUA_ASSET_FORMATS {
             if asset_name.ends_with(&format!(".{format}")) {
-                return match format {
-                    "tgz" => "tar.gz",
-                    "txz" => "tar.xz",
-                    "tbz2" | "tbz" => "tar.bz2",
-                    _ => format,
-                };
+                return format;
             }
         }
         "raw"
@@ -570,12 +599,7 @@ impl AquaPackage {
             };
             self.detect_format(&asset)
         } else {
-            match self.format.as_str() {
-                "tgz" => "tar.gz",
-                "txz" => "tar.xz",
-                "tbz2" | "tbz" => "tar.bz2",
-                format => format,
-            }
+            &self.format
         };
         Ok(format)
     }
@@ -678,16 +702,33 @@ impl AquaPackage {
         os: &str,
         arch: &str,
     ) -> Result<String> {
-        let mut actual_arch = arch;
-        if os == "darwin" && arch == "arm64" && self.rosetta2 {
-            actual_arch = "amd64";
-        }
-        if os == "windows" && arch == "arm64" && self.windows_arm_emulation {
-            actual_arch = "amd64";
-        }
+        let mut ctx = self.template_context(&self.replacements, v, os, arch);
+        ctx.extend(self.vars_ctx()?);
+        ctx.extend(overrides.clone());
 
+        crate::template::render(s, &ctx)
+    }
+
+    fn actual_arch<'a>(&self, os: &str, arch: &'a str) -> &'a str {
+        if (os == "darwin" && arch == "arm64" && self.rosetta2)
+            || (os == "windows" && arch == "arm64" && self.windows_arm_emulation)
+        {
+            "amd64"
+        } else {
+            arch
+        }
+    }
+
+    fn template_context(
+        &self,
+        replacements: &HashMap<String, String>,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> HashMap<String, String> {
+        let actual_arch = self.actual_arch(os, arch);
         let replace = |s: &str| {
-            self.replacements
+            replacements
                 .get(s)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| s.to_string())
@@ -699,18 +740,15 @@ impl AquaPackage {
             v
         };
 
-        let mut ctx = HashMap::new();
-        ctx.insert("Version".to_string(), replace(v));
-        ctx.insert("SemVer".to_string(), replace(semver));
-        ctx.insert("OS".to_string(), replace(os));
-        ctx.insert("GOOS".to_string(), replace(os));
-        ctx.insert("GOARCH".to_string(), replace(actual_arch));
-        ctx.insert("Arch".to_string(), replace(actual_arch));
-        ctx.insert("Format".to_string(), replace(&self.format));
-        ctx.extend(self.vars_ctx()?);
-        ctx.extend(overrides.clone());
-
-        crate::template::render(s, &ctx)
+        HashMap::from([
+            ("Version".to_string(), replace(v)),
+            ("SemVer".to_string(), replace(semver)),
+            ("OS".to_string(), replace(os)),
+            ("GOOS".to_string(), replace(os)),
+            ("GOARCH".to_string(), replace(actual_arch)),
+            ("Arch".to_string(), replace(actual_arch)),
+            ("Format".to_string(), replace(&self.format)),
+        ])
     }
 
     fn vars_ctx(&self) -> Result<HashMap<String, String>> {
@@ -812,22 +850,27 @@ impl AquaPackage {
 
 impl AquaOverride {
     fn matches(&self, os: &str, arch: &str, runtime: AquaRuntime<'_>) -> bool {
-        let platform_matches = if let (Some(goos), Some(goarch)) = (&self.goos, &self.goarch) {
-            goos == os && goarch == arch
-        } else if let Some(goos) = &self.goos {
-            goos == os
-        } else if let Some(goarch) = &self.goarch {
-            goarch == arch
-        } else {
-            false
-        };
-
-        platform_matches
+        self.goos.as_ref().is_none_or(|goos| goos == os)
+            && self.goarch.as_ref().is_none_or(|goarch| goarch == arch)
+            && (self.envs.is_empty() || envs_match(&self.envs, os, arch))
             && self
                 .variants
                 .iter()
                 .all(|variant| variant.matches(os, runtime))
     }
+}
+
+impl AquaFormatOverride {
+    fn matches(&self, os: &str) -> bool {
+        self.goos == os
+    }
+}
+
+fn envs_match(envs: &[String], os: &str, arch: &str) -> bool {
+    let os_arch = format!("{os}/{arch}");
+    // Aqua env selectors accept GOOS, GOARCH, GOOS/GOARCH, or the wildcard "all".
+    envs.iter()
+        .any(|env| env == "all" || env == os || env == arch || env == &os_arch)
 }
 
 impl AquaVariant {
@@ -881,6 +924,19 @@ fn split_version_prefix(version: &str) -> (String, String) {
         )
 }
 
+const AQUA_ASSET_FORMATS: &[&str] = &[
+    "tar.br", "tar.bz2", "tar.gz", "tar.lz4", "tar.sz", "tar.xz", "tbr", "tbz", "tbz2", "tgz",
+    "tlz4", "tsz", "txz", "tar.zst", "zip", "7z", "gz", "bz2", "lz4", "sz", "xz", "zst", "dmg",
+    "pkg", "rar", "tar",
+];
+
+fn asset_without_ext(asset: &str) -> &str {
+    AQUA_ASSET_FORMATS
+        .iter()
+        .find_map(|format| asset.strip_suffix(format)?.strip_suffix('.'))
+        .unwrap_or(asset)
+}
+
 impl AquaFile {
     fn template_ctx(
         &self,
@@ -890,18 +946,7 @@ impl AquaFile {
         arch: &str,
     ) -> Result<HashMap<String, String>> {
         let asset = pkg.asset(v, os, arch)?;
-        let asset = asset.strip_suffix(".tar.gz").unwrap_or(&asset);
-        let asset = asset.strip_suffix(".tar.xz").unwrap_or(asset);
-        let asset = asset.strip_suffix(".tar.bz2").unwrap_or(asset);
-        let asset = asset.strip_suffix(".gz").unwrap_or(asset);
-        let asset = asset.strip_suffix(".xz").unwrap_or(asset);
-        let asset = asset.strip_suffix(".bz2").unwrap_or(asset);
-        let asset = asset.strip_suffix(".zip").unwrap_or(asset);
-        let asset = asset.strip_suffix(".tar").unwrap_or(asset);
-        let asset = asset.strip_suffix(".tgz").unwrap_or(asset);
-        let asset = asset.strip_suffix(".txz").unwrap_or(asset);
-        let asset = asset.strip_suffix(".tbz2").unwrap_or(asset);
-        let asset = asset.strip_suffix(".tbz").unwrap_or(asset);
+        let asset = asset_without_ext(&asset);
 
         let mut ctx = HashMap::new();
         ctx.insert("AssetWithoutExt".to_string(), asset.to_string());
@@ -974,6 +1019,9 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     orig.replacements.extend(avo.replacements.clone());
     if let Some(avo_version_prefix) = avo.version_prefix.clone() {
         orig.version_prefix = Some(avo_version_prefix);
+    }
+    if !avo.format_overrides.is_empty() {
+        orig.format_overrides = avo.format_overrides.clone();
     }
     if !avo.overrides.is_empty() {
         orig.overrides = avo.overrides.clone();
@@ -1066,7 +1114,7 @@ impl AquaChecksum {
         let mut asset_strs = IndexSet::new();
         for asset in pkg.asset_strs(v, os, arch)? {
             let checksum_asset = self.asset.as_ref().unwrap();
-            let mut ctx = HashMap::new();
+            let mut ctx = self.template_ctx(pkg, v, os, arch)?;
             ctx.insert("Asset".to_string(), asset.to_string());
             asset_strs.insert(pkg.parse_aqua_str(checksum_asset, v, &ctx, os, arch)?);
         }
@@ -1086,7 +1134,13 @@ impl AquaChecksum {
     }
 
     pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
-        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
+        pkg.parse_aqua_str(
+            self.url.as_ref().unwrap(),
+            v,
+            &self.template_ctx(pkg, v, os, arch)?,
+            os,
+            arch,
+        )
     }
 
     fn merge(&mut self, other: Self) {
@@ -1111,11 +1165,61 @@ impl AquaChecksum {
         if let Some(file_format) = other.file_format {
             self.file_format = Some(file_format);
         }
+        if let Some(replacements) = other.replacements {
+            if replacements.is_empty() {
+                self.replacements = Some(HashMap::new());
+            } else {
+                self.replacements
+                    .get_or_insert_with(HashMap::new)
+                    .extend(replacements);
+            }
+        }
         if let Some(cosign) = other.cosign {
             if self.cosign.is_none() {
                 self.cosign = Some(cosign.clone());
             }
             self.cosign.as_mut().unwrap().merge(cosign);
+        }
+        if let Some(minisign) = other.minisign {
+            if self.minisign.is_none() {
+                self.minisign = Some(minisign.clone());
+            }
+            self.minisign.as_mut().unwrap().merge(minisign);
+        }
+        if let Some(attestations) = other.github_artifact_attestations {
+            if self.github_artifact_attestations.is_none() {
+                self.github_artifact_attestations = Some(attestations.clone());
+            }
+            self.github_artifact_attestations
+                .as_mut()
+                .unwrap()
+                .merge(attestations);
+        }
+    }
+
+    pub fn template_ctx(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<HashMap<String, String>> {
+        let mut ctx = pkg.template_context(&self.effective_replacements(pkg), v, os, arch);
+        if pkg.r#type == AquaPackageType::Http {
+            ctx.insert("AssetURL".to_string(), pkg.url(v, os, arch)?);
+        }
+        Ok(ctx)
+    }
+
+    fn effective_replacements(&self, pkg: &AquaPackage) -> HashMap<String, String> {
+        match &self.replacements {
+            None => pkg.replacements.clone(),
+            Some(replacements) if replacements.is_empty() => HashMap::new(),
+            Some(replacements) => {
+                let mut merged = pkg.replacements.clone();
+                merged.extend(replacements.clone());
+                merged
+            }
         }
     }
 }
@@ -1265,14 +1369,17 @@ impl AquaMinisign {
         pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
 
-    pub fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
-        pkg.parse_aqua_str(
-            self.asset.as_ref().unwrap(),
-            v,
-            &Default::default(),
-            os,
-            arch,
-        )
+    pub fn asset(
+        &self,
+        pkg: &AquaPackage,
+        package_asset: &str,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<String> {
+        let mut ctx = HashMap::new();
+        ctx.insert("Asset".to_string(), package_asset.to_string());
+        pkg.parse_aqua_str(self.asset.as_ref().unwrap(), v, &ctx, os, arch)
     }
 
     pub fn public_key(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
@@ -1314,6 +1421,9 @@ impl AquaGithubArtifactAttestations {
     fn merge(&mut self, other: Self) {
         if let Some(enabled) = other.enabled {
             self.enabled = Some(enabled);
+        }
+        if let Some(predicate_type) = other.predicate_type {
+            self.predicate_type = Some(predicate_type);
         }
         if let Some(signer_workflow) = other.signer_workflow {
             self.signer_workflow = Some(signer_workflow);
@@ -1378,6 +1488,183 @@ packages:
     }
 
     #[test]
+    fn test_github_artifact_attestations_predicate_type() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - github_artifact_attestations:
+      enabled: true
+      predicate_type: https://slsa.dev/provenance/v1
+      signer_workflow: canonical-workflow.yml
+"#,
+        );
+
+        let attestations = pkg.github_artifact_attestations.unwrap();
+        assert_eq!(attestations.enabled, Some(true));
+        assert_eq!(
+            attestations.predicate_type.as_deref(),
+            Some("https://slsa.dev/provenance/v1")
+        );
+        assert_eq!(
+            attestations.signer_workflow.as_deref(),
+            Some("canonical-workflow.yml")
+        );
+    }
+
+    #[test]
+    fn test_checksum_nested_verification_fields_are_deserialized() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+      replacements:
+        darwin: mac
+      minisign:
+        type: github_release
+        asset: checksums.txt.minisig
+        public_key: minisign-public-key
+      github_artifact_attestations:
+        enabled: true
+        predicate_type: https://slsa.dev/provenance/v1
+        signer_workflow: checksum-workflow.yml
+"#,
+        );
+
+        let checksum = pkg.checksum.unwrap();
+        assert_eq!(
+            checksum.replacements.as_ref().and_then(|r| r.get("darwin")),
+            Some(&"mac".to_string())
+        );
+        assert_eq!(
+            checksum
+                .minisign
+                .as_ref()
+                .and_then(|m| m.public_key.as_deref()),
+            Some("minisign-public-key")
+        );
+        let attestations = checksum.github_artifact_attestations.unwrap();
+        assert_eq!(attestations.enabled, Some(true));
+        assert_eq!(
+            attestations.predicate_type.as_deref(),
+            Some("https://slsa.dev/provenance/v1")
+        );
+        assert_eq!(
+            attestations.signer_workflow.as_deref(),
+            Some("checksum-workflow.yml")
+        );
+    }
+
+    #[test]
+    fn test_checksum_replacements_override_package_replacements() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: http
+    url: https://example.com/tool-{{.OS}}-{{.Arch}}.tar.gz
+    replacements:
+      darwin: macOS
+      arm64: aarch64
+    checksum:
+      type: http
+      url: "{{.AssetURL}}.{{.OS}}-{{.Arch}}.checksums"
+      replacements:
+        darwin: mac
+        arm64: arm64
+"#,
+        );
+
+        assert_eq!(
+            pkg.url("1.0.0", "darwin", "arm64").unwrap(),
+            "https://example.com/tool-macOS-aarch64.tar.gz"
+        );
+        assert_eq!(
+            pkg.checksum
+                .as_ref()
+                .unwrap()
+                .url(&pkg, "1.0.0", "darwin", "arm64")
+                .unwrap(),
+            "https://example.com/tool-macOS-aarch64.tar.gz.mac-arm64.checksums"
+        );
+    }
+
+    #[test]
+    fn test_checksum_replacements_merge_on_version_override() {
+        let mut checksum = first_registry_package(
+            r#"
+packages:
+  - checksum:
+      type: http
+      url: https://example.com/{{.OS}}.checksums
+      replacements:
+        darwin: mac
+"#,
+        )
+        .checksum
+        .unwrap();
+        let override_checksum = first_registry_package(
+            r#"
+packages:
+  - checksum:
+      replacements:
+        arm64: aarch64
+"#,
+        )
+        .checksum
+        .unwrap();
+        checksum.merge(override_checksum);
+        assert_eq!(
+            checksum.replacements,
+            Some(HashMap::from([
+                ("darwin".to_string(), "mac".to_string()),
+                ("arm64".to_string(), "aarch64".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_checksum_replacements_null_deserializes_to_none() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+      replacements: null
+"#,
+        );
+        assert_eq!(pkg.checksum.unwrap().replacements, None);
+    }
+
+    #[test]
+    fn test_checksum_url_applies_replacements_to_goos_and_goarch() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: http
+    url: https://example.com/tool.tar.gz
+    checksum:
+      type: http
+      url: https://example.com/{{.GOOS}}-{{.GOARCH}}.checksums
+      replacements:
+        darwin: mac
+        arm64: aarch64
+"#,
+        );
+        assert_eq!(
+            pkg.checksum
+                .as_ref()
+                .unwrap()
+                .url(&pkg, "1.0.0", "darwin", "arm64")
+                .unwrap(),
+            "https://example.com/mac-aarch64.checksums"
+        );
+    }
+
+    #[test]
     fn test_aqua_file_src_gradle() {
         // Test the gradle package src template: {{.AssetWithoutExt | trimSuffix "-bin"}}/bin/gradle
         let pkg = AquaPackage {
@@ -1394,6 +1681,56 @@ packages:
 
         let result = file.src(&pkg, "8.14.3", "darwin", "arm64").unwrap();
         assert_eq!(result, Some("gradle-8.14.3/bin/gradle".to_string()));
+    }
+
+    #[test]
+    fn test_aqua_file_src_asset_without_ext_strips_zst() {
+        let pkg = AquaPackage {
+            repo_owner: "openai".to_string(),
+            repo_name: "codex".to_string(),
+            asset: "codex-{{.Arch}}-{{.OS}}.exe.{{.Format}}".to_string(),
+            format: "zst".to_string(),
+            replacements: HashMap::from([
+                ("amd64".to_string(), "x86_64".to_string()),
+                ("windows".to_string(), "pc-windows-msvc".to_string()),
+            ]),
+            ..Default::default()
+        };
+        let file = AquaFile {
+            name: "codex".to_string(),
+            src: Some("{{.AssetWithoutExt}}".to_string()),
+            ..Default::default()
+        };
+
+        let result = file.src(&pkg, "0.133.0", "windows", "amd64").unwrap();
+
+        assert_eq!(result, Some("codex-x86_64-pc-windows-msvc.exe".to_string()));
+    }
+
+    #[test]
+    fn test_asset_without_ext_uses_aqua_asset_formats() {
+        assert_eq!(
+            asset_without_ext("tfcmt_linux_amd64.tar.gz"),
+            "tfcmt_linux_amd64"
+        );
+        assert_eq!(
+            asset_without_ext("tfcmt_linux_amd64.tgz"),
+            "tfcmt_linux_amd64"
+        );
+        assert_eq!(
+            asset_without_ext("tfcmt_linux_amd64.tbz"),
+            "tfcmt_linux_amd64"
+        );
+        assert_eq!(asset_without_ext("tool.tar.br"), "tool");
+        assert_eq!(
+            asset_without_ext("codex-x86_64-pc-windows-msvc.exe.zst"),
+            "codex-x86_64-pc-windows-msvc.exe"
+        );
+        assert_eq!(asset_without_ext("tfcmt.js"), "tfcmt.js");
+        assert_eq!(
+            asset_without_ext("tfcmt_windows_amd64.exe"),
+            "tfcmt_windows_amd64.exe"
+        );
     }
 
     #[test]
@@ -1578,6 +1915,41 @@ packages:
         let format = pkg.format("1.0.0", "windows", "amd64").unwrap();
 
         assert_eq!(format, "7z");
+    }
+
+    #[test]
+    fn test_format_detects_literal_aqua_aliases() {
+        let cases = [
+            ("tool-{{.Version}}.tgz", "tgz"),
+            ("tool-{{.Version}}.txz", "txz"),
+            ("tool-{{.Version}}.tbz", "tbz"),
+            ("tool-{{.Version}}.tbz2", "tbz2"),
+        ];
+
+        for (asset, expected) in cases {
+            let pkg = AquaPackage {
+                asset: asset.to_string(),
+                ..Default::default()
+            };
+
+            let format = pkg.format("1.0.0", "linux", "amd64").unwrap();
+
+            assert_eq!(format, expected);
+        }
+    }
+
+    #[test]
+    fn test_format_preserves_explicit_aqua_aliases() {
+        for format in ["tgz", "txz", "tbz", "tbz2"] {
+            let pkg = AquaPackage {
+                format: format.to_string(),
+                ..Default::default()
+            };
+
+            let detected = pkg.format("1.0.0", "linux", "amd64").unwrap();
+
+            assert_eq!(detected, format);
+        }
     }
 
     #[test]
@@ -1915,6 +2287,29 @@ packages:
     }
 
     #[test]
+    fn test_minisign_asset_template_uses_package_asset() {
+        let yml = r#"
+packages:
+  - asset: minisign-{{.Version}}-{{.OS}}.tar.gz
+    minisign:
+      type: github_release
+      asset: "{{.Asset}}.minisig"
+      public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
+"#;
+        let pkg = first_registry_package(yml);
+        let package_asset = pkg.asset("0.12", "linux", "amd64").unwrap();
+        let minisign_asset = pkg
+            .minisign
+            .as_ref()
+            .unwrap()
+            .asset(&pkg, &package_asset, "0.12", "linux", "amd64")
+            .unwrap();
+
+        assert_eq!(package_asset, "minisign-0.12-linux.tar.gz");
+        assert_eq!(minisign_asset, "minisign-0.12-linux.tar.gz.minisig");
+    }
+
+    #[test]
     fn test_override_variants_match_linux_libc() {
         let yml = r#"
 packages:
@@ -1946,6 +2341,168 @@ packages:
             musl.url("1.0.0", "linux", "amd64").unwrap(),
             "https://example.com/tool-1.0.0-linux-amd64-musl"
         );
+    }
+
+    #[test]
+    fn test_override_envs_match_os() {
+        let yml = r#"
+packages:
+  - files:
+      - name: catalina.sh
+        src: apache-tomcat-{{.SemVer}}/bin/catalina.sh
+    overrides:
+      - envs:
+          - windows
+        files:
+          - name: catalina.bat
+            src: apache-tomcat-{{.SemVer}}/bin/catalina.bat
+"#;
+        let pkg = first_registry_package(yml);
+
+        let linux = pkg.clone().with_version(&["10.1.0"], "linux", "amd64");
+        let windows = pkg.with_version(&["10.1.0"], "windows", "amd64");
+
+        assert_eq!(linux.files[0].name, "catalina.sh");
+        assert_eq!(windows.files[0].name, "catalina.bat");
+    }
+
+    #[test]
+    fn test_override_envs_match_os_arch() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    complete_windows_ext: false
+    overrides:
+      - envs:
+          - darwin
+          - windows/arm64
+        url: https://example.com/tool-cargo
+"#;
+        let pkg = first_registry_package(yml);
+
+        let darwin = pkg.clone().with_version(&["1.0.0"], "darwin", "amd64");
+        let windows_arm64 = pkg.clone().with_version(&["1.0.0"], "windows", "arm64");
+        let windows_amd64 = pkg.with_version(&["1.0.0"], "windows", "amd64");
+
+        assert_eq!(
+            darwin.url("1.0.0", "darwin", "amd64").unwrap(),
+            "https://example.com/tool-cargo"
+        );
+        assert_eq!(
+            windows_arm64.url("1.0.0", "windows", "arm64").unwrap(),
+            "https://example.com/tool-cargo"
+        );
+        assert_eq!(
+            windows_amd64.url("1.0.0", "windows", "amd64").unwrap(),
+            "https://example.com/tool-default"
+        );
+    }
+
+    #[test]
+    fn test_override_envs_all_matches_any_platform() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - envs:
+          - all
+        url: https://example.com/tool-all
+"#;
+        let pkg = first_registry_package(yml);
+
+        for (os, arch) in [
+            ("linux", "amd64"),
+            ("darwin", "arm64"),
+            ("windows", "amd64"),
+        ] {
+            let resolved = pkg.clone().with_version(&["1.0.0"], os, arch);
+
+            assert_eq!(
+                resolved.url("1.0.0", os, arch).unwrap(),
+                "https://example.com/tool-all"
+            );
+        }
+    }
+
+    #[test]
+    fn test_override_envs_combine_with_goarch() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - goarch: arm64
+        envs:
+          - linux
+        url: https://example.com/tool-linux-arm64
+"#;
+        let pkg = first_registry_package(yml);
+
+        let linux_amd64 = pkg.clone().with_version(&["1.0.0"], "linux", "amd64");
+        let linux_arm64 = pkg.clone().with_version(&["1.0.0"], "linux", "arm64");
+        let darwin_arm64 = pkg.with_version(&["1.0.0"], "darwin", "arm64");
+
+        assert_eq!(
+            linux_amd64.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-default"
+        );
+        assert_eq!(
+            linux_arm64.url("1.0.0", "linux", "arm64").unwrap(),
+            "https://example.com/tool-linux-arm64"
+        );
+        assert_eq!(
+            darwin_arm64.url("1.0.0", "darwin", "arm64").unwrap(),
+            "https://example.com/tool-default"
+        );
+    }
+
+    #[test]
+    fn test_format_overrides_apply_by_os_before_rendering() {
+        let yml = r#"
+packages:
+  - asset: tool-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+"#;
+        let pkg = first_registry_package(yml);
+
+        let linux = pkg.clone().with_version(&["1.0.0"], "linux", "amd64");
+        let windows = pkg.with_version(&["1.0.0"], "windows", "amd64");
+
+        assert_eq!(linux.format("1.0.0", "linux", "amd64").unwrap(), "tar.gz");
+        assert_eq!(
+            linux.asset("1.0.0", "linux", "amd64").unwrap(),
+            "tool-1.0.0-linux-amd64.tar.gz"
+        );
+        assert_eq!(windows.format("1.0.0", "windows", "amd64").unwrap(), "zip");
+        assert_eq!(
+            windows.asset("1.0.0", "windows", "amd64").unwrap(),
+            "tool-1.0.0-windows-amd64.zip"
+        );
+    }
+
+    #[test]
+    fn test_platform_override_can_override_format_override() {
+        let yml = r#"
+packages:
+  - asset: tool-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    overrides:
+      - goos: windows
+        asset: tool.exe
+        format: raw
+"#;
+        let pkg = first_registry_package(yml).with_version(&["1.0.0"], "windows", "amd64");
+
+        assert_eq!(pkg.format("1.0.0", "windows", "amd64").unwrap(), "raw");
+        assert_eq!(pkg.asset("1.0.0", "windows", "amd64").unwrap(), "tool.exe");
     }
 
     #[test]

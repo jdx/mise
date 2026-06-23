@@ -58,6 +58,82 @@ calling `curl https://mise.run` dynamically—though of course this means it wil
 the version of mise that was current when the script was created.
 :::
 
+## Project-local task entrypoints
+
+If you want contributors to run project tasks without installing mise first, pair
+[`mise generate bootstrap`](/cli/generate/bootstrap.html) with
+[`mise generate task-stubs`](/cli/generate/task-stubs.html):
+
+```sh
+mkdir -p bin
+mise generate bootstrap --localize --write bin/mise
+mise generate task-stubs --mise-bin ./bin/mise
+./bin/test
+```
+
+The generated task stubs behave like small project commands, while `bin/mise`
+downloads and runs the pinned mise binary for the project.
+
+## Machine bootstrapping <Badge type="warning" text="experimental" />
+
+Beyond `[tools]`, mise can declare the rest of the machine setup needed for
+a project or workstation, and [`mise bootstrap`](/cli/bootstrap.html)
+converges it in one command — system packages, then dotfiles, then macOS
+defaults, then LaunchAgents, then login shell, then tools, then a
+`bootstrap` task if you define one:
+
+```toml
+[bootstrap.packages]                      # OS packages (apk/apt/dnf/pacman/brew)
+"apk:build-base" = "latest"
+"apt:build-essential" = "latest"
+"brew:postgresql@17" = "latest"
+
+[dotfiles]                             # dotfiles: symlink/copy/template
+"~/.gitconfig" = { mode = "symlink" }
+"~/.config/nvim" = { mode = "symlink" }
+"~/.zshrc/activate" = { block = 'eval "$(mise activate zsh)"' }
+
+[bootstrap.macos.dock]                 # friendly macOS defaults
+autohide = true
+orientation = "left"
+
+[bootstrap.macos.finder]
+show_pathbar = true
+
+[bootstrap.macos.launchd.agents.my-sync]      # macOS user LaunchAgents
+program = "~/.local/bin/my-sync"
+run_at_load = true
+
+[bootstrap.linux.systemd.units.my-sync]       # Linux systemd user services
+exec_start = "~/.local/bin/my-sync --watch"
+restart = "on-failure"
+
+[bootstrap.user]                       # current user's login shell
+login_shell = "/bin/zsh"
+
+[bootstrap.hooks.post-defaults]        # optional phase hooks
+run = "killall Dock || true"
+
+[tasks.bootstrap]                      # anything else, with tools on PATH
+run = "gh auth status || gh auth login"
+```
+
+```sh
+mise bootstrap --yes   # new laptop or container -> ready to work
+```
+
+Everything is declarative and idempotent: re-running skips whatever is
+already in its desired state, `mise bootstrap packages status --missing` and
+`mise dotfiles status --missing` make CI checks, and nothing is ever applied
+implicitly. The exceptions are `[bootstrap.hooks]` and `[tasks.bootstrap]`,
+which are imperative commands run during `mise bootstrap` and may have side
+effects; treat hook commands as non-idempotent unless they are written to
+converge safely. See
+[Bootstrap](/bootstrap.html), [Bootstrap Packages](/bootstrap/packages/),
+[Dotfiles](/dotfiles.html), [macOS Defaults](/bootstrap/macos-defaults.html),
+[launchd](/bootstrap/launchd.html), [systemd](/bootstrap/systemd.html), and
+[User Login Shell](/bootstrap/user.html).
+
 ## Installation via zsh zinit
 
 [Zinit](https://github.com/zdharma-continuum/zinit) is a plugin manager for ZSH, which this snippet you will get mise (and usage for shell completion):
@@ -145,6 +221,77 @@ mise test
 ::: warning
 Don't do this inside of scripts because mise may add a command in a future version and could conflict with your task.
 :::
+
+## Watch tasks while editing
+
+[`mise watch`](/cli/watch.html) reruns tasks when files change. It uses
+`watchexec`, which you can install globally with mise:
+
+```sh
+mise use -g watchexec@latest
+mise watch test
+```
+
+Use `--restart` for long-running processes that should restart on changes:
+
+```sh
+mise watch --restart dev
+```
+
+## Share task catalogs
+
+For projects with a lot of tasks,
+[`task_config.includes`](/tasks/task-configuration.html#task-config-includes)
+can load task definitions from additional directories, `tasks.toml` files, or
+remote git repositories:
+
+```toml
+[task_config]
+includes = [
+  "mise-tasks",
+  "tasks.toml",
+  "git::https://github.com/myorg/shared-tasks.git//tasks?ref=v1.0.0",
+]
+```
+
+Included `tasks.toml` files use the same shape as the `[tasks]` table without
+the `[tasks.]` prefix.
+
+## Reuse task definitions with templates
+
+Experimental [task templates](/tasks/templates.html) let multiple tasks share
+common tools, environment variables, and command defaults:
+
+```toml
+[settings]
+experimental = true
+
+[task_templates."node:test"]
+tools = { node = "24", pnpm = "latest" }
+run = "pnpm test"
+
+[tasks.test]
+extends = "node:test"
+run = "pnpm test -- --watch=false"
+```
+
+This is especially useful in monorepos where each package needs similar build,
+test, or lint tasks with small local overrides.
+
+## Redact secrets from task output
+
+If a task may echo secrets in CI logs, add `redactions` to the task or config.
+The listed environment variables are replaced with `[redacted]` in task output:
+
+```toml
+redactions = ["API_KEY", "PASSWORD"]
+```
+
+Glob patterns are also supported:
+
+```toml
+redactions.env = ["SECRETS_*"]
+```
 
 ## Software verification
 

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# #10469: the `task.show_full_cmd` setting (env MISE_TASK_SHOW_CMD_NO_TRUNC) must
+# echo the FULL multi-line command in the task header, not just the first real
+# command. PR #9844 added display_first_command(), which reduced the echoed header
+# to the first real command (skipping leading shebang/blank/`set ...` lines)
+# UNCONDITIONALLY — making show_full_cmd a no-op. The reduction is now gated on the
+# setting: the whole script when on, the first command when off.
+
+cat <<'EOF' >mise.toml
+[tasks.multi]
+run = """
+#!/usr/bin/env bash
+set -e
+echo first-line
+echo second-line
+"""
+EOF
+
+# show_full_cmd ON: the echoed header includes the LATER command line. The literal
+# "echo second-line" only appears in the echoed command (execution prints
+# "second-line", not "echo second-line").
+assert_contains "MISE_TASK_SHOW_CMD_NO_TRUNC=1 mise run multi 2>&1" "echo second-line"
+
+# show_full_cmd OFF (#9844 behavior preserved): the header shows the first REAL
+# command, skipping the shebang/`set` boilerplate, and later lines are truncated.
+assert_contains "mise run multi 2>&1" "echo first-line"
+assert_not_contains "mise run multi 2>&1" "echo second-line"

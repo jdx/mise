@@ -9,7 +9,6 @@ use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_json::Value;
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -118,6 +117,8 @@ pub struct EnvDirectiveOptions {
 pub enum EnvDirective {
     /// simple key/value pair
     Val(String, String, EnvDirectiveOptions),
+    /// use a fallback value if the key is not already set
+    Default(String, String, EnvDirectiveOptions),
     /// remove a key
     Rm(String, EnvDirectiveOptions),
     /// Required variable that must be defined elsewhere
@@ -150,6 +151,7 @@ impl EnvDirective {
     pub fn options(&self) -> &EnvDirectiveOptions {
         match self {
             EnvDirective::Val(_, _, opts)
+            | EnvDirective::Default(_, _, opts)
             | EnvDirective::Rm(_, opts)
             | EnvDirective::Required(_, opts)
             | EnvDirective::File(_, opts)
@@ -178,6 +180,7 @@ impl Display for EnvDirective {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
+            EnvDirective::Default(k, v, _) => write!(f, "{k} default={v}"),
             EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
             EnvDirective::Required(k, _) => write!(f, "{k} (required)"),
             EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
@@ -253,6 +256,12 @@ pub enum ToolsFilter {
     #[default]
     NonToolsOnly,
     Both,
+    /// `tools = true` directives, but only plain `Val` (`KEY = value`) entries.
+    /// Env *modules* (PythonVenv/Module/Source/File/Path) are skipped because they
+    /// may reference tools outside a partial (dependency) toolset and would error.
+    /// Used by `dependency_env` so a dependent tool's install sees `tools = true`
+    /// value vars like `CLOUDSDK_PYTHON = "{{ tools.python.path }}/..."`. (#10282)
+    ToolsOnlyVals,
 }
 
 pub struct EnvResolveOptions {
@@ -296,6 +305,9 @@ impl EnvResults {
                     ToolsFilter::ToolsOnly => directive.options().tools,
                     ToolsFilter::NonToolsOnly => !directive.options().tools,
                     ToolsFilter::Both => true,
+                    ToolsFilter::ToolsOnlyVals => {
+                        directive.options().tools && matches!(directive, EnvDirective::Val(..))
+                    }
                 };
 
                 if !should_include {
@@ -332,7 +344,7 @@ impl EnvResults {
                 .collect::<EnvMap>();
             ctx.insert("env", &env_vars);
 
-            let mut vars: EnvMap = if let Some(Value::Object(existing_vars)) = ctx.get("vars") {
+            let context_vars: EnvMap = if let Some(Value::Object(existing_vars)) = ctx.get("vars") {
                 existing_vars
                     .iter()
                     .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
@@ -341,6 +353,7 @@ impl EnvResults {
                 EnvMap::new()
             };
 
+            let mut vars = context_vars.clone();
             vars.extend(r.vars.iter().map(|(k, (v, _))| (k.clone(), v.clone())));
 
             ctx.insert("vars", &vars);
@@ -355,6 +368,41 @@ impl EnvResults {
                     } else {
                         r.env_remove.remove(&k);
                         // trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
+                        env.insert(k, (v, Some(source.clone())));
+                    }
+                }
+                EnvDirective::Default(k, v, _opts) => {
+                    if resolve_opts.vars {
+                        if let Some((v, _)) = r.vars.get(&k).filter(|(v, _)| !v.is_empty()) {
+                            if redact.unwrap_or(false) {
+                                r.redactions.push(k.clone());
+                            }
+                            r.vars.insert(k, (v.clone(), source.clone()));
+                            continue;
+                        }
+                        if let Some(v) = env::PRISTINE_ENV.get(&k).filter(|v| !v.is_empty()) {
+                            if redact.unwrap_or(false) {
+                                r.redactions.push(k.clone());
+                            }
+                            r.vars.insert(k, (v.clone(), source.clone()));
+                            continue;
+                        }
+                    } else if env.get(&k).is_some_and(|(v, _)| !v.is_empty()) {
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
+                        continue;
+                    }
+
+                    let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &v)?;
+
+                    if resolve_opts.vars {
+                        r.vars.insert(k, (v, source.clone()));
+                    } else {
+                        r.env_remove.remove(&k);
                         if redact.unwrap_or(false) {
                             r.redactions.push(k.clone());
                         }
@@ -621,6 +669,9 @@ impl EnvResults {
                 EnvDirective::Val(key, _, options) if options.required.is_required() => {
                     required_vars.push((key.clone(), source.clone(), options.required.clone()));
                 }
+                EnvDirective::Default(key, _, options) if options.required.is_required() => {
+                    required_vars.push((key.clone(), source.clone(), options.required.clone()));
+                }
                 EnvDirective::Required(key, options) => {
                     required_vars.push((key.clone(), source.clone(), options.required.clone()));
                 }
@@ -703,29 +754,14 @@ impl EnvResults {
                         .get("env")
                         .and_then(|v| serde_json::from_value(v.clone()).ok())
                         .unwrap_or_default();
-                    let before_expand = output.clone();
                     let mut missing_vars = Vec::new();
-                    output = shellexpand::env_with_context_no_errors(&output, |var| match env_vars
-                        .get(var)
-                    {
-                        Some(v) => Some(Cow::Borrowed(v.as_str())),
-                        None => {
-                            missing_vars.push(var.to_string());
-                            None
-                        }
-                    })
-                    .into_owned();
+                    output = shell_expand_env(&output, &env_vars, &mut missing_vars);
                     for var in missing_vars {
-                        // Don't warn if the user provided a default via ${VAR:-...} or ${VAR-...}
-                        if !before_expand.contains(&format!("${{{var}:-"))
-                            && !before_expand.contains(&format!("${{{var}-"))
-                        {
-                            warn_once!(
-                                "env var '{var}' is not defined and will be left unexpanded. \
-                                 Use ${{{var}:-}} to default to an empty string and suppress \
-                                 this warning."
-                            );
-                        }
+                        warn_once!(
+                            "env var '{var}' is not defined and will be left unexpanded. \
+                             Use ${{{var}:-}} to default to an empty string and suppress \
+                             this warning."
+                        );
                     }
                 }
                 Some(false) => {}
@@ -753,6 +789,160 @@ impl EnvResults {
     }
 }
 
+fn shell_expand_env(
+    input: &str,
+    env_vars: &BTreeMap<String, String>,
+    missing_vars: &mut Vec<String>,
+) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut chars = input.char_indices().peekable();
+
+    while let Some((idx, ch)) = chars.next() {
+        if ch != '$' {
+            output.push(ch);
+            continue;
+        }
+
+        match chars.peek().copied() {
+            Some((_, '$')) => {
+                chars.next();
+                output.push('$');
+            }
+            Some((_, '{')) => {
+                chars.next();
+                if let Some((end, expr)) = read_braced_expr(input, idx + 2) {
+                    output.push_str(&expand_braced_expr(
+                        expr,
+                        &input[idx..=end],
+                        env_vars,
+                        missing_vars,
+                    ));
+                    while chars.peek().is_some_and(|(i, _)| *i <= end) {
+                        chars.next();
+                    }
+                } else {
+                    output.push_str(&input[idx..]);
+                    break;
+                }
+            }
+            Some((_, next)) if is_var_start(next) => {
+                let start = chars.peek().map(|(i, _)| *i).unwrap_or(idx + 1);
+                let mut end = start;
+                while let Some((i, next)) = chars.peek().copied() {
+                    if is_var_char(next) {
+                        end = i + next.len_utf8();
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                let var = &input[start..end];
+                if let Some(value) = env_vars.get(var) {
+                    output.push_str(value);
+                } else {
+                    missing_vars.push(var.to_string());
+                    output.push_str(&input[idx..end]);
+                }
+            }
+            _ => output.push('$'),
+        }
+    }
+
+    output
+}
+
+fn read_braced_expr(input: &str, start: usize) -> Option<(usize, &str)> {
+    let mut depth = 1;
+    let mut command_depth = 0;
+    let mut chars = input[start..].char_indices().peekable();
+
+    while let Some((offset, ch)) = chars.next() {
+        let idx = start + offset;
+        if command_depth > 0 {
+            match ch {
+                '(' => command_depth += 1,
+                ')' => command_depth -= 1,
+                _ => {}
+            }
+            continue;
+        }
+
+        match ch {
+            '$' if chars.peek().is_some_and(|(_, next)| *next == '{') => {
+                chars.next();
+                depth += 1;
+            }
+            '$' if chars.peek().is_some_and(|(_, next)| *next == '(') => {
+                chars.next();
+                command_depth = 1;
+            }
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((idx, &input[start..idx]));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn expand_braced_expr(
+    expr: &str,
+    original: &str,
+    env_vars: &BTreeMap<String, String>,
+    missing_vars: &mut Vec<String>,
+) -> String {
+    let Some(var_end) = expr
+        .char_indices()
+        .take_while(|(_, ch)| is_var_char(*ch))
+        .last()
+        .map(|(idx, ch)| idx + ch.len_utf8())
+    else {
+        return original.to_string();
+    };
+
+    let var = &expr[..var_end];
+    if !var.chars().next().is_some_and(is_var_start) {
+        return original.to_string();
+    }
+
+    match expr.get(var_end..) {
+        Some("") => match env_vars.get(var) {
+            Some(value) => value.to_string(),
+            None => {
+                missing_vars.push(var.to_string());
+                original.to_string()
+            }
+        },
+        Some(rest) if rest.starts_with(":-") => {
+            let default = &rest[2..];
+            match env_vars.get(var) {
+                Some(value) if !value.is_empty() => value.to_string(),
+                _ => shell_expand_env(default, env_vars, missing_vars),
+            }
+        }
+        Some(rest) if rest.starts_with('-') => {
+            let default = &rest[1..];
+            match env_vars.get(var) {
+                Some(value) => value.to_string(),
+                None => shell_expand_env(default, env_vars, missing_vars),
+            }
+        }
+        _ => original.to_string(),
+    }
+}
+
+fn is_var_start(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphabetic()
+}
+
+fn is_var_char(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
+
 impl Debug for EnvResults {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut ds = f.debug_struct("EnvResults");
@@ -775,5 +965,60 @@ impl Debug for EnvResults {
             ds.field("tool_add_paths", &self.tool_add_paths);
         }
         ds.finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::env_diff::EnvMap;
+    use crate::tera::BASE_CONTEXT;
+
+    /// `ToolsFilter::ToolsOnlyVals` must select only `tools = true` `Val`
+    /// directives — excluding `tools = false` vars and `tools = true` *modules*
+    /// (here a `Path`). This is what `dependency_env` relies on to surface vars
+    /// like `CLOUDSDK_PYTHON = "{{ tools.python.path }}/..."` during a dependent
+    /// tool's install without running env modules on a partial toolset. (#10282)
+    #[tokio::test]
+    async fn test_tools_only_vals_filter() {
+        let env = EnvMap::new();
+        let config = Config::get().await.unwrap();
+        let tools = EnvDirectiveOptions {
+            tools: true,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &env,
+            vec![
+                // tools = true Val -> included
+                (
+                    EnvDirective::Val("TOOLS_VAL".into(), "yes".into(), tools.clone()),
+                    PathBuf::from("/config"),
+                ),
+                // tools = false Val -> excluded
+                (
+                    EnvDirective::Val("PLAIN_VAL".into(), "no".into(), Default::default()),
+                    PathBuf::from("/config"),
+                ),
+                // tools = true module (Path) -> excluded
+                (
+                    EnvDirective::Path("/should/not/appear".into(), tools.clone()),
+                    PathBuf::from("/config"),
+                ),
+            ],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::ToolsOnlyVals,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+        let keys: Vec<String> = results.env.keys().cloned().collect();
+        assert_eq!(keys, vec!["TOOLS_VAL".to_string()]);
+        assert!(results.env_paths.is_empty());
     }
 }

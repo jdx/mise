@@ -22,7 +22,7 @@ a lot easier than figuring out mise's rules.
 Notes:
 
 - Paths which start with `mise` can be dotfiles, e.g.: `.mise.toml` or `.mise/config.toml`.
-- This list doesn't include [Configuration Environments](/configuration/environments) which allow for environment-specific config files like `mise.development.toml`—set with `MISE_ENV=development`.
+- This list doesn't include [Configuration Environments](/configuration/environments) which allow for environment-specific config files like `mise.development.toml`—set with `MISE_ENV=development`. Platform-specific environments like `mise.windows.toml` or `mise.macos-arm64.toml` can be enabled automatically with the [`auto_env` setting](/configuration/environments.html#platform-environments).
 - See [`LOCAL_CONFIG_FILENAMES` in `src/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/config/mod.rs) for the actual code for these paths and their precedence. Some legacy paths are not listed here for brevity.
 
 ## Configuration Hierarchy
@@ -279,12 +279,14 @@ min_version = { hard = '2024.11.1', soft = '2024.9.0' }
 
 When a soft minimum is not met, mise will print a warning and (if available) show self-update instructions. When a hard minimum is not met, mise errors and shows self-update instructions.
 
-### Monorepo root <Badge type="warning" text="experimental" />
+Use `min_version` to communicate the oldest mise version your project supports. In general, users should keep mise up to date because mise integrates with external registries and backends that change over time. Projects and organizations should prefer a minimum version requirement over locking users to a specific mise executable; locking users to one mise version is generally discouraged. Pinning users back is like preventing `apt update` or `brew update` from refreshing package metadata: it can hide deprecation warnings and let upstream integrations drift out of date.
 
-Mark a configuration file as a monorepo root to enable target path syntax for tasks. Requires `MISE_EXPERIMENTAL=1`.
+### Monorepo root
+
+Mark a configuration file as a monorepo root to enable target path syntax for tasks.
 
 ```toml
-experimental_monorepo_root = true
+monorepo_root = true
 ```
 
 When enabled:

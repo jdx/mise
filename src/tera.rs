@@ -413,6 +413,102 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
     tera
 }
 
+/// Like [`get_tera`] but with `os()` and `arch()` bound to an explicit target
+/// platform instead of the current host. Used by cross-platform `mise lock` to
+/// render URL/checksum templates for platforms other than the one mise runs on.
+///
+/// `os` should be a platform os name (e.g. "macos", "linux", "windows") and
+/// `arch` a platform arch name (e.g. "x64", "arm64"), matching the values
+/// returned by the host-bound functions. Remap arguments such as
+/// `os(macos="darwin")` and `arch(x64="amd64")` keep the same semantics.
+pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> Tera {
+    let mut tera = get_tera(dir);
+
+    // os_family() must follow the target too, not the host.
+    let family = if os == "windows" { "windows" } else { "unix" };
+
+    let os = os.to_string();
+    tera.register_function(
+        "os",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            if let Some(remapped) = args.get(&os).and_then(|v| v.as_str()) {
+                return Ok(Value::String(remapped.to_string()));
+            }
+            Ok(Value::String(os.clone()))
+        },
+    );
+
+    let arch = arch.to_string();
+    tera.register_function(
+        "arch",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            if let Some(remapped) = args.get(&arch).and_then(|v| v.as_str()) {
+                return Ok(Value::String(remapped.to_string()));
+            }
+            Ok(Value::String(arch.clone()))
+        },
+    );
+
+    tera.register_function(
+        "os_family",
+        move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
+            Ok(Value::String(family.to_string()))
+        },
+    );
+
+    tera
+}
+
+/// Like [`get_tera`] but with `os()` and `arch()` rewritten to re-emit
+/// themselves as template fragments (e.g. `os(macos="darwin")` renders back to
+/// the literal `{{ os(macos="darwin") }}`).
+///
+/// Used when rendering tool option templates at config-load time: env/vars are
+/// resolved, but `os()`/`arch()` are deferred so the backend can re-render them
+/// for the host at install time or for an arbitrary target during cross-platform
+/// `mise lock`. Mirrors how `{{ version }}` is preserved via a placeholder.
+pub fn get_tera_preserving_os_arch(dir: Option<&Path>) -> Tera {
+    let mut tera = get_tera(dir);
+    tera.register_function("os", reemit_template_fn("os"));
+    tera.register_function("arch", reemit_template_fn("arch"));
+    // os_family() must be deferred too: it derives from the target OS, so
+    // resolving it against the host here would bake e.g. "unix" into a template
+    // that is later rendered for a windows target.
+    tera.register_function("os_family", reemit_template_fn("os_family"));
+    tera
+}
+
+fn reemit_template_fn(
+    name: &'static str,
+) -> impl Fn(&HashMap<String, Value>) -> tera::Result<Value> {
+    move |args: &HashMap<String, Value>| {
+        let mut parts: Vec<String> = args
+            .iter()
+            .filter_map(|(k, v)| reemit_arg_literal(v).map(|lit| format!("{k}={lit}")))
+            .collect();
+        let rendered = if parts.is_empty() {
+            format!("{{{{ {name}() }}}}")
+        } else {
+            parts.sort();
+            format!("{{{{ {name}({}) }}}}", parts.join(", "))
+        };
+        Ok(Value::String(rendered))
+    }
+}
+
+/// Render a Tera function argument value back into its template literal form so
+/// it round-trips through re-emission. Tera string literals are literal (no
+/// escape sequences), so strings are simply re-quoted; numbers/bools render
+/// natively; other types are dropped (os()/arch() ignore non-string remaps).
+fn reemit_arg_literal(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => Some(format!("\"{s}\"")),
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
 pub fn tera_exec(
     dir: Option<PathBuf>,
     env: EnvMap,
@@ -452,10 +548,48 @@ pub fn tera_exec(
                     env_no_shims
                         .insert(env::PATH_KEY.to_string(), strip_shims_from_path(&path_val));
                 }
-                let mut cmd: duct::Expression = cmd(&shell[0], args).full_env(&env_no_shims);
-                if let Some(dir) = &dir {
-                    cmd = cmd.dir(dir);
-                }
+                // Run the command capturing stdout (duct `.read()` trims one
+                // trailing newline). On Windows a `cmd /c` command is passed
+                // verbatim so inner double quotes survive (#9355); non-cmd shells
+                // and Unix keep the duct path. Returns eyre::Result so it can feed
+                // the cache's get_or_try_init directly.
+                let run_once = || -> eyre::Result<String> {
+                    #[cfg(windows)]
+                    {
+                        if let Some(mut c) =
+                            crate::path::cmd_verbatim_command(&shell[0], &shell[1..], command)
+                        {
+                            c.env_clear();
+                            c.envs(env_no_shims.iter());
+                            if let Some(dir) = &dir {
+                                c.current_dir(dir);
+                            }
+                            let out = c.output()?;
+                            if !out.status.success() {
+                                eyre::bail!(
+                                    "exec command failed: {}",
+                                    String::from_utf8_lossy(&out.stderr)
+                                );
+                            }
+                            // Strict UTF-8 like duct's `.read()` (which uses
+                            // read_to_string and errors on invalid UTF-8 rather
+                            // than substituting U+FFFD replacement characters).
+                            let mut s = String::from_utf8(out.stdout)?;
+                            // Match duct's `.read()`: strip *all* trailing \r and
+                            // \n, so the cmd path returns byte-identical output to
+                            // the non-cmd (duct) path on the same machine.
+                            while s.ends_with('\n') || s.ends_with('\r') {
+                                s.pop();
+                            }
+                            return Ok(s);
+                        }
+                    }
+                    let mut expr: duct::Expression = cmd(&shell[0], args).full_env(&env_no_shims);
+                    if let Some(dir) = &dir {
+                        expr = expr.dir(dir);
+                    }
+                    Ok(expr.read()?)
+                };
                 let result = if cache.is_some() || cache_duration.is_some() {
                     let cachehash = hash::hash_blake3_to_str(
                         &(dir
@@ -474,12 +608,12 @@ pub fn tera_exec(
                         cacheman = cacheman.with_fresh_duration(Some(cache_duration));
                     }
                     let cache = cacheman.build();
-                    match cache.get_or_try_init(|| Ok(cmd.read()?)) {
+                    match cache.get_or_try_init(run_once) {
                         Ok(result) => result.clone(),
                         Err(e) => return Err(format!("exec command: {e}").into()),
                     }
                 } else {
-                    cmd.read()?
+                    run_once().map_err(|e| tera::Error::msg(format!("exec command: {e}")))?
                 };
                 Ok(Value::String(result))
             }
@@ -881,5 +1015,86 @@ mod tests {
         tera_ctx.insert("cwd", "/");
         let mut tera = get_tera(Option::from(config_root));
         render_str(&mut tera, s, &tera_ctx).unwrap()
+    }
+
+    fn render_for_target(s: &str, os: &str, arch: &str) -> String {
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("cwd", "/");
+        let mut tera = get_tera_for_target(None, os, arch);
+        render_str(&mut tera, s, &tera_ctx).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_os_arch_for_target() {
+        let _config = Config::get().await.unwrap();
+        // os()/arch() resolve to the requested target, not the host.
+        assert_eq!(
+            render_for_target("{{os()}}-{{arch()}}", "windows", "arm64"),
+            "windows-arm64"
+        );
+        assert_eq!(render_for_target("{{os()}}", "macos", "x64"), "macos");
+    }
+
+    #[tokio::test]
+    async fn test_os_arch_remap_for_target() {
+        let _config = Config::get().await.unwrap();
+        // Remap arguments keep host semantics but apply to the target value.
+        assert_eq!(
+            render_for_target(
+                r#"{{os(macos="darwin")}}_{{arch(x64="amd64")}}"#,
+                "macos",
+                "x64"
+            ),
+            "darwin_amd64"
+        );
+        // A remap that does not match the target value is ignored.
+        assert_eq!(
+            render_for_target(r#"{{arch(x64="amd64")}}"#, "linux", "arm64"),
+            "arm64"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_os_family_for_target() {
+        let _config = Config::get().await.unwrap();
+        // os_family() follows the target, not the host.
+        assert_eq!(
+            render_for_target("{{os_family()}}", "windows", "x64"),
+            "windows"
+        );
+        assert_eq!(render_for_target("{{os_family()}}", "linux", "x64"), "unix");
+        assert_eq!(
+            render_for_target("{{os_family()}}", "macos", "arm64"),
+            "unix"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_preserving_os_arch_round_trips_through_target() {
+        let _config = Config::get().await.unwrap();
+        // A deferred os(...) remap survives config-load preservation and then
+        // re-renders correctly for a target platform.
+        let mut ctx = BASE_CONTEXT.clone();
+        ctx.insert("cwd", "/");
+        let mut deferred = get_tera_preserving_os_arch(None);
+        let preserved = render_str(&mut deferred, r#"{{ os(macos="darwin") }}"#, &ctx).unwrap();
+        assert_eq!(preserved, r#"{{ os(macos="darwin") }}"#);
+        let mut tera = get_tera_for_target(None, "macos", "arm64");
+        assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "darwin");
+    }
+
+    #[tokio::test]
+    async fn test_preserving_os_family_round_trips_through_target() {
+        let _config = Config::get().await.unwrap();
+        // os_family() must be deferred at config-load time and resolve against
+        // the lock target, not the host — otherwise a windows target locked from
+        // a unix host would get "unix" baked in.
+        let mut ctx = BASE_CONTEXT.clone();
+        ctx.insert("cwd", "/");
+        let mut deferred = get_tera_preserving_os_arch(None);
+        let preserved = render_str(&mut deferred, r#"{{ os_family() }}"#, &ctx).unwrap();
+        assert_eq!(preserved, r#"{{ os_family() }}"#);
+        let mut tera = get_tera_for_target(None, "windows", "x64");
+        assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "windows");
     }
 }

@@ -4,6 +4,7 @@ use eyre::{Result, bail};
 
 use crate::config::{Config, ConfigMap};
 use crate::oci::{BuildOptions, BuildOutput, Builder, OciConfig};
+use crate::system;
 use crate::toolset::{ConfigScope, ToolsetBuilder};
 
 /// Merge `[oci]` sections from the given config files, with more specific
@@ -53,12 +54,26 @@ pub async fn perform_build(opts: BuildOptions, include_global: bool) -> Result<B
     if include_global {
         let ts = ToolsetBuilder::new().build(&config).await?;
         let oci = merged_oci_config(&config);
-        return Builder::new(config.clone(), ts, oci, opts).build().await;
+        reject_unsupported_system_defaults(&config.config_files)?;
+        let files = system::files::files_from_config_files(&config.config_files);
+        let packages = system::packages_from_config_files(&config.config_files);
+        return Builder::new(config.clone(), ts, oci, opts)
+            .with_dotfiles(files)
+            .with_system_packages(packages)
+            .build()
+            .await;
     }
     let project_files = project_config_files(&config)?;
     let ts = build_project_toolset(&config, project_files.clone()).await?;
     let oci = merged_oci_config_from(project_files.values());
-    Builder::new(config.clone(), ts, oci, opts).build().await
+    reject_unsupported_system_defaults(&project_files)?;
+    let files = system::files::files_from_config_files(&project_files);
+    let packages = system::packages_from_config_files(&project_files);
+    Builder::new(config.clone(), ts, oci, opts)
+        .with_dotfiles(files)
+        .with_system_packages(packages)
+        .build()
+        .await
 }
 
 /// Configs at-or-below the project root.
@@ -100,6 +115,24 @@ async fn build_project_toolset(
         .with_scope(ConfigScope::LocalOnly)
         .build(config)
         .await
+}
+
+fn reject_unsupported_system_defaults(config_files: &ConfigMap) -> Result<()> {
+    let mut defaults = 0usize;
+    for cf in config_files.values() {
+        let Some(system) = cf.bootstrap_config() else {
+            continue;
+        };
+        defaults += system::macos_defaults_entry_count(&system.macos);
+    }
+
+    if defaults > 0 {
+        bail!(
+            "mise oci does not support [bootstrap.macos.*] defaults (found {defaults} default entries); \
+             macOS defaults do not apply to OCI images."
+        );
+    }
+    Ok(())
 }
 
 pub fn short_digest(d: &str) -> String {

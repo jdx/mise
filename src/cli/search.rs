@@ -1,25 +1,19 @@
-use std::sync::LazyLock as Lazy;
-
 use clap::ValueEnum;
 use demand::DemandOption;
 use demand::Select;
 use eyre::Result;
 use eyre::bail;
 use eyre::eyre;
-use fuzzy_matcher::FuzzyMatcher;
-use fuzzy_matcher::skim::SkimMatcherV2;
 use itertools::Itertools;
 use xx::regex;
 
+use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
 use crate::registry::RegistryTool;
 use crate::{
     config::Settings,
     registry::{REGISTRY, tool_enabled},
     ui::table::MiseTable,
 };
-
-static FUZZY_MATCHER: Lazy<SkimMatcherV2> =
-    Lazy::new(|| SkimMatcherV2::default().use_cache(true).smart_case());
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum MatchType {
@@ -111,10 +105,12 @@ impl Search {
     }
 
     fn get_matches(&self) -> Vec<(String, String)> {
+        let name = self.name.as_deref().unwrap_or("");
+        let mut fuzzy_matcher = FuzzyMatcher::default();
+        let fuzzy_pattern = FuzzyPattern::new(&name.to_lowercase());
         self.get_tools()
             .iter()
             .filter_map(|(short, rt)| {
-                let name = self.name.as_deref().unwrap_or("");
                 if name.is_empty() {
                     Some((0, short, rt))
                 } else {
@@ -133,13 +129,13 @@ impl Search {
                                 None
                             }
                         }
-                        MatchType::Fuzzy => FUZZY_MATCHER
-                            .fuzzy_match(&short.to_lowercase(), name.to_lowercase().as_str())
+                        MatchType::Fuzzy => fuzzy_matcher
+                            .score_pattern(&short.to_lowercase(), &fuzzy_pattern)
                             .map(|score| (score, short, rt)),
                     }
                 }
             })
-            .sorted_by_key(|(score, _short, _rt)| -1 * *score)
+            .sorted_by_key(|(score, _short, _rt)| std::cmp::Reverse(*score))
             .map(|(_score, short, rt)| (short.to_string(), get_description(rt)))
             .collect()
     }

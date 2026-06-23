@@ -8,7 +8,7 @@ use tempfile::TempDir;
 use crate::cli::oci::common::perform_build;
 use crate::config::Settings;
 use crate::file;
-use crate::oci::BuildOptions;
+use crate::oci::{BuildOptions, LayerOwner};
 
 /// [experimental] Build an OCI image and push it to a registry
 ///
@@ -32,7 +32,7 @@ pub struct Push {
     from: Option<String>,
 
     /// Push an already-built OCI image layout (skip the build step)
-    #[clap(long, value_hint = ValueHint::DirPath, conflicts_with_all = &["from", "mount_point", "no_mise", "include_global"])]
+    #[clap(long, value_hint = ValueHint::DirPath, conflicts_with_all = &["from", "mount_point", "no_mise", "owner", "include_global"])]
     image_dir: Option<PathBuf>,
 
     /// Also include tools from the global / system config (default: project-only)
@@ -48,6 +48,14 @@ pub struct Push {
     /// Don't embed the mise binary (ignored with --image-dir)
     #[clap(long)]
     no_mise: bool,
+
+    /// UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
+    ///
+    /// Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
+    /// omitted, it defaults to UID. This affects file ownership only; [oci].user
+    /// controls the image USER directive.
+    #[clap(long, value_name = "UID[:GID]")]
+    owner: Option<LayerOwner>,
 
     /// Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`.
     #[clap(long, default_value = "auto")]
@@ -95,6 +103,7 @@ impl Push {
                     from: self.from.clone(),
                     tag: Some(self.reference.clone()),
                     mount_point: self.mount_point.clone(),
+                    owner: self.owner,
                     include_mise: !self.no_mise,
                 };
                 let built = perform_build(opts, self.include_global).await?;

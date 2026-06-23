@@ -480,7 +480,6 @@ async fn execute(
     hook: &Hook,
     installed_tools: Option<&[InstalledToolInfo]>,
 ) -> Result<()> {
-    Settings::get().ensure_experimental("hooks")?;
     let HookAction::Run {
         run,
         run_windows,
@@ -640,8 +639,6 @@ async fn execute_task(
     task_name: &str,
     installed_tools: Option<&[InstalledToolInfo]>,
 ) -> Result<()> {
-    Settings::get().ensure_experimental("hooks")?;
-
     let mise_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mise"));
 
     let mut env = if hook.hook == Hooks::Preinstall {

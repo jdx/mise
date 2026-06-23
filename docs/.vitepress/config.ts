@@ -129,10 +129,45 @@ export default withMermaid(
                 { text: "http", link: "/dev-tools/backends/http" },
                 { text: "npm", link: "/dev-tools/backends/npm" },
                 { text: "pipx", link: "/dev-tools/backends/pipx" },
+                { text: "pkgx", link: "/dev-tools/backends/pkgx" },
                 { text: "spm", link: "/dev-tools/backends/spm" },
                 { text: "ubi", link: "/dev-tools/backends/ubi" },
                 { text: "vfox", link: "/dev-tools/backends/vfox" },
               ],
+            },
+          ],
+        },
+        {
+          text: "Bootstrap (experimental)",
+          items: [
+            { text: "Overview", link: "/bootstrap" },
+            {
+              text: "Bootstrap Packages",
+              link: "/bootstrap/packages/",
+              collapsed: true,
+              items: [
+                { text: "apk", link: "/bootstrap/packages/apk" },
+                { text: "apt", link: "/bootstrap/packages/apt" },
+                { text: "dnf", link: "/bootstrap/packages/dnf" },
+                { text: "pacman", link: "/bootstrap/packages/pacman" },
+                { text: "brew", link: "/bootstrap/packages/brew" },
+              ],
+            },
+            {
+              text: "Dotfiles",
+              link: "/dotfiles",
+            },
+            {
+              text: "macOS Defaults",
+              link: "/bootstrap/macos-defaults",
+            },
+            {
+              text: "launchd",
+              link: "/bootstrap/launchd",
+            },
+            {
+              text: "User Login Shell",
+              link: "/bootstrap/user",
             },
           ],
         },

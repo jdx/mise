@@ -9,7 +9,7 @@ export MISE_EXPERIMENTAL=1
 # Create monorepo structure similar to the reported issue:
 # mise-monorepo/
 #   mise/
-#     config.toml (root config with experimental_monorepo_root)
+#     config.toml (root config with monorepo_root)
 #     common.tasks.toml (shared tasks)
 #   packages/
 #     foo/
@@ -21,7 +21,7 @@ mkdir -p packages/foo/mise
 
 # Create root config
 cat <<EOF >mise/config.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["packages/*"]
@@ -107,7 +107,7 @@ EOF
 
 # Update monorepo config_roots to include deeper path
 cat <<EOF >mise/config.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["packages/*", "packages/bar/src"]

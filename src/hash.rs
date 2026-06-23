@@ -139,11 +139,13 @@ pub fn ensure_checksum(
 
 pub fn parse_shasums(text: &str) -> HashMap<String, String> {
     text.lines()
-        .map(|l| {
+        .filter_map(|l| {
             let mut parts = l.split_whitespace();
-            let hash = parts.next().unwrap();
-            let name = parts.next().unwrap();
-            (name.into(), hash.into())
+            let hash = parts.next()?;
+            let name = parts.next()?;
+            // Strip coreutils binary-mode marker (e.g. "<hash> *file.tar.gz").
+            let name = name.strip_prefix('*').unwrap_or(name);
+            Some((name.into(), hash.into()))
         })
         .collect()
 }

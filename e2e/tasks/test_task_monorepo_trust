@@ -5,7 +5,7 @@ export MISE_EXPERIMENTAL=1
 
 # Create monorepo root config
 cat <<EOF >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["projects/*", "projects/frontend/*"]
@@ -43,10 +43,14 @@ assert_not_contains "mise tasks ls --all 2>&1" "Trust them"
 assert_contains "mise run '//projects/frontend:build'" "frontend build"
 assert_contains "mise run '//projects/frontend/components:test'" "component test"
 
-# Test that trust warnings DO appear for configs outside monorepo
-# Create a parent directory with its own config (not part of monorepo)
+# Test that trust warnings DO appear for unsafe configs outside monorepo
+# (tasks-only configs are safe and load without trust, so use [env] to make
+# this one require trust)
 mkdir -p ../parent-dir
 cat <<EOF >../parent-dir/mise.toml
+[env]
+FOO = "bar"
+
 [tasks.parent-task]
 run = 'echo "parent task"'
 EOF

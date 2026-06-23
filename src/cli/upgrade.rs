@@ -4,9 +4,9 @@ use std::sync::Arc;
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, config_file};
-use crate::duration::parse_into_timestamp;
+use crate::errors::split_install_result;
 use crate::file::display_path;
-use crate::install_before::resolve_before_date_for_tool;
+use crate::install_before::resolve_cli_minimum_release_age;
 use crate::semver::split_version_prefix;
 use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
@@ -126,6 +126,7 @@ impl Upgrade {
             use_locked_version: false,
             latest_versions: true,
             before_date,
+            before_date_from_default: false,
             offline: false,
             refresh_remote_versions: false,
             inactive: self.inactive,
@@ -280,6 +281,7 @@ impl Upgrade {
                 use_locked_version: false,
                 latest_versions: true,
                 before_date,
+                before_date_from_default: false,
                 offline: false,
                 refresh_remote_versions: false,
                 inactive: self.inactive,
@@ -293,16 +295,7 @@ impl Upgrade {
 
         // Install all tools in parallel
         let (mut successful_versions, install_error) =
-            match ts.install_all_versions(config, tool_requests, &opts).await {
-                Ok(versions) => (versions, eyre::Result::Ok(())),
-                Err(e) => match e.downcast_ref::<crate::errors::Error>() {
-                    Some(crate::errors::Error::InstallFailed {
-                        successful_installations,
-                        ..
-                    }) => (successful_installations.clone(), eyre::Result::Err(e)),
-                    _ => (vec![], eyre::Result::Err(e)),
-                },
-            };
+            split_install_result(ts.install_all_versions(config, tool_requests, &opts).await);
 
         // Only update config files for tools that were successfully installed
         for (o, cf) in config_file_updates {
@@ -408,27 +401,29 @@ impl Upgrade {
 
         // Only uninstall old versions of tools that were successfully upgraded
         // and are not needed by any tracked config
-        for (o, tv) in to_remove {
+        for (o, old_version) in to_remove {
             if successful_versions
                 .iter()
                 .any(|v| v.ba() == o.tool_version.ba())
             {
-                // Check if this version is still needed by another tracked config
-                let version_key = (
-                    o.tool_version.ba().short.to_string(),
-                    o.tool_version.tv_pathname(),
-                );
+                // Build a ToolVersion that targets the actual installed old version
+                // (e.g., "1.0.0"), not the resolved latest (e.g., "2.0.0").
+                // When minimum_release_age forces a remote lookup for "latest",
+                // the toolset resolves to the remote version, and tv_pathname()
+                // on the toolset version would give the wrong key.
+                let old_tv = ToolVersion::new(o.tool_version.request.clone(), old_version.clone());
+                let version_key = (old_tv.ba().short.to_string(), old_tv.tv_pathname());
                 if versions_needed_by_tracked.contains(&version_key) {
                     debug!(
                         "Keeping {}@{} because it's still needed by a tracked config",
-                        o.name, tv
+                        o.name, old_version
                     );
                     continue;
                 }
 
-                let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
+                let pr = mpr.add(&format!("uninstall {}@{}", o.name, old_version));
                 if let Err(e) = self
-                    .uninstall_old_version(config, &o.tool_version, pr.as_ref())
+                    .uninstall_old_version(config, &old_tv, pr.as_ref())
                     .await
                 {
                     warn!("Failed to uninstall old version of {}: {}", o.name, e);
@@ -535,10 +530,7 @@ impl Upgrade {
     /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(minimum_release_age) = &self.minimum_release_age {
-            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
-        }
-        Ok(None)
+        resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 
     async fn warn_if_newer_versions_hidden_by_minimum_release_age(
@@ -576,25 +568,19 @@ impl Upgrade {
             if !warned.insert(warning_key) {
                 continue;
             }
-            let before_date = match resolve_before_date_for_tool(
-                tv.ba(),
-                opts.before_date,
-                tv.request.options().minimum_release_age(),
-            ) {
-                Ok(Some(before_date)) => before_date,
-                Ok(None) => continue,
-                Err(err) => {
-                    warn!(
-                        "Error resolving minimum_release_age for {}: {err:#}",
-                        tv.ba()
-                    );
-                    continue;
-                }
-            };
-            let opts_with_effective_before_date = ResolveOptions {
-                before_date: Some(before_date),
-                ..opts.clone()
-            };
+            let mut opts_with_effective_before_date = opts.clone();
+            if let Err(err) = opts_with_effective_before_date
+                .apply_before_date_for_tool(tv.ba(), tv.request.options().minimum_release_age())
+            {
+                warn!(
+                    "Error resolving minimum_release_age for {}: {err:#}",
+                    tv.ba()
+                );
+                continue;
+            }
+            if opts_with_effective_before_date.before_date.is_none() {
+                continue;
+            }
             let eligible_latest = self
                 .latest_for_upgrade(config, &tv, &opts_with_effective_before_date)
                 .await;

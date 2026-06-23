@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::{fmt::Debug, sync::Arc};
 
 use async_trait::async_trait;
@@ -16,10 +17,9 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::GITHUB_TOKEN;
-use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 
 #[derive(Debug)]
 pub struct CargoBackend {
@@ -84,7 +84,7 @@ impl<'a> CargoOptions<'a> {
 
 #[derive(Debug)]
 enum BinstallStatus {
-    Enabled,
+    Enabled(PathBuf),
     Disabled,
     Unavailable,
     UnsupportedOptions(Vec<&'static str>),
@@ -183,9 +183,9 @@ impl Backend for CargoBackend {
             }
             cmd
         } else {
-            match self.binstall_status(&config, &tv).await {
-                BinstallStatus::Enabled => {
-                    let mut cmd = CmdLineRunner::new("cargo-binstall").arg("-y");
+            match self.binstall_status(&config, Some(&ctx.ts), &tv).await {
+                BinstallStatus::Enabled(cargo_binstall) => {
+                    let mut cmd = CmdLineRunner::new(cargo_binstall).arg("-y");
                     if let Some(token) = &*GITHUB_TOKEN {
                         cmd = cmd.env("GITHUB_TOKEN", token)
                     }
@@ -259,9 +259,9 @@ impl Backend for CargoBackend {
         &self,
         request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let opts = request.options();
-        CargoOptions::new(&opts).lockfile_options(target)
+        Ok(CargoOptions::new(&opts).lockfile_options(target))
     }
 }
 
@@ -298,7 +298,12 @@ impl CargoBackend {
         options
     }
 
-    async fn binstall_status(&self, config: &Arc<Config>, tv: &ToolVersion) -> BinstallStatus {
+    async fn binstall_status(
+        &self,
+        config: &Arc<Config>,
+        ts: Option<&Toolset>,
+        tv: &ToolVersion,
+    ) -> BinstallStatus {
         if !Settings::get().cargo.binstall {
             return BinstallStatus::Disabled;
         }
@@ -307,19 +312,13 @@ impl CargoBackend {
         if !cargo_install_required_options.is_empty() {
             return BinstallStatus::UnsupportedOptions(cargo_install_required_options);
         }
-        if file::which_non_pristine("cargo-binstall").is_none() {
-            match self.dependency_toolset(config).await {
-                Ok(ts) => {
-                    if ts.which(config, "cargo-binstall").await.is_none() {
-                        return BinstallStatus::Unavailable;
-                    }
-                }
-                Err(_e) => {
-                    return BinstallStatus::Unavailable;
-                }
-            }
+        if let Some(cargo_binstall) = self
+            .dependency_path_for_install(config, ts, "cargo-binstall")
+            .await
+        {
+            return BinstallStatus::Enabled(cargo_binstall);
         }
-        BinstallStatus::Enabled
+        BinstallStatus::Unavailable
     }
 
     /// if the name is a git repo, return the git url

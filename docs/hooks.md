@@ -1,4 +1,4 @@
-# Hooks <Badge type="warning" text="experimental" />
+# Hooks
 
 You can have mise automatically execute scripts during a `mise activate` session. You cannot use these
 without the `mise activate` shell hook installed in your shell—except the `preinstall` and `postinstall` hooks.

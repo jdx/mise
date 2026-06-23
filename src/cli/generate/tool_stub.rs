@@ -4,7 +4,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::tool_stub::ToolStubFile;
 use crate::config::Config;
-use crate::file::{self, TarFormat, TarOptions};
+use crate::file::{self, ExtractionFormat};
 use crate::http::HTTP;
 use crate::lockfile::PlatformInfo;
 use crate::minisign;
@@ -13,9 +13,9 @@ use crate::toolset::{ResolveOptions, ToolVersion};
 use crate::ui::info;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
+use bytesize::ByteSize;
 use clap::ValueHint;
 use color_eyre::eyre::bail;
-use humansize::{BINARY, format_size};
 use indexmap::IndexMap;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -471,7 +471,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         let checksum = format!("blake3:{}", blake3::hash(&bytes).to_hex());
 
         // Detect binary path if this is an archive
-        let bin_path = if TarFormat::from_file_name(&filename).is_archive() {
+        let bin_path = if ExtractionFormat::from_file_name(&filename).is_archive() {
             // Update progress message for extraction and reuse the same progress reporter
             pr.set_message(format!("extract {filename}"));
             match self
@@ -508,20 +508,25 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         std::fs::create_dir_all(&extracted_dir)?;
 
         // Try extraction using mise's built-in extraction logic (reuse the passed progress reporter)
-        let tar_opts = TarOptions {
-            pr: Some(pr),
-            ..TarOptions::new(TarFormat::from_file_name(
-                &archive_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy(),
-            ))
-        };
-        file::untar(archive_path, &extracted_dir, &tar_opts)?;
+        let format = ExtractionFormat::from_file_name(
+            &archive_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy(),
+        );
+        file::extract_archive(
+            archive_path,
+            &extracted_dir,
+            format,
+            &file::ExtractOptions {
+                pr: Some(pr),
+                ..Default::default()
+            },
+        )?;
 
         // Check if strip_components would be applied during actual installation
         let format =
-            TarFormat::from_file_name(&archive_path.file_name().unwrap().to_string_lossy());
+            ExtractionFormat::from_file_name(&archive_path.file_name().unwrap().to_string_lossy());
         let will_strip = file::should_strip_components(archive_path, format)?;
 
         // Find executable files
@@ -804,7 +809,7 @@ fn is_bootstrap_stub(content: &str) -> bool {
 }
 
 fn format_size_comment(bytes: u64) -> String {
-    format!(" # {}", format_size(bytes, BINARY))
+    format!(" # {}", ByteSize::b(bytes).display().iec())
 }
 
 /// Extract TOML content from a stub file (handles both regular and bootstrap stubs)

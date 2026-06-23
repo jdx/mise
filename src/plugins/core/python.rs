@@ -7,7 +7,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file::{TarFormat, TarOptions, display_path};
+use crate::file::{ExtractOptions, ExtractionFormat, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -370,13 +370,14 @@ impl PythonPlugin {
         }
 
         file::remove_all(&install)?;
-        file::untar(
+        file::extract_archive(
             &tarball_path,
             &install,
-            &TarOptions {
+            ExtractionFormat::from_file_name(filename),
+            &ExtractOptions {
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
-                ..TarOptions::new(TarFormat::from_file_name(filename))
+                ..Default::default()
             },
         )?;
         if !install.join("bin").exists() {
@@ -499,12 +500,6 @@ impl PythonPlugin {
         let raw_opts = tv.request.options();
         let opts = PythonOptions::new(&raw_opts);
         if let Some(virtualenv) = opts.virtualenv() {
-            if !Settings::get().experimental {
-                warn!(
-                    "please enable experimental mode with `mise settings experimental=true` \
-                    to use python virtualenv activation"
-                );
-            }
             let mut virtualenv: PathBuf = file::replace_path(Path::new(virtualenv));
             if !virtualenv.is_absolute() {
                 // TODO: use the path of the config file that specified python, not the top one like this
@@ -930,7 +925,7 @@ impl Backend for PythonPlugin {
         &self,
         request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
         let is_current_platform = target.is_current();
@@ -961,7 +956,7 @@ impl Backend for PythonPlugin {
 
         let raw_opts = request.options();
         opts.extend(PythonOptions::new(&raw_opts).lockfile_options());
-        opts
+        Ok(opts)
     }
 
     async fn resolve_lock_info(

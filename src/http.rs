@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use eyre::{Report, Result, bail, ensure};
+use eyre::{Report, Result, bail, ensure, eyre};
 use regex::Regex;
 use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
@@ -52,6 +52,7 @@ struct RetryState {
 struct SendOnceOptions {
     use_netrc: bool,
     retry_github_oauth_401: bool,
+    error_for_status: bool,
     retry_state: Option<RetryStateHandle>,
 }
 
@@ -60,14 +61,21 @@ impl SendOnceOptions {
         Self {
             use_netrc,
             retry_github_oauth_401: true,
+            error_for_status: true,
             retry_state,
         }
+    }
+
+    fn allow_error_status(mut self) -> Self {
+        self.error_for_status = false;
+        self
     }
 
     fn recursive_retry(&self) -> Self {
         Self {
             use_netrc: false,
             retry_github_oauth_401: false,
+            error_for_status: self.error_for_status,
             retry_state: self.retry_state.clone(),
         }
     }
@@ -156,6 +164,17 @@ impl Client {
             .await?;
         resp.error_for_status_ref()?;
         Ok(resp)
+    }
+
+    pub async fn get_async_with_headers_allow_error_status<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+    ) -> Result<Response> {
+        ensure!(!Settings::get().offline(), "offline mode is enabled");
+        let url = url.into_url().unwrap();
+        self.send_with_https_fallback_allow_error_status(Method::GET, url, headers, "GET")
+            .await
     }
 
     pub async fn head<U: IntoUrl>(&self, url: U) -> Result<Response> {
@@ -400,6 +419,25 @@ impl Client {
             headers,
             verb_label,
             Settings::get().http_retries,
+            true,
+        )
+        .await
+    }
+
+    async fn send_with_https_fallback_allow_error_status(
+        &self,
+        method: Method,
+        url: Url,
+        headers: &HeaderMap,
+        verb_label: &str,
+    ) -> Result<Response> {
+        self.send_with_https_fallback_with_retries(
+            method,
+            url,
+            headers,
+            verb_label,
+            Settings::get().http_retries,
+            false,
         )
         .await
     }
@@ -411,6 +449,7 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
         retries: i64,
+        error_for_status: bool,
     ) -> Result<Response> {
         let retry_state = Arc::new(Mutex::new(RetryState {
             headers: headers.clone(),
@@ -421,13 +460,18 @@ impl Client {
                 let state = retry_state.lock().unwrap();
                 (state.headers.clone(), state.use_netrc)
             };
+            let options = SendOnceOptions::new(Some(retry_state.clone()), use_netrc);
+            let options = if error_for_status {
+                options
+            } else {
+                options.allow_error_status()
+            };
             self.send_once_with_https_fallback_with_retry_headers(
                 method.clone(),
                 url.clone(),
                 &headers,
                 verb_label,
-                Some(retry_state.clone()),
-                use_netrc,
+                options,
             )
             .await
         })
@@ -449,7 +493,11 @@ impl Client {
         verb_label: &str,
     ) -> Result<Response> {
         self.send_once_with_https_fallback_with_retry_headers(
-            method, url, headers, verb_label, None, true,
+            method,
+            url,
+            headers,
+            verb_label,
+            SendOnceOptions::new(None, true),
         )
         .await
     }
@@ -460,8 +508,7 @@ impl Client {
         url: Url,
         headers: &HeaderMap,
         verb_label: &str,
-        retry_state: Option<RetryStateHandle>,
-        use_netrc: bool,
+        options: SendOnceOptions,
     ) -> Result<Response> {
         match self
             .send_once_with_retry_headers(
@@ -469,8 +516,7 @@ impl Client {
                 url.clone(),
                 headers,
                 verb_label,
-                retry_state.clone(),
-                use_netrc,
+                options.clone(),
             )
             .await
         {
@@ -478,15 +524,8 @@ impl Client {
             Err(err) if url.scheme() == "http" && is_connection_error(&err) => {
                 let mut url = url;
                 url.set_scheme("https").unwrap();
-                self.send_once_with_retry_headers(
-                    method,
-                    url,
-                    headers,
-                    verb_label,
-                    retry_state,
-                    use_netrc,
-                )
-                .await
+                self.send_once_with_retry_headers(method, url, headers, verb_label, options)
+                    .await
             }
             Err(err) => Err(err),
         }
@@ -498,17 +537,10 @@ impl Client {
         url: Url,
         headers: &HeaderMap,
         verb_label: &str,
-        retry_state: Option<RetryStateHandle>,
-        use_netrc: bool,
+        options: SendOnceOptions,
     ) -> Result<Response> {
-        self.send_once_inner(
-            method,
-            url,
-            headers,
-            verb_label,
-            SendOnceOptions::new(retry_state, use_netrc),
-        )
-        .await
+        self.send_once_inner(method, url, headers, verb_label, options)
+            .await
     }
 
     async fn send_once_inner(
@@ -603,18 +635,20 @@ impl Client {
                 }
             }
         }
-        if is_authenticated_github_forbidden(&url, &final_headers, &resp) {
+        if options.error_for_status && is_github_forbidden(&url, &resp) {
             let status = resp.status();
             let status_error = resp
                 .error_for_status_ref()
                 .expect_err("403 response should be an error");
+            let used_github_token = final_headers.contains_key(AUTHORIZATION);
+            let rate_limit = github_rate_limit_summary(&resp);
             let body = resp.text().await.unwrap_or_default();
             // Retry without auth when the response mentions IP allow lists: GitHub App
             // installation tokens (`ghs_*`) get 403 on public API resources for orgs with IP
             // allow lists; stripping auth avoids that path.
             // https://github.com/orgs/community/discussions/191185
             // https://github.com/jdx/mise/discussions/9119
-            if body.contains("IP allow list") {
+            if used_github_token && body.contains("IP allow list") {
                 let mut headers = final_headers;
                 headers.remove(AUTHORIZATION);
                 debug!(
@@ -630,9 +664,16 @@ impl Client {
                 ))
                 .await;
             }
-            return Err(status_error.into());
+            return Err(github_forbidden_report(
+                status_error,
+                used_github_token,
+                rate_limit,
+                &body,
+            ));
         }
-        resp.error_for_status_ref()?;
+        if options.error_for_status {
+            resp.error_for_status_ref()?;
+        }
         Ok(resp)
     }
 }
@@ -668,6 +709,7 @@ impl TextRequest<'_> {
                 &headers,
                 "GET",
                 self.retries,
+                true,
             )
             .await?;
         let text = resp.text().await?;
@@ -683,10 +725,68 @@ impl TextRequest<'_> {
     }
 }
 
-fn is_authenticated_github_forbidden(url: &Url, headers: &HeaderMap, resp: &Response) -> bool {
-    resp.status() == StatusCode::FORBIDDEN
-        && url.host_str() == Some("api.github.com")
-        && headers.contains_key(AUTHORIZATION)
+fn is_github_forbidden(url: &Url, resp: &Response) -> bool {
+    resp.status() == StatusCode::FORBIDDEN && url.host_str() == Some("api.github.com")
+}
+
+fn github_forbidden_report(
+    status_error: reqwest::Error,
+    used_github_token: bool,
+    rate_limit: Option<String>,
+    body: &str,
+) -> Report {
+    let token_status = if used_github_token { "yes" } else { "no" };
+    let rate_limit = rate_limit
+        .map(|summary| format!("\ngithub rate limit: {summary}"))
+        .unwrap_or_default();
+    let body = format_response_body(body);
+    eyre!("{status_error}\ngithub auth: {token_status}{rate_limit}\ngithub response: {body}")
+}
+
+fn format_response_body(body: &str) -> String {
+    const MAX_BODY_CHARS: usize = 4096;
+    if body.trim().is_empty() {
+        return "<empty>".to_string();
+    }
+
+    let mut chars = body.chars();
+    let mut formatted: String = chars.by_ref().take(MAX_BODY_CHARS).collect();
+    if chars.next().is_some() {
+        formatted.push_str("\n<truncated>");
+    }
+    formatted
+}
+
+fn github_rate_limit_summary(resp: &Response) -> Option<String> {
+    let headers = resp.headers();
+    let limit = headers
+        .get("x-ratelimit-limit")
+        .and_then(|h| h.to_str().ok());
+    let remaining = headers
+        .get("x-ratelimit-remaining")
+        .and_then(|h| h.to_str().ok());
+    let resource = headers
+        .get("x-ratelimit-resource")
+        .and_then(|h| h.to_str().ok());
+    let reset = headers
+        .get("x-ratelimit-reset")
+        .and_then(|h| h.to_str().ok());
+
+    if limit.is_none() && remaining.is_none() && resource.is_none() && reset.is_none() {
+        return None;
+    }
+
+    Some(format!(
+        "{}/{}{}{}",
+        remaining.unwrap_or("?"),
+        limit.unwrap_or("?"),
+        resource
+            .map(|resource| format!(" ({resource})"))
+            .unwrap_or_default(),
+        reset
+            .map(|reset| format!(", resets at {reset}"))
+            .unwrap_or_default()
+    ))
 }
 
 fn stale_github_oauth_unauthorized_token(
@@ -1195,6 +1295,20 @@ mod tests {
     fn unauthorized_response() -> &'static str {
         "HTTP/1.1 401 Unauthorized\r\nContent-Length: 15\r\nConnection: close\r\n\r\nBad credentials"
     }
+    fn github_forbidden_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 403 Forbidden\r\n",
+            "Content-Type: application/json\r\n",
+            "X-RateLimit-Limit: 5000\r\n",
+            "X-RateLimit-Remaining: 42\r\n",
+            "X-RateLimit-Resource: core\r\n",
+            "X-RateLimit-Reset: 1781337353\r\n",
+            "Content-Length: 47\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            r#"{"message":"secondary rate limit","docs":"url"}"#
+        )
+    }
     fn github_oauth_token_response() -> &'static str {
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 51\r\nConnection: close\r\n\r\n{\"access_token\":\"ghu-refreshed\",\"expires_in\":28800}"
     }
@@ -1262,6 +1376,34 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert!(retry_request.contains("authorization: bearer ghu-refreshed"));
         let cache = std::fs::read_to_string(cache_path).unwrap();
         assert!(cache.contains("ghu-refreshed"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_github_forbidden_report_includes_body_and_auth_state() {
+        let (port, _count) = spawn_canned_server(vec![github_forbidden_response()]).await;
+        let url = format!("http://127.0.0.1:{port}/repos/microsoft/edit/releases");
+        let resp = reqwest::Client::new().get(url).send().await.unwrap();
+        let rate_limit = github_rate_limit_summary(&resp);
+        let status_error = resp
+            .error_for_status_ref()
+            .expect_err("403 response should be an error");
+        let body = resp.text().await.unwrap();
+        let err = github_forbidden_report(status_error, true, rate_limit, &body);
+        let msg = format!("{err:?}");
+
+        assert!(msg.contains("github auth: yes"));
+        assert!(msg.contains("github rate limit: 42/5000 (core), resets at 1781337353"));
+        assert!(msg.contains(r#"{"message":"secondary rate limit","docs":"url"}"#));
+    }
+
+    #[test]
+    fn test_format_response_body_handles_empty_and_truncates() {
+        assert_eq!(format_response_body(" \n\t"), "<empty>");
+
+        let body = "a".repeat(4097);
+        let formatted = format_response_body(&body);
+        assert_eq!(formatted.strip_suffix("\n<truncated>").unwrap().len(), 4096);
+        assert!(formatted.ends_with("\n<truncated>"));
     }
 
     #[tokio::test(flavor = "current_thread")]

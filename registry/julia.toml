@@ -6,6 +6,8 @@ test = { cmd = "julia --version", expected = "julia version" }
 full = "http:julia"
 
 [backends.options]
+checksum_expr = '"sha256:" + filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256'
+checksum_url = "https://julialang-s3.julialang.org/bin/versions.json"
 version_expr = 'sortVersions(filter(keys(fromJSON(body)), { # matches "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z\\.-]+)?$" }))'
 version_list_url = "https://julialang-s3.julialang.org/bin/versions.json"
 

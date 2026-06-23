@@ -16,7 +16,11 @@ use crate::{backend, ui};
 pub enum ProgressIcon {
     Success,
     Skipped,
+    #[allow(dead_code)]
     Warning,
+    // Constructed only by the brew package managers (`#[cfg(unix)]`), so it reads
+    // as never-constructed on the windows build.
+    #[cfg_attr(windows, allow(dead_code))]
     Error,
 }
 

@@ -148,6 +148,14 @@ impl Watch {
             args.push("--on-busy-update".to_string());
             args.push(self.watchexec.on_busy_update.to_string());
         }
+        // Forward --wrap-process to watchexec when it differs from watchexec's
+        // default ("group"). Without this the flag is parsed but dropped, so e.g.
+        // `mise watch --wrap-process none` had no effect and a TUI task launched in
+        // the default process group would block on terminal I/O (#10212).
+        if self.watchexec.wrap_process != WrapMode::Group {
+            args.push("--wrap-process".to_string());
+            args.push(self.watchexec.wrap_process.to_string());
+        }
         if !self.watchexec.signal_map.is_empty() {
             for signal_map in &self.watchexec.signal_map {
                 args.push("--map-signal".to_string());
@@ -1422,7 +1430,8 @@ pub enum OnBusyUpdate {
     Signal,
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub enum WrapMode {
     #[default]
     Group,
@@ -1469,8 +1478,8 @@ pub enum ColourMode {
 #[cfg(test)]
 mod tests {
     use super::{
-        common_ancestor, merge_watch_patterns, normalize_path, parse_source, relativize_source,
-        source_watch_dir,
+        WrapMode, common_ancestor, merge_watch_patterns, normalize_path, parse_source,
+        relativize_source, source_watch_dir,
     };
     use std::path::{Path, PathBuf};
 
@@ -1481,6 +1490,15 @@ mod tests {
     fn resolve_source(s: &str, cwd: &Path, anchor: &Path) -> String {
         let (k, abs) = parse_source(s, cwd);
         relativize_source(k, &abs, anchor)
+    }
+
+    #[test]
+    fn wrap_mode_serializes_to_watchexec_values() {
+        // These strings are forwarded verbatim to `watchexec --wrap-process`, so
+        // they must match the values watchexec accepts (#10212).
+        assert_eq!(WrapMode::Group.to_string(), "group");
+        assert_eq!(WrapMode::Session.to_string(), "session");
+        assert_eq!(WrapMode::None.to_string(), "none");
     }
 
     #[test]

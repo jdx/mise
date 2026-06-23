@@ -100,6 +100,14 @@ assert "cat ~/.config/mise/config.toml" '[tools]
 dummy = "1"'
 rm -f ~/.config/mise/config.toml
 
+assert_empty "mise use --quiet -g dummy@1 2>&1"
+assert "cat ~/.config/mise/config.toml" '[tools]
+dummy = "1"'
+assert_empty "mise use --silent -g dummy@1 2>&1"
+assert "cat ~/.config/mise/config.toml" '[tools]
+dummy = "1"'
+rm -f ~/.config/mise/config.toml
+
 mise use -g "ubi:cli/cli[exe=gh]"
 assert "cat ~/.config/mise/config.toml" '[tools]
 "ubi:cli/cli" = { version = "latest", exe = "gh" }'

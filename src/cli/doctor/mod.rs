@@ -48,6 +48,39 @@ pub enum Commands {
     Path(path::Path),
 }
 
+/// outcome of the `[bootstrap.macos.defaults]` doctor check
+enum SystemDefaultsDiagnosis {
+    Unavailable {
+        requested: usize,
+        reason: String,
+    },
+    Checked {
+        requested: usize,
+        out_of_sync: usize,
+    },
+    CheckFailed {
+        requested: usize,
+        error: String,
+    },
+}
+
+/// outcome of the `[bootstrap.user].login_shell` doctor check
+enum SystemLoginShellDiagnosis {
+    Unavailable {
+        reason: String,
+        shell: String,
+    },
+    Checked {
+        shell: String,
+        current: String,
+        out_of_sync: bool,
+    },
+    CheckFailed {
+        shell: String,
+        error: String,
+    },
+}
+
 impl Doctor {
     pub async fn run(self) -> eyre::Result<()> {
         if let Some(cmd) = self.subcommand {
@@ -190,6 +223,18 @@ impl Doctor {
             (f.ba().to_string(), versions)
         });
         data.insert("toolset".into(), tools.collect());
+
+        if let Some(system_packages) = self.system_packages_json(&config).await {
+            data.insert("system_packages".into(), system_packages);
+        }
+
+        if let Some(system_defaults) = self.system_defaults_json(&config).await {
+            data.insert("system_defaults".into(), system_defaults);
+        }
+
+        if let Some(system_login_shell) = self.system_login_shell_json(&config).await {
+            data.insert("system_login_shell".into(), system_login_shell);
+        }
 
         if !self.errors.is_empty() {
             data.insert("errors".into(), self.errors.clone().into_iter().collect());
@@ -360,6 +405,310 @@ impl Doctor {
             Err(err) => self.errors.push(format!("failed to load toolset: {err}")),
         }
 
+        self.analyze_system_packages(config).await?;
+        self.analyze_system_defaults(config).await?;
+        self.analyze_system_login_shell(config).await?;
+
+        Ok(())
+    }
+
+    /// same diagnostics as [`Self::analyze_system_packages`] for `doctor -J`
+    async fn system_packages_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
+        if !Settings::get().experimental {
+            return None;
+        }
+        let mgrs = crate::system::packages_from_config(config);
+        if mgrs.is_empty() {
+            return None;
+        }
+        let mut map = serde_json::Map::new();
+        let mut total_missing = 0;
+        for mp in mgrs {
+            let name = mp.manager.name();
+            if mp.disabled || !mp.manager.is_available() {
+                let reason = if mp.disabled {
+                    "excluded by the system_packages.managers setting".to_string()
+                } else {
+                    mp.manager.unavailable_reason()
+                };
+                map.insert(
+                    name.into(),
+                    serde_json::json!({
+                        "available": false,
+                        "reason": reason,
+                        "requested": mp.requests.len(),
+                    }),
+                );
+                continue;
+            }
+            match mp.manager.installed(&mp.requests).await {
+                Ok(statuses) => {
+                    let missing = statuses
+                        .iter()
+                        .filter(|s| {
+                            !matches!(
+                                s.state,
+                                crate::system::packages::PackageState::Installed { .. }
+                            )
+                        })
+                        .count();
+                    total_missing += missing;
+                    map.insert(
+                        name.into(),
+                        serde_json::json!({
+                            "available": true,
+                            "requested": statuses.len(),
+                            "missing": missing,
+                        }),
+                    );
+                }
+                Err(err) => self
+                    .warnings
+                    .push(format!("failed to check {name} system packages: {err}")),
+            }
+        }
+        if total_missing > 0 {
+            self.warnings.push(format!(
+                "{total_missing} system package(s) are missing, install them with `mise bootstrap packages install`"
+            ));
+        }
+        Some(map.into())
+    }
+
+    /// Shared `[bootstrap.macos.defaults]` check for the text and JSON doctor paths.
+    /// Pushes the relevant warnings; returns None when nothing is configured.
+    async fn check_system_defaults(
+        &mut self,
+        config: &Arc<Config>,
+    ) -> Option<SystemDefaultsDiagnosis> {
+        if !Settings::get().experimental {
+            return None;
+        }
+        let defaults = crate::system::defaults_from_config(config);
+        if defaults.is_empty() {
+            return None;
+        }
+        let requested = defaults.len();
+        if !crate::system::defaults::is_available() {
+            return Some(SystemDefaultsDiagnosis::Unavailable {
+                requested,
+                reason: crate::system::defaults::unavailable_reason(),
+            });
+        }
+        match crate::system::defaults::status(&defaults).await {
+            Ok(statuses) => {
+                let out_of_sync = statuses
+                    .iter()
+                    .filter(|s| s.state != crate::system::defaults::DefaultsState::Set)
+                    .count();
+                if out_of_sync > 0 {
+                    self.warnings.push(format!(
+                        "{out_of_sync} macOS default(s) are out of sync, apply them with `mise bootstrap macos-defaults apply`"
+                    ));
+                }
+                Some(SystemDefaultsDiagnosis::Checked {
+                    requested,
+                    out_of_sync,
+                })
+            }
+            Err(err) => {
+                self.warnings
+                    .push(format!("failed to check macOS defaults: {err}"));
+                Some(SystemDefaultsDiagnosis::CheckFailed {
+                    requested,
+                    error: err.to_string(),
+                })
+            }
+        }
+    }
+
+    /// same diagnostics as [`Self::analyze_system_defaults`] for `doctor -J`
+    async fn system_defaults_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
+        let json = match self.check_system_defaults(config).await? {
+            SystemDefaultsDiagnosis::Unavailable { requested, reason } => serde_json::json!({
+                "available": false,
+                "reason": reason,
+                "requested": requested,
+            }),
+            SystemDefaultsDiagnosis::Checked {
+                requested,
+                out_of_sync,
+            } => serde_json::json!({
+                "available": true,
+                "requested": requested,
+                "out_of_sync": out_of_sync,
+            }),
+            SystemDefaultsDiagnosis::CheckFailed { requested, error } => serde_json::json!({
+                "available": true,
+                "requested": requested,
+                "error": error,
+            }),
+        };
+        Some(json)
+    }
+
+    async fn analyze_system_defaults(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        let Some(diagnosis) = self.check_system_defaults(config).await else {
+            return Ok(());
+        };
+        let line = match diagnosis {
+            SystemDefaultsDiagnosis::Unavailable { requested, reason } => {
+                format!("unavailable ({reason}), {requested} entry(ies) skipped")
+            }
+            SystemDefaultsDiagnosis::Checked {
+                requested,
+                out_of_sync,
+            } => format!("{requested} requested, {out_of_sync} out of sync"),
+            SystemDefaultsDiagnosis::CheckFailed { requested, error } => {
+                format!("{requested} requested, check failed: {error}")
+            }
+        };
+        info::section("system_defaults", line)?;
+        Ok(())
+    }
+
+    /// Shared `[bootstrap.user].login_shell` check for the text and JSON doctor paths.
+    /// Pushes the relevant warnings; returns None when nothing is configured.
+    async fn check_system_login_shell(
+        &mut self,
+        config: &Arc<Config>,
+    ) -> Option<SystemLoginShellDiagnosis> {
+        if !Settings::get().experimental {
+            return None;
+        }
+        let request = crate::system::login_shell_from_config(config)?;
+        if !crate::system::login_shell::is_available() {
+            return Some(SystemLoginShellDiagnosis::Unavailable {
+                reason: crate::system::login_shell::unavailable_reason(),
+                shell: request.shell,
+            });
+        }
+        match crate::system::login_shell::status(&request) {
+            Ok(status) => {
+                let out_of_sync = status.state != crate::system::login_shell::LoginShellState::Set;
+                if out_of_sync {
+                    self.warnings.push(
+                        "login shell is out of sync, apply it with `mise bootstrap user apply`"
+                            .to_string(),
+                    );
+                }
+                Some(SystemLoginShellDiagnosis::Checked {
+                    shell: status.request.shell,
+                    current: status.current,
+                    out_of_sync,
+                })
+            }
+            Err(err) => {
+                self.warnings
+                    .push(format!("failed to check login shell: {err}"));
+                Some(SystemLoginShellDiagnosis::CheckFailed {
+                    shell: request.shell,
+                    error: err.to_string(),
+                })
+            }
+        }
+    }
+
+    /// same diagnostics as [`Self::analyze_system_login_shell`] for `doctor -J`
+    async fn system_login_shell_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
+        let json = match self.check_system_login_shell(config).await? {
+            SystemLoginShellDiagnosis::Unavailable { reason, shell } => serde_json::json!({
+                "available": false,
+                "reason": reason,
+                "shell": shell,
+            }),
+            SystemLoginShellDiagnosis::Checked {
+                shell,
+                current,
+                out_of_sync,
+            } => serde_json::json!({
+                "available": true,
+                "shell": shell,
+                "current": current,
+                "out_of_sync": out_of_sync,
+            }),
+            SystemLoginShellDiagnosis::CheckFailed { shell, error } => serde_json::json!({
+                "available": true,
+                "shell": shell,
+                "error": error,
+            }),
+        };
+        Some(json)
+    }
+
+    async fn analyze_system_login_shell(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        let Some(diagnosis) = self.check_system_login_shell(config).await else {
+            return Ok(());
+        };
+        let line = match diagnosis {
+            SystemLoginShellDiagnosis::Unavailable { reason, shell } => {
+                format!("{shell}: unavailable ({reason}), skipped")
+            }
+            SystemLoginShellDiagnosis::Checked {
+                shell,
+                current,
+                out_of_sync,
+            } => format!("{shell} requested, current {current}, out_of_sync={out_of_sync}"),
+            SystemLoginShellDiagnosis::CheckFailed { shell, error } => {
+                format!("{shell} requested, check failed: {error}")
+            }
+        };
+        info::section("system_login_shell", line)?;
+        Ok(())
+    }
+
+    async fn analyze_system_packages(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        if !Settings::get().experimental {
+            return Ok(());
+        }
+        let mgrs = crate::system::packages_from_config(config);
+        if mgrs.is_empty() {
+            return Ok(());
+        }
+        let mut lines = vec![];
+        let mut total_missing = 0;
+        for mp in mgrs {
+            let name = mp.manager.name();
+            if mp.disabled || !mp.manager.is_available() {
+                let reason = if mp.disabled {
+                    "excluded by the system_packages.managers setting".to_string()
+                } else {
+                    mp.manager.unavailable_reason()
+                };
+                lines.push(format!(
+                    "{name}: unavailable ({reason}), {} package(s) skipped",
+                    mp.requests.len()
+                ));
+                continue;
+            }
+            match mp.manager.installed(&mp.requests).await {
+                Ok(statuses) => {
+                    let missing = statuses
+                        .iter()
+                        .filter(|s| {
+                            !matches!(
+                                s.state,
+                                crate::system::packages::PackageState::Installed { .. }
+                            )
+                        })
+                        .count();
+                    lines.push(format!(
+                        "{name}: {} requested, {missing} missing",
+                        statuses.len()
+                    ));
+                    total_missing += missing;
+                }
+                Err(err) => self
+                    .warnings
+                    .push(format!("failed to check {name} system packages: {err}")),
+            }
+        }
+        if total_missing > 0 {
+            self.warnings.push(format!(
+                "{total_missing} system package(s) are missing, install them with `mise bootstrap packages install`"
+            ));
+        }
+        info::section("system_packages", lines.join("\n"))?;
         Ok(())
     }
 

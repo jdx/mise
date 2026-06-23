@@ -4,7 +4,7 @@ export MISE_EXPERIMENTAL=1
 
 # Create monorepo root config with vars
 cat <<EOF >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["infra/stacks/*"]

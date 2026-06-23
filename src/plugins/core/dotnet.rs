@@ -8,15 +8,15 @@ use serde::Deserialize;
 use versions::Versioning;
 
 use crate::backend::Backend;
-use crate::backend::VersionInfo;
 use crate::backend::options::BackendOptions;
+use crate::backend::{VersionInfo, platform_target::PlatformTarget};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::parallel;
-use crate::toolset::{ToolVersion, ToolVersionOptions, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, plugins};
 
@@ -43,6 +43,14 @@ impl<'a> DotnetOptions<'a> {
 
     fn runtime_framework_name(&self) -> Option<&'static str> {
         self.runtime().and_then(runtime_framework_name)
+    }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        let mut opts = BTreeMap::new();
+        if let Some(runtime) = self.runtime() {
+            opts.insert("runtime".to_string(), runtime.to_string());
+        }
+        opts
     }
 }
 
@@ -83,6 +91,15 @@ impl Backend for DotnetPlugin {
 
     fn supports_lockfile_url(&self) -> bool {
         false
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> Result<BTreeMap<String, String>> {
+        let raw_opts = request.options();
+        Ok(DotnetOptions::new(&raw_opts).lockfile_options())
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
@@ -417,6 +434,7 @@ impl PartialOrd for SortedVersion {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::toolset::ToolSource;
 
     fn opts_with_runtime(runtime: &str) -> ToolVersionOptions {
         let mut opts = ToolVersionOptions::default();
@@ -436,6 +454,53 @@ mod tests {
         assert_eq!(
             parsed.runtime_framework_name(),
             Some("Microsoft.AspNetCore.App")
+        );
+    }
+
+    #[test]
+    fn dotnet_lockfile_options_include_runtime() {
+        let opts = opts_with_runtime("dotnet");
+        assert_eq!(
+            DotnetOptions::new(&opts).lockfile_options(),
+            BTreeMap::from([("runtime".to_string(), "dotnet".to_string())])
+        );
+        assert!(
+            DotnetOptions::new(&ToolVersionOptions::default())
+                .lockfile_options()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn resolve_lockfile_options_include_runtime() {
+        let backend = DotnetPlugin::new();
+        let request = ToolRequest::new_opts(
+            backend.ba().clone(),
+            "8.0.14",
+            opts_with_runtime("aspnetcore"),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+
+        assert_eq!(
+            backend
+                .resolve_lockfile_options(&request, &PlatformTarget::from_current())
+                .unwrap(),
+            BTreeMap::from([("runtime".to_string(), "aspnetcore".to_string())])
+        );
+
+        let request_no_runtime = ToolRequest::new_opts(
+            backend.ba().clone(),
+            "8.0.14",
+            ToolVersionOptions::default(),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        assert!(
+            backend
+                .resolve_lockfile_options(&request_no_runtime, &PlatformTarget::from_current())
+                .unwrap()
+                .is_empty()
         );
     }
 }

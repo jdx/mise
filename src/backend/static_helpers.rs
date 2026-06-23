@@ -23,23 +23,45 @@ static VERSION_PATTERN: LazyLock<regex::Regex> =
 /// Fetches a checksum for a specific file from a SHASUMS256.txt-style file.
 /// Uses cached HTTP requests since the same SHASUMS file is fetched for all platforms.
 ///
+/// The algorithm is detected from the SHASUMS file name (e.g. `*.sha512`,
+/// `SHA512SUMS`, defaulting to sha256), since the file lists bare hashes without
+/// declaring it.
+///
 /// # Arguments
 /// * `shasums_url` - URL to the SHASUMS256.txt file
 /// * `filename` - The filename to look up in the SHASUMS file
 ///
 /// # Returns
-/// * `Some("sha256:<hash>")` if found
+/// * `Some("<algo>:<hash>")` if found
 /// * `None` if the SHASUMS file couldn't be fetched or filename not found
 pub async fn fetch_checksum_from_shasums(shasums_url: &str, filename: &str) -> Option<String> {
     match HTTP.get_text_cached(shasums_url).await {
         Ok(shasums_content) => {
             let shasums = hash::parse_shasums(&shasums_content);
-            shasums.get(filename).map(|h| format!("sha256:{h}"))
+            let algo = crate::backend::asset_matcher::detect_checksum_algorithm(
+                &get_filename_from_url(shasums_url),
+            );
+            shasums.get(filename).map(|h| format!("{algo}:{h}"))
         }
         Err(e) => {
             debug!("Failed to fetch SHASUMS from {}: {e}", shasums_url);
             None
         }
+    }
+}
+
+/// Returns `true` if the file at `shasums_url` parses as a SHASUMS-style list
+/// with at least one `<hash>  <filename>` entry (as opposed to a bare individual
+/// checksum file that has only a hash).
+///
+/// Used to decide whether a [`fetch_checksum_from_shasums`] miss means "this is
+/// an individual checksum file, scan it for the hash" or "this is a SHASUMS list
+/// that simply has no row for our artifact" — in which case falling back to a
+/// first-hash scan would silently pick another platform's checksum.
+pub async fn shasums_has_entries(shasums_url: &str) -> bool {
+    match HTTP.get_text_cached(shasums_url).await {
+        Ok(content) => !hash::parse_shasums(&content).is_empty(),
+        Err(_) => false,
     }
 }
 
@@ -53,20 +75,109 @@ pub async fn fetch_checksum_from_shasums(shasums_url: &str, filename: &str) -> O
 /// # Returns
 /// * `Some("<algo>:<hash>")` if found
 /// * `None` if the checksum file couldn't be fetched
+///
+/// Uses the in-process cache so that resolving an individual checksum file
+/// doesn't re-fetch the same URL already probed by [`fetch_checksum_from_shasums`]
+/// / [`shasums_has_entries`] for that platform.
 pub async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
-    match HTTP.get_text(checksum_url).await {
-        Ok(content) => {
-            // Format is typically "<hash>  <filename>" or just "<hash>"
-            content
-                .split_whitespace()
-                .next()
-                .map(|h| format!("{algo}:{}", h.trim()))
-        }
+    match HTTP.get_text_cached(checksum_url).await {
+        Ok(content) => parse_checksum_file_content(&content, algo),
         Err(e) => {
             debug!("Failed to fetch checksum from {}: {e}", checksum_url);
             None
         }
     }
+}
+
+fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
+    // PowerShell Get-FileHash output:
+    // Hash      : 7FDD...
+    for line in content.lines() {
+        if let Some((key, value)) = line.split_once(':')
+            && key.trim().eq_ignore_ascii_case("hash")
+        {
+            let hash = value.trim();
+            if is_checksum_hex(hash, algo) {
+                return Some(format!("{algo}:{}", hash.to_lowercase()));
+            }
+        }
+    }
+
+    // Standard formats are typically "<hash>  <filename>" or just "<hash>".
+    content
+        .split_whitespace()
+        .find(|token| is_checksum_hex(token, algo))
+        .map(|hash| format!("{algo}:{}", hash.to_lowercase()))
+}
+
+/// Evaluate a checksum expression (expr-lang) against a manifest body to extract
+/// a single checksum string for a target platform.
+///
+/// The raw manifest is injected as a `body` string; `vars` supplies additional
+/// context such as `version`, `os`, `arch`, `url`, and `filename` so the
+/// expression can select the right entry. The expression must evaluate to an
+/// `algo:hash` string. Manifests that store the hash and algorithm separately
+/// build the prefix in the expression itself, e.g. `entry.algo + ":" + entry.hash`
+/// (or a literal `"sha256:" + entry.hash` when the algorithm is fixed).
+///
+/// The result is normalized to `algo:hash`. Returns `None` when evaluation fails
+/// or the result is not a usable `algo:hash`.
+pub fn eval_checksum_expr(expr_str: &str, body: &str, vars: &[(&str, &str)]) -> Option<String> {
+    use expr::{Context, Environment, Value};
+
+    let mut ctx = Context::default();
+    ctx.insert("body".to_string(), Value::String(body.to_string()));
+    for (key, value) in vars {
+        ctx.insert((*key).to_string(), Value::String((*value).to_string()));
+    }
+
+    let env = Environment::new();
+    match env.eval(expr_str, &ctx) {
+        Ok(Value::String(s)) => normalize_checksum(&s),
+        Ok(other) => {
+            debug!("checksum_expr did not evaluate to a string: {other:?}");
+            None
+        }
+        Err(e) => {
+            debug!("failed to evaluate checksum_expr '{expr_str}': {e}");
+            None
+        }
+    }
+}
+
+/// Normalize an `algo:hash` checksum string. The algorithm name is
+/// case-insensitive (e.g. `SHA256` from a manifest). Returns `None` when the
+/// value has no `algo:` prefix or the hash isn't valid hex for that algorithm.
+///
+/// mise stores and verifies checksums as `algo:hash` everywhere, so a bare hash
+/// is rejected rather than guessed — the expression must qualify it (e.g.
+/// `"sha256:" + entry.hash`).
+fn normalize_checksum(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    let Some((algo, hash)) = raw.split_once(':') else {
+        debug!("checksum_expr result is not in algo:hash form: {raw}");
+        return None;
+    };
+    let algo = algo.trim().to_ascii_lowercase();
+    let hash = hash.trim();
+    if is_checksum_hex(hash, &algo) {
+        Some(format!("{algo}:{}", hash.to_lowercase()))
+    } else {
+        debug!("checksum value is not valid {algo} hex: {hash}");
+        None
+    }
+}
+
+fn is_checksum_hex(s: &str, algo: &str) -> bool {
+    let expected_len = match algo {
+        "sha1" => 40,
+        "sha256" | "blake3" => 64,
+        "sha512" => 128,
+        "md5" => 32,
+        _ => return false,
+    };
+
+    s.len() == expected_len && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 pub trait VerifiableError: Sized + Send + Sync + 'static {
@@ -334,6 +445,26 @@ pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &s
 }
 
 pub fn template_string(template: &str, tv: &ToolVersion) -> String {
+    // `os()`/`arch()` resolve to the current host platform.
+    render_template(template, &tv.version, crate::tera::get_tera(None))
+}
+
+/// Like [`template_string`] but renders `os()`/`arch()` for an explicit target
+/// platform instead of the current host. Used by cross-platform `mise lock` to
+/// build URLs and checksum-file URLs for platforms other than the one mise runs on.
+pub fn template_string_for_target(
+    template: &str,
+    tv: &ToolVersion,
+    target: &PlatformTarget,
+) -> String {
+    render_template(
+        template,
+        &tv.version,
+        crate::tera::get_tera_for_target(None, target.os_name(), target.arch_name()),
+    )
+}
+
+fn render_template(template: &str, version: &str, mut tera: tera::Tera) -> String {
     // Check for legacy {version} syntax and emit deprecation warning
     if template.contains("{version}") && !template.contains("{{version}}") {
         deprecated_at!(
@@ -343,7 +474,7 @@ pub fn template_string(template: &str, tv: &ToolVersion) -> String {
             "Use {{{{ version }}}} instead of {{version}} in URL templates"
         );
         // Legacy support: replace {version} placeholder
-        return template.replace("{version}", &tv.version);
+        return template.replace("{version}", version);
     }
 
     if !crate::tera::contains_template_syntax(template) {
@@ -353,9 +484,8 @@ pub fn template_string(template: &str, tv: &ToolVersion) -> String {
     // Use Tera rendering for templates
     // Supports {{ version }}, {{ os() }}, {{ arch() }}, etc.
     let mut ctx = crate::tera::BASE_CONTEXT.clone();
-    ctx.insert("version", &tv.version);
+    ctx.insert("version", version);
 
-    let mut tera = crate::tera::get_tera(None);
     match crate::tera::render_str(&mut tera, template, &ctx) {
         Ok(rendered) => rendered,
         Err(e) => {
@@ -399,12 +529,12 @@ pub fn install_artifact(
     file::remove_all(&install_path)?;
     file::create_dir_all(&install_path)?;
 
-    // Use TarFormat for format detection
+    // Use ExtractionFormat for format detection
     // Check for explicit format option first, then fall back to file extension
     let format = if let Some(format_opt) = lookup_with_fallback(opts, "format") {
-        file::TarFormat::from_ext(&format_opt)
+        file::ExtractionFormat::from_ext(&format_opt).unwrap_or(file::ExtractionFormat::Raw)
     } else {
-        file::TarFormat::from_file_name(
+        file::ExtractionFormat::from_file_name(
             &file_path.file_name().unwrap_or_default().to_string_lossy(),
         )
     };
@@ -412,7 +542,7 @@ pub fn install_artifact(
     // Get file extension and detect format
     let file_name = file_path.file_name().unwrap().to_string_lossy();
 
-    if !format.is_archive() && format != file::TarFormat::Raw {
+    if !format.is_archive() && format != file::ExtractionFormat::Raw {
         // Handle compressed single binary
         let ext = Path::new(&*file_name)
             .extension()
@@ -435,17 +565,10 @@ pub fn install_artifact(
             install_path.join(cleaned_name)
         };
 
-        file::untar(
-            file_path,
-            &dest,
-            &file::TarOptions {
-                pr,
-                ..file::TarOptions::new(format)
-            },
-        )?;
+        file::decompress_file(file_path, &dest, format)?;
 
         file::make_executable(&dest)?;
-    } else if format == file::TarFormat::Raw {
+    } else if format == file::ExtractionFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
         if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
             let bin_path = template_string(&bin_path_template, tv);
@@ -479,14 +602,14 @@ pub fn install_artifact(
             debug!("Auto-detected single directory archive, extracting with strip_components=1");
             strip_components = Some(1);
         }
-        let tar_opts = file::TarOptions {
+        let extract_opts = file::ExtractOptions {
             strip_components: strip_components.unwrap_or(0),
             pr,
-            ..file::TarOptions::new(format)
+            ..Default::default()
         };
 
         // Extract with determined strip_components
-        file::untar(file_path, &install_path, &tar_opts)?;
+        file::extract_archive(file_path, &install_path, format, &extract_opts)?;
 
         // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
         let full_tool_name = tv.ba().tool_name.as_str();
@@ -1000,6 +1123,150 @@ mod tests {
     use super::*;
     use crate::toolset::ToolVersionOptions;
     use indexmap::IndexMap;
+
+    const SHA256_LOWER: &str = "7fdd1f42e6b0855421ecf27bb406e2492ade1087c85e30ebf0deab6280ea743c";
+    const SHA256_UPPER: &str = "7FDD1F42E6B0855421ECF27BB406E2492ADE1087C85E30EBF0DEAB6280EA743C";
+    const SHA512_LOWER: &str = "78b83c1f3aa14cfa6c5a551a92d90c147b3c029304429d96bc86560e0f08fc9cf69c343c2dc52fec0d7c7bceee894bb5647d4f3e3359816b231dafaee8799363";
+
+    #[test]
+    fn test_parse_checksum_file_content_standard_format() {
+        let content = format!("{SHA256_LOWER}  deno-x86_64-unknown-linux-gnu.zip\n");
+
+        assert_eq!(
+            parse_checksum_file_content(&content, "sha256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_parse_checksum_file_content_powershell_get_file_hash_format() {
+        let content = format!(
+            "\
+Algorithm : SHA256
+Hash      : {SHA256_UPPER}
+Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
+"
+        );
+
+        assert_eq!(
+            parse_checksum_file_content(&content, "sha256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_parse_checksum_file_content_rejects_non_hash_tokens() {
+        let content = "Algorithm : SHA256\nPath      : deno.zip\n";
+
+        assert_eq!(parse_checksum_file_content(content, "sha256"), None);
+    }
+
+    #[test]
+    fn test_parse_checksum_file_content_rejects_unknown_algorithms() {
+        assert_eq!(parse_checksum_file_content(SHA256_LOWER, "sha3-256"), None);
+    }
+
+    #[test]
+    fn test_normalize_checksum_rejects_bare_hash() {
+        // A bare hash with no `algo:` prefix is rejected; the expression must
+        // qualify it (e.g. `"sha256:" + hash`).
+        assert_eq!(normalize_checksum(SHA256_LOWER), None);
+    }
+
+    #[test]
+    fn test_normalize_checksum_prefixed_hash_keeps_algo() {
+        assert_eq!(
+            normalize_checksum(&format!("sha256:{SHA256_UPPER}")),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_normalize_checksum_rejects_non_hex() {
+        assert_eq!(normalize_checksum("sha256:not-a-hash"), None);
+    }
+
+    #[test]
+    fn test_normalize_checksum_accepts_uppercase_algo() {
+        // Uppercase algorithm name in the prefix is normalized, not rejected.
+        assert_eq!(
+            normalize_checksum(&format!("SHA256:{SHA256_LOWER}")),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_selects_entry_by_target() {
+        // A julia-style manifest: pick the file matching os/arch and read sha256.
+        let body = format!(
+            r#"{{"files":[
+                {{"os":"linux","arch":"x64","sha256":"{SHA256_LOWER}"}},
+                {{"os":"macos","arch":"arm64","sha256":"{SHA256_UPPER}"}}
+            ]}}"#
+        );
+        let expr = r#""sha256:" + filter(fromJSON(body).files, {#.os == os and #.arch == arch})[0].sha256"#;
+        let vars = [("os", "macos"), ("arch", "arm64")];
+        assert_eq!(
+            eval_checksum_expr(expr, &body, &vars),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_julia_shaped_version_keyed_manifest() {
+        // julia versions.json shape: top-level keyed by version, files[] with url+sha256.
+        let body = format!(
+            r#"{{"1.10.0":{{"files":[
+                {{"url":"https://x/julia-1.10.0-linux-x86_64.tar.gz","sha256":"{SHA256_LOWER}"}},
+                {{"url":"https://x/julia-1.10.0-macaarch64.tar.gz","sha256":"{SHA256_UPPER}"}}
+            ]}}}}"#
+        );
+        // expr-lang treats a bare identifier in `[]` as a literal key, so a
+        // runtime version must be forced to evaluate via `version + ""`.
+        let expr =
+            r#""sha256:" + filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256"#;
+        let vars = [
+            ("version", "1.10.0"),
+            ("url", "https://x/julia-1.10.0-linux-x86_64.tar.gz"),
+        ];
+        assert_eq!(
+            eval_checksum_expr(expr, &body, &vars),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_returns_none_on_no_match() {
+        let body = r#"{"files":[]}"#;
+        let expr = r#"len(fromJSON(body).files) > 0 ? fromJSON(body).files[0].sha256 : """#;
+        let vars: [(&str, &str); 0] = [];
+        assert_eq!(eval_checksum_expr(expr, body, &vars), None);
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_rejects_bare_hash_result() {
+        // A bare hash (no algo: prefix) is rejected rather than assumed sha256.
+        let body = format!(r#"{{"files":[{{"os":"linux","sha256":"{SHA256_LOWER}"}}]}}"#);
+        let expr = r#"filter(fromJSON(body).files, { #.os == os })[0].sha256"#;
+        let vars = [("os", "linux")];
+        assert_eq!(eval_checksum_expr(expr, &body, &vars), None);
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_honors_explicit_algo_prefix() {
+        // When the algorithm varies, the expression builds the `algo:hash`
+        // string itself; the prefix is used as-is rather than the default.
+        let body = format!(
+            r#"{{"files":[{{"os":"linux","algo":"sha512","checksum":"{SHA512_LOWER}"}}]}}"#
+        );
+        let expr =
+            r#"let f = filter(fromJSON(body).files, { #.os == os })[0]; f.algo + ":" + f.checksum"#;
+        let vars = [("os", "linux")];
+        assert_eq!(
+            eval_checksum_expr(expr, &body, &vars),
+            Some(format!("sha512:{SHA512_LOWER}"))
+        );
+    }
 
     #[test]
     fn test_clean_binary_name() {

@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+
+# Test `matching` combined with `tool_alias` to install MULTIPLE binaries from a
+# single multi-binary release, each selected portably.
+#
+# Two real multi-binary repos are exercised so the pattern isn't tied to one repo:
+#
+#   - oxc-project/oxc ships oxlint and oxfmt as separate per-platform binaries in
+#     one release. apps_v1.69.0 bundles oxlint 1.69.0 and oxfmt 0.54.0: different
+#     names, different internal versions, one repo and one release tag. Its assets
+#     are per-platform archives named with the platform triple (e.g.
+#     oxlint-aarch64-apple-darwin.tar.gz / .zip), each extracting to a triple-named
+#     binary, so `rename_exe` exposes the plain name on PATH.
+#   - bazelbuild/buildtools ships buildifier, buildozer and unused_deps as separate
+#     per-platform bare binaries (e.g. buildifier-darwin-arm64), all at version
+#     7.1.2. This repo is already a CI download dependency via e2e/cli/test_upgrade.
+#
+# `tool_alias` maps a name to the backend, and `matching` selects each binary while
+# keeping platform autodetection, so one config stays portable across OS/arch. This
+# is the portable replacement for the per-platform `asset_pattern` workaround
+# (#9358, #9074).
+
+export MISE_EXPERIMENTAL=1
+# Enable the lockfile so we can assert `matching` round-trips through a real
+# install (stronger than the unit test, which inserts the option directly).
+export MISE_LOCKFILE=1
+
+cat <<'EOF' >mise.toml
+[tool_alias]
+oxlint = "github:oxc-project/oxc"
+oxfmt = "github:oxc-project/oxc"
+buildifier = "github:bazelbuild/buildtools"
+buildozer = "github:bazelbuild/buildtools"
+
+# version is the release tag (apps_v1.69.0); it ships oxlint 1.69.0 and oxfmt 0.54.0
+[tools.oxlint]
+version = "apps_v1.69.0"
+matching = "oxlint"
+rename_exe = "oxlint"
+
+[tools.oxfmt]
+version = "apps_v1.69.0"
+matching = "oxfmt"
+rename_exe = "oxfmt"
+
+# buildifier and buildozer both ship in the single 7.1.2 release
+[tools.buildifier]
+version = "7.1.2"
+matching = "buildifier"
+rename_exe = "buildifier"
+
+[tools.buildozer]
+version = "7.1.2"
+matching = "buildozer"
+rename_exe = "buildozer"
+EOF
+
+touch mise.lock
+
+mise install
+
+# Each alias selected its own binary from the same release and reports its own
+# version, even though the two aliases of each repo pin a shared release tag.
+assert_contains "mise x oxlint -- oxlint --version" "1.69.0"
+assert_contains "mise x oxfmt -- oxfmt --version" "0.54.0"
+assert_contains "mise x buildifier -- buildifier --version" "buildifier version: 7.1.2"
+assert_contains "mise x buildozer -- buildozer --version" "buildozer version: 7.1.2"
+
+# Distinct aliases resolving to the same backend/version install as distinct
+# tools, rather than being deduplicated to a single install. Assert the
+# version-keyed subdir (the release tag for oxc, 7.1.2 for buildtools) so this
+# proves a real per-alias install, not just an empty top-level dir.
+assert "test -d ~/.local/share/mise/installs/oxlint/apps_v1.69.0"
+assert "test -d ~/.local/share/mise/installs/oxfmt/apps_v1.69.0"
+assert "test -d ~/.local/share/mise/installs/buildifier/7.1.2"
+assert "test -d ~/.local/share/mise/installs/buildozer/7.1.2"
+
+# `matching` round-trips through a real install into the lockfile, so a relock on
+# another OS reproduces the same per-alias asset selection (each option is written
+# as `matching = "<value>"`, the same way `asset_pattern` is — see
+# e2e/backend/test_github_url_tracking).
+assert_contains "cat mise.lock" 'matching = "oxlint"'
+assert_contains "cat mise.lock" 'matching = "oxfmt"'
+assert_contains "cat mise.lock" 'matching = "buildifier"'
+assert_contains "cat mise.lock" 'matching = "buildozer"'
+
+# Reinstalling from the lockfile reproduces each binary (re-resolution path).
+mise uninstall oxlint oxfmt buildifier buildozer
+mise install
+assert_contains "mise x oxlint -- oxlint --version" "1.69.0"
+assert_contains "mise x buildifier -- buildifier --version" "buildifier version: 7.1.2"

@@ -1,4 +1,4 @@
-use crate::config::{self, Config, Settings};
+use crate::config::{self, Config};
 use crate::file::display_path;
 use crate::task::{
     GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, resolve_task_pattern,
@@ -9,12 +9,13 @@ use crate::{dirs, file};
 use console::Term;
 use demand::{DemandOption, Select};
 use eyre::{Result, bail, ensure, eyre};
-use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
 
 const MAX_AVAILABLE_TASKS_IN_ERROR: usize = 20;
 
@@ -51,20 +52,6 @@ pub fn split_task_spec(spec: &str) -> (&str, Vec<String>) {
 
 /// Validate that monorepo features are properly configured
 fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
-    // Check if experimental mode is enabled
-    if !Settings::get().experimental {
-        bail!(
-            "Monorepo task paths (like `//path:task` or `:task`) require experimental mode.\n\
-            \n\
-            To enable experimental features, set:\n\
-            {}\n\
-            \n\
-            Or run with: {}",
-            style::eyellow("  export MISE_EXPERIMENTAL=true"),
-            style::eyellow("MISE_EXPERIMENTAL=1 mise run ...")
-        );
-    }
-
     // Check if a monorepo root is configured
     if !config.is_monorepo() {
         bail!(
@@ -75,7 +62,7 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
             \n\
             Then create task files in subdirectories that will be automatically discovered.\n\
             See {} for more information.",
-            style::eyellow("  experimental_monorepo_root = true"),
+            style::eyellow("  monorepo_root = true"),
             style::eunderline("https://mise.en.dev/tasks/task-configuration.html#monorepo-support")
         );
     }
@@ -87,16 +74,16 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
 fn suggest_similar_commands(name: &str) -> Vec<String> {
     use clap::CommandFactory;
     let cmd = crate::cli::Cli::command();
-    let matcher = SkimMatcherV2::default().use_cache(true).smart_case();
+    let mut matcher = FuzzyMatcher::default();
+    let pattern = FuzzyPattern::new(name);
     cmd.get_subcommands()
         .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
         .filter_map(|subcmd| {
             matcher
-                .fuzzy_match(subcmd, name)
-                .filter(|&score| score > 0)
+                .score_pattern(subcmd, &pattern)
                 .map(|score| (score, subcmd.to_string()))
         })
-        .sorted_by_key(|(score, _)| -1 * *score)
+        .sorted_by_key(|(score, _)| std::cmp::Reverse(*score))
         .take(3)
         .map(|(_, subcmd)| subcmd)
         .collect()

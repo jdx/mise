@@ -284,6 +284,20 @@ mise uninstall --all
 mise install
 ```
 
+### Ruby Precompiled Build Revision Releases
+
+Precompiled Ruby binaries can have build revision releases for the same Ruby
+version. The lockfile keeps `version = "3.3.11"` but pins the selected build
+revision in the platform `url`:
+
+```toml
+url = "https://github.com/jdx/ruby/releases/download/3.3.11-1/ruby-3.3.11.x86_64_linux.tar.gz"
+```
+
+Here `3.3.11-1` is build revision `1`. See [Ruby precompiled build revisions](/lang/ruby.html#precompiled-build-revisions)
+for details on why revisions exist, how unlocked installs behave, and how to
+update older lockfiles.
+
 ### Lockfile Conflicts
 
 When merging branches with different lockfiles:

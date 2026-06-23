@@ -9,6 +9,14 @@ BAR = "$FOO-world"
 EOF
 MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep BAR" "export BAR=hello-world"
 
+# Test $$ escapes a literal $
+cat <<'EOF' >mise.toml
+[env]
+SOME_VAR = "$$x"
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash 2>&1" "export SOME_VAR='\$x'"
+MISE_ENV_SHELL_EXPAND=true assert_not_contains "mise env -s bash 2>&1" "env var 'x' is not defined"
+
 # Test ${VAR} brace syntax
 cat <<'EOF' >mise.toml
 [env]
@@ -23,6 +31,41 @@ cat <<'EOF' >mise.toml
 BAR = "${NONEXISTENT:-fallback}"
 EOF
 MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep BAR" "export BAR=fallback"
+
+# Test ${VAR:-default} treats empty strings as unset
+cat <<'EOF' >mise.toml
+[env]
+BAR = "${EMPTY_VAR:-fallback}"
+EOF
+EMPTY_VAR='' MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep BAR" "export BAR=fallback"
+
+# Test ${VAR-default} treats empty strings as set
+cat <<'EOF' >mise.toml
+[env]
+BAR = "${EMPTY_VAR-fallback}"
+EOF
+EMPTY_VAR='' MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep BAR" "export BAR=''"
+
+# Test default values are shell-expanded
+cat <<'EOF' >mise.toml
+[env]
+BAR = "${NONEXISTENT:-$OTHER}"
+EOF
+OTHER=hello MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep BAR" "export BAR=hello"
+
+# Test unterminated braced expressions stay literal
+cat <<'EOF' >mise.toml
+[env]
+BAR = "${NONEXISTENT:-$OTHER"
+EOF
+OTHER=hello MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep BAR" "export BAR='\${NONEXISTENT:-\$OTHER'"
+
+# Test } inside command substitution text does not close braced expressions
+cat <<'EOF' >mise.toml
+[env]
+BAR = "${NONEXISTENT:-$(echo })}"
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep BAR" "export BAR='\$(echo })'"
 
 # Test expansion from initial environment
 cat <<'EOF' >mise.toml

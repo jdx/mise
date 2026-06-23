@@ -5,7 +5,7 @@ export MISE_EXPERIMENTAL=1
 
 # Create monorepo root config
 cat <<EOF >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["projects/*"]
@@ -74,3 +74,42 @@ output=$(mise run '//projects/frontend:*')
 assert_contains "echo '$output'" "task from toml"
 assert_contains "echo '$output'" "task from script"
 assert_contains "echo '$output'" "task with long name"
+
+# Verify includes = ["."] does not parse the child mise.toml as a task TOML.
+mkdir -p projects/colocated
+cat <<'EOF' >projects/colocated/mise.toml
+[task_config]
+includes = ["."]
+
+[tasks.config-task]
+run = 'echo "task from config"'
+EOF
+
+cat <<'EOF' >projects/colocated/tasks.toml
+[toml-task]
+run = 'echo "task from colocated toml"'
+EOF
+
+mkdir -p projects/colocated/nested
+cat <<'EOF' >projects/colocated/nested/mise.toml
+[task_config]
+includes = ["."]
+
+[tasks.nested-config-task]
+run = 'echo "task from nested config"'
+EOF
+
+cat <<'EOF' >projects/colocated/file-task
+#!/usr/bin/env bash
+echo "task from colocated file"
+EOF
+chmod +x projects/colocated/file-task
+
+assert_contains "mise tasks ls --all" "//projects/colocated:config-task"
+assert_contains "mise tasks ls --all" "//projects/colocated:toml-task"
+assert_contains "mise tasks ls --all" "//projects/colocated:file-task"
+assert_not_contains "mise tasks ls --all" "//projects/colocated:task_config"
+assert_not_contains "mise tasks ls --all" "//projects/colocated:nested-config-task"
+assert_contains "mise run '//projects/colocated:config-task'" "task from config"
+assert_contains "mise run '//projects/colocated:toml-task'" "task from colocated toml"
+assert_contains "mise run '//projects/colocated:file-task'" "task from colocated file"

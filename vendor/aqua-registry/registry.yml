@@ -3022,6 +3022,35 @@ packages:
           - windows
           - amd64
   - type: github_release
+    repo_owner: EpicGames
+    repo_name: lore
+    description: Lore is a next-generation, open source version control system
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: lore-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: lore-{{.Version}}-{{.Arch}}-{{.OS}}-neoverse-512tvb.{{.Format}}
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+  - type: github_release
     repo_owner: Epistates
     repo_name: treemd
     description: A (TUI/CLI) markdown navigator with tree-based structural navigation
@@ -5272,6 +5301,42 @@ packages:
           - windows
           - amd64
   - type: github_release
+    repo_owner: Latias94
+    repo_name: merman
+    description: Mermaid.js, but headless, in Rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.7.0-alpha.1"
+        no_asset: true
+      - version_constraint: "true"
+        asset: merman-cli-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: merman-cli
+            src: "{{.AssetWithoutExt}}/merman-cli"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            files:
+              - name: merman-cli
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+  - type: github_release
     repo_owner: Lifailon
     repo_name: lazyjournal
     description: TUI for journalctl, file system logs, as well Docker and Podman containers for quick viewing and filtering with fuzzy find, regex support (like fzf and grep) and coloring the output, written in Go with the gocui library
@@ -7375,12 +7440,22 @@ packages:
           - darwin/arm64
           - linux/amd64
           - windows
-      - version_constraint: "true"
+      - version_constraint: semver("< 0.14.0.2224")
         url: https://binaries.sonarsource.com/Distribution/sonarqube-cli/{{.Version}}/{{.OS}}/sonarqube-cli-{{.Version}}-{{.OS}}-{{.Arch}}.exe
         format: raw
         replacements:
           darwin: macos
           amd64: x86-64
+      - version_constraint: "true"
+        url: https://binaries.sonarsource.com/Distribution/sonarqube-cli/{{.Version}}/{{.OS}}/sonarqube-cli-{{.Version}}-{{.OS}}-{{.Arch}}.bin
+        format: raw
+        complete_windows_ext: false
+        replacements:
+          darwin: macos
+          amd64: x86-64
+        overrides:
+          - goos: windows
+            url: https://binaries.sonarsource.com/Distribution/sonarqube-cli/{{.Version}}/{{.OS}}/sonarqube-cli-{{.Version}}-{{.OS}}-{{.Arch}}.exe
   - type: github_release
     repo_owner: Songmu
     repo_name: ecschedule
@@ -8340,8 +8415,6 @@ packages:
         overrides:
           - goos: windows
             format: zip
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: Version == "v3.32.0"
         asset: upcloud-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -8354,8 +8427,6 @@ packages:
         overrides:
           - goos: windows
             format: zip
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: "true"
         asset: upcloud-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -8370,8 +8441,6 @@ packages:
         overrides:
           - goos: windows
             format: zip
-        github_immutable_release: true
-        github_release_attestations: true
   - type: github_release
     repo_owner: Versent
     repo_name: saml2aws
@@ -14174,7 +14243,7 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.5.4")
         asset: argd_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -14190,6 +14259,25 @@ packages:
             bundle:
               type: github_release
               asset: argd_checksums.txt.bundle
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+      - version_constraint: "true"
+        asset: argd_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: argd_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: argd_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
@@ -19560,8 +19648,92 @@ packages:
           - darwin
         rosetta2: true
   - type: github_release
-    repo_owner: bitnami-labs
+    repo_owner: bitnami
+    repo_name: charts-syncer
+    aliases:
+      - name: bitnami-labs/charts-syncer
+    description: Tool for synchronizing Helm Chart repositories
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.1")
+        asset: c3tsyncer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: c3tsyncer
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.6.2")
+        asset: charts-syncer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.9.1")
+        asset: charts-syncer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux
+          - darwin
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.19.0")
+        asset: charts-syncer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.20.1")
+        asset: charts-syncer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: charts-syncer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+  - type: github_release
+    repo_owner: bitnami
     repo_name: sealed-secrets
+    aliases:
+      - name: bitnami-labs/sealed-secrets
     description: A Kubernetes controller and tool for one-way encrypted Secrets
     files:
       - name: kubeseal
@@ -19666,88 +19838,6 @@ packages:
               - https://github.com/bitnami-labs/sealed-secrets/releases/download/{{.Version}}/cosign.pub
               - --signature
               - https://github.com/bitnami-labs/sealed-secrets/releases/download/{{.Version}}/sealed-secrets_{{trimV .Version}}_checksums.txt.sig
-  - type: github_release
-    repo_owner: bitnami
-    repo_name: charts-syncer
-    aliases:
-      - name: bitnami-labs/charts-syncer
-    description: Tool for synchronizing Helm Chart repositories
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 0.2.1")
-        asset: c3tsyncer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        files:
-          - name: c3tsyncer
-        replacements:
-          amd64: x86_64
-        supported_envs:
-          - linux/amd64
-          - darwin
-        rosetta2: true
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-      - version_constraint: semver("<= 0.6.2")
-        asset: charts-syncer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-        supported_envs:
-          - linux/amd64
-          - darwin
-        rosetta2: true
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-      - version_constraint: semver("<= 0.9.1")
-        asset: charts-syncer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-        supported_envs:
-          - linux
-          - darwin
-        rosetta2: true
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-      - version_constraint: semver("<= 0.19.0")
-        asset: charts-syncer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-        supported_envs:
-          - linux
-          - darwin
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-      - version_constraint: semver("<= 0.20.1")
-        asset: charts-syncer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-      - version_constraint: "true"
-        asset: charts-syncer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        overrides:
-          - goos: windows
-            format: zip
-        replacements:
-          amd64: x86_64
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
   - type: github_release
     repo_owner: bitwarden
     repo_name: clients
@@ -23399,6 +23489,50 @@ packages:
           asset: mustache_{{trimV .Version}}_checksums.txt
           algorithm: sha256
   - type: github_release
+    repo_owner: cdxgen
+    repo_name: cdxgen
+    aliases:
+      - name: CycloneDX/cdxgen
+    description: Creates CycloneDX Bill of Materials (BOM) from source code and container images
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 11.5.0")
+        error_message: The version is too old. Please use a version 11.5.0 or higher.
+      - version_constraint: semver("<= 11.9.0")
+        asset: cdxgen-{{.OS}}-{{.Arch}}
+        format: raw
+        overrides:
+          - goos: linux
+            asset: cdxgen-{{.OS}}-{{.Arch}}-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: semver("<= 12.0.0")
+        asset: cdxgen-{{.OS}}-{{.Arch}}
+        format: raw
+        overrides:
+          - goos: linux
+            asset: cdxgen-{{.OS}}-{{.Arch}}-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+      - version_constraint: "true"
+        asset: cdxgen-{{.OS}}-{{.Arch}}
+        format: raw
+        overrides:
+          - goos: linux
+            asset: cdxgen-{{.OS}}-{{.Arch}}-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+  - type: github_release
     repo_owner: cea-hpc
     repo_name: sshproxy
     asset: sshproxy_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
@@ -26659,6 +26793,42 @@ packages:
     files:
       - name: cc-test-reporter
         src: test-reporter
+  - type: github_release
+    repo_owner: coder
+    repo_name: boo
+    description: A GNU screen style terminal multiplexer built on libghostty
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.4")
+        asset: ghostscreen-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ghostscreen
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: boo-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
   - type: github_release
     repo_owner: coder
     repo_name: coder
@@ -34275,8 +34445,6 @@ packages:
           type: github_release
           asset: SHASUMS256.txt
           algorithm: sha256
-        github_immutable_release: true
-        github_release_attestations: true
   - type: github_release
     repo_owner: drlau
     repo_name: akashi
@@ -36684,6 +36852,39 @@ packages:
     asset: ktfmt-{{trimV .Version}}-with-dependencies.jar
     format: raw
     complete_windows_ext: false
+  - type: github_release
+    repo_owner: fallow-rs
+    repo_name: fallow
+    description: "Codebase intelligence for TypeScript and JavaScript. Free static layer: unused code, duplication, circular deps, complexity hotspots, architecture boundaries. Optional paid runtime layer: hot-path review and cold-path deletion evidence from real production traffic. Rust-native, sub-second, zero-config framework support"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v1.0.0", "v2.22.2"]
+        no_asset: true
+      - version_constraint: semver("<= 2.47.0")
+        asset: fallow-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: fallow-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: fastfetch-cli
     repo_name: fastfetch
@@ -46637,18 +46838,16 @@ packages:
     repo_name: ghcup-hs
     url: https://downloads.haskell.org/~ghcup/{{trimV .Version}}/{{.Arch}}-{{.OS}}-ghcup-{{trimV .Version}}
     format: raw
+    windows_arm_emulation: true
     link: https://www.haskell.org/ghcup/
     description: GHCup is an installer for the general purpose language Haskell
     replacements:
       arm64: aarch64
       amd64: x86_64
       darwin: apple-darwin
+      windows: mingw64
     files:
       - name: ghcup
-        src: "{{.Arch}}-{{.OS}}-ghcup-{{trimV .Version}}"
-    supported_envs:
-      - linux
-      - darwin
   - type: github_release
     repo_owner: hasura
     repo_name: graphql-engine
@@ -50205,8 +50404,6 @@ packages:
             format: zip
             files:
               - name: prek
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: "true"
         asset: prek-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -50230,8 +50427,6 @@ packages:
               - name: prek
         github_artifact_attestations:
           signer_workflow: j178/prek/.github/workflows/release.yml
-        github_immutable_release: true
-        github_release_attestations: true
   - type: github_release
     repo_owner: jacek-kurlit
     repo_name: pik
@@ -50703,8 +50898,6 @@ packages:
           - linux
           - darwin/arm64
           - windows
-        github_immutable_release: true
-        github_release_attestations: true
   - type: github_release
     repo_owner: jdx
     repo_name: mise
@@ -50809,8 +51002,6 @@ packages:
         supported_envs:
           - linux
           - darwin
-        github_immutable_release: true
-        github_release_attestations: true
         checksum:
           type: github_release
           asset: SHASUMS512.txt
@@ -50920,8 +51111,6 @@ packages:
         supported_envs:
           - linux
           - darwin
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: "true"
         asset: usage-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -50936,8 +51125,6 @@ packages:
             asset: usage-universal-{{.OS}}.{{.Format}}
           - goos: windows
             format: zip
-        github_immutable_release: true
-        github_release_attestations: true
   - type: github_release
     repo_owner: jedisct1
     repo_name: minisign
@@ -70571,10 +70758,23 @@ packages:
           - amd64
   - type: http
     name: oracle.com/sqlcl
+    repo_owner: jasonlyle88
+    repo_name: sqlcl-releases
     url: https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-{{.Version}}.zip
+    format: zip
+    link: https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/
+    description: Oracle SQLcl command-line interface for Oracle Database
     files:
       - name: sql
         src: sqlcl/bin/sql
+    checksum:
+      type: github_release
+      asset: sqlcl-{{.Version}}.zip.sha256
+      algorithm: sha256
+      file_format: regexp
+      pattern:
+        checksum: ^(\b[A-Fa-f0-9]{64}\b)
+        file: "^\\b[A-Fa-f0-9]{64}\\b\\s+(\\S+)$"
   - type: github_release
     repo_owner: orangekame3
     repo_name: stree
@@ -71569,15 +71769,16 @@ packages:
     repo_owner: oxc-project
     repo_name: oxc
     description: The linter for oxc
+    version_filter: 'Version matches "^apps_v" || Version matches "^oxlint_v"'
+    files:
+      - name: oxlint
+        src: "{{.AssetWithoutExt}}"
     version_constraint: "false"
-    version_prefix: oxlint_v
     version_overrides:
-      - version_constraint: semver(">= 1.17.0")
-        error_message: |
-          aqua can't support oxlint 1.17.0 or later. 
-          > Newer versions of Oxlint require node.js. There isn’t a native executable alternative anymore.
-          https://github.com/oxc-project/oxc/discussions/14452#discussioncomment-14631344
+      - version_constraint: Version in ["apps_v1.47.0", "oxlint_v0.0.9", "oxlint_v0.1.1"]
+        no_asset: true
       - version_constraint: semver("<= 0.0.8")
+        version_prefix: oxlint_v
         asset: oxlint-{{.OS}}-{{.Arch}}
         files:
           - name: oxlint
@@ -71585,9 +71786,8 @@ packages:
         replacements:
           amd64: x64
           windows: win32
-      - version_constraint: Version == "oxlint_v0.0.9"
-        no_asset: true
       - version_constraint: semver("<= 0.0.19")
+        version_prefix: oxlint_v
         asset: oxlint-{{.OS}}-{{.Arch}}
         files:
           - name: oxlint
@@ -71595,9 +71795,8 @@ packages:
         replacements:
           amd64: x64
           windows: win32
-      - version_constraint: Version == "oxlint_v0.1.1"
-        no_asset: true
       - version_constraint: semver("<= 0.2.2")
+        version_prefix: oxlint_v
         asset: oxlint-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         files:
@@ -71609,7 +71808,8 @@ packages:
         replacements:
           amd64: x64
           windows: win32
-      - version_constraint: "true"
+      - version_constraint: semver("< 1.17.0")
+        version_prefix: oxlint_v
         asset: oxlint-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         files:
@@ -71626,6 +71826,62 @@ packages:
         replacements:
           amd64: x64
           windows: win32
+      - version_constraint: semver(">= 1.17.0")
+        version_prefix: oxlint_v
+        error_message: |
+          This version is unavailable.
+          < 1.17.0: The version prefix is oxlint_v e.g. oxlint_v1.16.0
+          >= 1.17.0, < 1.28.0: These versions are unavailable
+          >= 1.28.0: The version prefix is apps_v e.g. apps_v1.28.0
+      - version_constraint: semver("< 1.28.0")
+        version_prefix: apps_v
+        error_message: |
+          The version was too old. Please ugrade to 1.28.0 or later.
+          < 1.17.0: The version prefix is oxlint_v
+          >= 1.17.0, < 1.28.0: These versions are unavailable
+          >= 1.28.0: The version prefix is apps_v
+      - version_constraint: semver("<= 1.43.0")
+        version_prefix: apps_v
+        asset: oxlint-{{.OS}}-{{.Arch}}-gnu.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+          windows: win32
+        overrides:
+          - goos: darwin
+            asset: oxlint-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: oxlint-{{.OS}}-{{.Arch}}.{{.Format}}
+      - version_constraint: semver("<= 1.51.0")
+        version_prefix: apps_v
+        asset: oxlint-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.53.0")
+        version_prefix: apps_v
+        no_asset: true
+      - version_constraint: "true"
+        version_prefix: apps_v
+        asset: oxlint-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: oxipng
     repo_name: oxipng
@@ -73609,8 +73865,6 @@ packages:
           amd64: x64
           darwin: macos
           windows: win
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: semver("<= 11.0.4")
         asset: pnpm-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -73625,8 +73879,6 @@ packages:
         overrides:
           - goos: windows
             format: zip
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: semver("<= 11.0.6")
         asset: pnpm-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -73643,8 +73895,6 @@ packages:
             format: zip
         github_artifact_attestations:
           signer_workflow: pnpm/pnpm/\.github/workflows/release\.yml
-        github_immutable_release: true
-        github_release_attestations: true
         supported_envs:
           - linux
           - windows
@@ -73673,8 +73923,6 @@ packages:
             format: zip
         github_artifact_attestations:
           signer_workflow: pnpm/pnpm/\.github/workflows/release\.yml
-        github_immutable_release: true
-        github_release_attestations: true
         supported_envs:
           - linux
           - windows
@@ -76932,8 +77180,6 @@ packages:
     description: reviewdog nightly releases
     asset: reviewdog_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
     format: tar.gz
-    github_immutable_release: true
-    github_release_attestations: true
     files:
       - name: reviewdog
     replacements:
@@ -86917,8 +87163,6 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
-        github_immutable_release: true
-        github_release_attestations: true
         overrides:
           - goos: windows
             format: zip
@@ -87017,7 +87261,7 @@ packages:
     description: Make document maintainable, reusable, and testable
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.2.0")
         asset: docfresh_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -87028,6 +87272,30 @@ packages:
             bundle:
               type: github_release
               asset: docfresh_checksums.txt.bundle
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: docfresh_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: docfresh_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: docfresh_checksums.txt.sigstore.json
             opts:
               - --certificate-identity-regexp
               - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
@@ -87135,7 +87403,7 @@ packages:
     description: ghaperf is a CLI to analyze the performance of GitHub Actions using GitHub API and raw job logs
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.1.1")
         asset: ghaperf_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -87151,6 +87419,28 @@ packages:
             bundle:
               type: github_release
               asset: ghaperf_checksums.txt.bundle
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        supported_envs:
+          - linux
+          - darwin/arm64
+      - version_constraint: "true"
+        asset: ghaperf_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: ghaperf_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+            bundle:
+              type: github_release
+              asset: ghaperf_checksums.txt.sigstore.json
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
@@ -87259,7 +87549,7 @@ packages:
     description: ghir is a CLI making past GitHub Releases immutable
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.0.3")
         asset: ghir_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -87281,8 +87571,30 @@ packages:
           asset: multiple.intoto.jsonl
         github_artifact_attestations:
           signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
-        github_immutable_release: true
-        github_release_attestations: true
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: ghir_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: ghir_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: ghir_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.+$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
         overrides:
           - goos: windows
             format: zip
@@ -87348,11 +87660,19 @@ packages:
     repo_owner: suzuki-shunsuke
     repo_name: ghtkn
     description: A CLI to create GitHub App User Access Token for secure local development
+    asset: ghtkn_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    slsa_provenance:
+      type: github_release
+      asset: multiple.intoto.jsonl
+    github_artifact_attestations:
+      signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
+    overrides:
+      - goos: windows
+        format: zip
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
-        asset: ghtkn_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
+      - version_constraint: semver("<= 0.2.2")
         checksum:
           type: github_release
           asset: ghtkn_checksums.txt
@@ -87367,14 +87687,34 @@ packages:
               - https://token.actions.githubusercontent.com
               - --signature
               - https://github.com/suzuki-shunsuke/ghtkn/releases/download/{{.Version}}/ghtkn_checksums.txt.sig
-        slsa_provenance:
+      - version_constraint: semver("<= 0.2.5")
+        checksum:
           type: github_release
-          asset: multiple.intoto.jsonl
-        github_artifact_attestations:
-          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
-        overrides:
-          - goos: windows
-            format: zip
+          asset: ghtkn_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: ghtkn_checksums.txt.bundle
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.+$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+      - version_constraint: "true"
+        checksum:
+          type: github_release
+          asset: ghtkn_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: ghtkn_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.+$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
   - type: github_release
     repo_owner: suzuki-shunsuke
     repo_name: git-rm-branch
@@ -93274,8 +93614,6 @@ packages:
           - goos: windows
             format: zip
             asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: semver("<= 2.68.1")
         asset: chezmoi_{{trimV .Version}}_{{.OS}}-glibc_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -93303,8 +93641,6 @@ packages:
           - goos: windows
             format: zip
             asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        github_immutable_release: true
-        github_release_attestations: true
       - version_constraint: "true"
         asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -93321,8 +93657,6 @@ packages:
         overrides:
           - goos: windows
             format: zip
-        github_immutable_release: true
-        github_release_attestations: true
   - type: github_release
     repo_owner: txn2
     repo_name: kubefwd
@@ -93621,6 +93955,18 @@ packages:
       - vue
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 0.106.0")
+        asset: vize-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: vize-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -93633,6 +93979,15 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        cosign:
+          bundle:
+            type: github_release
+            asset: "{{.Asset}}.cosign.bundle"
+          opts:
+            - --certificate-identity
+            - https://github.com/ubugeeei-prod/vize/.github/workflows/release.yml@refs/tags/{{.Version}}
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
   - type: github_release
     repo_owner: umlx5h
     repo_name: gtrash

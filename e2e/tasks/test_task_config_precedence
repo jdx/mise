@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+mkdir -p .config .mise
+
+cat <<'EOF' >.config/mise.toml
+[tasks.a]
+description = ".config/a"
+run = "echo .config/a"
+EOF
+
+cat <<'EOF' >.mise/config.toml
+[tasks.a]
+description = ".mise/a"
+run = "echo .mise/a"
+EOF
+
+assert_contains "mise tasks" "a  .mise/a"
+assert_not_contains "mise tasks" "a  .config/a"
+assert_contains "mise run a" ".mise/a"
+assert_not_contains "mise run a" ".config/a"

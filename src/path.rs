@@ -235,6 +235,37 @@ pub(crate) fn quote_arg_for_cmd_body(arg: &str) -> String {
     s
 }
 
+/// Windows: if `program` is `cmd[.exe]` invoked with a `/c`|`/k` flag, build a
+/// configured-but-unspawned [`std::process::Command`] that hands `body` to cmd
+/// *verbatim* — raw args, a single outer quote pair, `/s` ensured (see
+/// [`cmd_verbatim_args`]) — so inner double quotes survive. Returns `None` for
+/// any non-cmd shell (or a cmd invocation that does not run a command string),
+/// so the caller falls through to its existing duct/std path unchanged.
+///
+/// Only the program and args are set; the caller owns env, cwd, stdio, and
+/// spawning. Mirrors the inline-task path in
+/// `TaskExecutor::get_cmd_program_and_args` and the hook path in
+/// `hooks::execute`, extended to the other `cmd /c` call sites. See #9355.
+#[cfg(windows)]
+pub fn cmd_verbatim_command(
+    program: &str,
+    flags: &[String],
+    body: &str,
+) -> Option<std::process::Command> {
+    use std::os::windows::process::CommandExt;
+    let runs_command = flags
+        .iter()
+        .any(|f| f.eq_ignore_ascii_case("/c") || f.eq_ignore_ascii_case("/k"));
+    if !is_cmd_shell_program(Path::new(program)) || !runs_command {
+        return None;
+    }
+    let mut c = std::process::Command::new(program);
+    for a in cmd_verbatim_args(flags, body, &[]) {
+        c.raw_arg(a);
+    }
+    Some(c)
+}
+
 /// Split a configured shell *command string* (program + args) into argv,
 /// honoring host conventions.
 ///
@@ -577,6 +608,32 @@ mod tests {
         assert_eq!(quote_arg_for_cmd_body("a&b"), r#""a&b""#);
         assert_eq!(quote_arg_for_cmd_body("foo|bar"), r#""foo|bar""#);
         assert_eq!(quote_arg_for_cmd_body("a>b"), r#""a>b""#);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_cmd_verbatim_command() {
+        // cmd + /c -> Some; the body is wrapped in one outer quote pair with `/s`
+        // ensured, passed via raw_arg (which appears verbatim in get_args()).
+        let c = cmd_verbatim_command("cmd", &["/c".to_string()], r#"echo "a b""#).unwrap();
+        assert_eq!(c.get_program().to_str(), Some("cmd"));
+        let args: Vec<String> = c
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                "/s".to_string(),
+                "/c".to_string(),
+                r#""echo "a b"""#.to_string()
+            ]
+        );
+        // /k also runs a command string.
+        assert!(cmd_verbatim_command("cmd", &["/k".to_string()], "echo hi").is_some());
+        // Non-cmd shell, or cmd without /c|/k -> None (caller falls through).
+        assert!(cmd_verbatim_command("bash", &["-c".to_string()], "echo hi").is_none());
+        assert!(cmd_verbatim_command("cmd", &[], "echo hi").is_none());
     }
 
     #[test]

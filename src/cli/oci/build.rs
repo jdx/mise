@@ -6,7 +6,7 @@ use eyre::Result;
 use crate::cli::oci::common::{perform_build, short_digest};
 use crate::config::Settings;
 use crate::file::display_path;
-use crate::oci::BuildOptions;
+use crate::oci::{BuildOptions, LayerOwner};
 
 /// [experimental] Build an OCI image from the current mise.toml
 ///
@@ -50,6 +50,14 @@ pub struct Build {
     /// Do not embed the currently-running mise binary at /usr/local/bin/mise
     #[clap(long)]
     no_mise: bool,
+
+    /// UID[:GID] to assign to every tar entry in generated layers
+    ///
+    /// Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
+    /// omitted, it defaults to UID. This affects file ownership only; [oci].user
+    /// controls the image USER directive.
+    #[clap(long, value_name = "UID[:GID]")]
+    owner: Option<LayerOwner>,
 }
 
 impl Build {
@@ -61,6 +69,7 @@ impl Build {
             from: self.from.clone(),
             tag: self.tag.clone(),
             mount_point: self.mount_point.clone(),
+            owner: self.owner,
             include_mise: !self.no_mise,
         };
         let out = perform_build(opts, self.include_global).await?;

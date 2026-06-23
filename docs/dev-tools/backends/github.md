@@ -44,7 +44,7 @@ mise install github:user/repo
 ```
 
 ::: tip
-The autodetection logic is implemented in [`src/backend/asset_matcher.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_matcher.rs), which is shared by both the GitHub and GitLab backends.
+The autodetection logic is implemented in [`src/backend/asset_matcher.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_matcher.rs), which is shared by the GitHub, GitLab, and Forgejo backends.
 :::
 
 ### `asset_pattern`
@@ -55,6 +55,45 @@ Specifies the pattern to match against release asset names. This is useful when 
 [tools]
 "github:cli/cli" = { version = "latest", asset_pattern = "gh_*_linux_x64.tar.gz" }
 ```
+
+### `matching`
+
+Narrows asset selection to names containing the given substring, **while keeping platform autodetection**. Unlike [`asset_pattern`](#asset_pattern) (which replaces autodetection entirely), `matching` only refines the candidate set — autodetection still chooses the correct OS/arch from the narrowed list, so a single config stays portable across platforms.
+
+This is the option to reach for when a repository ships **multiple binaries as separate per-platform assets** and autodetection can't tell which one you want (see [Multiple Assets from the Same Release](#multiple-assets-from-the-same-release)).
+
+```toml
+[tools]
+# oxc-project/oxc ships both oxlint and oxfmt per platform; matching picks oxlint
+# on every OS/arch without hardcoding a platform-specific asset_pattern.
+# `apps_v1.69.0` is the literal release tag; the assets are per-platform
+# archives, and rename_exe renames the extracted `oxlint-<triple>` binary to `oxlint`.
+"github:oxc-project/oxc" = { version = "apps_v1.69.0", matching = "oxlint", rename_exe = "oxlint" }
+```
+
+Tool options can also be passed inline on the command line using `[key=value]` syntax:
+
+```sh
+mise use "github:oxc-project/oxc[matching=oxlint,rename_exe=oxlint]@apps_v1.69.0"
+```
+
+`matching` is a case-sensitive substring test, so a value that is also a substring of another asset's name (e.g. `matching = "tool"` when both `tool-*` and `tool-extras-*` are published) won't uniquely select your binary. Use [`matching_regex`](#matching_regex) with an anchor when you need a precise match.
+
+If [`asset_pattern`](#asset_pattern) is also set, it takes precedence and `matching`/`matching_regex` are ignored — `asset_pattern` replaces autodetection entirely, so there is no candidate set left for them to narrow. They are ignored silently: when `asset_pattern` is set, a `matching_regex` is never consulted and an invalid one is not reported, since mise does not error on a superseded option.
+
+The filter also scopes verification: checksums are looked up for the selected asset, and SLSA provenance discovery is narrowed the same way, so a multi-binary release can't verify one binary against another's provenance. A single shared provenance file that attests every artifact in the release (e.g. `multiple.intoto.jsonl`) is still used as a fallback when no per-binary provenance matches.
+
+### `matching_regex`
+
+Like [`matching`](#matching), but the asset name must match the given regular expression. Use this when a substring isn't selective enough. The match is case-sensitive; use an inline `(?i)` flag for case-insensitive matching.
+
+```toml
+[tools]
+"github:oxc-project/oxc" = { version = "apps_v1.69.0", matching_regex = "^oxlint-", rename_exe = "oxlint" }
+```
+
+If both `matching` and `matching_regex` are set, an asset must satisfy **both** (logical AND)
+to remain a candidate.
 
 ### `version_prefix`
 
@@ -97,14 +136,55 @@ macos-arm64 = { asset_pattern = "gh_*_macOS_arm64.tar.gz" }
 
 The GitHub backend installs one release asset for each tool. If a repository publishes
 multiple binaries as separate assets in the same release, define one tool alias per
-binary and point each alias at the same `github:owner/repo` backend. Then configure
-each aliased tool with its own `asset_pattern`.
+binary and point each alias at the same `github:owner/repo` backend, then narrow each
+alias to its binary.
+
+Prefer [`matching`](#matching) (or [`matching_regex`](#matching_regex)): it narrows the
+candidate set while **keeping platform autodetection**, so one config works on every
+OS/arch. This is the right choice when the per-platform asset names can't be templated
+portably (e.g. Rust target-triples like `oxlint-aarch64-apple-darwin.tar.gz`).
+
+The example below installs both `oxlint` and `oxfmt` from the single
+`oxc-project/oxc` release. Note that each `matching` value must be specific enough to
+select **only** the intended binary — if one binary's name were a substring of the
+other's, use [`matching_regex`](#matching_regex) with an anchor (e.g. `"^oxlint-"`)
+instead (see the [`matching`](#matching) caveat).
 
 ```toml
 [tool_alias]
-tool-a = "github:owner/repo"
-tool-b = "github:owner/repo"
+oxlint = "github:oxc-project/oxc"
+oxfmt = "github:oxc-project/oxc"
 
+[tools.oxlint]
+version = "apps_v1.69.0"
+matching = "oxlint"
+rename_exe = "oxlint"
+
+[tools.oxfmt]
+version = "apps_v1.69.0"
+matching = "oxfmt"
+rename_exe = "oxfmt"
+```
+
+::: warning
+A distinct alias per binary is **required**, not just tidy. `matching`/`matching_regex` are
+**not** part of the install path — it is keyed by the tool name (the alias, or `owner/repo`
+when unaliased) and version. Installing the same `github:owner/repo` backend string twice
+with different `matching` values (for example `mise use "github:owner/repo[matching=tool-a]"`
+followed by `mise use "github:owner/repo[matching=tool-b]"`) resolves to the **same**
+directory, so the second install overwrites the first. Giving each binary its own alias gives
+each its own install directory, so they coexist.
+:::
+
+If the binary isn't named the way you want to invoke it, add
+[`rename_exe`](#rename_exe) (renames the executable extracted from an archive) or
+[`bin`](#bin) (selects/renames the binary, including a single bare non-archive binary).
+
+Use [`asset_pattern`](#asset_pattern) instead only when you need full manual control and
+can name the asset portably (it replaces autodetection, so any `{{os}}`/`{{arch}}`
+templating must cover every platform you target):
+
+```toml
 [tools.tool-a]
 version = "latest"
 asset_pattern = "tool-a-*"

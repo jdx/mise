@@ -9,7 +9,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::DEFAULT_NODE_MIRROR_URL;
 use crate::config::{Config, Settings};
-use crate::file::{TarFormat, TarOptions};
+use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -116,10 +116,11 @@ impl NodePlugin {
                 file::untar(
                     &opts.binary_tarball_path,
                     &opts.install_path,
-                    &TarOptions {
+                    ExtractionFormat::TarGz,
+                    &ExtractOptions {
                         strip_components: 1,
                         pr: Some(ctx.pr.as_ref()),
-                        ..TarOptions::new(TarFormat::TarGz)
+                        ..Default::default()
                     },
                 )?;
                 Ok(())
@@ -187,9 +188,10 @@ impl NodePlugin {
         file::untar(
             &opts.source_tarball_path,
             opts.build_dir.parent().unwrap(),
-            &TarOptions {
+            ExtractionFormat::TarGz,
+            &ExtractOptions {
                 pr: Some(ctx.pr.as_ref()),
-                ..TarOptions::new(TarFormat::TarGz)
+                ..Default::default()
             },
         )?;
         self.exec_configure(ctx, opts, tv)?;
@@ -357,6 +359,20 @@ impl NodePlugin {
         }
     }
 
+    async fn npm<'a>(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        pr: &'a dyn SingleReport,
+    ) -> Result<CmdLineRunner<'a>> {
+        Ok(CmdLineRunner::new(self.npm_path(tv))
+            .with_pr(pr)
+            .envs(config.env().await?)
+            .envs(tv.install_env())
+            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
+            .env("NPM_CONFIG_UPDATE_NOTIFIER", "false"))
+    }
+
     fn corepack_path(&self, tv: &ToolVersion) -> PathBuf {
         if cfg!(windows) {
             tv.install_path().join("corepack.cmd")
@@ -386,15 +402,11 @@ impl NodePlugin {
         }
         for package in packages {
             pr.set_message(format!("install default package: {package}"));
-            let npm = self.npm_path(tv);
-            CmdLineRunner::new(npm)
-                .with_pr(pr)
+            self.npm(config, tv, pr)
+                .await?
                 .arg("install")
                 .arg("--global")
                 .arg(package)
-                .envs(config.env().await?)
-                .envs(tv.install_env())
-                .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
         Ok(())
@@ -455,13 +467,7 @@ impl NodePlugin {
         pr: &dyn SingleReport,
     ) -> Result<()> {
         pr.set_message("npm -v".into());
-        CmdLineRunner::new(self.npm_path(tv))
-            .with_pr(pr)
-            .arg("-v")
-            .envs(config.env().await?)
-            .envs(tv.install_env())
-            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
-            .execute()
+        self.npm(config, tv, pr).await?.arg("-v").execute()
     }
 
     fn shasums_url(&self, v: &str, tarball_name: &str) -> Result<Url> {
@@ -741,7 +747,7 @@ impl Backend for NodePlugin {
         &self,
         _request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
         let is_current_platform = target.is_current();
@@ -762,7 +768,7 @@ impl Backend for NodePlugin {
             opts.insert("flavor".to_string(), flavor);
         }
 
-        opts
+        Ok(opts)
     }
 
     async fn resolve_lock_info(

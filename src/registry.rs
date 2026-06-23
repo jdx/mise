@@ -192,15 +192,35 @@ pub fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {
 }
 
 pub fn is_trusted_plugin(name: &str, remote: &str) -> bool {
-    let normalized_url = normalize_remote(remote).unwrap_or("INVALID_URL".into());
-    let is_shorthand = REGISTRY
-        .get(name)
-        .and_then(|tool| tool.backends().first().copied())
-        .map(full_to_url)
-        .is_some_and(|s| normalize_remote(&s).unwrap_or_default() == normalized_url);
-    let is_mise_url = normalized_url.starts_with("github.com/mise-plugins/");
+    let Ok(normalized_url) = normalize_remote(remote) else {
+        return false;
+    };
+    if normalized_url.starts_with("github.com/mise-plugins/") {
+        return true;
+    }
 
-    !is_shorthand || is_mise_url
+    let official_registry_plugin_remotes = || {
+        static REMOTES: Lazy<HashSet<String>> = Lazy::new(|| {
+            REGISTRY
+                .values()
+                .flat_map(|tool| tool.backends.iter().map(|backend| backend.full))
+                .filter(|full| full.starts_with("asdf:") || full.starts_with("vfox:"))
+                .filter_map(|full| normalize_remote(&full_to_url(full)).ok())
+                .collect()
+        });
+        &*REMOTES
+    };
+
+    let name_matches_official_remote = REGISTRY.get(name).is_some_and(|tool| {
+        tool.backends
+            .iter()
+            .map(|backend| backend.full)
+            .filter(|full| full.starts_with("asdf:") || full.starts_with("vfox:"))
+            .filter_map(|full| normalize_remote(&full_to_url(full)).ok())
+            .any(|official_remote| official_remote == normalized_url)
+    });
+
+    name_matches_official_remote || official_registry_plugin_remotes().contains(&normalized_url)
 }
 
 pub fn normalize_remote(remote: &str) -> eyre::Result<String> {
@@ -397,5 +417,46 @@ mod tests {
         // Invalid URLs should return an error
         let result = normalize_remote("not-a-url");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_trusted_plugin_rejects_non_normalizable_remote() {
+        use super::*;
+
+        assert!(!is_trusted_plugin("cmake", "not-a-url"));
+    }
+
+    #[test]
+    fn test_is_trusted_plugin_rejects_non_registry_plugin_url() {
+        use super::*;
+
+        assert!(!is_trusted_plugin(
+            "vfox-attacker-evil",
+            "https://github.com/attacker/evil.git"
+        ));
+    }
+
+    #[test]
+    fn test_is_trusted_plugin_accepts_official_registry_plugin_url() {
+        use super::*;
+
+        assert!(is_trusted_plugin(
+            "cmake",
+            "https://github.com/mise-plugins/vfox-cmake.git"
+        ));
+        assert!(is_trusted_plugin(
+            "vfox-echocat-vfox-mongod",
+            "https://github.com/echocat/vfox-mongod.git"
+        ));
+    }
+
+    #[test]
+    fn test_is_trusted_plugin_rejects_shorthand_mismatch() {
+        use super::*;
+
+        assert!(!is_trusted_plugin(
+            "cmake",
+            "https://github.com/attacker/vfox-cmake.git"
+        ));
     }
 }

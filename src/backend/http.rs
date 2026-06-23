@@ -2,10 +2,12 @@ use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
-    clean_binary_name, get_filename_from_url, rename_executable_in_dir, template_string,
-    verify_artifact,
+    clean_binary_name, eval_checksum_expr, fetch_checksum_from_file, fetch_checksum_from_shasums,
+    get_filename_from_url, rename_executable_in_dir, shasums_has_entries, template_string,
+    template_string_for_target, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::cli::args::BackendArg;
@@ -13,6 +15,7 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::ToolRequest;
 use crate::toolset::ToolVersion;
@@ -22,6 +25,7 @@ use crate::{dirs, file, hash};
 use async_trait::async_trait;
 use eyre::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -57,9 +61,15 @@ struct FileInfo {
     /// File extension
     extension: String,
     /// Detected archive format
-    format: file::TarFormat,
+    format: file::ExtractionFormat,
     /// Whether this is a compressed single binary (not a tar archive)
     is_compressed_binary: bool,
+}
+
+struct CachePlan {
+    key: String,
+    file_info: FileInfo,
+    strip_components: usize,
 }
 
 impl FileInfo {
@@ -81,20 +91,17 @@ impl FileInfo {
         };
 
         let file_name = effective_path.file_name().unwrap().to_string_lossy();
-        let format = file::TarFormat::from_file_name(&file_name);
+        let format = file::ExtractionFormat::from_file_name(&file_name);
 
-        let extension = format
-            .extension()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| {
-                effective_path
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_string()
-            });
+        let extension = format.extension().unwrap_or_else(|| {
+            effective_path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string()
+        });
 
-        let is_compressed_binary = !format.is_archive() && format != file::TarFormat::Raw;
+        let is_compressed_binary = !format.is_archive() && format != file::ExtractionFormat::Raw;
 
         Self {
             effective_path,
@@ -170,6 +177,38 @@ impl<'a> HttpOptions<'a> {
         self.values.platform_string("bin_path")
     }
 
+    fn checksum_expr(&self) -> Option<&'a str> {
+        self.values.str("checksum_expr")
+    }
+
+    // Target-aware accessors for cross-platform `mise lock`. These resolve
+    // `platforms.<key>.<opt>` for an arbitrary target rather than the host.
+    fn url_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("url", target)
+    }
+
+    fn checksum_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("checksum", target)
+    }
+
+    fn checksum_url_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values
+            .platform_string_for_target("checksum_url", target)
+    }
+
+    fn format_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("format", target)
+    }
+
+    fn strip_components_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values
+            .platform_string_for_target("strip_components", target)
+    }
+
+    fn rename_exe_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("rename_exe", target)
+    }
+
     fn version_list_url(&self) -> Option<&'a str> {
         self.values.str("version_list_url")
     }
@@ -225,7 +264,12 @@ impl HttpBackend {
     // -------------------------------------------------------------------------
 
     /// Generate a cache key based on file content and extraction options
-    fn cache_key(&self, file_path: &Path, opts: &HttpOptions<'_>) -> Result<String> {
+    fn cache_key(
+        &self,
+        file_path: &Path,
+        opts: &HttpOptions<'_>,
+        strip_components: usize,
+    ) -> Result<String> {
         let checksum = hash::file_hash_blake3(file_path, None)?;
 
         // Include extraction options that affect output structure
@@ -234,6 +278,8 @@ impl HttpBackend {
 
         if let Some(strip) = opts.strip_components() {
             parts.push(format!("strip_{strip}"));
+        } else if strip_components > 0 {
+            parts.push(format!("strip_{strip_components}"));
         }
 
         // Include rename_exe in cache key since it modifies the extracted content
@@ -249,6 +295,46 @@ impl HttpBackend {
         let key = parts.join("_");
         debug!("Cache key: {}", key);
         Ok(key)
+    }
+
+    fn cache_plan(&self, file_path: &Path, opts: &HttpOptions<'_>) -> Result<CachePlan> {
+        let file_info = FileInfo::new(file_path, opts);
+        let strip_components = self.effective_strip_components(file_path, &file_info, opts)?;
+        let key = self.cache_key(file_path, opts, strip_components)?;
+
+        Ok(CachePlan {
+            key,
+            file_info,
+            strip_components,
+        })
+    }
+
+    fn effective_strip_components(
+        &self,
+        file_path: &Path,
+        file_info: &FileInfo,
+        opts: &HttpOptions<'_>,
+    ) -> Result<usize> {
+        let mut strip_components: Option<usize> = opts
+            .strip_components()
+            .map(|s| {
+                s.parse::<usize>()
+                    .map_err(|_| eyre::eyre!("Invalid strip_components value: {s}"))
+            })
+            .transpose()?;
+
+        // Auto-detect strip_components=1 for single-directory archives
+        if strip_components.is_none()
+            && !file_info.is_compressed_binary
+            && file_info.format != file::ExtractionFormat::Raw
+            && opts.bin_path().is_none()
+            && file::should_strip_components(file_path, file_info.format).unwrap_or(false)
+        {
+            debug!("Auto-detected single directory archive, using strip_components=1");
+            strip_components = Some(1);
+        }
+
+        Ok(strip_components.unwrap_or(0))
     }
 
     // -------------------------------------------------------------------------
@@ -286,7 +372,7 @@ impl HttpBackend {
     /// used different options (e.g., different `bin` name)
     fn extraction_type_from_cache(&self, cache_key: &str, file_info: &FileInfo) -> ExtractionType {
         // For archives, we don't need to detect the filename
-        if !file_info.is_compressed_binary && file_info.format != file::TarFormat::Raw {
+        if !file_info.is_compressed_binary && file_info.format != file::ExtractionFormat::Raw {
             return ExtractionType::Archive;
         }
 
@@ -316,12 +402,12 @@ impl HttpBackend {
         &self,
         tv: &ToolVersion,
         file_path: &Path,
-        cache_key: &str,
+        cache_plan: &CachePlan,
         url: &str,
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
-        let cache_path = self.cache_path(cache_key);
+        let cache_path = self.cache_path(&cache_plan.key);
 
         // Ensure parent directory exists
         file::create_dir_all(Self::tarballs_dir())?;
@@ -329,7 +415,7 @@ impl HttpBackend {
         // Create unique temp directory for atomic extraction
         let tmp_path = Self::tarballs_dir().join(format!(
             "{}.tmp-{}-{}",
-            cache_key,
+            cache_plan.key,
             std::process::id(),
             SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
         ));
@@ -340,7 +426,8 @@ impl HttpBackend {
         }
 
         // Perform extraction
-        let extraction_type = self.extract_artifact(tv, &tmp_path, file_path, opts, pr)?;
+        let extraction_type =
+            self.extract_artifact(tv, &tmp_path, file_path, cache_plan, opts, pr)?;
 
         // Atomic replace
         if cache_path.exists() {
@@ -349,7 +436,7 @@ impl HttpBackend {
         std::fs::rename(&tmp_path, &cache_path)?;
 
         // Write metadata
-        self.write_metadata(cache_key, url, file_path, opts)?;
+        self.write_metadata(&cache_plan.key, url, file_path, opts)?;
 
         Ok(extraction_type)
     }
@@ -360,19 +447,18 @@ impl HttpBackend {
         tv: &ToolVersion,
         dest: &Path,
         file_path: &Path,
+        cache_plan: &CachePlan,
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         file::create_dir_all(dest)?;
 
-        let file_info = FileInfo::new(file_path, opts);
-
-        if file_info.is_compressed_binary {
-            self.extract_compressed_binary(dest, file_path, &file_info, opts, pr)
-        } else if file_info.format == file::TarFormat::Raw {
-            self.extract_raw_file(dest, file_path, &file_info, opts, pr)
+        if cache_plan.file_info.is_compressed_binary {
+            self.extract_compressed_binary(dest, file_path, &cache_plan.file_info, opts, pr)
+        } else if cache_plan.file_info.format == file::ExtractionFormat::Raw {
+            self.extract_raw_file(dest, file_path, &cache_plan.file_info, opts, pr)
         } else {
-            self.extract_archive(tv, dest, file_path, &file_info, opts, pr)
+            self.extract_archive(tv, dest, file_path, cache_plan, opts, pr)
         }
     }
 
@@ -393,14 +479,7 @@ impl HttpBackend {
             pr.set_message(format!("extract {}", file_info.file_name()));
         }
 
-        file::untar(
-            file_path,
-            &dest_file,
-            &file::TarOptions {
-                pr,
-                ..file::TarOptions::new(file_info.format)
-            },
-        )?;
+        file::decompress_file(file_path, &dest_file, file_info.format)?;
 
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })
@@ -435,30 +514,17 @@ impl HttpBackend {
         tv: &ToolVersion,
         dest: &Path,
         file_path: &Path,
-        file_info: &FileInfo,
+        cache_plan: &CachePlan,
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
-        let mut strip_components: Option<usize> =
-            opts.strip_components().and_then(|s| s.parse().ok());
-
-        // Auto-detect strip_components=1 for single-directory archives
-        if strip_components.is_none()
-            && opts.bin_path().is_none()
-            && file::should_strip_components(file_path, file_info.format).unwrap_or(false)
-        {
-            debug!("Auto-detected single directory archive, using strip_components=1");
-            strip_components = Some(1);
-        }
-
-        let tar_opts = file::TarOptions {
-            format: file_info.format,
-            strip_components: strip_components.unwrap_or(0),
+        let extract_opts = file::ExtractOptions {
+            strip_components: cache_plan.strip_components,
             pr,
             preserve_mtime: false,
         };
 
-        file::untar(file_path, dest, &tar_opts)?;
+        file::extract_archive(file_path, dest, cache_plan.file_info.format, &extract_opts)?;
 
         // Handle rename_exe option for archives
         if let Some(rename_to) = opts.rename_exe() {
@@ -693,6 +759,88 @@ impl HttpBackend {
 
         version_list::fetch_versions(&url, regex, json_path, version_expr).await
     }
+
+    // -------------------------------------------------------------------------
+    // Cross-platform lock resolution
+    // -------------------------------------------------------------------------
+
+    /// Resolve the artifact URL for a target platform during `mise lock`.
+    /// Renders `os()`/`arch()` for the target rather than the host.
+    fn lock_url_for_target(
+        &self,
+        opts: &HttpOptions<'_>,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Option<String> {
+        opts.url_for_target(target)
+            .map(|template| template_string_for_target(&template, tv, target))
+    }
+
+    /// Resolve a published checksum for a target platform without downloading
+    /// the artifact. Tries, in order: a checksum configured directly for the
+    /// platform, a manifest evaluated via `checksum_expr`, a SHASUMS file keyed
+    /// by filename, then an individual checksum file. Returns `None`
+    /// (best-effort) when no published checksum is available.
+    async fn resolve_lock_checksum(
+        &self,
+        opts: &HttpOptions<'_>,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+        url: &str,
+    ) -> Option<String> {
+        // 1. Checksum declared directly for this platform.
+        if let Some(checksum) = opts.checksum_for_target(target) {
+            return Some(checksum);
+        }
+
+        // 2. Fetch from a declared checksum source.
+        let checksum_url_template = opts.checksum_url_for_target(target)?;
+        let checksum_url = template_string_for_target(&checksum_url_template, tv, target);
+        let filename = get_filename_from_url(url);
+
+        // 2a. Manifest with an extraction expression. The expression returns an
+        // `algo:hash` string. The manifest is the same across platforms, so use
+        // the cached fetch.
+        if let Some(expr) = opts.checksum_expr() {
+            let body = match HTTP.get_text_cached(&checksum_url).await {
+                Ok(body) => body,
+                Err(e) => {
+                    debug!("failed to fetch checksum manifest {checksum_url}: {e}");
+                    return None;
+                }
+            };
+            let vars = [
+                ("version", tv.version.as_str()),
+                ("os", target.os_name()),
+                ("arch", target.arch_name()),
+                ("url", url),
+                ("filename", filename.as_str()),
+            ];
+            return eval_checksum_expr(expr, &body, &vars);
+        }
+
+        // 2b. Checksum file: a SHASUMS list (filename match) first, then an
+        // individual checksum file. The algorithm is detected from its name.
+        if let Some(checksum) = fetch_checksum_from_shasums(&checksum_url, &filename).await {
+            return Some(checksum);
+        }
+        // A SHASUMS list that has entries but none matching our artifact is a
+        // naming mismatch, not an individual checksum file. Falling back to the
+        // individual-file scan would return the first hash in the list — another
+        // platform's checksum — and silently lock it. Bail so the platform is
+        // reported unresolved instead.
+        if shasums_has_entries(&checksum_url).await {
+            debug!(
+                "checksum_url {checksum_url} is a SHASUMS list with no entry for {filename}; \
+                 not falling back to a first-hash scan"
+            );
+            return None;
+        }
+        let file_algo = crate::backend::asset_matcher::detect_checksum_algorithm(
+            &get_filename_from_url(&checksum_url),
+        );
+        fetch_checksum_from_file(&checksum_url, &file_algo).await
+    }
 }
 
 /// Returns install-time-only option keys for HTTP backend.
@@ -706,6 +854,8 @@ pub fn install_time_option_keys() -> Vec<String> {
         "version_expr".into(),
         "format".into(),
         "rename_exe".into(),
+        "checksum_url".into(),
+        "checksum_expr".into(),
     ]
 }
 
@@ -736,6 +886,73 @@ impl Backend for HttpBackend {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
         super::http_install_operation_count(opts.checksum().is_some(), &self.get_platform_key(), tv)
+    }
+
+    /// Options that affect which artifact is downloaded, resolved for the target
+    /// platform so cross-platform lockfile entries match install-time lookups.
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> Result<BTreeMap<String, String>> {
+        let raw_opts = request.options();
+        let opts = HttpOptions::new(&raw_opts);
+        let mut result = BTreeMap::new();
+        if let Some(format) = opts.format_for_target(target) {
+            result.insert("format".to_string(), format);
+        }
+        if let Some(strip) = opts.strip_components_for_target(target) {
+            result.insert("strip_components".to_string(), strip);
+        }
+        if let Some(rename) = opts.rename_exe_for_target(target) {
+            result.insert("rename_exe".to_string(), rename);
+        }
+        Ok(result)
+    }
+
+    /// Resolve URL + published checksum for a target platform during `mise lock`,
+    /// without downloading the artifact. Best-effort: a platform with no
+    /// resolvable URL fails closed (`Err`) so the lock run reports it as skipped
+    /// rather than writing nothing under a success count; a missing checksum
+    /// yields a url-only entry.
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let raw_opts = tv.request.options();
+        let opts = HttpOptions::new(&raw_opts);
+
+        // Fail closed when the platform can't be resolved so the lock
+        // orchestration reports it as skipped, rather than returning an empty
+        // entry that is miscounted as a successful platform (see #7113).
+        let Some(url) = self.lock_url_for_target(&opts, tv, target) else {
+            return Err(eyre::eyre!(
+                "no URL configured for {} on {}; skipping",
+                self.ba.full(),
+                target.to_key()
+            ));
+        };
+
+        let checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
+
+        // A checksum source was configured but produced nothing for this target
+        // (manifest miss, SHASUMS naming mismatch, unreachable file, ...). The
+        // url-only entry is still written, but surface it so it isn't a silent
+        // drop of checksum verification.
+        if checksum.is_none() && opts.checksum_url_for_target(target).is_some() {
+            warn!(
+                "could not resolve a checksum for {} on {}; locking the URL without checksum verification",
+                self.ba.full(),
+                target.to_key()
+            );
+        }
+
+        Ok(PlatformInfo {
+            url: Some(url),
+            checksum,
+            ..Default::default()
+        })
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
@@ -805,29 +1022,28 @@ impl Backend for HttpBackend {
         verify_artifact(&tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
 
         // Generate cache key
-        let cache_key = self.cache_key(&file_path, &opts)?;
-        let file_info = FileInfo::new(&file_path, &opts);
+        let cache_plan = self.cache_plan(&file_path, &opts)?;
 
         // Acquire lock and extract or reuse cache
-        let cache_path = self.cache_path(&cache_key);
+        let cache_path = self.cache_path(&cache_plan.key);
         let _lock = crate::lock_file::get(&cache_path, ctx.force)?;
 
         // Determine extraction type based on whether we're using cache or extracting fresh
         // On cache hit, we need to detect the actual filename from the cache (which may differ
         // from current options if a previous extraction used different `bin` name)
         ctx.pr.next_operation();
-        let extraction_type = if self.is_cached(&cache_key) {
+        let extraction_type = if self.is_cached(&cache_plan.key) {
             ctx.pr.set_message("using cached tarball".into());
             // Report extraction operation as complete (instant since we're using cache)
             ctx.pr.set_length(1);
             ctx.pr.set_position(1);
-            self.extraction_type_from_cache(&cache_key, &file_info)
+            self.extraction_type_from_cache(&cache_plan.key, &cache_plan.file_info)
         } else {
             ctx.pr.set_message("extracting to cache".into());
             self.extract_to_cache(
                 &tv,
                 &file_path,
-                &cache_key,
+                &cache_plan,
                 &url,
                 &opts,
                 Some(ctx.pr.as_ref()),
@@ -835,9 +1051,9 @@ impl Backend for HttpBackend {
         };
 
         // Create symlinks
-        self.create_install_symlink(&tv, &cache_key, &extraction_type, &opts)?;
-        self.create_version_alias_symlink(&tv, &cache_key)?;
-        tv.install_path = Some(Self::install_path_for(&tv, &cache_key));
+        self.create_install_symlink(&tv, &cache_plan.key, &extraction_type, &opts)?;
+        self.create_version_alias_symlink(&tv, &cache_plan.key)?;
+        tv.install_path = Some(Self::install_path_for(&tv, &cache_plan.key));
 
         // Verify checksum for lockfile
         if lockfile_enabled || has_lockfile_checksum {
@@ -944,6 +1160,23 @@ mod tests {
 
     fn version_hash(version: &str) -> String {
         crate::hash::hash_sha256_to_str(version)[..7].to_string()
+    }
+
+    #[test]
+    fn template_string_for_target_renders_target_os_arch() {
+        let tv = http_test_tv("0.40.0");
+        let template =
+            r#"sentinel_{{ version }}_{{ os(macos="darwin") }}_{{ arch(x64="amd64") }}.zip"#;
+        let linux = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        assert_eq!(
+            template_string_for_target(template, &tv, &linux),
+            "sentinel_0.40.0_linux_amd64.zip"
+        );
+        let win = PlatformTarget::new(crate::platform::Platform::parse("windows-x64").unwrap());
+        assert_eq!(
+            template_string_for_target(template, &tv, &win),
+            "sentinel_0.40.0_windows_amd64.zip"
+        );
     }
 
     #[test]

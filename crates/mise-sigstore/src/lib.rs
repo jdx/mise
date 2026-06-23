@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use base64::Engine;
@@ -17,6 +18,106 @@ use tokio::io::AsyncReadExt;
 
 const GITHUB_API_URL: &str = "https://api.github.com";
 const USER_AGENT_VALUE: &str = "mise-sigstore/0.1.0";
+
+/// Default per-request timeout for attestation API calls. Without this the
+/// client would wait indefinitely on a stalled connection (reqwest has no
+/// default timeout). Mirrors mise's `http_timeout` default; the embedding crate
+/// overrides it via [`RetryConfig`] to honor `MISE_HTTP_TIMEOUT`.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+/// Default number of retries on transient failures. GitHub's attestations API
+/// intermittently returns 5xx (e.g. 504 Gateway Timeout) and 429 under load; a
+/// single attempt fails the whole install. Mirrors mise's `http_retries`
+/// default; the embedding crate overrides it to honor `MISE_HTTP_RETRIES`.
+const DEFAULT_RETRIES: usize = 3;
+/// Default base backoff before the first retry. Doubles each attempt: ~0.5s / 1s / 2s.
+const DEFAULT_BACKOFF_BASE: Duration = Duration::from_millis(500);
+
+/// HTTP retry/timeout policy for the attestation client. Lets the embedding
+/// crate (mise) pass its `http_retries` / `http_timeout` settings through
+/// instead of the attestation path using a hardcoded policy of its own.
+#[derive(Debug, Clone)]
+pub struct RetryConfig {
+    /// Per-request timeout.
+    pub timeout: Duration,
+    /// Number of retries on transient failures (total attempts = `retries + 1`).
+    pub retries: usize,
+    /// Attempt-1 backoff; doubles each subsequent attempt, with equal jitter.
+    pub backoff_base: Duration,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            timeout: DEFAULT_TIMEOUT,
+            retries: DEFAULT_RETRIES,
+            backoff_base: DEFAULT_BACKOFF_BASE,
+        }
+    }
+}
+/// Upper bound on a server-supplied `Retry-After` wait, so a hostile or buggy
+/// header can't stall an install for minutes.
+const RETRY_AFTER_MAX: Duration = Duration::from_secs(60);
+
+/// Whether an HTTP status warrants a retry. 429 (rate limit) and any 5xx are
+/// transient server-side conditions; everything else (incl. 404) is terminal.
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+/// Whether a transport-level error warrants a retry: timeouts, connection
+/// failures, and mid-stream body drops, which are all transient. Broader classes
+/// (TLS handshake, genuine decode errors, builder errors) won't recover on retry
+/// so they surface immediately. Matches the transient classification used by
+/// mise's main HTTP client and vfox.
+fn is_retryable_error(err: &reqwest::Error) -> bool {
+    err.is_timeout() || err.is_connect() || err.is_body() || is_incomplete_body(err)
+}
+
+/// A buffered body read (`.bytes()`) of a truncated response surfaces as a
+/// `Decode` error wrapping an `io::ErrorKind::UnexpectedEof` (rather than the
+/// `is_body()` kind a streamed read would yield). Detect that specific case so a
+/// connection dropped mid-body is retried, without retrying genuine decode
+/// errors.
+fn is_incomplete_body(err: &reqwest::Error) -> bool {
+    use std::error::Error;
+    let mut source: Option<&(dyn Error + 'static)> = err.source();
+    while let Some(e) = source {
+        if let Some(io_err) = e.downcast_ref::<std::io::Error>()
+            && io_err.kind() == std::io::ErrorKind::UnexpectedEof
+        {
+            return true;
+        }
+        source = e.source();
+    }
+    false
+}
+
+/// Honor a `429`'s `Retry-After` header when present and expressed as
+/// delta-seconds (GitHub's form). HTTP-date values are ignored and fall back to
+/// exponential backoff. Capped at [`RETRY_AFTER_MAX`].
+fn retry_after_delay(headers: &HeaderMap) -> Option<Duration> {
+    let raw = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?;
+    let secs: u64 = raw.trim().parse().ok()?;
+    Some(Duration::from_secs(secs).min(RETRY_AFTER_MAX))
+}
+
+/// Backoff delay for the given attempt (1-based) with "equal jitter" in
+/// `[d/2, d)` to avoid synchronized retries across concurrent installs. `base`
+/// is the attempt-1 delay; it doubles each attempt. A zero base yields no delay
+/// (used by tests to keep the suite fast).
+fn backoff_delay(base: Duration, attempt: usize) -> Duration {
+    let exp = (attempt.saturating_sub(1)).min(16) as u32;
+    let scaled = base.saturating_mul(1u32 << exp);
+    let half = scaled / 2;
+    if half.is_zero() {
+        return scaled;
+    }
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0);
+    half + Duration::from_nanos(nanos % half.as_nanos().max(1) as u64)
+}
 
 #[derive(Debug, Error)]
 pub enum AttestationError {
@@ -165,12 +266,17 @@ pub struct AttestationClient {
     client: reqwest::Client,
     base_url: String,
     github_token: Option<String>,
+    max_attempts: usize,
+    backoff_base: Duration,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct AttestationClientBuilder {
     base_url: Option<String>,
     github_token: Option<String>,
+    timeout: Option<Duration>,
+    retries: Option<usize>,
+    backoff_base: Option<Duration>,
 }
 
 impl AttestationClientBuilder {
@@ -184,19 +290,60 @@ impl AttestationClientBuilder {
         self
     }
 
+    /// Per-request timeout (defaults to [`DEFAULT_TIMEOUT`]).
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Number of retries on transient failures (defaults to [`DEFAULT_RETRIES`];
+    /// total attempts = `retries + 1`). Set to 0 to disable retries.
+    pub fn retries(mut self, retries: usize) -> Self {
+        self.retries = Some(retries);
+        self
+    }
+
+    /// Override the attempt-1 retry backoff (defaults to [`DEFAULT_BACKOFF_BASE`]).
+    /// Mainly an injection point for tests, which set it to zero so the suite
+    /// doesn't pay real wall-clock backoff between retries.
+    pub fn backoff_base(mut self, base: Duration) -> Self {
+        self.backoff_base = Some(base);
+        self
+    }
+
+    /// Apply a full [`RetryConfig`] (timeout + retries + backoff) at once. Used
+    /// by the embedding crate to pass through mise's `http_*` settings.
+    pub fn retry_config(self, config: RetryConfig) -> Self {
+        self.timeout(config.timeout)
+            .retries(config.retries)
+            .backoff_base(config.backoff_base)
+    }
+
     pub fn build(self) -> Result<AttestationClient> {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_VALUE));
         let client = reqwest::Client::builder()
             .default_headers(headers)
+            .timeout(self.timeout.unwrap_or(DEFAULT_TIMEOUT))
             .build()?;
 
         Ok(AttestationClient {
             client,
             base_url: self.base_url.unwrap_or_else(|| GITHUB_API_URL.to_string()),
             github_token: self.github_token,
+            max_attempts: self.retries.unwrap_or(DEFAULT_RETRIES) + 1,
+            backoff_base: self.backoff_base.unwrap_or(DEFAULT_BACKOFF_BASE),
         })
     }
+}
+
+/// A fully-read HTTP response. The body is buffered inside the retry loop so a
+/// transient failure mid-body-read is retried like a failed send, rather than
+/// surfacing after the retry boundary.
+struct HttpResponse {
+    status: reqwest::StatusCode,
+    headers: HeaderMap,
+    body: Vec<u8>,
 }
 
 #[derive(Debug, Serialize)]
@@ -249,7 +396,7 @@ impl AttestationClient {
         Ok(headers)
     }
 
-    pub async fn fetch_attestations(&self, params: FetchParams) -> Result<Vec<Attestation>> {
+    fn attestations_url(&self, params: &FetchParams) -> Result<reqwest::Url> {
         let url = if let Some(repo) = &params.repo {
             format!(
                 "{}/repos/{repo}/attestations/{}",
@@ -266,33 +413,89 @@ impl AttestationClient {
         if let Some(predicate_type) = &params.predicate_type {
             query_params.push(("predicate_type", predicate_type.clone()));
         }
-        let url = reqwest::Url::parse_with_params(&url, query_params)
-            .map_err(|e| AttestationError::Api(format!("Invalid GitHub attestations URL: {e}")))?;
+        reqwest::Url::parse_with_params(&url, query_params)
+            .map_err(|e| AttestationError::Api(format!("Invalid GitHub attestations URL: {e}")))
+    }
 
-        let response = self
+    /// Send a request and read its body, retrying transient failures (5xx, 429,
+    /// timeouts, connection errors, and mid-body-read errors) with exponential
+    /// backoff. A `429`'s `Retry-After` header is honored in preference to the
+    /// computed backoff. The body is buffered here so a transient failure during
+    /// the body read is retried too, rather than escaping the retry boundary.
+    ///
+    /// The request must have no streaming body so it can be cloned per attempt —
+    /// true for all GET calls here. Non-transient responses (incl. 4xx like 404)
+    /// are returned as-is for the caller to interpret.
+    async fn send_with_retry(&self, request: reqwest::RequestBuilder) -> Result<HttpResponse> {
+        let mut attempt = 1;
+        loop {
+            let req = request
+                .try_clone()
+                .expect("attestation requests must not have a streaming body");
+            let last = attempt >= self.max_attempts;
+
+            // A labeled block so the `reqwest::Response` is dropped before the
+            // backoff sleep — holding it would pin its body/connection for the
+            // whole delay. Each attempt either returns, errors out, or breaks
+            // with the delay to wait before the next attempt.
+            let delay = 'attempt: {
+                match req.send().await {
+                    Ok(response) => {
+                        let status = response.status();
+                        if !last && is_retryable_status(status) {
+                            break 'attempt retry_after_delay(response.headers())
+                                .unwrap_or_else(|| backoff_delay(self.backoff_base, attempt));
+                        }
+                        let headers = response.headers().clone();
+                        match response.bytes().await {
+                            Ok(body) => {
+                                return Ok(HttpResponse {
+                                    status,
+                                    headers,
+                                    body: body.to_vec(),
+                                });
+                            }
+                            Err(err) if !last && is_retryable_error(&err) => {
+                                break 'attempt backoff_delay(self.backoff_base, attempt);
+                            }
+                            Err(err) => return Err(AttestationError::Http(err)),
+                        }
+                    }
+                    Err(err) if !last && is_retryable_error(&err) => {
+                        break 'attempt backoff_delay(self.backoff_base, attempt);
+                    }
+                    Err(err) => return Err(AttestationError::Http(err)),
+                }
+            };
+
+            tokio::time::sleep(delay).await;
+            attempt += 1;
+        }
+    }
+
+    pub async fn fetch_attestations(&self, params: FetchParams) -> Result<Vec<Attestation>> {
+        let url = self.attestations_url(&params)?;
+
+        let request = self
             .client
             .get(url.clone())
-            .headers(self.github_headers(url.as_str())?)
-            .send()
-            .await?;
+            .headers(self.github_headers(url.as_str())?);
+        let response = self.send_with_retry(request).await?;
 
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
+        if response.status == reqwest::StatusCode::NOT_FOUND {
             return Ok(vec![]);
         }
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
+        if !response.status.is_success() {
+            let body = String::from_utf8_lossy(&response.body);
             return Err(AttestationError::Api(format!(
-                "GitHub API returned {status}: {body}"
+                "GitHub API returned {}: {body}",
+                response.status
             )));
         }
 
-        let response: AttestationsResponse = response.json().await?;
+        let parsed: AttestationsResponse = serde_json::from_slice(&response.body)?;
         let mut attestations = Vec::new();
-        for attestation in response.attestations {
+        for attestation in parsed.attestations {
             if attestation.bundle.is_some() {
                 attestations.push(attestation);
             } else if let Some(bundle_url) = &attestation.bundle_url {
@@ -307,26 +510,24 @@ impl AttestationClient {
     }
 
     async fn fetch_bundle_url(&self, bundle_url: &str) -> Result<serde_json::Value> {
-        let response = self
+        let request = self
             .client
             .get(bundle_url)
-            .headers(self.github_headers(bundle_url)?)
-            .send()
-            .await?;
-        if !response.status().is_success() {
+            .headers(self.github_headers(bundle_url)?);
+        let response = self.send_with_retry(request).await?;
+        if !response.status.is_success() {
             return Err(AttestationError::Api(format!(
                 "bundle URL returned {}",
-                response.status()
+                response.status
             )));
         }
-        if is_snappy_content_type(&response) {
-            let bytes = response.bytes().await?;
+        if is_snappy_content_type(&response.headers) {
             let decompressed = snap::raw::Decoder::new()
-                .decompress_vec(&bytes)
+                .decompress_vec(&response.body)
                 .map_err(|e| AttestationError::Api(format!("Snappy decompression failed: {e}")))?;
             serde_json::from_slice(&decompressed).map_err(AttestationError::Json)
         } else {
-            response.json().await.map_err(AttestationError::Http)
+            serde_json::from_slice(&response.body).map_err(AttestationError::Json)
         }
     }
 }
@@ -337,6 +538,7 @@ pub async fn verify_github_attestation(
     repo: &str,
     token: Option<&str>,
     signer_workflow: Option<&str>,
+    retry_config: RetryConfig,
 ) -> Result<bool> {
     verify_github_attestation_inner(
         artifact_path,
@@ -346,6 +548,7 @@ pub async fn verify_github_attestation(
         signer_workflow,
         None,
         None,
+        retry_config,
     )
     .await
 }
@@ -357,6 +560,7 @@ pub async fn verify_github_attestation_with_base_url(
     token: Option<&str>,
     signer_workflow: Option<&str>,
     base_url: &str,
+    retry_config: RetryConfig,
 ) -> Result<bool> {
     verify_github_attestation_inner(
         artifact_path,
@@ -366,10 +570,12 @@ pub async fn verify_github_attestation_with_base_url(
         signer_workflow,
         Some(base_url),
         None,
+        retry_config,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn verify_github_attestation_with_base_url_and_digest(
     artifact_path: &Path,
     owner: &str,
@@ -378,6 +584,7 @@ pub async fn verify_github_attestation_with_base_url_and_digest(
     signer_workflow: Option<&str>,
     base_url: &str,
     digest: &str,
+    retry_config: RetryConfig,
 ) -> Result<bool> {
     verify_github_attestation_inner(
         artifact_path,
@@ -387,6 +594,7 @@ pub async fn verify_github_attestation_with_base_url_and_digest(
         signer_workflow,
         Some(base_url),
         Some(digest),
+        retry_config,
     )
     .await
 }
@@ -405,6 +613,7 @@ pub async fn verify_github_attestation_with_attestations(
     verify_attestation_bundles(attestations, &artifact, signer_workflow, &mut trust_roots).await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn verify_github_attestation_inner(
     artifact_path: &Path,
     owner: &str,
@@ -413,8 +622,9 @@ async fn verify_github_attestation_inner(
     signer_workflow: Option<&str>,
     base_url: Option<&str>,
     digest: Option<&str>,
+    retry_config: RetryConfig,
 ) -> Result<bool> {
-    let mut builder = AttestationClient::builder();
+    let mut builder = AttestationClient::builder().retry_config(retry_config);
     if let Some(token) = token {
         builder = builder.github_token(token);
     }
@@ -989,9 +1199,8 @@ async fn verify_attestation_bundles(
     )))
 }
 
-fn is_snappy_content_type(response: &reqwest::Response) -> bool {
-    response
-        .headers()
+fn is_snappy_content_type(headers: &HeaderMap) -> bool {
+    headers
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .and_then(|content_type| content_type.split(';').next())
@@ -1334,6 +1543,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn attestations_url_includes_predicate_type() {
+        let client = AttestationClient::builder()
+            .base_url("https://api.github.com")
+            .build()
+            .unwrap();
+        let url = client
+            .attestations_url(&FetchParams {
+                owner: "owner".to_string(),
+                repo: Some("owner/repo".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: Some("https://slsa.dev/provenance/v1".to_string()),
+            })
+            .unwrap();
+        let query: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+
+        assert_eq!(url.path(), "/repos/owner/repo/attestations/sha256:abc");
+        assert_eq!(query.get("per_page").map(String::as_str), Some("30"));
+        assert_eq!(
+            query.get("predicate_type").map(String::as_str),
+            Some("https://slsa.dev/provenance/v1")
+        );
+    }
+
+    #[test]
     fn signer_workflow_requires_identity() {
         let err = verify_signer_workflow_identity(None, Some(".github/workflows/release.yml"))
             .unwrap_err()
@@ -1373,6 +1607,290 @@ mod tests {
         .to_string();
 
         assert!(err.contains("Workflow verification failed"));
+    }
+
+    #[test]
+    fn retryable_status_classification() {
+        use reqwest::StatusCode;
+        // Transient server-side conditions retry.
+        assert!(is_retryable_status(StatusCode::GATEWAY_TIMEOUT)); // 504 — the reported failure
+        assert!(is_retryable_status(StatusCode::BAD_GATEWAY)); // 502
+        assert!(is_retryable_status(StatusCode::SERVICE_UNAVAILABLE)); // 503
+        assert!(is_retryable_status(StatusCode::TOO_MANY_REQUESTS)); // 429
+        // Terminal conditions do not.
+        assert!(!is_retryable_status(StatusCode::OK));
+        assert!(!is_retryable_status(StatusCode::NOT_FOUND));
+        assert!(!is_retryable_status(StatusCode::UNAUTHORIZED));
+        assert!(!is_retryable_status(StatusCode::FORBIDDEN));
+    }
+
+    #[test]
+    fn backoff_grows_and_stays_within_jitter_bounds() {
+        // Each attempt's delay must fall in [base/2, base) where base doubles.
+        for attempt in 1..=4 {
+            let base = DEFAULT_BACKOFF_BASE * (1u32 << (attempt - 1));
+            let d = backoff_delay(DEFAULT_BACKOFF_BASE, attempt);
+            assert!(d >= base / 2, "attempt {attempt}: {d:?} < {:?}", base / 2);
+            assert!(d < base, "attempt {attempt}: {d:?} >= {base:?}");
+        }
+    }
+
+    #[test]
+    fn backoff_zero_base_yields_no_delay() {
+        for attempt in 1..=4 {
+            assert_eq!(backoff_delay(Duration::ZERO, attempt), Duration::ZERO);
+        }
+    }
+
+    /// Spawn a throwaway HTTP server that replies with each status in
+    /// `statuses` (one per connection, in order) then `200 {body}` for the
+    /// rest. A `429` reply carries `Retry-After: 0` so the retry path stays
+    /// fast. Returns the bound `base_url` and a counter of accepted connections.
+    fn flaky_server(
+        statuses: Vec<u16>,
+        body: &'static str,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::{Read, Write};
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_thread = hits.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = match stream {
+                    Ok(s) => s,
+                    Err(_) => break,
+                };
+                let n = hits_thread.fetch_add(1, Ordering::SeqCst);
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf); // drain the request line/headers
+                let (code, payload) = match statuses.get(n) {
+                    Some(&s) => (s, ""),
+                    None => (200, body),
+                };
+                let extra = if code == 429 {
+                    "Retry-After: 0\r\n"
+                } else {
+                    ""
+                };
+                let response = format!(
+                    "HTTP/1.1 {code} X\r\nContent-Type: application/json\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (format!("http://{addr}"), hits)
+    }
+
+    /// Build a client pointed at a test server with zero backoff so retries
+    /// don't pay real wall-clock time.
+    fn test_client(base_url: &str) -> AttestationClient {
+        AttestationClient::builder()
+            .base_url(base_url)
+            .backoff_base(Duration::ZERO)
+            .build()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn fetch_attestations_retries_on_5xx() {
+        // 504 (the reported failure) then 502, then success — must recover.
+        let (base_url, hits) = flaky_server(vec![504, 502], r#"{"attestations":[]}"#);
+        let client = test_client(&base_url);
+        let result = client
+            .fetch_attestations(FetchParams {
+                owner: "EarthBuild".to_string(),
+                repo: Some("EarthBuild/earthbuild".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "expected recovery after retries: {result:?}"
+        );
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            3,
+            "should have taken 2 failed + 1 successful attempt"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_attestations_surfaces_error_after_exhausting_retries() {
+        // Persistent 504 — exhaust all attempts then surface the API error.
+        let (base_url, hits) = flaky_server(vec![504, 504, 504, 504, 504], "");
+        let client = test_client(&base_url);
+        let err = client
+            .fetch_attestations(FetchParams {
+                owner: "EarthBuild".to_string(),
+                repo: Some("EarthBuild/earthbuild".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AttestationError::Api(_)), "got {err:?}");
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            DEFAULT_RETRIES + 1,
+            "should stop after retries + 1 attempts"
+        );
+    }
+
+    #[tokio::test]
+    async fn retries_setting_controls_attempt_count() {
+        // retries(0) disables retries: a single 504 surfaces immediately.
+        let (base_url, hits) = flaky_server(vec![504, 504], "");
+        let client = AttestationClient::builder()
+            .base_url(&base_url)
+            .retries(0)
+            .backoff_base(Duration::ZERO)
+            .build()
+            .unwrap();
+        let err = client
+            .fetch_attestations(FetchParams {
+                owner: "EarthBuild".to_string(),
+                repo: Some("EarthBuild/earthbuild".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AttestationError::Api(_)), "got {err:?}");
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "retries(0) should make exactly one attempt"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_attestations_retries_on_429_with_retry_after() {
+        // 429 carrying Retry-After (set by the server), then success.
+        let (base_url, hits) = flaky_server(vec![429], r#"{"attestations":[]}"#);
+        let client = test_client(&base_url);
+        let result = client
+            .fetch_attestations(FetchParams {
+                owner: "EarthBuild".to_string(),
+                repo: Some("EarthBuild/earthbuild".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await;
+
+        assert!(result.is_ok(), "expected recovery after 429: {result:?}");
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "should have taken 1 rate-limited + 1 successful attempt"
+        );
+    }
+
+    #[test]
+    fn retry_after_parses_delta_seconds_and_caps() {
+        fn headers_with(value: Option<&str>) -> HeaderMap {
+            let mut headers = HeaderMap::new();
+            if let Some(value) = value {
+                headers.insert(reqwest::header::RETRY_AFTER, value.parse().unwrap());
+            }
+            headers
+        }
+
+        assert_eq!(
+            retry_after_delay(&headers_with(Some("2"))),
+            Some(Duration::from_secs(2))
+        );
+        // Capped at RETRY_AFTER_MAX.
+        assert_eq!(
+            retry_after_delay(&headers_with(Some("9999"))),
+            Some(RETRY_AFTER_MAX)
+        );
+        // HTTP-date form is not delta-seconds → ignored, falls back to backoff.
+        assert_eq!(
+            retry_after_delay(&headers_with(Some("Wed, 21 Oct 2015 07:28:00 GMT"))),
+            None
+        );
+        // Absent header → no override.
+        assert_eq!(retry_after_delay(&headers_with(None)), None);
+    }
+
+    /// Spawn a server whose first connection sends a `200` with a `Content-Length`
+    /// larger than the bytes actually written, then closes — making the body read
+    /// fail mid-stream (a transient `is_body()` error). Later connections serve a
+    /// full `200 {body}`. Returns the `base_url` and a connection counter.
+    fn body_drop_then_ok_server(
+        body: &'static str,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::{Read, Write};
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_thread = hits.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = match stream {
+                    Ok(s) => s,
+                    Err(_) => break,
+                };
+                let n = hits_thread.fetch_add(1, Ordering::SeqCst);
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let response = if n == 0 {
+                    // Promise 1024 bytes, send 4, then drop the connection.
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n{ \"".to_string()
+                } else {
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                };
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (format!("http://{addr}"), hits)
+    }
+
+    #[tokio::test]
+    async fn fetch_attestations_retries_on_body_read_failure() {
+        // First attempt drops mid-body (transient is_body error); second succeeds.
+        let (base_url, hits) = body_drop_then_ok_server(r#"{"attestations":[]}"#);
+        let client = test_client(&base_url);
+        let result = client
+            .fetch_attestations(FetchParams {
+                owner: "EarthBuild".to_string(),
+                repo: Some("EarthBuild/earthbuild".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "expected recovery after body-read failure: {result:?}"
+        );
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "should have taken 1 body-drop + 1 successful attempt"
+        );
     }
 
     /// A genuine `*.intoto.jsonl` produced by slsa-github-generator (sops

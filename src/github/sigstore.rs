@@ -29,7 +29,7 @@
 use std::path::Path;
 
 use mise_sigstore::sources::github::GitHubSource;
-use mise_sigstore::{ArtifactRef, AttestationSource};
+use mise_sigstore::{ArtifactRef, AttestationClient, AttestationSource, FetchParams, RetryConfig};
 
 pub use mise_sigstore::{AttestationError, SlsaArtifact};
 
@@ -54,6 +54,30 @@ fn routed_api_url(api_url: &str) -> String {
     } else {
         url.to_string()
     }
+}
+
+/// Build a [`RetryConfig`] from mise's HTTP settings so attestation requests
+/// retry and time out exactly like the rest of mise's HTTP traffic rather than
+/// using a policy hardcoded in the `mise-sigstore` crate.
+fn mise_retry_config() -> RetryConfig {
+    let settings = crate::config::Settings::get();
+    RetryConfig {
+        timeout: settings.http_timeout(),
+        retries: settings.http_retries.max(0) as usize,
+        ..RetryConfig::default()
+    }
+}
+
+fn attestation_client(api_url: &str) -> AttestationResult<AttestationClient> {
+    let token = resolve_token_for_wrapper(Some(api_url));
+    let base_url = routed_api_url(api_url);
+    let mut builder = AttestationClient::builder()
+        .base_url(&base_url)
+        .retry_config(mise_retry_config());
+    if let Some(token) = token.as_deref() {
+        builder = builder.github_token(token);
+    }
+    builder.build()
 }
 
 /// Verify a GitHub artifact attestation for a file on disk.
@@ -114,6 +138,7 @@ pub async fn verify_attestation(
             expected_workflow,
             &base_url,
             &digest,
+            mise_retry_config(),
         )
         .await
     } else {
@@ -124,9 +149,54 @@ pub async fn verify_attestation(
             token.as_deref(),
             expected_workflow,
             &base_url,
+            mise_retry_config(),
         )
         .await
     }
+}
+
+/// Verify a GitHub artifact attestation filtered by predicate type.
+///
+/// The versions-host cache is keyed by digest only, so predicate-filtered
+/// requests go directly to the GitHub attestations API.
+pub async fn verify_attestation_with_predicate_type(
+    artifact_path: &Path,
+    owner: &str,
+    repo: &str,
+    expected_workflow: Option<&str>,
+    predicate_type: Option<&str>,
+    api_url: Option<&str>,
+    use_versions_host: bool,
+) -> AttestationResult<bool> {
+    let Some(predicate_type) = predicate_type else {
+        return verify_attestation(
+            artifact_path,
+            owner,
+            repo,
+            expected_workflow,
+            api_url,
+            use_versions_host,
+        )
+        .await;
+    };
+
+    let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
+    let client = attestation_client(api_url.unwrap_or(crate::github::API_URL))?;
+    let attestations = client
+        .fetch_attestations(FetchParams {
+            owner: owner.to_string(),
+            repo: Some(format!("{owner}/{repo}")),
+            digest: format!("sha256:{artifact_digest}"),
+            limit: 30,
+            predicate_type: Some(predicate_type.to_string()),
+        })
+        .await?;
+    mise_sigstore::verify_github_attestation_with_attestations(
+        artifact_path,
+        &attestations,
+        expected_workflow,
+    )
+    .await
 }
 
 /// Reason the pre-download attestation probe could not complete.
@@ -137,8 +207,7 @@ pub async fn verify_attestation(
 /// wrapper keeps that signal instead of flattening both into one error string.
 #[derive(Debug)]
 pub enum DetectError {
-    /// `GitHubSource::with_base_url` rejected the (owner, repo, api_url) tuple — usually a
-    /// malformed base URL.
+    /// Attestation source/client construction rejected the base URL.
     SourceCreation(AttestationError),
     /// The attestations endpoint returned an error (403 rate-limit, 5xx, network failure).
     Fetch(AttestationError),
@@ -195,6 +264,41 @@ pub async fn detect_attestations(
     let artifact_ref = ArtifactRef::from_digest(digest);
     let attestations = source
         .fetch_attestations(&artifact_ref)
+        .await
+        .map_err(DetectError::Fetch)?;
+    Ok(!attestations.is_empty())
+}
+
+/// Probe the GitHub attestation API for the given digest and predicate type.
+///
+/// The versions-host cache is keyed by digest only, so predicate-filtered
+/// requests go directly to the GitHub attestations API.
+pub async fn detect_attestations_with_predicate_type(
+    owner: &str,
+    repo: &str,
+    api_url: &str,
+    digest: &str,
+    predicate_type: Option<&str>,
+    use_versions_host: bool,
+) -> Result<bool, DetectError> {
+    let Some(predicate_type) = predicate_type else {
+        return detect_attestations(owner, repo, api_url, digest, use_versions_host).await;
+    };
+
+    let client = attestation_client(api_url).map_err(DetectError::SourceCreation)?;
+    let digest = if digest.contains(':') {
+        digest.to_string()
+    } else {
+        format!("sha256:{digest}")
+    };
+    let attestations = client
+        .fetch_attestations(FetchParams {
+            owner: owner.to_string(),
+            repo: Some(format!("{owner}/{repo}")),
+            digest,
+            limit: 30,
+            predicate_type: Some(predicate_type.to_string()),
+        })
         .await
         .map_err(DetectError::Fetch)?;
     Ok(!attestations.is_empty())

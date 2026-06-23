@@ -60,14 +60,14 @@ Connect backend install command stdin/stdout/stderr directly to the terminal Imp
 
 ### `--shared <SHARED>`
 
-[experimental] Install tool(s) to a shared directory
+Install tool(s) to a shared directory
 
 Installs to the specified directory instead of the default install location.
 May require elevated permissions depending on the path.
 
 ### `--system`
 
-[experimental] Install tool(s) to the system-wide shared directory
+Install tool(s) to the system-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).

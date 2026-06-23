@@ -25,6 +25,83 @@ export const commands: { [key: string]: Command } = {
   "bin-paths": {
     hide: false,
   },
+  bootstrap: {
+    hide: false,
+    subcommands: {
+      launchd: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      "macos-defaults": {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      packages: {
+        hide: false,
+        subcommands: {
+          brew: {
+            hide: false,
+            subcommands: {
+              tap: {
+                hide: false,
+              },
+              untap: {
+                hide: false,
+              },
+            },
+          },
+          install: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+          upgrade: {
+            hide: false,
+          },
+          use: {
+            hide: false,
+          },
+        },
+      },
+      systemd: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      user: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+    },
+  },
   cache: {
     hide: false,
     subcommands: {
@@ -94,6 +171,23 @@ export const commands: { [key: string]: Command } = {
     hide: false,
     subcommands: {
       path: {
+        hide: false,
+      },
+    },
+  },
+  dotfiles: {
+    hide: false,
+    subcommands: {
+      add: {
+        hide: false,
+      },
+      apply: {
+        hide: false,
+      },
+      edit: {
+        hide: false,
+      },
+      status: {
         hide: false,
       },
     },

@@ -10,7 +10,7 @@ export MISE_EXPERIMENTAL=1
 # Set up monorepo structure
 cat <<'EOF' >mise.toml
 min_version = "2025.10.6"
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["submodule", "project", "other"]

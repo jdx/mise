@@ -3,6 +3,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::platform::linux_os_release;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, backend::VersionInfo, config::Config};
@@ -64,7 +65,6 @@ impl SwiftPlugin {
     }
 
     fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
-        Settings::get().ensure_experimental("swift")?;
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         let version = &tv.version;
         ctx.pr.set_message(format!("extract {filename}"));
@@ -93,10 +93,11 @@ impl SwiftPlugin {
             file::untar(
                 tarball_path,
                 &tv.install_path(),
-                &file::TarOptions {
+                file::ExtractionFormat::TarGz,
+                &file::ExtractOptions {
                     strip_components: 1,
                     pr: Some(ctx.pr.as_ref()),
-                    ..file::TarOptions::new(file::TarFormat::TarGz)
+                    ..Default::default()
                 },
             )?;
         }
@@ -208,6 +209,17 @@ impl Backend for SwiftPlugin {
         &self.ba
     }
 
+    /// Swift download URLs are derived from the build host: OS, arch, and—on
+    /// Linux—the specific distro (e.g. `ubuntu24.04`, `amazonlinux2`,
+    /// `fedora39`, `ubi9`). The generic `<os>-<arch>` lock platform key can't
+    /// encode the distro, so a foreign-platform URL can't be resolved or
+    /// persisted to the lockfile from another host. Opt out of the `--locked`
+    /// URL requirement so installs don't hard-fail on platforms missing from
+    /// the lockfile; checksums are still verified at install time.
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
         use crate::backend::SecurityFeature;
 
@@ -244,11 +256,7 @@ impl Backend for SwiftPlugin {
     }
 
     async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
-        if Settings::get().experimental {
-            Ok(vec![".swift-version".into()])
-        } else {
-            Ok(vec![])
-        }
+        Ok(vec![".swift-version".into()])
     }
 
     async fn install_version_(
@@ -278,7 +286,7 @@ fn platform_directory() -> String {
         "xcode".into()
     } else if cfg!(windows) {
         "windows10".into()
-    } else if let Ok(os_release) = &*os_release::OS_RELEASE {
+    } else if let Some(os_release) = linux_os_release() {
         let settings = Settings::get();
         let arch = settings.arch();
         if os_release.id == "ubuntu" && arch == "arm64" {
@@ -304,7 +312,7 @@ fn platform() -> String {
         "osx".to_string()
     } else if cfg!(windows) {
         "windows10".to_string()
-    } else if let Ok(os_release) = &*os_release::OS_RELEASE {
+    } else if let Some(os_release) = linux_os_release() {
         if os_release.id == "amzn" {
             format!("amazonlinux{}", os_release.version_id)
         } else if os_release.id == "ubi" {

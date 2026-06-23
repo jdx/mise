@@ -760,9 +760,9 @@ When `path` points at a directory, mise loads both executable file tasks and any
 
 Included `.toml` files use the [task toml file format](#task-config-includes) (the keys are task names — there is no `[tasks.…]` prefix). The repository will be cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the include will be loaded as if they were local. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
 
-## Monorepo Support <Badge type="warning" text="experimental" />
+## Monorepo Support
 
-mise supports monorepo-style task organization with target path syntax. Enable it by setting `experimental_monorepo_root = true` in your root `mise.toml`.
+mise supports monorepo-style task organization with target path syntax. Enable it by setting `monorepo_root = true` in your root `mise.toml`.
 
 For complete documentation on monorepo tasks including:
 
@@ -806,6 +806,13 @@ vars = { e2e_args = '--headed' }
 ```
 
 The task-level `vars` override any config-level vars with the same name. In the example above, `e2e_args` resolves to `'--headed'` instead of the config-level `'--headless'`.
+
+Config vars can read from process environment variables when using the `default` form. If a process environment variable with the same name exists and is non-empty, its value is used; otherwise, the default is applied. Values from the `[env]` section are not used for this lookup.
+
+```toml
+[vars]
+e2e_args = { default = "--headless" }
+```
 
 Like `[env]`, vars can also be read in as a file:
 

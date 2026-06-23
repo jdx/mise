@@ -10,6 +10,24 @@ use crate::config::{Config, Settings};
 use crate::duration::{parse_duration, parse_into_timestamp};
 
 const DEFAULT_MINIMUM_RELEASE_AGE: &str = "24h";
+const DISABLED_MINIMUM_RELEASE_AGE_CUTOFF: &str = "2099-01-01";
+
+/// Where an effective release-age cutoff came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BeforeDateSource {
+    /// Pre-resolved by the caller (e.g. the `--minimum-release-age` CLI flag
+    /// or a `ResolveOptions` cutoff threaded through from another resolution).
+    /// The caller already knows whether it was explicit or default.
+    Provided,
+    /// A per-tool `minimum_release_age` option or the explicit
+    /// `minimum_release_age` setting.
+    Explicit,
+    /// The built-in default for backends that report release timestamps.
+    /// This only gates which versions remote resolution may pick — it must
+    /// not disable installed-version fast paths, otherwise every resolution
+    /// becomes a remote fetch (https://github.com/jdx/mise/discussions/10308).
+    Default,
+}
 
 /// Resolve the effective `minimum_release_age` cutoff.
 ///
@@ -29,7 +47,25 @@ pub fn resolve_before_date(
     before_date: Option<Timestamp>,
     minimum_release_age: Option<&str>,
 ) -> Result<Option<Timestamp>> {
-    resolve_before_date_with_excludes(None, before_date, minimum_release_age, false)
+    Ok(
+        resolve_before_date_with_excludes(None, before_date, minimum_release_age, false)?
+            .map(|(ts, _)| ts),
+    )
+}
+
+/// Resolve the CLI `--minimum-release-age` flag without falling back to global
+/// settings or the built-in default when the flag is omitted.
+pub fn resolve_cli_minimum_release_age(
+    minimum_release_age: Option<&str>,
+) -> Result<Option<Timestamp>> {
+    if minimum_release_age
+        .is_some_and(|age| parse_duration(age).is_ok_and(|duration| duration.is_zero()))
+    {
+        return Ok(Some(parse_into_timestamp(
+            DISABLED_MINIMUM_RELEASE_AGE_CUTOFF,
+        )?));
+    }
+    Ok(resolve_before_date_with_excludes(None, None, minimum_release_age, true)?.map(|(ts, _)| ts))
 }
 
 pub fn resolve_before_date_for_tool(
@@ -37,6 +73,20 @@ pub fn resolve_before_date_for_tool(
     before_date: Option<Timestamp>,
     minimum_release_age: Option<&str>,
 ) -> Result<Option<Timestamp>> {
+    Ok(
+        resolve_before_date_for_tool_with_source(backend_arg, before_date, minimum_release_age)?
+            .map(|(ts, _)| ts),
+    )
+}
+
+/// Like `resolve_before_date_for_tool` but also reports where the cutoff came
+/// from, so callers can treat the built-in default differently from explicit
+/// configuration.
+pub fn resolve_before_date_for_tool_with_source(
+    backend_arg: &BackendArg,
+    before_date: Option<Timestamp>,
+    minimum_release_age: Option<&str>,
+) -> Result<Option<(Timestamp, BeforeDateSource)>> {
     resolve_before_date_with_excludes(
         Some(backend_arg),
         before_date,
@@ -50,24 +100,33 @@ fn resolve_before_date_with_excludes(
     before_date: Option<Timestamp>,
     minimum_release_age: Option<&str>,
     excluded: bool,
-) -> Result<Option<Timestamp>> {
+) -> Result<Option<(Timestamp, BeforeDateSource)>> {
     if let Some(before_date) = before_date {
-        return Ok(Some(before_date));
+        return Ok(Some((before_date, BeforeDateSource::Provided)));
     }
     if let Some(before) = minimum_release_age {
         if parse_duration(before).is_ok_and(|duration| duration.is_zero()) {
             return Ok(None);
         }
-        return Ok(Some(parse_into_timestamp(before)?));
+        return Ok(Some((
+            parse_into_timestamp(before)?,
+            BeforeDateSource::Explicit,
+        )));
     }
     if !excluded && let Some(before) = &Settings::get().minimum_release_age {
         if parse_duration(before).is_ok_and(|duration| duration.is_zero()) {
             return Ok(None);
         }
-        return Ok(Some(parse_into_timestamp(before)?));
+        return Ok(Some((
+            parse_into_timestamp(before)?,
+            BeforeDateSource::Explicit,
+        )));
     }
     if !excluded && backend_arg.is_some_and(default_minimum_release_age_applies) {
-        return Ok(Some(parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE)?));
+        return Ok(Some((
+            parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE)?,
+            BeforeDateSource::Default,
+        )));
     }
     Ok(None)
 }
@@ -139,7 +198,10 @@ pub(crate) async fn resolve_before_date_for_backend<B: Backend + ?Sized>(
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_MINIMUM_RELEASE_AGE, resolve_before_date, resolve_before_date_for_tool};
+    use super::{
+        BeforeDateSource, DEFAULT_MINIMUM_RELEASE_AGE, resolve_before_date,
+        resolve_before_date_for_tool, resolve_before_date_for_tool_with_source,
+    };
     use crate::cli::args::BackendArg;
     use crate::config::settings::{Settings, SettingsPartial};
     use confique::Layer;
@@ -187,6 +249,11 @@ mod tests {
     fn test_zero_minimum_release_age_disables_cutoff() {
         Settings::reset(None);
         assert_eq!(resolved_timestamp(None, Some("0s")), None);
+        assert_eq!(
+            super::resolve_cli_minimum_release_age(Some("0s")).unwrap(),
+            Some(crate::duration::parse_into_timestamp("2099-01-01").unwrap())
+        );
+        assert_eq!(super::resolve_cli_minimum_release_age(None).unwrap(), None);
 
         let mut partial = SettingsPartial::empty();
         partial.minimum_release_age = Some("0s".to_string());
@@ -297,6 +364,43 @@ mod tests {
     fn test_effective_before_date_skips_default_for_unsupported_backend() {
         Settings::reset(None);
         assert_eq!(resolved_tool_timestamp("asdf:tiny", None, None), None);
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_before_date_source_distinguishes_default_from_explicit() {
+        Settings::reset(None);
+        let ba: BackendArg = "npm:prettier".into();
+
+        // Built-in default → Default source
+        let (_, source) = resolve_before_date_for_tool_with_source(&ba, None, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(source, BeforeDateSource::Default);
+
+        // Per-tool option → Explicit source
+        let (_, source) = resolve_before_date_for_tool_with_source(&ba, None, Some("7d"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(source, BeforeDateSource::Explicit);
+
+        // Explicit global setting → Explicit source
+        let mut partial = SettingsPartial::empty();
+        partial.minimum_release_age = Some("7d".to_string());
+        Settings::reset(Some(partial));
+        let (_, source) = resolve_before_date_for_tool_with_source(&ba, None, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(source, BeforeDateSource::Explicit);
+        Settings::reset(None);
+
+        // Pre-resolved cutoff → Provided source
+        let cli_before = "2024-01-02T03:04:05Z".parse().unwrap();
+        let (ts, source) = resolve_before_date_for_tool_with_source(&ba, Some(cli_before), None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(ts, cli_before);
+        assert_eq!(source, BeforeDateSource::Provided);
         Settings::reset(None);
     }
 

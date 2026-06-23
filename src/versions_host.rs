@@ -227,8 +227,8 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
         return Ok(None);
     }
 
-    // Use TOML format which includes created_at timestamps
-    let url = format!("https://mise-versions.jdx.dev/tools/{}.toml", tool);
+    // Use the static TOML asset which includes created_at timestamps.
+    let url = version_list_url(tool);
     let versions: Vec<VersionInfo> = match HTTP_FETCH
         .get_text_request(&url)
         .headers(&VERSIONS_HOST_HEADERS)
@@ -371,33 +371,78 @@ async fn fetch_optional_json<T>(
 where
     T: serde::de::DeserializeOwned,
 {
+    if Settings::get().offline() {
+        log_versions_host_trace(ctx, "disabled", "fallback=true");
+        return Ok(None);
+    }
+
+    debug!("GET {url}");
     match HTTP_FETCH
-        .json_with_headers(url, &VERSIONS_HOST_HEADERS)
+        .get_async_with_headers_allow_error_status(url, &VERSIONS_HOST_HEADERS)
         .await
     {
-        Ok(value) => Ok(Some(value)),
-        Err(err) => match http::error_code(&err).unwrap_or(0) {
-            404 => {
-                log_versions_host_trace(ctx, "not_found", "status=404 fallback=true");
-                Ok(None)
+        Ok(resp) => {
+            let status = resp.status();
+            debug!("GET {url} {status}");
+            if status.is_success() {
+                return Ok(Some(resp.json().await?));
             }
-            429 => {
-                log_versions_host_warn(ctx, "rate_limited", "status=429 fallback=true");
-                Ok(None)
+            let body = resp.text().await.unwrap_or_default();
+            match status.as_u16() {
+                404 => {
+                    log_versions_host_trace(ctx, "not_found", "status=404 fallback=true");
+                    Ok(None)
+                }
+                429 => {
+                    log_versions_host_warn(ctx, "rate_limited", "status=429 fallback=true");
+                    Ok(None)
+                }
+                status => {
+                    log_versions_host_warn(
+                        ctx,
+                        "failed",
+                        &format!(
+                            "status={status} fallback=true error={}",
+                            log_value(&versions_host_error_message(status, &body))
+                        ),
+                    );
+                    Ok(None)
+                }
             }
-            status => {
-                log_versions_host_warn(
-                    ctx,
-                    "failed",
-                    &format!(
-                        "status={status} fallback=true error={}",
-                        log_value(&err.to_string())
-                    ),
-                );
-                Ok(None)
-            }
-        },
+        }
+        Err(err) => {
+            log_versions_host_warn(
+                ctx,
+                "failed",
+                &format!(
+                    "status={} fallback=true error={}",
+                    http::error_code(&err).unwrap_or(0),
+                    log_value(&err.to_string())
+                ),
+            );
+            Ok(None)
+        }
     }
+}
+
+fn versions_host_error_message(status: u16, body: &str) -> String {
+    let body = body.trim();
+    let status_code = reqwest::StatusCode::from_u16(status);
+    let label = match status_code {
+        Ok(status) if status.is_client_error() => "HTTP status client error",
+        Ok(status) if status.is_server_error() => "HTTP status server error",
+        _ => "HTTP status error",
+    };
+    let status = status_code
+        .map(|status| status.to_string())
+        .unwrap_or_else(|_| status.to_string());
+    if body.is_empty() {
+        return format!("{label} ({status})");
+    }
+    format!(
+        "{label} ({status}): {}",
+        body.chars().take(200).collect::<String>()
+    )
 }
 
 fn enabled_for_github_metadata() -> bool {
@@ -567,6 +612,10 @@ fn track_install_url(tool: &str) -> String {
     )
 }
 
+fn version_list_url(tool: &str) -> String {
+    format!("https://mise-versions.jdx.dev/data/{}.toml", tool)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -584,6 +633,14 @@ mod tests {
         assert_eq!(
             track_install_url("node"),
             "https://mise-versions.jdx.dev/api/tools/node"
+        );
+    }
+
+    #[test]
+    fn test_version_list_url_uses_static_asset_path() {
+        assert_eq!(
+            version_list_url("node"),
+            "https://mise-versions.jdx.dev/data/node.toml"
         );
     }
 
@@ -736,6 +793,32 @@ mod tests {
         assert!(valid_github_release_tag(&release, "v1.0.0"));
         assert!(valid_github_release_tag(&release, "latest"));
         assert!(!valid_github_release_tag(&release, "v2.0.0"));
+    }
+
+    #[test]
+    fn test_versions_host_error_message_includes_body() {
+        assert_eq!(
+            versions_host_error_message(403, "GitHub repo is not in the mise registry\n"),
+            "HTTP status client error (403 Forbidden): GitHub repo is not in the mise registry"
+        );
+    }
+
+    #[test]
+    fn test_versions_host_error_message_caps_body() {
+        let body = "x".repeat(250);
+        let message = versions_host_error_message(502, &body);
+        assert_eq!(
+            message.len(),
+            "HTTP status server error (502 Bad Gateway): ".len() + 200
+        );
+    }
+
+    #[test]
+    fn test_versions_host_error_message_uses_generic_label_for_other_statuses() {
+        assert_eq!(
+            versions_host_error_message(302, ""),
+            "HTTP status error (302 Found)"
+        );
     }
 
     #[test]

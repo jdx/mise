@@ -68,6 +68,46 @@ fn resolve_task_sandbox_path(p: &Path, task_base: Option<&Path>) -> PathBuf {
     }
 }
 
+/// Build the single-line command shown in a task's header (the `$ ...` line).
+///
+/// Skips leading shebang/blank/`set ...` boilerplate so the first real command is
+/// shown, and joins backslash-continued lines into one logical line. Without the
+/// join, a command wrapped across physical lines would display only its first line
+/// ending in `\`, and any extra CLI args would be glued onto that dangling
+/// backslash (e.g. `$ echo foo \ --bar`). Returns the whole script if it contains
+/// only boilerplate.
+///
+/// A trailing backslash with no following line is left untouched, so a literal
+/// trailing backslash that is data rather than a continuation (e.g. a Windows path
+/// like `echo C:\tmp\`) is shown as-is. The remaining ambiguity — a literal `\` at
+/// the end of a line that *is* followed by another line — is still treated as a
+/// continuation, which is acceptable for a display-only string.
+fn display_first_command(script: &str) -> String {
+    let mut lines = script.lines();
+    let Some(first) = lines.find(|line| {
+        let t = line.trim_start();
+        !t.is_empty() && !t.starts_with("#!") && t != "set" && !t.starts_with("set ")
+    }) else {
+        return script.to_string();
+    };
+    let mut cmd = first.to_string();
+    while cmd.trim_end().ends_with('\\') {
+        let Some(next) = lines.next() else {
+            // Trailing backslash with no continuation line: keep it (literal data).
+            break;
+        };
+        let truncated = cmd.trim_end();
+        let base = truncated[..truncated.len() - 1].trim_end().to_string();
+        let next = next.trim();
+        cmd = if base.is_empty() || next.is_empty() {
+            format!("{base}{next}")
+        } else {
+            format!("{base} {next}")
+        };
+    }
+    cmd
+}
+
 /// Configuration for TaskExecutor
 pub struct TaskExecutorConfig {
     pub force: bool,
@@ -813,16 +853,16 @@ impl TaskExecutor {
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
-        // For display, skip leading shebang/blank/`set ...` boilerplate so
-        // the user sees the first real command instead of e.g.
-        // "#!/usr/bin/env bash" or "set -Eeuo pipefail".
-        let display_script = script
-            .lines()
-            .find(|line| {
-                let t = line.trim_start();
-                !t.is_empty() && !t.starts_with("#!") && t != "set" && !t.starts_with("set ")
-            })
-            .unwrap_or(script);
+        // For display, skip leading shebang/blank/`set ...` boilerplate and join
+        // backslash-continued lines so the header shows the first real command as a
+        // single logical line (see display_first_command). When show_full_cmd is set,
+        // keep the whole script instead — the reduction would otherwise discard every
+        // line past the first command, making the setting a no-op (#10469, #9844).
+        let display_script = if Settings::get().task.show_full_cmd {
+            script.to_string()
+        } else {
+            display_first_command(script)
+        };
         let args_str = args.join(" ");
         let cmd = match (display_script.is_empty(), args_str.is_empty()) {
             (true, true) => "$".to_string(),
@@ -867,13 +907,14 @@ impl TaskExecutor {
             .or_else(|| shell_from_shebang(file))
             .or_else(|| shell_from_extension(file))
             .unwrap_or(Settings::get().default_file_shell()?);
+        let (program, _) = task_shell_parts(&shell, "file shell")?;
         trace!("using shell: {}", shell.join(" "));
-        let mut full_args = shell.clone();
+        let mut full_args = shell.to_vec();
         full_args.push(display);
         if !args.is_empty() {
             full_args.extend(args.iter().cloned());
         }
-        Ok((shell[0].clone(), full_args[1..].to_vec()))
+        Ok((program.to_string(), full_args[1..].to_vec()))
     }
 
     /// Build the `(program, args, cmd_verbatim)` for an inline script. When
@@ -888,6 +929,7 @@ impl TaskExecutor {
         args: &[String],
     ) -> Result<(String, Vec<String>, bool)> {
         let shell = task.shell()?.unwrap_or(self.clone_default_inline_shell()?);
+        let (program, _shell_args) = task_shell_parts(&shell, "inline shell")?;
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
 
@@ -902,27 +944,36 @@ impl TaskExecutor {
             // in a single outer quote pair, and use `/s` so cmd strips exactly
             // that pair and runs the rest — inner quotes included — verbatim.
             // See discussion #9355.
-            let runs_command = shell
+            let runs_command = _shell_args
                 .iter()
-                .skip(1)
                 .any(|f| f.eq_ignore_ascii_case("/c") || f.eq_ignore_ascii_case("/k"));
-            if crate::path::is_cmd_shell_program(Path::new(&shell[0])) && runs_command {
-                let cmd_args = crate::path::cmd_verbatim_args(&shell[1..], script, args);
-                return Ok((shell[0].clone(), cmd_args, true));
+            if crate::path::is_cmd_shell_program(Path::new(program)) && runs_command {
+                let cmd_args = crate::path::cmd_verbatim_args(_shell_args, script, args);
+                return Ok((program.to_string(), cmd_args, true));
             }
-            full_args.push(script.to_string());
-            full_args.extend(args.iter().cloned());
+            // Non-POSIX, non-cmd shells (e.g. `pwsh -Command`) use a different
+            // quoting convention than `shell_words` (which is POSIX), so keep
+            // passing their forwarded args as separate argv. Only POSIX shells
+            // (`bash -c`, `sh -c`, …) fall through to the shared append below.
+            if !crate::path::is_posix_shell_program(Path::new(program)) {
+                full_args.push(script.to_string());
+                full_args.extend(args.iter().cloned());
+                return Ok((program.to_string(), full_args[1..].to_vec(), false));
+            }
         }
 
-        #[cfg(unix)]
-        {
-            let mut script = script.to_string();
-            if !args.is_empty() {
-                script = format!("{script} {}", shell_words::join(args));
-            }
-            full_args.push(script);
+        // Shared (Unix, and Windows POSIX shells like `bash -c`): append the
+        // forwarded args to the command string so they reach an inline `-c` shell
+        // as part of the command — the documented behavior for inline TOML
+        // scripts — rather than as positional parameters. Passing them as separate
+        // argv to `bash -c` on Windows shifted the user's first arg into `$0`.
+        // See #9355.
+        let mut script = script.to_string();
+        if !args.is_empty() {
+            script = format!("{script} {}", shell_words::join(args));
         }
-        Ok((full_args[0].clone(), full_args[1..].to_vec(), false))
+        full_args.push(script);
+        Ok((program.to_string(), full_args[1..].to_vec(), false))
     }
 
     fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
@@ -1040,7 +1091,6 @@ impl TaskExecutor {
         let raw = self.raw(Some(task));
         let sandbox = self.build_sandbox_for_task(task, &config).await?;
         let env = if sandbox.is_active() {
-            Settings::get().ensure_experimental("sandbox")?;
             &sandbox.filter_env(env)
         } else {
             env
@@ -1226,11 +1276,9 @@ impl TaskExecutor {
         if let Some(timeout) = effective_timeout {
             cmd = cmd.with_timeout(timeout);
         }
-        // Apply sandbox async (DNS resolution for macOS) before blocking execute
+        // Apply sandbox async (DNS resolution for macOS) before spawning.
         cmd.apply_sandbox().await?;
-        // cmd.execute() is blocking (calls cp.wait()), so use block_in_place
-        // to avoid starving the tokio runtime while holding the TASK_RUNTIME_LOCK guard.
-        tokio::task::block_in_place(|| cmd.execute())?;
+        cmd.execute_async().await?;
         trace!("{prefix} exited successfully");
         Ok(())
     }
@@ -1375,6 +1423,15 @@ fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
         "ps1" => Some(vec!["pwsh".to_string(), "-File".to_string()]),
         _ => None,
     }
+}
+
+fn task_shell_parts<'a>(shell: &'a [String], shell_kind: &str) -> Result<(&'a str, &'a [String])> {
+    shell
+        .split_first()
+        .map(|(program, args)| (program.as_str(), args))
+        .ok_or_else(|| {
+            eyre!("{shell_kind} is empty; check task shell, --shell, or default shell settings")
+        })
 }
 
 /// On Windows, when about to spawn a POSIX shell whose PATH we are about to
@@ -1656,6 +1713,21 @@ mod tests {
     }
 
     #[test]
+    fn test_task_shell_parts_errors_on_empty_shell() {
+        let shell = Vec::new();
+        let err = task_shell_parts(&shell, "inline shell").unwrap_err();
+        assert!(err.to_string().contains("inline shell is empty"));
+    }
+
+    #[test]
+    fn test_task_shell_parts_splits_program_and_args() {
+        let shell = vec!["cmd".to_string(), "/c".to_string()];
+        let (program, args) = task_shell_parts(&shell, "inline shell").unwrap();
+        assert_eq!(program, "cmd");
+        assert_eq!(args, &["/c"]);
+    }
+
+    #[test]
     fn test_resolve_task_sandbox_path_expands_home_before_task_base() {
         let resolved =
             resolve_task_sandbox_path(Path::new("~/sandbox-path"), Some(Path::new("/task/base")));
@@ -1676,6 +1748,64 @@ mod tests {
         let resolved = resolve_task_sandbox_path(Path::new(""), Some(Path::new("/task/base")));
 
         assert_eq!(resolved, PathBuf::new());
+    }
+
+    #[test]
+    fn test_display_first_command_plain() {
+        assert_eq!(display_first_command("echo hi"), "echo hi");
+    }
+
+    #[test]
+    fn test_display_first_command_skips_boilerplate() {
+        let script = "#!/usr/bin/env bash\nset -Eeuo pipefail\necho hi";
+        assert_eq!(display_first_command(script), "echo hi");
+    }
+
+    #[test]
+    fn test_display_first_command_joins_continuations() {
+        let script = "echo long_command \\\n  --option1 value1 \\\n  --option2";
+        assert_eq!(
+            display_first_command(script),
+            "echo long_command --option1 value1 --option2"
+        );
+    }
+
+    #[test]
+    fn test_display_first_command_joins_continuations_after_boilerplate() {
+        let script = "#!/usr/bin/env bash\nset -e\necho foo \\\n  --bar";
+        assert_eq!(display_first_command(script), "echo foo --bar");
+    }
+
+    #[test]
+    fn test_display_first_command_keeps_literal_trailing_backslash() {
+        // A trailing backslash with no following line is treated as literal data
+        // (it cannot be a continuation), so it is preserved rather than dropped or
+        // joined. Only genuine multi-line continuations are merged.
+        assert_eq!(display_first_command("echo foo \\"), "echo foo \\");
+    }
+
+    #[test]
+    fn test_display_first_command_keeps_windows_path_trailing_backslash() {
+        // A Windows path ending in a backslash is data, not a line continuation,
+        // and must be shown verbatim in the header.
+        assert_eq!(display_first_command("echo C:\\tmp\\"), "echo C:\\tmp\\");
+    }
+
+    #[test]
+    fn test_display_first_command_all_boilerplate_returns_script() {
+        let script = "#!/usr/bin/env bash\nset -e";
+        assert_eq!(display_first_command(script), script);
+    }
+
+    #[test]
+    fn test_display_first_command_header_has_no_dangling_backslash_with_args() {
+        // Reproduces #10083: the joined command plus extra args must not contain
+        // the `\ ` sequence that confused the original output.
+        let display_script = display_first_command("echo long_command \\\n  --option1 value1");
+        let args_str = ["--extra", "args"].join(" ");
+        let header = format!("$ {display_script} {args_str}");
+        assert_eq!(header, "$ echo long_command --option1 value1 --extra args");
+        assert!(!header.contains("\\ "));
     }
 
     #[test]

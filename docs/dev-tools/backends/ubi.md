@@ -1,9 +1,11 @@
 # Ubi Backend <Badge type="danger" text="deprecated" />
 
 ::: warning
-The ubi backend is **deprecated**. Please use the [github backend](/dev-tools/backends/github) instead.
+The ubi backend is **deprecated**. Please use the [GitHub backend](/dev-tools/backends/github) instead.
 
-The github backend offers several advantages over ubi including provenance verification, download progress reports, and fewer dependencies. To migrate, replace `ubi:owner/repo` with `github:owner/repo` in your configuration files.
+The GitHub backend offers several advantages over ubi including provenance verification, download progress reports, and fewer dependencies. To migrate, replace `ubi:owner/repo` with `github:owner/repo` in your configuration files. The [`matching`](/dev-tools/backends/github.html#matching) and [`matching_regex`](/dev-tools/backends/github.html#matching_regex) options carry over. One behavioral difference is worth noting: ubi applies the substring `matching` only as a tiebreaker among assets that already match your OS/arch, and skips it when a single asset matches the platform. The GitHub backend applies `matching` as a pre-filter before autodetection, so for multi-binary releases you get the binary your filter names, or a clear error naming the filter if it isn't published for your platform.
+
+One migration gotcha: ubi folds `matching` into the install path, so you can install several binaries from one repo via separate `matching` values on the same `ubi:owner/repo` string. The GitHub backend keeps the install path keyed by tool name + version only, so two `github:owner/repo` entries with different `matching` values resolve to the **same** directory and the second overwrites the first. If you rely on that ubi pattern, give each binary its own [`tool_alias`](/dev-tools/backends/github.html#multiple-assets-from-the-same-release) on GitHub so each gets its own install directory.
 :::
 
 You may install GitHub Releases and URL packages directly using [ubi](https://github.com/houseabsolute/ubi) backend. ubi is directly compiled into

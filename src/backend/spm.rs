@@ -13,7 +13,7 @@ use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::{dirs, file, github, gitlab};
 use async_trait::async_trait;
 use duct::Expression;
-use eyre::{WrapErr, bail};
+use eyre::{Result, WrapErr, bail};
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::de::{MapAccess, Visitor};
@@ -27,8 +27,7 @@ use strum::{AsRefStr, EnumString, VariantNames};
 use url::Url;
 use xx::regex;
 
-/// SPM backend requires experimental mode to be enabled
-pub const EXPERIMENTAL: bool = true;
+pub const EXPERIMENTAL: bool = false;
 
 #[derive(Debug)]
 pub struct SPMBackend {
@@ -162,9 +161,9 @@ impl Backend for SPMBackend {
         &self,
         request: &crate::toolset::ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let raw_opts = request.options();
-        SpmOptions::new(&raw_opts).lockfile_options(target)
+        Ok(SpmOptions::new(&raw_opts).lockfile_options(target))
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -205,9 +204,6 @@ impl Backend for SPMBackend {
         ctx: &InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let settings = Settings::get();
-        settings.ensure_experimental("spm backend")?;
-
         // Check if swift is available
         self.warn_if_dependency_missing(
             &ctx.config,
@@ -483,11 +479,7 @@ impl SPMBackend {
         self.verify_checksum(ctx, tv, &download_path)?;
 
         ctx.pr.set_message(format!("extract {}", asset.name));
-        file::untar(
-            &download_path,
-            &bundle_dir,
-            &file::TarOptions::new(file::TarFormat::Zip),
-        )?;
+        file::unzip(&download_path, &bundle_dir, &Default::default())?;
 
         let triples = swift_target_triples(ctx, self, tv).await?;
         let binaries = artifactbundle_binaries(&bundle_dir, &triples)?;

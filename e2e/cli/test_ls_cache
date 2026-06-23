@@ -14,7 +14,7 @@ fi
 if [[ $output == *"GET https://mise-versions.jdx.dev/api/github/repos/sharkdp/bat/releases/latest"* ]]; then
   fail "[mise -v ls bat] unexpectedly fetched the GitHub latest release from mise-versions"
 fi
-if [[ $output == *"GET https://mise-versions.jdx.dev/tools/bat.toml"* ]]; then
+if [[ $output == *"GET https://mise-versions.jdx.dev/data/bat.toml"* ]]; then
   fail "[mise -v ls bat] unexpectedly fetched the versions host"
 fi
 ok "[mise -v ls bat] reused cached metadata"

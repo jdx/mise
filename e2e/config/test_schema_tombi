@@ -13,6 +13,7 @@ mise use -g tombi@$TOMBI_VERSION
 
 SCHEMA_PATH="$ROOT/schema/mise.json"
 TASK_SCHEMA_PATH="$ROOT/schema/mise-task.json"
+REGISTRY_TOOL_SCHEMA_PATH="$ROOT/schema/mise-registry-tool.json"
 TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
 TOMBI_LINT="$TOMBI lint --offline --no-cache --error-on-warnings --quiet"
 assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
@@ -32,6 +33,10 @@ include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.to
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
 include = ["mise-task-os.toml"]
+
+[[schemas]]
+path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
+include = ["mise-registry-tool.toml"]
 EOF
 
 # Create a mise.toml exercising task properties that were previously broken
@@ -45,7 +50,6 @@ run = "cargo fmt"
 shell = "bash -c"
 
 [task_templates.base]
-quiet = true
 dir = "{{config_root}}"
 deny_net = true
 allow_env = ["CI"]
@@ -64,6 +68,9 @@ allow_read = ["."]
 extends = "base"
 run = "cargo clippy"
 description = "Lint the project"
+
+[vars]
+e2e_args = { default = "--headless", redact = true }
 TOML
 
 # Create a separate file for age schema coverage so mise does not try to decrypt
@@ -71,6 +78,7 @@ TOML
 cat >"$HOME/workdir/mise-age.toml" <<'TOML'
 [env]
 VALUE_OBJECT = { value = 123, tools = true, redact = true, required = "set VALUE_OBJECT" }
+VALUE_DEFAULT = { default = 123, tools = true, redact = true }
 SECRET_SIMPLE = { age = "AGE-SECRET", tools = true }
 SECRET_COMPLEX = { age = { value = "AGE-SECRET", format = "raw", tools = true, redact = true } }
 TOML
@@ -99,6 +107,15 @@ run = "echo ok"
 node = { version = "latest", os = ["linux/x64", "macos/arm64"], profile = "release" }
 TOML
 
+cat >"$HOME/workdir/mise-registry-tool.toml" <<'TOML'
+backends = [
+  { full = "aqua:ImageMagick/ImageMagick", platforms = ["windows-x64"] },
+  { full = "github:owner/repo", platforms = ["linux", "arm64"], options = { platforms = { linux-x64 = { asset_pattern = "tool-linux.tar.gz" }, darwin-aarch64 = { asset_pattern = "tool-darwin.tar.gz" } } } },
+]
+description = "Example tool"
+test = { cmd = "tool --version", expected = "tool {{version}}" }
+TOML
+
 # tombi lint should succeed with no errors (warnings about table order are ok)
 cd "$HOME/workdir"
 assert_succeed "$TOMBI_LINT mise.toml"
@@ -106,6 +123,7 @@ assert_succeed "$TOMBI_LINT mise-age.toml"
 assert_succeed "$TOMBI_LINT mise-env-directives.toml"
 assert_succeed "$TOMBI_LINT mise-os.toml"
 assert_succeed "$TOMBI_LINT mise-task-os.toml"
+assert_succeed "$TOMBI_LINT mise-registry-tool.toml"
 
 # Verify that invalid properties on tasks are rejected
 cat >"$HOME/workdir/mise-bad.toml" <<'TOML'
@@ -124,11 +142,15 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-directive.toml", "mise-bad-tmpl.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
 include = ["mise-bad-task-os.toml", "mise-bad-task-tool-extra.toml"]
+
+[[schemas]]
+path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
+include = ["mise-bad-registry-tool.toml"]
 EOF
 
 assert_fail "$TOMBI_LINT mise-bad.toml"
@@ -142,6 +164,20 @@ TOML
 
 assert_fail "$TOMBI_LINT mise-bad-age.toml"
 
+cat >"$HOME/workdir/mise-bad-env-default.toml" <<'TOML'
+[env]
+VALUE_AND_DEFAULT = { value = "x", default = "y" }
+REQUIRED_AND_DEFAULT = { required = true, default = "y" }
+AGE_AND_DEFAULT = { age = "AGE-SECRET", default = "y" }
+BOOL_DEFAULT = { default = false }
+
+[vars]
+VALUE_AND_DEFAULT = { value = "x", default = "y" }
+BOOL_DEFAULT = { default = false }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-env-default.toml"
+
 cat >"$HOME/workdir/mise-bad-env-directive.toml" <<'TOML'
 [env]
 _.file = { path = ".env", required = 123 }
@@ -153,10 +189,18 @@ assert_fail "$TOMBI_LINT mise-bad-env-directive.toml"
 cat >"$HOME/workdir/mise-bad-tmpl.toml" <<'TOML'
 [task_templates.derived]
 extends = "base"
-quiet = true
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-tmpl.toml"
+
+# Verify that quiet/hide/raw/interactive/raw_args are rejected on task_templates
+for flag in quiet hide raw interactive raw_args; do
+  cat >"$HOME/workdir/mise-bad-tmpl-output-flag.toml" <<TOML
+[task_templates.base]
+$flag = true
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-tmpl-output-flag.toml"
+done
 
 cat >"$HOME/workdir/mise-bad-os.toml" <<'TOML'
 [tools]
@@ -193,3 +237,12 @@ node = { version = "latest", os = "linux/x64", backend_options = { nested = true
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-task-tool-extra.toml"
+
+cat >"$HOME/workdir/mise-bad-registry-tool.toml" <<'TOML'
+backends = [
+  { full = "github:owner/repo", platforms = ["windows-amd64"] },
+  { full = "github:owner/repo", options = { platforms = { linux-x64-musl = { asset_pattern = "tool-linux.tar.gz" } } } },
+]
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-registry-tool.toml"
