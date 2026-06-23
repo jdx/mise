@@ -23,7 +23,7 @@ sha2 = "0.11"
 sigstore-verify = { version = "0.8.0", default-features = false }
 snap = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["fs", "io-util"] }
+tokio = { version = "1", features = ["fs", "io-util", "time"] }
 x509-cert = { version = "0.2", default-features = false, features = [
   "std",
   "pem",
@@ -33,6 +33,9 @@ rustls-webpki = { version = "0.103", default-features = false, features = [
   "aws-lc-rs",
 ] }
 rustls-pki-types = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
 
 [features]
 default = ["rustls"]

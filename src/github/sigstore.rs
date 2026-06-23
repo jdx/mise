@@ -29,7 +29,7 @@
 use std::path::Path;
 
 use mise_sigstore::sources::github::GitHubSource;
-use mise_sigstore::{ArtifactRef, AttestationClient, AttestationSource, FetchParams};
+use mise_sigstore::{ArtifactRef, AttestationClient, AttestationSource, FetchParams, RetryConfig};
 
 pub use mise_sigstore::{AttestationError, SlsaArtifact};
 
@@ -56,10 +56,24 @@ fn routed_api_url(api_url: &str) -> String {
     }
 }
 
+/// Build a [`RetryConfig`] from mise's HTTP settings so attestation requests
+/// retry and time out exactly like the rest of mise's HTTP traffic rather than
+/// using a policy hardcoded in the `mise-sigstore` crate.
+fn mise_retry_config() -> RetryConfig {
+    let settings = crate::config::Settings::get();
+    RetryConfig {
+        timeout: settings.http_timeout(),
+        retries: settings.http_retries.max(0) as usize,
+        ..RetryConfig::default()
+    }
+}
+
 fn attestation_client(api_url: &str) -> AttestationResult<AttestationClient> {
     let token = resolve_token_for_wrapper(Some(api_url));
     let base_url = routed_api_url(api_url);
-    let mut builder = AttestationClient::builder().base_url(&base_url);
+    let mut builder = AttestationClient::builder()
+        .base_url(&base_url)
+        .retry_config(mise_retry_config());
     if let Some(token) = token.as_deref() {
         builder = builder.github_token(token);
     }
@@ -124,6 +138,7 @@ pub async fn verify_attestation(
             expected_workflow,
             &base_url,
             &digest,
+            mise_retry_config(),
         )
         .await
     } else {
@@ -134,6 +149,7 @@ pub async fn verify_attestation(
             token.as_deref(),
             expected_workflow,
             &base_url,
+            mise_retry_config(),
         )
         .await
     }

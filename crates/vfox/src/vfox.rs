@@ -552,6 +552,7 @@ impl Vfox {
                     repo.as_str(),
                     Some(token.as_str()),
                     attestation.github_signer_workflow.as_deref(),
+                    crate::http::sigstore_retry_config(),
                 )
                 .await?;
                 // All configured verifications always execute (no short-circuit).
