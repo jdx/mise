@@ -6,6 +6,7 @@ full = "http:neo4j"
 platforms = ["linux", "macos"]
 
 [backends.options]
+checksum_url = "https://dist.neo4j.org/neo4j-community-{{ version }}-unix.tar.gz.sha256"
 strip_components = "1"
 url = "https://dist.neo4j.org/neo4j-community-{{ version }}-unix.tar.gz"
 version_json_path = ".response.docs[].v"

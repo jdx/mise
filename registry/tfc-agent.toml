@@ -5,6 +5,7 @@ os = ["linux"]
 full = "http:tfc-agent"
 
 [backends.options]
+checksum_url = "https://releases.hashicorp.com/tfc-agent/{{ version }}/tfc-agent_{{ version }}_SHA256SUMS"
 url = 'https://releases.hashicorp.com/tfc-agent/{{ version }}/tfc-agent_{{ version }}_linux_{{ arch(x64="amd64") }}.zip'
 version_expr = 'fromJSON(body).versions | keys() | sortVersions()'
 version_list_url = "https://releases.hashicorp.com/tfc-agent/index.json"
