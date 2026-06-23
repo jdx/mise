@@ -17,7 +17,7 @@ use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::{Deps, Task};
-use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, info, style};
 use clap::{CommandFactory, ValueHint};
 use eyre::{Result, bail, eyre};
@@ -369,10 +369,18 @@ impl Run {
 
         // Build and install toolset only after tasks resolve. A naked run that
         // does not match any task should fail without installing project tools.
+        // Task startup should not fetch remote version metadata just to build
+        // the environment. If tools are missing and auto-install is enabled,
+        // install_missing_versions re-resolves those specific requests online.
+        let resolve_options = ResolveOptions {
+            offline: true,
+            ..Default::default()
+        };
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .with_default_to_latest(true)
             .with_config_files(combined_configs)
+            .with_resolve_options(resolve_options)
             .build(&config)
             .await?;
 

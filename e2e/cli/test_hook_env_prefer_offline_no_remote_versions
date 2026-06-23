@@ -30,3 +30,32 @@ EOF
 
 assert_succeed "mise hook-env -s bash --force"
 assert_fail "test -f '$HOME/list-all-called'"
+
+credential_marker="$HOME/github-credential-command-called"
+credential_command="$HOME/fake-github-credential-command"
+cat >"$credential_command" <<EOF
+#!/usr/bin/env bash
+touch "$credential_marker"
+echo fake-token
+EOF
+chmod +x "$credential_command"
+
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings]
+github.credential_command = "$credential_command"
+minimum_release_age = "3d"
+EOF
+
+cat >mise.toml <<EOF
+[tools]
+"github:cli/cli" = "latest"
+EOF
+
+assert_succeed "mise hook-env -s bash --force"
+assert_fail "test -f '$credential_marker'"
+
+rm -f "$credential_marker"
+offline_current="$(MISE_OFFLINE=1 mise current github:cli/cli 2>/dev/null || true)"
+assert_not_contains_text "$offline_current" "latest"
+assert_fail "test -f '$credential_marker'"
