@@ -234,18 +234,12 @@ impl Backend for AquaBackend {
             features.push(SecurityFeature::Checksum { algorithm });
         }
 
-        // GitHub Artifact Attestations - check registry config OR actual release assets
-        let has_attestations_config = all_pkgs.iter().any(|p| {
-            p.github_artifact_attestations
-                .as_ref()
-                .is_some_and(|a| a.enabled.unwrap_or(true))
-                || Self::checksum_github_attestations_config(p).is_some()
-        });
-        let has_attestations_assets = release_assets.iter().any(|a| {
-            let name = a.name.to_lowercase();
-            name.ends_with(".sigstore.json") || name.ends_with(".sigstore")
-        });
-        if has_attestations_config || has_attestations_assets {
+        // GitHub Artifact Attestations require registry config so the badge
+        // matches lock/install provenance verification behavior.
+        if all_pkgs
+            .iter()
+            .any(|p| Self::has_github_attestations_config(p))
+        {
             let signer_workflow = all_pkgs
                 .iter()
                 .filter_map(|p| {
@@ -1064,6 +1058,13 @@ impl AquaBackend {
         Some((checksum, attestations))
     }
 
+    fn has_github_attestations_config(pkg: &AquaPackage) -> bool {
+        pkg.github_artifact_attestations
+            .as_ref()
+            .is_some_and(|attestations| attestations.enabled != Some(false))
+            || Self::checksum_github_attestations_config(pkg).is_some()
+    }
+
     /// Detect provenance type from aqua registry package config.
     ///
     /// Returns the highest-priority provenance type that is configured and
@@ -1084,11 +1085,7 @@ impl AquaBackend {
         // or on first install when the lockfile doesn't yet have provenance).
         if settings.github_attestations
             && settings.aqua.github_attestations
-            && (pkg
-                .github_artifact_attestations
-                .as_ref()
-                .is_some_and(|att| att.enabled != Some(false))
-                || Self::checksum_github_attestations_config(pkg).is_some())
+            && Self::has_github_attestations_config(pkg)
         {
             return Some(ProvenanceType::GithubAttestations);
         }
@@ -3069,6 +3066,26 @@ mod tests {
         assert!(
             !direct_backend.use_versions_host_for_github_metadata("aws/session-manager-plugin")
         );
+    }
+
+    #[test]
+    fn test_has_github_attestations_config_requires_enabled_config() {
+        let mut pkg = AquaPackage::default();
+        assert!(!AquaBackend::has_github_attestations_config(&pkg));
+
+        pkg.github_artifact_attestations = Some(AquaGithubArtifactAttestations {
+            enabled: Some(false),
+            predicate_type: None,
+            signer_workflow: None,
+        });
+        assert!(!AquaBackend::has_github_attestations_config(&pkg));
+
+        pkg.github_artifact_attestations = Some(AquaGithubArtifactAttestations {
+            enabled: None,
+            predicate_type: None,
+            signer_workflow: None,
+        });
+        assert!(AquaBackend::has_github_attestations_config(&pkg));
     }
 
     #[test]
