@@ -67,13 +67,15 @@ installs app bundles into `/Applications` while recording the version under
 "brew-cask:homebrew/cask/visual-studio-code" = "latest"
 ```
 
-`brew-cask` currently supports app-bundle casks (`app` artifacts) and macOS
-installer packages (`pkg` artifacts) from dmg, zip, and tar archives. Package
-installers run through mise's normal system-package sudo path, so
-non-interactive runs never hang waiting for a password. Casks that require
-custom installer choices, preflight scripts, services, or other cask artifact
-types fail with a clear unsupported artifact error instead of delegating to
-Homebrew.
+`brew-cask` currently supports app-bundle casks (`app` artifacts) and simple
+macOS installer packages (`pkg` artifacts) from dmg and common archive formats.
+Package installers run through mise's normal system-package sudo path, so
+non-interactive runs never hang waiting for a password. Pkg casks must include
+`pkgutil` receipt IDs in their `uninstall` or `zap` metadata so mise can verify
+installed state after the installer writes files outside the Caskroom. Casks
+that require custom installer choices, services, or other cask artifact types
+fail with a clear unsupported artifact error instead of delegating to Homebrew.
+Lifecycle metadata such as `preflight` and `postflight` is not executed.
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like
@@ -186,8 +188,9 @@ operation.
 ## Limitations
 
 - **Cask artifact coverage is intentionally narrow.** `brew-cask` supports
-  app bundles and pkg installers from common archive formats. Other artifact
-  types, and pkg installers with custom choices, fail explicitly.
+  app bundles and simple pkg installers from dmg and common archive formats.
+  Other artifact types, pkg installers without `pkgutil` IDs, and pkg
+  installers with custom choices fail explicitly.
 - **`brew services` is not implemented.**
 - **Source builds cover the common formula shapes.** mise's formula shim
   implements the widely-used subset of the DSL (see

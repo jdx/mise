@@ -57,7 +57,7 @@ struct CaskReceipt {
     #[serde(default)]
     apps: Vec<PathBuf>,
     #[serde(default)]
-    pkgs: Vec<String>,
+    pkg_ids: Vec<String>,
 }
 
 impl BrewCaskManager {
@@ -337,6 +337,12 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
     }
     artifacts.pkg_ids.sort();
     artifacts.pkg_ids.dedup();
+    if !artifacts.pkgs.is_empty() && artifacts.pkg_ids.is_empty() {
+        bail!(
+            "brew-cask:{}: pkg artifacts require pkgutil ids in uninstall or zap metadata",
+            cask.token
+        );
+    }
     Ok(artifacts)
 }
 
@@ -386,23 +392,28 @@ fn parse_pkg_artifact(value: &Value) -> Result<Option<PkgArtifact>> {
 }
 
 fn collect_uninstall_pkg_ids(value: &Value, pkg_ids: &mut Vec<String>) {
-    let Some(uninstall) = value.as_object().and_then(|o| o.get("uninstall")) else {
+    let Some(object) = value.as_object() else {
         return;
     };
-    let values: Vec<&Value> = match uninstall {
-        Value::Array(values) => values.iter().collect(),
-        value => vec![value],
-    };
-    for value in values {
-        let Some(pkgutil) = value.as_object().and_then(|o| o.get("pkgutil")) else {
+    for key in ["uninstall", "zap"] {
+        let Some(metadata) = object.get(key) else {
             continue;
         };
-        match pkgutil {
-            Value::String(id) => pkg_ids.push(id.clone()),
-            Value::Array(ids) => {
-                pkg_ids.extend(ids.iter().filter_map(Value::as_str).map(str::to_string))
+        let values: Vec<&Value> = match metadata {
+            Value::Array(values) => values.iter().collect(),
+            value => vec![value],
+        };
+        for value in values {
+            let Some(pkgutil) = value.as_object().and_then(|o| o.get("pkgutil")) else {
+                continue;
+            };
+            match pkgutil {
+                Value::String(id) => pkg_ids.push(id.clone()),
+                Value::Array(ids) => {
+                    pkg_ids.extend(ids.iter().filter_map(Value::as_str).map(str::to_string))
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 }
@@ -498,7 +509,7 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
     let version_dir = caskroom_version_dir(&cask.token, &version);
     match read_receipt(&version_dir)? {
         Some(receipt) => {
-            if receipt.apps.iter().all(|app| app.exists()) && pkg_ids_installed(&receipt.pkgs)? {
+            if receipt.apps.iter().all(|app| app.exists()) && pkg_ids_installed(&receipt.pkg_ids)? {
                 Ok(Some(receipt.version))
             } else {
                 Ok(None)
@@ -526,7 +537,7 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
             .iter()
             .map(|app| app_target_path(app.target_name()))
             .collect::<Result<Vec<_>>>()?,
-        pkgs: artifacts.pkg_ids.clone(),
+        pkg_ids: artifacts.pkg_ids.clone(),
     };
     let body = toml::to_string_pretty(&receipt)?;
     crate::file::write(caskroom.join(".mise-cask.toml"), body)?;
@@ -693,6 +704,36 @@ mod tests {
             }
         );
         Ok(())
+    }
+
+    #[test]
+    fn parses_zap_pkgutil_ids() -> Result<()> {
+        let mut cask = test_cask("example", "1.0.0");
+        cask.artifacts = vec![
+            serde_json::json!({"zap": [{"pkgutil": ["com.example.pkg"]}]}),
+            serde_json::json!({"pkg": ["Example.pkg"]}),
+        ];
+
+        assert_eq!(
+            cask_artifacts(&cask)?,
+            CaskArtifacts {
+                pkgs: vec![PkgArtifact {
+                    source: "Example.pkg".to_string()
+                }],
+                pkg_ids: vec!["com.example.pkg".to_string()],
+                ..Default::default()
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_pkg_artifacts_without_pkgutil_ids() {
+        let mut cask = test_cask("example", "1.0.0");
+        cask.artifacts = vec![serde_json::json!({"pkg": ["Example.pkg"]})];
+
+        let err = cask_artifacts(&cask).unwrap_err().to_string();
+        assert!(err.contains("pkg artifacts require pkgutil ids"));
     }
 
     #[test]
