@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Regression test for aqua:jdx/aube@v1.24.0 install panic reported with mise 2026.6.13.
+#
+# Original failure:
+#   called `Result::unwrap()` on an `Err` value: reqwest::Error { kind: Builder, source: RelativeUrlWithoutBase }
+#   Location: src/github.rs:651 (get_headers -> url.into_url().unwrap())
+#
+# See fix(github): return error instead of panic on invalid request url (#10591)
+
+set -euo pipefail
+
+export MISE_EXPERIMENTAL=1
+export MISE_AQUA_GITHUB_ATTESTATIONS=true
+export MISE_GITHUB_ATTESTATIONS=true
+
+echo "=== aqua:jdx/aube@v1.24.0 install regression ==="
+
+mise uninstall aqua:jdx/aube@v1.24.0 2>/dev/null || true
+
+output=""
+status=0
+output=$(mise install aqua:jdx/aube@v1.24.0 2>&1) || status=$?
+
+echo "$output"
+
+if echo "$output" | grep -qE 'panicked|RelativeUrlWithoutBase'; then
+  echo "ERROR: install panicked instead of returning a normal error"
+  exit 1
+fi
+
+if [[ $status -ne 0 ]]; then
+  # A clean install failure is acceptable; panics are not.
+  if echo "$output" | grep -q 'invalid request URL for GitHub auth headers'; then
+    echo "Install failed with expected invalid-URL error (not a panic)"
+    exit 0
+  fi
+  echo "ERROR: install failed unexpectedly (status=$status)"
+  exit 1
+fi
+
+assert_contains "mise x aqua:jdx/aube@v1.24.0 -- aube --version" "1.24.0"
+
+mise uninstall aqua:jdx/aube@v1.24.0 || true
+
+echo "=== aqua:jdx/aube@v1.24.0 install regression passed ==="
