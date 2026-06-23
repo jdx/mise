@@ -458,7 +458,7 @@ impl SPMBackend {
         let download_path = tv.download_path().join(&asset.name);
         let headers = match provider.kind {
             GitProviderKind::GitLab => gitlab::get_headers(&asset.url),
-            GitProviderKind::GitHub => github::get_headers(&asset.url),
+            GitProviderKind::GitHub => github::get_headers(&asset.url)?,
         };
         ctx.pr.set_message(format!("download {}", asset.name));
         HTTP.download_file_with_headers(

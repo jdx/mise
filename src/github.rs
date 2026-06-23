@@ -2,7 +2,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::Settings;
 use crate::tokens;
 use crate::{dirs, env};
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use heck::ToKebabCase;
 use reqwest::IntoUrl;
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -179,7 +179,7 @@ pub async fn list_releases_including_prereleases_from_url(
 
 async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
     let url = format!("{api_url}/repos/{repo}/releases?per_page=100");
-    let headers = get_headers(&url);
+    let headers = get_headers(&url)?;
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GithubRelease>, _>(url, &headers)
         .await?;
@@ -197,7 +197,7 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>>
         {
             break;
         }
-        headers = get_headers(&next);
+        headers = get_headers(&next)?;
         let (more, h) = crate::http::HTTP_FETCH
             .json_headers_with_headers::<Vec<GithubRelease>, _>(next, &headers)
             .await?;
@@ -232,14 +232,14 @@ pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>
 
 async fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
     let url = format!("{api_url}/repos/{repo}/tags?per_page=100");
-    let headers = get_headers(&url);
+    let headers = get_headers(&url)?;
     let (mut tags, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GithubTag>, _>(url, &headers)
         .await?;
 
     if *env::MISE_LIST_ALL_VERSIONS {
         while let Some(next) = next_page(&headers) {
-            headers = get_headers(&next);
+            headers = get_headers(&next)?;
             let (more, h) = crate::http::HTTP_FETCH
                 .json_headers_with_headers::<Vec<GithubTag>, _>(next, &headers)
                 .await?;
@@ -259,14 +259,14 @@ pub async fn list_tags_with_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> 
 
 async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTagWithDate>> {
     let url = format!("{api_url}/repos/{repo}/tags?per_page=100");
-    let headers = get_headers(&url);
+    let headers = get_headers(&url)?;
     let (mut tags, mut response_headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GithubTag>, _>(url, &headers)
         .await?;
 
     // Fetch all pages when MISE_LIST_ALL_VERSIONS is set
     while let Some(next) = next_page(&response_headers) {
-        response_headers = get_headers(&next);
+        response_headers = get_headers(&next)?;
         let (more, h) = crate::http::HTTP_FETCH
             .json_headers_with_headers::<Vec<GithubTag>, _>(next, &response_headers)
             .await?;
@@ -277,7 +277,7 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
     // Fetch commit dates in parallel using the parallel utility
     let results = crate::parallel::parallel(tags, |tag| async move {
         let date = if let Some(commit) = tag.commit {
-            let headers = get_headers(&commit.url);
+            let headers = get_headers(&commit.url)?;
             match crate::http::HTTP_FETCH
                 .json_with_headers::<GithubCommit, _>(&commit.url, &headers)
                 .await
@@ -437,7 +437,7 @@ async fn get_release_with_options(
     } else {
         format!("{api_url}/repos/{repo}/releases/tags/{tag}")
     };
-    let headers = get_headers(&url);
+    let headers = get_headers(&url)?;
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
         .await
@@ -646,9 +646,11 @@ pub fn resolve_token_for_api_url(api_url: &str) -> Option<String> {
     resolve_token(host).map(|(t, _)| t)
 }
 
-pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
+pub fn get_headers<U: IntoUrl>(url: U) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
-    let url = url.into_url().unwrap();
+    let url = url
+        .into_url()
+        .wrap_err("invalid request URL for GitHub auth headers")?;
 
     if is_github_api_url(&url)
         && let Some((token, _source)) = resolve_token(url.host_str().unwrap_or("github.com"))
@@ -670,7 +672,7 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
         );
     }
 
-    headers
+    Ok(headers)
 }
 
 // ── github_tokens.toml ──────────────────────────────────────────────
@@ -889,7 +891,7 @@ something_else = "value"
                 "https://octocorp.ghe.com/api/v3/repos/owner/repo/releases",
                 "https://octocorp.ghe.com/owner/repo/releases/download/v1.0.0/file.tar.gz",
             ] {
-                let headers = get_headers(url);
+                let headers = get_headers(url).unwrap();
                 assert!(
                     !headers.contains_key(reqwest::header::AUTHORIZATION),
                     "{url} should not use GitHub auth"
@@ -900,23 +902,35 @@ something_else = "value"
                 );
             }
 
-            let headers = get_headers("https://api.github.com/repos/owner/repo/releases");
+            let headers = get_headers("https://api.github.com/repos/owner/repo/releases").unwrap();
             assert!(headers.contains_key(reqwest::header::AUTHORIZATION));
             assert!(headers.contains_key("x-github-api-version"));
 
-            let headers = get_headers("https://api.github.com/repos/owner/repo/releases/assets/1");
+            let headers =
+                get_headers("https://api.github.com/repos/owner/repo/releases/assets/1").unwrap();
             assert!(headers.contains_key(reqwest::header::AUTHORIZATION));
             assert_eq!(headers.get("accept").unwrap(), "application/octet-stream");
 
             let headers =
-                get_headers("https://github.example.com/api/v3/repos/owner/repo/releases");
+                get_headers("https://github.example.com/api/v3/repos/owner/repo/releases").unwrap();
             assert!(headers.contains_key(reqwest::header::AUTHORIZATION));
             assert!(headers.contains_key("x-github-api-version"));
 
-            let headers = get_headers("https://api.octocorp.ghe.com/repos/owner/repo/releases");
+            let headers =
+                get_headers("https://api.octocorp.ghe.com/repos/owner/repo/releases").unwrap();
             assert!(headers.contains_key(reqwest::header::AUTHORIZATION));
             assert!(headers.contains_key("x-github-api-version"));
         });
+    }
+
+    #[test]
+    fn test_get_headers_rejects_relative_url() {
+        let err = get_headers("/repos/jdx/aube/releases").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("invalid request URL for GitHub auth headers"),
+            "unexpected error: {err}"
+        );
     }
 
     fn make_release(tag: &str) -> GithubRelease {
