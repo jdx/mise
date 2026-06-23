@@ -337,7 +337,9 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
     }
     artifacts.pkg_ids.sort();
     artifacts.pkg_ids.dedup();
-    if !artifacts.pkgs.is_empty() && artifacts.pkg_ids.is_empty() {
+    if artifacts.pkgs.is_empty() {
+        artifacts.pkg_ids.clear();
+    } else if artifacts.pkg_ids.is_empty() {
         bail!(
             "brew-cask:{}: pkg artifacts require pkgutil ids in uninstall or zap metadata",
             cask.token
@@ -509,7 +511,8 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
     let version_dir = caskroom_version_dir(&cask.token, &version);
     match read_receipt(&version_dir)? {
         Some(receipt) => {
-            if receipt.apps.iter().all(|app| app.exists()) && pkg_ids_installed(&receipt.pkg_ids)? {
+            let pkgs_installed = artifacts.pkgs.is_empty() || pkg_ids_installed(&receipt.pkg_ids)?;
+            if receipt.apps.iter().all(|app| app.exists()) && pkgs_installed {
                 Ok(Some(receipt.version))
             } else {
                 Ok(None)
@@ -521,7 +524,7 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
                     return Ok(None);
                 }
             }
-            if !pkg_ids_installed(&artifacts.pkg_ids)? {
+            if !artifacts.pkgs.is_empty() && !pkg_ids_installed(&artifacts.pkg_ids)? {
                 return Ok(None);
             }
             Ok(Some(version))
@@ -734,6 +737,63 @@ mod tests {
 
         let err = cask_artifacts(&cask).unwrap_err().to_string();
         assert!(err.contains("pkg artifacts require pkgutil ids"));
+    }
+
+    #[test]
+    fn app_only_casks_ignore_pkgutil_ids() -> Result<()> {
+        let mut cask = test_cask("example", "1.0.0");
+        cask.artifacts = vec![
+            serde_json::json!({"uninstall": [{"pkgutil": "com.example.helper"}]}),
+            serde_json::json!({"app": "Example.app"}),
+        ];
+
+        assert_eq!(
+            cask_artifacts(&cask)?,
+            CaskArtifacts {
+                apps: vec![AppArtifact {
+                    source: "Example.app".to_string(),
+                    target: None,
+                }],
+                ..Default::default()
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn installed_cask_version_ignores_receipt_pkg_ids_for_app_only_casks() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("app-only", "1.0.0");
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+        let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+        file::create_dir_all(&caskroom)?;
+        file::create_dir_all(app_target_path(app.target_name())?)?;
+        let receipt = CaskReceipt {
+            version: cask.version.clone(),
+            apps: vec![app_target_path(app.target_name())?],
+            pkg_ids: vec!["com.example.helper".to_string()],
+        };
+        crate::file::write(
+            caskroom.join(".mise-cask.toml"),
+            toml::to_string_pretty(&receipt)?,
+        )?;
+
+        assert_eq!(
+            installed_cask_version(
+                &cask,
+                &CaskArtifacts {
+                    apps: vec![app],
+                    ..Default::default()
+                }
+            )?,
+            Some("1.0.0".to_string())
+        );
+        Ok(())
     }
 
     #[test]
