@@ -128,7 +128,11 @@ impl NodePlugin {
         {
             FetchOutcome::Downloaded => Ok(()),
             FetchOutcome::NotFound => {
-                if Settings::get().node.compile != Some(false) {
+                if ctx.locked {
+                    bail!(
+                        "precompiled node archive not found and locked mode requires the locked precompiled artifact"
+                    )
+                } else if Settings::get().node.compile != Some(false) {
                     self.install_compiling(ctx, tv, opts).await
                 } else {
                     bail!("precompiled node archive not found and compilation is disabled")
@@ -676,17 +680,17 @@ impl Backend for NodePlugin {
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx, &tv).await?;
         trace!("node build opts: {:#?}", opts);
-        let locked_source_compile = if ctx.locked {
-            tv.lock_platforms
-                .get(&self.get_platform_key())
-                .is_some_and(|pi| pi.install.as_deref() == Some("source"))
-        } else {
-            false
-        };
+        let platform_key = self.get_platform_key();
+        let compile_from_source = should_compile_from_source(
+            ctx.locked,
+            &tv.lock_platforms,
+            &platform_key,
+            settings.node.compile,
+        );
 
         if cfg!(windows) {
             self.install_windows(ctx, &mut tv, &opts).await?;
-        } else if locked_source_compile || settings.node.compile == Some(true) {
+        } else if compile_from_source {
             self.install_compiling(ctx, &mut tv, &opts).await?;
         } else {
             self.install_precompiled(ctx, &mut tv, &opts).await?;
@@ -1118,6 +1122,21 @@ fn source_tarball_name(v: &str) -> String {
     format!("node-v{v}.tar.gz")
 }
 
+fn should_compile_from_source(
+    locked: bool,
+    lock_platforms: &BTreeMap<String, PlatformInfo>,
+    platform_key: &str,
+    node_compile: Option<bool>,
+) -> bool {
+    if locked {
+        lock_platforms
+            .get(platform_key)
+            .is_some_and(|pi| pi.install.as_deref() == Some("source"))
+    } else {
+        node_compile == Some(true)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct NodeVersion {
     version: String,
@@ -1154,9 +1173,7 @@ mod tests {
                 .filter(|(key, _)| key.starts_with("NODE_"))
                 .collect::<BTreeMap<_, _>>();
             for key in vars.keys() {
-                unsafe {
-                    std::env::remove_var(key);
-                }
+                env::remove_var(key);
             }
             Self { vars }
         }
@@ -1169,14 +1186,10 @@ mod tests {
                 .filter(|key| key.starts_with("NODE_"))
                 .collect::<Vec<_>>()
             {
-                unsafe {
-                    std::env::remove_var(key);
-                }
+                env::remove_var(key);
             }
             for (key, value) in &self.vars {
-                unsafe {
-                    std::env::set_var(key, value);
-                }
+                env::set_var(key, value);
             }
         }
     }
@@ -1197,6 +1210,60 @@ mod tests {
         backend
             .resolve_lockfile_options(&request, &PlatformTarget::from_current())
             .expect("node lockfile options")
+    }
+
+    #[test]
+    fn test_locked_node_install_uses_source_marker() {
+        let platform_key = Platform::current().to_key();
+        let lock_platforms = BTreeMap::from([(
+            platform_key.clone(),
+            PlatformInfo {
+                install: Some("source".to_string()),
+                ..Default::default()
+            },
+        )]);
+
+        assert!(should_compile_from_source(
+            true,
+            &lock_platforms,
+            &platform_key,
+            Some(false)
+        ));
+    }
+
+    #[test]
+    fn test_locked_node_install_ignores_compile_setting_for_binary_lock() {
+        let platform_key = Platform::current().to_key();
+        let lock_platforms = BTreeMap::from([(
+            platform_key.clone(),
+            PlatformInfo {
+                url: Some("https://nodejs.org/dist/v22.0.0/node-v22.0.0-linux-x64.tar.gz".into()),
+                ..Default::default()
+            },
+        )]);
+
+        assert!(!should_compile_from_source(
+            true,
+            &lock_platforms,
+            &platform_key,
+            Some(true)
+        ));
+    }
+
+    #[test]
+    fn test_unlocked_node_install_uses_compile_setting() {
+        assert!(should_compile_from_source(
+            false,
+            &BTreeMap::new(),
+            "linux-x64",
+            Some(true)
+        ));
+        assert!(!should_compile_from_source(
+            false,
+            &BTreeMap::new(),
+            "linux-x64",
+            None
+        ));
     }
 
     #[test]
@@ -1301,11 +1368,9 @@ mod tests {
         let lock = TEST_SETTINGS_LOCK.lock().unwrap();
         let _guard = SettingsResetGuard { _lock: lock };
         let _env_guard = NodeEnvResetGuard::clear();
-        unsafe {
-            std::env::set_var("NODE_CONFIGURE_OPTS", "--openssl-no-asm");
-            std::env::set_var("NODE_MAKE_OPTS", "-s");
-            std::env::set_var("NODE_MAKE_INSTALL_OPTS", "--no-strip");
-        }
+        env::set_var("NODE_CONFIGURE_OPTS", "--openssl-no-asm");
+        env::set_var("NODE_MAKE_OPTS", "-s");
+        env::set_var("NODE_MAKE_INSTALL_OPTS", "--no-strip");
         Settings::reset(Some(SettingsPartial::empty()));
 
         let backend = NodePlugin::new();
