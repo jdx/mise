@@ -1,5 +1,69 @@
 # Changelog
 
+## [2026.6.12](https://github.com/jdx/mise/compare/v2026.6.11..v2026.6.12) - 2026-06-21
+
+### 🚀 Features
+
+- **(bootstrap)** add skip controls by @jdx in [#10497](https://github.com/jdx/mise/pull/10497)
+- **(http)** resolve cross-platform lock checksums from published metadata by @itochan in [#10509](https://github.com/jdx/mise/pull/10509)
+- **(upgrade)** fix tool removal when minimum_release_age is set by @roele in [#10466](https://github.com/jdx/mise/pull/10466)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** support checksum verification fields by @risu729 in [#10473](https://github.com/jdx/mise/pull/10473)
+- **(backend)** resolve dependency executables on Windows by @risu729 in [#10514](https://github.com/jdx/mise/pull/10514)
+- **(env)** expand escaped dollar in env shell expansion by @jdx in [#10511](https://github.com/jdx/mise/pull/10511)
+- **(install)** rebuild symlinks after partial installs by @risu729 in [#10470](https://github.com/jdx/mise/pull/10470)
+- **(npm)** warn when system pnpm/bun may not support minimum_release_age by @risu729 in [#10491](https://github.com/jdx/mise/pull/10491)
+- **(pipx)** upgrade shared pip for release age installs by @risu729 in [#10472](https://github.com/jdx/mise/pull/10472)
+- **(pipx)** warn for unsupported uv exclude-newer by @risu729 in [#10510](https://github.com/jdx/mise/pull/10510)
+- **(pipx)** force pip backend for mise pipx subprocess calls by @risu729 in [#10513](https://github.com/jdx/mise/pull/10513)
+- **(system)** drop bare -- from dnf argv (breaks DNF5 install/upgrade) by @spencergilbert in [#10538](https://github.com/jdx/mise/pull/10538)
+- **(task)** align duplicate config task precedence by @risu729 in [#10471](https://github.com/jdx/mise/pull/10471)
+- **(task)** skip mise configs in task include dirs by @jdx in [#10500](https://github.com/jdx/mise/pull/10500)
+- **(task)** error on empty task shell by @jdx in [#10517](https://github.com/jdx/mise/pull/10517)
+- **(task)** honor show_full_cmd in the task command header by @JamBalaya56562 in [#10518](https://github.com/jdx/mise/pull/10518)
+- **(vfox)** resolve tools=true env path templates against the dependency toolset by @JamBalaya56562 in [#10481](https://github.com/jdx/mise/pull/10481)
+
+### 📚 Documentation
+
+- **(dotfiles)** make self-managing config first-run safe by @jdx in [#10494](https://github.com/jdx/mise/pull/10494)
+- **(env)** remove emoji checkboxes by @jdx in [#10504](https://github.com/jdx/mise/pull/10504)
+- recommend keeping mise current by @jdx in [#10505](https://github.com/jdx/mise/pull/10505)
+
+### 📦️ Dependency Updates
+
+- bump usage to 3.5.2 by @jdx in [#10498](https://github.com/jdx/mise/pull/10498)
+- update ghcr.io/jdx/mise:rpm docker digest to b5e0574 by @renovate[bot] in [#10531](https://github.com/jdx/mise/pull/10531)
+- update ghcr.io/jdx/mise:alpine docker digest to 892c324 by @renovate[bot] in [#10529](https://github.com/jdx/mise/pull/10529)
+- update jdx/mise-action digest to e6a8b39 by @renovate[bot] in [#10532](https://github.com/jdx/mise/pull/10532)
+- update rust docker digest to c681116 by @renovate[bot] in [#10533](https://github.com/jdx/mise/pull/10533)
+- update ubuntu:26.04 docker digest to e153663 by @renovate[bot] in [#10534](https://github.com/jdx/mise/pull/10534)
+- update ghcr.io/jdx/mise:deb docker digest to 3d636fa by @renovate[bot] in [#10530](https://github.com/jdx/mise/pull/10530)
+- update dependency esbuild to v0.28.1 by @renovate[bot] in [#10535](https://github.com/jdx/mise/pull/10535)
+- update ubuntu:26.04 docker digest to 53958ec by @renovate[bot] in [#10539](https://github.com/jdx/mise/pull/10539)
+
+### 📦 Registry
+
+- add aspire ([github:microsoft/aspire](https://github.com/microsoft/aspire)) by @davidfowl in [#10520](https://github.com/jdx/mise/pull/10520)
+- add nub by @colinhacks in [#10544](https://github.com/jdx/mise/pull/10544)
+- add ldc ([github:ldc-developers/ldc](https://github.com/ldc-developers/ldc)) by @slbls in [#10527](https://github.com/jdx/mise/pull/10527)
+- relax checkov test by @jdx in [#10548](https://github.com/jdx/mise/pull/10548)
+
+### New Contributors
+
+- @spencergilbert made their first contribution in [#10538](https://github.com/jdx/mise/pull/10538)
+- @slbls made their first contribution in [#10527](https://github.com/jdx/mise/pull/10527)
+- @colinhacks made their first contribution in [#10544](https://github.com/jdx/mise/pull/10544)
+- @davidfowl made their first contribution in [#10520](https://github.com/jdx/mise/pull/10520)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`EpicGames/lore`](https://github.com/EpicGames/lore)
+- [`cdxgen/cdxgen`](https://github.com/cdxgen/cdxgen)
+
 ## [2026.6.11](https://github.com/jdx/mise/compare/v2026.6.10..v2026.6.11) - 2026-06-16
 
 ### 🚀 Features

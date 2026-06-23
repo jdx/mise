@@ -2410,48 +2410,6 @@ packages:
           - amd64
   - type: github_release
     repo_owner: CycloneDX
-    repo_name: cdxgen
-    description: Creates CycloneDX Bill of Materials (BOM) from source code and container images
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("< 11.5.0")
-        error_message: The version is too old. Please use a version 11.5.0 or higher.
-      - version_constraint: semver("<= 11.9.0")
-        asset: cdxgen-{{.OS}}-{{.Arch}}
-        format: raw
-        overrides:
-          - goos: linux
-            asset: cdxgen-{{.OS}}-{{.Arch}}-musl
-        checksum:
-          type: github_release
-          asset: "{{.Asset}}.sha256"
-          algorithm: sha256
-      - version_constraint: semver("<= 12.0.0")
-        asset: cdxgen-{{.OS}}-{{.Arch}}
-        format: raw
-        overrides:
-          - goos: linux
-            asset: cdxgen-{{.OS}}-{{.Arch}}-musl
-        checksum:
-          type: github_release
-          asset: "{{.Asset}}.sha256"
-          algorithm: sha256
-        supported_envs:
-          - linux
-          - darwin/arm64
-          - windows
-      - version_constraint: "true"
-        asset: cdxgen-{{.OS}}-{{.Arch}}
-        format: raw
-        overrides:
-          - goos: linux
-            asset: cdxgen-{{.OS}}-{{.Arch}}-musl
-        checksum:
-          type: github_release
-          asset: "{{.Asset}}.sha256"
-          algorithm: sha256
-  - type: github_release
-    repo_owner: CycloneDX
     repo_name: cyclonedx-cli
     description: CycloneDX CLI tool for SBOM analysis, merging, diffs and format conversions
     files:
@@ -3063,6 +3021,35 @@ packages:
           - darwin
           - windows
           - amd64
+  - type: github_release
+    repo_owner: EpicGames
+    repo_name: lore
+    description: Lore is a next-generation, open source version control system
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: lore-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: lore-{{.Version}}-{{.Arch}}-{{.OS}}-neoverse-512tvb.{{.Format}}
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
   - type: github_release
     repo_owner: Epistates
     repo_name: treemd
@@ -23500,6 +23487,50 @@ packages:
         checksum:
           type: github_release
           asset: mustache_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+  - type: github_release
+    repo_owner: cdxgen
+    repo_name: cdxgen
+    aliases:
+      - name: CycloneDX/cdxgen
+    description: Creates CycloneDX Bill of Materials (BOM) from source code and container images
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 11.5.0")
+        error_message: The version is too old. Please use a version 11.5.0 or higher.
+      - version_constraint: semver("<= 11.9.0")
+        asset: cdxgen-{{.OS}}-{{.Arch}}
+        format: raw
+        overrides:
+          - goos: linux
+            asset: cdxgen-{{.OS}}-{{.Arch}}-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: semver("<= 12.0.0")
+        asset: cdxgen-{{.OS}}-{{.Arch}}
+        format: raw
+        overrides:
+          - goos: linux
+            asset: cdxgen-{{.OS}}-{{.Arch}}-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+      - version_constraint: "true"
+        asset: cdxgen-{{.OS}}-{{.Arch}}
+        format: raw
+        overrides:
+          - goos: linux
+            asset: cdxgen-{{.OS}}-{{.Arch}}-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
           algorithm: sha256
   - type: github_release
     repo_owner: cea-hpc

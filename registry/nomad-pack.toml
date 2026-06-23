@@ -5,6 +5,7 @@ test = { cmd = "nomad-pack version", expected = "{{version}}" }
 full = "http:nomad-pack"
 
 [backends.options]
+checksum_url = "https://releases.hashicorp.com/nomad-pack/{{ version }}/nomad-pack_{{ version }}_SHA256SUMS"
 url = 'https://releases.hashicorp.com/nomad-pack/{{ version }}/nomad-pack_{{ version }}_{{ os(macos="darwin") }}_{{ arch(x64="amd64") }}.zip'
 version_expr = 'fromJSON(body).versions | keys() | sortVersions()'
 version_list_url = "https://releases.hashicorp.com/nomad-pack/index.json"
