@@ -227,6 +227,8 @@ pub enum GithubAttestationsStatus {
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub install: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
     /// Size in bytes (read-only field, preserved from existing lockfiles but not written)
     #[serde(skip_serializing, default)]
@@ -272,7 +274,8 @@ impl<'de> Deserialize<'de> for PlatformInfo {
 impl PlatformInfo {
     /// Returns true if this PlatformInfo has no meaningful data (for serde skip)
     pub fn is_empty(&self) -> bool {
-        self.checksum.is_none()
+        self.install.is_none()
+            && self.checksum.is_none()
             && self.url.is_none()
             && self.url_api.is_none()
             && self.conda_deps.is_none()
@@ -296,11 +299,15 @@ impl PlatformInfo {
     ///   changes.
     pub fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
         let url_changed = self.url.is_some() && other.url.is_some() && self.url != other.url;
+        let install_changed = self.install.is_some() && self.install != other.install;
+        let artifact_changed = url_changed
+            || install_changed
+            || (self.url.is_some() && other.install.as_deref() == Some("source"));
 
         // For checksums, prefer sha256 over blake3 since sha256 comes from
-        // official releases and is more portable/verifiable. If URLs disagree,
+        // official releases and is more portable/verifiable. If artifacts disagree,
         // ignore the other side's artifact-bound fields entirely.
-        let checksum = if url_changed {
+        let checksum = if artifact_changed {
             self.checksum.clone()
         } else {
             match (&self.checksum, &other.checksum) {
@@ -318,26 +325,41 @@ impl PlatformInfo {
             }
         };
 
-        let size = if url_changed {
+        let size = if artifact_changed {
             self.size
         } else {
             self.size.or(other.size)
         };
 
-        let url_api = if url_changed {
+        let url_api = if artifact_changed {
             self.url_api.clone()
         } else {
             self.url_api.clone().or_else(|| other.url_api.clone())
         };
 
-        let provenance = match (self.provenance.clone(), other.provenance.clone()) {
-            (Some(a), Some(b)) => Some(a.merge(b)),
-            (a, b) => a.or(b),
+        let provenance = if artifact_changed {
+            self.provenance.clone()
+        } else {
+            match (self.provenance.clone(), other.provenance.clone()) {
+                (Some(a), Some(b)) => Some(a.merge(b)),
+                (a, b) => a.or(b),
+            }
         };
         PlatformInfo {
+            install: self.install.clone().or_else(|| {
+                if self.url.is_some() {
+                    None
+                } else {
+                    other.install.clone()
+                }
+            }),
             checksum,
             size,
-            url: self.url.clone().or_else(|| other.url.clone()),
+            url: if artifact_changed {
+                self.url.clone()
+            } else {
+                self.url.clone().or_else(|| other.url.clone())
+            },
             url_api,
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
             pkgx_deps: self.pkgx_deps.clone().or_else(|| other.pkgx_deps.clone()),
@@ -364,6 +386,13 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 ..Default::default()
             }),
             toml::Value::Table(mut t) => {
+                let install = match t.remove("install") {
+                    Some(toml::Value::String(s)) if s == "source" => Some(s),
+                    Some(toml::Value::String(s)) => {
+                        bail!("unrecognized install {s:?} in lockfile")
+                    }
+                    _ => None,
+                };
                 let checksum = match t.remove("checksum") {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
@@ -463,6 +492,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     github_attestations
                 };
                 Ok(PlatformInfo {
+                    install,
                     checksum,
                     size,
                     url,
@@ -483,6 +513,9 @@ impl TryFrom<toml::Value> for PlatformInfo {
 impl From<PlatformInfo> for toml::Value {
     fn from(platform_info: PlatformInfo) -> Self {
         let mut table = toml::Table::new();
+        if let Some(install) = platform_info.install {
+            table.insert("install".to_string(), install.into());
+        }
         if let Some(checksum) = platform_info.checksum {
             table.insert("checksum".to_string(), checksum.into());
         }
@@ -1022,15 +1055,31 @@ impl Lockfile {
                 let url_changed = platform_info.url.is_some()
                     && existing.url.is_some()
                     && platform_info.url != existing.url;
-                let preserve_artifact_fields = !url_changed;
-                let provenance = match (
-                    platform_info.provenance.clone(),
-                    existing.provenance.clone(),
-                ) {
-                    (Some(a), Some(b)) => Some(a.merge(b)),
-                    (a, b) => a.or(b),
+                let install_changed =
+                    platform_info.install.is_some() && platform_info.install != existing.install;
+                let source_to_url = platform_info.url.is_some()
+                    && platform_info.install.is_none()
+                    && existing.install.as_deref() == Some("source");
+                let preserve_artifact_fields = !url_changed && !install_changed && !source_to_url;
+                let provenance = if preserve_artifact_fields {
+                    match (
+                        platform_info.provenance.clone(),
+                        existing.provenance.clone(),
+                    ) {
+                        (Some(a), Some(b)) => Some(a.merge(b)),
+                        (a, b) => a.or(b),
+                    }
+                } else {
+                    platform_info.provenance.clone()
                 };
                 PlatformInfo {
+                    install: platform_info.install.or_else(|| {
+                        if platform_info.url.is_some() {
+                            None
+                        } else {
+                            existing.install.clone()
+                        }
+                    }),
                     checksum: platform_info.checksum.or_else(|| {
                         if preserve_artifact_fields {
                             existing.checksum.clone()
@@ -1043,7 +1092,13 @@ impl Lockfile {
                     } else {
                         None
                     }),
-                    url: platform_info.url.or_else(|| existing.url.clone()),
+                    url: platform_info.url.or_else(|| {
+                        if preserve_artifact_fields {
+                            existing.url.clone()
+                        } else {
+                            None
+                        }
+                    }),
                     url_api: platform_info.url_api.or_else(|| {
                         if preserve_artifact_fields {
                             existing.url_api.clone()
@@ -3056,6 +3111,26 @@ backend = "conda:jq"
     }
 
     #[test]
+    fn test_platform_info_merge_clears_stale_source_marker_on_url() {
+        let new_info = PlatformInfo {
+            checksum: Some("sha256:NEW".to_string()),
+            url: Some("https://example.com/v2.tar.gz".to_string()),
+            ..Default::default()
+        };
+        let stale_source = PlatformInfo {
+            install: Some("source".to_string()),
+            checksum: Some("sha256:OLD".to_string()),
+            url: Some("https://example.com/source.tar.gz".to_string()),
+            ..Default::default()
+        };
+
+        let merged = new_info.merge_with(&stale_source);
+        assert_eq!(merged.install, None);
+        assert_eq!(merged.url.as_deref(), Some("https://example.com/v2.tar.gz"));
+        assert_eq!(merged.checksum.as_deref(), Some("sha256:NEW"));
+    }
+
+    #[test]
     fn test_provenance_fields_roundtrip() {
         let info = PlatformInfo {
             checksum: Some("sha256:abc123".to_string()),
@@ -3376,6 +3451,124 @@ backend = "conda:jq"
             }
             other => panic!("expected Slsa provenance with URL, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_set_platform_info_replaces_artifact_with_source_outcome() {
+        let mut lockfile = Lockfile::default();
+        lockfile.set_platform_info(
+            "node",
+            "24.0.0",
+            Some("core:node"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:OLD".to_string()),
+                size: Some(123),
+                url: Some("https://example.com/binary.tar.gz".to_string()),
+                url_api: Some("https://api.example.com/binary".to_string()),
+                ..Default::default()
+            },
+        );
+        lockfile.set_platform_info(
+            "node",
+            "24.0.0",
+            Some("core:node"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                install: Some("source".to_string()),
+                checksum: Some("sha256:NEW".to_string()),
+                url: Some("https://example.com/source.tar.gz".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let info = &lockfile.tools["node"][0].platforms["linux-x64"];
+        assert_eq!(info.install.as_deref(), Some("source"));
+        assert_eq!(info.checksum.as_deref(), Some("sha256:NEW"));
+        assert_eq!(info.size, None);
+        assert_eq!(
+            info.url.as_deref(),
+            Some("https://example.com/source.tar.gz")
+        );
+        assert_eq!(info.url_api, None);
+    }
+
+    #[test]
+    fn test_set_platform_info_replaces_source_outcome_with_artifact() {
+        let mut lockfile = Lockfile::default();
+        lockfile.set_platform_info(
+            "node",
+            "24.0.0",
+            Some("core:node"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                install: Some("source".to_string()),
+                checksum: Some("sha256:OLD".to_string()),
+                url: Some("https://example.com/source.tar.gz".to_string()),
+                ..Default::default()
+            },
+        );
+        lockfile.set_platform_info(
+            "node",
+            "24.0.0",
+            Some("core:node"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:NEW".to_string()),
+                url: Some("https://example.com/binary.tar.gz".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let info = &lockfile.tools["node"][0].platforms["linux-x64"];
+        assert_eq!(info.install, None);
+        assert_eq!(info.checksum.as_deref(), Some("sha256:NEW"));
+        assert_eq!(
+            info.url.as_deref(),
+            Some("https://example.com/binary.tar.gz")
+        );
+    }
+
+    #[test]
+    fn test_source_platform_info_serializes_as_lock_marker() {
+        let mut lockfile = Lockfile::default();
+        lockfile.set_platform_info(
+            "node",
+            "24.0.0",
+            Some("core:node"),
+            &BTreeMap::new(),
+            "linux-riscv64",
+            PlatformInfo {
+                install: Some("source".to_string()),
+                checksum: Some("sha256:SOURCE".to_string()),
+                url: Some("https://example.com/node-v24.0.0.tar.gz".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_lockfile = temp_dir.path().join("source-platform-marker.lock");
+        lockfile.write(&test_lockfile).unwrap();
+        let serialized = file::read_to_string(&test_lockfile).unwrap();
+
+        assert!(serialized.contains("platforms.linux-riscv64"));
+        assert!(serialized.contains("install = \"source\""));
+        assert!(serialized.contains("checksum = \"sha256:SOURCE\""));
+        assert!(serialized.contains("url = \"https://example.com/node-v24.0.0.tar.gz\""));
+        assert!(!serialized.contains("node-v24.0.0-linux-riscv64.tar.gz"));
+
+        let reloaded = Lockfile::read(&test_lockfile).unwrap();
+        let info = &reloaded.tools["node"][0].platforms["linux-riscv64"];
+        assert_eq!(info.install.as_deref(), Some("source"));
+        assert_eq!(info.checksum.as_deref(), Some("sha256:SOURCE"));
+        assert_eq!(
+            info.url.as_deref(),
+            Some("https://example.com/node-v24.0.0.tar.gz")
+        );
     }
 
     #[test]
