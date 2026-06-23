@@ -17,6 +17,7 @@ use crate::cli::HookReason;
 use crate::config::{Config, DEFAULT_CONFIG_FILENAMES, Settings};
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
+use crate::errors::Error::UntrustedConfig;
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
 use crate::{dirs, duration, env, file, hooks, watch_files};
@@ -25,6 +26,7 @@ use crate::{dirs, duration, env, file, hooks, watch_files};
 /// Timestamps are stored per-directory (using a hash of CWD) so that
 /// multiple shells in different directories don't interfere with each other.
 static LAST_CHECK_DIR: Lazy<PathBuf> = Lazy::new(|| dirs::STATE.join("hook-env-checks"));
+const LAST_UNTRUSTED_CONFIG_WARNING_DIR_ENV: &str = "__MISE_LAST_UNTRUSTED_CONFIG_WARNING_DIR";
 
 /// Get the path to the last check file for a specific directory.
 fn last_check_file_for_dir(dir: &Path) -> PathBuf {
@@ -63,6 +65,47 @@ fn mtime_to_millis(mtime: SystemTime) -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
+}
+
+pub fn is_untrusted_config_error(err: &eyre::Report) -> bool {
+    err.chain()
+        .any(|cause| matches!(cause.downcast_ref(), Some(UntrustedConfig(_))))
+}
+
+pub fn should_show_untrusted_config_warning() -> bool {
+    env::var(LAST_UNTRUSTED_CONFIG_WARNING_DIR_ENV).unwrap_or_default()
+        != current_untrusted_warning_dir()
+}
+
+pub fn mark_untrusted_config_warning_seen(shell: &dyn Shell) -> Result<()> {
+    miseprint!(
+        "{}",
+        shell.set_env(
+            LAST_UNTRUSTED_CONFIG_WARNING_DIR_ENV,
+            &current_untrusted_warning_dir()
+        )
+    )?;
+    Ok(())
+}
+
+pub fn clear_untrusted_config_warning_if_dir_changed(patches: &mut EnvDiffPatches) {
+    if env::var(LAST_UNTRUSTED_CONFIG_WARNING_DIR_ENV)
+        .is_ok_and(|dir| !dir.is_empty() && dir != current_untrusted_warning_dir())
+    {
+        patches.push(EnvDiffOperation::Remove(
+            LAST_UNTRUSTED_CONFIG_WARNING_DIR_ENV.into(),
+        ));
+    }
+}
+
+fn current_untrusted_warning_dir() -> String {
+    dirs::CWD
+        .as_ref()
+        .and_then(|p| p.canonicalize().ok())
+        .or_else(|| dirs::CWD.clone())
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string()
 }
 
 pub static PREV_SESSION: Lazy<HookEnvSession> = Lazy::new(|| {
