@@ -511,7 +511,8 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
     let version_dir = caskroom_version_dir(&cask.token, &version);
     match read_receipt(&version_dir)? {
         Some(receipt) => {
-            let pkgs_installed = artifacts.pkgs.is_empty() || pkg_ids_installed(&receipt.pkg_ids)?;
+            let pkgs_installed =
+                artifacts.pkgs.is_empty() || pkg_ids_installed(&artifacts.pkg_ids)?;
             if receipt.apps.iter().all(|app| app.exists()) && pkgs_installed {
                 Ok(Some(receipt.version))
             } else {
@@ -792,6 +793,43 @@ mod tests {
                 }
             )?,
             Some("1.0.0".to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn installed_cask_version_checks_current_pkg_ids_with_old_receipt() -> Result<()> {
+        if crate::file::which("pkgutil").is_none() {
+            return Ok(());
+        }
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("pkg-only", "1.0.0");
+        let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+        file::create_dir_all(&caskroom)?;
+        let receipt = CaskReceipt {
+            version: cask.version.clone(),
+            apps: vec![],
+            pkg_ids: vec![],
+        };
+        crate::file::write(
+            caskroom.join(".mise-cask.toml"),
+            toml::to_string_pretty(&receipt)?,
+        )?;
+
+        assert_eq!(
+            installed_cask_version(
+                &cask,
+                &CaskArtifacts {
+                    pkgs: vec![PkgArtifact {
+                        source: "Example.pkg".to_string(),
+                    }],
+                    pkg_ids: vec!["com.example.missing".to_string()],
+                    ..Default::default()
+                }
+            )?,
+            None
         );
         Ok(())
     }
