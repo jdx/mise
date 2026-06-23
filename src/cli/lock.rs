@@ -579,8 +579,10 @@ impl Lock {
                                     }
                                 }
                             }
-                            let active_unresolved =
-                                ts.versions.get(ba.as_ref()).is_some_and(|tvl| {
+                            let requested_tool = self.tool.is_empty()
+                                || self.tool.iter().any(|tool| tool.ba.short == ba.short);
+                            let active_unresolved = requested_tool
+                                && ts.versions.get(ba.as_ref()).is_some_and(|tvl| {
                                     tvl.requests
                                         .iter()
                                         .any(|active| request_matches(active, request))
@@ -593,22 +595,24 @@ impl Lock {
                                 || request.version() == "latest"
                                 || source.is_idiomatic_version_file();
                             if !matched_resolved && should_resolve_overridden {
-                                let mut resolve_options =
-                                    match request.resolve_options(base_resolve_options) {
-                                        Ok(opts) => opts,
-                                        Err(err) => {
-                                            if active_unresolved {
-                                                return Err(err.wrap_err(format!(
-                                                    "failed to resolve options for {request}"
+                                let mut resolve_options = match request
+                                    .resolve_options(base_resolve_options)
+                                {
+                                    Ok(opts) => opts,
+                                    Err(err) => {
+                                        if active_unresolved {
+                                            return Err(err.wrap_err(format!(
+                                                    "failed to resolve options for {request} for lockfile {}",
+                                                    display_path(target_lockfile_path)
                                                 )));
-                                            } else {
-                                                debug!(
-                                                    "failed to resolve options for {request}: {err}"
-                                                );
-                                                continue;
-                                            }
+                                        } else {
+                                            debug!(
+                                                "failed to resolve options for {request}: {err}"
+                                            );
+                                            continue;
                                         }
-                                    };
+                                    }
+                                };
                                 resolve_options.use_locked_version = false;
                                 if resolve_options.before_date.is_some() {
                                     resolve_options.latest_versions = true;
