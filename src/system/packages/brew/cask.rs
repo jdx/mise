@@ -14,6 +14,7 @@ use crate::result::Result;
 use crate::system::packages::{
     InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager,
 };
+use crate::system::sudo;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::{ProgressIcon, SingleReport};
 
@@ -38,10 +39,25 @@ struct AppArtifact {
     target: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PkgArtifact {
+    source: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct CaskArtifacts {
+    apps: Vec<AppArtifact>,
+    pkgs: Vec<PkgArtifact>,
+    pkg_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct CaskReceipt {
     version: String,
+    #[serde(default)]
     apps: Vec<PathBuf>,
+    #[serde(default)]
+    pkgs: Vec<String>,
 }
 
 impl BrewCaskManager {
@@ -56,15 +72,18 @@ impl BrewCaskManager {
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
         let cask = fetch_cask(req).await?;
-        let apps = app_artifacts(&cask)?;
-        if installed_cask_version(&cask, &apps)?.as_deref() == Some(cask.version.as_str()) {
+        let artifacts = cask_artifacts(&cask)?;
+        if installed_cask_version(&cask, &artifacts)?.as_deref() == Some(cask.version.as_str()) {
             info!("brew-cask:{}: already installed", cask.token);
             return Ok(cask.version);
         }
         if opts.dry_run {
             miseprintln!("install cask {}/{}", cask.token, cask.version);
-            for app in &apps {
+            for app in &artifacts.apps {
                 miseprintln!("link app {}", app.target_name());
+            }
+            for pkg in &artifacts.pkgs {
+                miseprintln!("install pkg {}", pkg.source);
             }
             return Ok(cask.version);
         }
@@ -76,10 +95,13 @@ impl BrewCaskManager {
         let tmp_caskroom = caskroom_tmp_dir(&cask);
         file::remove_all(&tmp_caskroom)?;
         file::create_dir_all(&tmp_caskroom)?;
-        for app in &apps {
+        for app in &artifacts.apps {
             install_app(&stage, &tmp_caskroom, app)?;
         }
-        write_receipt(&tmp_caskroom, &cask, &apps)?;
+        for pkg in &artifacts.pkgs {
+            install_pkg(&stage, pkg)?;
+        }
+        write_receipt(&tmp_caskroom, &cask, &artifacts)?;
         file::remove_all(&caskroom)?;
         file::rename(&tmp_caskroom, &caskroom)?;
         remove_stale_versions(&caskroom_token, &cask.version)?;
@@ -116,8 +138,8 @@ impl SystemPackageManager for BrewCaskManager {
         let mut statuses = Vec::with_capacity(pkgs.len());
         for req in pkgs {
             let cask = fetch_cask(req).await?;
-            let apps = app_artifacts(&cask)?;
-            let version = installed_cask_version(&cask, &apps)?;
+            let artifacts = cask_artifacts(&cask)?;
+            let version = installed_cask_version(&cask, &artifacts)?;
             let state = match version {
                 Some(version) => match &req.version {
                     Some(requested) if version != *requested => {
@@ -273,29 +295,49 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
     Ok(())
 }
 
-fn app_artifacts(cask: &Cask) -> Result<Vec<AppArtifact>> {
-    let mut apps = Vec::new();
+fn install_pkg(stage: &Path, pkg: &PkgArtifact) -> Result<()> {
+    let source = find_artifact(stage, &pkg.source)
+        .ok_or_else(|| eyre!("brew-cask: pkg artifact '{}' was not found", pkg.source))?;
+    let args = vec![
+        "-pkg".to_string(),
+        source.display().to_string(),
+        "-target".to_string(),
+        "/".to_string(),
+    ];
+    sudo::run("installer", &args, &[])
+}
+
+fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
+    let mut artifacts = CaskArtifacts::default();
     for artifact in &cask.artifacts {
         let artifact_type = artifact_type(artifact);
         if is_non_install_artifact(&artifact_type) {
+            collect_uninstall_pkg_ids(artifact, &mut artifacts.pkg_ids);
             continue;
         }
-        let Some(app) = parse_app_artifact(artifact) else {
-            bail!(
-                "brew-cask:{}: unsupported artifact type {}",
-                cask.token,
-                artifact_type
-            );
-        };
-        apps.push(app);
-    }
-    if apps.is_empty() {
+        if let Some(app) = parse_app_artifact(artifact) {
+            artifacts.apps.push(app);
+            continue;
+        }
+        if let Some(pkg) = parse_pkg_artifact(artifact)? {
+            artifacts.pkgs.push(pkg);
+            continue;
+        }
         bail!(
-            "brew-cask:{}: no app artifact found; only app-bundle casks are supported",
+            "brew-cask:{}: unsupported artifact type {}",
+            cask.token,
+            artifact_type
+        );
+    }
+    if artifacts.apps.is_empty() && artifacts.pkgs.is_empty() {
+        bail!(
+            "brew-cask:{}: no app or pkg artifact found; only app-bundle and pkg casks are supported",
             cask.token
         );
     }
-    Ok(apps)
+    artifacts.pkg_ids.sort();
+    artifacts.pkg_ids.dedup();
+    Ok(artifacts)
 }
 
 fn parse_app_artifact(value: &Value) -> Option<AppArtifact> {
@@ -320,17 +362,65 @@ fn parse_app_artifact(value: &Value) -> Option<AppArtifact> {
     }
 }
 
+fn parse_pkg_artifact(value: &Value) -> Result<Option<PkgArtifact>> {
+    let Some(pkg) = value.as_object().and_then(|o| o.get("pkg")) else {
+        return Ok(None);
+    };
+    match pkg {
+        Value::String(source) => Ok(Some(PkgArtifact {
+            source: source.clone(),
+        })),
+        Value::Array(values) => {
+            if values.len() > 1 {
+                bail!("brew-cask: pkg installer choices are not supported yet");
+            }
+            Ok(values
+                .first()
+                .and_then(Value::as_str)
+                .map(|source| PkgArtifact {
+                    source: source.to_string(),
+                }))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn collect_uninstall_pkg_ids(value: &Value, pkg_ids: &mut Vec<String>) {
+    let Some(uninstall) = value.as_object().and_then(|o| o.get("uninstall")) else {
+        return;
+    };
+    let values: Vec<&Value> = match uninstall {
+        Value::Array(values) => values.iter().collect(),
+        value => vec![value],
+    };
+    for value in values {
+        let Some(pkgutil) = value.as_object().and_then(|o| o.get("pkgutil")) else {
+            continue;
+        };
+        match pkgutil {
+            Value::String(id) => pkg_ids.push(id.clone()),
+            Value::Array(ids) => {
+                pkg_ids.extend(ids.iter().filter_map(Value::as_str).map(str::to_string))
+            }
+            _ => {}
+        }
+    }
+}
+
 fn find_app(root: &Path, name: &str) -> Option<PathBuf> {
+    find_artifact(root, name).filter(|path| path.is_dir())
+}
+
+fn find_artifact(root: &Path, name: &str) -> Option<PathBuf> {
     let name_path = Path::new(name);
     WalkDir::new(root)
         .into_iter()
         .filter_map(|entry| entry.ok())
         .find(|entry| {
-            entry.file_type().is_dir()
-                && entry
-                    .path()
-                    .strip_prefix(root)
-                    .is_ok_and(|relative| relative.ends_with(name_path))
+            entry
+                .path()
+                .strip_prefix(root)
+                .is_ok_and(|relative| relative.ends_with(name_path))
         })
         .map(|entry| entry.into_path())
 }
@@ -381,37 +471,62 @@ fn installed_version(token: &str) -> Option<String> {
     }
 }
 
-fn installed_cask_version(cask: &Cask, apps: &[AppArtifact]) -> Result<Option<String>> {
+fn pkg_id_installed(pkg_id: &str) -> Result<bool> {
+    let output = std::process::Command::new("pkgutil")
+        .arg("--pkg-info")
+        .arg(pkg_id)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()?;
+    Ok(output.success())
+}
+
+fn pkg_ids_installed(pkg_ids: &[String]) -> Result<bool> {
+    for pkg_id in pkg_ids {
+        if !pkg_id_installed(pkg_id)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Option<String>> {
     let Some(version) = installed_version(&cask.token) else {
         return Ok(None);
     };
     let version_dir = caskroom_version_dir(&cask.token, &version);
     match read_receipt(&version_dir)? {
         Some(receipt) => {
-            if receipt.apps.iter().all(|app| app.exists()) {
+            if receipt.apps.iter().all(|app| app.exists()) && pkg_ids_installed(&receipt.pkgs)? {
                 Ok(Some(receipt.version))
             } else {
                 Ok(None)
             }
         }
         None => {
-            for app in apps {
+            for app in &artifacts.apps {
                 if !app_target_path(app.target_name())?.exists() {
                     return Ok(None);
                 }
+            }
+            if !pkg_ids_installed(&artifacts.pkg_ids)? {
+                return Ok(None);
             }
             Ok(Some(version))
         }
     }
 }
 
-fn write_receipt(caskroom: &Path, cask: &Cask, apps: &[AppArtifact]) -> Result<()> {
+fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Result<()> {
     let receipt = CaskReceipt {
         version: cask.version.clone(),
-        apps: apps
+        apps: artifacts
+            .apps
             .iter()
             .map(|app| app_target_path(app.target_name()))
             .collect::<Result<Vec<_>>>()?,
+        pkgs: artifacts.pkg_ids.clone(),
     };
     let body = toml::to_string_pretty(&receipt)?;
     crate::file::write(caskroom.join(".mise-cask.toml"), body)?;
@@ -538,6 +653,49 @@ mod tests {
     }
 
     #[test]
+    fn parses_pkg_artifacts() {
+        let value: Value = serde_json::json!({"pkg": ["OpenJDK.pkg"]});
+        assert_eq!(
+            parse_pkg_artifact(&value).unwrap(),
+            Some(PkgArtifact {
+                source: "OpenJDK.pkg".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_pkg_installer_choices() {
+        let value: Value = serde_json::json!({
+            "pkg": [
+                "VirtualBox.pkg",
+                {"choices": [{"choiceIdentifier": "choiceVBox", "attributeSetting": 1}]}
+            ]
+        });
+        assert!(parse_pkg_artifact(&value).is_err());
+    }
+
+    #[test]
+    fn parses_uninstall_pkgutil_ids() -> Result<()> {
+        let mut cask = test_cask("temurin", "26.0.1,8");
+        cask.artifacts = vec![
+            serde_json::json!({"uninstall": [{"pkgutil": "net.temurin.26.jdk"}]}),
+            serde_json::json!({"pkg": ["OpenJDK26U-jdk.pkg"]}),
+        ];
+
+        assert_eq!(
+            cask_artifacts(&cask)?,
+            CaskArtifacts {
+                pkgs: vec![PkgArtifact {
+                    source: "OpenJDK26U-jdk.pkg".to_string()
+                }],
+                pkg_ids: vec!["net.temurin.26.jdk".to_string()],
+                ..Default::default()
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
     fn installed_cask_version_checks_apps_without_receipt() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
@@ -550,13 +708,25 @@ mod tests {
         file::create_dir_all(caskroom_version_dir(&cask.token, &cask.version))?;
 
         assert_eq!(
-            installed_cask_version(&cask, std::slice::from_ref(&app))?,
+            installed_cask_version(
+                &cask,
+                &CaskArtifacts {
+                    apps: vec![app.clone()],
+                    ..Default::default()
+                }
+            )?,
             None
         );
 
         file::create_dir_all(app_target_path(app.target_name())?)?;
         assert_eq!(
-            installed_cask_version(&cask, &[app])?,
+            installed_cask_version(
+                &cask,
+                &CaskArtifacts {
+                    apps: vec![app],
+                    ..Default::default()
+                }
+            )?,
             Some("1.0.0".to_string())
         );
         Ok(())
@@ -575,16 +745,28 @@ mod tests {
         file::create_dir_all(caskroom_version_dir("configured-name", &cask.version))?;
         file::create_dir_all(app_target_path(app.target_name())?)?;
 
-        assert_eq!(installed_cask_version(&cask, &[app])?, None);
+        assert_eq!(
+            installed_cask_version(
+                &cask,
+                &CaskArtifacts {
+                    apps: vec![app],
+                    ..Default::default()
+                }
+            )?,
+            None
+        );
 
         file::create_dir_all(caskroom_version_dir(&cask.token, &cask.version))?;
         assert_eq!(
             installed_cask_version(
                 &cask,
-                &[AppArtifact {
-                    source: "Example.app".to_string(),
-                    target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
-                }]
+                &CaskArtifacts {
+                    apps: vec![AppArtifact {
+                        source: "Example.app".to_string(),
+                        target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+                    }],
+                    ..Default::default()
+                }
             )?,
             Some("2.0.0".to_string())
         );
