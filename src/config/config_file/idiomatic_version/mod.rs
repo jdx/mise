@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use eyre::Result;
+use eyre::{Result, eyre};
 
 use crate::backend::BackendList;
 use crate::cli::args::BackendArg;
 use crate::config::config_file::ConfigFile;
+use crate::file;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 pub mod package_json;
@@ -48,6 +49,13 @@ impl IdiomaticVersionFile {
 
         Ok(Self { tools, path })
     }
+
+    fn read_only_error(&self, action: &str) -> eyre::Report {
+        eyre!(
+            "cannot {action} idiomatic version file {}; use mise.toml, .tool-versions, or --path to choose a writable config file",
+            file::display_path(&self.path)
+        )
+    }
 }
 
 impl ConfigFile for IdiomaticVersionFile {
@@ -55,28 +63,26 @@ impl ConfigFile for IdiomaticVersionFile {
         self.path.as_path()
     }
 
-    #[cfg_attr(coverage_nightly, coverage(off))]
     fn remove_tool(&self, _fa: &BackendArg) -> Result<()> {
-        unimplemented!()
+        Err(self.read_only_error("remove tools from"))
     }
 
-    #[cfg_attr(coverage_nightly, coverage(off))]
     fn replace_versions(
         &self,
         _plugin_name: &BackendArg,
         _versions: Vec<ToolRequest>,
     ) -> Result<()> {
-        unimplemented!()
+        Err(self.read_only_error("update"))
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn save(&self) -> Result<()> {
-        unimplemented!()
+        Ok(())
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn dump(&self) -> Result<String> {
-        unimplemented!()
+        file::read_to_string(&self.path)
     }
 
     fn source(&self) -> ToolSource {
@@ -176,5 +182,23 @@ mod tests {
         let (ba, versions, _) = &tools[0];
         assert_eq!(ba.short, "python");
         assert_eq!(versions[0].version(), "3.10.0");
+    }
+
+    #[test]
+    fn test_idiomatic_mutations_return_errors() {
+        let file = IdiomaticVersionFile::init(PathBuf::from("package.json"));
+        let ba = MockBackend::new("node", false, None).ba;
+
+        let err = file.replace_versions(&ba, vec![]).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("cannot update idiomatic version file")
+        );
+
+        let err = file.remove_tool(&ba).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("cannot remove tools from idiomatic version file")
+        );
     }
 }
