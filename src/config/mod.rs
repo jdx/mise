@@ -1170,11 +1170,7 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
     let mut config_files = dirs
         .iter()
         .flat_map(|dir| {
-            if !include_ignored
-                && env::MISE_IGNORED_CONFIG_PATHS
-                    .iter()
-                    .any(|p| dir.starts_with(p))
-            {
+            if config_dir_is_ignored(dir, include_ignored) {
                 vec![]
             } else {
                 config_filenames
@@ -1192,13 +1188,7 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
     config_files
         .into_iter()
         .unique_by(|p| file::desymlink_path(p))
-        .filter(|p| {
-            if is_default_config_dir_override_filtered(p) {
-                return false;
-            }
-            include_ignored
-                || !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
-        })
+        .filter(|p| !config_path_is_ignored(p, include_ignored))
         .collect()
 }
 
@@ -1302,11 +1292,7 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
     // that wouldn't be loaded even with auto_env enabled
     found
         .into_iter()
-        .filter(|p| {
-            !(is_default_config_dir_override_filtered(p)
-                || config_file::is_ignored(&config_trust_root(p))
-                || config_file::is_ignored(p))
-        })
+        .filter(|p| !config_path_is_ignored(p, false))
         .collect()
 }
 
@@ -1335,10 +1321,7 @@ pub async fn load_config_hierarchy_from_dir(
     let mut config_files = dirs
         .iter()
         .flat_map(|dir| {
-            if env::MISE_IGNORED_CONFIG_PATHS
-                .iter()
-                .any(|p| dir.starts_with(p))
-            {
+            if config_dir_is_ignored(dir, false) {
                 vec![]
             } else {
                 config_filenames
@@ -1357,12 +1340,7 @@ pub async fn load_config_hierarchy_from_dir(
     let paths = config_files
         .into_iter()
         .unique_by(|p| file::desymlink_path(p))
-        .filter(|p| {
-            if is_default_config_dir_override_filtered(p) {
-                return false;
-            }
-            !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
-        })
+        .filter(|p| !config_path_is_ignored(p, false))
         .collect();
 
     Ok((paths, idiomatic_files))
@@ -1384,6 +1362,21 @@ fn is_default_config_dir_override_filtered(path: &Path) -> bool {
     *env::MISE_CONFIG_DIR_OVERRIDDEN
         && !global_config_files().contains(path)
         && path.starts_with(&*env::MISE_DEFAULT_CONFIG_DIR)
+}
+
+fn config_dir_is_ignored(dir: &Path, include_ignored: bool) -> bool {
+    !include_ignored
+        && env::MISE_IGNORED_CONFIG_PATHS
+            .iter()
+            .any(|p| dir.starts_with(p))
+}
+
+fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool {
+    if is_default_config_dir_override_filtered(path) {
+        return true;
+    }
+    !include_ignored
+        && (config_file::is_ignored(&config_trust_root(path)) || config_file::is_ignored(path))
 }
 
 static GLOBAL_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
@@ -1507,15 +1500,22 @@ pub fn local_toml_config_path() -> PathBuf {
 /// This matches the write-target rule from the docs: choose the highest-precedence
 /// directory first, then the lowest-precedence file inside that directory.
 pub fn local_toml_config_path_from_dir(cwd: &Path) -> PathBuf {
-    for dir in all_dirs_from(cwd).unwrap_or_default() {
-        let files = TOML_CONFIG_FILENAMES
-            .iter()
-            .flat_map(|f| glob(&dir, f).unwrap_or_default())
-            .collect();
-        if let Some(cf) = first_config_file(&files)
-            && !is_global_config(cf)
-        {
-            return cf.clone();
+    if !Settings::no_config() {
+        for dir in all_dirs_from(cwd).unwrap_or_default() {
+            if config_dir_is_ignored(&dir, false) {
+                continue;
+            }
+            let files = TOML_CONFIG_FILENAMES
+                .iter()
+                .flat_map(|f| glob(&dir, f).unwrap_or_default())
+                .unique_by(|p| file::desymlink_path(p))
+                .filter(|p| !config_path_is_ignored(p, false))
+                .collect();
+            if let Some(cf) = first_config_file(&files)
+                && !is_global_config(cf)
+            {
+                return cf.clone();
+            }
         }
     }
     cwd.join(&*env::MISE_DEFAULT_CONFIG_FILENAME)
