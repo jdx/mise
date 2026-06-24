@@ -100,6 +100,7 @@ impl BrewCaskManager {
             return Ok(cask.version);
         }
         prefix::bootstrap(false)?;
+        let previous_binaries = previous_binary_targets(&cask)?;
         let archive = fetch_archive(&cask, pr).await?;
         let stage = extract_archive(&cask, &archive, pr)?;
         let caskroom_token = caskroom_token_dir(&cask.token);
@@ -122,6 +123,7 @@ impl BrewCaskManager {
         for binary in &artifacts.binaries {
             link_binary(&caskroom, binary)?;
         }
+        remove_obsolete_binary_links(&cask, &previous_binaries, &binary_targets(&artifacts)?)?;
         remove_stale_versions(&caskroom_token, &cask.version)?;
         file::remove_all(stage)?;
         Ok(cask.version)
@@ -353,6 +355,9 @@ fn stage_binary(stage: &Path, caskroom: &Path, binary: &BinaryArtifact) -> Resul
         })?;
     let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
     file::remove_all(&caskroom_binary)?;
+    if let Some(parent) = caskroom_binary.parent() {
+        file::create_dir_all(parent)?;
+    }
     file::copy(&source, &caskroom_binary)?;
     file::make_executable(&caskroom_binary)?;
     Ok(())
@@ -376,12 +381,20 @@ fn link_binary(caskroom: &Path, binary: &BinaryArtifact) -> Result<()> {
 
 fn caskroom_binary_path(caskroom: &Path, binary: &BinaryArtifact) -> Result<PathBuf> {
     let target = binary.target_path()?;
-    let target_name = binary.target_name()?;
-    let filename = target
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| eyre!("brew-cask: invalid binary target '{target_name}'"))?;
-    Ok(caskroom.join(filename))
+    let relative = target.strip_prefix(prefix::prefix()).wrap_err_with(|| {
+        format!(
+            "brew-cask: binary target '{}' must be under {}",
+            target.display(),
+            prefix::prefix().display()
+        )
+    })?;
+    if relative.components().next().is_none() {
+        bail!(
+            "brew-cask: invalid binary target '{}'",
+            binary.target_name()?
+        );
+    }
+    Ok(caskroom.join(relative))
 }
 
 fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
@@ -640,6 +653,58 @@ fn pkg_ids_installed(pkg_ids: &[String]) -> Result<bool> {
     Ok(true)
 }
 
+fn binary_targets(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
+    artifacts
+        .binaries
+        .iter()
+        .map(BinaryArtifact::target_path)
+        .collect::<Result<Vec<_>>>()
+}
+
+fn previous_binary_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
+    let Some(version) = installed_version(&cask.token) else {
+        return Ok(Vec::new());
+    };
+    let version_dir = caskroom_version_dir(&cask.token, &version);
+    Ok(read_receipt(&version_dir)?
+        .map(|receipt| receipt.binaries)
+        .unwrap_or_default())
+}
+
+fn remove_obsolete_binary_links(
+    cask: &Cask,
+    previous_targets: &[PathBuf],
+    current_targets: &[PathBuf],
+) -> Result<()> {
+    let token_dir = file::desymlink_path(&caskroom_token_dir(&cask.token));
+    for target in previous_targets {
+        if current_targets.contains(target) {
+            continue;
+        }
+        let Ok(metadata) = target.symlink_metadata() else {
+            continue;
+        };
+        if !metadata.file_type().is_symlink() {
+            continue;
+        }
+        let Ok(link_target) = std::fs::read_link(target) else {
+            continue;
+        };
+        let resolved = if link_target.is_absolute() {
+            link_target
+        } else {
+            target
+                .parent()
+                .map(|parent| parent.join(&link_target))
+                .unwrap_or(link_target)
+        };
+        if file::desymlink_path(&resolved).starts_with(&token_dir) {
+            file::remove_file(target)?;
+        }
+    }
+    Ok(())
+}
+
 fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Option<String>> {
     let Some(version) = installed_version(&cask.token) else {
         return Ok(None);
@@ -703,11 +768,7 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
             .iter()
             .map(|app| app_target_path(app.target_name()))
             .collect::<Result<Vec<_>>>()?,
-        binaries: artifacts
-            .binaries
-            .iter()
-            .map(BinaryArtifact::target_path)
-            .collect::<Result<Vec<_>>>()?,
+        binaries: binary_targets(artifacts)?,
         pkg_ids: artifacts.pkg_ids.clone(),
     };
     let body = toml::to_string_pretty(&receipt)?;
@@ -1001,6 +1062,24 @@ mod tests {
     }
 
     #[test]
+    fn caskroom_binary_paths_preserve_prefix_relative_target() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let caskroom = tmp.path().join("Caskroom/example/1.0.0");
+        let binary = BinaryArtifact {
+            source: "op".to_string(),
+            target: Some("$HOMEBREW_PREFIX/sbin/op".to_string()),
+        };
+
+        assert_eq!(
+            caskroom_binary_path(&caskroom, &binary)?,
+            caskroom.join("sbin/op")
+        );
+        Ok(())
+    }
+
+    #[test]
     fn installed_cask_version_ignores_receipt_pkg_ids_for_app_only_casks() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
@@ -1097,8 +1176,71 @@ mod tests {
         link_binary(&caskroom, &binary)?;
 
         let target = binary.target_path()?;
-        assert_eq!(std::fs::read_link(&target)?, caskroom.join("op"));
+        assert_eq!(std::fs::read_link(&target)?, caskroom.join("bin/op"));
         assert_eq!(crate::file::read_to_string(&target)?, "binary");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stages_same_basename_binaries_without_collision() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(stage.join("bin"))?;
+        file::create_dir_all(stage.join("sbin"))?;
+        crate::file::write(stage.join("bin/op"), "bin")?;
+        crate::file::write(stage.join("sbin/op"), "sbin")?;
+        let caskroom = caskroom_version_dir("binary-only", "1.0.0");
+        file::create_dir_all(&caskroom)?;
+        let bin = BinaryArtifact {
+            source: "bin/op".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/op".to_string()),
+        };
+        let sbin = BinaryArtifact {
+            source: "sbin/op".to_string(),
+            target: Some("$HOMEBREW_PREFIX/sbin/op".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &bin)?;
+        stage_binary(&stage, &caskroom, &sbin)?;
+        link_binary(&caskroom, &bin)?;
+        link_binary(&caskroom, &sbin)?;
+
+        assert_eq!(crate::file::read_to_string(bin.target_path()?)?, "bin");
+        assert_eq!(crate::file::read_to_string(sbin.target_path()?)?, "sbin");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_obsolete_binary_links_removes_only_caskroom_symlinks() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("binary-only", "2.0.0");
+        let old_caskroom = caskroom_version_dir(&cask.token, "1.0.0");
+        file::create_dir_all(old_caskroom.join("bin"))?;
+        crate::file::write(old_caskroom.join("bin/old"), "old")?;
+        let old_target = tmp.path().join("bin/old");
+        file::create_dir_all(old_target.parent().unwrap())?;
+        file::make_symlink(&old_caskroom.join("bin/old"), &old_target)?;
+
+        let external = tmp.path().join("external/outside");
+        file::create_dir_all(external.parent().unwrap())?;
+        crate::file::write(&external, "outside")?;
+        let external_target = tmp.path().join("bin/outside");
+        file::make_symlink(&external, &external_target)?;
+
+        remove_obsolete_binary_links(
+            &cask,
+            &[old_target.clone(), external_target.clone()],
+            &[tmp.path().join("bin/new")],
+        )?;
+
+        assert!(old_target.symlink_metadata().is_err());
+        assert!(external_target.symlink_metadata().is_ok());
         Ok(())
     }
 
