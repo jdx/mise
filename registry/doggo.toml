@@ -1,3 +1,5 @@
-backends = ["aqua:mr-karan/doggo"]
+backends = [
+  { full = "github:mr-karan/doggo", options = { asset_pattern = "doggo-{{ os(macos='darwin') }}-{{ arch(x64='x86_64', arm64='aarch64', x86='i386') }}{% if os() == 'windows' %}.zip{% else %}.tar.gz{% endif %}" } },
+]
 description = ":dog: Command-line DNS Client for Humans. Written in Golang"
 test = { cmd = "doggo --version | awk '{print $1}'", expected = "v{{version}}" }
