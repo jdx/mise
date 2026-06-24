@@ -27,6 +27,7 @@ EOF
 assert_succeed "mise bootstrap user status --missing"
 assert_contains "mise bootstrap user status --json" '"state": "set"'
 assert_succeed "mise bootstrap --yes"
+assert_not_contains "mise bootstrap --yes" "bootstrap: follow-up"
 assert_fail "test -f '$CHSH_LOG'"
 
 # A local config overrides the global login shell.
@@ -65,6 +66,8 @@ assert_succeed "mise bootstrap packages install --dry-run --yes"
 assert_not_contains "mise bootstrap packages install --dry-run --yes" "chsh -s /tmp/mise-test-shell"
 assert_contains "mise bootstrap user apply --dry-run --yes" "chsh -s /tmp/mise-test-shell"
 assert_contains "mise bootstrap --dry-run --yes" "chsh -s /tmp/mise-test-shell"
+assert_contains "mise bootstrap --dry-run --yes" "bootstrap: follow-up if applied"
+assert_contains "mise bootstrap --dry-run --yes" "start a new login session for /tmp/mise-test-shell to take effect"
 assert_fail "test -f '$CHSH_LOG'"
 assert_fail "grep -q /tmp/mise-test-shell '$MISE_TEST_SHELLS_FILE'"
 

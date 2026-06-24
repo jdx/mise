@@ -17,6 +17,9 @@ runs:
 chsh -s /bin/zsh
 ```
 
+Top-level `mise bootstrap` also includes a final follow-up reminder to start a
+new login session when it changes or would change the login shell.
+
 ## Semantics
 
 `[bootstrap.user].login_shell` follows the same manual, idempotent model as

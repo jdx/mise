@@ -298,6 +298,7 @@ impl Bootstrap {
         let mut config = Config::get().await?;
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
+        let mut follow_up = BootstrapFollowUp::new(self.dry_run);
 
         if skip.contains(&BootstrapPart::Packages) {
             debug!("bootstrap: system packages skipped");
@@ -309,6 +310,7 @@ impl Bootstrap {
                 debug!("bootstrap: no [bootstrap.packages] configured, skipping");
             } else {
                 info!("bootstrap: system packages");
+                follow_up.add_package_skips(&mgrs);
                 let opts = DriverOpts {
                     manager: None,
                     explicit: false,
@@ -378,7 +380,18 @@ impl Bootstrap {
                 debug!("bootstrap: no [bootstrap.macos.defaults] configured, skipping");
             } else {
                 info!("bootstrap: system defaults");
-                install::apply_defaults(defaults, self.dry_run, self.yes).await?;
+                let requested = defaults.len();
+                let report =
+                    install::apply_defaults_with_report(defaults, self.dry_run, self.yes, false)
+                        .await?;
+                if report.changed {
+                    follow_up.add_macos_defaults();
+                }
+                if let Some(reason) = report.skipped_reason {
+                    follow_up.add_skipped(format!(
+                        "macOS defaults: {requested} entry(ies) skipped ({reason})"
+                    ));
+                }
             }
             self.run_hooks(&hooks, BootstrapHookPhase::PostDefaults)
                 .await?;
@@ -392,7 +405,13 @@ impl Bootstrap {
                 debug!("bootstrap: no [bootstrap.macos.launchd.agents] configured, skipping");
             } else {
                 info!("bootstrap: launchd agents");
-                install::apply_launchd(agents, self.dry_run, self.yes).await?;
+                let requested = agents.len();
+                let report =
+                    install::apply_launchd_with_report(agents, self.dry_run, self.yes).await?;
+                if let Some(reason) = report.skipped_reason {
+                    follow_up
+                        .add_skipped(format!("launchd: {requested} agent(s) skipped ({reason})"));
+                }
             }
         }
 
@@ -404,7 +423,13 @@ impl Bootstrap {
                 debug!("bootstrap: no [bootstrap.linux.systemd.units] configured, skipping");
             } else {
                 info!("bootstrap: systemd user services");
-                install::apply_systemd(units, self.dry_run, self.yes).await?;
+                let requested = units.len();
+                let report =
+                    install::apply_systemd_with_report(units, self.dry_run, self.yes).await?;
+                if let Some(reason) = report.skipped_reason {
+                    follow_up
+                        .add_skipped(format!("systemd: {requested} unit(s) skipped ({reason})"));
+                }
             }
         }
 
@@ -416,8 +441,24 @@ impl Bootstrap {
             if login_shell.is_none() {
                 debug!("bootstrap: no [bootstrap.user].login_shell configured, skipping");
             } else {
+                let shell = login_shell.as_ref().map(|r| r.shell.clone());
                 info!("bootstrap: login shell");
-                install::apply_login_shell(login_shell, self.dry_run, self.yes)?;
+                let report = install::apply_login_shell_with_report(
+                    login_shell,
+                    self.dry_run,
+                    self.yes,
+                    false,
+                )?;
+                if report.changed
+                    && let Some(shell) = shell.as_ref()
+                {
+                    follow_up.add_login_shell(shell);
+                }
+                if let Some(reason) = report.skipped_reason
+                    && let Some(shell) = shell
+                {
+                    follow_up.add_skipped(format!("login shell {shell}: skipped ({reason})"));
+                }
             }
             self.run_hooks(&hooks, BootstrapHookPhase::PostUser).await?;
         }
@@ -453,6 +494,7 @@ impl Bootstrap {
         } else {
             self.run_hooks(&hooks, BootstrapHookPhase::Final).await?;
         }
+        follow_up.print()?;
         Ok(())
     }
 
@@ -546,6 +588,72 @@ impl Bootstrap {
         }
         .run()
         .await
+    }
+}
+
+struct BootstrapFollowUp {
+    dry_run: bool,
+    items: Vec<String>,
+}
+
+impl BootstrapFollowUp {
+    fn new(dry_run: bool) -> Self {
+        Self {
+            dry_run,
+            items: vec![],
+        }
+    }
+
+    fn add_package_skips(&mut self, mgrs: &[system::ManagerPackages]) {
+        for mp in mgrs {
+            let name = mp.manager.name();
+            let reason = if mp.disabled {
+                Some("excluded by the system_packages.managers setting".to_string())
+            } else if !mp.manager.is_available() {
+                Some(mp.manager.unavailable_reason())
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                self.add_skipped(format!(
+                    "{name}: {} package(s) skipped ({reason})",
+                    mp.requests.len()
+                ));
+            }
+        }
+    }
+
+    fn add_macos_defaults(&mut self) {
+        self.items.push(
+            "relaunch apps that read changed macOS defaults (for example: `killall Dock`, \
+             `killall Finder`, `killall SystemUIServer`)"
+                .to_string(),
+        );
+    }
+
+    fn add_login_shell(&mut self, shell: &str) {
+        self.items.push(format!(
+            "start a new login session for {shell} to take effect"
+        ));
+    }
+
+    fn add_skipped(&mut self, message: String) {
+        self.items.push(message);
+    }
+
+    fn print(&self) -> Result<()> {
+        if self.items.is_empty() {
+            return Ok(());
+        }
+        if self.dry_run {
+            miseprintln!("bootstrap: follow-up if applied");
+        } else {
+            miseprintln!("bootstrap: follow-up");
+        }
+        for item in &self.items {
+            miseprintln!("  - {item}");
+        }
+        Ok(())
     }
 }
 
