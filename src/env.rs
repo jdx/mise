@@ -694,6 +694,7 @@ fn prefer_offline(args: &[String]) -> bool {
                 "hook-env",
                 "ls",
                 "where",
+                "which",
                 "x",
             ]
             .contains(&a.as_str())
