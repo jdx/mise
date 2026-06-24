@@ -1502,6 +1502,25 @@ pub fn local_toml_config_path() -> PathBuf {
         })
 }
 
+/// The lowest-precedence TOML config in the nearest directory that has one.
+///
+/// This matches the write-target rule from the docs: choose the highest-precedence
+/// directory first, then the lowest-precedence file inside that directory.
+pub fn local_toml_config_path_from_dir(cwd: &Path) -> PathBuf {
+    for dir in all_dirs_from(cwd).unwrap_or_default() {
+        let files = TOML_CONFIG_FILENAMES
+            .iter()
+            .flat_map(|f| glob(&dir, f).unwrap_or_default())
+            .collect();
+        if let Some(cf) = first_config_file(&files)
+            && !is_global_config(cf)
+        {
+            return cf.clone();
+        }
+    }
+    cwd.join(&*env::MISE_DEFAULT_CONFIG_FILENAME)
+}
+
 /// Options for resolving target config file path
 #[derive(Debug, Default)]
 pub struct ConfigPathOptions {
@@ -1562,8 +1581,9 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
 
     // Default: determine based on current directory
     if opts.prefer_toml {
-        // For mise set, prefer TOML and use local_toml_config_path logic
-        Ok(local_toml_config_path())
+        // For TOML-only commands, choose the nearest config directory and write
+        // to its lowest-precedence TOML file.
+        Ok(local_toml_config_path_from_dir(&cwd))
     } else {
         // For mise use, use existing config_file_from_dir logic which respects ASDF compat
         Ok(config_file_from_dir(&cwd))
