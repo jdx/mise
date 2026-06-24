@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use async_trait::async_trait;
 use eyre::{WrapErr, bail, eyre};
@@ -40,6 +40,12 @@ struct AppArtifact {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct BinaryArtifact {
+    source: String,
+    target: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct PkgArtifact {
     source: String,
 }
@@ -47,6 +53,7 @@ struct PkgArtifact {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct CaskArtifacts {
     apps: Vec<AppArtifact>,
+    binaries: Vec<BinaryArtifact>,
     pkgs: Vec<PkgArtifact>,
     pkg_ids: Vec<String>,
 }
@@ -56,6 +63,8 @@ struct CaskReceipt {
     version: String,
     #[serde(default)]
     apps: Vec<PathBuf>,
+    #[serde(default)]
+    binaries: Vec<PathBuf>,
     #[serde(default)]
     pkg_ids: Vec<String>,
 }
@@ -82,6 +91,9 @@ impl BrewCaskManager {
             for app in &artifacts.apps {
                 miseprintln!("link app {}", app.target_name());
             }
+            for binary in &artifacts.binaries {
+                miseprintln!("link binary {}", binary.target_name()?);
+            }
             for pkg in &artifacts.pkgs {
                 miseprintln!("install pkg {}", pkg.source);
             }
@@ -98,12 +110,18 @@ impl BrewCaskManager {
         for app in &artifacts.apps {
             install_app(&stage, &tmp_caskroom, app)?;
         }
+        for binary in &artifacts.binaries {
+            stage_binary(&stage, &tmp_caskroom, binary)?;
+        }
         for pkg in &artifacts.pkgs {
             install_pkg(&stage, pkg)?;
         }
         write_receipt(&tmp_caskroom, &cask, &artifacts)?;
         file::remove_all(&caskroom)?;
         file::rename(&tmp_caskroom, &caskroom)?;
+        for binary in &artifacts.binaries {
+            link_binary(&caskroom, binary)?;
+        }
         remove_stale_versions(&caskroom_token, &cask.version)?;
         file::remove_all(stage)?;
         Ok(cask.version)
@@ -113,6 +131,23 @@ impl BrewCaskManager {
 impl AppArtifact {
     fn target_name(&self) -> &str {
         self.target.as_deref().unwrap_or(&self.source)
+    }
+}
+
+impl BinaryArtifact {
+    fn target_name(&self) -> Result<String> {
+        match &self.target {
+            Some(target) => Ok(target.clone()),
+            None => Path::new(&self.source)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_string)
+                .ok_or_else(|| eyre!("brew-cask: invalid binary source '{}'", self.source)),
+        }
+    }
+
+    fn target_path(&self) -> Result<PathBuf> {
+        binary_target_path(&self.target_name()?)
     }
 }
 
@@ -307,6 +342,48 @@ fn install_pkg(stage: &Path, pkg: &PkgArtifact) -> Result<()> {
     sudo::run("installer", &args, &[])
 }
 
+fn stage_binary(stage: &Path, caskroom: &Path, binary: &BinaryArtifact) -> Result<()> {
+    let source = find_artifact(stage, &binary.source)
+        .filter(|path| path.is_file())
+        .ok_or_else(|| {
+            eyre!(
+                "brew-cask: binary artifact '{}' was not found",
+                binary.source
+            )
+        })?;
+    let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
+    file::remove_all(&caskroom_binary)?;
+    file::copy(&source, &caskroom_binary)?;
+    file::make_executable(&caskroom_binary)?;
+    Ok(())
+}
+
+fn link_binary(caskroom: &Path, binary: &BinaryArtifact) -> Result<()> {
+    let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
+    if !caskroom_binary.is_file() {
+        bail!(
+            "brew-cask: binary artifact '{}' was not staged",
+            binary.source
+        );
+    }
+    let target = binary.target_path()?;
+    if let Some(parent) = target.parent() {
+        file::create_dir_all(parent)?;
+    }
+    file::make_symlink(&caskroom_binary, &target)?;
+    Ok(())
+}
+
+fn caskroom_binary_path(caskroom: &Path, binary: &BinaryArtifact) -> Result<PathBuf> {
+    let target = binary.target_path()?;
+    let target_name = binary.target_name()?;
+    let filename = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| eyre!("brew-cask: invalid binary target '{target_name}'"))?;
+    Ok(caskroom.join(filename))
+}
+
 fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
     let mut artifacts = CaskArtifacts::default();
     for artifact in &cask.artifacts {
@@ -319,6 +396,10 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
             artifacts.apps.push(app);
             continue;
         }
+        if let Some(binary) = parse_binary_artifact(artifact) {
+            artifacts.binaries.push(binary);
+            continue;
+        }
         if let Some(pkg) = parse_pkg_artifact(artifact)? {
             artifacts.pkgs.push(pkg);
             continue;
@@ -329,9 +410,9 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
             artifact_type
         );
     }
-    if artifacts.apps.is_empty() && artifacts.pkgs.is_empty() {
+    if artifacts.apps.is_empty() && artifacts.binaries.is_empty() && artifacts.pkgs.is_empty() {
         bail!(
-            "brew-cask:{}: no app or pkg artifact found; only app-bundle and pkg casks are supported",
+            "brew-cask:{}: no app, binary, or pkg artifact found; only app-bundle, binary, and pkg casks are supported",
             cask.token
         );
     }
@@ -348,6 +429,16 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
     Ok(artifacts)
 }
 
+fn artifact_target(value: &Value, values: &[Value]) -> Option<String> {
+    values
+        .get(1)
+        .and_then(|v| v.as_object())
+        .and_then(|o| o.get("target"))
+        .or_else(|| value.as_object().and_then(|o| o.get("target")))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
 fn parse_app_artifact(value: &Value) -> Option<AppArtifact> {
     let app = value.as_object()?.get("app")?;
     match app {
@@ -357,14 +448,28 @@ fn parse_app_artifact(value: &Value) -> Option<AppArtifact> {
         }),
         Value::Array(values) => {
             let source = values.first()?.as_str()?.to_string();
-            let target = values
-                .get(1)
-                .and_then(|v| v.as_object())
-                .and_then(|o| o.get("target"))
-                .or_else(|| value.as_object().and_then(|o| o.get("target")))
-                .and_then(Value::as_str)
-                .map(str::to_string);
+            let target = artifact_target(value, values);
             Some(AppArtifact { source, target })
+        }
+        _ => None,
+    }
+}
+
+fn parse_binary_artifact(value: &Value) -> Option<BinaryArtifact> {
+    let binary = value.as_object()?.get("binary")?;
+    match binary {
+        Value::String(source) => Some(BinaryArtifact {
+            source: source.clone(),
+            target: value
+                .as_object()
+                .and_then(|o| o.get("target"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        }),
+        Value::Array(values) => {
+            let source = values.first()?.as_str()?.to_string();
+            let target = artifact_target(value, values);
+            Some(BinaryArtifact { source, target })
         }
         _ => None,
     }
@@ -461,6 +566,37 @@ fn app_bundle_name(target_name: &str) -> Result<&str> {
         .ok_or_else(|| eyre!("brew-cask: invalid app target '{target_name}'"))
 }
 
+fn binary_target_path(target_name: &str) -> Result<PathBuf> {
+    let prefix = prefix::prefix();
+    let target_name =
+        target_name.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy().to_string());
+    let path = PathBuf::from(&target_name);
+    let target = if path.is_absolute() {
+        path
+    } else if target_name.contains('/') {
+        prefix.join(path)
+    } else {
+        prefix.join("bin").join(path)
+    };
+    if target
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        bail!(
+            "brew-cask: binary target '{}' must not contain '..'",
+            target.display()
+        );
+    }
+    if !target.starts_with(&prefix) {
+        bail!(
+            "brew-cask: binary target '{}' must be under {}",
+            target.display(),
+            prefix.display()
+        );
+    }
+    Ok(target)
+}
+
 fn installed_version(token: &str) -> Option<String> {
     let dir = caskroom_token_dir(token);
     let entries = std::fs::read_dir(dir).ok()?;
@@ -511,9 +647,30 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
     let version_dir = caskroom_version_dir(&cask.token, &version);
     match read_receipt(&version_dir)? {
         Some(receipt) => {
+            let app_targets = if receipt.apps.is_empty() {
+                artifacts
+                    .apps
+                    .iter()
+                    .map(|app| app_target_path(app.target_name()))
+                    .collect::<Result<Vec<_>>>()?
+            } else {
+                receipt.apps
+            };
+            let binary_targets = if receipt.binaries.is_empty() {
+                artifacts
+                    .binaries
+                    .iter()
+                    .map(BinaryArtifact::target_path)
+                    .collect::<Result<Vec<_>>>()?
+            } else {
+                receipt.binaries
+            };
             let pkgs_installed =
                 artifacts.pkgs.is_empty() || pkg_ids_installed(&artifacts.pkg_ids)?;
-            if receipt.apps.iter().all(|app| app.exists()) && pkgs_installed {
+            if app_targets.iter().all(|app| app.exists())
+                && binary_targets.iter().all(|binary| binary.exists())
+                && pkgs_installed
+            {
                 Ok(Some(receipt.version))
             } else {
                 Ok(None)
@@ -522,6 +679,11 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
         None => {
             for app in &artifacts.apps {
                 if !app_target_path(app.target_name())?.exists() {
+                    return Ok(None);
+                }
+            }
+            for binary in &artifacts.binaries {
+                if !binary.target_path()?.exists() {
                     return Ok(None);
                 }
             }
@@ -540,6 +702,11 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
             .apps
             .iter()
             .map(|app| app_target_path(app.target_name()))
+            .collect::<Result<Vec<_>>>()?,
+        binaries: artifacts
+            .binaries
+            .iter()
+            .map(BinaryArtifact::target_path)
             .collect::<Result<Vec<_>>>()?,
         pkg_ids: artifacts.pkg_ids.clone(),
     };
@@ -609,6 +776,7 @@ fn is_non_install_artifact(kind: &str) -> bool {
         "caveats"
             | "conflicts_with"
             | "depends_on"
+            | "generate_completions_from_executable"
             | "postflight"
             | "preflight"
             | "uninstall"
@@ -665,6 +833,47 @@ mod tests {
                 target: Some("Firefox Nightly.app".to_string())
             })
         );
+    }
+
+    #[test]
+    fn parses_binary_artifact_targets() {
+        let value: Value =
+            serde_json::json!({"binary": ["op"], "target": "$HOMEBREW_PREFIX/bin/op"});
+        assert_eq!(
+            parse_binary_artifact(&value),
+            Some(BinaryArtifact {
+                source: "op".to_string(),
+                target: Some("$HOMEBREW_PREFIX/bin/op".to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn parses_binary_artifacts_and_ignores_completion_generation() -> Result<()> {
+        let mut cask = test_cask("1password-cli", "2.34.1");
+        cask.artifacts = vec![
+            serde_json::json!({"binary": ["op"], "target": "$HOMEBREW_PREFIX/bin/op"}),
+            serde_json::json!({
+                "generate_completions_from_executable": [
+                    "op",
+                    "completion",
+                    {"shells": ["bash", "zsh", "fish"]}
+                ]
+            }),
+            serde_json::json!({"zap": [{"trash": "~/.config/op"}]}),
+        ];
+
+        assert_eq!(
+            cask_artifacts(&cask)?,
+            CaskArtifacts {
+                binaries: vec![BinaryArtifact {
+                    source: "op".to_string(),
+                    target: Some("$HOMEBREW_PREFIX/bin/op".to_string())
+                }],
+                ..Default::default()
+            }
+        );
+        Ok(())
     }
 
     #[test]
@@ -762,6 +971,36 @@ mod tests {
     }
 
     #[test]
+    fn binary_targets_default_to_prefix_bin() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+
+        assert_eq!(binary_target_path("op")?, tmp.path().join("bin/op"));
+        assert_eq!(binary_target_path("sbin/op")?, tmp.path().join("sbin/op"));
+        assert_eq!(
+            binary_target_path("$HOMEBREW_PREFIX/bin/op")?,
+            tmp.path().join("bin/op")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn binary_targets_must_stay_under_prefix() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+
+        let err = binary_target_path("/usr/local/bin/op")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("must be under"));
+        let err = binary_target_path("../op").unwrap_err().to_string();
+        assert!(err.contains("must not contain '..'"));
+        Ok(())
+    }
+
+    #[test]
     fn installed_cask_version_ignores_receipt_pkg_ids_for_app_only_casks() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
@@ -777,6 +1016,7 @@ mod tests {
         let receipt = CaskReceipt {
             version: cask.version.clone(),
             apps: vec![app_target_path(app.target_name())?],
+            binaries: vec![],
             pkg_ids: vec!["com.example.helper".to_string()],
         };
         crate::file::write(
@@ -798,6 +1038,71 @@ mod tests {
     }
 
     #[test]
+    fn installed_cask_version_checks_binaries_without_receipt() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("binary-only", "1.0.0");
+        let binary = BinaryArtifact {
+            source: "op".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/op".to_string()),
+        };
+        file::create_dir_all(caskroom_version_dir(&cask.token, &cask.version))?;
+
+        assert_eq!(
+            installed_cask_version(
+                &cask,
+                &CaskArtifacts {
+                    binaries: vec![binary.clone()],
+                    ..Default::default()
+                }
+            )?,
+            None
+        );
+
+        let target = binary.target_path()?;
+        file::create_dir_all(target.parent().unwrap())?;
+        crate::file::write(&target, "binary")?;
+
+        assert_eq!(
+            installed_cask_version(
+                &cask,
+                &CaskArtifacts {
+                    binaries: vec![binary],
+                    ..Default::default()
+                }
+            )?,
+            Some("1.0.0".to_string())
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stages_and_links_binary_artifact() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        crate::file::write(stage.join("op"), "binary")?;
+        let caskroom = caskroom_version_dir("binary-only", "1.0.0");
+        file::create_dir_all(&caskroom)?;
+        let binary = BinaryArtifact {
+            source: "op".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/op".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &binary)?;
+        link_binary(&caskroom, &binary)?;
+
+        let target = binary.target_path()?;
+        assert_eq!(std::fs::read_link(&target)?, caskroom.join("op"));
+        assert_eq!(crate::file::read_to_string(&target)?, "binary");
+        Ok(())
+    }
+
+    #[test]
     fn installed_cask_version_checks_current_pkg_ids_with_old_receipt() -> Result<()> {
         if crate::file::which("pkgutil").is_none() {
             return Ok(());
@@ -811,6 +1116,7 @@ mod tests {
         let receipt = CaskReceipt {
             version: cask.version.clone(),
             apps: vec![],
+            binaries: vec![],
             pkg_ids: vec![],
         };
         crate::file::write(
