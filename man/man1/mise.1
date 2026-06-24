@@ -204,6 +204,12 @@ Add bootstrap packages to [bootstrap.packages] and install them
 \fIAliases: \fRu
 .RE
 .TP
+\fBbootstrap status\fR
+Show the aggregate bootstrap status
+.RS
+\fIAliases: \fRls
+.RE
+.TP
 \fBbootstrap systemd\fR
 Manage systemd user services from `[bootstrap.linux.systemd.units]`
 .TP
@@ -1120,6 +1126,19 @@ Skip the confirmation prompt
 .TP
 \fB<PACKAGE>\fR
 Packages in `manager:package[@version]` form
+.SH "MISE BOOTSTRAP STATUS"
+Show the aggregate bootstrap status
+.PP
+\fBUsage:\fR mise bootstrap status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured bootstrap state is not in its desired state
 .SH "MISE BOOTSTRAP SYSTEMD APPLY"
 \fBUsage:\fR mise bootstrap systemd apply [OPTIONS]
 .PP
