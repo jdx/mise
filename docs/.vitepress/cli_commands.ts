@@ -84,6 +84,17 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      shell: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
       status: {
         hide: false,
       },

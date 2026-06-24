@@ -2361,6 +2361,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_bootstrap_mise_shell_activate() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.mise_shell_activate]
+        zsh = true
+        bash = false
+        fish = {enabled = true}
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        assert_eq!(
+            system.mise_shell_activate.get("zsh"),
+            Some(&toml::Value::Boolean(true))
+        );
+        assert_eq!(
+            system.mise_shell_activate.get("bash"),
+            Some(&toml::Value::Boolean(false))
+        );
+        assert!(system.mise_shell_activate.get("fish").unwrap().is_table());
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
     async fn test_bootstrap_macos_defaults() {
         let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");

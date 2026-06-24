@@ -2,8 +2,9 @@
 
 `mise bootstrap` sets up the machine-level pieces around a mise config: OS
 packages, dotfiles, macOS defaults, macOS LaunchAgents, Linux systemd user
-services, the user's login shell, tools, and any final project-specific task.
-You can also add hooks that run at named points in the bootstrap sequence.
+services, mise shell activation, the user's login shell, tools, and any final
+project-specific task. You can also add hooks that run at named points in the
+bootstrap sequence.
 
 Use bootstrap for things that are needed before a project or workstation is
 ready, but that do not belong in `[tools]`: native libraries, Homebrew
@@ -16,19 +17,22 @@ one-time machine setup.
 
 1. `mise bootstrap packages install` installs missing `[bootstrap.packages]`.
 2. `mise dotfiles apply` applies `[dotfiles]`.
-3. `mise bootstrap macos-defaults apply` writes `[bootstrap.macos.defaults]`.
-4. `mise bootstrap launchd apply` writes and loads `[bootstrap.macos.launchd.agents]`.
-5. `mise bootstrap systemd apply` converges `[bootstrap.linux.systemd.units]`
+3. `mise bootstrap shell apply` configures shell activation from
+   `[bootstrap.mise_shell_activate]`.
+4. `mise bootstrap macos-defaults apply` writes `[bootstrap.macos.defaults]`.
+5. `mise bootstrap launchd apply` writes and loads `[bootstrap.macos.launchd.agents]`.
+6. `mise bootstrap systemd apply` converges `[bootstrap.linux.systemd.units]`
    by writing unit files, enabling/disabling them, and starting/stopping them
    as configured.
-6. `mise bootstrap user apply` applies `[bootstrap.user]`.
-7. `mise install` installs missing `[tools]`.
-8. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
-9. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
+7. `mise bootstrap user apply` applies `[bootstrap.user]`.
+8. `mise install` installs missing `[tools]`.
+9. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
+10. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
-`packages`, `dotfiles`, `defaults`, `launchd`, `systemd`, `user`, `tools`,
-`task`, and `final-hook`. The flag can be repeated or comma-separated, for
+`packages`, `dotfiles`, `shell`, `defaults`, `launchd`, `systemd`, `user`,
+`tools`, `task`, and `final-hook`. The flag can be repeated or
+comma-separated, for
 example `mise bootstrap --skip tools,task`.
 
 Use `mise bootstrap --only <part>` to run only specific parts. It supports the
@@ -56,7 +60,11 @@ task runs every time, so keep it idempotent.
 [dotfiles]
 "~/.gitconfig" = { mode = "symlink" }
 "~/.config/nvim" = { mode = "symlink" }
-"~/.zshrc/activate" = { block = 'eval "$(mise activate zsh)"' }
+
+[bootstrap.mise_shell_activate]
+zprofile = "shims"
+zshrc = "activate"
+fish = "activate"
 
 [bootstrap.macos.dock]
 autohide = true
@@ -139,6 +147,7 @@ mise bootstrap packages status
 mise dotfiles status
 mise dotfiles apply --dry-run
 mise dotfiles apply --dry-run --verbose
+mise bootstrap shell status
 mise bootstrap macos-defaults status
 mise bootstrap launchd status
 mise bootstrap systemd status
@@ -156,6 +165,7 @@ only want to check one part without installing anything.
 | ---------------------------------- | ------------------------------------------------------------- |
 | `[bootstrap.packages]`             | OS packages from apk, apt, dnf, pacman, or brew               |
 | `[dotfiles]`                       | Whole-file dotfiles and small managed edits to existing files |
+| `[bootstrap.mise_shell_activate]`  | mise activation snippets in shell startup files               |
 | `[bootstrap.macos.*]`              | Curated macOS preferences for Dock/Finder/keyboard/trackpad   |
 | `[bootstrap.macos.defaults]`       | macOS user preferences written through `defaults write`       |
 | `[bootstrap.macos.launchd.agents]` | macOS user LaunchAgents written and loaded with `launchctl`   |

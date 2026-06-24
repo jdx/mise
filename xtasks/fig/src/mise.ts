@@ -1100,6 +1100,45 @@ const completionSpec: Fig.Spec = {
           ],
         },
         {
+          name: "shell",
+          description:
+            "Manage mise shell activation from `[bootstrap.mise_shell_activate]`",
+          subcommands: [
+            {
+              name: "apply",
+              options: [
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the actions that would run without writing anything",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+            },
+            {
+              name: "status",
+              options: [
+                {
+                  name: ["-J", "--json"],
+                  description: "Output in JSON format",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--missing",
+                  description:
+                    "Exit with code 1 if any configured shell activation is not in its desired state",
+                  isRepeatable: false,
+                },
+              ],
+            },
+          ],
+        },
+        {
           name: ["status", "ls"],
           description: "Show the aggregate bootstrap status",
           options: [
@@ -1221,6 +1260,7 @@ const completionSpec: Fig.Spec = {
             suggestions: [
               "packages",
               "dotfiles",
+              "shell",
               "defaults",
               "launchd",
               "systemd",
@@ -1240,6 +1280,7 @@ const completionSpec: Fig.Spec = {
             suggestions: [
               "packages",
               "dotfiles",
+              "shell",
               "defaults",
               "launchd",
               "systemd",

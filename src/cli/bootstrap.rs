@@ -13,7 +13,7 @@ use crate::dirs;
 use crate::path::PathExt;
 use crate::system;
 use crate::system::defaults::DefaultsState;
-use crate::system::files::{FileMode, FileRequest};
+use crate::system::files::{FileMode, FileRequest, FileState};
 use crate::system::hooks::{self, BootstrapHookPhase};
 use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
@@ -33,19 +33,21 @@ use clap::{Subcommand, ValueEnum};
 ///    then `[bootstrap.hooks.post-packages]`
 /// 2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
 ///    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-/// 3. `mise bootstrap macos-defaults apply` — write
+/// 3. `mise bootstrap shell apply` — configure shell activation from
+///    `[bootstrap.mise_shell_activate]`
+/// 4. `mise bootstrap macos-defaults apply` — write
 ///    `[bootstrap.macos.defaults]` entries (macOS)
 ///    surrounded by `pre-defaults`/`post-defaults` hooks
-/// 4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
-/// 5. `mise bootstrap systemd apply` — install/start systemd user services
+/// 5. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+/// 6. `mise bootstrap systemd apply` — install/start systemd user services
 ///    (Linux)
-/// 6. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+/// 7. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
 ///    (Unix)
 ///    surrounded by `pre-user`/`post-user` hooks
-/// 7. `mise install` — install missing tools from `[tools]`
+/// 8. `mise install` — install missing tools from `[tools]`
 ///    surrounded by `pre-tools`/`post-tools` hooks
-/// 8. `mise run bootstrap` — if a task named `bootstrap` is defined
-/// 9. `[bootstrap.hooks.final]` — optional final hook
+/// 9. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 10. `[bootstrap.hooks.final]` — optional final hook
 ///
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -96,6 +98,7 @@ pub struct Bootstrap {
 enum BootstrapPart {
     Packages,
     Dotfiles,
+    Shell,
     Defaults,
     Launchd,
     Systemd,
@@ -108,9 +111,10 @@ enum BootstrapPart {
 impl BootstrapPart {
     // Keep this in sync with every enum variant. `--only` computes a
     // complement from ALL, so an omitted variant would always run.
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::Packages,
         Self::Dotfiles,
+        Self::Shell,
         Self::Defaults,
         Self::Launchd,
         Self::Systemd,
@@ -126,6 +130,7 @@ enum Commands {
     Launchd(BootstrapLaunchd),
     MacosDefaults(BootstrapMacosDefaults),
     Packages(BootstrapPackages),
+    Shell(BootstrapShell),
     Status(BootstrapStatus),
     Systemd(BootstrapSystemd),
     User(BootstrapUser),
@@ -272,6 +277,42 @@ struct BootstrapSystemdStatus {
     missing: bool,
 }
 
+/// Manage mise shell activation from `[bootstrap.mise_shell_activate]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapShell {
+    #[clap(subcommand)]
+    command: BootstrapShellCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapShellCommands {
+    Apply(BootstrapShellApply),
+    Status(BootstrapShellStatus),
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapShellApply {
+    /// Print the actions that would run without writing anything
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapShellStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured shell activation is not in its desired state
+    #[clap(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
 /// Manage current-user bootstrap settings from `[bootstrap.user]`
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
@@ -318,6 +359,7 @@ impl Bootstrap {
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
         let mut follow_up = BootstrapFollowUp::new(self.dry_run);
+        let mut dry_run_config_files = None;
 
         if skip.contains(&BootstrapPart::Packages) {
             debug!("bootstrap: system packages skipped");
@@ -380,13 +422,31 @@ impl Bootstrap {
                 system::edits::apply(&config, &edits, &opts)?;
             }
             if self.dry_run {
-                hooks = self.hooks_after_dotfiles_dry_run(&config, &files)?;
+                let config_files =
+                    self.config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+                hooks = system::hooks_from_config_files(&config_files);
+                dry_run_config_files = Some(config_files);
             } else {
                 config = Config::reset().await?;
                 hooks = system::hooks_from_config(&config);
             }
             self.run_hooks(&hooks, BootstrapHookPhase::PostDotfiles)
                 .await?;
+        }
+
+        if skip.contains(&BootstrapPart::Shell) {
+            debug!("bootstrap: shell activation skipped");
+        } else {
+            let activations = dry_run_config_files
+                .as_ref()
+                .map(system::shell_activation_from_config_files)
+                .unwrap_or_else(|| system::shell_activation_from_config(&config));
+            if activations.is_empty() {
+                debug!("bootstrap: no [bootstrap.mise_shell_activate] configured, skipping");
+            } else {
+                info!("bootstrap: shell activation");
+                install::apply_shell_activation(&config, activations, self.dry_run, self.yes)?;
+            }
         }
 
         if skip.contains(&BootstrapPart::Defaults) {
@@ -537,30 +597,91 @@ impl Bootstrap {
         }
     }
 
-    fn hooks_after_dotfiles_dry_run(
+    fn config_files_after_dotfiles_dry_run(
         &self,
         config: &Config,
         files: &[FileRequest],
-    ) -> Result<Vec<hooks::BootstrapHook>> {
+        edits: &[system::edits::EditRequest],
+    ) -> Result<config::ConfigMap> {
         let mut config_files = config.config_files.clone();
+        let mut bodies = indexmap::IndexMap::new();
         for file in files {
             if !is_mise_config_target(&file.target) || !file.source.is_file() {
                 continue;
             }
-            match parse_dotfile_mise_config(config, file) {
-                Ok(cf) => {
-                    config_files.insert(file.target.clone(), cf);
-                }
+            match dotfile_mise_config_body(config, file) {
+                Ok(body) => match parse_mise_config_body(&file.target, &body) {
+                    Ok(cf) => {
+                        bodies.insert(file.target.clone(), body);
+                        config_files.insert(file.target.clone(), cf);
+                    }
+                    Err(err) => {
+                        warn!(
+                            "[dotfiles].\"{}\": failed to parse config source {}: {err}",
+                            file.target_raw,
+                            file.source.display()
+                        );
+                    }
+                },
                 Err(err) => {
                     warn!(
-                        "[dotfiles].\"{}\": failed to parse config source {}: {err}",
+                        "[dotfiles].\"{}\": failed to read config source {}: {err}",
                         file.target_raw,
                         file.source.display()
                     );
                 }
             }
         }
-        Ok(system::hooks_from_config_files(&config_files))
+        for edit in edits {
+            if !is_mise_config_target(&edit.path) {
+                continue;
+            }
+            let body = match bodies.get(&edit.path) {
+                Some(body) => body.clone(),
+                None if edit.path.exists() => match crate::file::read_to_string(&edit.path) {
+                    Ok(body) => body,
+                    Err(err) => {
+                        warn!(
+                            "[dotfiles].\"{}\": failed to read config target {}: {err}",
+                            edit.config_key(),
+                            edit.path.display()
+                        );
+                        continue;
+                    }
+                },
+                None => String::new(),
+            };
+            match system::edits::apply_dry_run_to_string(config, edit, &body) {
+                Ok(Some(body)) => match parse_mise_config_body(&edit.path, &body) {
+                    Ok(cf) => {
+                        bodies.insert(edit.path.clone(), body);
+                        config_files.insert(edit.path.clone(), cf);
+                    }
+                    Err(err) => {
+                        warn!(
+                            "[dotfiles].\"{}\": failed to parse edited config target {}: {err}",
+                            edit.config_key(),
+                            edit.path.display()
+                        );
+                    }
+                },
+                Ok(None) => {
+                    debug!(
+                        "bootstrap: edited config target {} skipped in dry-run config simulation \
+                         because the edit requires template rendering",
+                        edit.path.display()
+                    );
+                }
+                Err(err) => {
+                    warn!(
+                        "[dotfiles].\"{}\": failed to simulate config edit for {}: {err}",
+                        edit.config_key(),
+                        edit.path.display()
+                    );
+                }
+            }
+        }
+        Ok(config_files)
     }
 
     async fn run_task(&self, task: &str, skip_tools: bool) -> Result<()> {
@@ -699,16 +820,19 @@ impl Drop for BootstrapFollowUp {
     }
 }
 
-fn parse_dotfile_mise_config(
-    config: &Config,
-    file: &FileRequest,
+fn dotfile_mise_config_body(config: &Config, file: &FileRequest) -> Result<String> {
+    match file.mode {
+        FileMode::Template => system::files::render_template(config, file),
+        _ => crate::file::read_to_string(&file.source),
+    }
+}
+
+fn parse_mise_config_body(
+    path: &std::path::Path,
+    body: &str,
 ) -> Result<Arc<dyn config::config_file::ConfigFile>> {
-    let body = match file.mode {
-        FileMode::Template => system::files::render_template(config, file)?,
-        _ => crate::file::read_to_string(&file.source)?,
-    };
     Ok(Arc::new(
-        config::config_file::mise_toml::MiseToml::from_str(&body, &file.target)?,
+        config::config_file::mise_toml::MiseToml::from_str(body, path)?,
     ))
 }
 
@@ -730,6 +854,7 @@ impl Commands {
             Self::Launchd(cmd) => cmd.run().await,
             Self::MacosDefaults(cmd) => cmd.run().await,
             Self::Packages(cmd) => cmd.run().await,
+            Self::Shell(cmd) => cmd.run().await,
             Self::Status(cmd) => cmd.run().await,
             Self::Systemd(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
@@ -1617,6 +1742,86 @@ impl BootstrapMacosDefaultsStatus {
     }
 }
 
+impl BootstrapShell {
+    async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise bootstrap")?;
+        match self.command {
+            BootstrapShellCommands::Apply(cmd) => cmd.run().await,
+            BootstrapShellCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapShellApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_shell_activation(
+            &config,
+            system::shell_activation_from_config(&config),
+            self.dry_run,
+            self.yes,
+        )
+    }
+}
+
+impl BootstrapShellStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let activations = system::shell_activation_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_entries = vec![];
+        for request in &activations {
+            let state = match system::edits::check(&config, &request.edit) {
+                Ok(state) => state,
+                Err(err) => FileState::Differs(format!("{err}")),
+            };
+            any_missing |= state != FileState::Applied;
+            if self.json {
+                let mut entry = json!({
+                    "target": request.target.name(),
+                    "shell": request.shell.name(),
+                    "path": request.edit.path_raw,
+                    "mode": request.mode.name(),
+                    "state": file_state_json(&state),
+                });
+                if let FileState::Differs(reason) = &state {
+                    entry["reason"] = json!(reason);
+                }
+                json_entries.push(entry);
+            } else {
+                rows.push(vec![
+                    request.target.name().to_string(),
+                    request.shell.name().to_string(),
+                    request.edit.path_raw.clone(),
+                    request.mode.name().to_string(),
+                    file_state_display(&state),
+                ]);
+            }
+        }
+        if self.json {
+            miseprintln!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "mise_shell_activate": json_entries,
+                }))?
+            );
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.mise_shell_activate]");
+        } else {
+            let mut table = MiseTable::new(false, &["Target", "Shell", "Path", "Mode", "State"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            crate::exit(1);
+        }
+        Ok(())
+    }
+}
+
 impl BootstrapUser {
     async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("mise bootstrap")?;
@@ -1728,6 +1933,25 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap macos-defaults status</bold>
     $ <bold>mise bootstrap launchd apply --dry-run</bold>
     $ <bold>mise bootstrap systemd apply --dry-run</bold>
+    $ <bold>mise bootstrap shell apply --dry-run</bold>
     $ <bold>mise bootstrap user apply --dry-run</bold>
 "#
 );
+
+fn file_state_display(state: &FileState) -> String {
+    match state {
+        FileState::Applied => "applied".to_string(),
+        FileState::Missing => "missing".to_string(),
+        FileState::SourceMissing => "source missing".to_string(),
+        FileState::Differs(reason) => format!("differs ({reason})"),
+    }
+}
+
+fn file_state_json(state: &FileState) -> &'static str {
+    match state {
+        FileState::Applied => "applied",
+        FileState::Missing => "missing",
+        FileState::SourceMissing => "source_missing",
+        FileState::Differs(_) => "differs",
+    }
+}

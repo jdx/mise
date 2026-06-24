@@ -29,7 +29,7 @@ use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::config::Config;
+use crate::config::{Config, ConfigMap};
 use crate::file;
 use crate::path::PathExt;
 use crate::system::files::FileState;
@@ -145,9 +145,13 @@ pub fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
 /// union global -> local, keyed by `(path, id)`; a more local config overrides
 /// an edit with the same id. Malformed entries warn and are skipped.
 pub fn edits_from_config(config: &Config) -> Vec<EditRequest> {
+    edits_from_config_files(&config.config_files)
+}
+
+pub fn edits_from_config_files(config_files: &ConfigMap) -> Vec<EditRequest> {
     let mut merged: IndexMap<String, EditRequest> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
-    for (cf_path, cf) in config.config_files.iter().rev() {
+    for (cf_path, cf) in config_files.iter().rev() {
         let base = cf_path.parent().unwrap_or(Path::new(".")).to_path_buf();
         let Some(dotfiles) = cf.dotfiles_config() else {
             continue;
@@ -645,6 +649,21 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
     Ok(())
 }
 
+/// Simulate applying an edit to in-memory text for bootstrap dry-run config
+/// discovery. Template edits are intentionally not rendered during dry-runs
+/// because rendering may execute user commands.
+pub fn apply_dry_run_to_string(
+    config: &Config,
+    req: &EditRequest,
+    text: &str,
+) -> Result<Option<String>> {
+    if matches!(&req.op, EditOp::Block { template: true, .. }) {
+        return Ok(None);
+    }
+    let desired = desired_content(config, req)?;
+    apply_to_string(req, desired.as_deref(), text).map(Some)
+}
+
 fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {
     debug!("edits: {} ({})", req.path.display_user(), req.describe_op());
     if let Some(parent) = req.path.parent() {
@@ -655,6 +674,13 @@ fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {
     } else {
         String::new()
     };
+    let out = apply_to_string(req, desired, &text)?;
+    // file::write truncates in place, preserving the file's permissions
+    file::write(&req.path, &out)?;
+    Ok(())
+}
+
+fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Result<String> {
     let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
     match &req.op {
         EditOp::Block { comment, .. } => {
@@ -694,9 +720,7 @@ fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {
     }
     let mut out = lines.join("\n");
     out.push('\n');
-    // file::write truncates in place, preserving the file's permissions
-    file::write(&req.path, &out)?;
-    Ok(())
+    Ok(out)
 }
 
 #[cfg(test)]

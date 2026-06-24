@@ -36,7 +36,9 @@ applied by `mise bootstrap macos-defaults apply`, and macOS
 [LaunchAgents](/bootstrap/launchd.html) (`[bootstrap.macos.launchd.agents]`),
 applied by `mise bootstrap launchd apply`. Linux user services live in
 [systemd](/bootstrap/systemd.html) (`[bootstrap.linux.systemd.units]`),
-applied by `mise bootstrap systemd apply`. Current-user
+applied by `mise bootstrap systemd apply`. Shell activation snippets live in
+[Shell Activation](/bootstrap/shell.html) (`[bootstrap.mise_shell_activate]`).
+Current-user
 [login shells](/bootstrap/user.html) (`[bootstrap.user].login_shell`) are
 applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html).
 

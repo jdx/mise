@@ -6,7 +6,8 @@
 //! — declarative macOS user defaults — `[bootstrap.macos.launchd.agents]`
 //! — declarative macOS LaunchAgents — `[bootstrap.linux.systemd.units]`
 //! — declarative Linux systemd user services — `[bootstrap.user].login_shell`
-//! — and `[bootstrap.hooks]` bootstrap phase hooks.
+//! — `[bootstrap.mise_shell_activate]` shell activation setup — and
+//! `[bootstrap.hooks]` bootstrap phase hooks.
 //! These are intentionally not part of `[tools]`: they're unversioned,
 //! machine-global settings and resources, not mise's per-project toolset.
 
@@ -21,6 +22,9 @@ use crate::config::{Config, ConfigMap};
 use crate::system::defaults::{DefaultsRequest, DefaultsValue};
 use crate::system::launchd::{LaunchdRequest, LaunchdTomlConfig};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
+use crate::system::shell_activation::{
+    ShellActivationMode, ShellActivationRequest, ShellActivationShell, ShellActivationTarget,
+};
 use crate::system::systemd::{SystemdRequest, SystemdTomlConfig};
 
 pub mod defaults;
@@ -30,6 +34,7 @@ pub mod hooks;
 pub mod launchd;
 pub mod login_shell;
 pub mod packages;
+pub mod shell_activation;
 pub(crate) mod sudo;
 pub mod systemd;
 
@@ -53,6 +58,10 @@ pub struct BootstrapTomlConfig {
     /// Homebrew-specific bootstrap package config.
     #[serde(default)]
     pub brew: SystemBrewTomlConfig,
+    /// Shell activation setup. Values stay raw TOML so future options can warn
+    /// and be skipped without rejecting the whole config.
+    #[serde(default)]
+    pub mise_shell_activate: IndexMap<String, toml::Value>,
     /// Bootstrap phase hooks. Values stay raw TOML so newer hook shapes can
     /// warn and be skipped without rejecting the whole config.
     #[serde(default)]
@@ -784,6 +793,242 @@ pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShel
     shell.map(|shell| login_shell::LoginShellRequest { shell })
 }
 
+/// Aggregate `[bootstrap.mise_shell_activate]` across all loaded config files.
+///
+/// Target keys merge global -> local, with local config overriding broader
+/// config. Shell keys are shortcuts that expand to that shell's default target
+/// files before target-specific keys in the same config are applied. Explicit
+/// `[dotfiles]` edits for the same rc file/id win over the generated shell
+/// activation edit.
+pub fn shell_activation_from_config(config: &Config) -> Vec<ShellActivationRequest> {
+    shell_activation_from_config_files(&config.config_files)
+}
+
+pub fn shell_activation_from_config_files(config_files: &ConfigMap) -> Vec<ShellActivationRequest> {
+    let explicit_files = files::files_from_config_files(config_files);
+    let explicit_edits = edits::edits_from_config_files(config_files);
+    let mut merged: IndexMap<ShellActivationTarget, Option<ShellActivationMode>> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local
+    for cf in config_files.values().rev() {
+        if let Some(sys) = cf.bootstrap_config() {
+            let mut shell_entries = vec![];
+            let mut target_entries = vec![];
+            for (key, value) in sys.mise_shell_activate {
+                if let Some(shell) = ShellActivationShell::parse(&key) {
+                    shell_entries.push((key, shell, value));
+                } else if let Some(target) = ShellActivationTarget::parse(&key) {
+                    target_entries.push((key, target, value));
+                } else {
+                    warn!(
+                        "[bootstrap.mise_shell_activate]: unknown target '{key}' \
+                         (expected {}), ignoring entry",
+                        ShellActivationTarget::expected_keys()
+                    );
+                    continue;
+                };
+            }
+            for (key, shell, value) in shell_entries {
+                match shell_activation_setting(&key, value) {
+                    Some(setting) => {
+                        for &target in shell.default_targets() {
+                            merge_shell_activation_target(&mut merged, target, setting);
+                        }
+                    }
+                    None => {
+                        warn_shell_activation_invalid_shell_retains_broader(&merged, &key, shell);
+                    }
+                }
+            }
+            for (key, target, value) in target_entries {
+                match shell_activation_setting(&key, value) {
+                    Some(setting) => {
+                        merge_shell_activation_target(&mut merged, target, setting);
+                    }
+                    None => {
+                        warn_shell_activation_invalid_target_retains_broader(&merged, &key, target);
+                    }
+                }
+            }
+        }
+    }
+    merged
+        .into_iter()
+        .filter_map(|(target, mode)| {
+            mode.and_then(|mode| {
+                let request = ShellActivationRequest::new(target, mode);
+                if explicit_files
+                    .iter()
+                    .any(|file| file.target == request.edit.path)
+                {
+                    debug!(
+                        "bootstrap: shell activation for {} skipped because [dotfiles] owns {}",
+                        target.name(),
+                        request.edit.path_raw
+                    );
+                    return None;
+                }
+                if explicit_edits
+                    .iter()
+                    .any(|edit| edit.path == request.edit.path && edit.id == request.edit.id)
+                {
+                    debug!(
+                        "bootstrap: shell activation for {} skipped because [dotfiles] owns {}/{}",
+                        target.name(),
+                        request.edit.path_raw,
+                        request.edit.id
+                    );
+                    None
+                } else {
+                    Some(request)
+                }
+            })
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+struct ShellActivationSetting {
+    enabled: bool,
+    mode: Option<ShellActivationMode>,
+}
+
+fn merge_shell_activation_target(
+    merged: &mut IndexMap<ShellActivationTarget, Option<ShellActivationMode>>,
+    target: ShellActivationTarget,
+    setting: ShellActivationSetting,
+) {
+    let mode = setting
+        .enabled
+        .then(|| setting.mode.unwrap_or_else(|| target.default_mode()));
+    merged.insert(target, mode);
+}
+
+fn shell_activation_setting(key: &str, value: toml::Value) -> Option<ShellActivationSetting> {
+    match value {
+        toml::Value::Boolean(enabled) => Some(ShellActivationSetting {
+            enabled,
+            mode: None,
+        }),
+        toml::Value::String(mode) => {
+            let Some(mode) = ShellActivationMode::parse(&mode) else {
+                warn!(
+                    "[bootstrap.mise_shell_activate.{key}]: expected \"activate\" or \"shims\", \
+                     ignoring entry"
+                );
+                return None;
+            };
+            Some(ShellActivationSetting {
+                enabled: true,
+                mode: Some(mode),
+            })
+        }
+        toml::Value::Table(table) => {
+            let unknown = table
+                .keys()
+                .filter(|key| !matches!(key.as_str(), "enabled" | "mode"))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !unknown.is_empty() {
+                warn!(
+                    "[bootstrap.mise_shell_activate.{key}]: unknown field(s) {}, ignoring entry",
+                    unknown.join(", ")
+                );
+                return None;
+            }
+            let enabled = match table.get("enabled") {
+                Some(toml::Value::Boolean(enabled)) => *enabled,
+                Some(_) => {
+                    warn!(
+                        "[bootstrap.mise_shell_activate.{key}].enabled: expected bool, \
+                         ignoring entry"
+                    );
+                    return None;
+                }
+                None => {
+                    warn!("[bootstrap.mise_shell_activate.{key}]: missing enabled, ignoring entry");
+                    return None;
+                }
+            };
+            let mode = match table.get("mode") {
+                Some(toml::Value::String(mode)) => {
+                    let Some(mode) = ShellActivationMode::parse(mode) else {
+                        warn!(
+                            "[bootstrap.mise_shell_activate.{key}].mode: expected \"activate\" or \
+                             \"shims\", ignoring entry"
+                        );
+                        return None;
+                    };
+                    Some(mode)
+                }
+                Some(_) => {
+                    warn!(
+                        "[bootstrap.mise_shell_activate.{key}].mode: expected string, ignoring entry"
+                    );
+                    return None;
+                }
+                None => None,
+            };
+            Some(ShellActivationSetting { enabled, mode })
+        }
+        _ => {
+            warn!(
+                "[bootstrap.mise_shell_activate.{key}]: expected bool, \"activate\", \"shims\", \
+                 or table, ignoring entry"
+            );
+            None
+        }
+    }
+}
+
+fn warn_shell_activation_invalid_shell_retains_broader(
+    merged: &IndexMap<ShellActivationTarget, Option<ShellActivationMode>>,
+    key: &str,
+    shell: ShellActivationShell,
+) {
+    let retained = shell
+        .default_targets()
+        .iter()
+        .filter_map(|target| {
+            merged.get(target).map(|mode| {
+                format!(
+                    "{}={}",
+                    target.name(),
+                    shell_activation_setting_display(*mode)
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    if !retained.is_empty() {
+        warn!(
+            "[bootstrap.mise_shell_activate.{key}]: invalid entry ignored; keeping broader config \
+             values {}",
+            retained.join(", ")
+        );
+    }
+}
+
+fn warn_shell_activation_invalid_target_retains_broader(
+    merged: &IndexMap<ShellActivationTarget, Option<ShellActivationMode>>,
+    key: &str,
+    target: ShellActivationTarget,
+) {
+    if let Some(mode) = merged.get(&target) {
+        warn!(
+            "[bootstrap.mise_shell_activate.{key}]: invalid entry ignored; keeping broader config \
+             value {}",
+            shell_activation_setting_display(*mode)
+        );
+    }
+}
+
+fn shell_activation_setting_display(setting: Option<ShellActivationMode>) -> &'static str {
+    match setting {
+        Some(ShellActivationMode::Activate) => "activate",
+        Some(ShellActivationMode::Shims) => "shims",
+        None => "disabled",
+    }
+}
+
 /// Aggregate `[bootstrap.hooks]` across all loaded config files.
 ///
 /// Hooks are additive and ordered global -> local. A hook value can be a string
@@ -1183,6 +1428,59 @@ mod tests {
         assert_eq!(
             merged.get(&("com.apple.dock".into(), "tilesize".into())),
             Some(&toml::Value::Integer(48))
+        );
+    }
+
+    #[test]
+    fn test_shell_activation_setting_bool_string_and_table_forms() {
+        assert_eq!(
+            shell_activation_setting("zshrc", tv("true")),
+            Some(ShellActivationSetting {
+                enabled: true,
+                mode: None
+            })
+        );
+        assert_eq!(
+            shell_activation_setting("bashrc", tv("false")),
+            Some(ShellActivationSetting {
+                enabled: false,
+                mode: None
+            })
+        );
+        assert_eq!(
+            shell_activation_setting("zprofile", tv(r#""shims""#)),
+            Some(ShellActivationSetting {
+                enabled: true,
+                mode: Some(ShellActivationMode::Shims)
+            })
+        );
+        assert_eq!(
+            shell_activation_setting("fish", tv(r#"{enabled = true, mode = "activate"}"#)),
+            Some(ShellActivationSetting {
+                enabled: true,
+                mode: Some(ShellActivationMode::Activate)
+            })
+        );
+        assert_eq!(
+            shell_activation_setting("fish", tv("{enabled = false}")),
+            Some(ShellActivationSetting {
+                enabled: false,
+                mode: None
+            })
+        );
+    }
+
+    #[test]
+    fn test_shell_activation_setting_skips_invalid_options() {
+        assert_eq!(
+            shell_activation_setting("zshrc", tv(r#"{enabled = true, prompt = true}"#)),
+            None
+        );
+        assert_eq!(shell_activation_setting("zshrc", tv("{}")), None);
+        assert_eq!(shell_activation_setting("zshrc", tv(r#""yes""#)), None);
+        assert_eq!(
+            shell_activation_setting("zshrc", tv(r#"{enabled = true, mode = "yes"}"#)),
+            None
         );
     }
 

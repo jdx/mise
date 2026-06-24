@@ -179,6 +179,7 @@ pub(crate) fn apply_login_shell_with_report(
             return Ok(BootstrapApplyReport::default());
         }
     }
+
     login_shell::apply(&request, dry_run)?;
     if !dry_run {
         if print_follow_up {
@@ -194,6 +195,28 @@ pub(crate) fn apply_login_shell_with_report(
         needs_follow_up,
         skipped_reason: None,
     })
+}
+
+/// Apply `[bootstrap.mise_shell_activate]` entries using dotfile edit blocks.
+pub(crate) fn apply_shell_activation(
+    config: &Config,
+    requests: Vec<system::shell_activation::ShellActivationRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    if requests.is_empty() {
+        return Ok(());
+    }
+    let edits = requests
+        .into_iter()
+        .map(|request| request.edit)
+        .collect::<Vec<_>>();
+    let opts = system::edits::ApplyOpts {
+        dry_run,
+        verbose: Settings::get().verbose,
+        yes,
+    };
+    system::edits::apply(config, &edits, &opts)
 }
 
 /// Apply `[bootstrap.macos.launchd.agents]` entries that are missing, changed,
