@@ -116,9 +116,11 @@ mise bootstrap --dry-run
 ```
 
 When `mise bootstrap` applies or would apply something that needs user
-follow-up, it prints a final `bootstrap: follow-up` section. Dry runs use
-`bootstrap: follow-up if applied`. The section is omitted when there is
-nothing actionable to report.
+follow-up, it prints a final `bootstrap: follow-up` section after a successful
+run. Dry runs use `bootstrap: follow-up if applied`. If a later bootstrap phase
+fails after earlier phases already produced follow-up items, mise prints those
+items before returning the error. The section is omitted when there is nothing
+actionable to report.
 
 By default, bootstrap refuses dotfile conflicts rather than replacing local
 files. Use `mise bootstrap --force-dotfiles` when you explicitly want the

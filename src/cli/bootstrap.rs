@@ -384,7 +384,7 @@ impl Bootstrap {
                 let report =
                     install::apply_defaults_with_report(defaults, self.dry_run, self.yes, false)
                         .await?;
-                if report.changed {
+                if report.needs_follow_up {
                     follow_up.add_macos_defaults();
                 }
                 if let Some(reason) = report.skipped_reason {
@@ -449,7 +449,7 @@ impl Bootstrap {
                     self.yes,
                     false,
                 )?;
-                if report.changed
+                if report.needs_follow_up
                     && let Some(shell) = shell.as_ref()
                 {
                     follow_up.add_login_shell(shell);
@@ -594,6 +594,7 @@ impl Bootstrap {
 struct BootstrapFollowUp {
     dry_run: bool,
     items: Vec<String>,
+    printed: bool,
 }
 
 impl BootstrapFollowUp {
@@ -601,6 +602,7 @@ impl BootstrapFollowUp {
         Self {
             dry_run,
             items: vec![],
+            printed: false,
         }
     }
 
@@ -641,7 +643,22 @@ impl BootstrapFollowUp {
         self.items.push(message);
     }
 
-    fn print(&self) -> Result<()> {
+    fn print(&mut self) -> Result<()> {
+        self.printed = true;
+        self.print_inner()
+    }
+
+    fn print_best_effort(&mut self) {
+        if self.printed {
+            return;
+        }
+        self.printed = true;
+        if let Err(err) = self.print_inner() {
+            debug!("bootstrap: failed to print follow-up after error: {err}");
+        }
+    }
+
+    fn print_inner(&self) -> Result<()> {
         if self.items.is_empty() {
             return Ok(());
         }
@@ -654,6 +671,12 @@ impl BootstrapFollowUp {
             miseprintln!("  - {item}");
         }
         Ok(())
+    }
+}
+
+impl Drop for BootstrapFollowUp {
+    fn drop(&mut self) {
+        self.print_best_effort();
     }
 }
 

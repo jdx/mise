@@ -6,7 +6,9 @@ use crate::system;
 
 #[derive(Debug, Default)]
 pub(crate) struct BootstrapApplyReport {
-    pub changed: bool,
+    /// Whether top-level `mise bootstrap` should print a user follow-up item
+    /// for this phase after a successful apply or dry-run.
+    pub needs_follow_up: bool,
     pub skipped_reason: Option<String>,
 }
 
@@ -93,7 +95,7 @@ pub(crate) async fn apply_defaults_with_report(
         let reason = defaults::unavailable_reason();
         debug!("defaults: skipping, {reason}");
         return Ok(BootstrapApplyReport {
-            changed: false,
+            needs_follow_up: false,
             skipped_reason: Some(reason),
         });
     }
@@ -131,7 +133,7 @@ pub(crate) async fn apply_defaults_with_report(
         }
     }
     Ok(BootstrapApplyReport {
-        changed: true,
+        needs_follow_up: true,
         skipped_reason: None,
     })
 }
@@ -160,7 +162,7 @@ pub(crate) fn apply_login_shell_with_report(
         let reason = login_shell::unavailable_reason();
         debug!("login_shell: skipping, {reason}");
         return Ok(BootstrapApplyReport {
-            changed: false,
+            needs_follow_up: false,
             skipped_reason: Some(reason),
         });
     }
@@ -169,7 +171,7 @@ pub(crate) fn apply_login_shell_with_report(
         info!("login_shell: already set to {}", request.shell);
         return Ok(BootstrapApplyReport::default());
     }
-    let needs_new_session = matches!(status.state, LoginShellState::Differs { .. });
+    let needs_follow_up = status.state != LoginShellState::Set;
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("login_shell: run `chsh -s {}`?", request.shell);
         if !crate::ui::prompt::confirm(msg)? {
@@ -189,7 +191,7 @@ pub(crate) fn apply_login_shell_with_report(
         }
     }
     Ok(BootstrapApplyReport {
-        changed: needs_new_session,
+        needs_follow_up,
         skipped_reason: None,
     })
 }
@@ -219,7 +221,7 @@ pub(crate) async fn apply_launchd_with_report(
         let reason = launchd::unavailable_reason();
         debug!("launchd: skipping, {reason}");
         return Ok(BootstrapApplyReport {
-            changed: false,
+            needs_follow_up: false,
             skipped_reason: Some(reason),
         });
     }
@@ -249,7 +251,7 @@ pub(crate) async fn apply_launchd_with_report(
         info!("launchd: installed/loaded {}", list.join(", "));
     }
     Ok(BootstrapApplyReport {
-        changed: true,
+        needs_follow_up: false,
         skipped_reason: None,
     })
 }
@@ -279,7 +281,7 @@ pub(crate) async fn apply_systemd_with_report(
         let reason = systemd::unavailable_reason();
         debug!("systemd: skipping, {reason}");
         return Ok(BootstrapApplyReport {
-            changed: false,
+            needs_follow_up: false,
             skipped_reason: Some(reason),
         });
     }
@@ -309,7 +311,7 @@ pub(crate) async fn apply_systemd_with_report(
         info!("systemd: applied {}", list.join(", "));
     }
     Ok(BootstrapApplyReport {
-        changed: true,
+        needs_follow_up: false,
         skipped_reason: None,
     })
 }
