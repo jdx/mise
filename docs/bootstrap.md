@@ -62,8 +62,9 @@ task runs every time, so keep it idempotent.
 "~/.config/nvim" = { mode = "symlink" }
 
 [bootstrap.mise_shell_activate]
-zsh = true
-fish = true
+zprofile = "shims"
+zshrc = "activate"
+fish = "activate"
 
 [bootstrap.macos.dock]
 autohide = true
@@ -164,7 +165,7 @@ only want to check one part without installing anything.
 | ---------------------------------- | ------------------------------------------------------------- |
 | `[bootstrap.packages]`             | OS packages from apk, apt, dnf, pacman, or brew               |
 | `[dotfiles]`                       | Whole-file dotfiles and small managed edits to existing files |
-| `[bootstrap.mise_shell_activate]`  | mise activation snippets in bash, zsh, or fish rc files       |
+| `[bootstrap.mise_shell_activate]`  | mise activation snippets in shell startup files               |
 | `[bootstrap.macos.*]`              | Curated macOS preferences for Dock/Finder/keyboard/trackpad   |
 | `[bootstrap.macos.defaults]`       | macOS user preferences written through `defaults write`       |
 | `[bootstrap.macos.launchd.agents]` | macOS user LaunchAgents written and loaded with `launchctl`   |

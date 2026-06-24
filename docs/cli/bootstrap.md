@@ -14,19 +14,21 @@ Runs the bootstrap steps for the current config in order:
    then `[bootstrap.hooks.post-packages]`
 2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-3. `mise bootstrap macos-defaults apply` — write
+3. `mise bootstrap shell apply` — configure shell activation from
+   `[bootstrap.mise_shell_activate]`
+4. `mise bootstrap macos-defaults apply` — write
    `[bootstrap.macos.defaults]` entries (macOS)
    surrounded by `pre-defaults`/`post-defaults` hooks
-4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
-5. `mise bootstrap systemd apply` — install/start systemd user services
+5. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+6. `mise bootstrap systemd apply` — install/start systemd user services
    (Linux)
-6. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+7. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
    (Unix)
    surrounded by `pre-user`/`post-user` hooks
-7. `mise install` — install missing tools from `[tools]`
+8. `mise install` — install missing tools from `[tools]`
    surrounded by `pre-tools`/`post-tools` hooks
-8. `mise run bootstrap` — if a task named `bootstrap` is defined
-9. `[bootstrap.hooks.final]` — optional final hook
+9. `mise run bootstrap` — if a task named `bootstrap` is defined
+10. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -81,6 +83,7 @@ Can be passed multiple times or as a comma-separated list.
 
 - `packages`
 - `dotfiles`
+- `shell`
 - `defaults`
 - `launchd`
 - `systemd`
@@ -98,6 +101,7 @@ Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-
 - [`mise bootstrap launchd <SUBCOMMAND>`](/cli/bootstrap/launchd.md)
 - [`mise bootstrap macos-defaults <SUBCOMMAND>`](/cli/bootstrap/macos-defaults.md)
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.md)
+- [`mise bootstrap shell <SUBCOMMAND>`](/cli/bootstrap/shell.md)
 - [`mise bootstrap status [-J --json] [--missing]`](/cli/bootstrap/status.md)
 - [`mise bootstrap systemd <SUBCOMMAND>`](/cli/bootstrap/systemd.md)
 - [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.md)
@@ -114,5 +118,6 @@ mise bootstrap packages install --yes
 mise bootstrap macos-defaults status
 mise bootstrap launchd apply --dry-run
 mise bootstrap systemd apply --dry-run
+mise bootstrap shell apply --dry-run
 mise bootstrap user apply --dry-run
 ```

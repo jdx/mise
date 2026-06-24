@@ -649,6 +649,21 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
     Ok(())
 }
 
+/// Simulate applying an edit to in-memory text for bootstrap dry-run config
+/// discovery. Template edits are intentionally not rendered during dry-runs
+/// because rendering may execute user commands.
+pub fn apply_dry_run_to_string(
+    config: &Config,
+    req: &EditRequest,
+    text: &str,
+) -> Result<Option<String>> {
+    if matches!(&req.op, EditOp::Block { template: true, .. }) {
+        return Ok(None);
+    }
+    let desired = desired_content(config, req)?;
+    apply_to_string(req, desired.as_deref(), text).map(Some)
+}
+
 fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {
     debug!("edits: {} ({})", req.path.display_user(), req.describe_op());
     if let Some(parent) = req.path.parent() {
@@ -659,6 +674,13 @@ fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {
     } else {
         String::new()
     };
+    let out = apply_to_string(req, desired, &text)?;
+    // file::write truncates in place, preserving the file's permissions
+    file::write(&req.path, &out)?;
+    Ok(())
+}
+
+fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Result<String> {
     let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
     match &req.op {
         EditOp::Block { comment, .. } => {
@@ -698,9 +720,7 @@ fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {
     }
     let mut out = lines.join("\n");
     out.push('\n');
-    // file::write truncates in place, preserving the file's permissions
-    file::write(&req.path, &out)?;
-    Ok(())
+    Ok(out)
 }
 
 #[cfg(test)]

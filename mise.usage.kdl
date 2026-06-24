@@ -292,19 +292,21 @@ Runs the bootstrap steps for the current config in order:
    then `[bootstrap.hooks.post-packages]`
 2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-3. `mise bootstrap macos-defaults apply` — write
+3. `mise bootstrap shell apply` — configure shell activation from
+   `[bootstrap.mise_shell_activate]`
+4. `mise bootstrap macos-defaults apply` — write
    `[bootstrap.macos.defaults]` entries (macOS)
    surrounded by `pre-defaults`/`post-defaults` hooks
-4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
-5. `mise bootstrap systemd apply` — install/start systemd user services
+5. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+6. `mise bootstrap systemd apply` — install/start systemd user services
    (Linux)
-6. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+7. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
    (Unix)
    surrounded by `pre-user`/`post-user` hooks
-7. `mise install` — install missing tools from `[tools]`
+8. `mise install` — install missing tools from `[tools]`
    surrounded by `pre-tools`/`post-tools` hooks
-8. `mise run bootstrap` — if a task named `bootstrap` is defined
-9. `[bootstrap.hooks.final]` — optional final hook
+9. `mise run bootstrap` — if a task named `bootstrap` is defined
+10. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -328,6 +330,7 @@ Examples:
     $ mise bootstrap macos-defaults status
     $ mise bootstrap launchd apply --dry-run
     $ mise bootstrap systemd apply --dry-run
+    $ mise bootstrap shell apply --dry-run
     $ mise bootstrap user apply --dry-run
 
 """#
@@ -351,7 +354,7 @@ Skip one or more bootstrap parts
 Can be passed multiple times or as a comma-separated list.
 """#
         arg <SKIP> {
-            choices packages dotfiles defaults launchd systemd user tools task final-hook
+            choices packages dotfiles shell defaults launchd systemd user tools task final-hook
         }
     }
     flag --update help="Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
@@ -585,6 +588,16 @@ Examples:
             }
             flag "-y --yes" help="Skip the confirmation prompt"
             arg <PACKAGE>… help="Packages in `manager:package[@version]` form" var=#true
+        }
+    }
+    cmd shell subcommand_required=#true help="Manage mise shell activation from `[bootstrap.mise_shell_activate]`" {
+        cmd apply {
+            flag "-n --dry-run" help="Print the actions that would run without writing anything"
+            flag "-y --yes" help="Skip the confirmation prompt"
+        }
+        cmd status {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured shell activation is not in its desired state"
         }
     }
     cmd status help="Show the aggregate bootstrap status" {

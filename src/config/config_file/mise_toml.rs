@@ -2370,9 +2370,7 @@ mod tests {
         [bootstrap.mise_shell_activate]
         zsh = true
         bash = false
-
-        [bootstrap.mise_shell_activate.fish]
-        enabled = true
+        fish = {enabled = true}
         "#,
         )
         .unwrap();

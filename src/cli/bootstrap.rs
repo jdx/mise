@@ -130,8 +130,8 @@ enum Commands {
     Launchd(BootstrapLaunchd),
     MacosDefaults(BootstrapMacosDefaults),
     Packages(BootstrapPackages),
-    Status(BootstrapStatus),
     Shell(BootstrapShell),
+    Status(BootstrapStatus),
     Systemd(BootstrapSystemd),
     User(BootstrapUser),
 }
@@ -422,7 +422,8 @@ impl Bootstrap {
                 system::edits::apply(&config, &edits, &opts)?;
             }
             if self.dry_run {
-                let config_files = self.config_files_after_dotfiles_dry_run(&config, &files)?;
+                let config_files =
+                    self.config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
                 hooks = system::hooks_from_config_files(&config_files);
                 dry_run_config_files = Some(config_files);
             } else {
@@ -600,21 +601,82 @@ impl Bootstrap {
         &self,
         config: &Config,
         files: &[FileRequest],
+        edits: &[system::edits::EditRequest],
     ) -> Result<config::ConfigMap> {
         let mut config_files = config.config_files.clone();
+        let mut bodies = indexmap::IndexMap::new();
         for file in files {
             if !is_mise_config_target(&file.target) || !file.source.is_file() {
                 continue;
             }
-            match parse_dotfile_mise_config(config, file) {
-                Ok(cf) => {
-                    config_files.insert(file.target.clone(), cf);
+            match dotfile_mise_config_body(config, file) {
+                Ok(body) => match parse_mise_config_body(&file.target, &body) {
+                    Ok(cf) => {
+                        bodies.insert(file.target.clone(), body);
+                        config_files.insert(file.target.clone(), cf);
+                    }
+                    Err(err) => {
+                        warn!(
+                            "[dotfiles].\"{}\": failed to parse config source {}: {err}",
+                            file.target_raw,
+                            file.source.display()
+                        );
+                    }
+                },
+                Err(err) => {
+                    warn!(
+                        "[dotfiles].\"{}\": failed to read config source {}: {err}",
+                        file.target_raw,
+                        file.source.display()
+                    );
+                }
+            }
+        }
+        for edit in edits {
+            if !is_mise_config_target(&edit.path) {
+                continue;
+            }
+            let body = match bodies.get(&edit.path) {
+                Some(body) => body.clone(),
+                None if edit.path.exists() => match crate::file::read_to_string(&edit.path) {
+                    Ok(body) => body,
+                    Err(err) => {
+                        warn!(
+                            "[dotfiles].\"{}\": failed to read config target {}: {err}",
+                            edit.config_key(),
+                            edit.path.display()
+                        );
+                        continue;
+                    }
+                },
+                None => String::new(),
+            };
+            match system::edits::apply_dry_run_to_string(config, edit, &body) {
+                Ok(Some(body)) => match parse_mise_config_body(&edit.path, &body) {
+                    Ok(cf) => {
+                        bodies.insert(edit.path.clone(), body);
+                        config_files.insert(edit.path.clone(), cf);
+                    }
+                    Err(err) => {
+                        warn!(
+                            "[dotfiles].\"{}\": failed to parse edited config target {}: {err}",
+                            edit.config_key(),
+                            edit.path.display()
+                        );
+                    }
+                },
+                Ok(None) => {
+                    debug!(
+                        "bootstrap: edited config target {} skipped in dry-run config simulation \
+                         because the edit requires template rendering",
+                        edit.path.display()
+                    );
                 }
                 Err(err) => {
                     warn!(
-                        "[dotfiles].\"{}\": failed to parse config source {}: {err}",
-                        file.target_raw,
-                        file.source.display()
+                        "[dotfiles].\"{}\": failed to simulate config edit for {}: {err}",
+                        edit.config_key(),
+                        edit.path.display()
                     );
                 }
             }
@@ -758,16 +820,19 @@ impl Drop for BootstrapFollowUp {
     }
 }
 
-fn parse_dotfile_mise_config(
-    config: &Config,
-    file: &FileRequest,
+fn dotfile_mise_config_body(config: &Config, file: &FileRequest) -> Result<String> {
+    match file.mode {
+        FileMode::Template => system::files::render_template(config, file),
+        _ => crate::file::read_to_string(&file.source),
+    }
+}
+
+fn parse_mise_config_body(
+    path: &std::path::Path,
+    body: &str,
 ) -> Result<Arc<dyn config::config_file::ConfigFile>> {
-    let body = match file.mode {
-        FileMode::Template => system::files::render_template(config, file)?,
-        _ => crate::file::read_to_string(&file.source)?,
-    };
     Ok(Arc::new(
-        config::config_file::mise_toml::MiseToml::from_str(&body, &file.target)?,
+        config::config_file::mise_toml::MiseToml::from_str(body, path)?,
     ))
 }
 
@@ -789,8 +854,8 @@ impl Commands {
             Self::Launchd(cmd) => cmd.run().await,
             Self::MacosDefaults(cmd) => cmd.run().await,
             Self::Packages(cmd) => cmd.run().await,
-            Self::Status(cmd) => cmd.run().await,
             Self::Shell(cmd) => cmd.run().await,
+            Self::Status(cmd) => cmd.run().await,
             Self::Systemd(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
         }
@@ -1714,8 +1779,10 @@ impl BootstrapShellStatus {
             any_missing |= state != FileState::Applied;
             if self.json {
                 let mut entry = json!({
+                    "target": request.target.name(),
                     "shell": request.shell.name(),
                     "path": request.edit.path_raw,
+                    "mode": request.mode.name(),
                     "state": file_state_json(&state),
                 });
                 if let FileState::Differs(reason) = &state {
@@ -1724,8 +1791,10 @@ impl BootstrapShellStatus {
                 json_entries.push(entry);
             } else {
                 rows.push(vec![
+                    request.target.name().to_string(),
                     request.shell.name().to_string(),
                     request.edit.path_raw.clone(),
+                    request.mode.name().to_string(),
                     file_state_display(&state),
                 ]);
             }
@@ -1740,7 +1809,7 @@ impl BootstrapShellStatus {
         } else if rows.is_empty() {
             info!("nothing configured in [bootstrap.mise_shell_activate]");
         } else {
-            let mut table = MiseTable::new(false, &["Shell", "Path", "State"]);
+            let mut table = MiseTable::new(false, &["Target", "Shell", "Path", "Mode", "State"]);
             for row in rows {
                 table.add_row(row);
             }

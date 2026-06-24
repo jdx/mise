@@ -92,9 +92,10 @@ tools, then a `bootstrap` task if you define one:
 "~/.gitconfig" = { mode = "symlink" }
 "~/.config/nvim" = { mode = "symlink" }
 
-[bootstrap.mise_shell_activate]       # mise activation in shell rc files
-zsh = true
-fish = true
+[bootstrap.mise_shell_activate]       # mise activation in shell startup files
+zprofile = "shims"
+zshrc = "activate"
+fish = "activate"
 
 [bootstrap.macos.dock]                 # friendly macOS defaults
 autohide = true

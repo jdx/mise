@@ -204,6 +204,13 @@ Add bootstrap packages to [bootstrap.packages] and install them
 \fIAliases: \fRu
 .RE
 .TP
+\fBbootstrap shell\fR
+Manage mise shell activation from `[bootstrap.mise_shell_activate]`
+.TP
+\fBbootstrap shell apply\fR
+.TP
+\fBbootstrap shell status\fR
+.TP
 \fBbootstrap status\fR
 Show the aggregate bootstrap status
 .RS
@@ -818,19 +825,21 @@ Runs the bootstrap steps for the current config in order:
    then `[bootstrap.hooks.post\-packages]`
 2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre\-dotfiles`/`post\-dotfiles` hooks
-3. `mise bootstrap macos\-defaults apply` — write
+3. `mise bootstrap shell apply` — configure shell activation from
+   `[bootstrap.mise_shell_activate]`
+4. `mise bootstrap macos\-defaults apply` — write
    `[bootstrap.macos.defaults]` entries (macOS)
    surrounded by `pre\-defaults`/`post\-defaults` hooks
-4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
-5. `mise bootstrap systemd apply` — install/start systemd user services
+5. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+6. `mise bootstrap systemd apply` — install/start systemd user services
    (Linux)
-6. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+7. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
    (Unix)
    surrounded by `pre\-user`/`post\-user` hooks
-7. `mise install` — install missing tools from `[tools]`
+8. `mise install` — install missing tools from `[tools]`
    surrounded by `pre\-tools`/`post\-tools` hooks
-8. `mise run bootstrap` — if a task named `bootstrap` is defined
-9. `[bootstrap.hooks.final]` — optional final hook
+9. `mise run bootstrap` — if a task named `bootstrap` is defined
+10. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re\-running is safe. The `bootstrap` task runs on every
@@ -1126,6 +1135,28 @@ Skip the confirmation prompt
 .TP
 \fB<PACKAGE>\fR
 Packages in `manager:package[@version]` form
+.SH "MISE BOOTSTRAP SHELL APPLY"
+\fBUsage:\fR mise bootstrap shell apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the actions that would run without writing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP SHELL STATUS"
+\fBUsage:\fR mise bootstrap shell status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured shell activation is not in its desired state
 .SH "MISE BOOTSTRAP STATUS"
 Show the aggregate bootstrap status
 .PP
