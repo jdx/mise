@@ -222,7 +222,7 @@ fn clone_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
     if dry_run {
         miseprintln!("{}", shell_words::join(clone_command_parts(request)));
         if let Some(git_ref) = checkout_after_clone_ref(request) {
-            print_git_command(&request.path, &["checkout", git_ref])?;
+            print_git_command(&request.path, &["checkout", checkout_ref_for(git_ref)])?;
         }
         return Ok(());
     }
@@ -236,7 +236,7 @@ fn clone_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
     }
     run_command(&mut cmd)?;
     if let Some(git_ref) = checkout_after_clone_ref(request) {
-        git_run(&request.path, &["checkout", git_ref])?;
+        git_run(&request.path, &["checkout", checkout_ref_for(git_ref)])?;
     }
     Ok(())
 }
@@ -247,16 +247,22 @@ fn update_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
     };
     if dry_run {
         print_git_command(&request.path, &["fetch", "--prune", "--tags", "origin"])?;
-        print_git_command(&request.path, &["checkout", git_ref])?;
+        print_git_command(&request.path, &["checkout", checkout_ref_for(git_ref)])?;
         if should_pull_after_checkout(&request.path, git_ref) {
-            print_git_command(&request.path, &["pull", "--ff-only", "origin", git_ref])?;
+            print_git_command(
+                &request.path,
+                &["pull", "--ff-only", "origin", pull_ref_for(git_ref)],
+            )?;
         }
         return Ok(());
     }
     git_run(&request.path, &["fetch", "--prune", "--tags", "origin"])?;
-    git_run(&request.path, &["checkout", git_ref])?;
-    if current_ref(&request.path).ok().as_deref() == Some(git_ref.as_str()) {
-        git_run(&request.path, &["pull", "--ff-only", "origin", git_ref])?;
+    git_run(&request.path, &["checkout", checkout_ref_for(git_ref)])?;
+    if should_pull_after_checkout(&request.path, git_ref) {
+        git_run(
+            &request.path,
+            &["pull", "--ff-only", "origin", pull_ref_for(git_ref)],
+        )?;
     }
     Ok(())
 }
@@ -362,7 +368,16 @@ fn is_full_sha(git_ref: &str) -> bool {
 }
 
 fn is_git_repo(path: &Path) -> bool {
-    git_output(path, &["rev-parse", "--is-inside-work-tree"]).is_ok_and(|out| out == "true")
+    let Ok(top_level) = git_output(path, &["rev-parse", "--show-toplevel"]) else {
+        return false;
+    };
+    paths_equal(path, Path::new(&top_level))
+}
+
+fn paths_equal(left: &Path, right: &Path) -> bool {
+    let left = std::fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
+    let right = std::fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
+    left == right
 }
 
 fn is_dir_empty(path: &Path) -> Result<bool> {
@@ -409,6 +424,7 @@ fn should_pull_after_checkout(path: &Path, git_ref: &str) -> bool {
 }
 
 fn local_branch_exists(path: &Path, git_ref: &str) -> Result<bool> {
+    let git_ref = git_ref.strip_prefix("refs/heads/").unwrap_or(git_ref);
     let branch_ref = format!("refs/heads/{git_ref}");
     git_success(path, &["show-ref", "--verify", "--quiet", &branch_ref])
 }
@@ -417,6 +433,14 @@ fn remote_branch_exists(path: &Path, git_ref: &str) -> Result<bool> {
     let git_ref = git_ref.strip_prefix("refs/heads/").unwrap_or(git_ref);
     let branch_ref = format!("refs/heads/{git_ref}");
     Ok(!git_output(path, &["ls-remote", "--heads", "origin", &branch_ref])?.is_empty())
+}
+
+fn checkout_ref_for(git_ref: &str) -> &str {
+    git_ref.strip_prefix("refs/heads/").unwrap_or(git_ref)
+}
+
+fn pull_ref_for(git_ref: &str) -> &str {
+    git_ref.strip_prefix("refs/heads/").unwrap_or(git_ref)
 }
 
 fn git_output(path: &Path, args: &[&str]) -> Result<String> {
@@ -626,6 +650,16 @@ mod tests {
     }
 
     #[test]
+    fn branch_refs_use_branch_name_for_checkout_and_pull() {
+        assert_eq!(checkout_ref_for("refs/heads/main"), "main");
+        assert_eq!(pull_ref_for("refs/heads/main"), "main");
+        assert_eq!(checkout_ref_for("refs/tags/v1"), "refs/tags/v1");
+        assert_eq!(pull_ref_for("refs/tags/v1"), "refs/tags/v1");
+        assert_eq!(checkout_ref_for("main"), "main");
+        assert_eq!(pull_ref_for("main"), "main");
+    }
+
+    #[test]
     fn empty_directory_is_missing() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("target");
@@ -633,6 +667,29 @@ mod tests {
         let request = RepoRequest {
             path_raw: path.display().to_string(),
             path,
+            url: "https://github.com/jdx/mise.git".to_string(),
+            git_ref: None,
+        };
+        let status = status(&[request]).unwrap();
+        assert_eq!(status[0].state, RepoState::Missing);
+    }
+
+    #[test]
+    fn nested_directory_inside_parent_repo_is_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let nested = parent.join("nested");
+        Command::new("git")
+            .args(["init", "-q", "-b", "main"])
+            .arg(&parent)
+            .status()
+            .unwrap();
+        fs::create_dir(&nested).unwrap();
+
+        assert!(!is_git_repo(&nested));
+        let request = RepoRequest {
+            path_raw: nested.display().to_string(),
+            path: nested,
             url: "https://github.com/jdx/mise.git".to_string(),
             git_ref: None,
         };

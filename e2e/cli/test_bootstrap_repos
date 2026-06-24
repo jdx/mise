@@ -49,6 +49,20 @@ echo "local" >"$HOME/src/dotfiles/local.txt"
 assert_fail "mise bootstrap repos apply --yes" "local changes"
 rm -f "$HOME/src/dotfiles/local.txt"
 
+# full branch refs update without detaching or skipping the pull
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/full-ref" = { url = "$SRC_URL", ref = "refs/heads/main" }
+EOF
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat ~/src/full-ref/version.txt" "v2"
+echo "v3" >"$SRC/version.txt"
+commit_all "$SRC" "v3"
+assert_contains "mise bootstrap repos status" "differs"
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat ~/src/full-ref/version.txt" "v3"
+assert "git -C ~/src/full-ref rev-parse --abbrev-ref HEAD" "main"
+
 # empty target directories can be cloned into
 mkdir -p "$HOME/src/empty"
 cat <<EOF >mise.toml
@@ -57,7 +71,7 @@ cat <<EOF >mise.toml
 EOF
 assert_contains "mise bootstrap repos status" "missing"
 assert_succeed "mise bootstrap repos apply --yes"
-assert "cat ~/src/empty/version.txt" "v2"
+assert "cat ~/src/empty/version.txt" "v3"
 
 # tag refs are supported
 cat <<EOF >mise.toml

@@ -66,6 +66,7 @@ Can be passed multiple times or as a comma-separated list. Cannot be used with `
 **Choices:**
 
 - `packages`
+- `repos`
 - `dotfiles`
 - `shell`
 - `defaults`
