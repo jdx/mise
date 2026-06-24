@@ -975,6 +975,7 @@ impl BootstrapStatus {
     async fn collect(&self, config: &Arc<Config>) -> Result<BootstrapStatusReport> {
         let mut report = BootstrapStatusReport::new();
         self.collect_packages(config, &mut report).await?;
+        self.collect_repos(config, &mut report)?;
         self.collect_dotfiles(config, &mut report)?;
         self.collect_shell(config, &mut report)?;
         self.collect_defaults(config, &mut report).await?;
@@ -1054,6 +1055,51 @@ impl BootstrapStatus {
             );
         }
         report.json.insert("packages".to_string(), json!(json_out));
+        Ok(())
+    }
+
+    fn collect_repos(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let repos = system::repos_from_config(config);
+        let mut json_entries = vec![];
+        for s in system::repos::status(&repos)? {
+            let state = s.state.as_str();
+            let (row_state, reason, missing) = match &s.state {
+                RepoState::Current => ("current".to_string(), "".to_string(), false),
+                RepoState::Missing => ("missing".to_string(), "".to_string(), true),
+                RepoState::Differs => ("differs".to_string(), "".to_string(), true),
+                RepoState::Dirty => (
+                    "dirty (local changes)".to_string(),
+                    "local changes".to_string(),
+                    true,
+                ),
+                RepoState::Conflict(reason) => {
+                    (format!("conflict ({reason})"), reason.clone(), true)
+                }
+            };
+            report.row(
+                "repos",
+                s.request.path_raw.clone(),
+                s.current_ref.clone().unwrap_or_default(),
+                row_state,
+                missing,
+            );
+            json_entries.push(json!({
+                "path": s.request.path,
+                "path_raw": s.request.path_raw,
+                "url": s.request.url,
+                "ref": s.request.git_ref,
+                "origin": s.origin,
+                "current_ref": s.current_ref,
+                "current_sha": s.current_sha,
+                "state": state,
+                "reason": reason,
+            }));
+        }
+        report.json.insert("repos".to_string(), json!(json_entries));
         Ok(())
     }
 

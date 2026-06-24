@@ -595,6 +595,16 @@ Examples:
             arg <PACKAGE>… help="Packages in `manager:package[@version]` form" var=#true
         }
     }
+    cmd repos subcommand_required=#true help="Manage git repo checkouts from `[bootstrap.repos]`" {
+        cmd apply {
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+        }
+        cmd status {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured repo is not in its desired state"
+        }
+    }
     cmd shell subcommand_required=#true help="Manage mise shell activation from `[bootstrap.mise_shell_activate]`" {
         cmd apply {
             flag "-n --dry-run" help="Print the actions that would run without writing anything"
@@ -609,16 +619,6 @@ Examples:
         alias ls
         flag "-J --json" help="Output in JSON format"
         flag --missing help="Exit with code 1 if any configured bootstrap state is not in its desired state"
-    }
-    cmd repos subcommand_required=#true help="Manage git repo checkouts from `[bootstrap.repos]`" {
-        cmd apply {
-            flag "-n --dry-run" help="Print the commands that would run without running them"
-            flag "-y --yes" help="Skip the confirmation prompt"
-        }
-        cmd status {
-            flag "-J --json" help="Output in JSON format"
-            flag --missing help="Exit with code 1 if any configured repo is not in its desired state"
-        }
     }
     cmd systemd subcommand_required=#true help="Manage systemd user services from `[bootstrap.linux.systemd.units]`" {
         cmd apply {

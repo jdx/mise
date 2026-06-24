@@ -24,6 +24,9 @@ EOF
 
 assert_contains "mise bootstrap repos status" "missing"
 assert_fail "mise bootstrap repos status --missing"
+assert_contains "mise bootstrap status" "repos"
+assert_contains "mise bootstrap status" "missing"
+assert_fail "mise bootstrap status --missing"
 assert_contains "mise bootstrap repos apply --dry-run" "git clone --branch main $SRC_URL"
 assert_directory_not_exists "$HOME/src/dotfiles"
 
@@ -33,6 +36,8 @@ assert_contains "mise bootstrap repos status" "current"
 assert_succeed "mise bootstrap repos status --json | jq -e . >/dev/null"
 assert_contains "mise bootstrap repos status --json" '"state": "current"'
 assert_succeed "mise bootstrap repos status --missing"
+assert_contains "mise bootstrap status --json" '"repos"'
+assert_succeed "mise bootstrap status --missing"
 
 # idempotent: re-running does not fail
 assert_succeed "mise bootstrap repos apply --yes"

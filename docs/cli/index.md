@@ -88,7 +88,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise backends <SUBCOMMAND>`](/cli/backends.md)
 - [`mise backends ls`](/cli/backends/ls.md)
 - [`mise bin-paths [--bin-names] [-J --json] [TOOL@VERSION]…`](/cli/bin-paths.md)
-- [`mise bootstrap [FLAGS] <SUBCOMMAND>`](/cli/bootstrap.md)
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.md)
 - [`mise bootstrap launchd <SUBCOMMAND>`](/cli/bootstrap/launchd.md)
 - [`mise bootstrap launchd apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/launchd/apply.md)
 - [`mise bootstrap launchd status [-J --json] [--missing]`](/cli/bootstrap/launchd/status.md)

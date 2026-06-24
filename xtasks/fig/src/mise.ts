@@ -1100,6 +1100,44 @@ const completionSpec: Fig.Spec = {
           ],
         },
         {
+          name: "repos",
+          description: "Manage git repo checkouts from `[bootstrap.repos]`",
+          subcommands: [
+            {
+              name: "apply",
+              options: [
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+            },
+            {
+              name: "status",
+              options: [
+                {
+                  name: ["-J", "--json"],
+                  description: "Output in JSON format",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--missing",
+                  description:
+                    "Exit with code 1 if any configured repo is not in its desired state",
+                  isRepeatable: false,
+                },
+              ],
+            },
+          ],
+        },
+        {
           name: "shell",
           description:
             "Manage mise shell activation from `[bootstrap.mise_shell_activate]`",
@@ -1259,6 +1297,7 @@ const completionSpec: Fig.Spec = {
             name: "only",
             suggestions: [
               "packages",
+              "repos",
               "dotfiles",
               "shell",
               "defaults",
@@ -1279,6 +1318,7 @@ const completionSpec: Fig.Spec = {
             name: "skip",
             suggestions: [
               "packages",
+              "repos",
               "dotfiles",
               "shell",
               "defaults",
