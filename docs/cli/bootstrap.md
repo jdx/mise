@@ -35,7 +35,8 @@ that doesn't fit the declarative sections (cloning repos, seeding
 databases, etc.) — it runs with the installed tools on PATH.
 
 Use `--skip <part>` to skip named parts, or `--only <part>` to run just
-named parts. Both flags can be repeated or comma-separated.
+named parts. Both flags can be repeated or comma-separated, but they
+cannot be used together.
 
 ## Flags
 
@@ -51,11 +52,11 @@ Skip confirmation prompts
 
 Overwrite existing files that conflict with whole-file dotfile entries
 
-### `--skip… <SKIP>`
+### `--only… <ONLY>`
 
-Skip one or more bootstrap parts
+Run only one or more bootstrap parts
 
-Can be passed multiple times or as a comma-separated list.
+Can be passed multiple times or as a comma-separated list. Cannot be used with `--skip`.
 
 **Choices:**
 
@@ -69,9 +70,9 @@ Can be passed multiple times or as a comma-separated list.
 - `task`
 - `final-hook`
 
-### `--only… <ONLY>`
+### `--skip… <SKIP>`
 
-Run only one or more bootstrap parts
+Skip one or more bootstrap parts
 
 Can be passed multiple times or as a comma-separated list.
 

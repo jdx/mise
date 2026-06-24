@@ -1115,6 +1115,25 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--only",
+          description: "Run only one or more bootstrap parts",
+          isRepeatable: true,
+          args: {
+            name: "only",
+            suggestions: [
+              "packages",
+              "dotfiles",
+              "defaults",
+              "launchd",
+              "systemd",
+              "user",
+              "tools",
+              "task",
+              "final-hook",
+            ],
+          },
+        },
+        {
           name: "--skip",
           description: "Skip one or more bootstrap parts",
           isRepeatable: true,

@@ -51,7 +51,8 @@ use clap::{Subcommand, ValueEnum};
 /// databases, etc.) — it runs with the installed tools on PATH.
 ///
 /// Use `--skip <part>` to skip named parts, or `--only <part>` to run just
-/// named parts. Both flags can be repeated or comma-separated.
+/// named parts. Both flags can be repeated or comma-separated, but they
+/// cannot be used together.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Bootstrap {
@@ -70,17 +71,18 @@ pub struct Bootstrap {
     #[clap(long)]
     force_dotfiles: bool,
 
+    /// Run only one or more bootstrap parts
+    ///
+    /// Can be passed multiple times or as a comma-separated list.
+    /// Cannot be used with `--skip`.
+    #[clap(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
+    only: Vec<BootstrapPart>,
+
     /// Skip one or more bootstrap parts
     ///
     /// Can be passed multiple times or as a comma-separated list.
     #[clap(long, value_enum, value_delimiter = ',')]
     skip: Vec<BootstrapPart>,
-
-    /// Run only one or more bootstrap parts
-    ///
-    /// Can be passed multiple times or as a comma-separated list.
-    #[clap(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
-    only: Vec<BootstrapPart>,
 
     /// Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
     #[clap(long)]
@@ -101,6 +103,8 @@ enum BootstrapPart {
 }
 
 impl BootstrapPart {
+    // Keep this in sync with every enum variant. `--only` computes a
+    // complement from ALL, so an omitted variant would always run.
     const ALL: [Self; 9] = [
         Self::Packages,
         Self::Dotfiles,
