@@ -7,7 +7,8 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sigstore_verify::VerificationPolicy;
-use sigstore_verify::trust_root::{SigstoreInstance, TrustedRoot};
+pub use sigstore_verify::trust_root::DEFAULT_TUF_URL;
+use sigstore_verify::trust_root::{PRODUCTION_TUF_ROOT, SigstoreInstance, TrustedRoot, TufConfig};
 use sigstore_verify::types::bundle::VerificationMaterialContent;
 use sigstore_verify::types::{
     Artifact, Bundle, DerCertificate, DerPublicKey, HashAlgorithm, Sha256Hash, SignatureBytes,
@@ -1385,8 +1386,47 @@ fn extract_spki_der(cert_der: &[u8]) -> Result<Vec<u8>> {
         })
 }
 
+/// Process-global override for the Sigstore public-good TUF repository URL.
+///
+/// Set by the embedding crate from `settings.url_replacements` so the TUF root
+/// fetch follows the same mirror/proxy as the rest of mise's HTTP traffic.
+/// `None` means "use the crate default" (unchanged behavior).
+static TUF_URL_OVERRIDE: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Override the Sigstore public-good TUF URL (e.g. a mirror derived from mise's
+/// `settings.url_replacements`). Passing a mirror URL still bootstraps from the
+/// embedded production root ([`PRODUCTION_TUF_ROOT`]), so a mirror cannot forge
+/// the chain of trust — TUF verifies all fetched metadata against that pinned
+/// root. Passing `None` restores the default behavior.
+pub fn set_tuf_url(url: Option<String>) {
+    // Recover from a poisoned lock rather than silently dropping the override:
+    // the guarded data is just a String, so a poisoned lock still holds a valid
+    // value and we must still apply the (mirror) URL.
+    let mut guard = TUF_URL_OVERRIDE.write().unwrap_or_else(|e| e.into_inner());
+    *guard = url;
+}
+
+/// Build the [`TufConfig`] for the Sigstore public-good root, honoring an
+/// optional URL override.
+fn select_tuf_config(override_url: Option<String>) -> TufConfig {
+    match override_url {
+        // SECURITY: pin the embedded production root even when fetching from a
+        // mirror. A custom URL has no embedded-root fallback, and the mirror
+        // serves identical TUF content; bootstrapping with PRODUCTION_TUF_ROOT
+        // means every metadata file is verified against the canonical root.
+        Some(url) => TufConfig::custom(url, PRODUCTION_TUF_ROOT),
+        // Equivalent to `TrustedRoot::production()` (which is itself
+        // `from_tuf(TufConfig::production())`) — the default path is unchanged.
+        None => TufConfig::production(),
+    }
+}
+
 async fn production_trusted_root() -> Result<TrustedRoot> {
-    Ok(TrustedRoot::production().await?)
+    let override_url = TUF_URL_OVERRIDE
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    Ok(TrustedRoot::from_tuf(select_tuf_config(override_url)).await?)
 }
 
 fn github_trusted_root() -> Result<TrustedRoot> {
@@ -1541,6 +1581,21 @@ pub async fn calculate_file_digest(path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn select_tuf_config_default_uses_production_url() {
+        // No override → canonical Sigstore public-good TUF URL (default behavior).
+        assert_eq!(select_tuf_config(None).url, DEFAULT_TUF_URL);
+    }
+
+    #[test]
+    fn select_tuf_config_override_uses_mirror_url() {
+        // Override → the mirror URL, while still pinning PRODUCTION_TUF_ROOT
+        // (the latter is enforced by TufConfig::custom, covered by the
+        // sigstore-trust-root crate's own tests).
+        let mirror = "https://tuf-mirror.example.com/".to_string();
+        assert_eq!(select_tuf_config(Some(mirror.clone())).url, mirror);
+    }
 
     #[test]
     fn attestations_url_includes_predicate_type() {
