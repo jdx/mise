@@ -64,7 +64,13 @@ export const commands: { [key: string]: Command } = {
               },
             },
           },
+          import: {
+            hide: false,
+          },
           install: {
+            hide: false,
+          },
+          prune: {
             hide: false,
           },
           status: {

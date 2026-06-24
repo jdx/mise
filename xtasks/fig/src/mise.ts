@@ -860,6 +860,59 @@ const completionSpec: Fig.Spec = {
               ],
             },
             {
+              name: "import",
+              description:
+                "Import installed system packages into `[bootstrap.packages]`",
+              options: [
+                {
+                  name: ["-e", "--env"],
+                  description:
+                    "Write to the config file for this environment (mise.<ENV>.toml)",
+                  isRepeatable: false,
+                  args: {
+                    name: "env",
+                  },
+                },
+                {
+                  name: ["-g", "--global"],
+                  description:
+                    "Write to the global config (~/.config/mise/config.toml)",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-m", "--manager"],
+                  description:
+                    "Only import packages for this manager. Currently only `brew` is supported",
+                  isRepeatable: false,
+                  args: {
+                    name: "manager",
+                    suggestions: ["brew"],
+                  },
+                },
+                {
+                  name: "--all",
+                  description:
+                    "Import every linked formula, including dependencies",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the config change without writing config or adopting packages",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-p", "--path"],
+                  description: "Write to this config file or directory",
+                  isRepeatable: false,
+                  args: {
+                    name: "path",
+                    template: "filepaths",
+                  },
+                },
+              ],
+            },
+            {
               name: ["install", "i"],
               description:
                 "Install missing system packages from `[bootstrap.packages]`",
@@ -907,6 +960,34 @@ const completionSpec: Fig.Spec = {
                 isOptional: true,
                 isVariadic: true,
               },
+            },
+            {
+              name: "prune",
+              description:
+                "Prune installed system packages no longer declared in `[bootstrap.packages]`",
+              options: [
+                {
+                  name: ["-m", "--manager"],
+                  description:
+                    "Only prune packages for this manager. Currently only `brew` is supported",
+                  isRepeatable: false,
+                  args: {
+                    name: "manager",
+                    suggestions: ["brew"],
+                  },
+                },
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print what would be removed without deleting anything",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
             },
             {
               name: ["status", "ls"],

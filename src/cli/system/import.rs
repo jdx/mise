@@ -2,7 +2,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use eyre::Result;
+use eyre::{Result, bail};
 
 use crate::config::Settings;
 #[cfg(unix)]
@@ -16,6 +16,8 @@ use crate::file::display_path;
 #[cfg(unix)]
 use crate::system::packages::PackageRequest;
 #[cfg(unix)]
+use crate::system::packages::SystemPackageManager;
+#[cfg(unix)]
 use crate::system::packages::brew;
 
 /// Import installed system packages into `[bootstrap.packages]`
@@ -26,6 +28,14 @@ use crate::system::packages::brew;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemImport {
+    /// Write to the config file for this environment (mise.<ENV>.toml)
+    #[clap(long, short, value_name = "ENV", conflicts_with_all = ["global", "path"])]
+    env: Option<String>,
+
+    /// Write to the global config (~/.config/mise/config.toml)
+    #[clap(long, short, conflicts_with_all = ["env", "path"])]
+    global: bool,
+
     /// Only import packages for this manager. Currently only `brew` is supported.
     #[clap(long, short, default_value = "brew", value_parser = ["brew"])]
     manager: String,
@@ -33,14 +43,6 @@ pub struct SystemImport {
     /// Import every linked formula, including dependencies
     #[clap(long)]
     all: bool,
-
-    /// Write to the global config (~/.config/mise/config.toml)
-    #[clap(long, short, conflicts_with_all = ["env", "path"])]
-    global: bool,
-
-    /// Write to the config file for this environment (mise.<ENV>.toml)
-    #[clap(long, short, value_name = "ENV", conflicts_with_all = ["global", "path"])]
-    env: Option<String>,
 
     /// Print the config change without writing config or adopting packages
     #[clap(long, short = 'n')]
@@ -54,12 +56,27 @@ pub struct SystemImport {
 impl SystemImport {
     pub async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("mise bootstrap")?;
+        if Settings::get()
+            .system_packages
+            .managers
+            .as_ref()
+            .is_some_and(|enabled| !enabled.contains(&self.manager))
+        {
+            bail!(
+                "manager '{}' is excluded by the system_packages.managers setting",
+                self.manager
+            );
+        }
         self.run_brew().await
     }
 
     #[cfg(unix)]
     async fn run_brew(self) -> Result<()> {
         debug_assert_eq!(self.manager, "brew");
+        let manager = brew::BrewManager::new();
+        if !manager.is_available() {
+            bail!("brew is not available: {}", manager.unavailable_reason());
+        }
         let formulae = brew::linked_formulae(self.all)?;
         if formulae.is_empty() {
             info!("brew: no installed formulae to import");
@@ -111,7 +128,6 @@ impl SystemImport {
             return Ok(());
         }
 
-        brew::adopt_formulae(&requests).await?;
         let mut cf = if path.exists() {
             MiseToml::from_file(&path)?
         } else {
@@ -124,6 +140,7 @@ impl SystemImport {
             cf.update_bootstrap_package(&formula.config_key(), "latest")?;
         }
         cf.save()?;
+        brew::adopt_formulae(&requests).await?;
         info!(
             "{}: imported {} brew formulae",
             display_path(&path),
@@ -135,7 +152,7 @@ impl SystemImport {
     #[cfg(not(unix))]
     async fn run_brew(self) -> Result<()> {
         let _ = self.manager;
-        eyre::bail!("brew import is not supported on windows")
+        bail!("brew import is not supported on windows")
     }
 }
 

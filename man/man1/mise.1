@@ -963,6 +963,12 @@ Pass `\-\-all` to import every linked formula, including dependencies.
 \fBOptions:\fR
 .PP
 .TP
+\fB\-e, \-\-env\fR \fI<ENV>\fR
+Write to the config file for this environment (mise.<ENV>.toml)
+.TP
+\fB\-g, \-\-global\fR
+Write to the global config (~/.config/mise/config.toml)
+.TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
 Only import packages for this manager. Currently only `brew` is supported
 .RS
@@ -971,12 +977,6 @@ Only import packages for this manager. Currently only `brew` is supported
 .TP
 \fB\-\-all\fR
 Import every linked formula, including dependencies
-.TP
-\fB\-g, \-\-global\fR
-Write to the global config (~/.config/mise/config.toml)
-.TP
-\fB\-e, \-\-env\fR \fI<ENV>\fR
-Write to the config file for this environment (mise.<ENV>.toml)
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the config change without writing config or adopting packages

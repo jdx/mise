@@ -431,16 +431,16 @@ Examples:
     $ mise bootstrap packages import --manager brew --dry-run
 
 """#
+            flag "-e --env" help="Write to the config file for this environment (mise.<ENV>.toml)" {
+                arg <ENV>
+            }
+            flag "-g --global" help="Write to the global config (~/.config/mise/config.toml)"
             flag "-m --manager" help="Only import packages for this manager. Currently only `brew` is supported" default=brew {
                 arg <MANAGER> {
                     choices brew
                 }
             }
             flag --all help="Import every linked formula, including dependencies"
-            flag "-g --global" help="Write to the global config (~/.config/mise/config.toml)"
-            flag "-e --env" help="Write to the config file for this environment (mise.<ENV>.toml)" {
-                arg <ENV>
-            }
             flag "-n --dry-run" help="Print the config change without writing config or adopting packages"
             flag "-p --path" help="Write to this config file or directory" {
                 arg <PATH>
@@ -4918,7 +4918,11 @@ e.g.: `mise which npm --tool=node@20`
 }
 source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
-{%- if cmd.subcommands | length > 0 -%}
+{%- if path == "bootstrap/packages/import" -%}
+{%- set path = "system/import.rs" -%}
+{%- elif path == "bootstrap/packages/prune" -%}
+{%- set path = "system/prune.rs" -%}
+{%- elif cmd.subcommands | length > 0 -%}
 {%- set path = path | split(pat="/") | slice(end=1) | concat(with="mod.rs") | join(sep="/") -%}
 {%- else -%}
 {%- set path = path ~ ".rs" -%}

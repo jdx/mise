@@ -2,7 +2,7 @@
 # `mise bootstrap packages import`
 
 - **Usage**: `mise bootstrap packages import [FLAGS]`
-- **Source code**: [`src/cli/bootstrap/packages/import.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/packages/import.rs)
+- **Source code**: [`src/cli/system/import.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/import.rs)
 
 Import installed system packages into `[bootstrap.packages]`
 
@@ -11,6 +11,14 @@ formulae whose active keg receipt says they were installed on request.
 Pass `--all` to import every linked formula, including dependencies.
 
 ## Flags
+
+### `-e --env <ENV>`
+
+Write to the config file for this environment (mise.&lt;ENV>.toml)
+
+### `-g --global`
+
+Write to the global config (~/.config/mise/config.toml)
 
 ### `-m --manager <MANAGER>`
 
@@ -25,14 +33,6 @@ Only import packages for this manager. Currently only `brew` is supported
 ### `--all`
 
 Import every linked formula, including dependencies
-
-### `-g --global`
-
-Write to the global config (~/.config/mise/config.toml)
-
-### `-e --env <ENV>`
-
-Write to the config file for this environment (mise.&lt;ENV>.toml)
 
 ### `-n --dry-run`
 

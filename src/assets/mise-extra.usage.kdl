@@ -1,6 +1,10 @@
 source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
-{%- if cmd.subcommands | length > 0 -%}
+{%- if path == "bootstrap/packages/import" -%}
+{%- set path = "system/import.rs" -%}
+{%- elif path == "bootstrap/packages/prune" -%}
+{%- set path = "system/prune.rs" -%}
+{%- elif cmd.subcommands | length > 0 -%}
 {%- set path = path | split(pat="/") | slice(end=1) | concat(with="mod.rs") | join(sep="/") -%}
 {%- else -%}
 {%- set path = path ~ ".rs" -%}
