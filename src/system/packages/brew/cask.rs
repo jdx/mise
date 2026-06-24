@@ -581,8 +581,8 @@ fn app_bundle_name(target_name: &str) -> Result<&str> {
 
 fn binary_target_path(target_name: &str) -> Result<PathBuf> {
     let prefix = prefix::prefix();
-    let target_name =
-        target_name.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy().to_string());
+    let prefix_str = prefix.to_string_lossy();
+    let target_name = target_name.replace("$HOMEBREW_PREFIX", prefix_str.as_ref());
     let path = PathBuf::from(&target_name);
     let target = if path.is_absolute() {
         path
