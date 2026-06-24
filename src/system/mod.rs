@@ -814,7 +814,15 @@ pub fn shell_activation_from_config(config: &Config) -> Vec<ShellActivationReque
                     Some(enabled) => {
                         merged.insert(shell, enabled);
                     }
-                    None => continue,
+                    None => {
+                        if let Some(enabled) = merged.get(&shell) {
+                            warn!(
+                                "[bootstrap.mise_shell_activate.{}]: keeping broader value \
+                                 {enabled} after invalid entry",
+                                shell.name()
+                            );
+                        }
+                    }
                 }
             }
         }

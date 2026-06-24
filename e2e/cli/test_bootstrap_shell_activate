@@ -26,6 +26,10 @@ assert_fail "test -e ~/.bashrc"
 assert_succeed "mise bootstrap shell status --missing"
 assert_contains "mise bootstrap shell status --json" '"state": "applied"'
 
+sed -i.bak 's/eval "$(mise activate zsh)"/echo changed/' ~/.zshrc
+assert_contains "mise bootstrap shell status --json" '"state": "differs"'
+assert_contains "mise bootstrap shell status --json" '"reason": "block content differs"'
+
 # idempotent: re-running does not duplicate managed blocks
 assert_succeed "mise bootstrap shell apply --yes"
 assert "grep -c 'mise activate zsh' ~/.zshrc" "1"

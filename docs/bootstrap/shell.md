@@ -63,3 +63,7 @@ mise bootstrap shell apply           # writes missing/different blocks
 mise bootstrap shell apply --dry-run # print the edits instead
 mise bootstrap shell apply --yes     # skip the confirmation prompt
 ```
+
+JSON status entries use `state = "missing" | "applied" | "differs" |
+"source_missing"`. Entries with `state = "differs"` also include a `reason`
+field.

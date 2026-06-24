@@ -1707,11 +1707,15 @@ impl BootstrapShellStatus {
             };
             any_missing |= state != FileState::Applied;
             if self.json {
-                json_entries.push(json!({
+                let mut entry = json!({
                     "shell": request.shell.name(),
                     "path": request.edit.path_raw,
                     "state": file_state_json(&state),
-                }));
+                });
+                if let FileState::Differs(reason) = &state {
+                    entry["reason"] = json!(reason);
+                }
+                json_entries.push(entry);
             } else {
                 rows.push(vec![
                     request.shell.name().to_string(),
