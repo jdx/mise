@@ -46,6 +46,8 @@ MISE_PIN=1 mise use dummy@1 --path mise.local.toml
 assert "cat mise.local.toml" '[tools]
 dummy = "1.0.0"'
 
+assert_fail "mise use --dry-run --path package.json dummy@1" "cannot update idiomatic version file"
+
 mise use --rm dummy --path mise.local.toml
 assert "cat mise.local.toml" ""
 
