@@ -881,7 +881,7 @@ fn validate_package_name(mgr: &str, name: &str) -> eyre::Result<()> {
     Ok(())
 }
 
-fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
+pub(crate) fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
     let mut brew_taps: IndexMap<String, String> = IndexMap::new();
     for cf in config.config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {

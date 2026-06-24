@@ -61,4 +61,8 @@ impl Ledger {
             },
         );
     }
+
+    pub fn remove(&mut self, name: &str) {
+        self.kegs.remove(name);
+    }
 }

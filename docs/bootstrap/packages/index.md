@@ -54,10 +54,13 @@ applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html
 
 ## Semantics
 
-- **Declarative and additive** — entries merge across the
+- **Declarative and additive by default** — entries merge across the
   [config hierarchy](/configuration.html) (global → project) as a union of
   keys. A project can add packages on top of the global list (and override a
-  global entry's version pin) but not remove them.
+  global entry's version pin) but not remove them. For Homebrew formulae,
+  `mise bootstrap packages prune --manager brew` is an explicit destructive
+  command that removes mise-managed formulae no longer declared by the merged
+  config.
 - **OS-filtered** — entries for a manager that isn't available on the current
   machine are not acted on, so the same config works across platforms: `apt`
   entries are ignored on macOS, `dnf` entries on Ubuntu, and so on. `brew`
@@ -98,6 +101,14 @@ mise bootstrap packages use -g brew:ffmpeg                      # write globally
 mise bootstrap packages use apt:curl@8.5.0-2   # pin a version (brew pins via the
                                    # formula name: brew:postgresql@17)
 
+mise bootstrap packages import --manager brew   # add installed requested brew formulae
+mise bootstrap packages import --manager brew --all
+mise bootstrap packages import --manager brew --dry-run
+
+mise bootstrap packages prune --manager brew    # remove adopted unconfigured brew formulae
+mise bootstrap packages prune --manager brew --dry-run
+mise bootstrap packages prune --manager brew --yes
+
 mise bootstrap packages upgrade           # upgrade installed packages to current versions
 mise bootstrap packages upgrade --manager brew
 mise bootstrap packages upgrade --manager brew-cask
@@ -110,6 +121,21 @@ default, the global one with `-g`) and installs whatever is missing. Entries
 for managers that aren't available on the current machine are written without
 installing — that's how a shared config picks up `apt:` lines authored on a
 Mac.
+
+`mise bootstrap packages import --manager brew` is the inverse for Homebrew
+formulae: it reads the active Homebrew `opt` links and writes requested
+formulae to `[bootstrap.packages]` as `"brew:<formula>" = "latest"`. By
+default it imports only formulae whose keg receipt says they were installed
+on request; pass `--all` to include dependency formulae too. Imported formulae
+and their resolved dependency closure are adopted into mise's brew ledger, so
+they can be pruned later.
+
+`mise bootstrap packages prune --manager brew` removes brew formulae that
+mise installed or adopted but that are no longer needed by the merged
+`[bootstrap.packages]` config. It does not touch unmanaged Homebrew formulae.
+This is mise's declarative cleanup command, similar in spirit to
+[Homebrew Bundle cleanup](https://docs.brew.sh/Manpage), not the old upstream
+`brew prune` command, which Homebrew removed.
 
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available

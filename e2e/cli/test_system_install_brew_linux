@@ -29,3 +29,19 @@ assert_contains "/home/linuxbrew/.linuxbrew/bin/xz --version" "xz"
 
 # idempotent
 assert_contains "mise bootstrap packages install --yes 2>&1" "already"
+
+# import previews and writes the currently installed requested formula
+assert_contains "mise bootstrap packages import --manager brew --dry-run --path imported.toml" '"brew:xz" = "latest"'
+mise bootstrap packages import --manager brew --path imported.toml
+assert_contains "cat imported.toml" '"brew:xz" = "latest"'
+
+# prune is a no-op while the formula is still configured
+assert_contains "mise bootstrap packages prune --manager brew --dry-run 2>&1" "nothing to prune"
+
+# after removing it from config, prune previews and removes the adopted formula
+cat <<EOF >mise.toml
+[bootstrap.packages]
+EOF
+assert_contains "mise bootstrap packages prune --manager brew --dry-run" "remove brew:xz"
+mise bootstrap packages prune --manager brew --yes
+assert_fail "test -e /home/linuxbrew/.linuxbrew/opt/xz"
