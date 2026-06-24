@@ -4924,7 +4924,9 @@ e.g.: `mise which npm --tool=node@20`
 }
 source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
-{%- if path == "bootstrap/packages/import" -%}
+{%- if path == "bootstrap/status" -%}
+{%- set path = "bootstrap.rs" -%}
+{%- elif path == "bootstrap/packages/import" -%}
 {%- set path = "system/import.rs" -%}
 {%- elif path == "bootstrap/packages/prune" -%}
 {%- set path = "system/prune.rs" -%}
