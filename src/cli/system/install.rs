@@ -233,7 +233,7 @@ pub(crate) fn apply_repos(
     let targets: Vec<_> = statuses
         .iter()
         .filter(|s| !s.state.is_current())
-        .map(|s| s.request.clone())
+        .cloned()
         .collect();
     let current = statuses.len() - targets.len();
     if current > 0 {
@@ -256,7 +256,10 @@ pub(crate) fn apply_repos(
             RepoState::Current | RepoState::Missing | RepoState::Differs => {}
         }
     }
-    let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
+    let list = targets
+        .iter()
+        .map(|s| s.request.to_string())
+        .collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("repos: apply {}?", list.join(", "));
         if !crate::ui::prompt::confirm(msg)? {
@@ -264,7 +267,7 @@ pub(crate) fn apply_repos(
             return Ok(());
         }
     }
-    repos::apply(&targets, dry_run)?;
+    repos::apply_statuses(&targets, dry_run)?;
     if !dry_run {
         info!("repos: applied {}", list.join(", "));
     }

@@ -105,9 +105,9 @@ pub fn status(requests: &[RepoRequest]) -> Result<Vec<RepoStatus>> {
     requests.iter().map(status_one).collect()
 }
 
-pub fn apply(requests: &[RepoRequest], dry_run: bool) -> Result<()> {
-    for status in status(requests)? {
-        match status.state {
+pub fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
+    for status in statuses {
+        match &status.state {
             RepoState::Current => {
                 info!("repos: {} already current", status.request);
             }
@@ -264,7 +264,7 @@ fn ref_is_current(
     current_sha: Option<&str>,
 ) -> bool {
     if current_ref == Some(git_ref) {
-        return remote_ref_matches_head(path, git_ref, current_sha).unwrap_or(true);
+        return remote_ref_matches_head(path, git_ref, current_sha).unwrap_or(false);
     }
     if current_sha.is_some_and(|sha| sha == git_ref) {
         return true;
@@ -272,7 +272,7 @@ fn ref_is_current(
     if let (Some(sha), Ok(local_sha)) = (current_sha, local_ref_sha(path, git_ref))
         && sha == local_sha
     {
-        return remote_ref_matches_head(path, git_ref, current_sha).unwrap_or(true);
+        return remote_ref_matches_head(path, git_ref, current_sha).unwrap_or(false);
     }
     false
 }
@@ -283,7 +283,7 @@ fn remote_ref_matches_head(path: &Path, git_ref: &str, current_sha: Option<&str>
     };
     match remote_ref_sha(path, git_ref)? {
         Some(remote_sha) => Ok(remote_sha == current_sha),
-        None => Ok(true),
+        None => Ok(false),
     }
 }
 
@@ -292,7 +292,7 @@ fn is_git_repo(path: &Path) -> bool {
 }
 
 fn is_clean(path: &Path) -> Result<bool> {
-    Ok(git_output(path, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty())
+    Ok(git_output(path, &["status", "--porcelain=v1"])?.is_empty())
 }
 
 fn current_ref(path: &Path) -> Result<String> {
@@ -364,12 +364,9 @@ fn git_run(path: &Path, args: &[&str]) -> Result<()> {
 
 fn run_command(cmd: &mut Command) -> Result<()> {
     debug!("$ {:?}", cmd);
-    let output = cmd.output().map_err(|err| eyre!("git failed: {err:#}"))?;
-    if !output.status.success() {
-        bail!(
-            "git failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+    let status = cmd.status().map_err(|err| eyre!("git failed: {err:#}"))?;
+    if !status.success() {
+        bail!("git failed with status {status}");
     }
     Ok(())
 }
@@ -388,6 +385,22 @@ fn print_git_command(path: &Path, args: &[&str]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    fn test_git(path: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {} failed: {}",
+            shell_words::join(args),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 
     #[test]
     fn validates_repo_request() {
@@ -425,5 +438,62 @@ mod tests {
             RepoState::Conflict("reason".to_string()).as_str(),
             "conflict"
         );
+    }
+
+    #[test]
+    fn branch_ref_is_not_current_when_remote_check_fails() {
+        assert!(!ref_is_current(
+            Path::new("/path/that/does/not/exist"),
+            "main",
+            Some("main"),
+            Some("abc123")
+        ));
+    }
+
+    #[test]
+    fn missing_remote_ref_is_not_current() {
+        let tmp = tempfile::tempdir().unwrap();
+        let origin = tmp.path().join("origin.git");
+        let work = tmp.path().join("work");
+
+        Command::new("git")
+            .args(["init", "-q", "--bare"])
+            .arg(&origin)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["init", "-q", "-b", "main"])
+            .arg(&work)
+            .status()
+            .unwrap();
+        fs::write(work.join("version.txt"), "v1").unwrap();
+        test_git(&work, &["add", "."]);
+        test_git(
+            &work,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test User",
+                "commit",
+                "-q",
+                "-m",
+                "v1",
+            ],
+        );
+        test_git(
+            &work,
+            &["remote", "add", "origin", origin.to_str().unwrap()],
+        );
+        test_git(&work, &["push", "-q", "origin", "main"]);
+        test_git(&work, &["checkout", "-q", "-b", "local-only"]);
+
+        let sha = current_sha(&work).unwrap();
+        assert!(!ref_is_current(
+            &work,
+            "local-only",
+            Some("local-only"),
+            Some(&sha)
+        ));
     }
 }
