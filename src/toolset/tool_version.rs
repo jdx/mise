@@ -131,7 +131,23 @@ impl ToolVersion {
         self
     }
 
-    fn from_lockfile(request: ToolRequest, lt: LockfileTool) -> Self {
+    fn from_lockfile(mut request: ToolRequest, lt: LockfileTool) -> Self {
+        if let Some(backend_full) = &lt.backend {
+            let backend = Arc::new(BackendArg::new(
+                request.ba().short.clone(),
+                Some(backend_full.clone()),
+            ));
+            match &mut request {
+                ToolRequest::Version { backend: b, .. }
+                | ToolRequest::Prefix { backend: b, .. }
+                | ToolRequest::Ref { backend: b, .. }
+                | ToolRequest::Sub { backend: b, .. }
+                | ToolRequest::Path { backend: b, .. }
+                | ToolRequest::System { backend: b, .. } => *b = backend,
+            }
+        }
+        // Lockfile options have already selected the matching lock entry; keep
+        // the original request options so config/core install behavior survives.
         let mut tv = Self::new(request, lt.version);
         tv.locked = true;
         tv.lock_platforms = lt.platforms;
@@ -858,6 +874,7 @@ impl Display for ResolveOptions {
 mod tests {
     use super::*;
     use crate::cli::args::BackendResolution;
+    use crate::toolset::CoreToolOptions;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_name(prefix: &str) -> String {
@@ -882,6 +899,56 @@ mod tests {
         );
         backend.installs_path = installs_path;
         backend
+    }
+
+    #[test]
+    fn from_lockfile_applies_backend_and_preserves_request_options() {
+        let backend = Arc::new(BackendArg::new("npm".to_string(), None));
+        let mut options = ToolVersionOptions {
+            core: CoreToolOptions {
+                depends: Some(vec!["node".to_string()]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        options.install_env.insert(
+            "NODE_OPTIONS".to_string(),
+            "--enable-source-maps".to_string(),
+        );
+        options.opts.insert(
+            "registry".to_string(),
+            toml::Value::String("https://registry.example.test".to_string()),
+        );
+        let request = ToolRequest::Version {
+            backend,
+            version: "latest".to_string(),
+            options,
+            source: ToolSource::Argument,
+        };
+        let lt = LockfileTool {
+            version: "11.17.0".to_string(),
+            backend: Some("npm:npm".to_string()),
+            options: BTreeMap::from([("registry".to_string(), "lockfile-value".to_string())]),
+            platforms: Default::default(),
+        };
+
+        let tv = ToolVersion::from_lockfile(request, lt);
+        let options = tv.request.options();
+
+        assert_eq!(tv.version, "11.17.0");
+        assert!(tv.locked);
+        assert_eq!(tv.ba().full_without_opts(), "npm:npm");
+        assert_eq!(options.depends, Some(vec!["node".to_string()]));
+        assert_eq!(
+            options.install_env.get("NODE_OPTIONS").map(String::as_str),
+            Some("--enable-source-maps")
+        );
+        assert_eq!(
+            options.opts.get("registry"),
+            Some(&toml::Value::String(
+                "https://registry.example.test".to_string()
+            ))
+        );
     }
 
     #[test]

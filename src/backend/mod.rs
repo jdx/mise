@@ -357,8 +357,10 @@ pub fn list() -> BackendList {
 pub fn get(ba: &BackendArg) -> Option<ABackend> {
     // Inline opts are command-scoped, so a short-name cache hit must not drop
     // the caller's BackendArg options.
-    if ba.explicit_opts().is_some() {
-        return arg_to_backend(ba.clone());
+    if (ba.explicit_opts().is_some() || ba.has_explicit_backend())
+        && let Some(backend) = arg_to_backend(ba.clone())
+    {
+        return Some(backend);
     }
 
     let mut tools = TOOLS.lock().unwrap();
