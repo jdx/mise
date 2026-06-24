@@ -461,12 +461,15 @@ fn next_page(headers: &HeaderMap) -> Option<String> {
 }
 
 fn resolve_pagination_url(current: &str, next: &str) -> Result<String> {
-    if url::Url::parse(next).is_ok() {
+    if next.starts_with("http://") || next.starts_with("https://") {
         return Ok(next.to_string());
     }
     let base = url::Url::parse(current)
         .wrap_err_with(|| format!("invalid pagination base URL: {current}"))?;
-    base.join(next.trim_start_matches('/'))
+    if next.starts_with('/') {
+        return Ok(format!("{}{next}", base.origin().ascii_serialization()));
+    }
+    base.join(next)
         .map(|u| u.to_string())
         .wrap_err_with(|| format!("invalid pagination URL: {next}"))
 }
