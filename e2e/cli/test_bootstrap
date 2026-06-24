@@ -5,6 +5,7 @@ cat <<EOF >mise.toml
 [tools]
 EOF
 assert_succeed "mise bootstrap --yes"
+assert_not_contains "mise bootstrap --yes" "bootstrap: follow-up"
 
 # bootstrap applies dotfiles, installs tools, and runs the
 # `bootstrap` task afterwards, with the installed tools on PATH
@@ -195,6 +196,39 @@ cat <<EOF >mise.toml
 "pacman:bc" = "latest"
 EOF
 assert_succeed "mise bootstrap --dry-run"
+
+# bootstrap prints a final follow-up section for configured parts skipped
+# because they are unavailable on the current platform
+if [[ $(uname) == "Darwin" ]]; then
+  cat <<EOF >mise.toml
+[bootstrap.linux.systemd.units.follow-up-skip]
+description = "skip summary"
+exec_start = "~/.local/bin/skip-summary"
+EOF
+  assert_contains "mise bootstrap --dry-run" "bootstrap: follow-up if applied"
+  assert_contains "mise bootstrap --dry-run" "systemd: 1 unit(s) skipped"
+else
+  cat <<EOF >mise.toml
+[bootstrap.macos.launchd.agents.follow-up-skip]
+program = "~/.local/bin/skip-summary"
+run_at_load = true
+EOF
+  assert_contains "mise bootstrap --dry-run" "bootstrap: follow-up if applied"
+  assert_contains "mise bootstrap --dry-run" "launchd: 1 agent(s) skipped"
+fi
+
+# bootstrap summarizes macOS defaults follow-up when values would be written
+cat <<EOF >mise.toml
+[bootstrap.macos.defaults]
+"dev.mise.e2e.follow-up" = { BootstrapFollowUp = true }
+EOF
+if [[ $(uname) == "Darwin" ]]; then
+  assert_contains "mise bootstrap --dry-run" "bootstrap: follow-up if applied"
+  assert_contains "mise bootstrap --dry-run" 'killall Dock'
+else
+  assert_contains "mise bootstrap --dry-run" "macOS defaults: 1 entry(ies) skipped"
+  assert_not_contains "mise bootstrap --dry-run" 'killall Dock'
+fi
 
 # dotfiles can add config that contributes hooks to later phases in the same run
 mkdir -p dotfiles/mise

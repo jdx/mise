@@ -142,7 +142,8 @@ mise bootstrap macos-defaults apply --yes     # skip the confirmation prompt
 ## App restarts
 
 Some applications only pick up changed defaults after a relaunch — mise
-prints a reminder after writing. The usual suspects:
+prints a reminder after writing, and top-level `mise bootstrap` includes the
+same reminder in its final follow-up summary. The usual suspects:
 
 ```sh
 killall Dock
