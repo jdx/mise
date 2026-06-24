@@ -917,6 +917,7 @@ impl BootstrapStatus {
         let mut report = BootstrapStatusReport::new();
         self.collect_packages(config, &mut report).await?;
         self.collect_dotfiles(config, &mut report)?;
+        self.collect_shell(config, &mut report)?;
         self.collect_defaults(config, &mut report).await?;
         self.collect_launchd(config, &mut report).await?;
         self.collect_systemd(config, &mut report).await?;
@@ -1066,6 +1067,36 @@ impl BootstrapStatus {
             "dotfiles".to_string(),
             json!({ "files": json_files, "edits": json_edits }),
         );
+        Ok(())
+    }
+
+    fn collect_shell(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let activations = system::shell_activation_from_config(config);
+        let mut json_entries = vec![];
+        for request in &activations {
+            let state = shell_activation_state(config, request);
+            let missing = state != FileState::Applied;
+            report.row(
+                "shell",
+                request.target.name(),
+                format!(
+                    "{} {} {}",
+                    request.shell.name(),
+                    request.edit.path_raw,
+                    request.mode.name()
+                ),
+                file_state_display(&state),
+                missing,
+            );
+            json_entries.push(shell_activation_json(request, &state));
+        }
+        report
+            .json
+            .insert("mise_shell_activate".to_string(), json!(json_entries));
         Ok(())
     }
 
@@ -1772,23 +1803,10 @@ impl BootstrapShellStatus {
         let mut rows: Vec<Vec<String>> = vec![];
         let mut json_entries = vec![];
         for request in &activations {
-            let state = match system::edits::check(&config, &request.edit) {
-                Ok(state) => state,
-                Err(err) => FileState::Differs(format!("{err}")),
-            };
+            let state = shell_activation_state(&config, request);
             any_missing |= state != FileState::Applied;
             if self.json {
-                let mut entry = json!({
-                    "target": request.target.name(),
-                    "shell": request.shell.name(),
-                    "path": request.edit.path_raw,
-                    "mode": request.mode.name(),
-                    "state": file_state_json(&state),
-                });
-                if let FileState::Differs(reason) = &state {
-                    entry["reason"] = json!(reason);
-                }
-                json_entries.push(entry);
+                json_entries.push(shell_activation_json(request, &state));
             } else {
                 rows.push(vec![
                     request.target.name().to_string(),
@@ -1937,6 +1955,33 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap user apply --dry-run</bold>
 "#
 );
+
+fn shell_activation_state(
+    config: &Config,
+    request: &system::shell_activation::ShellActivationRequest,
+) -> FileState {
+    match system::edits::check(config, &request.edit) {
+        Ok(state) => state,
+        Err(err) => FileState::Differs(format!("{err}")),
+    }
+}
+
+fn shell_activation_json(
+    request: &system::shell_activation::ShellActivationRequest,
+    state: &FileState,
+) -> Value {
+    let mut entry = json!({
+        "target": request.target.name(),
+        "shell": request.shell.name(),
+        "path": request.edit.path_raw,
+        "mode": request.mode.name(),
+        "state": file_state_json(state),
+    });
+    if let FileState::Differs(reason) = state {
+        entry["reason"] = json!(reason);
+    }
+    entry
+}
 
 fn file_state_display(state: &FileState) -> String {
     match state {
