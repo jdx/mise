@@ -14,9 +14,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 
 use crate::cli::HookReason;
-use crate::config::{Config, DEFAULT_CONFIG_FILENAMES, Settings};
+use crate::config::{Config, DEFAULT_CONFIG_FILENAMES, Settings, config_file};
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
+use crate::errors::Error;
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
 use crate::{dirs, duration, env, file, hooks, watch_files};
@@ -25,6 +26,7 @@ use crate::{dirs, duration, env, file, hooks, watch_files};
 /// Timestamps are stored per-directory (using a hash of CWD) so that
 /// multiple shells in different directories don't interfere with each other.
 static LAST_CHECK_DIR: Lazy<PathBuf> = Lazy::new(|| dirs::STATE.join("hook-env-checks"));
+const LAST_UNTRUSTED_CONFIG_WARNING_KEY_ENV: &str = "__MISE_LAST_UNTRUSTED_CONFIG_WARNING_KEY";
 
 /// Get the path to the last check file for a specific directory.
 fn last_check_file_for_dir(dir: &Path) -> PathBuf {
@@ -63,6 +65,68 @@ fn mtime_to_millis(mtime: SystemTime) -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
+}
+
+pub fn untrusted_config_error_path(err: &eyre::Report) -> Option<PathBuf> {
+    err.chain()
+        .find_map(|cause| match cause.downcast_ref::<Error>() {
+            Some(Error::UntrustedConfig(path)) => Some(path.clone()),
+            _ => None,
+        })
+}
+
+pub fn should_show_untrusted_config_warning(config_path: &Path) -> bool {
+    env::var(LAST_UNTRUSTED_CONFIG_WARNING_KEY_ENV).unwrap_or_default()
+        != current_untrusted_warning_key(config_path)
+}
+
+pub fn mark_untrusted_config_warning_seen(shell: &dyn Shell, config_path: &Path) -> Result<()> {
+    miseprint!(
+        "{}",
+        shell.set_env(
+            LAST_UNTRUSTED_CONFIG_WARNING_KEY_ENV,
+            &current_untrusted_warning_key(config_path)
+        )
+    )?;
+    Ok(())
+}
+
+pub fn clear_untrusted_config_warning(patches: &mut EnvDiffPatches) {
+    if has_untrusted_config_warning_marker() {
+        patches.push(EnvDiffOperation::Remove(
+            LAST_UNTRUSTED_CONFIG_WARNING_KEY_ENV.into(),
+        ));
+    }
+}
+
+fn has_untrusted_config_warning_marker() -> bool {
+    env::var(LAST_UNTRUSTED_CONFIG_WARNING_KEY_ENV).is_ok_and(|key| !key.is_empty())
+}
+
+fn current_untrusted_warning_key(config_path: &Path) -> String {
+    let cwd = dirs::CWD
+        .as_ref()
+        .map(|p| canonical_path_key(p))
+        .unwrap_or_default();
+    let trust_root = canonical_path_key(&config_file::config_trust_root(config_path));
+    let config_path = canonical_path_key(config_path);
+    let mtime = config_path_mtime_millis(Path::new(&config_path));
+
+    hash_to_str(&(cwd, trust_root, config_path, mtime))
+}
+
+fn canonical_path_key(path: &Path) -> String {
+    path.canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .to_string()
+}
+
+fn config_path_mtime_millis(path: &Path) -> u128 {
+    path.metadata()
+        .and_then(|m| m.modified())
+        .map(mtime_to_millis)
+        .unwrap_or_default()
 }
 
 pub static PREV_SESSION: Lazy<HookEnvSession> = Lazy::new(|| {
@@ -119,6 +183,9 @@ pub fn should_exit_early_fast() -> bool {
     }
     // Can't exit early if --force flag is present
     if args.iter().any(|a| a == "--force" || a == "-f") {
+        return false;
+    }
+    if has_untrusted_config_warning_marker() {
         return false;
     }
     // Check if running from precmd for the first time
@@ -250,6 +317,9 @@ pub fn should_exit_early(
     // This catches PATH modifications from shell initialization (e.g., path_helper in zsh)
     if reason == Some(HookReason::Precmd) && !*env::__MISE_ZSH_PRECMD_RUN {
         trace!("__MISE_ZSH_PRECMD_RUN=0 and reason=precmd, forcing hook-env to run");
+        return false;
+    }
+    if has_untrusted_config_warning_marker() {
         return false;
     }
     // Schedule hooks on directory change (can't do this in fast-path)

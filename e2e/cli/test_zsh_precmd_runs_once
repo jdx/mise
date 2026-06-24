@@ -31,7 +31,7 @@ run_hooks_to_file() {
 
 contains_trust_warning() {
   local file="$1"
-  grep -q "Config files in" "$file" && grep -q "are not trusted" "$file"
+  grep -Eq 'Config file(\(s\)|s)? in' "$file" && grep -q "are not trusted" "$file"
 }
 
 contains_mise_precmd_hook() {
@@ -78,14 +78,14 @@ if ! contains_mise_precmd_hook; then
   exit 1
 fi
 
-# In an interactive zsh session, `cd` would trigger `chpwd` hooks and the next
-# prompt would trigger `precmd` hooks automatically. In this non-interactive
-# test script, we invoke both hook lists manually.
-cd project
-
-# Crucially, `run_hooks_to_file` executes the hooks in the current shell rather
-# than via command substitution, so hook functions can still mutate shell state.
-run_hooks_to_file "$chpwd_file" "${chpwd_functions[@]}"
+# In an interactive zsh session, `cd` triggers `chpwd` hooks and the next prompt
+# triggers `precmd` hooks automatically. Capture the real `cd` first; if this
+# zsh mode does not fire chpwd on `cd`, fall back to invoking the hook list
+# manually in the current shell so hook functions can still mutate shell state.
+{ cd project; } >"$chpwd_file" 2>&1
+if [[ ${__MISE_ZSH_CHPWD_RAN:-0} != "1" ]]; then
+  run_hooks_to_file "$chpwd_file" "${chpwd_functions[@]}"
+fi
 run_hooks_to_file "$precmd_file" "${precmd_functions[@]-}"
 
 # The chpwd hook should surface the untrusted-config warning on directory entry.

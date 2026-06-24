@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION
+
+contains_trust_warning() {
+  local file="$1"
+  grep -Eq 'Config file(\(s\)|s)? in' "$file" && grep -q "are not trusted" "$file"
+}
+
+run_hook_env() {
+  local stdout_file="$1"
+  local stderr_file="$2"
+  : >"$stdout_file"
+  : >"$stderr_file"
+  mise hook-env -s bash >"$stdout_file" 2>"$stderr_file" || true
+  # Apply the marker exported by hook-env so the next prompt in this shell can
+  # suppress the same warning without trusting or ignoring the config.
+  eval "$(cat "$stdout_file")"
+}
+
+mkdir -p project
+cat >project/.mise.toml <<'EOF'
+[env]
+FOO = "bar"
+
+[tasks.make]
+run = "echo make"
+EOF
+
+parent_stdout="$(mktemp)"
+parent_stderr="$(mktemp)"
+first_stdout="$(mktemp)"
+first_stderr="$(mktemp)"
+second_stdout="$(mktemp)"
+second_stderr="$(mktemp)"
+changed_stdout="$(mktemp)"
+changed_stderr="$(mktemp)"
+left_stdout="$(mktemp)"
+left_stderr="$(mktemp)"
+reentered_stdout="$(mktemp)"
+reentered_stderr="$(mktemp)"
+explicit_stderr="$(mktemp)"
+trap 'rm -f "$parent_stdout" "$parent_stderr" "$first_stdout" "$first_stderr" "$second_stdout" "$second_stderr" "$changed_stdout" "$changed_stderr" "$left_stdout" "$left_stderr" "$reentered_stdout" "$reentered_stderr" "$explicit_stderr"' EXIT
+
+run_hook_env "$parent_stdout" "$parent_stderr"
+if contains_trust_warning "$parent_stderr"; then
+  echo "expected parent hook-env to be trusted"
+  cat "$parent_stderr"
+  exit 1
+fi
+
+cd project
+
+run_hook_env "$first_stdout" "$first_stderr"
+if ! contains_trust_warning "$first_stderr"; then
+  echo "expected first hook-env to report untrusted config"
+  cat "$first_stderr"
+  exit 1
+fi
+
+run_hook_env "$second_stdout" "$second_stderr"
+if contains_trust_warning "$second_stderr"; then
+  echo "expected second hook-env in same directory to suppress untrusted config warning"
+  cat "$second_stderr"
+  exit 1
+fi
+
+sleep 1
+echo "# changed" >>.mise.toml
+
+run_hook_env "$changed_stdout" "$changed_stderr"
+if ! contains_trust_warning "$changed_stderr"; then
+  echo "expected hook-env to warn again after config changes"
+  cat "$changed_stderr"
+  exit 1
+fi
+
+cd ..
+run_hook_env "$left_stdout" "$left_stderr"
+if contains_trust_warning "$left_stderr"; then
+  echo "expected parent hook-env after leaving project to be trusted"
+  cat "$left_stderr"
+  exit 1
+fi
+
+cd project
+run_hook_env "$reentered_stdout" "$reentered_stderr"
+if ! contains_trust_warning "$reentered_stderr"; then
+  echo "expected hook-env to warn again after leaving and re-entering directory"
+  cat "$reentered_stderr"
+  exit 1
+fi
+
+MISE_YES=0 mise run make 2>"$explicit_stderr" >/dev/null && {
+  echo "expected mise run to fail on untrusted config"
+  exit 1
+}
+if ! contains_trust_warning "$explicit_stderr"; then
+  echo "expected explicit mise run to keep reporting untrusted config"
+  cat "$explicit_stderr"
+  exit 1
+fi
