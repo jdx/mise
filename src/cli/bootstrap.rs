@@ -1105,17 +1105,32 @@ impl BootstrapStatus {
             }
             let item = tr.to_string();
             let resolved = match tr.resolve(config, &ResolveOptions::default()).await {
-                Ok(tv) => Some(tv),
+                Ok(tv) => tv,
                 Err(err) => {
-                    debug!("bootstrap status: failed to resolve {tr}: {err:#}");
-                    None
+                    let err = format!("{err:#}");
+                    report.row(
+                        "tools",
+                        item.clone(),
+                        "",
+                        format!("resolve error ({err})"),
+                        true,
+                    );
+                    json_tools.push(json!({
+                        "tool": tr.ba().to_string(),
+                        "requested_version": tr.version(),
+                        "resolved_version": null,
+                        "state": "resolve_error",
+                        "installed": false,
+                        "error": err,
+                    }));
+                    continue;
                 }
             };
-            let installed = resolved.as_ref().is_some_and(|tv| {
+            let installed = {
                 crate::backend::get(tr.ba())
-                    .is_some_and(|backend| backend.is_version_installed(config, tv, false))
-            });
-            let resolved_version = resolved.map(|tv| tv.version).unwrap_or_default();
+                    .is_some_and(|backend| backend.is_version_installed(config, &resolved, true))
+            };
+            let resolved_version = resolved.version;
             let state = if installed { "installed" } else { "missing" };
             report.row(
                 "tools",

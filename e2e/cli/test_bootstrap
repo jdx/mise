@@ -27,7 +27,8 @@ assert_contains "mise ls tiny" "1.0.0"
 assert "readlink ~/.gitconfig" "$PWD/gitconfig"
 assert_contains "cat ~/.zshrc" ">>> mise:activate >>>"
 assert_contains "mise bootstrap status" "dotfiles"
-assert_contains "mise bootstrap status" "tools  tiny@1.0.0"
+assert_contains "mise bootstrap status" "tiny@1.0.0"
+assert_contains "mise bootstrap status" "installed"
 assert_contains "mise bootstrap status --json" '"dotfiles"'
 assert_contains "mise bootstrap status --json" '"tools"'
 assert_succeed "mise bootstrap status --missing"
@@ -49,6 +50,22 @@ assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/2.1.0"
 assert_fail "cat bootstrap_ran"
 assert_fail "mise bootstrap status --missing" "tiny@2.1.0"
 assert_contains "mise bootstrap status --json" '"state": "missing"'
+
+# resolution errors should also fail --missing
+cat <<EOF >mise.toml
+[tools]
+tiny = "prefix:9999"
+EOF
+assert_fail "mise bootstrap status --missing" "resolve error"
+assert_contains "mise bootstrap status --json" '"state": "resolve_error"'
+
+# runtime symlinks should not count as installed for bootstrap status
+cat <<EOF >mise.toml
+[tools]
+tiny = "9.9.9"
+EOF
+ln -s ./1.0.0 "$MISE_DATA_DIR/installs/tiny/9.9.9"
+assert_fail "mise bootstrap status --missing" "tiny@9.9.9"
 
 # --skip tools leaves configured tools uninstalled
 cat <<EOF >mise.toml
