@@ -1054,16 +1054,18 @@ impl BootstrapStatus {
         }
 
         let status = system::login_shell::status(&req)?;
-        let (state, missing) = match &status.state {
-            LoginShellState::Set => ("set", false),
-            LoginShellState::Differs { .. } => ("differs", true),
-            LoginShellState::MissingFromShells { .. } => ("missing from /etc/shells", true),
+        let (row_state, json_state, missing) = match &status.state {
+            LoginShellState::Set => ("set", "set", false),
+            LoginShellState::Differs { .. } => ("differs", "differs", true),
+            LoginShellState::MissingFromShells { .. } => {
+                ("missing from /etc/shells", "missing_from_shells", true)
+            }
         };
         report.row(
             "user",
             "login_shell",
             status.current.clone(),
-            state,
+            row_state,
             missing,
         );
         report.json.insert(
@@ -1074,7 +1076,7 @@ impl BootstrapStatus {
                 "user": status.user,
                 "current": status.current,
                 "shell_listed": status.shell_listed,
-                "state": state,
+                "state": json_state,
             }),
         );
         Ok(())
@@ -1091,6 +1093,8 @@ impl BootstrapStatus {
             report.row("tools", ba.to_string(), "", "unknown", true);
             json_tools.push(json!({
                 "tool": ba.to_string(),
+                "requested_version": null,
+                "resolved_version": null,
                 "state": "unknown",
                 "installed": false,
             }));
