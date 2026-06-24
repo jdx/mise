@@ -32,10 +32,20 @@ impl InstalledFormula {
         format!("brew:{}", self.package_name())
     }
 
-    pub fn tap_entry(&self) -> Result<Option<(String, String)>> {
+    pub fn tap_entry_with_urls(
+        &self,
+        configured_taps: &BTreeMap<String, String>,
+    ) -> Result<Option<(String, String)>> {
         self.tap
             .as_ref()
-            .map(|tap| default_tap_url(tap).map(|url| (tap.clone(), url)))
+            .map(|tap| {
+                configured_taps
+                    .get(tap)
+                    .cloned()
+                    .map(Ok)
+                    .unwrap_or_else(|| default_tap_url(tap))
+                    .map(|url| (tap.clone(), url))
+            })
             .transpose()
     }
 }
@@ -53,6 +63,18 @@ pub struct PrunePlan {
     pub forget: Vec<String>,
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct AdoptionPlan {
+    records: Vec<AdoptionRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AdoptionRecord {
+    name: String,
+    version: String,
+    on_request: bool,
+}
+
 impl PrunePlan {
     pub fn is_empty(&self) -> bool {
         self.remove.is_empty() && self.forget.is_empty()
@@ -65,6 +87,8 @@ struct InstallReceipt {
     installed_on_request: Option<bool>,
     #[serde(default)]
     source: Option<ReceiptSource>,
+    #[serde(default)]
+    runtime_dependencies: Vec<RuntimeDependency>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -73,13 +97,23 @@ struct ReceiptSource {
     tap: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct RuntimeDependency {
+    #[serde(default)]
+    full_name: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+}
+
 pub fn default_tap_url(tap: &str) -> Result<String> {
     let mut parts = tap.split('/');
     match (parts.next(), parts.next(), parts.next()) {
         (Some(owner), Some(repo), None) if !owner.is_empty() && !repo.is_empty() => {
             Ok(format!("https://github.com/{owner}/homebrew-{repo}.git"))
         }
-        _ => bail!("tap '{tap}' must be in <owner>/<repo> format"),
+        _ => bail!(
+            "tap '{tap}' must be in <owner>/<repo> format; supply an explicit URL for non-standard taps"
+        ),
     }
 }
 
@@ -131,16 +165,31 @@ pub fn linked_formulae(include_all: bool) -> Result<Vec<InstalledFormula>> {
     Ok(formulae.into_values().collect())
 }
 
-pub async fn adopt_formulae(pkgs: &[PackageRequest]) -> Result<()> {
+pub async fn adoption_plan(pkgs: &[PackageRequest]) -> Result<AdoptionPlan> {
     if pkgs.is_empty() {
-        return Ok(());
+        return Ok(AdoptionPlan::default());
     }
     let closure = resolve::resolve_closure_with_taps(pkgs).await?;
+    let records = closure
+        .into_iter()
+        .filter_map(|rf| {
+            pour::linked_version(&rf.formula.name).map(|version| AdoptionRecord {
+                name: rf.formula.name,
+                version,
+                on_request: rf.on_request,
+            })
+        })
+        .collect();
+    Ok(AdoptionPlan { records })
+}
+
+pub fn apply_adoption_plan(plan: &AdoptionPlan) -> Result<()> {
+    if plan.records.is_empty() {
+        return Ok(());
+    }
     let mut ledger = state::Ledger::load();
-    for rf in closure {
-        if let Some(version) = pour::linked_version(&rf.formula.name) {
-            ledger.record(&rf.formula.name, &version, rf.on_request);
-        }
+    for record in &plan.records {
+        ledger.record(&record.name, &record.version, record.on_request);
     }
     ledger.save()
 }
@@ -148,7 +197,7 @@ pub async fn adopt_formulae(pkgs: &[PackageRequest]) -> Result<()> {
 pub async fn prune_plan(configured: &[PackageRequest]) -> Result<PrunePlan> {
     let keep = configured_formula_closure(configured).await?;
     let ledger = state::Ledger::load();
-    Ok(prune_plan_from_ledger(&ledger, &keep))
+    prune_plan_from_ledger(&ledger, &keep)
 }
 
 pub fn apply_prune_plan(plan: &PrunePlan, dry_run: bool) -> Result<()> {
@@ -185,7 +234,13 @@ async fn configured_formula_closure(configured: &[PackageRequest]) -> Result<Has
         .collect())
 }
 
-fn prune_plan_from_ledger(ledger: &state::Ledger, keep: &HashSet<String>) -> PrunePlan {
+fn prune_plan_from_ledger(ledger: &state::Ledger, keep: &HashSet<String>) -> Result<PrunePlan> {
+    let mut keep = keep.clone();
+    keep.extend(unmanaged_linked_formula_closure(ledger)?);
+    Ok(prune_plan_from_ledger_with_keep(ledger, &keep))
+}
+
+fn prune_plan_from_ledger_with_keep(ledger: &state::Ledger, keep: &HashSet<String>) -> PrunePlan {
     let mut plan = PrunePlan::default();
     for (name, entry) in &ledger.kegs {
         if keep.contains(name) {
@@ -214,6 +269,80 @@ fn prune_plan_from_ledger(ledger: &state::Ledger, keep: &HashSet<String>) -> Pru
         }
     }
     plan
+}
+
+fn unmanaged_linked_formula_closure(ledger: &state::Ledger) -> Result<HashSet<String>> {
+    let deps_by_formula = linked_receipt_dependencies()?;
+    let roots = deps_by_formula
+        .keys()
+        .filter(|name| !ledger.kegs.contains_key(*name))
+        .cloned()
+        .collect::<Vec<_>>();
+    Ok(dependency_closure(&deps_by_formula, roots))
+}
+
+fn linked_receipt_dependencies() -> Result<BTreeMap<String, Vec<String>>> {
+    let opt = prefix::prefix().join("opt");
+    let mut deps_by_formula = BTreeMap::new();
+    for entry in file::ls(&opt)? {
+        if !entry
+            .symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink())
+        {
+            continue;
+        }
+        let Some(name) = entry
+            .file_name()
+            .and_then(|f| f.to_str())
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        let Some((_, keg)) = linked_keg(&entry) else {
+            continue;
+        };
+        let rack = file::desymlink_path(&prefix::cellar().join(&name));
+        if !keg.starts_with(rack) {
+            continue;
+        }
+        let deps = read_receipt(&keg)?
+            .map(|receipt| {
+                receipt
+                    .runtime_dependencies
+                    .into_iter()
+                    .filter_map(|dep| {
+                        dep.full_name
+                            .or(dep.name)
+                            .and_then(|name| normalize_dependency_name(&name))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        deps_by_formula.insert(name, deps);
+    }
+    Ok(deps_by_formula)
+}
+
+fn dependency_closure(
+    deps_by_formula: &BTreeMap<String, Vec<String>>,
+    roots: Vec<String>,
+) -> HashSet<String> {
+    let mut keep = HashSet::new();
+    let mut stack = roots;
+    while let Some(name) = stack.pop() {
+        if !keep.insert(name.clone()) {
+            continue;
+        }
+        if let Some(deps) = deps_by_formula.get(&name) {
+            stack.extend(deps.iter().cloned());
+        }
+    }
+    keep
+}
+
+fn normalize_dependency_name(name: &str) -> Option<String> {
+    let name = name.rsplit('/').next().unwrap_or(name).trim();
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 fn read_receipt(keg: &Path) -> Result<Option<InstallReceipt>> {
@@ -408,10 +537,20 @@ mod tests {
         let formula = linked_formulae(false)?.pop().unwrap();
         assert_eq!(formula.config_key(), "brew:acme/tools/widget");
         assert_eq!(
-            formula.tap_entry()?,
+            formula.tap_entry_with_urls(&BTreeMap::new())?,
             Some((
                 "acme/tools".to_string(),
                 "https://github.com/acme/homebrew-tools.git".to_string(),
+            ))
+        );
+        assert_eq!(
+            formula.tap_entry_with_urls(&BTreeMap::from([(
+                "acme/tools".to_string(),
+                "https://brew.example.com/acme/tools.git".to_string(),
+            )]))?,
+            Some((
+                "acme/tools".to_string(),
+                "https://brew.example.com/acme/tools.git".to_string(),
             ))
         );
         Ok(())
@@ -441,7 +580,7 @@ mod tests {
         let keep = HashSet::from(["keep".to_string()]);
 
         assert_eq!(
-            prune_plan_from_ledger(&ledger, &keep),
+            prune_plan_from_ledger(&ledger, &keep)?,
             PrunePlan {
                 remove: vec![PruneCandidate {
                     name: "remove".to_string(),
@@ -449,6 +588,47 @@ mod tests {
                     keg: remove,
                 }],
                 forget: vec!["missing".to_string()],
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn prune_plan_keeps_ledger_deps_needed_by_unmanaged_formulae() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        write_keg(
+            tmp.path(),
+            "readline",
+            "8.2.0",
+            r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        let unused = write_keg(
+            tmp.path(),
+            "unused",
+            "1.0.0",
+            r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        write_keg(
+            tmp.path(),
+            "external",
+            "2.0.0",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"},"runtime_dependencies":[{"full_name":"readline"}]}"#,
+        )?;
+        let mut ledger = state::Ledger::default();
+        ledger.record("readline", "8.2.0", false);
+        ledger.record("unused", "1.0.0", false);
+
+        assert_eq!(
+            prune_plan_from_ledger(&ledger, &HashSet::new())?,
+            PrunePlan {
+                remove: vec![PruneCandidate {
+                    name: "unused".to_string(),
+                    version: "1.0.0".to_string(),
+                    keg: unused,
+                }],
+                forget: vec![],
             }
         );
         Ok(())

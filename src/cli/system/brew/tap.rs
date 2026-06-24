@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
-use eyre::{Result, bail};
+use eyre::Result;
 
 use crate::config::config_file::ConfigFile;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{ConfigPathOptions, resolve_target_config_path};
 use crate::file::display_path;
+use crate::system::packages::brew::default_tap_url;
 
 /// Add a Homebrew tap URL to [bootstrap.brew.taps]
 #[derive(Debug, clap::Args)]
@@ -63,18 +64,6 @@ impl SystemBrewTap {
         cf.save()?;
         info!("{}: added brew tap {}", display_path(&path), self.tap);
         Ok(())
-    }
-}
-
-fn default_tap_url(tap: &str) -> Result<String> {
-    let mut parts = tap.split('/');
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(owner), Some(repo), None) if !owner.is_empty() && !repo.is_empty() => {
-            Ok(format!("https://github.com/{owner}/homebrew-{repo}.git"))
-        }
-        _ => bail!(
-            "tap '{tap}' must be in <owner>/<repo> format; supply an explicit URL for non-standard taps"
-        ),
     }
 }
 

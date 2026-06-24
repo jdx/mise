@@ -1,9 +1,13 @@
 #[cfg(unix)]
 use std::collections::BTreeMap;
+#[cfg(unix)]
+use std::path::Path;
 use std::path::PathBuf;
 
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 
+#[cfg(unix)]
+use crate::config::Config;
 use crate::config::Settings;
 #[cfg(unix)]
 use crate::config::config_file::ConfigFile;
@@ -12,7 +16,9 @@ use crate::config::config_file::mise_toml::MiseToml;
 #[cfg(unix)]
 use crate::config::{ConfigPathOptions, resolve_target_config_path};
 #[cfg(unix)]
-use crate::file::display_path;
+use crate::file::{self, display_path};
+#[cfg(unix)]
+use crate::system;
 #[cfg(unix)]
 use crate::system::packages::PackageRequest;
 #[cfg(unix)]
@@ -92,12 +98,16 @@ impl SystemImport {
             prevent_home_local: true,
         })?;
 
+        let configured_taps = configured_brew_taps(&path).await?;
+        let target_taps = target_brew_taps(&path)?;
         let mut taps = BTreeMap::new();
         let mut requests = vec![];
         for formula in &formulae {
-            let tap_url = match formula.tap_entry()? {
+            let tap_url = match formula.tap_entry_with_urls(&configured_taps)? {
                 Some((tap, url)) => {
-                    taps.insert(tap, url.clone());
+                    if !target_taps.contains_key(&tap) {
+                        taps.insert(tap, url.clone());
+                    }
                     Some(url)
                 }
                 None => None,
@@ -128,6 +138,12 @@ impl SystemImport {
             return Ok(());
         }
 
+        let adoption = brew::adoption_plan(&requests).await?;
+        let original_config = if path.exists() {
+            Some(file::read(&path)?)
+        } else {
+            None
+        };
         let mut cf = if path.exists() {
             MiseToml::from_file(&path)?
         } else {
@@ -140,7 +156,15 @@ impl SystemImport {
             cf.update_bootstrap_package(&formula.config_key(), "latest")?;
         }
         cf.save()?;
-        brew::adopt_formulae(&requests).await?;
+        if let Err(err) = brew::apply_adoption_plan(&adoption) {
+            restore_config(&path, original_config).wrap_err_with(|| {
+                format!(
+                    "brew adoption failed, then restoring {} also failed",
+                    display_path(&path)
+                )
+            })?;
+            return Err(err).wrap_err("brew adoption failed; restored config");
+        }
         info!(
             "{}: imported {} brew formulae",
             display_path(&path),
@@ -153,6 +177,46 @@ impl SystemImport {
     async fn run_brew(self) -> Result<()> {
         let _ = self.manager;
         bail!("brew import is not supported on windows")
+    }
+}
+
+#[cfg(unix)]
+async fn configured_brew_taps(path: &Path) -> Result<BTreeMap<String, String>> {
+    let mut taps = BTreeMap::new();
+    let config = Config::get().await?;
+    for (tap, url) in system::brew_taps_from_config(&config) {
+        taps.insert(tap, url);
+    }
+    for (tap, url) in target_brew_taps(path)? {
+        taps.insert(tap, url);
+    }
+    Ok(taps)
+}
+
+#[cfg(unix)]
+fn target_brew_taps(path: &Path) -> Result<BTreeMap<String, String>> {
+    let mut taps = BTreeMap::new();
+    if path.exists() {
+        let cf = MiseToml::from_file(path)?;
+        if let Some(sys) = cf.bootstrap_config() {
+            for (tap, url) in sys.brew.taps {
+                taps.insert(tap, url);
+            }
+        }
+    }
+    Ok(taps)
+}
+
+#[cfg(unix)]
+fn restore_config(path: &Path, original: Option<Vec<u8>>) -> Result<()> {
+    match original {
+        Some(contents) => file::write(path, contents),
+        None => {
+            if path.exists() {
+                file::remove_file(path)?;
+            }
+            Ok(())
+        }
     }
 }
 

@@ -41,7 +41,10 @@ mod tag;
 
 pub struct BrewManager {}
 pub use cask::BrewCaskManager;
-pub use maintenance::{adopt_formulae, apply_prune_plan, linked_formulae, prune_plan};
+pub use maintenance::{
+    adoption_plan, apply_adoption_plan, apply_prune_plan, default_tap_url, linked_formulae,
+    prune_plan,
+};
 
 impl BrewManager {
     pub fn new() -> Self {
