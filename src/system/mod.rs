@@ -797,10 +797,15 @@ pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShel
 /// config. Explicit `[dotfiles]` edits for the same rc file/id win over the
 /// generated shell activation edit.
 pub fn shell_activation_from_config(config: &Config) -> Vec<ShellActivationRequest> {
-    let explicit_edits = edits::edits_from_config(config);
+    shell_activation_from_config_files(&config.config_files)
+}
+
+pub fn shell_activation_from_config_files(config_files: &ConfigMap) -> Vec<ShellActivationRequest> {
+    let explicit_files = files::files_from_config_files(config_files);
+    let explicit_edits = edits::edits_from_config_files(config_files);
     let mut merged: IndexMap<ShellActivationShell, bool> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
-    for cf in config.config_files.values().rev() {
+    for cf in config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (shell, value) in sys.mise_shell_activate {
                 let Some(shell) = ShellActivationShell::parse(&shell) else {
@@ -817,8 +822,8 @@ pub fn shell_activation_from_config(config: &Config) -> Vec<ShellActivationReque
                     None => {
                         if let Some(enabled) = merged.get(&shell) {
                             warn!(
-                                "[bootstrap.mise_shell_activate.{}]: keeping broader value \
-                                 {enabled} after invalid entry",
+                                "[bootstrap.mise_shell_activate.{}]: invalid entry ignored; \
+                                 keeping broader config value {enabled}",
                                 shell.name()
                             );
                         }
@@ -832,6 +837,17 @@ pub fn shell_activation_from_config(config: &Config) -> Vec<ShellActivationReque
         .filter_map(|(shell, enabled)| {
             enabled.then_some(shell).and_then(|shell| {
                 let request = ShellActivationRequest::new(shell);
+                if explicit_files
+                    .iter()
+                    .any(|file| file.target == request.edit.path)
+                {
+                    debug!(
+                        "bootstrap: shell activation for {} skipped because [dotfiles] owns {}",
+                        shell.name(),
+                        request.edit.path_raw
+                    );
+                    return None;
+                }
                 if explicit_edits
                     .iter()
                     .any(|edit| edit.path == request.edit.path && edit.id == request.edit.id)

@@ -359,6 +359,7 @@ impl Bootstrap {
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
         let mut follow_up = BootstrapFollowUp::new(self.dry_run);
+        let mut dry_run_config_files = None;
 
         if skip.contains(&BootstrapPart::Packages) {
             debug!("bootstrap: system packages skipped");
@@ -421,7 +422,9 @@ impl Bootstrap {
                 system::edits::apply(&config, &edits, &opts)?;
             }
             if self.dry_run {
-                hooks = self.hooks_after_dotfiles_dry_run(&config, &files)?;
+                let config_files = self.config_files_after_dotfiles_dry_run(&config, &files)?;
+                hooks = system::hooks_from_config_files(&config_files);
+                dry_run_config_files = Some(config_files);
             } else {
                 config = Config::reset().await?;
                 hooks = system::hooks_from_config(&config);
@@ -433,7 +436,10 @@ impl Bootstrap {
         if skip.contains(&BootstrapPart::Shell) {
             debug!("bootstrap: shell activation skipped");
         } else {
-            let activations = system::shell_activation_from_config(&config);
+            let activations = dry_run_config_files
+                .as_ref()
+                .map(system::shell_activation_from_config_files)
+                .unwrap_or_else(|| system::shell_activation_from_config(&config));
             if activations.is_empty() {
                 debug!("bootstrap: no [bootstrap.mise_shell_activate] configured, skipping");
             } else {
@@ -590,11 +596,11 @@ impl Bootstrap {
         }
     }
 
-    fn hooks_after_dotfiles_dry_run(
+    fn config_files_after_dotfiles_dry_run(
         &self,
         config: &Config,
         files: &[FileRequest],
-    ) -> Result<Vec<hooks::BootstrapHook>> {
+    ) -> Result<config::ConfigMap> {
         let mut config_files = config.config_files.clone();
         for file in files {
             if !is_mise_config_target(&file.target) || !file.source.is_file() {
@@ -613,7 +619,7 @@ impl Bootstrap {
                 }
             }
         }
-        Ok(system::hooks_from_config_files(&config_files))
+        Ok(config_files)
     }
 
     async fn run_task(&self, task: &str, skip_tools: bool) -> Result<()> {

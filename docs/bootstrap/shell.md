@@ -45,9 +45,10 @@ other bootstrap sections:
   Only `mise bootstrap shell apply` and `mise bootstrap` apply this section.
 - **Marker-owned edits** - mise only owns the block between its markers. Other
   content in the rc file is left untouched.
-- **Explicit dotfiles win** - if `[dotfiles]` already defines an edit for the
-  same target/id, such as `"~/.zshrc/activate"`, mise skips the generated
-  shell activation entry for that shell.
+- **Explicit dotfiles win** - if `[dotfiles]` already manages the same rc file
+  as a whole file, or defines an edit for the same target/id such as
+  `"~/.zshrc/activate"`, mise skips the generated shell activation entry for
+  that shell.
 
 For fully managed rc files or custom activation blocks, use `[dotfiles]`
 directly instead.

@@ -1221,6 +1221,7 @@ const completionSpec: Fig.Spec = {
             suggestions: [
               "packages",
               "dotfiles",
+              "shell",
               "defaults",
               "launchd",
               "systemd",

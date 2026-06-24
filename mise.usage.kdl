@@ -341,7 +341,7 @@ Run only one or more bootstrap parts
 Can be passed multiple times or as a comma-separated list. Cannot be used with `--skip`.
 """#
         arg <ONLY> {
-            choices packages dotfiles defaults launchd systemd user tools task final-hook
+            choices packages dotfiles shell defaults launchd systemd user tools task final-hook
         }
     }
     flag --skip help="Skip one or more bootstrap parts" var=#true {

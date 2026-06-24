@@ -29,7 +29,7 @@ use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::config::Config;
+use crate::config::{Config, ConfigMap};
 use crate::file;
 use crate::path::PathExt;
 use crate::system::files::FileState;
@@ -145,9 +145,13 @@ pub fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
 /// union global -> local, keyed by `(path, id)`; a more local config overrides
 /// an edit with the same id. Malformed entries warn and are skipped.
 pub fn edits_from_config(config: &Config) -> Vec<EditRequest> {
+    edits_from_config_files(&config.config_files)
+}
+
+pub fn edits_from_config_files(config_files: &ConfigMap) -> Vec<EditRequest> {
     let mut merged: IndexMap<String, EditRequest> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
-    for (cf_path, cf) in config.config_files.iter().rev() {
+    for (cf_path, cf) in config_files.iter().rev() {
         let base = cf_path.parent().unwrap_or(Path::new(".")).to_path_buf();
         let Some(dotfiles) = cf.dotfiles_config() else {
             continue;

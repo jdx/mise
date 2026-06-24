@@ -62,6 +62,7 @@ Can be passed multiple times or as a comma-separated list. Cannot be used with `
 
 - `packages`
 - `dotfiles`
+- `shell`
 - `defaults`
 - `launchd`
 - `systemd`

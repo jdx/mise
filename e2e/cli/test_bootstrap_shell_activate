@@ -45,7 +45,25 @@ EOF
 assert_succeed "mise bootstrap --dry-run --yes"
 assert_fail "test -e ~/.bashrc"
 
+# dry-run sees shell activation contributed by dotfile-managed mise config
+mkdir -p dotfiles/mise
+cat <<'EOF' >dotfiles/mise/config.toml
+[bootstrap.mise_shell_activate]
+zsh = true
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/mise/config.toml" = "dotfiles/mise/config.toml"
+EOF
+rm -f ~/.zshrc
+assert_contains "mise bootstrap --dry-run --yes" "edit ~/.zshrc (block:activate)"
+assert_fail "test -e ~/.zshrc"
+
 # --skip shell skips shell activation
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+bash = true
+EOF
 assert_succeed "mise bootstrap --yes --skip shell"
 assert_fail "test -e ~/.bashrc"
 
@@ -78,4 +96,18 @@ zsh = true
 EOF
 assert_succeed "mise bootstrap --yes --skip tools"
 assert_contains "cat ~/.zshrc" "echo custom activation"
+assert_not_contains "cat ~/.zshrc" 'mise activate zsh'
+
+# whole-file [dotfiles] targets for the rc file also win
+rm -f ~/.zshrc
+echo "whole zshrc" >zshrc
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+zsh = true
+
+[dotfiles]
+"~/.zshrc" = "zshrc"
+EOF
+assert_succeed "mise bootstrap --yes --skip tools"
+assert "readlink ~/.zshrc" "$PWD/zshrc"
 assert_not_contains "cat ~/.zshrc" 'mise activate zsh'
