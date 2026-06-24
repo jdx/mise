@@ -158,6 +158,10 @@ export default withMermaid(
               link: "/dotfiles",
             },
             {
+              text: "Shell Activation",
+              link: "/bootstrap/shell",
+            },
+            {
               text: "macOS Defaults",
               link: "/bootstrap/macos-defaults",
             },

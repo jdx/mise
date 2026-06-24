@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+# shellcheck disable=SC2016
+
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+zsh = true
+fish = true
+bash = false
+EOF
+
+assert_fail "mise bootstrap shell status --missing"
+assert_contains "mise bootstrap shell status --json" '"shell": "zsh"'
+assert_contains "mise bootstrap shell status --json" '"path": "~/.zshrc"'
+assert_contains "mise bootstrap shell status --json" '"shell": "fish"'
+assert_not_contains "mise bootstrap shell status --json" '"shell": "bash"'
+assert_contains "mise bootstrap shell apply --dry-run --yes" "edit ~/.zshrc (block:activate)"
+assert_contains "mise bootstrap shell apply --dry-run --yes" "edit ~/.config/fish/config.fish (block:activate)"
+assert_fail "test -e ~/.zshrc"
+assert_fail "test -e ~/.config/fish/config.fish"
+
+assert_succeed "mise bootstrap shell apply --yes"
+assert_contains "cat ~/.zshrc" 'eval "$(mise activate zsh)"'
+assert_contains "cat ~/.config/fish/config.fish" "mise activate fish | source"
+assert_fail "test -e ~/.bashrc"
+assert_succeed "mise bootstrap shell status --missing"
+assert_contains "mise bootstrap shell status --json" '"state": "applied"'
+
+# idempotent: re-running does not duplicate managed blocks
+assert_succeed "mise bootstrap shell apply --yes"
+assert "grep -c 'mise activate zsh' ~/.zshrc" "1"
+assert "grep -c 'mise activate fish' ~/.config/fish/config.fish" "1"
+
+# dry-run through top-level bootstrap does not write files
+rm -f ~/.zshrc ~/.bashrc
+rm -rf ~/.config/fish
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+bash = true
+EOF
+assert_succeed "mise bootstrap --dry-run --yes"
+assert_fail "test -e ~/.bashrc"
+
+# --skip shell skips shell activation
+assert_succeed "mise bootstrap --yes --skip shell"
+assert_fail "test -e ~/.bashrc"
+
+# local config overrides global config by shell key; table form is accepted
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[bootstrap.mise_shell_activate]
+zsh = true
+bash = true
+EOF
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+zsh = false
+
+[bootstrap.mise_shell_activate.fish]
+enabled = true
+EOF
+assert_contains "mise bootstrap shell status --json" '"shell": "bash"'
+assert_contains "mise bootstrap shell status --json" '"shell": "fish"'
+assert_not_contains "mise bootstrap shell status --json" '"shell": "zsh"'
+rm "$MISE_CONFIG_DIR/config.toml"
+
+# explicit [dotfiles] edits for the same path/id win over generated activation
+rm -f ~/.zshrc
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+zsh = true
+
+[dotfiles]
+"~/.zshrc/activate" = { block = "echo custom activation" }
+EOF
+assert_succeed "mise bootstrap --yes --skip tools"
+assert_contains "cat ~/.zshrc" "echo custom activation"
+assert_not_contains "cat ~/.zshrc" 'mise activate zsh'

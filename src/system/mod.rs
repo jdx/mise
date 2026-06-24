@@ -6,7 +6,8 @@
 //! — declarative macOS user defaults — `[bootstrap.macos.launchd.agents]`
 //! — declarative macOS LaunchAgents — `[bootstrap.linux.systemd.units]`
 //! — declarative Linux systemd user services — `[bootstrap.user].login_shell`
-//! — and `[bootstrap.hooks]` bootstrap phase hooks.
+//! — `[bootstrap.mise_shell_activate]` shell activation setup — and
+//! `[bootstrap.hooks]` bootstrap phase hooks.
 //! These are intentionally not part of `[tools]`: they're unversioned,
 //! machine-global settings and resources, not mise's per-project toolset.
 
@@ -21,6 +22,7 @@ use crate::config::{Config, ConfigMap};
 use crate::system::defaults::{DefaultsRequest, DefaultsValue};
 use crate::system::launchd::{LaunchdRequest, LaunchdTomlConfig};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
+use crate::system::shell_activation::{ShellActivationRequest, ShellActivationShell};
 use crate::system::systemd::{SystemdRequest, SystemdTomlConfig};
 
 pub mod defaults;
@@ -30,6 +32,7 @@ pub mod hooks;
 pub mod launchd;
 pub mod login_shell;
 pub mod packages;
+pub mod shell_activation;
 pub(crate) mod sudo;
 pub mod systemd;
 
@@ -53,6 +56,10 @@ pub struct BootstrapTomlConfig {
     /// Homebrew-specific bootstrap package config.
     #[serde(default)]
     pub brew: SystemBrewTomlConfig,
+    /// Shell activation setup. Values stay raw TOML so future options can warn
+    /// and be skipped without rejecting the whole config.
+    #[serde(default)]
+    pub mise_shell_activate: IndexMap<String, toml::Value>,
     /// Bootstrap phase hooks. Values stay raw TOML so newer hook shapes can
     /// warn and be skipped without rejecting the whole config.
     #[serde(default)]
@@ -784,6 +791,103 @@ pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShel
     shell.map(|shell| login_shell::LoginShellRequest { shell })
 }
 
+/// Aggregate `[bootstrap.mise_shell_activate]` across all loaded config files.
+///
+/// Shell keys merge global -> local, with local config overriding broader
+/// config. Explicit `[dotfiles]` edits for the same rc file/id win over the
+/// generated shell activation edit.
+pub fn shell_activation_from_config(config: &Config) -> Vec<ShellActivationRequest> {
+    let explicit_edits = edits::edits_from_config(config);
+    let mut merged: IndexMap<ShellActivationShell, bool> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local
+    for cf in config.config_files.values().rev() {
+        if let Some(sys) = cf.bootstrap_config() {
+            for (shell, value) in sys.mise_shell_activate {
+                let Some(shell) = ShellActivationShell::parse(&shell) else {
+                    warn!(
+                        "[bootstrap.mise_shell_activate]: unknown shell '{shell}' \
+                         (expected bash, zsh, or fish), ignoring entry"
+                    );
+                    continue;
+                };
+                match shell_activation_enabled(shell, value) {
+                    Some(enabled) => {
+                        merged.insert(shell, enabled);
+                    }
+                    None => continue,
+                }
+            }
+        }
+    }
+    merged
+        .into_iter()
+        .filter_map(|(shell, enabled)| {
+            enabled.then_some(shell).and_then(|shell| {
+                let request = ShellActivationRequest::new(shell);
+                if explicit_edits
+                    .iter()
+                    .any(|edit| edit.path == request.edit.path && edit.id == request.edit.id)
+                {
+                    debug!(
+                        "bootstrap: shell activation for {} skipped because [dotfiles] owns {}/{}",
+                        shell.name(),
+                        request.edit.path_raw,
+                        request.edit.id
+                    );
+                    None
+                } else {
+                    Some(request)
+                }
+            })
+        })
+        .collect()
+}
+
+fn shell_activation_enabled(shell: ShellActivationShell, value: toml::Value) -> Option<bool> {
+    match value {
+        toml::Value::Boolean(enabled) => Some(enabled),
+        toml::Value::Table(table) => {
+            let unknown = table
+                .keys()
+                .filter(|key| key.as_str() != "enabled")
+                .cloned()
+                .collect::<Vec<_>>();
+            if !unknown.is_empty() {
+                warn!(
+                    "[bootstrap.mise_shell_activate.{}]: unknown field(s) {}, ignoring entry",
+                    shell.name(),
+                    unknown.join(", ")
+                );
+                return None;
+            }
+            match table.get("enabled") {
+                Some(toml::Value::Boolean(enabled)) => Some(*enabled),
+                Some(_) => {
+                    warn!(
+                        "[bootstrap.mise_shell_activate.{}].enabled: expected bool, ignoring entry",
+                        shell.name()
+                    );
+                    None
+                }
+                None => {
+                    warn!(
+                        "[bootstrap.mise_shell_activate.{}]: missing enabled, ignoring entry",
+                        shell.name()
+                    );
+                    None
+                }
+            }
+        }
+        _ => {
+            warn!(
+                "[bootstrap.mise_shell_activate.{}]: expected bool or table, ignoring entry",
+                shell.name()
+            );
+            None
+        }
+    }
+}
+
 /// Aggregate `[bootstrap.hooks]` across all loaded config files.
 ///
 /// Hooks are additive and ordered global -> local. A hook value can be a string
@@ -1183,6 +1287,45 @@ mod tests {
         assert_eq!(
             merged.get(&("com.apple.dock".into(), "tilesize".into())),
             Some(&toml::Value::Integer(48))
+        );
+    }
+
+    #[test]
+    fn test_shell_activation_enabled_bool_and_table_forms() {
+        assert_eq!(
+            shell_activation_enabled(ShellActivationShell::Zsh, tv("true")),
+            Some(true)
+        );
+        assert_eq!(
+            shell_activation_enabled(ShellActivationShell::Bash, tv("false")),
+            Some(false)
+        );
+        assert_eq!(
+            shell_activation_enabled(ShellActivationShell::Fish, tv("{ enabled = true }")),
+            Some(true)
+        );
+        assert_eq!(
+            shell_activation_enabled(ShellActivationShell::Fish, tv("{ enabled = false }")),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn test_shell_activation_enabled_skips_future_options() {
+        assert_eq!(
+            shell_activation_enabled(
+                ShellActivationShell::Zsh,
+                tv(r#"{ enabled = true, mode = "shims" }"#)
+            ),
+            None
+        );
+        assert_eq!(
+            shell_activation_enabled(ShellActivationShell::Zsh, tv("{}")),
+            None
+        );
+        assert_eq!(
+            shell_activation_enabled(ShellActivationShell::Zsh, tv(r#""yes""#)),
+            None
         );
     }
 
