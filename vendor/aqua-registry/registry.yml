@@ -65696,6 +65696,23 @@ packages:
           type: github_release
           asset: doggo_{{trimV .Version}}_checksums.txt
           algorithm: sha256
+      - version_constraint: semver(">= 1.2.0")
+        asset: doggo-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: doggo
+            src: "{{.AssetWithoutExt}}/doggo"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          386: i386
+        checksum:
+          type: github_release
+          asset: doggo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: doggo_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
