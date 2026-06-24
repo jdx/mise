@@ -35,6 +35,22 @@ assert "mise set NEW_VAR=new_value" ""
 assert_contains "cat mise.toml" "NEW_VAR"
 assert_not_contains "cat mise.local.toml" "NEW_VAR"
 
+# Test that mise set writes to the nearest config directory, not the lowest
+# precedence TOML file across the entire hierarchy.
+rm -rf parent
+mkdir -p parent/myproject/inner
+touch parent/mise.toml parent/myproject/mise.toml
+assert "cd parent/myproject/inner && mise set SOMETHING=from_inner" ""
+assert_contains "cat parent/myproject/mise.toml" "SOMETHING"
+assert_not_contains "cat parent/mise.toml" "SOMETHING"
+
+# Test that ignored config directories are not selected as write targets.
+ignored_child="$(pwd)/parent/myproject"
+assert "cd parent/myproject/inner && MISE_IGNORED_CONFIG_PATHS=$ignored_child mise set IGNORED_CHILD=skipped" ""
+assert_contains "cat parent/mise.toml" "IGNORED_CHILD"
+assert_not_contains "cat parent/myproject/mise.toml" "IGNORED_CHILD"
+rm -rf parent
+
 # Test --stdin reads multiline value
 assert "printf 'line1\nline2' | mise set --stdin MULTI_LINE" ""
 assert "mise set MULTI_LINE" "line1
