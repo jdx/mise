@@ -1469,30 +1469,11 @@ pub static ALL_TOML_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
         .collect()
 });
 
-/// list of all non-global mise.tomls
-pub fn local_toml_config_paths() -> Vec<&'static PathBuf> {
-    ALL_TOML_CONFIG_FILES
-        .iter()
-        .filter(|p| !is_global_config(p))
-        .collect()
-}
-
-/// The last (lowest precedence) local mise.toml or the path to where it should be written to.
-/// This ensures commands write to mise.toml instead of mise.local.toml when both exist.
-/// Note: local_toml_config_paths() returns files in highest-to-lowest precedence order,
-/// so we use .last() to get the lowest precedence file.
+/// The lowest-precedence TOML config in the nearest local config directory, or
+/// the path where it should be written.
 pub fn local_toml_config_path() -> PathBuf {
     static CWD: Lazy<PathBuf> = Lazy::new(|| PathBuf::from("."));
-    local_toml_config_paths()
-        .into_iter()
-        .last()
-        .cloned()
-        .unwrap_or_else(|| {
-            dirs::CWD
-                .as_ref()
-                .unwrap_or(&CWD)
-                .join(&*env::MISE_DEFAULT_CONFIG_FILENAME)
-        })
+    local_toml_config_path_from_dir(dirs::CWD.as_ref().unwrap_or(&CWD))
 }
 
 /// The lowest-precedence TOML config in the nearest directory that has one.
