@@ -81,9 +81,13 @@ impl RepoRequest {
         if url.is_empty() {
             bail!("must set a non-empty `url`");
         }
+        if url.starts_with('-') {
+            bail!("`url` must not start with `-`");
+        }
         let git_ref = config.git_ref.map(|s| s.trim().to_string());
         let git_ref = match git_ref {
             Some(git_ref) if git_ref.is_empty() => bail!("`ref` must not be empty"),
+            Some(git_ref) if git_ref.starts_with('-') => bail!("`ref` must not start with `-`"),
             other => other,
         };
         Ok(Self {
@@ -481,6 +485,10 @@ fn print_git_command(path: &Path, args: &[&str]) -> Result<()> {
         "git".to_string(),
         "-C".to_string(),
         path.display().to_string(),
+        "-c".to_string(),
+        format!("safe.directory={}", path.display()),
+        "-c".to_string(),
+        "core.autocrlf=false".to_string(),
     ];
     parts.extend(args.iter().map(|arg| arg.to_string()));
     miseprintln!("{}", shell_words::join(parts));
@@ -527,6 +535,26 @@ mod tests {
                 RepoTomlConfig {
                     url: Some("".to_string()),
                     git_ref: None
+                }
+            )
+            .is_err()
+        );
+        assert!(
+            RepoRequest::from_toml(
+                "~/src/bad-url".to_string(),
+                RepoTomlConfig {
+                    url: Some("--upload-pack=sh".to_string()),
+                    git_ref: None
+                }
+            )
+            .is_err()
+        );
+        assert!(
+            RepoRequest::from_toml(
+                "~/src/bad-ref".to_string(),
+                RepoTomlConfig {
+                    url: Some("https://example.com/repo.git".to_string()),
+                    git_ref: Some("--detach".to_string())
                 }
             )
             .is_err()

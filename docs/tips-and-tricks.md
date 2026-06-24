@@ -79,8 +79,8 @@ downloads and runs the pinned mise binary for the project.
 Beyond `[tools]`, mise can declare the rest of the machine setup needed for
 a project or workstation, and [`mise bootstrap`](/cli/bootstrap.html)
 converges it in one command — system packages, then repos, then dotfiles, then
-shell activation, then macOS defaults, then LaunchAgents, then systemd, then
-login shell, then tools, then a `bootstrap` task if you define one:
+shell activation, then macOS defaults, then LaunchAgents, then systemd user services, then login
+shell, then tools, then a `bootstrap` task if you define one:
 
 ```toml
 [bootstrap.packages]                      # OS packages (apk/apt/dnf/pacman/brew)

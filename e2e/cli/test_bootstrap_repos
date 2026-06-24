@@ -69,7 +69,7 @@ assert "cat ~/src/tagged/version.txt" "v1"
 assert_contains "mise bootstrap repos status" "current"
 git -C "$HOME/src/tagged" checkout -q main
 assert_contains "mise bootstrap repos status" "differs"
-assert_contains "mise bootstrap repos apply --dry-run" "git -C $HOME/src/tagged checkout v1"
+assert_contains "mise bootstrap repos apply --dry-run" "checkout v1"
 assert_not_contains "mise bootstrap repos apply --dry-run" "pull --ff-only origin v1"
 assert_succeed "mise bootstrap repos apply --yes"
 assert "cat ~/src/tagged/version.txt" "v1"

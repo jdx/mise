@@ -114,7 +114,7 @@ Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-
 Examples:
 
 ```
-mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
+mise bootstrap                    # common phases: packages + repos + dotfiles + tools + task
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap --only tools       # run just tool installation

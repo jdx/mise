@@ -225,7 +225,7 @@ pub(crate) fn apply_repos(
     dry_run: bool,
     yes: bool,
 ) -> Result<()> {
-    use crate::system::repos::{self, RepoState};
+    use crate::system::repos;
     if repos.is_empty() {
         return Ok(());
     }
@@ -241,20 +241,6 @@ pub(crate) fn apply_repos(
     }
     if targets.is_empty() {
         return Ok(());
-    }
-    for status in &statuses {
-        match &status.state {
-            RepoState::Dirty => {
-                eyre::bail!(
-                    "repos: {} has local changes; commit, stash, or clean them before bootstrap",
-                    status.request
-                );
-            }
-            RepoState::Conflict(reason) => {
-                eyre::bail!("repos: {}: {reason}", status.request);
-            }
-            RepoState::Current | RepoState::Missing | RepoState::Differs => {}
-        }
     }
     let list = targets
         .iter()

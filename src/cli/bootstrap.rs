@@ -2077,7 +2077,7 @@ impl BootstrapUserStatus {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap</bold>                    # packages + repos + dotfiles + tools + bootstrap task
+    $ <bold>mise bootstrap</bold>                    # common phases: packages + repos + dotfiles + tools + task
     $ <bold>mise bootstrap --force-dotfiles</bold>   # replace conflicting dotfile targets
     $ <bold>mise bootstrap --skip tools,task</bold>  # skip tool installation and the bootstrap task
     $ <bold>mise bootstrap --only tools</bold>       # run just tool installation
