@@ -34,6 +34,9 @@ invocation; keep it idempotent. Use it for any project-specific setup
 that doesn't fit the declarative sections (cloning repos, seeding
 databases, etc.) — it runs with the installed tools on PATH.
 
+Use `--skip <part>` to skip named parts, or `--only <part>` to run just
+named parts. Both flags can be repeated or comma-separated.
+
 ## Flags
 
 ### `-n --dry-run`
@@ -51,6 +54,24 @@ Overwrite existing files that conflict with whole-file dotfile entries
 ### `--skip… <SKIP>`
 
 Skip one or more bootstrap parts
+
+Can be passed multiple times or as a comma-separated list.
+
+**Choices:**
+
+- `packages`
+- `dotfiles`
+- `defaults`
+- `launchd`
+- `systemd`
+- `user`
+- `tools`
+- `task`
+- `final-hook`
+
+### `--only… <ONLY>`
+
+Run only one or more bootstrap parts
 
 Can be passed multiple times or as a comma-separated list.
 
@@ -84,6 +105,7 @@ Examples:
 mise bootstrap                    # packages + dotfiles + tools + bootstrap task
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
+mise bootstrap --only tools       # run just tool installation
 mise bootstrap packages install --yes
 mise bootstrap macos-defaults status
 mise bootstrap launchd apply --dry-run

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use eyre::Result;
@@ -48,6 +49,9 @@ use clap::{Subcommand, ValueEnum};
 /// invocation; keep it idempotent. Use it for any project-specific setup
 /// that doesn't fit the declarative sections (cloning repos, seeding
 /// databases, etc.) — it runs with the installed tools on PATH.
+///
+/// Use `--skip <part>` to skip named parts, or `--only <part>` to run just
+/// named parts. Both flags can be repeated or comma-separated.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Bootstrap {
@@ -72,6 +76,12 @@ pub struct Bootstrap {
     #[clap(long, value_enum, value_delimiter = ',')]
     skip: Vec<BootstrapPart>,
 
+    /// Run only one or more bootstrap parts
+    ///
+    /// Can be passed multiple times or as a comma-separated list.
+    #[clap(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
+    only: Vec<BootstrapPart>,
+
     /// Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
     #[clap(long)]
     update: bool,
@@ -88,6 +98,20 @@ enum BootstrapPart {
     Tools,
     Task,
     FinalHook,
+}
+
+impl BootstrapPart {
+    const ALL: [Self; 9] = [
+        Self::Packages,
+        Self::Dotfiles,
+        Self::Defaults,
+        Self::Launchd,
+        Self::Systemd,
+        Self::User,
+        Self::Tools,
+        Self::Task,
+        Self::FinalHook,
+    ];
 }
 
 #[derive(Debug, Subcommand)]
@@ -269,11 +293,7 @@ impl Bootstrap {
         }
         let mut config = Config::get().await?;
         let mut hooks = system::hooks_from_config(&config);
-        let skip = self
-            .skip
-            .iter()
-            .copied()
-            .collect::<std::collections::HashSet<_>>();
+        let skip = self.skip_parts();
 
         if skip.contains(&BootstrapPart::Packages) {
             debug!("bootstrap: system packages skipped");
@@ -438,6 +458,18 @@ impl Bootstrap {
         phase: BootstrapHookPhase,
     ) -> Result<()> {
         hooks::run_phase(hooks, phase, self.dry_run).await
+    }
+
+    fn skip_parts(&self) -> HashSet<BootstrapPart> {
+        if self.only.is_empty() {
+            self.skip.iter().copied().collect()
+        } else {
+            let only = self.only.iter().copied().collect::<HashSet<_>>();
+            BootstrapPart::ALL
+                .into_iter()
+                .filter(|part| !only.contains(part))
+                .collect()
+        }
     }
 
     fn hooks_after_dotfiles_dry_run(
@@ -987,6 +1019,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap</bold>                    # packages + dotfiles + tools + bootstrap task
     $ <bold>mise bootstrap --force-dotfiles</bold>   # replace conflicting dotfile targets
     $ <bold>mise bootstrap --skip tools,task</bold>  # skip tool installation and the bootstrap task
+    $ <bold>mise bootstrap --only tools</bold>       # run just tool installation
     $ <bold>mise bootstrap packages install --yes</bold>
     $ <bold>mise bootstrap macos-defaults status</bold>
     $ <bold>mise bootstrap launchd apply --dry-run</bold>
