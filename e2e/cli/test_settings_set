@@ -37,11 +37,12 @@ assert "mise settings all_compile" "true"
 assert "mise settings set all_compile=0"
 assert "mise settings all_compile" "false"
 
-# test "settings set key=value" with dotted keys
+# dotted-only settings should not emit an empty parent table
+settings_config="$MISE_CONFIG_DIR/config.toml"
+rm -f "$settings_config"
 mise settings set status.missing_tools=always
 assert "mise settings get status.missing_tools" "always"
-mise settings set status.missing_tools=never
-assert "mise settings get status.missing_tools" "never"
+assert_not_contains "cat $settings_config" "[settings]"
 
 # test "settings set" with no value and no = fails
 assert_fail "mise settings set all_compile"

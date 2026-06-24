@@ -68,7 +68,9 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
     let raw = file::read_to_string(&path).unwrap_or_default();
     let mut config: DocumentMut = raw.parse()?;
     if !config.contains_key("settings") {
-        config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
+        let mut settings = toml_edit::Table::new();
+        settings.set_implicit(true);
+        config["settings"] = toml_edit::Item::Table(settings);
     }
     if let Some(mut settings) = config["settings"].as_table_mut() {
         if let Some((parent_key, child_key)) = key.split_once('.') {
