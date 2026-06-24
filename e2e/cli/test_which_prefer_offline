@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/10460
+#
+# `mise which` is a binary lookup and must not require HTTP calls when an
+# installed version already satisfies the request. It is now in the
+# prefer-offline auto-enable list (like `where`, `ls`, `exec`), so even an
+# explicit `minimum_release_age` cutoff -- which normally forces date-aware
+# remote resolution on regular commands -- must keep resolving from installed
+# versions instead of fetching a remote version list.
+#
+# Scope: this covers config-file tools. An explicit `--tool=spy@1` argument is
+# a `ToolSource::Argument` request, which intentionally opts out of
+# prefer-offline so explicit version requests resolve accurately (see #10571),
+# consistent with `mise exec`/`mise x`; that path is not exercised here.
+
+# Copy the dummy plugin into one whose remote version-listing scripts leave a
+# marker file behind when they run, making any remote fetch directly
+# observable. (cat > preserves the executable bit from the copied scripts.)
+marker="$HOME/remote-versions-fetched"
+cp -RL "$MISE_DATA_DIR/plugins/dummy" "$MISE_DATA_DIR/plugins/spy"
+cat >"$MISE_DATA_DIR/plugins/spy/bin/list-all" <<EOF
+#!/usr/bin/env bash
+touch "$marker"
+echo "1.0.0 1.1.0 2.0.0"
+EOF
+cat >"$MISE_DATA_DIR/plugins/spy/bin/latest-stable" <<EOF
+#!/usr/bin/env bash
+touch "$marker"
+echo "2.0.0"
+EOF
+
+mise install spy@1.0.0
+
+# Drop the marker and the remote-versions cache written during install. The
+# cache must go too: a regressed which with a warm cache would resolve
+# remotely without re-running list-all, hiding the fetch from the marker.
+rm -f "$marker"
+rm -rf "$MISE_CACHE_DIR/spy"
+
+# Fuzzy requests ("latest", a prefix) are the dangerous ones: an explicit
+# cutoff pushes those onto the remote date-aware resolution path. Newer remote
+# versions (1.1.0, 2.0.0) exist, so a regressed remote resolution would also
+# report a non-installed version below. Test both with no cutoff (built-in
+# default) and an explicit cutoff.
+for mra in unset 24h; do
+  if [[ $mra == unset ]]; then
+    unset MISE_MINIMUM_RELEASE_AGE
+  else
+    export MISE_MINIMUM_RELEASE_AGE="$mra"
+  fi
+
+  for version in latest 1 1.0.0; do
+    cat >mise.toml <<EOF
+[tools]
+spy = "$version"
+EOF
+
+    # The spy plugin installs a bin named `dummy`; look it up and assert it
+    # resolved to the installed 1.0.0 without a remote fetch. Check the
+    # resolved version (not the path, whose dir mirrors the request string
+    # "1"/"latest") so the assert is request-independent. A regressed remote
+    # resolution would pick a newer non-installed version (1.1.0/2.0.0) and
+    # `mise which` would fail to find the bin.
+    resolved="$(mise which --version dummy)" || fail "mise which dummy failed for spy@$version"
+
+    if [[ -e $marker ]]; then
+      fail "mise which fetched remote versions resolving spy@$version (minimum_release_age=$mra)"
+    fi
+    assert_contains_text "$resolved" "1.0.0"
+  done
+done

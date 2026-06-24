@@ -1852,7 +1852,7 @@ When enabled, mise will prefer locally cached data and avoid remote version fetc
 possible. Unlike `offline`, this still allows network requests as a fallback.
 
 This is automatically enabled for fast commands like `hook-env`, `activate`, `exec`, `env`,
-`ls`, `current`, `where`, and shims.
+`ls`, `current`, `where`, `which`, and shims.
 """
 env = "MISE_PREFER_OFFLINE"
 type = "Bool"
