@@ -178,10 +178,10 @@ pub async fn list_releases_including_prereleases_from_url(
 }
 
 async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
-    let url = format!("{api_url}/repos/{repo}/releases?per_page=100");
+    let mut url = format!("{api_url}/repos/{repo}/releases?per_page=100");
     let headers = get_headers(&url)?;
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
-        .json_headers_with_headers::<Vec<GithubRelease>, _>(url, &headers)
+        .json_headers_with_headers::<Vec<GithubRelease>, _>(&url, &headers)
         .await?;
 
     // Fetch additional pages when MISE_LIST_ALL_VERSIONS is set, or (bounded) while
@@ -197,9 +197,10 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>>
         {
             break;
         }
-        headers = get_headers(&next)?;
+        url = resolve_pagination_url(&url, &next)?;
+        headers = get_headers(&url)?;
         let (more, h) = crate::http::HTTP_FETCH
-            .json_headers_with_headers::<Vec<GithubRelease>, _>(next, &headers)
+            .json_headers_with_headers::<Vec<GithubRelease>, _>(&url, &headers)
             .await?;
         releases.extend(more);
         headers = h;
@@ -231,17 +232,18 @@ pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>
 }
 
 async fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
-    let url = format!("{api_url}/repos/{repo}/tags?per_page=100");
+    let mut url = format!("{api_url}/repos/{repo}/tags?per_page=100");
     let headers = get_headers(&url)?;
     let (mut tags, mut headers) = crate::http::HTTP_FETCH
-        .json_headers_with_headers::<Vec<GithubTag>, _>(url, &headers)
+        .json_headers_with_headers::<Vec<GithubTag>, _>(&url, &headers)
         .await?;
 
     if *env::MISE_LIST_ALL_VERSIONS {
         while let Some(next) = next_page(&headers) {
-            headers = get_headers(&next)?;
+            url = resolve_pagination_url(&url, &next)?;
+            headers = get_headers(&url)?;
             let (more, h) = crate::http::HTTP_FETCH
-                .json_headers_with_headers::<Vec<GithubTag>, _>(next, &headers)
+                .json_headers_with_headers::<Vec<GithubTag>, _>(&url, &headers)
                 .await?;
             tags.extend(more);
             headers = h;
@@ -258,17 +260,18 @@ pub async fn list_tags_with_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> 
 }
 
 async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTagWithDate>> {
-    let url = format!("{api_url}/repos/{repo}/tags?per_page=100");
+    let mut url = format!("{api_url}/repos/{repo}/tags?per_page=100");
     let headers = get_headers(&url)?;
     let (mut tags, mut response_headers) = crate::http::HTTP_FETCH
-        .json_headers_with_headers::<Vec<GithubTag>, _>(url, &headers)
+        .json_headers_with_headers::<Vec<GithubTag>, _>(&url, &headers)
         .await?;
 
     // Fetch all pages when MISE_LIST_ALL_VERSIONS is set
     while let Some(next) = next_page(&response_headers) {
-        response_headers = get_headers(&next)?;
+        url = resolve_pagination_url(&url, &next)?;
+        response_headers = get_headers(&url)?;
         let (more, h) = crate::http::HTTP_FETCH
-            .json_headers_with_headers::<Vec<GithubTag>, _>(next, &response_headers)
+            .json_headers_with_headers::<Vec<GithubTag>, _>(&url, &response_headers)
             .await?;
         tags.extend(more);
         response_headers = h;
@@ -455,6 +458,17 @@ fn next_page(headers: &HeaderMap) -> Option<String> {
     regex!(r#"<([^>]+)>; rel="next""#)
         .captures(&link)
         .map(|c| c.get(1).unwrap().as_str().to_string())
+}
+
+fn resolve_pagination_url(current: &str, next: &str) -> Result<String> {
+    if url::Url::parse(next).is_ok() {
+        return Ok(next.to_string());
+    }
+    let base = url::Url::parse(current)
+        .wrap_err_with(|| format!("invalid pagination base URL: {current}"))?;
+    base.join(next.trim_start_matches('/'))
+        .map(|u| u.to_string())
+        .wrap_err_with(|| format!("invalid pagination URL: {next}"))
 }
 
 fn cache_dir() -> PathBuf {
@@ -930,6 +944,23 @@ something_else = "value"
             err.to_string()
                 .contains("invalid request URL for GitHub auth headers"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_resolve_pagination_url() {
+        let base = "https://api.github.com/repos/jdx/aube/releases?per_page=100";
+        assert_eq!(
+            resolve_pagination_url(base, "/repos/jdx/aube/releases?page=2").unwrap(),
+            "https://api.github.com/repos/jdx/aube/releases?page=2"
+        );
+        assert_eq!(
+            resolve_pagination_url(
+                base,
+                "https://api.github.com/repos/jdx/aube/releases?page=2"
+            )
+            .unwrap(),
+            "https://api.github.com/repos/jdx/aube/releases?page=2"
         );
     }
 

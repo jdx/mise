@@ -147,7 +147,7 @@ impl Client {
     }
 
     pub async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
-        let url = url.into_url().unwrap();
+        let url = url.into_url()?;
         let headers = host_auth_headers(&url)?;
         self.get_async_with_headers(url, &headers).await
     }
@@ -178,7 +178,7 @@ impl Client {
     }
 
     pub async fn head<U: IntoUrl>(&self, url: U) -> Result<Response> {
-        let url = url.into_url().unwrap();
+        let url = url.into_url()?;
         let headers = host_auth_headers(&url)?;
         self.head_async_with_headers(url, &headers).await
     }
