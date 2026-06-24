@@ -1,17 +1,18 @@
 //! `[bootstrap]` config section: machine-global bootstrapping.
 //!
 //! This is `[bootstrap.packages]` — declarative system packages installed
-//! by `mise bootstrap packages install` — `[dotfiles]` — declarative config
-//! files applied by `mise dotfiles apply` — `[bootstrap.macos.defaults]`
-//! — declarative macOS user defaults — `[bootstrap.macos.launchd.agents]`
-//! — declarative macOS LaunchAgents — `[bootstrap.linux.systemd.units]`
-//! — declarative Linux systemd user services — `[bootstrap.user].login_shell`
-//! — `[bootstrap.mise_shell_activate]` shell activation setup — and
-//! `[bootstrap.hooks]` bootstrap phase hooks.
+//! by `mise bootstrap packages install` — `[bootstrap.repos]` — declarative
+//! git checkouts — `[dotfiles]` — declarative config files applied by
+//! `mise dotfiles apply` — `[bootstrap.mise_shell_activate]` shell activation
+//! setup — `[bootstrap.macos.defaults]` — declarative macOS user defaults —
+//! `[bootstrap.macos.launchd.agents]` — declarative macOS LaunchAgents —
+//! `[bootstrap.linux.systemd.units]` — declarative Linux systemd user services
+//! — `[bootstrap.user].login_shell` — and `[bootstrap.hooks]` bootstrap phase
+//! hooks.
 //! These are intentionally not part of `[tools]`: they're unversioned,
 //! machine-global settings and resources, not mise's per-project toolset.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use eyre::bail;
@@ -22,6 +23,7 @@ use crate::config::{Config, ConfigMap};
 use crate::system::defaults::{DefaultsRequest, DefaultsValue};
 use crate::system::launchd::{LaunchdRequest, LaunchdTomlConfig};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
+use crate::system::repos::{RepoRequest, RepoTomlConfig};
 use crate::system::shell_activation::{
     ShellActivationMode, ShellActivationRequest, ShellActivationShell, ShellActivationTarget,
 };
@@ -34,6 +36,7 @@ pub mod hooks;
 pub mod launchd;
 pub mod login_shell;
 pub mod packages;
+pub mod repos;
 pub mod shell_activation;
 pub(crate) mod sudo;
 pub mod systemd;
@@ -46,6 +49,9 @@ pub struct BootstrapTomlConfig {
     /// pacman, winget, ...) parse fine on older ones.
     #[serde(default)]
     pub packages: IndexMap<String, String>,
+    /// `"~/path"` -> git repo checkout.
+    #[serde(default)]
+    pub repos: IndexMap<String, RepoTomlConfig>,
     /// macOS-specific bootstrap config.
     #[serde(default)]
     pub macos: BootstrapMacosTomlConfig,
@@ -350,6 +356,29 @@ pub fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
         }
     }
     out
+}
+
+/// Aggregate `[bootstrap.repos]` across all loaded config files.
+///
+/// Repo paths union global -> local; a more local config replaces the full
+/// repo declaration for the same expanded path. Invalid entries warn and are
+/// skipped.
+pub fn repos_from_config(config: &Config) -> Vec<RepoRequest> {
+    let mut merged: IndexMap<PathBuf, RepoRequest> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local
+    for cf in config.config_files.values().rev() {
+        if let Some(sys) = cf.bootstrap_config() {
+            for (path_raw, repo) in sys.repos {
+                match RepoRequest::from_toml(path_raw.clone(), repo) {
+                    Ok(request) => {
+                        merged.insert(request.path.clone(), request);
+                    }
+                    Err(err) => warn!("[bootstrap.repos].\"{path_raw}\": {err}"),
+                }
+            }
+        }
+    }
+    merged.into_values().collect()
 }
 
 /// Count macOS defaults declared in one config file, including friendly
@@ -1254,6 +1283,23 @@ mod tests {
         assert_eq!(brew_tap_name("homebrew/cask/firefox"), None);
         assert_eq!(brew_tap_name("jq"), None);
         assert_eq!(brew_tap_name("too/many/slashes/here"), None);
+    }
+
+    #[test]
+    fn test_repo_request_validation() {
+        let request = repos::RepoRequest::from_toml(
+            "~/src/dotfiles".to_string(),
+            repos::RepoTomlConfig {
+                url: Some("https://github.com/jdx/dotfiles.git".to_string()),
+                git_ref: Some("main".to_string()),
+            },
+        )
+        .unwrap();
+        assert!(request.path.is_absolute());
+        assert_eq!(request.path_raw, "~/src/dotfiles");
+        assert_eq!(request.url, "https://github.com/jdx/dotfiles.git");
+        assert_eq!(request.git_ref.as_deref(), Some("main"));
+        assert!(repos::RepoRequest::from_toml("relative".to_string(), Default::default()).is_err());
     }
 
     #[test]

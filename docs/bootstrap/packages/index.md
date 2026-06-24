@@ -31,10 +31,12 @@ machine-global GUI apps (`libssl-dev`, `postgresql`, `ffmpeg`, `firefox`),
 not for project dev tools — those belong in `[tools]`.
 
 The `[bootstrap]` section can also declare
-[macOS defaults](/bootstrap/macos-defaults.html) (`[bootstrap.macos.defaults]`),
-applied by `mise bootstrap macos-defaults apply`, and macOS
-[LaunchAgents](/bootstrap/launchd.html) (`[bootstrap.macos.launchd.agents]`),
-applied by `mise bootstrap launchd apply`. Linux user services live in
+[repos](/bootstrap/repos.html) (`[bootstrap.repos]`), applied by
+`mise bootstrap repos apply`, [macOS defaults](/bootstrap/macos-defaults.html)
+(`[bootstrap.macos.defaults]`), applied by
+`mise bootstrap macos-defaults apply`, and macOS [LaunchAgents](/bootstrap/launchd.html)
+(`[bootstrap.macos.launchd.agents]`), applied by `mise bootstrap launchd apply`.
+Linux user services live in
 [systemd](/bootstrap/systemd.html) (`[bootstrap.linux.systemd.units]`),
 applied by `mise bootstrap systemd apply`. Shell activation snippets live in
 [Shell Activation](/bootstrap/shell.html) (`[bootstrap.mise_shell_activate]`).

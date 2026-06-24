@@ -154,6 +154,10 @@ export default withMermaid(
               ],
             },
             {
+              text: "Repos",
+              link: "/bootstrap/repos",
+            },
+            {
               text: "Dotfiles",
               link: "/dotfiles",
             },

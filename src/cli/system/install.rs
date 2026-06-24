@@ -219,6 +219,58 @@ pub(crate) fn apply_shell_activation(
     system::edits::apply(config, &edits, &opts)
 }
 
+/// Apply `[bootstrap.repos]` entries that are missing or differ.
+pub(crate) fn apply_repos(
+    repos: Vec<system::repos::RepoRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    use crate::system::repos::{self, RepoState};
+    if repos.is_empty() {
+        return Ok(());
+    }
+    let statuses = repos::status(&repos)?;
+    let targets: Vec<_> = statuses
+        .iter()
+        .filter(|s| !s.state.is_current())
+        .map(|s| s.request.clone())
+        .collect();
+    let current = statuses.len() - targets.len();
+    if current > 0 {
+        info!("repos: {current} repo(s) already current");
+    }
+    if targets.is_empty() {
+        return Ok(());
+    }
+    for status in &statuses {
+        match &status.state {
+            RepoState::Dirty => {
+                eyre::bail!(
+                    "repos: {} has local changes; commit, stash, or clean them before bootstrap",
+                    status.request
+                );
+            }
+            RepoState::Conflict(reason) => {
+                eyre::bail!("repos: {}: {reason}", status.request);
+            }
+            RepoState::Current | RepoState::Missing | RepoState::Differs => {}
+        }
+    }
+    let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
+    if !dry_run && !yes && console::user_attended_stderr() {
+        let msg = format!("repos: apply {}?", list.join(", "));
+        if !crate::ui::prompt::confirm(msg)? {
+            info!("repos: skipped");
+            return Ok(());
+        }
+    }
+    repos::apply(&targets, dry_run)?;
+    if !dry_run {
+        info!("repos: applied {}", list.join(", "));
+    }
+    Ok(())
+}
+
 /// Apply `[bootstrap.macos.launchd.agents]` entries that are missing, changed,
 /// or not loaded. Inert off-macOS.
 pub(crate) async fn apply_launchd(
