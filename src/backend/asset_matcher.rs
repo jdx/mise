@@ -40,6 +40,8 @@ pub enum AssetArch {
     Arm64,
     X86,
     Arm,
+    Riscv64,
+    Loongarch64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -66,6 +68,8 @@ impl AssetArch {
             AssetArch::Arm64 => target == "aarch64" || target == "arm64",
             AssetArch::X86 => target == "x86" || target == "i386" || target == "i686",
             AssetArch::Arm => target == "arm",
+            AssetArch::Riscv64 => target == "riscv64" || target == "riscv64gc",
+            AssetArch::Loongarch64 => target == "loongarch64" || target == "loong64",
         }
     }
 }
@@ -103,6 +107,8 @@ impl DetectedPlatform {
             AssetArch::Arm64 => "arm64",
             AssetArch::X86 => "x86",
             AssetArch::Arm => "arm",
+            AssetArch::Riscv64 => "riscv64",
+            AssetArch::Loongarch64 => "loongarch64",
         };
 
         format!("{os_str}-{arch_str}")
@@ -145,6 +151,14 @@ static ARCH_PATTERNS: LazyLock<Vec<(AssetArch, Regex)>> = LazyLock::new(|| {
         (
             AssetArch::Arm,
             Regex::new(r"(?i)(?:\b|_)arm(?:v[0-7])?(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetArch::Riscv64,
+            Regex::new(r"(?i)(?:\b|_)riscv_?64(?:gc)?(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetArch::Loongarch64,
+            Regex::new(r"(?i)(?:\b|_)loong(?:arch)?_?64(?:\b|_)").unwrap(),
         ),
     ]
 });
@@ -1152,6 +1166,27 @@ fn is_valid_hash(s: &str, algorithm: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_asset_picker_riscv64_not_shadowed_by_s390x() {
+        // Regression: uv/prek ship riscv64gc, s390x, and powerpc64 linux assets.
+        // s390x/powerpc64 match no arch regex, so before riscv64 was known they tied
+        // with the riscv asset at the same score and the shortest-name tiebreak
+        // picked the s390x asset on a riscv64 host. riscv64 must win on riscv64 host.
+        let assets = vec![
+            "uv-aarch64-unknown-linux-gnu.tar.gz".to_string(),
+            "uv-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "uv-s390x-unknown-linux-gnu.tar.gz".to_string(),
+            "uv-powerpc64-unknown-linux-gnu.tar.gz".to_string(),
+            "uv-powerpc64le-unknown-linux-gnu.tar.gz".to_string(),
+            "uv-riscv64gc-unknown-linux-gnu.tar.gz".to_string(),
+            "uv-riscv64gc-unknown-linux-musl.tar.gz".to_string(),
+        ];
+        let picked = AssetPicker::with_libc("linux".to_string(), "riscv64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "uv-riscv64gc-unknown-linux-gnu.tar.gz");
+    }
 
     fn test_assets() -> Vec<String> {
         vec![
