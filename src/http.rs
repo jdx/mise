@@ -147,8 +147,8 @@ impl Client {
     }
 
     pub async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
-        let url = url.into_url().unwrap();
-        let headers = host_auth_headers(&url);
+        let url = url.into_url()?;
+        let headers = host_auth_headers(&url)?;
         self.get_async_with_headers(url, &headers).await
     }
 
@@ -178,8 +178,8 @@ impl Client {
     }
 
     pub async fn head<U: IntoUrl>(&self, url: U) -> Result<Response> {
-        let url = url.into_url().unwrap();
-        let headers = host_auth_headers(&url);
+        let url = url.into_url()?;
+        let headers = host_auth_headers(&url)?;
         self.head_async_with_headers(url, &headers).await
     }
 
@@ -358,7 +358,7 @@ impl Client {
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
         let url = url.into_url()?;
-        let headers = host_auth_headers(&url);
+        let headers = host_auth_headers(&url)?;
         self.download_file_with_headers(url, path, &headers, pr)
             .await
     }
@@ -699,7 +699,7 @@ impl TextRequest<'_> {
     pub async fn send(mut self) -> Result<String> {
         ensure!(!Settings::get().offline(), "offline mode is enabled");
         // Merge GitHub headers with any extra headers provided
-        let mut headers = host_auth_headers(&self.url);
+        let mut headers = host_auth_headers(&self.url)?;
         headers.extend(self.extra_headers.clone());
         let resp = self
             .client
@@ -822,26 +822,26 @@ pub fn error_code(e: &Report) -> Option<u16> {
     }
 }
 
-fn host_auth_headers(url: &Url) -> HeaderMap {
+fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
     if crate::github::is_github_api_url(url) {
         return crate::github::get_headers(url.as_str());
     }
 
     let Some(host) = url.host_str() else {
-        return HeaderMap::new();
+        return Ok(HeaderMap::new());
     };
 
     let is_gitlab = host == "gitlab.com" || crate::gitlab::is_gitlab_host(host);
     if is_gitlab {
-        return crate::gitlab::get_headers(url.as_str());
+        return Ok(crate::gitlab::get_headers(url.as_str()));
     }
 
     let is_forgejo = host == "codeberg.org" || crate::forgejo::is_forgejo_host(host);
     if is_forgejo {
-        return crate::forgejo::get_headers(url.as_str());
+        return Ok(crate::forgejo::get_headers(url.as_str()));
     }
 
-    HeaderMap::new()
+    Ok(HeaderMap::new())
 }
 
 /// Get HTTP Basic authentication headers from netrc file for the given URL
