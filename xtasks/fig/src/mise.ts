@@ -1100,6 +1100,23 @@ const completionSpec: Fig.Spec = {
           ],
         },
         {
+          name: ["status", "ls"],
+          description: "Show the aggregate bootstrap status",
+          options: [
+            {
+              name: ["-J", "--json"],
+              description: "Output in JSON format",
+              isRepeatable: false,
+            },
+            {
+              name: "--missing",
+              description:
+                "Exit with code 1 if any configured bootstrap state is not in its desired state",
+              isRepeatable: false,
+            },
+          ],
+        },
+        {
           name: "systemd",
           description:
             "Manage systemd user services from `[bootstrap.linux.systemd.units]`",

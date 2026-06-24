@@ -97,6 +97,7 @@ Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-
 - [`mise bootstrap launchd <SUBCOMMAND>`](/cli/bootstrap/launchd.md)
 - [`mise bootstrap macos-defaults <SUBCOMMAND>`](/cli/bootstrap/macos-defaults.md)
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.md)
+- [`mise bootstrap status [-J --json] [--missing]`](/cli/bootstrap/status.md)
 - [`mise bootstrap systemd <SUBCOMMAND>`](/cli/bootstrap/systemd.md)
 - [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.md)
 
@@ -107,6 +108,7 @@ mise bootstrap                    # packages + dotfiles + tools + bootstrap task
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap --only tools       # run just tool installation
+mise bootstrap status --missing
 mise bootstrap packages install --yes
 mise bootstrap macos-defaults status
 mise bootstrap launchd apply --dry-run

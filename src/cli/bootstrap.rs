@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use eyre::Result;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::install::Install;
 use super::run;
@@ -10,13 +10,16 @@ use super::system::driver::{self, Action, DriverOpts};
 use super::system::{import, install, prune, status, upgrade, r#use};
 use crate::config::{self, Config, Settings};
 use crate::dirs;
+use crate::path::PathExt;
 use crate::system;
 use crate::system::defaults::DefaultsState;
 use crate::system::files::{FileMode, FileRequest};
 use crate::system::hooks::{self, BootstrapHookPhase};
 use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
+use crate::system::packages::PackageState;
 use crate::system::systemd::SystemdState;
+use crate::toolset::ResolveOptions;
 use crate::ui::table::MiseTable;
 use clap::{Subcommand, ValueEnum};
 
@@ -123,8 +126,22 @@ enum Commands {
     Launchd(BootstrapLaunchd),
     MacosDefaults(BootstrapMacosDefaults),
     Packages(BootstrapPackages),
+    Status(BootstrapStatus),
     Systemd(BootstrapSystemd),
     User(BootstrapUser),
+}
+
+/// Show the aggregate bootstrap status
+#[derive(Debug, clap::Args)]
+#[clap(visible_alias = "ls", verbatim_doc_comment)]
+struct BootstrapStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured bootstrap state is not in its desired state
+    #[clap(long, verbatim_doc_comment)]
+    missing: bool,
 }
 
 /// Manage bootstrap system packages from `[bootstrap.packages]`
@@ -582,9 +599,556 @@ impl Commands {
             Self::Launchd(cmd) => cmd.run().await,
             Self::MacosDefaults(cmd) => cmd.run().await,
             Self::Packages(cmd) => cmd.run().await,
+            Self::Status(cmd) => cmd.run().await,
             Self::Systemd(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
         }
+    }
+}
+
+struct BootstrapStatusReport {
+    rows: Vec<Vec<String>>,
+    json: serde_json::Map<String, Value>,
+    any_missing: bool,
+}
+
+impl BootstrapStatusReport {
+    fn new() -> Self {
+        Self {
+            rows: vec![],
+            json: serde_json::Map::new(),
+            any_missing: false,
+        }
+    }
+
+    fn row(
+        &mut self,
+        part: impl Into<String>,
+        item: impl Into<String>,
+        current: impl Into<String>,
+        state: impl Into<String>,
+        missing: bool,
+    ) {
+        self.any_missing |= missing;
+        self.rows
+            .push(vec![part.into(), item.into(), current.into(), state.into()]);
+    }
+}
+
+impl BootstrapStatus {
+    async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise bootstrap")?;
+        let config = Config::get().await?;
+        let report = self.collect(&config).await?;
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&report.json)?);
+        } else if report.rows.is_empty() {
+            info!("nothing configured for bootstrap");
+        } else {
+            let mut table = MiseTable::new(false, &["Part", "Item", "Current", "State"]);
+            for row in report.rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && report.any_missing {
+            crate::exit(1);
+        }
+        Ok(())
+    }
+
+    async fn collect(&self, config: &Arc<Config>) -> Result<BootstrapStatusReport> {
+        let mut report = BootstrapStatusReport::new();
+        self.collect_packages(config, &mut report).await?;
+        self.collect_dotfiles(config, &mut report)?;
+        self.collect_defaults(config, &mut report).await?;
+        self.collect_launchd(config, &mut report).await?;
+        self.collect_systemd(config, &mut report).await?;
+        self.collect_user(config, &mut report)?;
+        self.collect_tools(config, &mut report).await?;
+        Ok(report)
+    }
+
+    async fn collect_packages(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let mut json_out = serde_json::Map::new();
+        for mp in system::packages_from_config(config) {
+            let name = mp.manager.name();
+            if mp.disabled || !mp.manager.is_available() {
+                let reason = if mp.disabled {
+                    "excluded by the system_packages.managers setting".to_string()
+                } else {
+                    mp.manager.unavailable_reason()
+                };
+                for req in &mp.requests {
+                    report.row(
+                        "packages",
+                        format!("{name}:{req}"),
+                        "",
+                        format!("skipped ({reason})"),
+                        false,
+                    );
+                }
+                json_out.insert(
+                    name.to_string(),
+                    json!({
+                        "available": false,
+                        "reason": reason,
+                        "packages": mp.requests.iter().map(|req| {
+                            json!({
+                                "package": req.name,
+                                "requested_version": req.version.clone().unwrap_or_else(|| "latest".to_string()),
+                                "state": "skipped",
+                            })
+                        }).collect::<Vec<_>>(),
+                    }),
+                );
+                continue;
+            }
+            let statuses = mp.manager.installed(&mp.requests).await?;
+            let mut json_pkgs = vec![];
+            for s in statuses {
+                let (installed_version, state, missing) = match &s.state {
+                    PackageState::Installed { version } => (version.clone(), "installed", false),
+                    PackageState::Missing => ("".to_string(), "missing", true),
+                    PackageState::VersionMismatch { installed } => {
+                        (installed.clone(), "version mismatch", true)
+                    }
+                };
+                report.row(
+                    "packages",
+                    format!("{name}:{}", s.request),
+                    installed_version.clone(),
+                    state,
+                    missing,
+                );
+                json_pkgs.push(json!({
+                    "package": s.request.name,
+                    "requested_version": s.request.version.clone().unwrap_or_else(|| "latest".to_string()),
+                    "state": state.replace(' ', "_"),
+                    "installed_version": installed_version,
+                }));
+            }
+            json_out.insert(
+                name.to_string(),
+                json!({ "available": true, "packages": json_pkgs }),
+            );
+        }
+        report.json.insert("packages".to_string(), json!(json_out));
+        Ok(())
+    }
+
+    fn collect_dotfiles(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let mut json_files = vec![];
+        for req in system::files::files_from_config(config) {
+            let state = match system::files::check(config, &req) {
+                Ok(state) => state,
+                Err(err) => system::files::FileState::Differs(format!("{err}")),
+            };
+            let (state_str, state_json, missing) = match &state {
+                system::files::FileState::Applied => ("applied".to_string(), "applied", false),
+                system::files::FileState::Missing => ("missing".to_string(), "missing", true),
+                system::files::FileState::SourceMissing => {
+                    ("source missing".to_string(), "source_missing", true)
+                }
+                system::files::FileState::Differs(reason) => {
+                    (format!("differs ({reason})"), "differs", true)
+                }
+            };
+            report.row(
+                "dotfiles",
+                req.target_raw.clone(),
+                format!("{} {}", req.mode.name(), req.source.display_user()),
+                state_str,
+                missing,
+            );
+            json_files.push(json!({
+                "target": req.target_raw,
+                "source": req.source.display_user(),
+                "mode": req.mode.name(),
+                "state": state_json,
+            }));
+        }
+
+        let mut json_edits = vec![];
+        for req in system::edits::edits_from_config(config) {
+            let state = match system::edits::check(config, &req) {
+                Ok(state) => state,
+                Err(err) => system::files::FileState::Differs(format!("{err}")),
+            };
+            let (state_str, state_json, missing) = match &state {
+                system::files::FileState::Applied => ("applied".to_string(), "applied", false),
+                system::files::FileState::Missing => ("missing".to_string(), "missing", true),
+                system::files::FileState::SourceMissing => {
+                    ("source missing".to_string(), "source_missing", true)
+                }
+                system::files::FileState::Differs(reason) => {
+                    (format!("differs ({reason})"), "differs", true)
+                }
+            };
+            report.row(
+                "dotfiles",
+                req.path_raw.clone(),
+                req.describe_op(),
+                state_str,
+                missing,
+            );
+            json_edits.push(json!({
+                "path": req.path_raw,
+                "edit": req.describe_op(),
+                "state": state_json,
+            }));
+        }
+        report.json.insert(
+            "dotfiles".to_string(),
+            json!({ "files": json_files, "edits": json_edits }),
+        );
+        Ok(())
+    }
+
+    async fn collect_defaults(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let defaults = system::defaults_from_config(config);
+        if defaults.is_empty() {
+            report
+                .json
+                .insert("macos_defaults".to_string(), json!({ "entries": [] }));
+            return Ok(());
+        }
+        if !system::defaults::is_available() {
+            let reason = system::defaults::unavailable_reason();
+            for req in &defaults {
+                report.row(
+                    "defaults",
+                    format!("{} {}", req.domain, req.key),
+                    "",
+                    format!("skipped ({reason})"),
+                    false,
+                );
+            }
+            report.json.insert(
+                "macos_defaults".to_string(),
+                json!({
+                    "available": false,
+                    "reason": reason,
+                    "entries": defaults.iter().map(|req| {
+                        json!({
+                            "domain": req.domain,
+                            "key": req.key,
+                            "value": req.value.to_json(),
+                            "state": "skipped",
+                        })
+                    }).collect::<Vec<_>>(),
+                }),
+            );
+            return Ok(());
+        }
+
+        let mut json_entries = vec![];
+        for s in system::defaults::status(&defaults).await? {
+            let (current, state, missing) = match &s.state {
+                DefaultsState::Set => (s.request.value.to_string(), "set", false),
+                DefaultsState::Differs { current } => (current.clone(), "differs", true),
+                DefaultsState::Unset => ("".to_string(), "unset", true),
+            };
+            report.row(
+                "defaults",
+                format!("{} {}", s.request.domain, s.request.key),
+                current.clone(),
+                state,
+                missing,
+            );
+            json_entries.push(json!({
+                "domain": s.request.domain,
+                "key": s.request.key,
+                "value": s.request.value.to_json(),
+                "current": current,
+                "state": state,
+            }));
+        }
+        report.json.insert(
+            "macos_defaults".to_string(),
+            json!({ "available": true, "entries": json_entries }),
+        );
+        Ok(())
+    }
+
+    async fn collect_launchd(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let agents = system::launchd_from_config(config);
+        if agents.is_empty() {
+            report
+                .json
+                .insert("launchd".to_string(), json!({ "agents": [] }));
+            return Ok(());
+        }
+        if !system::launchd::is_available() {
+            let reason = system::launchd::unavailable_reason();
+            for req in &agents {
+                report.row(
+                    "launchd",
+                    req.name.clone(),
+                    req.label.clone(),
+                    format!("skipped ({reason})"),
+                    false,
+                );
+            }
+            report.json.insert(
+                "launchd".to_string(),
+                json!({
+                    "available": false,
+                    "reason": reason,
+                    "agents": agents.iter().map(|req| {
+                        json!({
+                            "name": req.name,
+                            "label": req.label,
+                            "state": "skipped",
+                        })
+                    }).collect::<Vec<_>>(),
+                }),
+            );
+            return Ok(());
+        }
+
+        let mut json_entries = vec![];
+        for s in system::launchd::status(&agents).await? {
+            let (state, missing) = match &s.state {
+                LaunchdState::Loaded => ("loaded", false),
+                LaunchdState::Unloaded => ("unloaded", true),
+                LaunchdState::Differs => ("differs", true),
+                LaunchdState::Missing => ("missing", true),
+            };
+            report.row(
+                "launchd",
+                s.request.name.clone(),
+                s.path.display().to_string(),
+                state,
+                missing,
+            );
+            json_entries.push(json!({
+                "name": s.request.name,
+                "label": s.request.label,
+                "path": s.path,
+                "loaded": s.loaded,
+                "state": state,
+            }));
+        }
+        report.json.insert(
+            "launchd".to_string(),
+            json!({ "available": true, "agents": json_entries }),
+        );
+        Ok(())
+    }
+
+    async fn collect_systemd(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let units = system::systemd_from_config(config);
+        if units.is_empty() {
+            report
+                .json
+                .insert("systemd".to_string(), json!({ "units": [] }));
+            return Ok(());
+        }
+        if !system::systemd::is_available() {
+            let reason = system::systemd::unavailable_reason();
+            for req in &units {
+                report.row(
+                    "systemd",
+                    req.name.clone(),
+                    req.unit.clone(),
+                    format!("skipped ({reason})"),
+                    false,
+                );
+            }
+            report.json.insert(
+                "systemd".to_string(),
+                json!({
+                    "available": false,
+                    "reason": reason,
+                    "units": units.iter().map(|req| {
+                        json!({
+                            "name": req.name,
+                            "unit": req.unit,
+                            "state": "skipped",
+                        })
+                    }).collect::<Vec<_>>(),
+                }),
+            );
+            return Ok(());
+        }
+
+        let mut json_entries = vec![];
+        for s in system::systemd::status(&units).await? {
+            let desired = s.is_desired();
+            let state = match &s.state {
+                SystemdState::Active => "active",
+                SystemdState::Inactive => "inactive",
+                SystemdState::Differs => "differs",
+                SystemdState::Missing => "missing",
+            };
+            let missing = !desired;
+            report.row(
+                "systemd",
+                s.request.name.clone(),
+                s.path.display().to_string(),
+                state,
+                missing,
+            );
+            json_entries.push(json!({
+                "name": s.request.name,
+                "unit": s.request.unit,
+                "path": s.path,
+                "active": s.active,
+                "enabled": s.enabled,
+                "desired": desired,
+                "state": state,
+            }));
+        }
+        report.json.insert(
+            "systemd".to_string(),
+            json!({ "available": true, "units": json_entries }),
+        );
+        Ok(())
+    }
+
+    fn collect_user(&self, config: &Arc<Config>, report: &mut BootstrapStatusReport) -> Result<()> {
+        let Some(req) = system::login_shell_from_config(config) else {
+            report.json.insert("login_shell".to_string(), json!(null));
+            return Ok(());
+        };
+        if !system::login_shell::is_available() {
+            let reason = system::login_shell::unavailable_reason();
+            report.row(
+                "user",
+                "login_shell",
+                "",
+                format!("skipped ({reason})"),
+                false,
+            );
+            report.json.insert(
+                "login_shell".to_string(),
+                json!({
+                    "available": false,
+                    "reason": reason,
+                    "shell": req.shell,
+                    "state": "skipped",
+                }),
+            );
+            return Ok(());
+        }
+
+        let status = system::login_shell::status(&req)?;
+        let (row_state, json_state, missing) = match &status.state {
+            LoginShellState::Set => ("set", "set", false),
+            LoginShellState::Differs { .. } => ("differs", "differs", true),
+            LoginShellState::MissingFromShells { .. } => {
+                ("missing from /etc/shells", "missing_from_shells", true)
+            }
+        };
+        report.row(
+            "user",
+            "login_shell",
+            status.current.clone(),
+            row_state,
+            missing,
+        );
+        report.json.insert(
+            "login_shell".to_string(),
+            json!({
+                "available": true,
+                "shell": status.request.shell,
+                "user": status.user,
+                "current": status.current,
+                "shell_listed": status.shell_listed,
+                "state": json_state,
+            }),
+        );
+        Ok(())
+    }
+
+    async fn collect_tools(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let trs = config.get_tool_request_set().await?;
+        let mut json_tools = vec![];
+        for ba in &trs.unknown_tools {
+            report.row("tools", ba.to_string(), "", "unknown", true);
+            json_tools.push(json!({
+                "tool": ba.to_string(),
+                "requested_version": null,
+                "resolved_version": null,
+                "state": "unknown",
+                "installed": false,
+            }));
+        }
+        for tr in trs.tools.values().flatten() {
+            if !tr.is_os_supported() {
+                continue;
+            }
+            let item = tr.to_string();
+            let resolved = match tr.resolve(config, &ResolveOptions::default()).await {
+                Ok(tv) => tv,
+                Err(err) => {
+                    let err = format!("{err:#}");
+                    report.row(
+                        "tools",
+                        item.clone(),
+                        "",
+                        format!("resolve error ({err})"),
+                        true,
+                    );
+                    json_tools.push(json!({
+                        "tool": tr.ba().to_string(),
+                        "requested_version": tr.version(),
+                        "resolved_version": null,
+                        "state": "resolve_error",
+                        "installed": false,
+                        "error": err,
+                    }));
+                    continue;
+                }
+            };
+            let installed = {
+                crate::backend::get(tr.ba())
+                    .is_some_and(|backend| backend.is_version_installed(config, &resolved, true))
+            };
+            let resolved_version = resolved.version;
+            let state = if installed { "installed" } else { "missing" };
+            report.row(
+                "tools",
+                item.clone(),
+                resolved_version.clone(),
+                state,
+                !installed,
+            );
+            json_tools.push(json!({
+                "tool": tr.ba().to_string(),
+                "requested_version": tr.version(),
+                "resolved_version": resolved_version,
+                "state": state,
+                "installed": installed,
+            }));
+        }
+        report.json.insert("tools".to_string(), json!(json_tools));
+        Ok(())
     }
 }
 
@@ -1028,6 +1592,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap --force-dotfiles</bold>   # replace conflicting dotfile targets
     $ <bold>mise bootstrap --skip tools,task</bold>  # skip tool installation and the bootstrap task
     $ <bold>mise bootstrap --only tools</bold>       # run just tool installation
+    $ <bold>mise bootstrap status --missing</bold>
     $ <bold>mise bootstrap packages install --yes</bold>
     $ <bold>mise bootstrap macos-defaults status</bold>
     $ <bold>mise bootstrap launchd apply --dry-run</bold>

@@ -105,6 +105,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise bootstrap packages status [-J --json] [--missing]`](/cli/bootstrap/packages/status.md)
 - [`mise bootstrap packages upgrade [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/upgrade.md)
 - [`mise bootstrap packages use [FLAGS] <PACKAGE>…`](/cli/bootstrap/packages/use.md)
+- [`mise bootstrap status [-J --json] [--missing]`](/cli/bootstrap/status.md)
 - [`mise bootstrap systemd <SUBCOMMAND>`](/cli/bootstrap/systemd.md)
 - [`mise bootstrap systemd apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/systemd/apply.md)
 - [`mise bootstrap systemd status [-J --json] [--missing]`](/cli/bootstrap/systemd/status.md)

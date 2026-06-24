@@ -84,6 +84,9 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      status: {
+        hide: false,
+      },
       systemd: {
         hide: false,
         subcommands: {
