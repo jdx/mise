@@ -10,6 +10,11 @@ bash = false
 EOF
 
 assert_fail "mise bootstrap shell status --missing"
+assert_fail "mise bootstrap status --missing" "zprofile"
+bootstrap_status_json="$(mise bootstrap status --json)"
+assert_contains_text "$bootstrap_status_json" '"mise_shell_activate"'
+assert_contains_text "$bootstrap_status_json" '"target": "zprofile"'
+assert_contains_text "$bootstrap_status_json" '"state": "missing"'
 status_json="$(mise bootstrap shell status --json)"
 assert_contains_text "$status_json" '"shell": "zsh"'
 assert_contains_text "$status_json" '"target": "zprofile"'
@@ -35,6 +40,7 @@ assert_contains "cat ~/.config/fish/config.fish" "mise activate fish | source"
 assert_fail "test -e ~/.bash_profile"
 assert_fail "test -e ~/.bashrc"
 assert_succeed "mise bootstrap shell status --missing"
+assert_succeed "mise bootstrap status --missing"
 status_json="$(mise bootstrap shell status --json)"
 assert_contains_text "$status_json" '"state": "applied"'
 
@@ -42,6 +48,7 @@ sed -i.bak 's/eval "$(mise activate zsh)"/echo changed/' ~/.zshrc
 status_json="$(mise bootstrap shell status --json)"
 assert_contains_text "$status_json" '"state": "differs"'
 assert_contains_text "$status_json" '"reason": "block content differs"'
+assert_fail "mise bootstrap status --missing" "differs"
 
 # idempotent: re-running does not duplicate managed blocks
 assert_succeed "mise bootstrap shell apply --yes"
