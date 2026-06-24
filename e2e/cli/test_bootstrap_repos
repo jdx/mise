@@ -116,3 +116,20 @@ assert_succeed "mise bootstrap --yes --skip repos --skip tools"
 assert_directory_not_exists "$HOME/src/skipped"
 assert_fail "test -f pre_repo_hook"
 assert_fail "test -f post_repo_hook"
+
+# --only excludes repos unless repos is requested
+rm -rf "$HOME/src/only-skipped" pre_repo_hook post_repo_hook
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/only-skipped" = { url = "$SRC_URL", ref = "main" }
+
+[bootstrap.hooks.pre-repos]
+run = "echo pre > pre_repo_hook"
+
+[bootstrap.hooks.post-repos]
+run = "echo post > post_repo_hook"
+EOF
+assert_succeed "mise bootstrap --yes --only tools"
+assert_directory_not_exists "$HOME/src/only-skipped"
+assert_fail "test -f pre_repo_hook"
+assert_fail "test -f post_repo_hook"
