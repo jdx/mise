@@ -121,10 +121,13 @@ dotfiles phase to replace conflicting whole-file dotfile targets.
 
 ## Inspecting State
 
-Use the narrower commands when you want to inspect one part of the bootstrap
-state:
+Use `mise bootstrap status` to inspect the declarative bootstrap state in one
+place:
 
 ```sh
+mise bootstrap status
+mise bootstrap status --json
+mise bootstrap status --missing
 mise bootstrap packages status
 mise dotfiles status
 mise dotfiles apply --dry-run
@@ -135,9 +138,10 @@ mise bootstrap systemd status
 mise bootstrap user status
 ```
 
-`mise bootstrap packages status --missing` and `mise dotfiles status
---missing` are useful CI checks when a repo expects machine setup to be in
-place but should not install anything during that check.
+`mise bootstrap status --missing` checks the whole declarative bootstrap
+surface in one command. The narrower `mise bootstrap packages status
+--missing` and `mise dotfiles status --missing` commands are useful when you
+only want to check one part without installing anything.
 
 ## What Goes Where
 
