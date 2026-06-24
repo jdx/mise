@@ -6,7 +6,7 @@ unset CI GITHUB_ACTIONS GITHUB_ACTION
 
 contains_trust_warning() {
   local file="$1"
-  grep -Eq "Config file(\\(s\\)|s)? in" "$file" && grep -q "are not trusted" "$file"
+  grep -Eq 'Config file(\(s\)|s)? in' "$file" && grep -q "are not trusted" "$file"
 }
 
 run_hook_env() {
@@ -29,16 +29,27 @@ FOO = "bar"
 run = "echo make"
 EOF
 
+parent_stdout="$(mktemp)"
+parent_stderr="$(mktemp)"
 first_stdout="$(mktemp)"
 first_stderr="$(mktemp)"
 second_stdout="$(mktemp)"
 second_stderr="$(mktemp)"
 changed_stdout="$(mktemp)"
 changed_stderr="$(mktemp)"
+left_stdout="$(mktemp)"
+left_stderr="$(mktemp)"
 reentered_stdout="$(mktemp)"
 reentered_stderr="$(mktemp)"
 explicit_stderr="$(mktemp)"
-trap 'rm -f "$first_stdout" "$first_stderr" "$second_stdout" "$second_stderr" "$changed_stdout" "$changed_stderr" "$reentered_stdout" "$reentered_stderr" "$explicit_stderr"' EXIT
+trap 'rm -f "$parent_stdout" "$parent_stderr" "$first_stdout" "$first_stderr" "$second_stdout" "$second_stderr" "$changed_stdout" "$changed_stderr" "$left_stdout" "$left_stderr" "$reentered_stdout" "$reentered_stderr" "$explicit_stderr"' EXIT
+
+run_hook_env "$parent_stdout" "$parent_stderr"
+if contains_trust_warning "$parent_stderr"; then
+  echo "expected parent hook-env to be trusted"
+  cat "$parent_stderr"
+  exit 1
+fi
 
 cd project
 
@@ -56,17 +67,23 @@ if contains_trust_warning "$second_stderr"; then
   exit 1
 fi
 
+sleep 1
 echo "# changed" >>.mise.toml
 
 run_hook_env "$changed_stdout" "$changed_stderr"
-if contains_trust_warning "$changed_stderr"; then
-  echo "expected hook-env to stay quiet in same directory after config changes"
+if ! contains_trust_warning "$changed_stderr"; then
+  echo "expected hook-env to warn again after config changes"
   cat "$changed_stderr"
   exit 1
 fi
 
 cd ..
-run_hook_env "$changed_stdout" "$changed_stderr"
+run_hook_env "$left_stdout" "$left_stderr"
+if contains_trust_warning "$left_stderr"; then
+  echo "expected parent hook-env after leaving project to be trusted"
+  cat "$left_stderr"
+  exit 1
+fi
 
 cd project
 run_hook_env "$reentered_stdout" "$reentered_stderr"

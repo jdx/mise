@@ -54,14 +54,20 @@ impl HookEnv {
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         let config = match Config::get().await {
             Ok(config) => config,
-            Err(err) if hook_env::is_untrusted_config_error(&err) => {
-                if hook_env::should_show_untrusted_config_warning() {
-                    hook_env::mark_untrusted_config_warning_seen(&*shell)?;
+            Err(err) => {
+                let Some(config_path) = hook_env::untrusted_config_error_path(&err) else {
+                    return Err(err);
+                };
+                if hook_env::should_show_untrusted_config_warning(&config_path) {
+                    if let Err(mark_err) =
+                        hook_env::mark_untrusted_config_warning_seen(&*shell, &config_path)
+                    {
+                        trace!("failed to mark untrusted config warning seen: {mark_err}");
+                    }
                     return Err(err);
                 }
                 exit(1);
             }
-            Err(err) => return Err(err),
         };
         // Shell activation must stay fast and non-networked; missing tools are
         // handled by the normal install paths instead of hook-env.
@@ -176,7 +182,7 @@ impl HookEnv {
                 "1".into(),
             ));
         }
-        hook_env::clear_untrusted_config_warning_if_dir_changed(&mut patches);
+        hook_env::clear_untrusted_config_warning(&mut patches);
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;

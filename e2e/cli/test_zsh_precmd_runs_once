@@ -31,7 +31,7 @@ run_hooks_to_file() {
 
 contains_trust_warning() {
   local file="$1"
-  grep -q "Config files in" "$file" && grep -q "are not trusted" "$file"
+  grep -Eq 'Config file(\(s\)|s)? in' "$file" && grep -q "are not trusted" "$file"
 }
 
 contains_mise_precmd_hook() {
@@ -83,7 +83,7 @@ fi
 # zsh mode does not fire chpwd on `cd`, fall back to invoking the hook list
 # manually in the current shell so hook functions can still mutate shell state.
 { cd project; } >"$chpwd_file" 2>&1
-if [[ "${__MISE_ZSH_CHPWD_RAN:-0}" != "1" ]]; then
+if [[ ${__MISE_ZSH_CHPWD_RAN:-0} != "1" ]]; then
   run_hooks_to_file "$chpwd_file" "${chpwd_functions[@]}"
 fi
 run_hooks_to_file "$precmd_file" "${precmd_functions[@]-}"
