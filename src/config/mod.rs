@@ -1369,11 +1369,26 @@ pub async fn load_config_hierarchy_from_dir(
 }
 
 pub fn is_global_config(path: &Path) -> bool {
-    global_config_files().contains(path) || is_system_config(path)
+    config_set_contains(&global_config_files(), path) || is_system_config(path)
 }
 
 pub fn is_system_config(path: &Path) -> bool {
-    system_config_files().contains(path)
+    config_set_contains(&system_config_files(), path)
+}
+
+/// Membership test that tolerates symlinked path prefixes (e.g. Fedora Atomic's
+/// `/home` -> `/var/home`, where the shell PWD and `$HOME` disagree on the
+/// prefix). The fast path is raw equality (no filesystem hit); only on a miss do
+/// we canonicalize via [`file::desymlink_path`], matching how `load_config_paths`
+/// already dedupes config paths. Without this, a global config discovered via the
+/// PWD prefix is not byte-equal to its `$HOME`-derived entry and is wrongly
+/// treated as a local config (stripping global-only settings).
+fn config_set_contains(set: &IndexSet<PathBuf>, path: &Path) -> bool {
+    if set.contains(path) {
+        return true;
+    }
+    let target = file::desymlink_path(path);
+    set.iter().any(|p| file::desymlink_path(p) == target)
 }
 
 /// Returns true if the path should be filtered out due to MISE_CONFIG_DIR override.
@@ -1382,7 +1397,7 @@ pub fn is_system_config(path: &Path) -> bool {
 /// See: https://github.com/jdx/mise/discussions/7015
 fn is_default_config_dir_override_filtered(path: &Path) -> bool {
     *env::MISE_CONFIG_DIR_OVERRIDDEN
-        && !global_config_files().contains(path)
+        && !config_set_contains(&global_config_files(), path)
         && path.starts_with(&*env::MISE_DEFAULT_CONFIG_DIR)
 }
 
@@ -2843,6 +2858,32 @@ mod tests {
     async fn test_load() {
         let config = Config::reset().await.unwrap();
         assert_debug_snapshot!(config);
+    }
+
+    #[test]
+    fn test_config_set_contains_matches_symlinked_prefix() {
+        // Regression for https://github.com/jdx/mise/discussions/10483:
+        // a global config discovered via a symlinked path prefix (e.g. Fedora
+        // Atomic's `/home` -> `/var/home`) must still be recognized as global.
+        let tmp = TempDir::new().unwrap();
+        let real_dir = tmp.path().join("real");
+        fs::create_dir_all(&real_dir).unwrap();
+        let real_file = real_dir.join("config.toml");
+        fs::write(&real_file, "").unwrap();
+        // Symlinked alias of the dir, mimicking `/home` -> `/var/home`.
+        let link_dir = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real_dir, &link_dir).unwrap();
+        let aliased_file = link_dir.join("config.toml");
+
+        let mut set = IndexSet::new();
+        set.insert(real_file.clone());
+
+        // exact match (fast path)
+        assert!(config_set_contains(&set, &real_file));
+        // same file reached via a symlinked prefix — false before the fix
+        assert!(config_set_contains(&set, &aliased_file));
+        // an unrelated path is not a member
+        assert!(!config_set_contains(&set, &real_dir.join("other.toml")));
     }
 
     #[test]
