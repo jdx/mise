@@ -825,6 +825,10 @@ is skipped, so re\-running is safe. The `bootstrap` task runs on every
 invocation; keep it idempotent. Use it for any project\-specific setup
 that doesn't fit the declarative sections (cloning repos, seeding
 databases, etc.) — it runs with the installed tools on PATH.
+
+Use `\-\-skip <part>` to skip named parts, or `\-\-only <part>` to run just
+named parts. Both flags can be repeated or comma\-separated, but they
+cannot be used together.
 .PP
 \fBUsage:\fR mise bootstrap [OPTIONS] [COMMAND]
 .PP
@@ -839,6 +843,11 @@ Skip confirmation prompts
 .TP
 \fB\-\-force\-dotfiles\fR
 Overwrite existing files that conflict with whole\-file dotfile entries
+.TP
+\fB\-\-only\fR \fI<ONLY>\fR
+Run only one or more bootstrap parts
+
+Can be passed multiple times or as a comma\-separated list. Cannot be used with `\-\-skip`.
 .TP
 \fB\-\-skip\fR \fI<SKIP>\fR
 Skip one or more bootstrap parts

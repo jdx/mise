@@ -31,6 +31,11 @@ Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
 `task`, and `final-hook`. The flag can be repeated or comma-separated, for
 example `mise bootstrap --skip tools,task`.
 
+Use `mise bootstrap --only <part>` to run only specific parts. It supports the
+same part names and can be repeated or comma-separated, for example
+`mise bootstrap --only dotfiles,tools`. `--only` and `--skip` are mutually
+exclusive.
+
 Hook phases can also run before and after the built-in steps:
 `pre-packages`, `post-packages`, `pre-dotfiles`, `post-dotfiles`,
 `pre-defaults`, `post-defaults`, `pre-user`, `post-user`, `pre-tools`, and

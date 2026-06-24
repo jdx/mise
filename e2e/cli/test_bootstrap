@@ -83,6 +83,27 @@ assert_succeed "mise bootstrap --yes --skip dotfiles --skip task"
 assert_fail "test -e ~/.bootstrap-skip-gitconfig"
 assert_fail "test -f bootstrap_ran"
 
+# --only runs just the selected parts
+echo "only gitconfig content" >gitconfig-only
+rm -f bootstrap_ran
+cat <<EOF >mise.toml
+[tools]
+tiny = "2.4.0"
+
+[dotfiles]
+"~/.bootstrap-only-gitconfig" = "gitconfig-only"
+
+[tasks.bootstrap]
+run = "touch bootstrap_ran"
+EOF
+assert_succeed "mise bootstrap --yes --only dotfiles,task"
+assert "readlink ~/.bootstrap-only-gitconfig" "$PWD/gitconfig-only"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/2.4.0"
+assert "test -f bootstrap_ran"
+
+# --only and --skip are mutually exclusive
+assert_fail "mise bootstrap --yes --only dotfiles --skip tools"
+
 # --skip dotfiles still reloads config written by earlier phases
 rm -f mise.local.toml config_task_ran
 cat <<'EOF' >mise.toml
