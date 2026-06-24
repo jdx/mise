@@ -112,11 +112,6 @@ pub fn status(requests: &[RepoRequest]) -> Result<Vec<RepoStatus>> {
 pub fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
     for status in statuses {
         match &status.state {
-            RepoState::Current => {
-                info!("repos: {} already current", status.request);
-            }
-            RepoState::Missing => clone_repo(&status.request, dry_run)?,
-            RepoState::Differs => update_repo(&status.request, dry_run)?,
             RepoState::Dirty => {
                 bail!(
                     "repos: {} has local changes; commit, stash, or clean them before bootstrap",
@@ -126,6 +121,18 @@ pub fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
             RepoState::Conflict(reason) => {
                 bail!("repos: {}: {reason}", status.request);
             }
+            RepoState::Current | RepoState::Missing | RepoState::Differs => {}
+        }
+    }
+
+    for status in statuses {
+        match &status.state {
+            RepoState::Current => {
+                info!("repos: {} already current", status.request);
+            }
+            RepoState::Missing => clone_repo(&status.request, dry_run)?,
+            RepoState::Differs => update_repo(&status.request, dry_run)?,
+            RepoState::Dirty | RepoState::Conflict(_) => unreachable!("preflighted above"),
         }
     }
     Ok(())
@@ -317,6 +324,7 @@ fn should_strip_git_suffix(url: &str) -> bool {
         || url.starts_with('/')
         || url.starts_with("./")
         || url.starts_with("../")
+        || is_windows_absolute_path(url)
     {
         return false;
     }
@@ -324,13 +332,21 @@ fn should_strip_git_suffix(url: &str) -> bool {
 }
 
 fn is_scp_like_url(url: &str) -> bool {
-    if url.contains("://") {
+    if url.contains("://") || is_windows_absolute_path(url) {
         return false;
     }
     let Some(colon) = url.find(':') else {
         return false;
     };
     url.find('/').is_none_or(|slash| colon < slash)
+}
+
+fn is_windows_absolute_path(url: &str) -> bool {
+    let bytes = url.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/')
 }
 
 fn clone_command_parts(request: &RepoRequest) -> Vec<String> {
@@ -404,18 +420,39 @@ fn local_ref_sha(path: &Path, git_ref: &str) -> Result<String> {
 }
 
 fn remote_ref_sha(path: &Path, git_ref: &str) -> Result<Option<String>> {
+    if git_ref.starts_with("refs/") {
+        return remote_exact_ref_sha(path, git_ref);
+    }
+
+    let branch_ref = format!("refs/heads/{git_ref}");
+    if let Some(sha) = remote_exact_ref_sha(path, &branch_ref)? {
+        return Ok(Some(sha));
+    }
+
+    let tag_ref = format!("refs/tags/{git_ref}");
+    remote_exact_ref_sha(path, &tag_ref)
+}
+
+fn remote_exact_ref_sha(path: &Path, git_ref: &str) -> Result<Option<String>> {
     let out = git_output(path, &["ls-remote", "origin", git_ref])?;
-    let mut fallback = None;
+    Ok(parse_remote_exact_ref_sha(&out, git_ref))
+}
+
+fn parse_remote_exact_ref_sha(out: &str, git_ref: &str) -> Option<String> {
+    let deref_ref = format!("{git_ref}^{{}}");
+    let mut direct = None;
     for line in out.lines() {
         let Some((sha, name)) = line.split_once(char::is_whitespace) else {
             continue;
         };
-        if name.ends_with("^{}") {
-            return Ok(Some(sha.to_string()));
+        if name == deref_ref {
+            return Some(sha.to_string());
         }
-        fallback = Some(sha.to_string());
+        if name == git_ref {
+            direct = Some(sha.to_string());
+        }
     }
-    Ok(fallback)
+    direct
 }
 
 fn should_pull_after_checkout(path: &Path, git_ref: &str) -> bool {
@@ -611,7 +648,45 @@ mod tests {
             Some("file:///tmp/source-repo.git"),
             "file:///tmp/source-repo"
         ));
+        assert_eq!(
+            normalize_remote_url(r"C:\repos\foo.git"),
+            r"C:\repos\foo.git"
+        );
+        assert_eq!(normalize_remote_url("C:/repos/foo.git"), "C:/repos/foo.git");
+        assert!(!is_scp_like_url(r"C:\repos\foo.git"));
+        assert!(is_scp_like_url("git@github.com:jdx/mise.git"));
         assert!(!origin_matches_config(None, "https://github.com/jdx/mise"));
+    }
+
+    #[test]
+    fn apply_statuses_preflights_blocked_repos_before_mutating() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing_path = tmp.path().join("missing");
+        let missing_request = RepoRequest {
+            path_raw: missing_path.display().to_string(),
+            path: missing_path.clone(),
+            url: "file:///does/not/matter.git".to_string(),
+            git_ref: None,
+        };
+        let dirty_request = RepoRequest {
+            path_raw: tmp.path().join("dirty").display().to_string(),
+            path: tmp.path().join("dirty"),
+            url: "file:///does/not/matter.git".to_string(),
+            git_ref: None,
+        };
+        let dirty_status = RepoStatus {
+            request: dirty_request,
+            origin: None,
+            current_ref: None,
+            current_sha: None,
+            state: RepoState::Dirty,
+        };
+
+        let err =
+            apply_statuses(&[missing_status(&missing_request), dirty_status], false).unwrap_err();
+
+        assert!(format!("{err:#}").contains("local changes"));
+        assert!(!missing_path.exists());
     }
 
     #[test]
@@ -657,6 +732,25 @@ mod tests {
         assert_eq!(pull_ref_for("refs/tags/v1"), "refs/tags/v1");
         assert_eq!(checkout_ref_for("main"), "main");
         assert_eq!(pull_ref_for("main"), "main");
+    }
+
+    #[test]
+    fn remote_ref_parser_uses_exact_refs() {
+        let out = "\
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\trefs/heads/release
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
+cccccccccccccccccccccccccccccccccccccccc\trefs/tags/release^{}
+";
+
+        assert_eq!(
+            parse_remote_exact_ref_sha(out, "refs/heads/release").as_deref(),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
+        assert_eq!(
+            parse_remote_exact_ref_sha(out, "refs/tags/release").as_deref(),
+            Some("cccccccccccccccccccccccccccccccccccccccc")
+        );
+        assert_eq!(parse_remote_exact_ref_sha(out, "refs/heads/missing"), None);
     }
 
     #[test]
