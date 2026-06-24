@@ -24,7 +24,7 @@ EOF
 
 assert_contains "mise bootstrap repos status" "missing"
 assert_fail "mise bootstrap repos status --missing"
-assert_contains "mise bootstrap repos apply --dry-run" "git clone $SRC_URL"
+assert_contains "mise bootstrap repos apply --dry-run" "git clone --branch main $SRC_URL"
 assert_directory_not_exists "$HOME/src/dotfiles"
 
 assert_succeed "mise bootstrap repos apply --yes"
@@ -49,6 +49,16 @@ echo "local" >"$HOME/src/dotfiles/local.txt"
 assert_fail "mise bootstrap repos apply --yes" "local changes"
 rm -f "$HOME/src/dotfiles/local.txt"
 
+# empty target directories can be cloned into
+mkdir -p "$HOME/src/empty"
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/empty" = { url = "$SRC_URL", ref = "main" }
+EOF
+assert_contains "mise bootstrap repos status" "missing"
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat ~/src/empty/version.txt" "v2"
+
 # tag refs are supported
 cat <<EOF >mise.toml
 [bootstrap.repos]
@@ -57,9 +67,16 @@ EOF
 assert_succeed "mise bootstrap repos apply --yes"
 assert "cat ~/src/tagged/version.txt" "v1"
 assert_contains "mise bootstrap repos status" "current"
+git -C "$HOME/src/tagged" checkout -q main
+assert_contains "mise bootstrap repos status" "differs"
+assert_contains "mise bootstrap repos apply --dry-run" "git -C $HOME/src/tagged checkout v1"
+assert_not_contains "mise bootstrap repos apply --dry-run" "pull --ff-only origin v1"
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat ~/src/tagged/version.txt" "v1"
 
-# existing non-git paths are conflicts
+# existing non-empty non-git paths are conflicts
 mkdir -p "$HOME/src/conflict"
+echo "local" >"$HOME/src/conflict/file.txt"
 cat <<EOF >mise.toml
 [bootstrap.repos]
 "~/src/conflict" = { url = "$SRC_URL", ref = "main" }

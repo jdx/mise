@@ -21,12 +21,13 @@ from that checkout.
 - **Declarative and path-keyed** — entries merge across the config hierarchy
   by expanded target path. A more local config replaces the full repo entry
   for that path.
-- **Safe updates only** — mise clones missing repos and updates existing repos
-  only when the worktree is clean and the configured `origin` URL matches.
+- **Safe updates only** — mise clones missing repos or empty target
+  directories and updates existing repos only when the worktree is clean and
+  the configured `origin` URL matches.
 - **No implicit writes** — repos are applied only by
   `mise bootstrap repos apply` or `mise bootstrap`.
-- **No forced resets** — dirty repos, non-git target paths, and mismatched
-  origins fail instead of overwriting local work.
+- **No forced resets** — dirty repos, non-empty non-git target paths, and
+  mismatched origins fail instead of overwriting local work.
 - **Omitted `ref`** — an existing repo with the expected origin is considered
   current; mise does not fetch or update it.
 
@@ -47,7 +48,7 @@ mise bootstrap repos apply --yes     # skip the confirmation prompt
 | State      | Meaning                                      |
 | ---------- | -------------------------------------------- |
 | `current`  | repo exists, origin matches, and ref matches |
-| `missing`  | target path does not exist                   |
+| `missing`  | target path does not exist or is empty       |
 | `differs`  | repo is clean but not at the configured ref  |
 | `dirty`    | repo has local changes or untracked files    |
 | `conflict` | target path is not the expected git repo     |

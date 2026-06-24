@@ -129,13 +129,7 @@ pub fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
 
 fn status_one(request: &RepoRequest) -> Result<RepoStatus> {
     if !request.path.exists() {
-        return Ok(RepoStatus {
-            request: request.clone(),
-            origin: None,
-            current_ref: None,
-            current_sha: None,
-            state: RepoState::Missing,
-        });
+        return Ok(missing_status(request));
     }
     if !request.path.is_dir() {
         return Ok(conflict_status(
@@ -144,6 +138,9 @@ fn status_one(request: &RepoRequest) -> Result<RepoStatus> {
         ));
     }
     if !is_git_repo(&request.path) {
+        if is_dir_empty(&request.path)? {
+            return Ok(missing_status(request));
+        }
         return Ok(conflict_status(
             request,
             "path exists and is not a git repository".to_string(),
@@ -151,7 +148,7 @@ fn status_one(request: &RepoRequest) -> Result<RepoStatus> {
     }
 
     let origin = git_output(&request.path, &["config", "--get", "remote.origin.url"]).ok();
-    if origin.as_deref() != Some(request.url.as_str()) {
+    if !origin_matches_config(origin.as_deref(), &request.url) {
         return Ok(RepoStatus {
             request: request.clone(),
             origin,
@@ -197,6 +194,16 @@ fn status_one(request: &RepoRequest) -> Result<RepoStatus> {
     })
 }
 
+fn missing_status(request: &RepoRequest) -> RepoStatus {
+    RepoStatus {
+        request: request.clone(),
+        origin: None,
+        current_ref: None,
+        current_sha: None,
+        state: RepoState::Missing,
+    }
+}
+
 fn conflict_status(request: &RepoRequest, reason: String) -> RepoStatus {
     RepoStatus {
         request: request.clone(),
@@ -209,16 +216,8 @@ fn conflict_status(request: &RepoRequest, reason: String) -> RepoStatus {
 
 fn clone_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
     if dry_run {
-        miseprintln!(
-            "{}",
-            shell_words::join([
-                "git".to_string(),
-                "clone".to_string(),
-                request.url.clone(),
-                request.path.display().to_string(),
-            ])
-        );
-        if let Some(git_ref) = &request.git_ref {
+        miseprintln!("{}", shell_words::join(clone_command_parts(request)));
+        if let Some(git_ref) = checkout_after_clone_ref(request) {
             print_git_command(&request.path, &["checkout", git_ref])?;
         }
         return Ok(());
@@ -227,13 +226,12 @@ fn clone_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
     if let Some(parent) = request.path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    run_command(
-        Command::new("git")
-            .arg("clone")
-            .arg(&request.url)
-            .arg(&request.path),
-    )?;
-    if let Some(git_ref) = &request.git_ref {
+    let mut cmd = Command::new("git");
+    for arg in clone_command_parts(request).into_iter().skip(1) {
+        cmd.arg(arg);
+    }
+    run_command(&mut cmd)?;
+    if let Some(git_ref) = checkout_after_clone_ref(request) {
         git_run(&request.path, &["checkout", git_ref])?;
     }
     Ok(())
@@ -246,7 +244,9 @@ fn update_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
     if dry_run {
         print_git_command(&request.path, &["fetch", "--prune", "--tags", "origin"])?;
         print_git_command(&request.path, &["checkout", git_ref])?;
-        print_git_command(&request.path, &["pull", "--ff-only", "origin", git_ref])?;
+        if should_pull_after_checkout(&request.path, git_ref) {
+            print_git_command(&request.path, &["pull", "--ff-only", "origin", git_ref])?;
+        }
         return Ok(());
     }
     git_run(&request.path, &["fetch", "--prune", "--tags", "origin"])?;
@@ -287,8 +287,82 @@ fn remote_ref_matches_head(path: &Path, git_ref: &str, current_sha: Option<&str>
     }
 }
 
+fn origin_matches_config(origin: Option<&str>, config_url: &str) -> bool {
+    let Some(origin) = origin else {
+        return false;
+    };
+    origin == config_url || normalize_remote_url(origin) == normalize_remote_url(config_url)
+}
+
+fn normalize_remote_url(url: &str) -> String {
+    let mut url = url.trim().trim_end_matches('/').to_string();
+    if should_strip_git_suffix(&url) && url.ends_with(".git") {
+        url.truncate(url.len() - 4);
+    }
+    url
+}
+
+fn should_strip_git_suffix(url: &str) -> bool {
+    if url.starts_with("file://")
+        || url.starts_with('/')
+        || url.starts_with("./")
+        || url.starts_with("../")
+    {
+        return false;
+    }
+    url.contains("://") || is_scp_like_url(url)
+}
+
+fn is_scp_like_url(url: &str) -> bool {
+    if url.contains("://") {
+        return false;
+    }
+    let Some(colon) = url.find(':') else {
+        return false;
+    };
+    url.find('/').is_none_or(|slash| colon < slash)
+}
+
+fn clone_command_parts(request: &RepoRequest) -> Vec<String> {
+    let mut parts = vec!["git".to_string(), "clone".to_string()];
+    if let Some(git_ref) = clone_with_ref(request) {
+        parts.push("--branch".to_string());
+        parts.push(git_ref.to_string());
+    }
+    parts.push(request.url.clone());
+    parts.push(request.path.display().to_string());
+    parts
+}
+
+fn clone_with_ref(request: &RepoRequest) -> Option<&str> {
+    request
+        .git_ref
+        .as_deref()
+        .filter(|git_ref| can_clone_with_ref(git_ref))
+}
+
+fn checkout_after_clone_ref(request: &RepoRequest) -> Option<&str> {
+    let clone_ref = clone_with_ref(request);
+    request
+        .git_ref
+        .as_deref()
+        .filter(|git_ref| Some(*git_ref) != clone_ref)
+}
+
+fn can_clone_with_ref(git_ref: &str) -> bool {
+    !is_full_sha(git_ref) && !git_ref.starts_with("refs/")
+}
+
+fn is_full_sha(git_ref: &str) -> bool {
+    matches!(git_ref.len(), 40 | 64) && git_ref.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 fn is_git_repo(path: &Path) -> bool {
     git_output(path, &["rev-parse", "--is-inside-work-tree"]).is_ok_and(|out| out == "true")
+}
+
+fn is_dir_empty(path: &Path) -> Result<bool> {
+    Ok(std::fs::read_dir(path)?.next().is_none())
 }
 
 fn is_clean(path: &Path) -> Result<bool> {
@@ -325,6 +399,22 @@ fn remote_ref_sha(path: &Path, git_ref: &str) -> Result<Option<String>> {
     Ok(fallback)
 }
 
+fn should_pull_after_checkout(path: &Path, git_ref: &str) -> bool {
+    local_branch_exists(path, git_ref).unwrap_or(false)
+        || remote_branch_exists(path, git_ref).unwrap_or(false)
+}
+
+fn local_branch_exists(path: &Path, git_ref: &str) -> Result<bool> {
+    let branch_ref = format!("refs/heads/{git_ref}");
+    git_success(path, &["show-ref", "--verify", "--quiet", &branch_ref])
+}
+
+fn remote_branch_exists(path: &Path, git_ref: &str) -> Result<bool> {
+    let git_ref = git_ref.strip_prefix("refs/heads/").unwrap_or(git_ref);
+    let branch_ref = format!("refs/heads/{git_ref}");
+    Ok(!git_output(path, &["ls-remote", "--heads", "origin", &branch_ref])?.is_empty())
+}
+
 fn git_output(path: &Path, args: &[&str]) -> Result<String> {
     let safe = format!("safe.directory={}", path.display());
     let output = Command::new("git")
@@ -346,6 +436,21 @@ fn git_output(path: &Path, args: &[&str]) -> Result<String> {
         );
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn git_success(path: &Path, args: &[&str]) -> Result<bool> {
+    let safe = format!("safe.directory={}", path.display());
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .arg("-c")
+        .arg(safe)
+        .arg("-c")
+        .arg("core.autocrlf=false")
+        .args(args)
+        .status()
+        .map_err(|err| eyre!("git failed: {err:#}"))?;
+    Ok(status.success())
 }
 
 fn git_run(path: &Path, args: &[&str]) -> Result<()> {
@@ -438,6 +543,73 @@ mod tests {
             RepoState::Conflict("reason".to_string()).as_str(),
             "conflict"
         );
+    }
+
+    #[test]
+    fn origin_urls_allow_common_git_suffix_equivalence() {
+        assert!(origin_matches_config(
+            Some("https://github.com/jdx/mise.git"),
+            "https://github.com/jdx/mise"
+        ));
+        assert!(origin_matches_config(
+            Some("git@github.com:jdx/mise.git"),
+            "git@github.com:jdx/mise/"
+        ));
+        assert!(!origin_matches_config(
+            Some("file:///tmp/source-repo.git"),
+            "file:///tmp/source-repo"
+        ));
+        assert!(!origin_matches_config(None, "https://github.com/jdx/mise"));
+    }
+
+    #[test]
+    fn clone_command_uses_branch_flag_except_for_sha_refs() {
+        let mut request = RepoRequest {
+            path_raw: "/tmp/repo".to_string(),
+            path: PathBuf::from("/tmp/repo"),
+            url: "https://github.com/jdx/mise.git".to_string(),
+            git_ref: Some("main".to_string()),
+        };
+        assert_eq!(
+            clone_command_parts(&request),
+            vec![
+                "git",
+                "clone",
+                "--branch",
+                "main",
+                "https://github.com/jdx/mise.git",
+                "/tmp/repo"
+            ]
+        );
+        assert_eq!(checkout_after_clone_ref(&request), None);
+
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        request.git_ref = Some(sha.to_string());
+        assert_eq!(
+            clone_command_parts(&request),
+            vec![
+                "git",
+                "clone",
+                "https://github.com/jdx/mise.git",
+                "/tmp/repo"
+            ]
+        );
+        assert_eq!(checkout_after_clone_ref(&request), Some(sha));
+    }
+
+    #[test]
+    fn empty_directory_is_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("target");
+        fs::create_dir(&path).unwrap();
+        let request = RepoRequest {
+            path_raw: path.display().to_string(),
+            path,
+            url: "https://github.com/jdx/mise.git".to_string(),
+            git_ref: None,
+        };
+        let status = status(&[request]).unwrap();
+        assert_eq!(status[0].state, RepoState::Missing);
     }
 
     #[test]
