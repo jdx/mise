@@ -44,9 +44,9 @@ Hook phases can also run before and after the built-in steps:
 `post-dotfiles`, `pre-defaults`, `post-defaults`, `pre-user`, `post-user`,
 `pre-tools`, and `post-tools`.
 
-The declarative steps converge: if a package is already installed, a dotfile
-already matches, or a default is already set, mise skips it. The `bootstrap`
-task runs every time, so keep it idempotent.
+The declarative steps converge: if a package is already installed, a repo is
+already at the requested ref, a dotfile already matches, or a default is already
+set, mise skips it. The `bootstrap` task runs every time, so keep it idempotent.
 
 ## Example
 

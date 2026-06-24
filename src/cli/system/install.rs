@@ -230,6 +230,7 @@ pub(crate) fn apply_repos(
         return Ok(());
     }
     let statuses = repos::status(&repos)?;
+    repos::preflight_statuses(&statuses)?;
     let targets: Vec<_> = statuses
         .iter()
         .filter(|s| !s.state.is_current())

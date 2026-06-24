@@ -109,7 +109,7 @@ pub fn status(requests: &[RepoRequest]) -> Result<Vec<RepoStatus>> {
     requests.iter().map(status_one).collect()
 }
 
-pub fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
+pub fn preflight_statuses(statuses: &[RepoStatus]) -> Result<()> {
     for status in statuses {
         match &status.state {
             RepoState::Dirty => {
@@ -124,7 +124,11 @@ pub fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
             RepoState::Current | RepoState::Missing | RepoState::Differs => {}
         }
     }
+    Ok(())
+}
 
+pub fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
+    preflight_statuses(statuses)?;
     for status in statuses {
         match &status.state {
             RepoState::Current => {
@@ -262,6 +266,12 @@ fn update_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
             )?;
         }
         return Ok(());
+    }
+    if !is_clean(&request.path)? {
+        bail!(
+            "repos: {} has local changes; commit, stash, or clean them before bootstrap",
+            request
+        );
     }
     git_run(&request.path, &["fetch", "--prune", "--tags", "origin"])?;
     git_run(&request.path, &["checkout", checkout_ref_for(git_ref)])?;
@@ -687,6 +697,44 @@ mod tests {
 
         assert!(format!("{err:#}").contains("local changes"));
         assert!(!missing_path.exists());
+    }
+
+    #[test]
+    fn update_repo_rechecks_clean_worktree_before_mutating() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        Command::new("git")
+            .args(["init", "-q", "-b", "main"])
+            .arg(&repo)
+            .status()
+            .unwrap();
+        fs::write(repo.join("tracked.txt"), "v1").unwrap();
+        test_git(&repo, &["add", "."]);
+        test_git(
+            &repo,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test User",
+                "commit",
+                "-q",
+                "-m",
+                "v1",
+            ],
+        );
+        fs::write(repo.join("local.txt"), "local").unwrap();
+
+        let request = RepoRequest {
+            path_raw: repo.display().to_string(),
+            path: repo,
+            url: "file:///does/not/matter.git".to_string(),
+            git_ref: Some("main".to_string()),
+        };
+
+        let err = update_repo(&request, false).unwrap_err();
+
+        assert!(format!("{err:#}").contains("local changes"));
     }
 
     #[test]

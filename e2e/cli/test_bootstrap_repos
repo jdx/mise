@@ -51,7 +51,13 @@ assert "cat ~/src/dotfiles/version.txt" "v2"
 
 # dirty repos fail closed instead of overwriting local work
 echo "local" >"$HOME/src/dotfiles/local.txt"
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/dotfiles" = { url = "$SRC_URL", ref = "main" }
+"~/src/preflight-missing" = { url = "$SRC_URL", ref = "main" }
+EOF
 assert_fail "mise bootstrap repos apply --yes" "local changes"
+assert_directory_not_exists "$HOME/src/preflight-missing"
 rm -f "$HOME/src/dotfiles/local.txt"
 
 # full branch refs update without detaching or skipping the pull
