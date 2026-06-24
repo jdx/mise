@@ -120,6 +120,48 @@ mise tracks what it installed in its own ledger
 prefix that it (or brew) didn't create — link conflicts fail with a list of
 the offending files rather than clobbering them.
 
+## Importing and pruning
+
+`mise bootstrap packages import --manager brew` snapshots installed Homebrew
+formulae into `[bootstrap.packages]`, similar in spirit to
+[`brew bundle dump`](https://docs.brew.sh/Brew-Bundle-and-Brewfile). It reads
+the active `opt` links in the Homebrew prefix and writes entries like:
+
+```toml
+[bootstrap.packages]
+"brew:ffmpeg" = "latest"
+"brew:postgresql@17" = "latest"
+```
+
+By default, import records only formulae whose active keg receipt says they
+were installed on request. Pass `--all` to include dependency formulae too.
+Tapped formulae are written with fully-qualified names, and mise adds inferred
+`[bootstrap.brew.taps]` entries when it can derive the conventional GitHub tap
+URL:
+
+```toml
+[bootstrap.brew.taps]
+"acme/tools" = "https://github.com/acme/homebrew-tools.git"
+
+[bootstrap.packages]
+"brew:acme/tools/widget" = "latest"
+```
+
+Import also adopts the imported roots and their resolved dependency closure
+into mise's brew ledger. That ownership boundary is what makes pruning safe:
+`mise bootstrap packages prune --manager brew` removes only formulae that mise
+installed or adopted and that are no longer needed by the merged
+`[bootstrap.packages]` config. Formulae installed by a real Homebrew are not
+pruned until you import/adopt them.
+
+Prune removes the active keg, the `opt` link, and prefix symlinks pointing into
+that keg. It also forgets stale ledger entries for kegs that no longer exist.
+Use `--dry-run` to preview and `--yes` to skip the confirmation prompt.
+
+This command is mise's declarative cleanup for bootstrap packages, similar to
+[`brew bundle cleanup`](https://docs.brew.sh/Manpage). It is not upstream
+`brew prune`, which Homebrew removed in favor of cleanup commands.
+
 ## How pouring works
 
 For each formula in the dependency closure (dependencies first):
@@ -195,6 +237,8 @@ operation.
   archive formats. Other artifact types, pkg installers without `pkgutil` IDs,
   and pkg installers with custom choices fail explicitly.
 - **`brew services` is not implemented.**
+- **Cask import/prune is not implemented.** `import` and `prune` are formulae-only
+  until cask uninstall semantics can be made safe for app and pkg artifacts.
 - **Source builds cover the common formula shapes.** mise's formula shim
   implements the widely-used subset of the DSL (see
   [Source formulae](#source-formulae)); formulae that reach beyond it fail

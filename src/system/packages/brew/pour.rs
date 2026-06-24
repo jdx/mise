@@ -15,7 +15,7 @@ use crate::ui::progress_report::SingleReport;
 
 /// directories linked from a keg into the prefix (brew's Keg::KEG_LINK_DIRECTORIES,
 /// minus etc/var which brew handles specially and we defer)
-const LINK_DIRS: &[&str] = &["bin", "sbin", "include", "lib", "share", "Frameworks"];
+pub(super) const LINK_DIRS: &[&str] = &["bin", "sbin", "include", "lib", "share", "Frameworks"];
 
 pub fn keg_path(name: &str, pkg_version: &str) -> PathBuf {
     prefix::cellar().join(name).join(pkg_version)
@@ -244,7 +244,7 @@ pub fn write_receipt(
                 "version_scheme": 0,
             },
             "path": null,
-            "tap": "homebrew/core",
+            "tap": rf.formula.tap.as_deref().unwrap_or("homebrew/core"),
             "tap_git_head": null,
         },
         "arch": if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" },

@@ -414,6 +414,38 @@ Examples:
                 arg <TAPS>… help="Tap name(s), e.g. `owner/repo`" var=#true
             }
         }
+        cmd import help="Import installed system packages into `[bootstrap.packages]`" {
+            long_help #"""
+Import installed system packages into `[bootstrap.packages]`
+
+Currently supports Homebrew formulae only. By default, imports linked
+formulae whose active keg receipt says they were installed on request.
+Pass `--all` to import every linked formula, including dependencies.
+"""#
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages import --manager brew
+    $ mise bootstrap packages import --manager brew --all
+    $ mise bootstrap packages import --manager brew --global
+    $ mise bootstrap packages import --manager brew --dry-run
+
+"""#
+            flag "-m --manager" help="Only import packages for this manager. Currently only `brew` is supported" default=brew {
+                arg <MANAGER> {
+                    choices brew
+                }
+            }
+            flag --all help="Import every linked formula, including dependencies"
+            flag "-g --global" help="Write to the global config (~/.config/mise/config.toml)"
+            flag "-e --env" help="Write to the config file for this environment (mise.<ENV>.toml)" {
+                arg <ENV>
+            }
+            flag "-n --dry-run" help="Print the config change without writing config or adopting packages"
+            flag "-p --path" help="Write to this config file or directory" {
+                arg <PATH>
+            }
+        }
         cmd install help="Install missing system packages from `[bootstrap.packages]`" {
             alias i
             long_help #"""
@@ -446,6 +478,30 @@ Examples:
             flag "-y --yes" help="Skip the confirmation prompt"
             flag --update help="Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
             arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
+        }
+        cmd prune help="Prune installed system packages no longer declared in `[bootstrap.packages]`" {
+            long_help #"""
+Prune installed system packages no longer declared in `[bootstrap.packages]`
+
+Currently supports Homebrew formulae only. Pruning is ledger-based: mise
+removes only formulae it installed or adopted with
+`mise bootstrap packages import`.
+"""#
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages prune --manager brew
+    $ mise bootstrap packages prune --manager brew --dry-run
+    $ mise bootstrap packages prune --manager brew --yes
+
+"""#
+            flag "-m --manager" help="Only prune packages for this manager. Currently only `brew` is supported" default=brew {
+                arg <MANAGER> {
+                    choices brew
+                }
+            }
+            flag "-n --dry-run" help="Print what would be removed without deleting anything"
+            flag "-y --yes" help="Skip the confirmation prompt"
         }
         cmd status help="Show the status of system packages from `[bootstrap.packages]`" {
             alias ls

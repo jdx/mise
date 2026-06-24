@@ -174,11 +174,17 @@ Remove Homebrew tap URLs from [bootstrap.brew.taps]
 \fIAliases: \fRremove, rm
 .RE
 .TP
+\fBbootstrap packages import\fR
+Import installed system packages into `[bootstrap.packages]`
+.TP
 \fBbootstrap packages install\fR
 Install missing system packages from `[bootstrap.packages]`
 .RS
 \fIAliases: \fRi
 .RE
+.TP
+\fBbootstrap packages prune\fR
+Prune installed system packages no longer declared in `[bootstrap.packages]`
 .TP
 \fBbootstrap packages status\fR
 Show the status of system packages from `[bootstrap.packages]`
@@ -945,6 +951,38 @@ Write to this config file or directory
 .TP
 \fB<TAPS>\fR
 Tap name(s), e.g. `owner/repo`
+.SH "MISE BOOTSTRAP PACKAGES IMPORT"
+Import installed system packages into `[bootstrap.packages]`
+
+Currently supports Homebrew formulae only. By default, imports linked
+formulae whose active keg receipt says they were installed on request.
+Pass `\-\-all` to import every linked formula, including dependencies.
+.PP
+\fBUsage:\fR mise bootstrap packages import [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
+Only import packages for this manager. Currently only `brew` is supported
+.RS
+\fIDefault: \fRbrew
+.RE
+.TP
+\fB\-\-all\fR
+Import every linked formula, including dependencies
+.TP
+\fB\-g, \-\-global\fR
+Write to the global config (~/.config/mise/config.toml)
+.TP
+\fB\-e, \-\-env\fR \fI<ENV>\fR
+Write to the config file for this environment (mise.<ENV>.toml)
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the config change without writing config or adopting packages
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Write to this config file or directory
 .SH "MISE BOOTSTRAP PACKAGES INSTALL"
 Install missing system packages from `[bootstrap.packages]`
 
@@ -978,6 +1016,29 @@ Refresh package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get
 .TP
 \fB<PACKAGE>\fR
 Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
+.SH "MISE BOOTSTRAP PACKAGES PRUNE"
+Prune installed system packages no longer declared in `[bootstrap.packages]`
+
+Currently supports Homebrew formulae only. Pruning is ledger\-based: mise
+removes only formulae it installed or adopted with
+`mise bootstrap packages import`.
+.PP
+\fBUsage:\fR mise bootstrap packages prune [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
+Only prune packages for this manager. Currently only `brew` is supported
+.RS
+\fIDefault: \fRbrew
+.RE
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print what would be removed without deleting anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
 .SH "MISE BOOTSTRAP PACKAGES STATUS"
 Show the status of system packages from `[bootstrap.packages]`
 .PP
