@@ -178,9 +178,55 @@ struct BootstrapDotfiles {
 
 #[derive(Debug, Subcommand)]
 enum BootstrapDotfilesCommands {
-    Apply(DotfilesApply),
-    Status(DotfilesStatus),
+    Apply(BootstrapDotfilesApply),
+    Status(BootstrapDotfilesStatus),
 }
+
+/// Apply dotfiles from `[dotfiles]`
+///
+/// Applies configured whole-file entries and edits that aren't in their
+/// desired state. Whole-file entries may symlink, copy, or render templates.
+/// Edit entries manage a marker-delimited block or a single line in a file
+/// mise doesn't otherwise own.
+#[derive(Debug, clap::Args)]
+#[clap(
+    verbatim_doc_comment,
+    after_long_help = BOOTSTRAP_DOTFILES_APPLY_AFTER_LONG_HELP
+)]
+struct BootstrapDotfilesApply {
+    #[clap(flatten)]
+    cmd: DotfilesApply,
+}
+
+/// Show the status of dotfiles from `[dotfiles]`
+#[derive(Debug, clap::Args)]
+#[clap(
+    verbatim_doc_comment,
+    after_long_help = BOOTSTRAP_DOTFILES_STATUS_AFTER_LONG_HELP
+)]
+struct BootstrapDotfilesStatus {
+    #[clap(flatten)]
+    cmd: DotfilesStatus,
+}
+
+static BOOTSTRAP_DOTFILES_APPLY_AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise bootstrap dotfiles apply</bold>
+    $ <bold>mise bootstrap dotfiles apply --dry-run</bold>
+    $ <bold>mise bootstrap dotfiles apply --force --yes</bold>
+"#
+);
+
+static BOOTSTRAP_DOTFILES_STATUS_AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise bootstrap dotfiles status</bold>
+    $ <bold>mise bootstrap dotfiles status ~/.zshrc</bold>
+    $ <bold>mise bootstrap dotfiles status --json</bold>
+    $ <bold>mise bootstrap dotfiles status --missing</bold> # exit 1 if anything is out of sync
+"#
+);
 
 /// Manage bootstrap system packages from `[bootstrap.packages]`
 #[derive(Debug, clap::Args)]
@@ -1623,6 +1669,18 @@ impl BootstrapDotfiles {
             BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
         }
+    }
+}
+
+impl BootstrapDotfilesApply {
+    async fn run(self) -> Result<()> {
+        self.cmd.run().await
+    }
+}
+
+impl BootstrapDotfilesStatus {
+    async fn run(self) -> Result<()> {
+        self.cmd.run().await
     }
 }
 

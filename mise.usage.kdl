@@ -377,11 +377,9 @@ mise doesn't otherwise own.
             after_long_help #"""
 Examples:
 
-    $ mise dotfiles apply
     $ mise bootstrap dotfiles apply
-    $ mise dotfiles apply --dry-run
-    $ mise dotfiles apply --dry-run --verbose
-    $ mise dotfiles apply --force --yes
+    $ mise bootstrap dotfiles apply --dry-run
+    $ mise bootstrap dotfiles apply --force --yes
 
 """#
             flag "-f --force" help="Overwrite existing files that conflict with whole-file dotfile entries"
@@ -394,11 +392,10 @@ Examples:
             after_long_help #"""
 Examples:
 
-    $ mise dotfiles status
     $ mise bootstrap dotfiles status
-    $ mise dotfiles status ~/.zshrc
-    $ mise dotfiles status --json
-    $ mise dotfiles status --missing # exit 1 if anything is out of sync
+    $ mise bootstrap dotfiles status ~/.zshrc
+    $ mise bootstrap dotfiles status --json
+    $ mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
 
 """#
             flag "-J --json" help="Output in JSON format"
@@ -1007,7 +1004,6 @@ Examples:
     $ mise dotfiles apply
     $ mise bootstrap dotfiles apply
     $ mise dotfiles apply --dry-run
-    $ mise dotfiles apply --dry-run --verbose
     $ mise dotfiles apply --force --yes
 
 """#
