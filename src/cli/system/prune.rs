@@ -15,7 +15,8 @@ use crate::ui::prompt;
 /// Prune installed system packages no longer declared in `[bootstrap.packages]`
 ///
 /// Currently supports Homebrew formulae only. Pruning removes linked formulae
-/// that are not needed by the current or tracked `[bootstrap.packages]` config.
+/// that are not needed by the current config or by trusted, loadable tracked
+/// configs.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemPrune {

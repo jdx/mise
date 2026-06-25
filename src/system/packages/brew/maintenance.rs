@@ -7,7 +7,7 @@ use eyre::{WrapErr, bail};
 use serde::Deserialize;
 use walkdir::WalkDir;
 
-use super::{pour, prefix, resolve};
+use super::{api, pour, prefix, resolve};
 use crate::file;
 use crate::result::Result;
 use crate::system::packages::PackageRequest;
@@ -143,7 +143,7 @@ pub fn linked_formulae(include_all: bool) -> Result<Vec<InstalledFormula>> {
 }
 
 pub async fn prune_plan(configured: &[PackageRequest]) -> Result<PrunePlan> {
-    let keep = configured_formula_closure(configured).await?;
+    let keep = configured_package_closure(configured).await?;
     prune_plan_from_linked_formulae(&keep)
 }
 
@@ -161,21 +161,21 @@ pub fn apply_prune_plan(plan: &PrunePlan, dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-async fn configured_formula_closure(configured: &[PackageRequest]) -> Result<HashSet<String>> {
+async fn configured_package_closure(configured: &[PackageRequest]) -> Result<HashSet<String>> {
     if configured.is_empty() {
         return Ok(HashSet::new());
     }
     Ok(resolve::resolve_closure_with_taps(configured)
         .await?
         .into_iter()
-        .map(|rf| rf.formula.name)
+        .map(|rf| formula_package_name(&rf.formula))
         .collect())
 }
 
 fn prune_plan_from_linked_formulae(keep: &HashSet<String>) -> Result<PrunePlan> {
     let mut plan = PrunePlan::default();
     for formula in linked_formulae(true)? {
-        if keep.contains(&formula.name) {
+        if keep.contains(&formula.package_name()) {
             continue;
         }
         let keg = file::desymlink_path(&pour::keg_path(&formula.name, &formula.version));
@@ -188,6 +188,13 @@ fn prune_plan_from_linked_formulae(keep: &HashSet<String>) -> Result<PrunePlan> 
         }
     }
     Ok(plan)
+}
+
+fn formula_package_name(formula: &api::Formula) -> String {
+    match formula.tap.as_deref().filter(|tap| *tap != "homebrew/core") {
+        Some(tap) => format!("{tap}/{}", formula.name),
+        None => formula.name.clone(),
+    }
 }
 
 fn read_receipt(keg: &Path) -> Result<Option<InstallReceipt>> {
@@ -430,6 +437,52 @@ mod tests {
                 }],
             }
         );
+        Ok(())
+    }
+
+    #[test]
+    fn prune_plan_uses_tap_qualified_keep_keys() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let keep = HashSet::from(["acme/tools/widget".to_string()]);
+
+        {
+            let tmp = tempfile::tempdir()?;
+            let _guard = BrewPrefixGuard::set(tmp.path());
+            let core_widget = write_keg(
+                tmp.path(),
+                "widget",
+                "1.0.0",
+                r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"}}"#,
+            )?;
+
+            assert_eq!(
+                prune_plan_from_linked_formulae(&keep)?,
+                PrunePlan {
+                    remove: vec![PruneCandidate {
+                        name: "widget".to_string(),
+                        version: "1.0.0".to_string(),
+                        keg: core_widget,
+                    }],
+                }
+            );
+        }
+
+        {
+            let tmp = tempfile::tempdir()?;
+            let _guard = BrewPrefixGuard::set(tmp.path());
+            write_keg(
+                tmp.path(),
+                "widget",
+                "1.0.0",
+                r#"{"installed_on_request":true,"source":{"tap":"acme/tools"}}"#,
+            )?;
+
+            assert_eq!(
+                prune_plan_from_linked_formulae(&keep)?,
+                PrunePlan { remove: vec![] }
+            );
+        }
+
         Ok(())
     }
 

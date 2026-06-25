@@ -267,7 +267,10 @@ fn packages_from_config_files_and_tracked_config_files(
         packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps),
     );
 
-    let tracked_brew_taps = brew_taps_from_config_files(tracked_config_files);
+    let mut tracked_brew_taps = current_brew_taps;
+    for (tap, url) in brew_taps_from_config_files(tracked_config_files) {
+        tracked_brew_taps.insert(tap, url);
+    }
     merge_manager_packages(
         &mut by_mgr,
         packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps),
@@ -283,8 +286,14 @@ fn merge_manager_packages(
     for mp in manager_packages {
         let requests = by_mgr.entry(mp.manager.name().to_string()).or_default();
         for request in mp.requests {
-            if !requests.contains(&request) {
-                requests.push(request);
+            match requests.iter_mut().find(|existing| {
+                existing.name == request.name && existing.version == request.version
+            }) {
+                Some(existing) if existing.tap_url.is_none() => {
+                    existing.tap_url = request.tap_url;
+                }
+                Some(_) => {}
+                None => requests.push(request),
             }
         }
     }
@@ -1297,7 +1306,6 @@ mod tests {
 
                 [bootstrap.packages]
                 "brew:jq" = "latest"
-                "brew:acme/tools/widget" = "latest"
             "#,
         )])?;
         let (_tracked_dir, tracked) = config_map_from_toml(&[(
@@ -1305,6 +1313,7 @@ mod tests {
             r#"
                 [bootstrap.packages]
                 "brew:jq" = "latest"
+                "brew:acme/tools/widget" = "latest"
                 "brew:ffmpeg" = "latest"
             "#,
         )])?;

@@ -98,6 +98,7 @@ impl SystemImport {
 
         let configured_taps = configured_brew_taps(&path).await?;
         let target_taps = target_brew_taps(&path)?;
+        let target_packages = target_bootstrap_packages(&path)?;
         let mut taps = BTreeMap::new();
         for formula in &formulae {
             if let Some((tap, url)) = formula.tap_entry_with_urls(&configured_taps)? {
@@ -117,11 +118,14 @@ impl SystemImport {
                 );
             }
             for formula in &formulae {
-                miseprintln!(
-                    "{}: \"{}\" = \"latest\"",
-                    display_path(&path),
-                    formula.config_key()
-                );
+                let key = formula.config_key();
+                if target_packages
+                    .get(&key)
+                    .is_some_and(|version| version == "latest")
+                {
+                    continue;
+                }
+                miseprintln!("{}: \"{}\" = \"latest\"", display_path(&path), key);
             }
             return Ok(());
         }
@@ -178,6 +182,20 @@ fn target_brew_taps(path: &Path) -> Result<BTreeMap<String, String>> {
         }
     }
     Ok(taps)
+}
+
+#[cfg(unix)]
+fn target_bootstrap_packages(path: &Path) -> Result<BTreeMap<String, String>> {
+    let mut packages = BTreeMap::new();
+    if path.exists() {
+        let cf = MiseToml::from_file(path)?;
+        if let Some(sys) = cf.bootstrap_config() {
+            for (spec, version) in sys.packages {
+                packages.insert(spec, version);
+            }
+        }
+    }
+    Ok(packages)
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

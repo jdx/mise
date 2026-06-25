@@ -147,9 +147,9 @@ URL:
 "brew:acme/tools/widget" = "latest"
 ```
 
-`mise bootstrap packages prune --manager brew` treats the current and tracked
-`[bootstrap.packages]` config as the source of truth. It removes any linked
-Homebrew formula whose name is not in the resolved dependency closure of those
+`mise bootstrap packages prune --manager brew` treats the current config and
+trusted, loadable tracked configs as the source of truth. It removes linked
+Homebrew formulae that are not in the resolved dependency closure of those
 configured `brew:` entries, including formulae installed by a real Homebrew.
 
 Prune removes the active keg, the `opt` link, and prefix symlinks pointing into

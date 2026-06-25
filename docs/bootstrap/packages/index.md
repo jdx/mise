@@ -63,8 +63,8 @@ applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html
   keys. A project can add packages on top of the global list (and override a
   global entry's version pin) but not remove them. For Homebrew formulae,
   `mise bootstrap packages prune --manager brew` is an explicit destructive command
-  that removes linked formulae no longer declared by the current or tracked
-  config.
+  that removes linked formulae no longer needed by the current config or by
+  trusted, loadable tracked configs.
 - **OS-filtered** — entries for a manager that isn't available on the current
   machine are not acted on, so the same config works across platforms: `apt`
   entries are ignored on macOS, `dnf` entries on Ubuntu, and so on. `brew`
@@ -109,7 +109,7 @@ mise bootstrap packages import --manager brew   # add installed requested brew f
 mise bootstrap packages import --manager brew --all
 mise bootstrap packages import --manager brew --dry-run
 
-mise bootstrap packages prune --manager brew    # remove unconfigured linked brew formulae
+mise bootstrap packages prune --manager brew    # remove unneeded linked brew formulae
 mise bootstrap packages prune --manager brew --dry-run
 mise bootstrap packages prune --manager brew --yes
 
@@ -133,10 +133,10 @@ default it imports only formulae whose keg receipt says they were installed
 on request; pass `--all` to include dependency formulae too. Imported formulae
 are kept by future prune runs because they are now declared in config.
 
-`mise bootstrap packages prune --manager brew` removes brew formulae that
-are no longer needed by the current or tracked `[bootstrap.packages]` config.
-This includes formulae installed by a real Homebrew. It is mise's declarative
-cleanup command, similar in spirit to
+`mise bootstrap packages prune --manager brew` removes linked brew formulae
+that are no longer needed by the current config or by trusted, loadable tracked
+configs. This includes formulae installed by a real Homebrew. It is mise's
+declarative cleanup command, similar in spirit to
 [Homebrew Bundle cleanup](https://docs.brew.sh/Manpage), not the old upstream
 `brew prune` command, which Homebrew removed.
 
