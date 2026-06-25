@@ -529,7 +529,7 @@ impl Builder {
         // install dir.
         let mut path_entries: Vec<String> = Vec::new();
         for (backend, tv) in versions {
-            let install_path = tv.install_path();
+            let install_path = crate::file::canonicalize_or_self(&tv.install_path());
             let in_image_tool_root = tool_in_image_path(mount_point, tv);
             let bin_paths = backend
                 .list_bin_paths(&self.cfg, tv)
@@ -537,6 +537,7 @@ impl Builder {
                 .unwrap_or_default();
             let mut had_one = false;
             for p in bin_paths {
+                let p = crate::file::canonicalize_or_self(&p);
                 if let Ok(rel) = p.strip_prefix(&install_path) {
                     let rel = rel.to_string_lossy();
                     let entry = if rel.is_empty() {
