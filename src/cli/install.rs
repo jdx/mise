@@ -422,11 +422,15 @@ impl Install {
         let (versions, install_error) = if missing.is_empty() {
             measure!("run_postinstall_hook", {
                 info!("all tools are installed");
-                hooks::run_one_hook(
+                // Nothing was installed, but postinstall still runs (idempotent
+                // project setup relies on it); MISE_INSTALLED_TOOLS is [] so hooks
+                // can guard on actual installs. (#10574)
+                hooks::run_one_hook_with_context(
                     &config,
                     config.get_toolset().await?,
                     Hooks::Postinstall,
                     None,
+                    Some(&[]),
                 )
                 .await;
                 (vec![], Ok(()))
