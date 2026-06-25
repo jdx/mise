@@ -50,10 +50,10 @@ Skip the confirmation prompt
 Examples:
 
 ```
-$ mise bootstrap packages upgrade
-$ mise bootstrap packages upgrade brew:postgresql@17
-$ mise bootstrap packages upgrade --manager brew-cask
-$ mise bootstrap packages upgrade --manager mas
-$ mise bootstrap packages upgrade --manager apt --yes
-$ mise bootstrap packages upgrade --dry-run
+mise bootstrap packages upgrade
+mise bootstrap packages upgrade brew:postgresql@17
+mise bootstrap packages upgrade --manager brew-cask
+mise bootstrap packages upgrade --manager mas
+mise bootstrap packages upgrade --manager apt --yes
+mise bootstrap packages upgrade --dry-run
 ```

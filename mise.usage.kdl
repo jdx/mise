@@ -350,7 +350,7 @@ Run only one or more bootstrap parts
 Can be passed multiple times or as a comma-separated list. Cannot be used with `--skip`.
 """#
         arg <ONLY> {
-            choices packages repos dotfiles mise-shell-activate macos-defaults macos-launchd-agents linux-systemd-units user tools task final-hook
+            choices packages repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
         }
     }
     flag --skip help="Skip one or more bootstrap parts" var=#true {
@@ -360,7 +360,7 @@ Skip one or more bootstrap parts
 Can be passed multiple times or as a comma-separated list.
 """#
         arg <SKIP> {
-            choices packages repos dotfiles mise-shell-activate macos-defaults macos-launchd-agents linux-systemd-units user tools task final-hook
+            choices packages repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
         }
     }
     flag --update help="Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
@@ -409,6 +409,16 @@ state (missing, source missing, differs)
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
         }
     }
+    cmd launchd hide=#true subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" {
+        cmd apply {
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+        }
+        cmd status {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured LaunchAgent is not in its desired state"
+        }
+    }
     cmd linux subcommand_required=#true help="Manage Linux bootstrap config from `[bootstrap.linux]`" {
         cmd systemd-units subcommand_required=#true help="Manage systemd user services from `[bootstrap.linux.systemd.units]`" {
             alias systemd hide=#true
@@ -445,6 +455,16 @@ state (missing, source missing, differs)
             }
         }
     }
+    cmd macos-defaults hide=#true subcommand_required=#true help="Manage macOS defaults from `[bootstrap.macos.defaults]`" {
+        cmd apply {
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+        }
+        cmd status {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured defaults are not in their desired state"
+        }
+    }
     cmd mise-shell-activate subcommand_required=#true help="Manage mise shell activation from `[bootstrap.mise_shell_activate]`" {
         alias shell hide=#true
         cmd apply {
@@ -456,27 +476,41 @@ state (missing, source missing, differs)
             flag --missing help="Exit with code 1 if any configured shell activation is not in its desired state"
         }
     }
-    cmd launchd hide=#true subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" {
-        cmd apply {
-            flag "-n --dry-run" help="Print the commands that would run without running them"
-            flag "-y --yes" help="Skip the confirmation prompt"
-        }
-        cmd status {
-            flag "-J --json" help="Output in JSON format"
-            flag --missing help="Exit with code 1 if any configured LaunchAgent is not in its desired state"
-        }
-    }
-    cmd macos-defaults hide=#true subcommand_required=#true help="Manage macOS defaults from `[bootstrap.macos.defaults]`" {
-        cmd apply {
-            flag "-n --dry-run" help="Print the commands that would run without running them"
-            flag "-y --yes" help="Skip the confirmation prompt"
-        }
-        cmd status {
-            flag "-J --json" help="Output in JSON format"
-            flag --missing help="Exit with code 1 if any configured defaults are not in their desired state"
-        }
-    }
     cmd packages subcommand_required=#true help="Manage bootstrap system packages from `[bootstrap.packages]`" {
+        cmd apply help="Apply system packages from `[bootstrap.packages]`" {
+            alias i
+            alias install hide=#true
+            long_help #"""
+Apply system packages from `[bootstrap.packages]`
+
+Checks which configured packages are missing and installs them with the
+system package manager. This may elevate with sudo when not running as
+root (see the `system_packages.sudo` setting).
+
+Packages can also be given explicitly in `manager:package` form (e.g.
+`apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
+the config. Explicit packages and `--manager` scope the run to packages
+only. `install` is accepted as an alias for this command.
+"""#
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages apply
+    $ mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835
+    $ mise bootstrap packages apply --dry-run
+    $ mise bootstrap packages apply --manager apt --yes
+
+"""#
+            flag "-m --manager" help="Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`" {
+                arg <MANAGER> {
+                    choices apk apt brew brew-cask dnf mas pacman
+                }
+            }
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+            flag --update help="Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
+            arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
+        }
         cmd brew subcommand_required=#true help="Manage Homebrew taps used by bootstrap packages" {
             long_help #"""
 Manage Homebrew taps used by bootstrap packages
@@ -515,40 +549,6 @@ Examples:
                 }
                 arg <TAPS>… help="Tap name(s), e.g. `owner/repo`" var=#true
             }
-        }
-        cmd apply help="Apply system packages from `[bootstrap.packages]`" {
-            alias i
-            alias install hide=#true
-            long_help #"""
-Apply system packages from `[bootstrap.packages]`
-
-Checks which configured packages are missing and installs them with the
-system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting).
-
-Packages can also be given explicitly in `manager:package` form (e.g.
-`apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
-the config. Explicit packages and `--manager` scope the run to packages
-only. `install` is accepted as an alias for this command.
-"""#
-            after_long_help #"""
-Examples:
-
-    $ mise bootstrap packages apply
-    $ mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835
-    $ mise bootstrap packages apply --dry-run
-    $ mise bootstrap packages apply --manager apt --yes
-
-"""#
-            flag "-m --manager" help="Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`" {
-                arg <MANAGER> {
-                    choices apk apt brew brew-cask dnf mas pacman
-                }
-            }
-            flag "-n --dry-run" help="Print the commands that would run without running them"
-            flag "-y --yes" help="Skip the confirmation prompt"
-            flag --update help="Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
-            arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
         }
         cmd import help="Import installed system packages into `[bootstrap.packages]`" {
             long_help #"""

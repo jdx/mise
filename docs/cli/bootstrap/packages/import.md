@@ -45,8 +45,8 @@ Write to this config file or directory
 Examples:
 
 ```
-$ mise bootstrap packages import --manager brew
-$ mise bootstrap packages import --manager brew --all
-$ mise bootstrap packages import --manager brew --global
-$ mise bootstrap packages import --manager brew --dry-run
+mise bootstrap packages import --manager brew
+mise bootstrap packages import --manager brew --all
+mise bootstrap packages import --manager brew --global
+mise bootstrap packages import --manager brew --dry-run
 ```

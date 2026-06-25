@@ -194,6 +194,12 @@ Manage mise shell activation from `[bootstrap.mise_shell_activate]`
 \fBbootstrap packages\fR
 Manage bootstrap system packages from `[bootstrap.packages]`
 .TP
+\fBbootstrap packages apply\fR
+Apply system packages from `[bootstrap.packages]`
+.RS
+\fIAliases: \fRi
+.RE
+.TP
 \fBbootstrap packages brew\fR
 Manage Homebrew taps used by bootstrap packages
 .TP
@@ -204,12 +210,6 @@ Add a Homebrew tap URL to [bootstrap.brew.taps]
 Remove Homebrew tap URLs from [bootstrap.brew.taps]
 .RS
 \fIAliases: \fRremove, rm
-.RE
-.TP
-\fBbootstrap packages apply\fR
-Apply system packages from `[bootstrap.packages]`
-.RS
-\fIAliases: \fRi
 .RE
 .TP
 \fBbootstrap packages import\fR
@@ -1038,6 +1038,39 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured shell activation is not in its desired state
+.SH "MISE BOOTSTRAP PACKAGES APPLY"
+Apply system packages from `[bootstrap.packages]`
+
+Checks which configured packages are missing and installs them with the
+system package manager. This may elevate with sudo when not running as
+root (see the `system_packages.sudo` setting).
+
+Packages can also be given explicitly in `manager:package` form (e.g.
+`apk:zlib\-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
+the config. Explicit packages and `\-\-manager` scope the run to packages
+only. `install` is accepted as an alias for this command.
+.PP
+\fBUsage:\fR mise bootstrap packages apply [OPTIONS] [<PACKAGE>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
+Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, or `mas`
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.TP
+\fB\-\-update\fR
+Refresh package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`)
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
 .SH "MISE BOOTSTRAP PACKAGES BREW TAP"
 Add a Homebrew tap URL to [bootstrap.brew.taps]
 .PP
@@ -1083,39 +1116,6 @@ Write to this config file or directory
 .TP
 \fB<TAPS>\fR
 Tap name(s), e.g. `owner/repo`
-.SH "MISE BOOTSTRAP PACKAGES APPLY"
-Apply system packages from `[bootstrap.packages]`
-
-Checks which configured packages are missing and installs them with the
-system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting).
-
-Packages can also be given explicitly in `manager:package` form (e.g.
-`apk:zlib\-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
-the config. Explicit packages and `\-\-manager` scope the run to packages
-only. `install` is accepted as an alias for this command.
-.PP
-\fBUsage:\fR mise bootstrap packages apply [OPTIONS] [<PACKAGE>] ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, or `mas`
-.TP
-\fB\-n, \-\-dry\-run\fR
-Print the commands that would run without running them
-.TP
-\fB\-y, \-\-yes\fR
-Skip the confirmation prompt
-.TP
-\fB\-\-update\fR
-Refresh package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`)
-\fBArguments:\fR
-.PP
-.TP
-\fB<PACKAGE>\fR
-Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
 .SH "MISE BOOTSTRAP PACKAGES IMPORT"
 Import installed system packages into `[bootstrap.packages]`
 

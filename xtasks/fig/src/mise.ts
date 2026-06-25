@@ -700,17 +700,23 @@ const completionSpec: Fig.Spec = {
         "[experimental] Set up a machine for the current config in one command",
       subcommands: [
         {
-          name: "launchd",
-          description:
-            "Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`",
+          name: "dotfiles",
+          description: "Manage dotfiles from `[dotfiles]`",
           subcommands: [
             {
               name: "apply",
+              description: "Apply dotfiles from `[dotfiles]`",
               options: [
+                {
+                  name: ["-f", "--force"],
+                  description:
+                    "Overwrite existing files that conflict with whole-file dotfile entries",
+                  isRepeatable: false,
+                },
                 {
                   name: ["-n", "--dry-run"],
                   description:
-                    "Print the commands that would run without running them",
+                    "Print the actions that would run without writing anything",
                   isRepeatable: false,
                 },
                 {
@@ -719,9 +725,16 @@ const completionSpec: Fig.Spec = {
                   isRepeatable: false,
                 },
               ],
+              args: {
+                name: "target",
+                description: "Only apply these targets",
+                isOptional: true,
+                isVariadic: true,
+              },
             },
             {
-              name: "status",
+              name: ["status", "ls"],
+              description: "Show the status of dotfiles from `[dotfiles]`",
               options: [
                 {
                   name: ["-J", "--json"],
@@ -731,17 +744,152 @@ const completionSpec: Fig.Spec = {
                 {
                   name: "--missing",
                   description:
-                    "Exit with code 1 if any configured LaunchAgent is not in its desired state",
+                    "Exit with code 1 if any configured dotfiles are not in their desired\nstate (missing, source missing, differs)",
                   isRepeatable: false,
+                },
+              ],
+              args: {
+                name: "target",
+                description: "Only show these targets",
+                isOptional: true,
+                isVariadic: true,
+              },
+            },
+          ],
+        },
+        {
+          name: "linux",
+          description: "Manage Linux bootstrap config from `[bootstrap.linux]`",
+          subcommands: [
+            {
+              name: "systemd-units",
+              description:
+                "Manage systemd user services from `[bootstrap.linux.systemd.units]`",
+              subcommands: [
+                {
+                  name: "apply",
+                  options: [
+                    {
+                      name: ["-n", "--dry-run"],
+                      description:
+                        "Print the commands that would run without running them",
+                      isRepeatable: false,
+                    },
+                    {
+                      name: ["-y", "--yes"],
+                      description: "Skip the confirmation prompt",
+                      isRepeatable: false,
+                    },
+                  ],
+                },
+                {
+                  name: "status",
+                  options: [
+                    {
+                      name: ["-J", "--json"],
+                      description: "Output in JSON format",
+                      isRepeatable: false,
+                    },
+                    {
+                      name: "--missing",
+                      description:
+                        "Exit with code 1 if any configured systemd user service is not in its desired state",
+                      isRepeatable: false,
+                    },
+                  ],
                 },
               ],
             },
           ],
         },
         {
-          name: "macos-defaults",
+          name: "macos",
+          description: "Manage macOS bootstrap config from `[bootstrap.macos]`",
+          subcommands: [
+            {
+              name: "defaults",
+              description:
+                "Manage macOS defaults from `[bootstrap.macos.defaults]`",
+              subcommands: [
+                {
+                  name: "apply",
+                  options: [
+                    {
+                      name: ["-n", "--dry-run"],
+                      description:
+                        "Print the commands that would run without running them",
+                      isRepeatable: false,
+                    },
+                    {
+                      name: ["-y", "--yes"],
+                      description: "Skip the confirmation prompt",
+                      isRepeatable: false,
+                    },
+                  ],
+                },
+                {
+                  name: "status",
+                  options: [
+                    {
+                      name: ["-J", "--json"],
+                      description: "Output in JSON format",
+                      isRepeatable: false,
+                    },
+                    {
+                      name: "--missing",
+                      description:
+                        "Exit with code 1 if any configured defaults are not in their desired state",
+                      isRepeatable: false,
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              name: "launchd-agents",
+              description:
+                "Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`",
+              subcommands: [
+                {
+                  name: "apply",
+                  options: [
+                    {
+                      name: ["-n", "--dry-run"],
+                      description:
+                        "Print the commands that would run without running them",
+                      isRepeatable: false,
+                    },
+                    {
+                      name: ["-y", "--yes"],
+                      description: "Skip the confirmation prompt",
+                      isRepeatable: false,
+                    },
+                  ],
+                },
+                {
+                  name: "status",
+                  options: [
+                    {
+                      name: ["-J", "--json"],
+                      description: "Output in JSON format",
+                      isRepeatable: false,
+                    },
+                    {
+                      name: "--missing",
+                      description:
+                        "Exit with code 1 if any configured LaunchAgent is not in its desired state",
+                      isRepeatable: false,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          name: "mise-shell-activate",
           description:
-            "Manage macOS defaults from `[bootstrap.macos.defaults]`",
+            "Manage mise shell activation from `[bootstrap.mise_shell_activate]`",
           subcommands: [
             {
               name: "apply",
@@ -749,7 +897,7 @@ const completionSpec: Fig.Spec = {
                 {
                   name: ["-n", "--dry-run"],
                   description:
-                    "Print the commands that would run without running them",
+                    "Print the actions that would run without writing anything",
                   isRepeatable: false,
                 },
                 {
@@ -770,7 +918,7 @@ const completionSpec: Fig.Spec = {
                 {
                   name: "--missing",
                   description:
-                    "Exit with code 1 if any configured defaults are not in their desired state",
+                    "Exit with code 1 if any configured shell activation is not in its desired state",
                   isRepeatable: false,
                 },
               ],
@@ -782,6 +930,54 @@ const completionSpec: Fig.Spec = {
           description:
             "Manage bootstrap system packages from `[bootstrap.packages]`",
           subcommands: [
+            {
+              name: ["apply", "i"],
+              description: "Apply system packages from `[bootstrap.packages]`",
+              options: [
+                {
+                  name: ["-m", "--manager"],
+                  description:
+                    "Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`",
+                  isRepeatable: false,
+                  args: {
+                    name: "manager",
+                    suggestions: [
+                      "apk",
+                      "apt",
+                      "brew",
+                      "brew-cask",
+                      "dnf",
+                      "mas",
+                      "pacman",
+                    ],
+                  },
+                },
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--update",
+                  description:
+                    "Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)",
+                  isRepeatable: false,
+                },
+              ],
+              args: {
+                name: "package",
+                description:
+                  "Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]",
+                isOptional: true,
+                isVariadic: true,
+              },
+            },
             {
               name: "brew",
               description: "Manage Homebrew taps used by bootstrap packages",
@@ -911,55 +1107,6 @@ const completionSpec: Fig.Spec = {
                   },
                 },
               ],
-            },
-            {
-              name: ["install", "i"],
-              description:
-                "Install missing system packages from `[bootstrap.packages]`",
-              options: [
-                {
-                  name: ["-m", "--manager"],
-                  description:
-                    "Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`",
-                  isRepeatable: false,
-                  args: {
-                    name: "manager",
-                    suggestions: [
-                      "apk",
-                      "apt",
-                      "brew",
-                      "brew-cask",
-                      "dnf",
-                      "mas",
-                      "pacman",
-                    ],
-                  },
-                },
-                {
-                  name: ["-n", "--dry-run"],
-                  description:
-                    "Print the commands that would run without running them",
-                  isRepeatable: false,
-                },
-                {
-                  name: ["-y", "--yes"],
-                  description: "Skip the confirmation prompt",
-                  isRepeatable: false,
-                },
-                {
-                  name: "--update",
-                  description:
-                    "Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)",
-                  isRepeatable: false,
-                },
-              ],
-              args: {
-                name: "package",
-                description:
-                  "Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]",
-                isOptional: true,
-                isVariadic: true,
-              },
             },
             {
               name: "prune",
@@ -1138,45 +1285,6 @@ const completionSpec: Fig.Spec = {
           ],
         },
         {
-          name: "shell",
-          description:
-            "Manage mise shell activation from `[bootstrap.mise_shell_activate]`",
-          subcommands: [
-            {
-              name: "apply",
-              options: [
-                {
-                  name: ["-n", "--dry-run"],
-                  description:
-                    "Print the actions that would run without writing anything",
-                  isRepeatable: false,
-                },
-                {
-                  name: ["-y", "--yes"],
-                  description: "Skip the confirmation prompt",
-                  isRepeatable: false,
-                },
-              ],
-            },
-            {
-              name: "status",
-              options: [
-                {
-                  name: ["-J", "--json"],
-                  description: "Output in JSON format",
-                  isRepeatable: false,
-                },
-                {
-                  name: "--missing",
-                  description:
-                    "Exit with code 1 if any configured shell activation is not in its desired state",
-                  isRepeatable: false,
-                },
-              ],
-            },
-          ],
-        },
-        {
           name: ["status", "ls"],
           description: "Show the aggregate bootstrap status",
           options: [
@@ -1190,45 +1298,6 @@ const completionSpec: Fig.Spec = {
               description:
                 "Exit with code 1 if any configured bootstrap state is not in its desired state",
               isRepeatable: false,
-            },
-          ],
-        },
-        {
-          name: "systemd",
-          description:
-            "Manage systemd user services from `[bootstrap.linux.systemd.units]`",
-          subcommands: [
-            {
-              name: "apply",
-              options: [
-                {
-                  name: ["-n", "--dry-run"],
-                  description:
-                    "Print the commands that would run without running them",
-                  isRepeatable: false,
-                },
-                {
-                  name: ["-y", "--yes"],
-                  description: "Skip the confirmation prompt",
-                  isRepeatable: false,
-                },
-              ],
-            },
-            {
-              name: "status",
-              options: [
-                {
-                  name: ["-J", "--json"],
-                  description: "Output in JSON format",
-                  isRepeatable: false,
-                },
-                {
-                  name: "--missing",
-                  description:
-                    "Exit with code 1 if any configured systemd user service is not in its desired state",
-                  isRepeatable: false,
-                },
-              ],
             },
           ],
         },
@@ -1299,9 +1368,13 @@ const completionSpec: Fig.Spec = {
               "packages",
               "repos",
               "dotfiles",
+              "mise-shell-activate",
               "shell",
+              "macos-defaults",
               "defaults",
+              "macos-launchd-agents",
               "launchd",
+              "linux-systemd-units",
               "systemd",
               "user",
               "tools",
@@ -1320,9 +1393,13 @@ const completionSpec: Fig.Spec = {
               "packages",
               "repos",
               "dotfiles",
+              "mise-shell-activate",
               "shell",
+              "macos-defaults",
               "defaults",
+              "macos-launchd-agents",
               "launchd",
+              "linux-systemd-units",
               "systemd",
               "user",
               "tools",

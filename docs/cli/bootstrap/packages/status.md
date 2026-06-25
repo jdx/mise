@@ -20,7 +20,7 @@ Exit with code 1 if any configured packages are not in their desired state
 Examples:
 
 ```
-$ mise bootstrap packages status
-$ mise bootstrap packages status --json
-$ mise bootstrap packages status --missing # exit 1 if anything is out of sync
+mise bootstrap packages status
+mise bootstrap packages status --json
+mise bootstrap packages status --missing # exit 1 if anything is out of sync
 ```

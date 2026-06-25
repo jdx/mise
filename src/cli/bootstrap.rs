@@ -139,14 +139,14 @@ impl BootstrapPart {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Dotfiles(BootstrapDotfiles),
-    Linux(BootstrapLinux),
-    Macos(BootstrapMacos),
-    #[clap(name = "mise-shell-activate", alias = "shell")]
-    MiseShellActivate(BootstrapShell),
     #[clap(hide = true)]
     Launchd(BootstrapLaunchd),
+    Linux(BootstrapLinux),
+    Macos(BootstrapMacos),
     #[clap(hide = true)]
     MacosDefaults(BootstrapMacosDefaults),
+    #[clap(name = "mise-shell-activate", alias = "shell")]
+    MiseShellActivate(BootstrapShell),
     Packages(BootstrapPackages),
     Repos(BootstrapRepos),
     Status(BootstrapStatus),
@@ -192,10 +192,10 @@ struct BootstrapPackages {
 
 #[derive(Debug, Subcommand)]
 enum BootstrapPackagesCommands {
-    #[cfg(unix)]
-    Brew(super::system::brew::SystemBrew),
     #[clap(alias = "install")]
     Apply(install::SystemInstall),
+    #[cfg(unix)]
+    Brew(super::system::brew::SystemBrew),
     Import(import::SystemImport),
     Prune(prune::SystemPrune),
     Status(status::SystemStatus),
@@ -966,8 +966,8 @@ impl Commands {
     async fn run(self) -> Result<()> {
         match self {
             Self::Dotfiles(cmd) => cmd.run().await,
-            Self::Linux(cmd) => cmd.run().await,
             Self::Launchd(cmd) => cmd.run().await,
+            Self::Linux(cmd) => cmd.run().await,
             Self::Macos(cmd) => cmd.run().await,
             Self::MacosDefaults(cmd) => cmd.run().await,
             Self::MiseShellActivate(cmd) => cmd.run().await,
@@ -1630,9 +1630,9 @@ impl BootstrapPackages {
     async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
+            BootstrapPackagesCommands::Apply(cmd) => cmd.run().await,
             #[cfg(unix)]
             BootstrapPackagesCommands::Brew(cmd) => cmd.run().await,
-            BootstrapPackagesCommands::Apply(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Import(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Prune(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Status(cmd) => cmd.run().await,

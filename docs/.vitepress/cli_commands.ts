@@ -39,6 +39,17 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      launchd: {
+        hide: true,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
       linux: {
         hide: false,
         subcommands: {
@@ -82,6 +93,17 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      "macos-defaults": {
+        hide: true,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
       "mise-shell-activate": {
         hide: false,
         subcommands: {
@@ -96,6 +118,9 @@ export const commands: { [key: string]: Command } = {
       packages: {
         hide: false,
         subcommands: {
+          apply: {
+            hide: false,
+          },
           brew: {
             hide: false,
             subcommands: {
@@ -106,9 +131,6 @@ export const commands: { [key: string]: Command } = {
                 hide: false,
               },
             },
-          },
-          apply: {
-            hide: false,
           },
           import: {
             hide: false,
@@ -140,6 +162,17 @@ export const commands: { [key: string]: Command } = {
       },
       status: {
         hide: false,
+      },
+      systemd: {
+        hide: true,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
       },
       user: {
         hide: false,
