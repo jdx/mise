@@ -3096,7 +3096,7 @@
     },
     "bootstrap": {
       "type": "object",
-      "description": "[experimental] machine-global bootstrapping (system packages, macOS defaults, launchd agents, login shell)",
+      "description": "[experimental] machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
       "properties": {
         "packages": {
           "type": "object",
@@ -3107,6 +3107,29 @@
           "additionalProperties": {
             "type": "string",
             "description": "version pin in the manager's native format, or \"latest\""
+          }
+        },
+        "repos": {
+          "type": "object",
+          "description": "git repositories to clone or update with `mise bootstrap repos apply`, keyed by target path",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": ".*\\S.*",
+                "description": "git repository URL"
+              },
+              "ref": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": ".*\\S.*",
+                "description": "optional branch, tag, or full commit SHA to check out"
+              }
+            },
+            "required": ["url"],
+            "additionalProperties": false
           }
         },
         "macos": {

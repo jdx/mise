@@ -18,6 +18,7 @@ use crate::system::hooks::{self, BootstrapHookPhase};
 use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
 use crate::system::packages::PackageState;
+use crate::system::repos::RepoState;
 use crate::system::systemd::SystemdState;
 use crate::toolset::ResolveOptions;
 use crate::ui::table::MiseTable;
@@ -31,29 +32,32 @@ use clap::{Subcommand, ValueEnum};
 /// 1. `mise bootstrap packages install` — install missing
 ///    `[bootstrap.packages]`
 ///    then `[bootstrap.hooks.post-packages]`
-/// 2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+/// 2. `mise bootstrap repos apply` — clone/update `[bootstrap.repos]`
+///    surrounded by `pre-repos`/`post-repos` hooks
+/// 3. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
 ///    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-/// 3. `mise bootstrap shell apply` — configure shell activation from
+/// 4. `mise bootstrap shell apply` — configure shell activation from
 ///    `[bootstrap.mise_shell_activate]`
-/// 4. `mise bootstrap macos-defaults apply` — write
+/// 5. `mise bootstrap macos-defaults apply` — write
 ///    `[bootstrap.macos.defaults]` entries (macOS)
 ///    surrounded by `pre-defaults`/`post-defaults` hooks
-/// 5. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
-/// 6. `mise bootstrap systemd apply` — install/start systemd user services
+/// 6. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+/// 7. `mise bootstrap systemd apply` — install/start systemd user services
 ///    (Linux)
-/// 7. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+/// 8. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
 ///    (Unix)
 ///    surrounded by `pre-user`/`post-user` hooks
-/// 8. `mise install` — install missing tools from `[tools]`
+/// 9. `mise install` — install missing tools from `[tools]`
 ///    surrounded by `pre-tools`/`post-tools` hooks
-/// 9. `mise run bootstrap` — if a task named `bootstrap` is defined
-/// 10. `[bootstrap.hooks.final]` — optional final hook
+/// 10. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 11. `[bootstrap.hooks.final]` — optional final hook
 ///
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
 /// invocation; keep it idempotent. Use it for any project-specific setup
-/// that doesn't fit the declarative sections (cloning repos, seeding
-/// databases, etc.) — it runs with the installed tools on PATH.
+/// that doesn't fit the declarative sections (auth flows, seeding
+/// databases, or other one-off project setup) — it runs with the installed
+/// tools on PATH.
 ///
 /// Use `--skip <part>` to skip named parts, or `--only <part>` to run just
 /// named parts. Both flags can be repeated or comma-separated, but they
@@ -97,6 +101,7 @@ pub struct Bootstrap {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, ValueEnum)]
 enum BootstrapPart {
     Packages,
+    Repos,
     Dotfiles,
     Shell,
     Defaults,
@@ -111,8 +116,9 @@ enum BootstrapPart {
 impl BootstrapPart {
     // Keep this in sync with every enum variant. `--only` computes a
     // complement from ALL, so an omitted variant would always run.
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::Packages,
+        Self::Repos,
         Self::Dotfiles,
         Self::Shell,
         Self::Defaults,
@@ -130,6 +136,7 @@ enum Commands {
     Launchd(BootstrapLaunchd),
     MacosDefaults(BootstrapMacosDefaults),
     Packages(BootstrapPackages),
+    Repos(BootstrapRepos),
     Shell(BootstrapShell),
     Status(BootstrapStatus),
     Systemd(BootstrapSystemd),
@@ -167,6 +174,42 @@ enum BootstrapPackagesCommands {
     Status(status::SystemStatus),
     Upgrade(upgrade::SystemUpgrade),
     Use(r#use::SystemUse),
+}
+
+/// Manage git repo checkouts from `[bootstrap.repos]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapRepos {
+    #[clap(subcommand)]
+    command: BootstrapReposCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapReposCommands {
+    Apply(BootstrapReposApply),
+    Status(BootstrapReposStatus),
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapReposApply {
+    /// Print the commands that would run without running them
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapReposStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured repo is not in its desired state
+    #[clap(long, verbatim_doc_comment)]
+    missing: bool,
 }
 
 /// Manage macOS defaults from `[bootstrap.macos.defaults]`
@@ -382,6 +425,21 @@ impl Bootstrap {
                 driver::run(mgrs, Action::Install, &opts).await?;
             }
             self.run_hooks(&hooks, BootstrapHookPhase::PostPackages)
+                .await?;
+        }
+
+        if skip.contains(&BootstrapPart::Repos) {
+            debug!("bootstrap: repos skipped");
+        } else {
+            self.run_hooks(&hooks, BootstrapHookPhase::PreRepos).await?;
+            let repos = system::repos_from_config(&config);
+            if repos.is_empty() {
+                debug!("bootstrap: no [bootstrap.repos] configured, skipping");
+            } else {
+                info!("bootstrap: repos");
+                install::apply_repos(repos, self.dry_run, self.yes)?;
+            }
+            self.run_hooks(&hooks, BootstrapHookPhase::PostRepos)
                 .await?;
         }
 
@@ -854,6 +912,7 @@ impl Commands {
             Self::Launchd(cmd) => cmd.run().await,
             Self::MacosDefaults(cmd) => cmd.run().await,
             Self::Packages(cmd) => cmd.run().await,
+            Self::Repos(cmd) => cmd.run().await,
             Self::Shell(cmd) => cmd.run().await,
             Self::Status(cmd) => cmd.run().await,
             Self::Systemd(cmd) => cmd.run().await,
@@ -916,6 +975,7 @@ impl BootstrapStatus {
     async fn collect(&self, config: &Arc<Config>) -> Result<BootstrapStatusReport> {
         let mut report = BootstrapStatusReport::new();
         self.collect_packages(config, &mut report).await?;
+        self.collect_repos(config, &mut report)?;
         self.collect_dotfiles(config, &mut report)?;
         self.collect_shell(config, &mut report)?;
         self.collect_defaults(config, &mut report).await?;
@@ -995,6 +1055,51 @@ impl BootstrapStatus {
             );
         }
         report.json.insert("packages".to_string(), json!(json_out));
+        Ok(())
+    }
+
+    fn collect_repos(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let repos = system::repos_from_config(config);
+        let mut json_entries = vec![];
+        for s in system::repos::status(&repos)? {
+            let state = s.state.as_str();
+            let (row_state, reason, missing) = match &s.state {
+                RepoState::Current => ("current".to_string(), "".to_string(), false),
+                RepoState::Missing => ("missing".to_string(), "".to_string(), true),
+                RepoState::Differs => ("differs".to_string(), "".to_string(), true),
+                RepoState::Dirty => (
+                    "dirty (local changes)".to_string(),
+                    "local changes".to_string(),
+                    true,
+                ),
+                RepoState::Conflict(reason) => {
+                    (format!("conflict ({reason})"), reason.clone(), true)
+                }
+            };
+            report.row(
+                "repos",
+                s.request.path_raw.clone(),
+                s.current_ref.clone().unwrap_or_default(),
+                row_state,
+                missing,
+            );
+            json_entries.push(json!({
+                "path": s.request.path,
+                "path_raw": s.request.path_raw,
+                "url": s.request.url,
+                "ref": s.request.git_ref,
+                "origin": s.origin,
+                "current_ref": s.current_ref,
+                "current_sha": s.current_sha,
+                "state": state,
+                "reason": reason,
+            }));
+        }
+        report.json.insert("repos".to_string(), json!(json_entries));
         Ok(())
     }
 
@@ -1452,6 +1557,82 @@ impl BootstrapPackages {
             BootstrapPackagesCommands::Upgrade(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Use(cmd) => cmd.run().await,
         }
+    }
+}
+
+impl BootstrapRepos {
+    async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise bootstrap")?;
+        match self.command {
+            BootstrapReposCommands::Apply(cmd) => cmd.run().await,
+            BootstrapReposCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapReposApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_repos(system::repos_from_config(&config), self.dry_run, self.yes)
+    }
+}
+
+impl BootstrapReposStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let repos = system::repos_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_entries = vec![];
+        for s in system::repos::status(&repos)? {
+            if !s.state.is_current() {
+                any_missing = true;
+            }
+            let state = s.state.as_str();
+            let reason = match &s.state {
+                RepoState::Conflict(reason) => reason.clone(),
+                RepoState::Dirty => "local changes".to_string(),
+                RepoState::Current | RepoState::Missing | RepoState::Differs => "".to_string(),
+            };
+            if self.json {
+                json_entries.push(json!({
+                    "path": s.request.path,
+                    "path_raw": s.request.path_raw,
+                    "url": s.request.url,
+                    "ref": s.request.git_ref,
+                    "origin": s.origin,
+                    "current_ref": s.current_ref,
+                    "current_sha": s.current_sha,
+                    "state": state,
+                    "reason": reason,
+                }));
+            } else {
+                rows.push(vec![
+                    s.request.path_raw,
+                    s.request.url,
+                    s.request.git_ref.unwrap_or_default(),
+                    state.to_string(),
+                    reason,
+                ]);
+            }
+        }
+        if self.json {
+            let mut json_out = serde_json::Map::new();
+            json_out.insert("repos".to_string(), json!(json_entries));
+            miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.repos]");
+        } else {
+            let mut table = MiseTable::new(false, &["Path", "URL", "Ref", "State", "Reason"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            crate::exit(1);
+        }
+        Ok(())
     }
 }
 
@@ -1942,12 +2123,14 @@ impl BootstrapUserStatus {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap</bold>                    # packages + dotfiles + tools + bootstrap task
+    $ <bold>mise bootstrap</bold>                    # common phases: packages + repos + dotfiles + tools + task
     $ <bold>mise bootstrap --force-dotfiles</bold>   # replace conflicting dotfile targets
     $ <bold>mise bootstrap --skip tools,task</bold>  # skip tool installation and the bootstrap task
     $ <bold>mise bootstrap --only tools</bold>       # run just tool installation
     $ <bold>mise bootstrap status --missing</bold>
     $ <bold>mise bootstrap packages install --yes</bold>
+    $ <bold>mise bootstrap repos status</bold>
+    $ <bold>mise bootstrap repos apply --dry-run</bold>
     $ <bold>mise bootstrap macos-defaults status</bold>
     $ <bold>mise bootstrap launchd apply --dry-run</bold>
     $ <bold>mise bootstrap systemd apply --dry-run</bold>

@@ -17,6 +17,8 @@ use crate::config::Settings;
 pub enum BootstrapHookPhase {
     PrePackages,
     PostPackages,
+    PreRepos,
+    PostRepos,
     PreDotfiles,
     PostDotfiles,
     PreDefaults,
@@ -38,6 +40,8 @@ impl BootstrapHookPhase {
         match self {
             Self::PrePackages => "pre-packages",
             Self::PostPackages => "post-packages",
+            Self::PreRepos => "pre-repos",
+            Self::PostRepos => "post-repos",
             Self::PreDotfiles => "pre-dotfiles",
             Self::PostDotfiles => "post-dotfiles",
             Self::PreDefaults => "pre-defaults",

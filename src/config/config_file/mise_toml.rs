@@ -2309,6 +2309,9 @@ mod tests {
         [bootstrap.brew.taps]
         "railwaycat/emacsmacport" = "https://github.com/railwaycat/homebrew-emacsmacport"
 
+        [bootstrap.repos]
+        "~/src/dotfiles" = { url = "https://github.com/jdx/dotfiles.git", ref = "main" }
+
         [bootstrap.hooks.pre-packages]
         run = "echo preparing"
 
@@ -2326,6 +2329,12 @@ mod tests {
             system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
             "https://github.com/railwaycat/homebrew-emacsmacport"
         );
+        let repo = system.repos.get("~/src/dotfiles").unwrap();
+        assert_eq!(
+            repo.url.as_deref(),
+            Some("https://github.com/jdx/dotfiles.git")
+        );
+        assert_eq!(repo.git_ref.as_deref(), Some("main"));
         assert!(system.hooks.get("pre-packages").unwrap().is_table());
         assert!(system.hooks.get("post-tools").unwrap().is_table());
         assert_eq!(system.user.login_shell, None);

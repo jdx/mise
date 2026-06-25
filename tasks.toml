@@ -77,6 +77,9 @@ run = [
   "mise generate task-docs > tasks.md",
   "rm -rf docs/cli && mkdir -p docs/cli",
   "usage generate markdown -m --out-dir docs/cli --url-prefix /cli --html-encode --file mise.usage.kdl --replace-pre-with-code-fences",
+  # usage-lib renders <SUBCOMMAND> for any command with subcommands. `mise bootstrap`
+  # can run without a subcommand, so normalize the generated markdown.
+  "perl -0pi -e 's/mise bootstrap \\[FLAGS\\] <SUBCOMMAND>/mise bootstrap [FLAGS] [SUBCOMMAND]/g' docs/cli/bootstrap.md docs/cli/index.md",
   "markdownlint --fix docs/cli",
 ]
 

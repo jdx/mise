@@ -1,39 +1,38 @@
 # Bootstrap <Badge type="warning" text="experimental" />
 
-`mise bootstrap` sets up the machine-level pieces around a mise config: OS
-packages, dotfiles, macOS defaults, macOS LaunchAgents, Linux systemd user
-services, mise shell activation, the user's login shell, tools, and any final
-project-specific task. You can also add hooks that run at named points in the
-bootstrap sequence.
+packages, git repos, dotfiles, mise shell activation, macOS defaults, macOS
+LaunchAgents, Linux systemd user services, the user's login shell, tools, and
+any final project-specific task. You can also add hooks that run at named points
+in the bootstrap sequence.
 
 Use bootstrap for things that are needed before a project or workstation is
 ready, but that do not belong in `[tools]`: native libraries, Homebrew
-formulae, shell rc files, editor config, macOS preferences, user services, and
-one-time machine setup.
+formulae, dotfile repositories, shell rc files, editor config, macOS
+preferences, user services, and one-time machine setup.
 
 ## How it runs
 
 `mise bootstrap` runs these steps in order:
 
 1. `mise bootstrap packages install` installs missing `[bootstrap.packages]`.
-2. `mise dotfiles apply` applies `[dotfiles]`.
-3. `mise bootstrap shell apply` configures shell activation from
+2. `mise bootstrap repos apply` clones or updates `[bootstrap.repos]`.
+3. `mise dotfiles apply` applies `[dotfiles]`.
+4. `mise bootstrap shell apply` configures shell activation from
    `[bootstrap.mise_shell_activate]`.
-4. `mise bootstrap macos-defaults apply` writes `[bootstrap.macos.defaults]`.
-5. `mise bootstrap launchd apply` writes and loads `[bootstrap.macos.launchd.agents]`.
-6. `mise bootstrap systemd apply` converges `[bootstrap.linux.systemd.units]`
+5. `mise bootstrap macos-defaults apply` writes `[bootstrap.macos.defaults]`.
+6. `mise bootstrap launchd apply` writes and loads `[bootstrap.macos.launchd.agents]`.
+7. `mise bootstrap systemd apply` converges `[bootstrap.linux.systemd.units]`
    by writing unit files, enabling/disabling them, and starting/stopping them
    as configured.
-7. `mise bootstrap user apply` applies `[bootstrap.user]`.
-8. `mise install` installs missing `[tools]`.
-9. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
-10. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
+8. `mise bootstrap user apply` applies `[bootstrap.user]`.
+9. `mise install` installs missing `[tools]`.
+10. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
+11. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
-`packages`, `dotfiles`, `shell`, `defaults`, `launchd`, `systemd`, `user`,
+`packages`, `repos`, `dotfiles`, `shell`, `defaults`, `launchd`, `systemd`, `user`,
 `tools`, `task`, and `final-hook`. The flag can be repeated or
-comma-separated, for
-example `mise bootstrap --skip tools,task`.
+comma-separated, for example `mise bootstrap --skip tools,task`.
 
 Use `mise bootstrap --only <part>` to run only specific parts. It supports the
 same part names and can be repeated or comma-separated, for example
@@ -41,13 +40,13 @@ same part names and can be repeated or comma-separated, for example
 exclusive.
 
 Hook phases can also run before and after the built-in steps:
-`pre-packages`, `post-packages`, `pre-dotfiles`, `post-dotfiles`,
-`pre-defaults`, `post-defaults`, `pre-user`, `post-user`, `pre-tools`, and
-`post-tools`.
+`pre-packages`, `post-packages`, `pre-repos`, `post-repos`, `pre-dotfiles`,
+`post-dotfiles`, `pre-defaults`, `post-defaults`, `pre-user`, `post-user`,
+`pre-tools`, and `post-tools`.
 
-The declarative steps converge: if a package is already installed, a dotfile
-already matches, or a default is already set, mise skips it. The `bootstrap`
-task runs every time, so keep it idempotent.
+The declarative steps converge: if a package is already installed, a repo is
+already at the requested ref, a dotfile already matches, or a default is already
+set, mise skips it. The `bootstrap` task runs every time, so keep it idempotent.
 
 ## Example
 
@@ -56,6 +55,9 @@ task runs every time, so keep it idempotent.
 "apk:build-base" = "latest"
 "apt:build-essential" = "latest"
 "brew:postgresql@17" = "latest"
+
+[bootstrap.repos]
+"~/src/dotfiles" = { url = "git@github.com:jdx/dotfiles.git", ref = "main" }
 
 [dotfiles]
 "~/.gitconfig" = { mode = "symlink" }
@@ -144,6 +146,7 @@ mise bootstrap status
 mise bootstrap status --json
 mise bootstrap status --missing
 mise bootstrap packages status
+mise bootstrap repos status
 mise dotfiles status
 mise dotfiles apply --dry-run
 mise dotfiles apply --dry-run --verbose
@@ -164,6 +167,7 @@ only want to check one part without installing anything.
 | Config                             | Use for                                                       |
 | ---------------------------------- | ------------------------------------------------------------- |
 | `[bootstrap.packages]`             | OS packages from apk, apt, dnf, pacman, or brew               |
+| `[bootstrap.repos]`                | Git repos cloned before dotfiles are applied                  |
 | `[dotfiles]`                       | Whole-file dotfiles and small managed edits to existing files |
 | `[bootstrap.mise_shell_activate]`  | mise activation snippets in shell startup files               |
 | `[bootstrap.macos.*]`              | Curated macOS preferences for Dock/Finder/keyboard/trackpad   |
@@ -177,8 +181,7 @@ only want to check one part without installing anything.
 
 Use declarative sections when mise can inspect and converge the state. Use
 `[tasks.bootstrap]` for imperative setup that does not fit those sections,
-such as cloning a private repository, running an auth flow, or seeding local
-data.
+such as running an auth flow or seeding local data.
 
 ## Hooks
 

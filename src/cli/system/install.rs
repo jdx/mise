@@ -219,6 +219,48 @@ pub(crate) fn apply_shell_activation(
     system::edits::apply(config, &edits, &opts)
 }
 
+/// Apply `[bootstrap.repos]` entries that are missing or differ.
+pub(crate) fn apply_repos(
+    repos: Vec<system::repos::RepoRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    use crate::system::repos;
+    if repos.is_empty() {
+        return Ok(());
+    }
+    let statuses = repos::status(&repos)?;
+    repos::preflight_statuses(&statuses)?;
+    let targets: Vec<_> = statuses
+        .iter()
+        .filter(|s| !s.state.is_current())
+        .cloned()
+        .collect();
+    let current = statuses.len() - targets.len();
+    if current > 0 {
+        info!("repos: {current} repo(s) already current");
+    }
+    if targets.is_empty() {
+        return Ok(());
+    }
+    let list = targets
+        .iter()
+        .map(|s| s.request.to_string())
+        .collect::<Vec<_>>();
+    if !dry_run && !yes && console::user_attended_stderr() {
+        let msg = format!("repos: apply {}?", list.join(", "));
+        if !crate::ui::prompt::confirm(msg)? {
+            info!("repos: skipped");
+            return Ok(());
+        }
+    }
+    repos::apply_statuses(&targets, dry_run)?;
+    if !dry_run {
+        info!("repos: applied {}", list.join(", "));
+    }
+    Ok(())
+}
+
 /// Apply `[bootstrap.macos.launchd.agents]` entries that are missing, changed,
 /// or not loaded. Inert off-macOS.
 pub(crate) async fn apply_launchd(

@@ -204,6 +204,13 @@ Add bootstrap packages to [bootstrap.packages] and install them
 \fIAliases: \fRu
 .RE
 .TP
+\fBbootstrap repos\fR
+Manage git repo checkouts from `[bootstrap.repos]`
+.TP
+\fBbootstrap repos apply\fR
+.TP
+\fBbootstrap repos status\fR
+.TP
 \fBbootstrap shell\fR
 Manage mise shell activation from `[bootstrap.mise_shell_activate]`
 .TP
@@ -823,29 +830,32 @@ Runs the bootstrap steps for the current config in order:
 1. `mise bootstrap packages install` — install missing
    `[bootstrap.packages]`
    then `[bootstrap.hooks.post\-packages]`
-2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+2. `mise bootstrap repos apply` — clone/update `[bootstrap.repos]`
+   surrounded by `pre\-repos`/`post\-repos` hooks
+3. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre\-dotfiles`/`post\-dotfiles` hooks
-3. `mise bootstrap shell apply` — configure shell activation from
+4. `mise bootstrap shell apply` — configure shell activation from
    `[bootstrap.mise_shell_activate]`
-4. `mise bootstrap macos\-defaults apply` — write
+5. `mise bootstrap macos\-defaults apply` — write
    `[bootstrap.macos.defaults]` entries (macOS)
    surrounded by `pre\-defaults`/`post\-defaults` hooks
-5. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
-6. `mise bootstrap systemd apply` — install/start systemd user services
+6. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+7. `mise bootstrap systemd apply` — install/start systemd user services
    (Linux)
-7. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+8. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
    (Unix)
    surrounded by `pre\-user`/`post\-user` hooks
-8. `mise install` — install missing tools from `[tools]`
+9. `mise install` — install missing tools from `[tools]`
    surrounded by `pre\-tools`/`post\-tools` hooks
-9. `mise run bootstrap` — if a task named `bootstrap` is defined
-10. `[bootstrap.hooks.final]` — optional final hook
+10. `mise run bootstrap` — if a task named `bootstrap` is defined
+11. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re\-running is safe. The `bootstrap` task runs on every
 invocation; keep it idempotent. Use it for any project\-specific setup
-that doesn't fit the declarative sections (cloning repos, seeding
-databases, etc.) — it runs with the installed tools on PATH.
+that doesn't fit the declarative sections (auth flows, seeding
+databases, or other one\-off project setup) — it runs with the installed
+tools on PATH.
 
 Use `\-\-skip <part>` to skip named parts, or `\-\-only <part>` to run just
 named parts. Both flags can be repeated or comma\-separated, but they
@@ -1135,6 +1145,28 @@ Skip the confirmation prompt
 .TP
 \fB<PACKAGE>\fR
 Packages in `manager:package[@version]` form
+.SH "MISE BOOTSTRAP REPOS APPLY"
+\fBUsage:\fR mise bootstrap repos apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP REPOS STATUS"
+\fBUsage:\fR mise bootstrap repos status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured repo is not in its desired state
 .SH "MISE BOOTSTRAP SHELL APPLY"
 \fBUsage:\fR mise bootstrap shell apply [OPTIONS]
 .PP

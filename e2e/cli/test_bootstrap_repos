@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+
+commit_all() {
+  local repo="$1" message="$2"
+  git -C "$repo" add .
+  git -C "$repo" \
+    -c user.email=test@example.com \
+    -c user.name="Test User" \
+    commit -q -m "$message"
+}
+
+SRC="$PWD/source-repo"
+SRC_URL="file://$SRC"
+mkdir -p "$SRC"
+git -C "$SRC" init -q -b main
+echo "v1" >"$SRC/version.txt"
+commit_all "$SRC" "v1"
+git -C "$SRC" tag v1
+
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/dotfiles" = { url = "$SRC_URL", ref = "main" }
+EOF
+
+assert_contains "mise bootstrap repos status" "missing"
+assert_fail "mise bootstrap repos status --missing"
+assert_contains "mise bootstrap status" "repos"
+assert_contains "mise bootstrap status" "missing"
+assert_fail "mise bootstrap status --missing"
+assert_contains "mise bootstrap repos apply --dry-run" "git clone --branch main $SRC_URL"
+assert_directory_not_exists "$HOME/src/dotfiles"
+
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat ~/src/dotfiles/version.txt" "v1"
+assert_contains "mise bootstrap repos status" "current"
+assert_succeed "mise bootstrap repos status --json | jq -e . >/dev/null"
+assert_contains "mise bootstrap repos status --json" '"state": "current"'
+assert_succeed "mise bootstrap repos status --missing"
+assert_contains "mise bootstrap status --json" '"repos"'
+assert_succeed "mise bootstrap status --missing"
+
+# idempotent: re-running does not fail
+assert_succeed "mise bootstrap repos apply --yes"
+
+# clean repos update to the configured ref
+echo "v2" >"$SRC/version.txt"
+commit_all "$SRC" "v2"
+assert_contains "mise bootstrap repos status" "differs"
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat ~/src/dotfiles/version.txt" "v2"
+
+# dirty repos fail closed instead of overwriting local work
+echo "local" >"$HOME/src/dotfiles/local.txt"
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/dotfiles" = { url = "$SRC_URL", ref = "main" }
+"~/src/preflight-missing" = { url = "$SRC_URL", ref = "main" }
+EOF
+assert_fail "mise bootstrap repos apply --yes" "local changes"
+assert_directory_not_exists "$HOME/src/preflight-missing"
+rm -f "$HOME/src/dotfiles/local.txt"
+
+# full branch refs update without detaching or skipping the pull
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/full-ref" = { url = "$SRC_URL", ref = "refs/heads/main" }
+EOF
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat ~/src/full-ref/version.txt" "v2"
+echo "v3" >"$SRC/version.txt"
+commit_all "$SRC" "v3"
+assert_contains "mise bootstrap repos status" "differs"
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat ~/src/full-ref/version.txt" "v3"
+assert "git -C ~/src/full-ref rev-parse --abbrev-ref HEAD" "main"
+
+# empty target directories can be cloned into
+mkdir -p "$HOME/src/empty"
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/empty" = { url = "$SRC_URL", ref = "main" }
+EOF
+assert_contains "mise bootstrap repos status" "missing"
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat ~/src/empty/version.txt" "v3"
+
+# tag refs are supported
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/tagged" = { url = "$SRC_URL", ref = "v1" }
+EOF
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat ~/src/tagged/version.txt" "v1"
+assert_contains "mise bootstrap repos status" "current"
+git -C "$HOME/src/tagged" checkout -q main
+assert_contains "mise bootstrap repos status" "differs"
+assert_contains "mise bootstrap repos apply --dry-run" "checkout v1"
+assert_not_contains "mise bootstrap repos apply --dry-run" "pull --ff-only origin v1"
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat ~/src/tagged/version.txt" "v1"
+
+# existing non-empty non-git paths are conflicts
+mkdir -p "$HOME/src/conflict"
+echo "local" >"$HOME/src/conflict/file.txt"
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/conflict" = { url = "$SRC_URL", ref = "main" }
+EOF
+assert_contains "mise bootstrap repos status" "conflict"
+assert_fail "mise bootstrap repos apply --yes" "not a git repository"
+
+# repos run as part of full bootstrap before dotfiles, and hooks wrap the phase
+rm -rf "$HOME/src/hook-repo" pre_repo_hook post_repo_hook
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/hook-repo" = { url = "$SRC_URL", ref = "main" }
+
+[bootstrap.hooks.pre-repos]
+run = "echo pre > pre_repo_hook"
+
+[bootstrap.hooks.post-repos]
+run = "test -d ~/src/hook-repo/.git && echo post > post_repo_hook"
+EOF
+assert_succeed "mise bootstrap --yes --skip tools"
+assert "cat pre_repo_hook" "pre"
+assert "cat post_repo_hook" "post"
+
+# --skip repos skips the phase and its hooks
+rm -rf "$HOME/src/skipped" pre_repo_hook post_repo_hook
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/skipped" = { url = "$SRC_URL", ref = "main" }
+
+[bootstrap.hooks.pre-repos]
+run = "echo pre > pre_repo_hook"
+
+[bootstrap.hooks.post-repos]
+run = "echo post > post_repo_hook"
+EOF
+assert_succeed "mise bootstrap --yes --skip repos --skip tools"
+assert_directory_not_exists "$HOME/src/skipped"
+assert_fail "test -f pre_repo_hook"
+assert_fail "test -f post_repo_hook"
+
+# --only excludes repos unless repos is requested
+rm -rf "$HOME/src/only-skipped" pre_repo_hook post_repo_hook
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/only-skipped" = { url = "$SRC_URL", ref = "main" }
+
+[bootstrap.hooks.pre-repos]
+run = "echo pre > pre_repo_hook"
+
+[bootstrap.hooks.post-repos]
+run = "echo post > post_repo_hook"
+EOF
+assert_succeed "mise bootstrap --yes --only tools"
+assert_directory_not_exists "$HOME/src/only-skipped"
+assert_fail "test -f pre_repo_hook"
+assert_fail "test -f post_repo_hook"

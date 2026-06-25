@@ -78,15 +78,18 @@ downloads and runs the pinned mise binary for the project.
 
 Beyond `[tools]`, mise can declare the rest of the machine setup needed for
 a project or workstation, and [`mise bootstrap`](/cli/bootstrap.html)
-converges it in one command — system packages, then dotfiles, then shell
-activation, then macOS defaults, then LaunchAgents, then login shell, then
-tools, then a `bootstrap` task if you define one:
+converges it in one command — system packages, then repos, then dotfiles, then
+shell activation, then macOS defaults, then LaunchAgents, then systemd user services, then login
+shell, then tools, then a `bootstrap` task if you define one:
 
 ```toml
 [bootstrap.packages]                      # OS packages (apk/apt/dnf/pacman/brew)
 "apk:build-base" = "latest"
 "apt:build-essential" = "latest"
 "brew:postgresql@17" = "latest"
+
+[bootstrap.repos]                         # git repos cloned before dotfiles
+"~/src/dotfiles" = { url = "git@github.com:jdx/dotfiles.git", ref = "main" }
 
 [dotfiles]                             # dotfiles: symlink/copy/template
 "~/.gitconfig" = { mode = "symlink" }
@@ -134,8 +137,9 @@ which are imperative commands run during `mise bootstrap` and may have side
 effects; treat hook commands as non-idempotent unless they are written to
 converge safely. See
 [Bootstrap](/bootstrap.html), [Bootstrap Packages](/bootstrap/packages/),
-[Dotfiles](/dotfiles.html), [macOS Defaults](/bootstrap/macos-defaults.html),
-[Shell Activation](/bootstrap/shell.html), [launchd](/bootstrap/launchd.html),
+[Repos](/bootstrap/repos.html), [Dotfiles](/dotfiles.html),
+[Shell Activation](/bootstrap/shell.html),
+[macOS Defaults](/bootstrap/macos-defaults.html), [launchd](/bootstrap/launchd.html),
 [systemd](/bootstrap/systemd.html), and [User Login Shell](/bootstrap/user.html).
 
 ## Installation via zsh zinit
