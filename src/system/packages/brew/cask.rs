@@ -271,6 +271,8 @@ async fn fetch_archive(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<Pat
         let _ = std::process::Command::new("xattr")
             .args(["-d", "com.apple.quarantine"])
             .arg(&archive)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status();
     }
     match cask.sha256.as_deref() {
@@ -340,12 +342,30 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
     ));
     file::remove_all(&tmp_target)?;
     ditto(&caskroom_app, &tmp_target)?;
-    file::remove_all(&target)?;
-    file::rename(&tmp_target, &target)?;
+    // Atomic swap: rename existing target aside before putting the new one in place so that
+    // a failure during rename leaves the old app intact rather than leaving nothing.
+    let old_target = target.with_extension(format!(
+        "mise-old-{}",
+        crate::hash::hash_to_str(&target.display().to_string())
+    ));
+    file::remove_all(&old_target)?;
+    if target.exists() {
+        file::rename(&target, &old_target)?;
+    }
+    if let Err(e) = file::rename(&tmp_target, &target) {
+        // Restore the old app if the swap failed.
+        if old_target.exists() {
+            let _ = file::rename(&old_target, &target);
+        }
+        return Err(e);
+    }
+    file::remove_all(&old_target)?;
     // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
     let _ = std::process::Command::new("xattr")
         .args(["-r", "-d", "com.apple.quarantine"])
         .arg(&target)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status();
     Ok(())
 }
@@ -381,16 +401,19 @@ fn stage_binary(stage: &Path, caskroom: &Path, binary: &BinaryArtifact) -> Resul
         file::create_dir_all(parent)?;
     }
     if binary.source.contains("$APPDIR") {
-        // $APPDIR is /Applications — the app has already been installed there by install_app.
-        // Symlink into the installed app bundle so the binary can trace back to find the app.
-        let resolved = binary.source.replace("$APPDIR", "/Applications");
-        let app_binary = PathBuf::from(&resolved);
-        if !app_binary.is_file() {
-            bail!(
-                "brew-cask: binary artifact '{}' was not found",
-                binary.source
-            )
-        }
+        // $APPDIR is the Applications directory where install_app placed the bundle.
+        // Symlink into the installed app so the CLI wrapper can trace back to find the app.
+        // Check both /Applications and $HOMEBREW_PREFIX/Applications per app_target_path().
+        let app_binary = [
+            PathBuf::from("/Applications"),
+            prefix::prefix().join("Applications"),
+        ]
+        .iter()
+        .map(|appdir| {
+            PathBuf::from(binary.source.replace("$APPDIR", &appdir.to_string_lossy()))
+        })
+        .find(|p| p.is_file())
+        .ok_or_else(|| eyre!("brew-cask: binary artifact '{}' was not found", binary.source))?;
         file::make_symlink(&app_binary, &caskroom_binary)?;
     } else {
         let source = find_artifact(stage, &binary.source)

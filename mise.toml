@@ -34,8 +34,6 @@ taplo = "latest"
 wait-for-gh-rate-limit = "latest"
 sops = "latest"
 node = "24"
-rust = "latest"
-cmake = "latest"
 
 [task_config]
 includes = ["tasks.toml", "xtasks"]
