@@ -33,3 +33,14 @@ else
   echo "Output: $output"
   exit 1
 fi
+
+# A no-op `mise install` (everything already installed) still runs postinstall,
+# now with an empty JSON array rather than an unset variable (#10574)
+output2=$(mise install 2>&1)
+if [[ $output2 == *'INSTALLED_TOOLS=[]'* ]]; then
+  echo "✓ MISE_INSTALLED_TOOLS is [] on a no-op install"
+else
+  echo "✗ MISE_INSTALLED_TOOLS should be [] on a no-op install"
+  echo "Output: $output2"
+  exit 1
+fi
