@@ -32,11 +32,11 @@ mise use -g mas
 ```sh
 mise bootstrap packages use mas:497799835
 mise bootstrap packages status
-mise bootstrap packages install --manager mas
+mise bootstrap packages apply --manager mas
 mise bootstrap packages upgrade --manager mas
 ```
 
-`mise bootstrap packages install` runs `mas install <id>` for missing apps.
+`mise bootstrap packages apply` runs `mas install <id>` for missing apps.
 `mise bootstrap packages upgrade` runs `mas upgrade <id>` for installed apps.
 Both commands require numeric ADAM IDs; bundle identifiers such as
 `com.apple.dt.Xcode` are not valid package names.
@@ -45,7 +45,7 @@ Both commands require numeric ADAM IDs; bundle identifiers such as
 
 `mas` is macOS-only and must be on `PATH`. On other platforms, or when the
 `mas` command is missing, shared configs list the entries as skipped instead
-of failing. Explicit commands such as `mise bootstrap packages install
+of failing. Explicit commands such as `mise bootstrap packages apply
 --manager mas` still fail when `mas` is unavailable, matching the other
 package managers.
 

@@ -1,14 +1,14 @@
 //! `[bootstrap]` config section: machine-global bootstrapping.
 //!
 //! This is `[bootstrap.packages]` — declarative system packages installed
-//! by `mise bootstrap packages install` — `[bootstrap.repos]` — declarative
+//! by `mise bootstrap packages apply` — `[bootstrap.repos]` — declarative
 //! git checkouts — `[dotfiles]` — declarative config files applied by
-//! `mise dotfiles apply` — `[bootstrap.mise_shell_activate]` shell activation
-//! setup — `[bootstrap.macos.defaults]` — declarative macOS user defaults —
-//! `[bootstrap.macos.launchd.agents]` — declarative macOS LaunchAgents —
-//! `[bootstrap.linux.systemd.units]` — declarative Linux systemd user services
-//! — `[bootstrap.user].login_shell` — and `[bootstrap.hooks]` bootstrap phase
-//! hooks.
+//! `mise bootstrap dotfiles apply` — `[bootstrap.mise_shell_activate]`
+//! shell activation setup — `[bootstrap.macos.defaults]` — declarative macOS
+//! user defaults — `[bootstrap.macos.launchd.agents]` — declarative macOS
+//! LaunchAgents — `[bootstrap.linux.systemd.units]` — declarative Linux
+//! systemd user services — `[bootstrap.user].login_shell` — and
+//! `[bootstrap.hooks]` bootstrap phase hooks.
 //! These are intentionally not part of `[tools]`: they're unversioned,
 //! machine-global settings and resources, not mise's per-project toolset.
 

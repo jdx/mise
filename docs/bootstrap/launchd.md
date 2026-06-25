@@ -2,7 +2,7 @@
 
 mise can declare macOS user LaunchAgents in
 `[bootstrap.macos.launchd.agents]` and apply them with
-`mise bootstrap launchd apply`:
+`mise bootstrap macos launchd-agents apply`:
 
 ```toml
 [bootstrap.macos.launchd.agents.my-sync]
@@ -47,23 +47,23 @@ numbers, `.`, `_`, and `-`. mise owns only the plist files it creates with the
   [config hierarchy](/configuration.html) (global → project). A more local
   config replaces the full declaration for the same agent name.
 - **macOS-only** — on other platforms the section is inert:
-  `mise bootstrap launchd status` lists entries as skipped and
-  `mise bootstrap launchd apply` ignores them.
+  `mise bootstrap macos launchd-agents status` lists entries as skipped and
+  `mise bootstrap macos launchd-agents apply` ignores them.
 - **Manual application only** — mise never writes or loads LaunchAgents
-  implicitly; only `mise bootstrap launchd apply` and `mise bootstrap` do.
+  implicitly; only `mise bootstrap macos launchd-agents apply` and `mise bootstrap` do.
 - **User agents only** — mise writes to `~/Library/LaunchAgents`. System
   daemons in `/Library/LaunchDaemons` are not supported.
 
 ## Commands
 
 ```sh
-mise bootstrap launchd status            # shows LaunchAgent state
-mise bootstrap launchd status --json     # machine-readable
-mise bootstrap launchd status --missing  # exit 1 if any agent is missing, changed, or unloaded
+mise bootstrap macos launchd-agents status            # shows LaunchAgent state
+mise bootstrap macos launchd-agents status --json     # machine-readable
+mise bootstrap macos launchd-agents status --missing  # exit 1 if any agent is missing, changed, or unloaded
 
-mise bootstrap launchd apply           # write and load missing/changed agents
-mise bootstrap launchd apply --dry-run # print the commands without running them
-mise bootstrap launchd apply --yes     # skip the confirmation prompt
+mise bootstrap macos launchd-agents apply           # write and load missing/changed agents
+mise bootstrap macos launchd-agents apply --dry-run # print the commands without running them
+mise bootstrap macos launchd-agents apply --yes     # skip the confirmation prompt
 ```
 
 `status` reports each agent as `loaded`, `unloaded`, `differs`, or `missing`.

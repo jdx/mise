@@ -79,8 +79,9 @@ downloads and runs the pinned mise binary for the project.
 Beyond `[tools]`, mise can declare the rest of the machine setup needed for
 a project or workstation, and [`mise bootstrap`](/cli/bootstrap.html)
 converges it in one command — system packages, then repos, then dotfiles, then
-shell activation, then macOS defaults, then LaunchAgents, then systemd user services, then login
-shell, then tools, then a `bootstrap` task if you define one:
+shell activation, then macOS defaults, then LaunchAgents, then systemd user
+services, then login shell, then tools, then a `bootstrap` task if you define
+one:
 
 ```toml
 [bootstrap.packages]                      # OS packages (apk/apt/dnf/pacman/brew)
@@ -131,8 +132,8 @@ mise bootstrap --yes   # new laptop or container -> ready to work
 
 Everything is declarative and idempotent: re-running skips whatever is
 already in its desired state, `mise bootstrap packages status --missing` and
-`mise dotfiles status --missing` make CI checks, and nothing is ever applied
-implicitly. The exceptions are `[bootstrap.hooks]` and `[tasks.bootstrap]`,
+`mise bootstrap dotfiles status --missing` make CI checks, and nothing is ever
+applied implicitly. The exceptions are `[bootstrap.hooks]` and `[tasks.bootstrap]`,
 which are imperative commands run during `mise bootstrap` and may have side
 effects; treat hook commands as non-idempotent unless they are written to
 converge safely. See

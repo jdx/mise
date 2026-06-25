@@ -1653,7 +1653,7 @@
             },
             "sudo": {
               "default": true,
-              "description": "[experimental] Allow `mise bootstrap packages install` to elevate with sudo when not running as root.",
+              "description": "[experimental] Allow `mise bootstrap packages apply` to elevate with sudo when not running as root.",
               "type": "boolean"
             }
           }
@@ -3100,7 +3100,7 @@
       "properties": {
         "packages": {
           "type": "object",
-          "description": "system packages to install with `mise bootstrap packages install`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
+          "description": "system packages to install with `mise bootstrap packages apply`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
           "propertyNames": {
             "pattern": "^[A-Za-z0-9_-]+:.+$"
           },
@@ -3240,7 +3240,7 @@
             },
             "defaults": {
               "type": "object",
-              "description": "macOS user defaults to apply with `mise bootstrap macos-defaults apply`, keyed by preferences domain (e.g. \"com.apple.dock\", \"NSGlobalDomain\")",
+              "description": "macOS user defaults to apply with `mise bootstrap macos defaults apply`, keyed by preferences domain (e.g. \"com.apple.dock\", \"NSGlobalDomain\")",
               "additionalProperties": {
                 "type": "object",
                 "description": "defaults keys and their desired values for this domain",
@@ -3269,7 +3269,7 @@
               "properties": {
                 "agents": {
                   "type": "object",
-                  "description": "macOS user LaunchAgents to write and load with `mise bootstrap launchd apply`",
+                  "description": "macOS user LaunchAgents to write and load with `mise bootstrap macos launchd-agents apply`",
                   "propertyNames": {
                     "pattern": "^[A-Za-z0-9._-]+$"
                   },
@@ -3343,7 +3343,7 @@
               "properties": {
                 "units": {
                   "type": "object",
-                  "description": "systemd user services to write and start with `mise bootstrap systemd apply`",
+                  "description": "systemd user services to write and start with `mise bootstrap linux systemd-units apply`",
                   "propertyNames": {
                     "pattern": "^[A-Za-z0-9._@-]+$"
                   },

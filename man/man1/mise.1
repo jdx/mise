@@ -145,19 +145,51 @@ List all the active runtime bin paths
 \fBbootstrap\fR
 [experimental] Set up a machine for the current config in one command
 .TP
-\fBbootstrap launchd\fR
-Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
+\fBbootstrap dotfiles\fR
+Manage dotfiles from `[dotfiles]`
 .TP
-\fBbootstrap launchd apply\fR
+\fBbootstrap dotfiles apply\fR
+Apply dotfiles from `[dotfiles]`
 .TP
-\fBbootstrap launchd status\fR
+\fBbootstrap dotfiles status\fR
+Show the status of dotfiles from `[dotfiles]`
+.RS
+\fIAliases: \fRls
+.RE
 .TP
-\fBbootstrap macos\-defaults\fR
+\fBbootstrap linux\fR
+Manage Linux bootstrap config from `[bootstrap.linux]`
+.TP
+\fBbootstrap linux systemd\-units\fR
+Manage systemd user services from `[bootstrap.linux.systemd.units]`
+.TP
+\fBbootstrap linux systemd\-units apply\fR
+.TP
+\fBbootstrap linux systemd\-units status\fR
+.TP
+\fBbootstrap macos\fR
+Manage macOS bootstrap config from `[bootstrap.macos]`
+.TP
+\fBbootstrap macos defaults\fR
 Manage macOS defaults from `[bootstrap.macos.defaults]`
 .TP
-\fBbootstrap macos\-defaults apply\fR
+\fBbootstrap macos defaults apply\fR
 .TP
-\fBbootstrap macos\-defaults status\fR
+\fBbootstrap macos defaults status\fR
+.TP
+\fBbootstrap macos launchd\-agents\fR
+Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
+.TP
+\fBbootstrap macos launchd\-agents apply\fR
+.TP
+\fBbootstrap macos launchd\-agents status\fR
+.TP
+\fBbootstrap mise\-shell\-activate\fR
+Manage mise shell activation from `[bootstrap.mise_shell_activate]`
+.TP
+\fBbootstrap mise\-shell\-activate apply\fR
+.TP
+\fBbootstrap mise\-shell\-activate status\fR
 .TP
 \fBbootstrap packages\fR
 Manage bootstrap system packages from `[bootstrap.packages]`
@@ -174,14 +206,14 @@ Remove Homebrew tap URLs from [bootstrap.brew.taps]
 \fIAliases: \fRremove, rm
 .RE
 .TP
-\fBbootstrap packages import\fR
-Import installed system packages into `[bootstrap.packages]`
-.TP
-\fBbootstrap packages install\fR
-Install missing system packages from `[bootstrap.packages]`
+\fBbootstrap packages apply\fR
+Apply system packages from `[bootstrap.packages]`
 .RS
 \fIAliases: \fRi
 .RE
+.TP
+\fBbootstrap packages import\fR
+Import installed system packages into `[bootstrap.packages]`
 .TP
 \fBbootstrap packages prune\fR
 Prune installed system packages no longer declared in `[bootstrap.packages]`
@@ -211,25 +243,11 @@ Manage git repo checkouts from `[bootstrap.repos]`
 .TP
 \fBbootstrap repos status\fR
 .TP
-\fBbootstrap shell\fR
-Manage mise shell activation from `[bootstrap.mise_shell_activate]`
-.TP
-\fBbootstrap shell apply\fR
-.TP
-\fBbootstrap shell status\fR
-.TP
 \fBbootstrap status\fR
 Show the aggregate bootstrap status
 .RS
 \fIAliases: \fRls
 .RE
-.TP
-\fBbootstrap systemd\fR
-Manage systemd user services from `[bootstrap.linux.systemd.units]`
-.TP
-\fBbootstrap systemd apply\fR
-.TP
-\fBbootstrap systemd status\fR
 .TP
 \fBbootstrap user\fR
 Manage current\-user bootstrap settings from `[bootstrap.user]`
@@ -827,21 +845,22 @@ e.g.: ruby@3
 Runs the bootstrap steps for the current config in order:
 
 0. `[bootstrap.hooks.pre\-packages]` — optional setup hook
-1. `mise bootstrap packages install` — install missing
+1. `mise bootstrap packages apply` — install missing
    `[bootstrap.packages]`
    then `[bootstrap.hooks.post\-packages]`
 2. `mise bootstrap repos apply` — clone/update `[bootstrap.repos]`
    surrounded by `pre\-repos`/`post\-repos` hooks
-3. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre\-dotfiles`/`post\-dotfiles` hooks
-4. `mise bootstrap shell apply` — configure shell activation from
-   `[bootstrap.mise_shell_activate]`
-5. `mise bootstrap macos\-defaults apply` — write
+4. `mise bootstrap mise\-shell\-activate apply` — configure shell activation
+   from `[bootstrap.mise_shell_activate]`
+5. `mise bootstrap macos defaults apply` — write
    `[bootstrap.macos.defaults]` entries (macOS)
    surrounded by `pre\-defaults`/`post\-defaults` hooks
-6. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
-7. `mise bootstrap systemd apply` — install/start systemd user services
-   (Linux)
+6. `mise bootstrap macos launchd\-agents apply` — install/load
+   `[bootstrap.macos.launchd.agents]`
+7. `mise bootstrap linux systemd\-units apply` — install/start
+   `[bootstrap.linux.systemd.units]`
 8. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
    (Unix)
    surrounded by `pre\-user`/`post\-user` hooks
@@ -853,9 +872,8 @@ Runs the bootstrap steps for the current config in order:
 The declarative steps converge — anything already in its desired state
 is skipped, so re\-running is safe. The `bootstrap` task runs on every
 invocation; keep it idempotent. Use it for any project\-specific setup
-that doesn't fit the declarative sections (auth flows, seeding
-databases, or other one\-off project setup) — it runs with the installed
-tools on PATH.
+that doesn't fit the declarative sections (seeding databases, auth flows,
+etc.) — it runs with the installed tools on PATH.
 
 Use `\-\-skip <part>` to skip named parts, or `\-\-only <part>` to run just
 named parts. Both flags can be repeated or comma\-separated, but they
@@ -887,19 +905,36 @@ Can be passed multiple times or as a comma\-separated list.
 .TP
 \fB\-\-update\fR
 Refresh system package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`)
-.SH "MISE BOOTSTRAP LAUNCHD APPLY"
-\fBUsage:\fR mise bootstrap launchd apply [OPTIONS]
+.SH "MISE BOOTSTRAP DOTFILES APPLY"
+Apply dotfiles from `[dotfiles]`
+
+Applies configured whole\-file entries and edits that aren't in their
+desired state. Whole\-file entries may symlink, copy, or render templates.
+Edit entries manage a marker\-delimited block or a single line in a file
+mise doesn't otherwise own.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles apply [OPTIONS] [<TARGET>] ...
 .PP
 \fBOptions:\fR
 .PP
 .TP
+\fB\-f, \-\-force\fR
+Overwrite existing files that conflict with whole\-file dotfile entries
+.TP
 \fB\-n, \-\-dry\-run\fR
-Print the commands that would run without running them
+Print the actions that would run without writing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
-.SH "MISE BOOTSTRAP LAUNCHD STATUS"
-\fBUsage:\fR mise bootstrap launchd status [OPTIONS]
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Only apply these targets
+.SH "MISE BOOTSTRAP DOTFILES STATUS"
+Show the status of dotfiles from `[dotfiles]`
+.PP
+\fBUsage:\fR mise bootstrap dotfiles status [OPTIONS] [<TARGET>] ...
 .PP
 \fBOptions:\fR
 .PP
@@ -908,9 +943,15 @@ Skip the confirmation prompt
 Output in JSON format
 .TP
 \fB\-\-missing\fR
-Exit with code 1 if any configured LaunchAgent is not in its desired state
-.SH "MISE BOOTSTRAP MACOS-DEFAULTS APPLY"
-\fBUsage:\fR mise bootstrap macos\-defaults apply [OPTIONS]
+Exit with code 1 if any configured dotfiles are not in their desired
+state (missing, source missing, differs)
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Only show these targets
+.SH "MISE BOOTSTRAP LINUX SYSTEMD-UNITS APPLY"
+\fBUsage:\fR mise bootstrap linux systemd\-units apply [OPTIONS]
 .PP
 \fBOptions:\fR
 .PP
@@ -920,8 +961,30 @@ Print the commands that would run without running them
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
-.SH "MISE BOOTSTRAP MACOS-DEFAULTS STATUS"
-\fBUsage:\fR mise bootstrap macos\-defaults status [OPTIONS]
+.SH "MISE BOOTSTRAP LINUX SYSTEMD-UNITS STATUS"
+\fBUsage:\fR mise bootstrap linux systemd\-units status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured systemd user service is not in its desired state
+.SH "MISE BOOTSTRAP MACOS DEFAULTS APPLY"
+\fBUsage:\fR mise bootstrap macos defaults apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP MACOS DEFAULTS STATUS"
+\fBUsage:\fR mise bootstrap macos defaults status [OPTIONS]
 .PP
 \fBOptions:\fR
 .PP
@@ -931,6 +994,50 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured defaults are not in their desired state
+.SH "MISE BOOTSTRAP MACOS LAUNCHD-AGENTS APPLY"
+\fBUsage:\fR mise bootstrap macos launchd\-agents apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP MACOS LAUNCHD-AGENTS STATUS"
+\fBUsage:\fR mise bootstrap macos launchd\-agents status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured LaunchAgent is not in its desired state
+.SH "MISE BOOTSTRAP MISE-SHELL-ACTIVATE APPLY"
+\fBUsage:\fR mise bootstrap mise\-shell\-activate apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the actions that would run without writing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP MISE-SHELL-ACTIVATE STATUS"
+\fBUsage:\fR mise bootstrap mise\-shell\-activate status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured shell activation is not in its desired state
 .SH "MISE BOOTSTRAP PACKAGES BREW TAP"
 Add a Homebrew tap URL to [bootstrap.brew.taps]
 .PP
@@ -976,6 +1083,39 @@ Write to this config file or directory
 .TP
 \fB<TAPS>\fR
 Tap name(s), e.g. `owner/repo`
+.SH "MISE BOOTSTRAP PACKAGES APPLY"
+Apply system packages from `[bootstrap.packages]`
+
+Checks which configured packages are missing and installs them with the
+system package manager. This may elevate with sudo when not running as
+root (see the `system_packages.sudo` setting).
+
+Packages can also be given explicitly in `manager:package` form (e.g.
+`apk:zlib\-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
+the config. Explicit packages and `\-\-manager` scope the run to packages
+only. `install` is accepted as an alias for this command.
+.PP
+\fBUsage:\fR mise bootstrap packages apply [OPTIONS] [<PACKAGE>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
+Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, or `mas`
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.TP
+\fB\-\-update\fR
+Refresh package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`)
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
 .SH "MISE BOOTSTRAP PACKAGES IMPORT"
 Import installed system packages into `[bootstrap.packages]`
 
@@ -1008,39 +1148,6 @@ Print the config change without writing config or adopting packages
 .TP
 \fB\-p, \-\-path\fR \fI<PATH>\fR
 Write to this config file or directory
-.SH "MISE BOOTSTRAP PACKAGES INSTALL"
-Install missing system packages from `[bootstrap.packages]`
-
-Checks which configured packages are missing and installs them with the
-system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting).
-
-Packages can also be given explicitly in `manager:package` form (e.g.
-`apk:zlib\-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
-the config. Explicit packages and `\-\-manager` scope the run to packages
-only.
-.PP
-\fBUsage:\fR mise bootstrap packages install [OPTIONS] [<PACKAGE>] ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, or `mas`
-.TP
-\fB\-n, \-\-dry\-run\fR
-Print the commands that would run without running them
-.TP
-\fB\-y, \-\-yes\fR
-Skip the confirmation prompt
-.TP
-\fB\-\-update\fR
-Refresh package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`)
-\fBArguments:\fR
-.PP
-.TP
-\fB<PACKAGE>\fR
-Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
 .SH "MISE BOOTSTRAP PACKAGES PRUNE"
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
@@ -1085,7 +1192,7 @@ that are already installed: apk/apt/dnf/pacman upgrade to the newest available
 version (apk, apt, and dnf honor a version pinned in config), brew pours the
 formula's current bottle and replaces the old keg, brew\-cask installs
 the current cask artifact, and mas upgrades App Store apps. Packages that
-are not installed yet are skipped — use `mise bootstrap packages install`
+are not installed yet are skipped — use `mise bootstrap packages apply`
 for those.
 
 Packages can also be given explicitly in `manager:package` form.
@@ -1167,28 +1274,6 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured repo is not in its desired state
-.SH "MISE BOOTSTRAP SHELL APPLY"
-\fBUsage:\fR mise bootstrap shell apply [OPTIONS]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-n, \-\-dry\-run\fR
-Print the actions that would run without writing anything
-.TP
-\fB\-y, \-\-yes\fR
-Skip the confirmation prompt
-.SH "MISE BOOTSTRAP SHELL STATUS"
-\fBUsage:\fR mise bootstrap shell status [OPTIONS]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-\-missing\fR
-Exit with code 1 if any configured shell activation is not in its desired state
 .SH "MISE BOOTSTRAP STATUS"
 Show the aggregate bootstrap status
 .PP
@@ -1202,28 +1287,6 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured bootstrap state is not in its desired state
-.SH "MISE BOOTSTRAP SYSTEMD APPLY"
-\fBUsage:\fR mise bootstrap systemd apply [OPTIONS]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-n, \-\-dry\-run\fR
-Print the commands that would run without running them
-.TP
-\fB\-y, \-\-yes\fR
-Skip the confirmation prompt
-.SH "MISE BOOTSTRAP SYSTEMD STATUS"
-\fBUsage:\fR mise bootstrap systemd status [OPTIONS]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-\-missing\fR
-Exit with code 1 if any configured systemd user service is not in its desired state
 .SH "MISE BOOTSTRAP USER APPLY"
 \fBUsage:\fR mise bootstrap user apply [OPTIONS]
 .PP

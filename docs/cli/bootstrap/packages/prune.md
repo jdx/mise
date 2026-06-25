@@ -33,7 +33,7 @@ Skip the confirmation prompt
 Examples:
 
 ```
-mise bootstrap packages prune --manager brew
-mise bootstrap packages prune --manager brew --dry-run
-mise bootstrap packages prune --manager brew --yes
+$ mise bootstrap packages prune --manager brew
+$ mise bootstrap packages prune --manager brew --dry-run
+$ mise bootstrap packages prune --manager brew --yes
 ```

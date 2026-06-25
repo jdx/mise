@@ -469,7 +469,7 @@ impl Doctor {
         }
         if total_missing > 0 {
             self.warnings.push(format!(
-                "{total_missing} system package(s) are missing, install them with `mise bootstrap packages install`"
+                "{total_missing} system package(s) are missing, install them with `mise bootstrap packages apply`"
             ));
         }
         Some(map.into())
@@ -503,7 +503,7 @@ impl Doctor {
                     .count();
                 if out_of_sync > 0 {
                     self.warnings.push(format!(
-                        "{out_of_sync} macOS default(s) are out of sync, apply them with `mise bootstrap macos-defaults apply`"
+                        "{out_of_sync} macOS default(s) are out of sync, apply them with `mise bootstrap macos defaults apply`"
                     ));
                 }
                 Some(SystemDefaultsDiagnosis::Checked {
@@ -705,7 +705,7 @@ impl Doctor {
         }
         if total_missing > 0 {
             self.warnings.push(format!(
-                "{total_missing} system package(s) are missing, install them with `mise bootstrap packages install`"
+                "{total_missing} system package(s) are missing, install them with `mise bootstrap packages apply`"
             ));
         }
         info::section("system_packages", lines.join("\n"))?;

@@ -12,7 +12,7 @@ that are already installed: apk/apt/dnf/pacman upgrade to the newest available
 version (apk, apt, and dnf honor a version pinned in config), brew pours the
 formula's current bottle and replaces the old keg, brew-cask installs
 the current cask artifact, and mas upgrades App Store apps. Packages that
-are not installed yet are skipped — use `mise bootstrap packages install`
+are not installed yet are skipped — use `mise bootstrap packages apply`
 for those.
 
 Packages can also be given explicitly in `manager:package` form.
@@ -50,10 +50,10 @@ Skip the confirmation prompt
 Examples:
 
 ```
-mise bootstrap packages upgrade
-mise bootstrap packages upgrade brew:postgresql@17
-mise bootstrap packages upgrade --manager brew-cask
-mise bootstrap packages upgrade --manager mas
-mise bootstrap packages upgrade --manager apt --yes
-mise bootstrap packages upgrade --dry-run
+$ mise bootstrap packages upgrade
+$ mise bootstrap packages upgrade brew:postgresql@17
+$ mise bootstrap packages upgrade --manager brew-cask
+$ mise bootstrap packages upgrade --manager mas
+$ mise bootstrap packages upgrade --manager apt --yes
+$ mise bootstrap packages upgrade --dry-run
 ```

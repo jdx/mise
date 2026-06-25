@@ -22,7 +22,7 @@ assert_contains "mise dotfiles status" "missing"
 assert_fail "mise dotfiles status --missing"
 
 # system commands do not manage dotfiles
-assert_succeed "mise bootstrap packages install --yes"
+assert_succeed "mise bootstrap packages apply --yes"
 assert_fail "cat ~/.gitconfig"
 
 # dry-run prints actions without writing anything

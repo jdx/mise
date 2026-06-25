@@ -2,7 +2,7 @@
 
 mise can declare macOS user defaults (preferences) in the
 `[bootstrap.macos.defaults]` section of `mise.toml` and apply them with
-`mise bootstrap macos-defaults apply`:
+`mise bootstrap macos defaults apply`:
 
 ```toml
 [bootstrap.macos.dock]
@@ -108,16 +108,16 @@ newer mise versions still work.
   more local config overrides the value of a pair the global config declared
   but cannot remove it. mise never deletes a default.
 - **OS-filtered** — on anything other than macOS the section is inert:
-  `mise bootstrap macos-defaults status` and `mise doctor` list the entries
+  `mise bootstrap macos defaults status` and `mise doctor` list the entries
   as skipped (so nothing is silently invisible) and
-  `mise bootstrap macos-defaults apply` ignores them, so a shared config
+  `mise bootstrap macos defaults apply` ignores them, so a shared config
   authored for both Linux and macOS just works.
 - **Manual application only** — mise never writes defaults implicitly; only
-  `mise bootstrap macos-defaults apply` does, after the usual confirmation
+  `mise bootstrap macos defaults apply` does, after the usual confirmation
   prompt.
 - **Strictly typed** — an existing value only counts as in sync when both
   the value and the plist type match: an integer `1` does not satisfy a
-  configured `true`. `mise bootstrap macos-defaults apply` converges it to the
+  configured `true`. `mise bootstrap macos defaults apply` converges it to the
   typed value.
 
 User defaults are per-user, so unlike system packages no sudo is ever
@@ -127,15 +127,15 @@ defaults` system domains are not supported.
 ## Commands
 
 ```sh
-mise bootstrap macos-defaults status            # shows defaults drift
-mise bootstrap macos-defaults status --missing  # exit 1 if anything is unset or differs
+mise bootstrap macos defaults status            # shows defaults drift
+mise bootstrap macos defaults status --missing  # exit 1 if anything is unset or differs
 
-mise bootstrap macos-defaults apply           # writes unset/differing defaults
-mise bootstrap macos-defaults apply --dry-run # print the `defaults write` commands
-mise bootstrap macos-defaults apply --yes     # skip the confirmation prompt
+mise bootstrap macos defaults apply           # writes unset/differing defaults
+mise bootstrap macos defaults apply --dry-run # print the `defaults write` commands
+mise bootstrap macos defaults apply --yes     # skip the confirmation prompt
 ```
 
-`mise bootstrap macos-defaults status` reports each entry as `set` (matches),
+`mise bootstrap macos defaults status` reports each entry as `set` (matches),
 `differs` (a value exists but doesn't match — the current value is shown), or
 `unset`. `mise doctor` summarizes the same drift.
 

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use eyre::Result;
 use serde_json::{Value, json};
 
+use super::dotfiles::{DotfilesApply, DotfilesStatus};
 use super::install::Install;
 use super::run;
 use super::system::driver::{self, Action, DriverOpts};
@@ -29,21 +30,22 @@ use clap::{Subcommand, ValueEnum};
 /// Runs the bootstrap steps for the current config in order:
 ///
 /// 0. `[bootstrap.hooks.pre-packages]` — optional setup hook
-/// 1. `mise bootstrap packages install` — install missing
+/// 1. `mise bootstrap packages apply` — install missing
 ///    `[bootstrap.packages]`
 ///    then `[bootstrap.hooks.post-packages]`
 /// 2. `mise bootstrap repos apply` — clone/update `[bootstrap.repos]`
 ///    surrounded by `pre-repos`/`post-repos` hooks
-/// 3. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+/// 3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
 ///    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-/// 4. `mise bootstrap shell apply` — configure shell activation from
-///    `[bootstrap.mise_shell_activate]`
-/// 5. `mise bootstrap macos-defaults apply` — write
+/// 4. `mise bootstrap mise-shell-activate apply` — configure shell activation
+///    from `[bootstrap.mise_shell_activate]`
+/// 5. `mise bootstrap macos defaults apply` — write
 ///    `[bootstrap.macos.defaults]` entries (macOS)
 ///    surrounded by `pre-defaults`/`post-defaults` hooks
-/// 6. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
-/// 7. `mise bootstrap systemd apply` — install/start systemd user services
-///    (Linux)
+/// 6. `mise bootstrap macos launchd-agents apply` — install/load
+///    `[bootstrap.macos.launchd.agents]`
+/// 7. `mise bootstrap linux systemd-units apply` — install/start
+///    `[bootstrap.linux.systemd.units]`
 /// 8. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
 ///    (Unix)
 ///    surrounded by `pre-user`/`post-user` hooks
@@ -55,9 +57,8 @@ use clap::{Subcommand, ValueEnum};
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
 /// invocation; keep it idempotent. Use it for any project-specific setup
-/// that doesn't fit the declarative sections (auth flows, seeding
-/// databases, or other one-off project setup) — it runs with the installed
-/// tools on PATH.
+/// that doesn't fit the declarative sections (seeding databases, auth flows,
+/// etc.) — it runs with the installed tools on PATH.
 ///
 /// Use `--skip <part>` to skip named parts, or `--only <part>` to run just
 /// named parts. Both flags can be repeated or comma-separated, but they
@@ -103,9 +104,13 @@ enum BootstrapPart {
     Packages,
     Repos,
     Dotfiles,
+    #[clap(name = "mise-shell-activate", alias = "shell")]
     Shell,
+    #[clap(name = "macos-defaults", alias = "defaults")]
     Defaults,
+    #[clap(name = "macos-launchd-agents", alias = "launchd")]
     Launchd,
+    #[clap(name = "linux-systemd-units", alias = "systemd")]
     Systemd,
     User,
     Tools,
@@ -133,12 +138,19 @@ impl BootstrapPart {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    Dotfiles(BootstrapDotfiles),
+    Linux(BootstrapLinux),
+    Macos(BootstrapMacos),
+    #[clap(name = "mise-shell-activate", alias = "shell")]
+    MiseShellActivate(BootstrapShell),
+    #[clap(hide = true)]
     Launchd(BootstrapLaunchd),
+    #[clap(hide = true)]
     MacosDefaults(BootstrapMacosDefaults),
     Packages(BootstrapPackages),
     Repos(BootstrapRepos),
-    Shell(BootstrapShell),
     Status(BootstrapStatus),
+    #[clap(hide = true)]
     Systemd(BootstrapSystemd),
     User(BootstrapUser),
 }
@@ -156,6 +168,20 @@ struct BootstrapStatus {
     missing: bool,
 }
 
+/// Manage dotfiles from `[dotfiles]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapDotfiles {
+    #[clap(subcommand)]
+    command: BootstrapDotfilesCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapDotfilesCommands {
+    Apply(DotfilesApply),
+    Status(DotfilesStatus),
+}
+
 /// Manage bootstrap system packages from `[bootstrap.packages]`
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
@@ -168,8 +194,9 @@ struct BootstrapPackages {
 enum BootstrapPackagesCommands {
     #[cfg(unix)]
     Brew(super::system::brew::SystemBrew),
+    #[clap(alias = "install")]
+    Apply(install::SystemInstall),
     Import(import::SystemImport),
-    Install(install::SystemInstall),
     Prune(prune::SystemPrune),
     Status(status::SystemStatus),
     Upgrade(upgrade::SystemUpgrade),
@@ -210,6 +237,35 @@ struct BootstrapReposStatus {
     /// Exit with code 1 if any configured repo is not in its desired state
     #[clap(long, verbatim_doc_comment)]
     missing: bool,
+}
+
+/// Manage macOS bootstrap config from `[bootstrap.macos]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapMacos {
+    #[clap(subcommand)]
+    command: BootstrapMacosCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapMacosCommands {
+    Defaults(BootstrapMacosDefaults),
+    #[clap(name = "launchd-agents", alias = "launchd")]
+    LaunchdAgents(BootstrapLaunchd),
+}
+
+/// Manage Linux bootstrap config from `[bootstrap.linux]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapLinux {
+    #[clap(subcommand)]
+    command: BootstrapLinuxCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapLinuxCommands {
+    #[clap(name = "systemd-units", alias = "systemd")]
+    SystemdUnits(BootstrapSystemd),
 }
 
 /// Manage macOS defaults from `[bootstrap.macos.defaults]`
@@ -909,11 +965,14 @@ fn is_mise_config_target(path: &std::path::Path) -> bool {
 impl Commands {
     async fn run(self) -> Result<()> {
         match self {
+            Self::Dotfiles(cmd) => cmd.run().await,
+            Self::Linux(cmd) => cmd.run().await,
             Self::Launchd(cmd) => cmd.run().await,
+            Self::Macos(cmd) => cmd.run().await,
             Self::MacosDefaults(cmd) => cmd.run().await,
+            Self::MiseShellActivate(cmd) => cmd.run().await,
             Self::Packages(cmd) => cmd.run().await,
             Self::Repos(cmd) => cmd.run().await,
-            Self::Shell(cmd) => cmd.run().await,
             Self::Status(cmd) => cmd.run().await,
             Self::Systemd(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
@@ -1183,7 +1242,10 @@ impl BootstrapStatus {
         let activations = system::shell_activation_from_config(config);
         let mut json_entries = vec![];
         for request in &activations {
-            let state = shell_activation_state(config, request);
+            let state = match system::edits::check(config, &request.edit) {
+                Ok(state) => state,
+                Err(err) => FileState::Differs(format!("{err}")),
+            };
             let missing = state != FileState::Applied;
             report.row(
                 "shell",
@@ -1197,7 +1259,17 @@ impl BootstrapStatus {
                 file_state_display(&state),
                 missing,
             );
-            json_entries.push(shell_activation_json(request, &state));
+            let mut entry = json!({
+                "target": request.target.name(),
+                "shell": request.shell.name(),
+                "path": request.edit.path_raw,
+                "mode": request.mode.name(),
+                "state": file_state_json(&state),
+            });
+            if let FileState::Differs(reason) = &state {
+                entry["reason"] = json!(reason);
+            }
+            json_entries.push(entry);
         }
         report
             .json
@@ -1544,14 +1616,24 @@ impl BootstrapStatus {
     }
 }
 
+impl BootstrapDotfiles {
+    async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise bootstrap")?;
+        match self.command {
+            BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
 impl BootstrapPackages {
     async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             #[cfg(unix)]
             BootstrapPackagesCommands::Brew(cmd) => cmd.run().await,
+            BootstrapPackagesCommands::Apply(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Import(cmd) => cmd.run().await,
-            BootstrapPackagesCommands::Install(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Prune(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Status(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Upgrade(cmd) => cmd.run().await,
@@ -1633,6 +1715,25 @@ impl BootstrapReposStatus {
             crate::exit(1);
         }
         Ok(())
+    }
+}
+
+impl BootstrapMacos {
+    async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise bootstrap")?;
+        match self.command {
+            BootstrapMacosCommands::Defaults(cmd) => cmd.run().await,
+            BootstrapMacosCommands::LaunchdAgents(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapLinux {
+    async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise bootstrap")?;
+        match self.command {
+            BootstrapLinuxCommands::SystemdUnits(cmd) => cmd.run().await,
+        }
     }
 }
 
@@ -1984,10 +2085,23 @@ impl BootstrapShellStatus {
         let mut rows: Vec<Vec<String>> = vec![];
         let mut json_entries = vec![];
         for request in &activations {
-            let state = shell_activation_state(&config, request);
+            let state = match system::edits::check(&config, &request.edit) {
+                Ok(state) => state,
+                Err(err) => FileState::Differs(format!("{err}")),
+            };
             any_missing |= state != FileState::Applied;
             if self.json {
-                json_entries.push(shell_activation_json(request, &state));
+                let mut entry = json!({
+                    "target": request.target.name(),
+                    "shell": request.shell.name(),
+                    "path": request.edit.path_raw,
+                    "mode": request.mode.name(),
+                    "state": file_state_json(&state),
+                });
+                if let FileState::Differs(reason) = &state {
+                    entry["reason"] = json!(reason);
+                }
+                json_entries.push(entry);
             } else {
                 rows.push(vec![
                     request.target.name().to_string(),
@@ -2123,48 +2237,22 @@ impl BootstrapUserStatus {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap</bold>                    # common phases: packages + repos + dotfiles + tools + task
+    $ <bold>mise bootstrap</bold>                    # packages + repos + dotfiles + tools + bootstrap task
     $ <bold>mise bootstrap --force-dotfiles</bold>   # replace conflicting dotfile targets
     $ <bold>mise bootstrap --skip tools,task</bold>  # skip tool installation and the bootstrap task
     $ <bold>mise bootstrap --only tools</bold>       # run just tool installation
     $ <bold>mise bootstrap status --missing</bold>
-    $ <bold>mise bootstrap packages install --yes</bold>
+    $ <bold>mise bootstrap packages apply --yes</bold>
     $ <bold>mise bootstrap repos status</bold>
     $ <bold>mise bootstrap repos apply --dry-run</bold>
-    $ <bold>mise bootstrap macos-defaults status</bold>
-    $ <bold>mise bootstrap launchd apply --dry-run</bold>
-    $ <bold>mise bootstrap systemd apply --dry-run</bold>
-    $ <bold>mise bootstrap shell apply --dry-run</bold>
+    $ <bold>mise bootstrap dotfiles status</bold>
+    $ <bold>mise bootstrap mise-shell-activate apply --dry-run</bold>
+    $ <bold>mise bootstrap macos defaults status</bold>
+    $ <bold>mise bootstrap macos launchd-agents apply --dry-run</bold>
+    $ <bold>mise bootstrap linux systemd-units apply --dry-run</bold>
     $ <bold>mise bootstrap user apply --dry-run</bold>
 "#
 );
-
-fn shell_activation_state(
-    config: &Config,
-    request: &system::shell_activation::ShellActivationRequest,
-) -> FileState {
-    match system::edits::check(config, &request.edit) {
-        Ok(state) => state,
-        Err(err) => FileState::Differs(format!("{err}")),
-    }
-}
-
-fn shell_activation_json(
-    request: &system::shell_activation::ShellActivationRequest,
-    state: &FileState,
-) -> Value {
-    let mut entry = json!({
-        "target": request.target.name(),
-        "shell": request.shell.name(),
-        "path": request.edit.path_raw,
-        "mode": request.mode.name(),
-        "state": file_state_json(state),
-    });
-    if let FileState::Differs(reason) = state {
-        entry["reason"] = json!(reason);
-    }
-    entry
-}
 
 fn file_state_display(state: &FileState) -> String {
     match state {

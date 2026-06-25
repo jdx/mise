@@ -33,6 +33,9 @@ assert_contains "mise bootstrap status" "installed"
 assert_contains "mise bootstrap status --json" '"dotfiles"'
 assert_contains "mise bootstrap status --json" '"tools"'
 assert_succeed "mise bootstrap status --missing"
+assert_contains "mise bootstrap dotfiles status" "~/.gitconfig"
+assert_succeed "mise bootstrap packages apply --dry-run --yes"
+assert_succeed "mise bootstrap packages install --dry-run --yes"
 
 # idempotent: re-running is fine
 assert_succeed "mise bootstrap --yes"
@@ -173,8 +176,10 @@ EOF
 assert_succeed "mise bootstrap --dry-run"
 if [[ $(uname) == "Darwin" ]]; then
   assert_contains "mise bootstrap launchd status" "my-sync"
+  assert_contains "mise bootstrap macos launchd-agents status" "my-sync"
 else
   assert_contains "mise bootstrap launchd status" "skipped"
+  assert_contains "mise bootstrap macos launchd-agents status" "skipped"
 fi
 
 # systemd user services are declarative and safe to inspect in dry-runs
@@ -187,6 +192,7 @@ EOF
 mkdir -p runtime/systemd/private
 XDG_RUNTIME_DIR="$PWD/runtime" assert_succeed "mise bootstrap --dry-run"
 XDG_RUNTIME_DIR="$PWD/runtime" assert_contains "mise bootstrap systemd status" "my-sync"
+XDG_RUNTIME_DIR="$PWD/runtime" assert_contains "mise bootstrap linux systemd-units status" "my-sync"
 
 # unavailable system package managers are skipped, not errors
 cat <<EOF >mise.toml

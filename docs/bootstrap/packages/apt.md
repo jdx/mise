@@ -30,13 +30,13 @@ touch apt metadata — if an install fails with "Unable to locate package",
 refresh explicitly:
 
 ```sh
-mise bootstrap packages install --update
+mise bootstrap packages apply --update
 ```
 
 ## Version pins
 
 A pinned entry (`"apt:curl" = "8.5.0-2ubuntu10"`) shows as `version mismatch`
 in `mise bootstrap packages status` when a different version is installed, and
-`mise bootstrap packages install` passes the pin to apt to correct it. `"latest"` entries
+`mise bootstrap packages apply` passes the pin to apt to correct it. `"latest"` entries
 are satisfied by any installed version — use `mise bootstrap packages upgrade` to move
 them to the newest available version.

@@ -62,8 +62,8 @@ login_shell = "/tmp/mise-test-shell"
 EOF
 assert_fail "mise bootstrap user status --missing"
 assert_contains "mise bootstrap user status --json" '"shell_listed": false'
-assert_succeed "mise bootstrap packages install --dry-run --yes"
-assert_not_contains "mise bootstrap packages install --dry-run --yes" "chsh -s /tmp/mise-test-shell"
+assert_succeed "mise bootstrap packages apply --dry-run --yes"
+assert_not_contains "mise bootstrap packages apply --dry-run --yes" "chsh -s /tmp/mise-test-shell"
 assert_contains "mise bootstrap user apply --dry-run --yes" "chsh -s /tmp/mise-test-shell"
 assert_contains "mise bootstrap --dry-run --yes" "chsh -s /tmp/mise-test-shell"
 assert_contains "mise bootstrap --dry-run --yes" "bootstrap: follow-up if applied"

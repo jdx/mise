@@ -18,12 +18,12 @@ assert_contains "mise bootstrap packages status --json" '"apt"'
 assert_contains "mise bootstrap packages status --json" '"apk"'
 assert_contains "mise bootstrap packages status --json" '"mas"'
 if ! command -v apk >/dev/null; then
-  assert_fail_contains "mise bootstrap packages install --manager apk --dry-run --yes" "apk is not available"
+  assert_fail_contains "mise bootstrap packages apply --manager apk --dry-run --yes" "apk is not available"
 fi
 if [[ "$(uname)" == "Darwin" ]] && command -v mas >/dev/null; then
-  assert_succeed "mise bootstrap packages install --manager mas --dry-run --yes"
+  assert_succeed "mise bootstrap packages apply --manager mas --dry-run --yes"
 else
-  assert_fail "mise bootstrap packages install --manager mas --dry-run --yes"
+  assert_fail "mise bootstrap packages apply --manager mas --dry-run --yes"
 fi
 
 # unknown managers warn but don't fail

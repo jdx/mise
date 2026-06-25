@@ -143,7 +143,7 @@ pub async fn pour(
             // future installs would skip it — make that state visible
             warn!(
                 "failed to remove {} after link failure: {rm_err}\n\
-                 remove it manually, then re-run `mise bootstrap packages install`",
+                 remove it manually, then re-run `mise bootstrap packages apply`",
                 keg.display()
             );
         }
@@ -344,7 +344,7 @@ pub fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
         // this error — so don't claim it remains usable
         bail!(
             "cannot link {name}: these files already exist and were not created by mise or brew:\n{}\n\
-             Remove or rename them, then re-run `mise bootstrap packages install`",
+             Remove or rename them, then re-run `mise bootstrap packages apply`",
             conflicts
                 .iter()
                 .map(|p| format!("  {}", p.display()))

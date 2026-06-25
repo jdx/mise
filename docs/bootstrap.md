@@ -14,14 +14,16 @@ preferences, user services, and one-time machine setup.
 
 `mise bootstrap` runs these steps in order:
 
-1. `mise bootstrap packages install` installs missing `[bootstrap.packages]`.
+1. `mise bootstrap packages apply` installs missing `[bootstrap.packages]`.
 2. `mise bootstrap repos apply` clones or updates `[bootstrap.repos]`.
-3. `mise dotfiles apply` applies `[dotfiles]`.
-4. `mise bootstrap shell apply` configures shell activation from
+3. `mise bootstrap dotfiles apply` applies `[dotfiles]`.
+4. `mise bootstrap mise-shell-activate apply` configures shell activation from
    `[bootstrap.mise_shell_activate]`.
-5. `mise bootstrap macos-defaults apply` writes `[bootstrap.macos.defaults]`.
-6. `mise bootstrap launchd apply` writes and loads `[bootstrap.macos.launchd.agents]`.
-7. `mise bootstrap systemd apply` converges `[bootstrap.linux.systemd.units]`
+5. `mise bootstrap macos defaults apply` writes `[bootstrap.macos.defaults]`.
+6. `mise bootstrap macos launchd-agents apply` writes and loads
+   `[bootstrap.macos.launchd.agents]`.
+7. `mise bootstrap linux systemd-units apply` converges
+   `[bootstrap.linux.systemd.units]`
    by writing unit files, enabling/disabling them, and starting/stopping them
    as configured.
 8. `mise bootstrap user apply` applies `[bootstrap.user]`.
@@ -30,8 +32,10 @@ preferences, user services, and one-time machine setup.
 11. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
-`packages`, `repos`, `dotfiles`, `shell`, `defaults`, `launchd`, `systemd`, `user`,
-`tools`, `task`, and `final-hook`. The flag can be repeated or
+`packages`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`,
+`macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, and
+`final-hook`. The old shorter names `shell`, `defaults`, `launchd`, and
+`systemd` are still accepted as aliases. The flag can be repeated or
 comma-separated, for example `mise bootstrap --skip tools,task`.
 
 Use `mise bootstrap --only <part>` to run only specific parts. It supports the
@@ -147,19 +151,19 @@ mise bootstrap status --json
 mise bootstrap status --missing
 mise bootstrap packages status
 mise bootstrap repos status
-mise dotfiles status
-mise dotfiles apply --dry-run
-mise dotfiles apply --dry-run --verbose
-mise bootstrap shell status
-mise bootstrap macos-defaults status
-mise bootstrap launchd status
-mise bootstrap systemd status
+mise bootstrap dotfiles status
+mise bootstrap dotfiles apply --dry-run
+mise bootstrap dotfiles apply --dry-run --verbose
+mise bootstrap mise-shell-activate status
+mise bootstrap macos defaults status
+mise bootstrap macos launchd-agents status
+mise bootstrap linux systemd-units status
 mise bootstrap user status
 ```
 
 `mise bootstrap status --missing` checks the whole declarative bootstrap
 surface in one command. The narrower `mise bootstrap packages status
---missing` and `mise dotfiles status --missing` commands are useful when you
+--missing` and `mise bootstrap dotfiles status --missing` commands are useful when you
 only want to check one part without installing anything.
 
 ## What Goes Where
@@ -181,7 +185,8 @@ only want to check one part without installing anything.
 
 Use declarative sections when mise can inspect and converge the state. Use
 `[tasks.bootstrap]` for imperative setup that does not fit those sections,
-such as running an auth flow or seeding local data.
+such as running an auth flow, seeding local data, or other one-off project
+setup.
 
 ## Hooks
 

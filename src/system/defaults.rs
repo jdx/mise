@@ -3,7 +3,7 @@
 //! Entries are written with `defaults write <domain> <key> <-type> <value>`
 //! and checked with `defaults read-type`/`defaults read`. Like
 //! `[bootstrap.packages]` they are machine-global, declarative, and only ever
-//! applied when explicitly requested with `mise bootstrap macos-defaults apply`
+//! applied when explicitly requested with `mise bootstrap macos defaults apply`
 //! or `mise bootstrap`.
 
 use std::process::Stdio;
@@ -69,7 +69,7 @@ impl DefaultsValue {
     /// Does the pair from `defaults read-type` ("boolean", "integer", ...)
     /// and `defaults read` (raw value; booleans print as 1/0) match this
     /// value? Types are compared strictly: an integer 1 does not satisfy a
-    /// configured `true` — `mise bootstrap macos-defaults apply` converges it to the typed
+    /// configured `true` — `mise bootstrap macos defaults apply` converges it to the typed
     /// value.
     fn matches(&self, read_type: &str, raw: &str) -> bool {
         match self {

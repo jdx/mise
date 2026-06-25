@@ -14,7 +14,7 @@ Tap name, e.g. `owner/repo`
 
 ### `[URL]`
 
-GitHub URL for the tap. Defaults to <https://github.com/&lt;owner>/homebrew-&lt;repo>.git>
+GitHub URL for the tap. Defaults to https://github.com/&lt;owner>/homebrew-&lt;repo>.git
 
 ## Flags
 
@@ -33,6 +33,6 @@ Write to this config file or directory
 Examples:
 
 ```
-mise bootstrap packages brew tap railwaycat/emacsmacport
-mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-tools.git
+$ mise bootstrap packages brew tap railwaycat/emacsmacport
+$ mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-tools.git
 ```

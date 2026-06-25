@@ -2,7 +2,7 @@
 
 mise can declare Linux systemd user services in
 `[bootstrap.linux.systemd.units]` and apply them with
-`mise bootstrap systemd apply`:
+`mise bootstrap linux systemd-units apply`:
 
 ```toml
 [bootstrap.linux.systemd.units.my-sync]
@@ -52,8 +52,8 @@ and enable without keeping the unit running.
   [config hierarchy](/configuration.html) (global → project). A more local
   config replaces the full declaration for the same unit name.
 - **Linux-only** — on other platforms the section is inert:
-  `mise bootstrap systemd status` lists entries as skipped and
-  `mise bootstrap systemd apply` ignores them.
+  `mise bootstrap linux systemd-units status` lists entries as skipped and
+  `mise bootstrap linux systemd-units apply` ignores them.
 - **User services only** — mise writes to `~/.config/systemd/user` and uses
   `systemctl --user`. System services in `/etc/systemd/system` are not
   supported.
@@ -61,18 +61,18 @@ and enable without keeping the unit running.
   reachable systemd user manager. `sudo mise` is skipped because `systemctl --user`
   would target the wrong user manager.
 - **Manual application only** — mise never writes or starts systemd services
-  implicitly; only `mise bootstrap systemd apply` and `mise bootstrap` do.
+  implicitly; only `mise bootstrap linux systemd-units apply` and `mise bootstrap` do.
 
 ## Commands
 
 ```sh
-mise bootstrap systemd status            # shows systemd user service state
-mise bootstrap systemd status --json     # machine-readable
-mise bootstrap systemd status --missing  # exit 1 if any unit is missing, changed, or inactive
+mise bootstrap linux systemd-units status            # shows systemd user service state
+mise bootstrap linux systemd-units status --json     # machine-readable
+mise bootstrap linux systemd-units status --missing  # exit 1 if any unit is missing, changed, or inactive
 
-mise bootstrap systemd apply           # write and start missing/changed units
-mise bootstrap systemd apply --dry-run # print the commands without running them
-mise bootstrap systemd apply --yes     # skip the confirmation prompt
+mise bootstrap linux systemd-units apply           # write and start missing/changed units
+mise bootstrap linux systemd-units apply --dry-run # print the commands without running them
+mise bootstrap linux systemd-units apply --yes     # skip the confirmation prompt
 ```
 
 `status` reports each unit as `active`, `inactive`, `differs`, or `missing`.

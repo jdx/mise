@@ -27,7 +27,7 @@ Shell keys are shortcuts. For example, `zsh = true` expands to
 Any target can use either `"activate"` or `"shims"`. Boolean `true` enables the
 target with its default mode, and `false` disables it.
 
-`mise bootstrap shell apply` writes marker-delimited blocks to the shell rc
+`mise bootstrap mise-shell-activate apply` writes marker-delimited blocks to the shell rc
 file:
 
 | Target         | Shell | Default mode | Target file                  | Block                                  |
@@ -55,7 +55,7 @@ other bootstrap sections:
 - **Per-target override** - a project config can override a global setting for
   one startup file with `zshrc = false` without changing `zprofile`.
 - **Manual application only** - mise never edits shell rc files implicitly.
-  Only `mise bootstrap shell apply` and `mise bootstrap` apply this section.
+  Only `mise bootstrap mise-shell-activate apply` and `mise bootstrap` apply this section.
 - **Marker-owned edits** - mise only owns the block between its markers. Other
   content in the rc file is left untouched.
 - **Shims stay out of `zshenv` by default** - `zshenv` is supported when
@@ -72,13 +72,13 @@ directly instead.
 ## Commands
 
 ```sh
-mise bootstrap shell status            # shows activation block state
-mise bootstrap shell status --json     # machine-readable
-mise bootstrap shell status --missing  # exit 1 if anything is out of sync
+mise bootstrap mise-shell-activate status            # shows activation block state
+mise bootstrap mise-shell-activate status --json     # machine-readable
+mise bootstrap mise-shell-activate status --missing  # exit 1 if anything is out of sync
 
-mise bootstrap shell apply           # writes missing/different blocks
-mise bootstrap shell apply --dry-run # print the edits instead
-mise bootstrap shell apply --yes     # skip the confirmation prompt
+mise bootstrap mise-shell-activate apply           # writes missing/different blocks
+mise bootstrap mise-shell-activate apply --dry-run # print the edits instead
+mise bootstrap mise-shell-activate apply --yes     # skip the confirmation prompt
 ```
 
 JSON status entries include `target`, `shell`, `path`, `mode`, and `state`.

@@ -132,7 +132,7 @@ impl BrewManager {
         if prefix::sudo_invoking_user().is_some() {
             warn!(
                 "running under sudo — poured files will be owned by root; run \
-                 `mise bootstrap packages install` without sudo instead (mise elevates itself \
+                 `mise bootstrap packages apply` without sudo instead (mise elevates itself \
                  for the one-time prefix setup)"
             );
         }

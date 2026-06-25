@@ -28,7 +28,7 @@ export const commands: { [key: string]: Command } = {
   bootstrap: {
     hide: false,
     subcommands: {
-      launchd: {
+      dotfiles: {
         hide: false,
         subcommands: {
           apply: {
@@ -39,7 +39,50 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
-      "macos-defaults": {
+      linux: {
+        hide: false,
+        subcommands: {
+          "systemd-units": {
+            hide: false,
+            subcommands: {
+              apply: {
+                hide: false,
+              },
+              status: {
+                hide: false,
+              },
+            },
+          },
+        },
+      },
+      macos: {
+        hide: false,
+        subcommands: {
+          defaults: {
+            hide: false,
+            subcommands: {
+              apply: {
+                hide: false,
+              },
+              status: {
+                hide: false,
+              },
+            },
+          },
+          "launchd-agents": {
+            hide: false,
+            subcommands: {
+              apply: {
+                hide: false,
+              },
+              status: {
+                hide: false,
+              },
+            },
+          },
+        },
+      },
+      "mise-shell-activate": {
         hide: false,
         subcommands: {
           apply: {
@@ -64,10 +107,10 @@ export const commands: { [key: string]: Command } = {
               },
             },
           },
-          import: {
+          apply: {
             hide: false,
           },
-          install: {
+          import: {
             hide: false,
           },
           prune: {
@@ -95,30 +138,8 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
-      shell: {
-        hide: false,
-        subcommands: {
-          apply: {
-            hide: false,
-          },
-          status: {
-            hide: false,
-          },
-        },
-      },
       status: {
         hide: false,
-      },
-      systemd: {
-        hide: false,
-        subcommands: {
-          apply: {
-            hide: false,
-          },
-          status: {
-            hide: false,
-          },
-        },
       },
       user: {
         hide: false,
