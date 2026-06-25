@@ -535,15 +535,6 @@ impl RubyPlugin {
             .replace("{arch}", arch)
     }
 
-    /// Check if the system needs the no-YJIT variant (glibc < 2.35 on Linux).
-    /// YJIT builds from jdx/ruby require glibc 2.35+.
-    fn needs_no_yjit() -> bool {
-        match *crate::env::LINUX_GLIBC_VERSION {
-            Some((major, minor)) => major < 2 || (major == 2 && minor < 35),
-            None => false, // non-Linux or can't detect, assume modern system
-        }
-    }
-
     /// Extract the build revision tag from existing lock_platforms URLs.
     ///
     /// URLs look like: `.../releases/download/3.3.11-1/ruby-3.3.11...`
@@ -581,14 +572,11 @@ impl RubyPlugin {
     }
 
     /// Find precompiled asset from a GitHub repo's releases.
-    /// On Linux with glibc < 2.35, prefers the no-YJIT variant (.no_yjit.) which
-    /// targets glibc 2.17. Falls back to the standard build if no variant is found.
     async fn find_precompiled_asset_in_repo(
         &self,
         repo: &str,
         version: &str,
         platform: &str,
-        prefer_no_yjit: bool,
         locked_build_revision: Option<&str>,
     ) -> Result<Option<(String, Option<String>)>> {
         let requires_build_revision = Self::source_requires_build_revision(repo);
@@ -636,30 +624,17 @@ impl RubyPlugin {
             );
         }
         let standard_name = format!("ruby-{}.{}.tar.gz", version, platform);
-        let no_yjit_name = format!("ruby-{}.{}.no_yjit.tar.gz", version, platform);
-
-        if prefer_no_yjit {
-            debug!("glibc < 2.35 detected, preferring no-YJIT Ruby variant");
-        }
-
-        let mut standard_asset = None;
-        let mut no_yjit_asset = None;
 
         for asset in &release.assets {
-            if no_yjit_asset.is_none() && asset.name == no_yjit_name {
-                no_yjit_asset = Some((asset.browser_download_url.clone(), asset.digest.clone()));
-            } else if standard_asset.is_none() && asset.name == standard_name {
-                standard_asset = Some((asset.browser_download_url.clone(), asset.digest.clone()));
+            if asset.name == standard_name {
+                return Ok(Some((
+                    asset.browser_download_url.clone(),
+                    asset.digest.clone(),
+                )));
             }
         }
 
-        if prefer_no_yjit {
-            if no_yjit_asset.is_some() {
-                return Ok(no_yjit_asset);
-            }
-            debug!("no-YJIT variant not found, falling back to standard build");
-        }
-        Ok(standard_asset)
+        Ok(None)
     }
 
     /// Resolve precompiled binary URL and checksum for a given version and platform
@@ -667,7 +642,6 @@ impl RubyPlugin {
         &self,
         version: &str,
         platform: &str,
-        prefer_no_yjit: bool,
         locked_build_revision: Option<&str>,
     ) -> Result<Option<(String, Option<String>)>> {
         let settings = Settings::get();
@@ -681,14 +655,8 @@ impl RubyPlugin {
             )))
         } else {
             // GitHub repo shorthand (default: "jdx/ruby")
-            self.find_precompiled_asset_in_repo(
-                source,
-                version,
-                platform,
-                prefer_no_yjit,
-                locked_build_revision,
-            )
-            .await
+            self.find_precompiled_asset_in_repo(source, version, platform, locked_build_revision)
+                .await
         }
     }
 
@@ -747,12 +715,7 @@ impl RubyPlugin {
         let locked_build_revision =
             Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
         let Some((url, checksum)) = self
-            .resolve_precompiled_url(
-                &tv.version,
-                &platform,
-                Self::needs_no_yjit(),
-                locked_build_revision.as_deref(),
-            )
+            .resolve_precompiled_url(&tv.version, &platform, locked_build_revision.as_deref())
             .await?
         else {
             return Ok(None);
@@ -1128,7 +1091,6 @@ impl Backend for RubyPlugin {
                 self.resolve_precompiled_url(
                     &tv.version,
                     &platform,
-                    false,
                     locked_build_revision.as_deref(),
                 )
                 .await?
