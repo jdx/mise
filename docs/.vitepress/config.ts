@@ -238,7 +238,6 @@ export default withMermaid(
           text: "About",
           items: [
             { text: "About mise", link: "/about" },
-            { text: "mise-en-place: The Song", link: "/mise-en-place" },
             { text: "Glossary", link: "/glossary" },
             { text: "FAQs", link: "/faq" },
             { text: "Troubleshooting", link: "/troubleshooting" },
@@ -261,6 +260,7 @@ export default withMermaid(
             { text: "Team", link: "/team" },
             { text: "Contributing", link: "/contributing" },
             { text: "External Resources", link: "/external-resources" },
+            { text: "mise-en-place: The Song", link: "/mise-en-place" },
           ],
         },
         {
