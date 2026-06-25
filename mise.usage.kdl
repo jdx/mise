@@ -450,7 +450,7 @@ Examples:
                 }
             }
             flag --all help="Import every linked formula, including dependencies"
-            flag "-n --dry-run" help="Print the config change without writing config or adopting packages"
+            flag "-n --dry-run" help="Print the config change without writing config"
             flag "-p --path" help="Write to this config file or directory" {
                 arg <PATH>
             }
@@ -492,9 +492,8 @@ Examples:
             long_help #"""
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
-Currently supports Homebrew formulae only. Pruning is ledger-based: mise
-removes only formulae it installed or adopted with
-`mise bootstrap packages import`.
+Currently supports Homebrew formulae only. Pruning removes linked formulae
+that are not needed by the current or tracked `[bootstrap.packages]` config.
 """#
             after_long_help #"""
 Examples:

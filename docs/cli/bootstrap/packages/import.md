@@ -36,7 +36,7 @@ Import every linked formula, including dependencies
 
 ### `-n --dry-run`
 
-Print the config change without writing config or adopting packages
+Print the config change without writing config
 
 ### `-p --path <PATH>`
 

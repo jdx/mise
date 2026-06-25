@@ -115,10 +115,10 @@ Homebrew installation, mise-poured kegs look like its own: `brew list`,
 status checks read the Cellar directly, so formulae installed by brew count
 as installed.
 
-mise tracks what it installed in its own ledger
-(`~/.local/state/mise/system/brew.json`) and never overwrites files in the
-prefix that it (or brew) didn't create — link conflicts fail with a list of
-the offending files rather than clobbering them.
+mise reads the Homebrew prefix directly, whether formulae were poured by mise
+or by a real Homebrew. It never overwrites files in the prefix that it didn't
+create — link conflicts fail with a list of the offending files rather than
+clobbering them.
 
 ## Importing and pruning
 
@@ -147,16 +147,13 @@ URL:
 "brew:acme/tools/widget" = "latest"
 ```
 
-Import also adopts the imported roots and their resolved dependency closure
-into mise's brew ledger. That ownership boundary is what makes pruning safe:
-`mise bootstrap packages prune --manager brew` removes only formulae that mise
-installed or adopted and that are no longer needed by the merged
-`[bootstrap.packages]` config. Formulae installed by a real Homebrew are not
-pruned until you import/adopt them.
+`mise bootstrap packages prune --manager brew` treats the current and tracked
+`[bootstrap.packages]` config as the source of truth. It removes any linked
+Homebrew formula whose name is not in the resolved dependency closure of those
+configured `brew:` entries, including formulae installed by a real Homebrew.
 
 Prune removes the active keg, the `opt` link, and prefix symlinks pointing into
-that keg. It also forgets stale ledger entries for kegs that no longer exist.
-Use `--dry-run` to preview and `--yes` to skip the confirmation prompt.
+that keg. Use `--dry-run` to preview and `--yes` to skip the confirmation prompt.
 
 This command is mise's declarative cleanup for bootstrap packages, similar to
 [`brew bundle cleanup`](https://docs.brew.sh/Manpage). It is not upstream

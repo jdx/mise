@@ -62,8 +62,8 @@ applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html
   [config hierarchy](/configuration.html) (global → project) as a union of
   keys. A project can add packages on top of the global list (and override a
   global entry's version pin) but not remove them. For Homebrew formulae,
-  `mise bootstrap packages prune --manager brew` is an explicit destructive
-  command that removes mise-managed formulae no longer declared by the merged
+  `mise bootstrap packages prune --manager brew` is an explicit destructive command
+  that removes linked formulae no longer declared by the current or tracked
   config.
 - **OS-filtered** — entries for a manager that isn't available on the current
   machine are not acted on, so the same config works across platforms: `apt`
@@ -109,7 +109,7 @@ mise bootstrap packages import --manager brew   # add installed requested brew f
 mise bootstrap packages import --manager brew --all
 mise bootstrap packages import --manager brew --dry-run
 
-mise bootstrap packages prune --manager brew    # remove adopted unconfigured brew formulae
+mise bootstrap packages prune --manager brew    # remove unconfigured linked brew formulae
 mise bootstrap packages prune --manager brew --dry-run
 mise bootstrap packages prune --manager brew --yes
 
@@ -131,13 +131,12 @@ formulae: it reads the active Homebrew `opt` links and writes requested
 formulae to `[bootstrap.packages]` as `"brew:<formula>" = "latest"`. By
 default it imports only formulae whose keg receipt says they were installed
 on request; pass `--all` to include dependency formulae too. Imported formulae
-and their resolved dependency closure are adopted into mise's brew ledger, so
-they can be pruned later.
+are kept by future prune runs because they are now declared in config.
 
 `mise bootstrap packages prune --manager brew` removes brew formulae that
-mise installed or adopted but that are no longer needed by the merged
-`[bootstrap.packages]` config. It does not touch unmanaged Homebrew formulae.
-This is mise's declarative cleanup command, similar in spirit to
+are no longer needed by the current or tracked `[bootstrap.packages]` config.
+This includes formulae installed by a real Homebrew. It is mise's declarative
+cleanup command, similar in spirit to
 [Homebrew Bundle cleanup](https://docs.brew.sh/Manpage), not the old upstream
 `brew prune` command, which Homebrew removed.
 

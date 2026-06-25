@@ -15,7 +15,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use eyre::bail;
+use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
@@ -244,6 +244,50 @@ pub fn attach_brew_tap_urls(config: &Config, by_mgr: &mut IndexMap<String, Vec<P
 pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
     let brew_taps = brew_taps_from_config(config);
     packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps)
+}
+
+/// Aggregate `[bootstrap.packages]` from the current merged config plus every
+/// tracked config file, mirroring the way `mise prune` protects tool versions
+/// still referenced by other projects.
+pub async fn packages_from_config_and_tracked_config_files(
+    config: &Arc<Config>,
+) -> Result<Vec<ManagerPackages>> {
+    let tracked_config_files = config.get_tracked_config_files().await?;
+    packages_from_config_files_and_tracked_config_files(&config.config_files, &tracked_config_files)
+}
+
+fn packages_from_config_files_and_tracked_config_files(
+    current_config_files: &ConfigMap,
+    tracked_config_files: &ConfigMap,
+) -> Result<Vec<ManagerPackages>> {
+    let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    let current_brew_taps = brew_taps_from_config_files(current_config_files);
+    merge_manager_packages(
+        &mut by_mgr,
+        packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps),
+    );
+
+    let tracked_brew_taps = brew_taps_from_config_files(tracked_config_files);
+    merge_manager_packages(
+        &mut by_mgr,
+        packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps),
+    );
+
+    resolve_managers(by_mgr, false)
+}
+
+fn merge_manager_packages(
+    by_mgr: &mut IndexMap<String, Vec<PackageRequest>>,
+    manager_packages: Vec<ManagerPackages>,
+) {
+    for mp in manager_packages {
+        let requests = by_mgr.entry(mp.manager.name().to_string()).or_default();
+        for request in mp.requests {
+            if !requests.contains(&request) {
+                requests.push(request);
+            }
+        }
+    }
 }
 
 /// Aggregate `[bootstrap.packages]` across a specific set of config files.
@@ -1156,8 +1200,12 @@ fn validate_package_name(mgr: &str, name: &str) -> eyre::Result<()> {
 }
 
 pub(crate) fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
+    brew_taps_from_config_files(&config.config_files)
+}
+
+fn brew_taps_from_config_files(config_files: &ConfigMap) -> IndexMap<String, String> {
     let mut brew_taps: IndexMap<String, String> = IndexMap::new();
-    for cf in config.config_files.values().rev() {
+    for cf in config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (tap, url) in sys.brew.taps {
                 brew_taps.insert(tap, url);
@@ -1213,9 +1261,77 @@ fn resolve_managers(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use crate::config::config_file::{ConfigFile, mise_toml::MiseToml};
+    #[cfg(unix)]
+    use std::sync::Arc;
 
     fn tv(s: &str) -> toml::Value {
         s.parse().unwrap()
+    }
+
+    #[cfg(unix)]
+    fn config_map_from_toml(files: &[(&str, &str)]) -> Result<(tempfile::TempDir, ConfigMap)> {
+        let tmp = tempfile::tempdir()?;
+        let mut config_files = ConfigMap::default();
+        for (name, contents) in files {
+            let path = tmp.path().join(name);
+            if let Some(parent) = path.parent() {
+                crate::file::create_dir_all(parent)?;
+            }
+            crate::file::write(&path, contents)?;
+            let cf: Arc<dyn ConfigFile> = Arc::new(MiseToml::from_file(&path)?);
+            config_files.insert(path, cf);
+        }
+        Ok((tmp, config_files))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_packages_from_config_files_and_tracked_config_files() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[(
+            "current.toml",
+            r#"
+                [bootstrap.brew.taps]
+                "acme/tools" = "https://github.com/acme/homebrew-tools.git"
+
+                [bootstrap.packages]
+                "brew:jq" = "latest"
+                "brew:acme/tools/widget" = "latest"
+            "#,
+        )])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:jq" = "latest"
+                "brew:ffmpeg" = "latest"
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let brew = packages
+            .into_iter()
+            .find(|mp| mp.manager.name() == "brew")
+            .unwrap();
+        let requests = brew
+            .requests
+            .iter()
+            .map(|req| (req.name.as_str(), req.tap_url.as_deref()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            requests,
+            vec![
+                ("jq", None),
+                (
+                    "acme/tools/widget",
+                    Some("https://github.com/acme/homebrew-tools.git")
+                ),
+                ("ffmpeg", None),
+            ]
+        );
+        Ok(())
     }
 
     #[test]

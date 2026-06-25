@@ -36,15 +36,11 @@ mod prefix;
 mod relocate;
 mod resolve;
 mod source;
-mod state;
 mod tag;
 
 pub struct BrewManager {}
 pub use cask::BrewCaskManager;
-pub use maintenance::{
-    adoption_plan, apply_adoption_plan, apply_prune_plan, default_tap_url, linked_formulae,
-    prune_plan,
-};
+pub use maintenance::{apply_prune_plan, default_tap_url, linked_formulae, prune_plan};
 
 impl BrewManager {
     pub fn new() -> Self {
@@ -152,7 +148,6 @@ impl BrewManager {
         // overall [cur/total] header above the per-formula clx jobs, same as
         // tool installs (no-op when only one formula is being installed)
         mpr.init_footer(false, "install", to_pour.len());
-        let mut ledger = state::Ledger::load();
         for rf in &to_pour {
             let name = &rf.formula.name;
             let pkg_version = rf.formula.pkg_version()?;
@@ -187,8 +182,6 @@ impl BrewManager {
                     return Err(err);
                 }
             };
-            ledger.record(name, &version, rf.on_request);
-            ledger.save()?;
             pr.finish_with_message(version);
             mpr.footer_inc(1);
         }

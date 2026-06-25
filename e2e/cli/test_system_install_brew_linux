@@ -38,7 +38,7 @@ assert_contains "cat imported.toml" '"brew:xz" = "latest"'
 # prune is a no-op while the formula is still configured
 assert_contains "mise bootstrap packages prune --manager brew --dry-run 2>&1" "nothing to prune"
 
-# after removing it from config, prune previews and removes the adopted formula
+# after removing it from config, prune previews and removes the linked formula
 cat <<EOF >mise.toml
 [bootstrap.packages]
 EOF
