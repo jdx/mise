@@ -101,11 +101,13 @@ impl SystemImport {
         let target_packages = target_bootstrap_packages(&path)?;
         let mut taps = BTreeMap::new();
         for formula in &formulae {
-            if let Some((tap, url)) = formula.tap_entry_with_urls(&configured_taps)? {
-                if !target_taps.contains_key(&tap) {
-                    taps.insert(tap, url);
-                }
+            let Some((tap, url)) = formula.tap_entry_with_urls(&configured_taps)? else {
+                continue;
+            };
+            if target_taps.contains_key(&tap) {
+                continue;
             }
+            taps.insert(tap, url);
         }
 
         if self.dry_run {
