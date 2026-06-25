@@ -405,6 +405,12 @@ impl Backend for AquaBackend {
             .lock_platforms
             .get(&platform_key)
             .and_then(|asset| asset.url.clone());
+        // Private repos download via the API asset endpoint; carry it from the lockfile so
+        // `--locked` installs of private tools can still fall back to it.
+        let existing_url_api = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|asset| asset.url_api.clone());
 
         // Skip get_version_tags() API call if we have lockfile URL
         let tag = if existing_platform.is_some() {
@@ -492,7 +498,9 @@ impl Backend for AquaBackend {
             None
         };
 
-        let (url, v, filename, api_digest) = if let Some(validated_url) = validated_url.clone() {
+        let (url, url_api, v, filename, api_digest) = if let Some(validated_url) =
+            validated_url.clone()
+        {
             let url = validated_url;
             let filename = get_filename_from_url(&url);
             // Determine which version variant was used based on the URL or filename
@@ -515,7 +523,7 @@ impl Backend for AquaBackend {
             } else {
                 tv.version.clone()
             };
-            (url, v, filename, None)
+            (url, existing_url_api.clone(), v, filename, None)
         } else if ctx.locked {
             bail!(
                 "No lockfile URL found for {} on platform {} (--locked mode requires pre-resolved URLs)",
@@ -523,47 +531,56 @@ impl Backend for AquaBackend {
                 platform_key
             );
         } else {
-            let (url, v, digest) = if let Some(v_prefixed) = v_prefixed {
+            let (url, url_api, v, digest) = if let Some(v_prefixed) = v_prefixed {
                 // Try v-prefixed version first because most aqua packages use v-prefixed versions
                 match self.get_url(&pkg, v_prefixed.as_ref()).await {
                     // If the url is already checked, use it
-                    Ok((url, true, digest)) => (url, v_prefixed, digest),
-                    Ok((url_prefixed, false, digest_prefixed)) => {
-                        let (url, _, digest) = self.get_url(&pkg, &v).await?;
+                    Ok((url, url_api, true, digest)) => (url, url_api, v_prefixed, digest),
+                    Ok((url_prefixed, url_api_prefixed, false, digest_prefixed)) => {
+                        let (url, url_api, _, digest) = self.get_url(&pkg, &v).await?;
                         // If the v-prefixed URL is the same as the non-prefixed URL, use it
                         if url == url_prefixed {
-                            (url_prefixed, v_prefixed, digest_prefixed)
+                            (url_prefixed, url_api_prefixed, v_prefixed, digest_prefixed)
                         } else {
                             // If they are different, check existence
                             match HTTP.head(&url_prefixed).await {
-                                Ok(_) => (url_prefixed, v_prefixed, digest_prefixed),
-                                Err(_) => (url, v, digest),
+                                Ok(_) => {
+                                    (url_prefixed, url_api_prefixed, v_prefixed, digest_prefixed)
+                                }
+                                Err(_) => (url, url_api, v, digest),
                             }
                         }
                     }
                     Err(err) => {
-                        let (url, _, digest) =
+                        let (url, url_api, _, digest) =
                             self.get_url(&pkg, &v).await.map_err(|e| err.wrap_err(e))?;
-                        (url, v, digest)
+                        (url, url_api, v, digest)
                     }
                 }
             } else {
-                let (url, _, digest) = self.get_url(&pkg, &v).await?;
-                (url, v, digest)
+                let (url, url_api, _, digest) = self.get_url(&pkg, &v).await?;
+                (url, url_api, v, digest)
             };
             let filename = get_filename_from_url(&url);
 
-            (url, v.to_string(), filename, digest)
+            (url, url_api, v.to_string(), filename, digest)
         };
 
         let format = pkg.format(&v, os(), arch()).unwrap_or_default();
 
-        self.download(ctx, &tv, &url, &filename).await?;
+        // Public repos download from the browser URL; private repos return 404/HTML there
+        // and must be fetched from the API asset endpoint instead.
+        let download_url = match url_api.as_deref() {
+            Some(url_api) => github::pick_reachable_asset_url(&url, url_api).await,
+            None => url.clone(),
+        };
+        self.download(ctx, &tv, &download_url, &filename).await?;
 
         if validated_url.is_none() {
             // Store the asset URL and digest (if available) in the tool version
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
             platform_info.url = Some(url.clone());
+            platform_info.url_api = url_api.clone();
             if let Some(digest) = api_digest.clone() {
                 debug!("using GitHub API digest for checksum verification");
                 platform_info.checksum = Some(digest);
@@ -763,7 +780,7 @@ impl Backend for AquaBackend {
         }
 
         // Get URL and checksum for the target platform
-        let (url, checksum) = match pkg.r#type {
+        let (url, url_api, checksum) = match pkg.r#type {
             AquaPackageType::GithubRelease => {
                 // Try v-prefixed version first (most aqua packages use v-prefixed tags),
                 // then fall back to the non-prefixed version.
@@ -771,16 +788,16 @@ impl Backend for AquaBackend {
                     Some(vp) => vec![vp.as_str(), v.as_str()],
                     None => vec![v.as_str()],
                 };
-                let mut result = (None, None);
+                let mut result = (None, None, None);
                 for candidate in &candidates {
                     let asset_strs = pkg.asset_strs(candidate, target_os, target_arch)?;
                     match self
                         .github_release_asset_for_target(&pkg, candidate, asset_strs, target)
                         .await
                     {
-                        Ok((url, digest)) => {
+                        Ok((url, url_api, digest)) => {
                             v = candidate.to_string();
-                            result = (Some(url), digest);
+                            result = (Some(url), url_api, digest);
                             break;
                         }
                         Err(e) => {
@@ -795,16 +812,16 @@ impl Backend for AquaBackend {
                 }
                 result
             }
-            AquaPackageType::GithubArchive => (Some(self.github_archive_url(&pkg, &v)), None),
+            AquaPackageType::GithubArchive => (Some(self.github_archive_url(&pkg, &v)), None, None),
             AquaPackageType::GithubContent => {
                 if pkg.path.is_some() {
-                    (Some(self.github_content_url(&pkg, &v)), None)
+                    (Some(self.github_content_url(&pkg, &v)), None, None)
                 } else {
                     bail!("github_content package requires `path`")
                 }
             }
-            AquaPackageType::Http => (pkg.url(&v, target_os, target_arch).ok(), None),
-            _ => (None, None),
+            AquaPackageType::Http => (pkg.url(&v, target_os, target_arch).ok(), None, None),
+            _ => (None, None, None),
         };
 
         let name = url.as_ref().map(|u| get_filename_from_url(u));
@@ -913,6 +930,7 @@ impl Backend for AquaBackend {
         }
         Ok(PlatformInfo {
             url,
+            url_api,
             checksum,
             provenance,
             github_attestations: None,
@@ -1384,8 +1402,8 @@ impl AquaBackend {
         match slsa.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
                 let asset_strs = slsa.asset_strs(&slsa_pkg, v, target_os, target_arch)?;
-                let (url, _) = self.github_release_asset(&slsa_pkg, v, asset_strs).await?;
-                Ok(url)
+                self.github_release_asset_download_url(&slsa_pkg, v, asset_strs)
+                    .await
             }
             "http" => slsa.url(&slsa_pkg, v, target_os, target_arch),
             t => Err(eyre!("unsupported slsa type: {t}")),
@@ -1502,7 +1520,9 @@ impl AquaBackend {
                 let mut sig_pkg = pkg.clone();
                 sig_pkg.repo_owner = repo_owner;
                 sig_pkg.repo_name = repo_name;
-                let url = self.github_release_asset(&sig_pkg, v, asset_strs).await?.0;
+                let url = self
+                    .github_release_asset_download_url(&sig_pkg, v, asset_strs)
+                    .await?;
                 let path = download_dir.join(get_filename_from_url(&url));
                 HTTP.download_file(&url, &path, pr).await?;
                 path
@@ -1546,7 +1566,8 @@ impl AquaBackend {
             let key_url = match key.r#type.as_deref().unwrap_or_default() {
                 "github_release" => {
                     let asset_strs = key.asset_strs(pkg, v, os(), arch())?;
-                    self.github_release_asset(&key_pkg, v, asset_strs).await?.0
+                    self.github_release_asset_download_url(&key_pkg, v, asset_strs)
+                        .await?
                 }
                 "http" => key.url(pkg, v, os(), arch())?,
                 t => return Err(eyre!("unsupported cosign key type: {t}")),
@@ -1564,7 +1585,8 @@ impl AquaBackend {
                 let sig_url = match signature.r#type.as_deref().unwrap_or_default() {
                     "github_release" => {
                         let asset_strs = signature.asset_strs(pkg, v, os(), arch())?;
-                        self.github_release_asset(&sig_pkg, v, asset_strs).await?.0
+                        self.github_release_asset_download_url(&sig_pkg, v, asset_strs)
+                            .await?
                     }
                     "http" => signature.url(pkg, v, os(), arch())?,
                     t => return Err(eyre!("unsupported cosign signature type: {t}")),
@@ -1597,9 +1619,8 @@ impl AquaBackend {
             let bundle_url = match bundle.r#type.as_deref().unwrap_or_default() {
                 "github_release" => {
                     let asset_strs = bundle.asset_strs(pkg, v, os(), arch())?;
-                    self.github_release_asset(&bundle_pkg, v, asset_strs)
+                    self.github_release_asset_download_url(&bundle_pkg, v, asset_strs)
                         .await?
-                        .0
                 }
                 "http" => bundle.url(pkg, v, os(), arch())?,
                 t => return Err(eyre!("unsupported cosign bundle type: {t}")),
@@ -1658,7 +1679,8 @@ impl AquaBackend {
         match checksum._type() {
             AquaChecksumType::GithubRelease => {
                 let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
-                Ok(self.github_release_asset(pkg, v, asset_strs).await?.0)
+                self.github_release_asset_download_url(pkg, v, asset_strs)
+                    .await
             }
             AquaChecksumType::Http => checksum.url(pkg, v, os(), arch()),
         }
@@ -1851,21 +1873,30 @@ impl AquaBackend {
             .await
     }
 
-    async fn get_url(&self, pkg: &AquaPackage, v: &str) -> Result<(String, bool, Option<String>)> {
+    /// Returns `(url, url_api, checked, digest)` where `url_api` is the GitHub API asset
+    /// endpoint used as a download fallback for private repositories (only set for
+    /// `GithubRelease` packages; other package types have no separate API endpoint).
+    async fn get_url(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+    ) -> Result<(String, Option<String>, bool, Option<String>)> {
         match pkg.r#type {
             AquaPackageType::GithubRelease => self
                 .github_release_url(pkg, v)
                 .await
-                .map(|(url, digest)| (url, true, digest)),
+                .map(|(url, url_api, digest)| (url, url_api, true, digest)),
             AquaPackageType::GithubContent => {
                 if pkg.path.is_some() {
-                    Ok((self.github_content_url(pkg, v), false, None))
+                    Ok((self.github_content_url(pkg, v), None, false, None))
                 } else {
                     bail!("github_content package requires `path`")
                 }
             }
-            AquaPackageType::GithubArchive => Ok((self.github_archive_url(pkg, v), false, None)),
-            AquaPackageType::Http => pkg.url(v, os(), arch()).map(|url| (url, false, None)),
+            AquaPackageType::GithubArchive => {
+                Ok((self.github_archive_url(pkg, v), None, false, None))
+            }
+            AquaPackageType::Http => pkg.url(v, os(), arch()).map(|url| (url, None, false, None)),
             ref t => bail!("unsupported aqua package type: {t}"),
         }
     }
@@ -1874,7 +1905,7 @@ impl AquaBackend {
         &self,
         pkg: &AquaPackage,
         v: &str,
-    ) -> Result<(String, Option<String>)> {
+    ) -> Result<(String, Option<String>, Option<String>)> {
         let target = PlatformTarget::from_current();
         let asset_strs = pkg.asset_strs(v, os(), arch())?;
         self.github_release_asset_for_target(pkg, v, asset_strs, &target)
@@ -1886,9 +1917,26 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
         asset_strs: IndexSet<String>,
-    ) -> Result<(String, Option<String>)> {
+    ) -> Result<(String, Option<String>, Option<String>)> {
         self.github_release_asset_matching(pkg, v, asset_strs, false)
             .await
+    }
+
+    /// Resolve a GitHub release asset to a directly-downloadable URL, falling back to the
+    /// API asset endpoint for private repos (see `github::pick_reachable_asset_url`). Used
+    /// for auxiliary assets (provenance, signatures, checksum files) so they install from
+    /// private repos too, not just the main artifact.
+    async fn github_release_asset_download_url(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        asset_strs: IndexSet<String>,
+    ) -> Result<String> {
+        let (url, url_api, _) = self.github_release_asset(pkg, v, asset_strs).await?;
+        Ok(match url_api.as_deref() {
+            Some(url_api) => github::pick_reachable_asset_url(&url, url_api).await,
+            None => url,
+        })
     }
 
     async fn github_release_asset_for_target(
@@ -1897,7 +1945,7 @@ impl AquaBackend {
         v: &str,
         asset_strs: IndexSet<String>,
         target: &PlatformTarget,
-    ) -> Result<(String, Option<String>)> {
+    ) -> Result<(String, Option<String>, Option<String>)> {
         // TODO: remove this when aqua supports musl variants natively.
         // For now aqua templates only see linux/amd64 or linux/arm64, so a
         // linux-*-musl lock target would otherwise choose the glibc asset even
@@ -1907,13 +1955,24 @@ impl AquaBackend {
             .await
     }
 
+    /// Returns `(browser_download_url, api_asset_url, digest)`.
+    ///
+    /// The browser download URL (`github.com/.../releases/download/...`) is kept as the
+    /// canonical URL so filename derivation, lockfile storage and version detection are
+    /// unchanged. The API asset endpoint (`api.github.com/.../releases/assets/{id}`) is
+    /// returned alongside because the browser URL returns 404/HTML for **private**
+    /// repositories even with a valid token — only the API endpoint serves private assets
+    /// (with a bearer token and `Accept: application/octet-stream`, both added
+    /// automatically by `host_auth_headers` for github API URLs). The download path probes
+    /// the browser URL and falls back to the API URL when it isn't directly reachable.
+    /// This mirrors how the github backend already handles private repositories.
     async fn github_release_asset_matching(
         &self,
         pkg: &AquaPackage,
         v: &str,
         asset_strs: IndexSet<String>,
         prefer_musl: bool,
-    ) -> Result<(String, Option<String>)> {
+    ) -> Result<(String, Option<String>, Option<String>)> {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let gh_release = self.get_github_release(&gh_id, v).await?;
 
@@ -1927,7 +1986,11 @@ impl AquaBackend {
                 )
             })?;
 
-        Ok((asset.browser_download_url.to_string(), asset.digest.clone()))
+        Ok((
+            asset.browser_download_url.to_string(),
+            Some(asset.url.to_string()),
+            asset.digest.clone(),
+        ))
     }
 
     fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> String {
@@ -1965,8 +2028,11 @@ impl AquaBackend {
         let url = match checksum_config._type() {
             AquaChecksumType::GithubRelease => {
                 let asset_strs = checksum_config.asset_strs(pkg, v, target_os, target_arch)?;
-                match self.github_release_asset(pkg, v, asset_strs).await {
-                    Ok((url, _)) => url,
+                match self
+                    .github_release_asset_download_url(pkg, v, asset_strs)
+                    .await
+                {
+                    Ok(url) => url,
                     Err(e) => {
                         debug!("Failed to get checksum file asset: {}", e);
                         return Ok(None);
