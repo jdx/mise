@@ -1093,8 +1093,7 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                   name: ["-n", "--dry-run"],
-                  description:
-                    "Print the config change without writing config or adopting packages",
+                  description: "Print the config change without writing config",
                   isRepeatable: false,
                 },
                 {

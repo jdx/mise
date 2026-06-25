@@ -1144,16 +1144,16 @@ Only import packages for this manager. Currently only `brew` is supported
 Import every linked formula, including dependencies
 .TP
 \fB\-n, \-\-dry\-run\fR
-Print the config change without writing config or adopting packages
+Print the config change without writing config
 .TP
 \fB\-p, \-\-path\fR \fI<PATH>\fR
 Write to this config file or directory
 .SH "MISE BOOTSTRAP PACKAGES PRUNE"
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
-Currently supports Homebrew formulae only. Pruning is ledger\-based: mise
-removes only formulae it installed or adopted with
-`mise bootstrap packages import`.
+Currently supports Homebrew formulae only. Pruning removes linked formulae
+that are not needed by the current config or by trusted, loadable tracked
+configs.
 .PP
 \fBUsage:\fR mise bootstrap packages prune [OPTIONS]
 .PP

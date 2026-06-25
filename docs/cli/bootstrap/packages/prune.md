@@ -6,9 +6,9 @@
 
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
-Currently supports Homebrew formulae only. Pruning is ledger-based: mise
-removes only formulae it installed or adopted with
-`mise bootstrap packages import`.
+Currently supports Homebrew formulae only. Pruning removes linked formulae
+that are not needed by the current config or by trusted, loadable tracked
+configs.
 
 ## Flags
 

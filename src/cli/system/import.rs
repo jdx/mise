@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::path::PathBuf;
 
-use eyre::{Result, WrapErr, bail};
+use eyre::{Result, bail};
 
 #[cfg(unix)]
 use crate::config::Config;
@@ -16,11 +16,9 @@ use crate::config::config_file::mise_toml::MiseToml;
 #[cfg(unix)]
 use crate::config::{ConfigPathOptions, resolve_target_config_path};
 #[cfg(unix)]
-use crate::file::{self, display_path};
+use crate::file::display_path;
 #[cfg(unix)]
 use crate::system;
-#[cfg(unix)]
-use crate::system::packages::PackageRequest;
 #[cfg(unix)]
 use crate::system::packages::SystemPackageManager;
 #[cfg(unix)]
@@ -50,7 +48,7 @@ pub struct SystemImport {
     #[clap(long)]
     all: bool,
 
-    /// Print the config change without writing config or adopting packages
+    /// Print the config change without writing config
     #[clap(long, short = 'n')]
     dry_run: bool,
 
@@ -100,23 +98,16 @@ impl SystemImport {
 
         let configured_taps = configured_brew_taps(&path).await?;
         let target_taps = target_brew_taps(&path)?;
+        let target_packages = target_bootstrap_packages(&path)?;
         let mut taps = BTreeMap::new();
-        let mut requests = vec![];
         for formula in &formulae {
-            let tap_url = match formula.tap_entry_with_urls(&configured_taps)? {
-                Some((tap, url)) => {
-                    if !target_taps.contains_key(&tap) {
-                        taps.insert(tap, url.clone());
-                    }
-                    Some(url)
-                }
-                None => None,
+            let Some((tap, url)) = formula.tap_entry_with_urls(&configured_taps)? else {
+                continue;
             };
-            requests.push(PackageRequest {
-                name: formula.package_name(),
-                version: None,
-                tap_url,
-            });
+            if target_taps.contains_key(&tap) {
+                continue;
+            }
+            taps.insert(tap, url);
         }
 
         if self.dry_run {
@@ -129,21 +120,18 @@ impl SystemImport {
                 );
             }
             for formula in &formulae {
-                miseprintln!(
-                    "{}: \"{}\" = \"latest\"",
-                    display_path(&path),
-                    formula.config_key()
-                );
+                let key = formula.config_key();
+                if target_packages
+                    .get(&key)
+                    .is_some_and(|version| version == "latest")
+                {
+                    continue;
+                }
+                miseprintln!("{}: \"{}\" = \"latest\"", display_path(&path), key);
             }
             return Ok(());
         }
 
-        let adoption = brew::adoption_plan(&requests).await?;
-        let original_config = if path.exists() {
-            Some(file::read(&path)?)
-        } else {
-            None
-        };
         let mut cf = if path.exists() {
             MiseToml::from_file(&path)?
         } else {
@@ -156,15 +144,6 @@ impl SystemImport {
             cf.update_bootstrap_package(&formula.config_key(), "latest")?;
         }
         cf.save()?;
-        if let Err(err) = brew::apply_adoption_plan(&adoption) {
-            restore_config(&path, original_config).wrap_err_with(|| {
-                format!(
-                    "brew adoption failed, then restoring {} also failed",
-                    display_path(&path)
-                )
-            })?;
-            return Err(err).wrap_err("brew adoption failed; restored config");
-        }
         info!(
             "{}: imported {} brew formulae",
             display_path(&path),
@@ -208,16 +187,17 @@ fn target_brew_taps(path: &Path) -> Result<BTreeMap<String, String>> {
 }
 
 #[cfg(unix)]
-fn restore_config(path: &Path, original: Option<Vec<u8>>) -> Result<()> {
-    match original {
-        Some(contents) => file::write(path, contents),
-        None => {
-            if path.exists() {
-                file::remove_file(path)?;
+fn target_bootstrap_packages(path: &Path) -> Result<BTreeMap<String, String>> {
+    let mut packages = BTreeMap::new();
+    if path.exists() {
+        let cf = MiseToml::from_file(path)?;
+        if let Some(sys) = cf.bootstrap_config() {
+            for (spec, version) in sys.packages {
+                packages.insert(spec, version);
             }
-            Ok(())
         }
     }
+    Ok(packages)
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

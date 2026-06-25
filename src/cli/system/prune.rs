@@ -14,9 +14,9 @@ use crate::ui::prompt;
 
 /// Prune installed system packages no longer declared in `[bootstrap.packages]`
 ///
-/// Currently supports Homebrew formulae only. Pruning is ledger-based: mise
-/// removes only formulae it installed or adopted with
-/// `mise bootstrap packages import`.
+/// Currently supports Homebrew formulae only. Pruning removes linked formulae
+/// that are not needed by the current config or by trusted, loadable tracked
+/// configs.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemPrune {
@@ -58,7 +58,8 @@ impl SystemPrune {
             bail!("brew is not available: {}", manager.unavailable_reason());
         }
         let config = Config::get().await?;
-        let configured = system::packages_from_config(&config)
+        let configured = system::packages_from_config_and_tracked_config_files(&config)
+            .await?
             .into_iter()
             .find(|mp| mp.manager.name() == "brew")
             .map(|mp| mp.requests)
@@ -77,27 +78,16 @@ impl SystemPrune {
             .iter()
             .map(|c| format!("{}@{}", c.name, c.version))
             .collect::<Vec<_>>();
-        let forget = plan
-            .forget
-            .iter()
-            .map(|name| format!("{name} (ledger only)"))
-            .collect::<Vec<_>>();
-        let targets = remove.into_iter().chain(forget).collect::<Vec<_>>();
         if !self.yes && !Settings::get().yes && console::user_attended_stderr() {
-            let msg = format!("brew: prune {}?", targets.join(", "));
+            let msg = format!("brew: prune {}?", remove.join(", "));
             if !prompt::confirm(msg)? {
                 info!("brew: skipped");
                 return Ok(());
             }
         }
         let removed = plan.remove.len();
-        let forgotten = plan.forget.len();
         brew::apply_prune_plan(&plan, false)?;
-        if forgotten > 0 {
-            info!("brew: pruned {removed} formulae and forgot {forgotten} stale ledger entries");
-        } else {
-            info!("brew: pruned {removed} formulae");
-        }
+        info!("brew: pruned {removed} formulae");
         Ok(())
     }
 
