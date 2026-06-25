@@ -1,5 +1,51 @@
 # Changelog
 
+## [2026.6.14](https://github.com/jdx/mise/compare/v2026.6.13..v2026.6.14) - 2026-06-25
+
+### 🚀 Features
+
+- **(bootstrap)** add --only flag by @jdx in [#10607](https://github.com/jdx/mise/pull/10607)
+- **(bootstrap)** add brew package import and prune by @jdx in [#10606](https://github.com/jdx/mise/pull/10606)
+- **(bootstrap)** add aggregate status by @jdx in [#10608](https://github.com/jdx/mise/pull/10608)
+- **(bootstrap)** summarize follow-up actions by @jdx in [#10609](https://github.com/jdx/mise/pull/10609)
+- **(bootstrap)** add shell activation setup by @jdx in [#10610](https://github.com/jdx/mise/pull/10610)
+- **(bootstrap)** add repo checkout by @jdx in [#10611](https://github.com/jdx/mise/pull/10611)
+- **(bootstrap)** align cli with config sections by @jdx in [#10613](https://github.com/jdx/mise/pull/10613)
+
+### 🐛 Bug Fixes
+
+- **(backend)** add riscv64/loongarch64 archs, patterns by @elerch in [#10506](https://github.com/jdx/mise/pull/10506)
+- **(bootstrap)** include shell activation in aggregate status by @jdx in [#10612](https://github.com/jdx/mise/pull/10612)
+- **(brew)** support binary cask artifacts by @jdx in [#10604](https://github.com/jdx/mise/pull/10604)
+- **(completions)** deduplicate plugin names in shell completion by @zeitlinger in [#10351](https://github.com/jdx/mise/pull/10351)
+- **(config)** target nearest config dir for TOML writes by @jdx in [#10603](https://github.com/jdx/mise/pull/10603)
+- **(config)** avoid idiomatic version file write panic by @jdx in [#10602](https://github.com/jdx/mise/pull/10602)
+- **(config)** treat symlinked global config paths as global by @JamBalaya56562 in [#10597](https://github.com/jdx/mise/pull/10597)
+- **(github)** return error instead of panic on invalid request url by @risu729 in [#10591](https://github.com/jdx/mise/pull/10591)
+- **(hook-env)** suppress repeated untrusted config warnings by @jdx in [#10589](https://github.com/jdx/mise/pull/10589)
+- **(settings)** hide empty parent table for nested settings by @jdx in [#10605](https://github.com/jdx/mise/pull/10605)
+- **(sigstore)** apply url_replacements to Sigstore TUF root fetch by @JamBalaya56562 in [#10596](https://github.com/jdx/mise/pull/10596)
+- **(which)** respect prefer_offline so binary lookup avoids remote fetches by @JamBalaya56562 in [#10595](https://github.com/jdx/mise/pull/10595)
+
+### 📚 Documentation
+
+- add mise song page by @jdx in [#10614](https://github.com/jdx/mise/pull/10614)
+
+### New Contributors
+
+- @elerch made their first contribution in [#10506](https://github.com/jdx/mise/pull/10506)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`VirusTotal/vt-cli`](https://github.com/VirusTotal/vt-cli)
+
+#### Updated Packages (2)
+
+- [`mr-karan/doggo`](https://github.com/mr-karan/doggo)
+- [`nao1215/gup`](https://github.com/nao1215/gup)
+
 ## [2026.6.13](https://github.com/jdx/mise/compare/v2026.6.12..v2026.6.13) - 2026-06-23
 
 ### 🚀 Features

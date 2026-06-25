@@ -8684,6 +8684,34 @@ packages:
               - name: vmalert-tool
                 src: vmalert-tool-windows-{{.Arch}}-prod.exe
   - type: github_release
+    repo_owner: VirusTotal
+    repo_name: vt-cli
+    description: VirusTotal Command Line Interface
+    files:
+      - name: vt
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "1.1.0"
+        no_asset: true
+      - version_constraint: "true"
+        asset: "{{.OS}}{{.Arch}}.{{.Format}}"
+        format: zip
+        files:
+          - name: vt
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: MacOSX
+          linux: Linux
+          windows: Windows
+          amd64: "64"
+        overrides:
+          - goos: darwin
+            asset: "{{.OS}}.{{.Format}}"
+        supported_envs:
+          - linux/amd64
+          - windows
+  - type: github_release
     repo_owner: WebAssembly
     repo_name: binaryen
     description: Optimizer and compiler/toolchain library for WebAssembly
@@ -65696,7 +65724,7 @@ packages:
           type: github_release
           asset: doggo_{{trimV .Version}}_checksums.txt
           algorithm: sha256
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.1.7")
         asset: doggo_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
@@ -65715,6 +65743,21 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: "true"
+        asset: doggo-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+            replacements: {}
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: doggo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
   - type: github_release
     repo_owner: mrjackwills
     repo_name: oxker
@@ -67042,7 +67085,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.5.0")
         asset: gup_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -67055,6 +67098,27 @@ packages:
               - https://github.com/nao1215/gup/releases/download/{{.Version}}/checksums.txt.pem
               - --signature
               - https://github.com/nao1215/gup/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate-identity
+              - https://github.com/nao1215/gup/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        github_artifact_attestations:
+          signer_workflow: nao1215/gup/.github/workflows/release.yml
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: gup_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
               - --certificate-identity
               - https://github.com/nao1215/gup/.github/workflows/release.yml@refs/tags/{{.Version}}
               - --certificate-oidc-issuer
