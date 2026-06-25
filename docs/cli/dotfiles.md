@@ -9,7 +9,7 @@
 Dotfiles are config files symlinked, copied, or rendered to target paths,
 plus marker-delimited blocks or single lines in files mise doesn't own.
 Unlike `[tools]`, dotfiles are only acted on when explicitly requested with
-`mise dotfiles apply` or `mise bootstrap`.
+`mise dotfiles apply`, `mise bootstrap dotfiles apply`, or `mise bootstrap`.
 
 ## Subcommands
 

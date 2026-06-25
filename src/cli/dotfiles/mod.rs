@@ -7,12 +7,15 @@ mod apply;
 mod edit;
 mod status;
 
+pub(crate) use apply::DotfilesApply;
+pub(crate) use status::DotfilesStatus;
+
 /// [experimental] Manage dotfiles from `[dotfiles]`
 ///
 /// Dotfiles are config files symlinked, copied, or rendered to target paths,
 /// plus marker-delimited blocks or single lines in files mise doesn't own.
 /// Unlike `[tools]`, dotfiles are only acted on when explicitly requested with
-/// `mise dotfiles apply` or `mise bootstrap`.
+/// `mise dotfiles apply`, `mise bootstrap dotfiles apply`, or `mise bootstrap`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct Dotfiles {

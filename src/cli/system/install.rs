@@ -12,7 +12,7 @@ pub(crate) struct BootstrapApplyReport {
     pub skipped_reason: Option<String>,
 }
 
-/// Install missing system packages from `[bootstrap.packages]`
+/// Apply system packages from `[bootstrap.packages]`
 ///
 /// Checks which configured packages are missing and installs them with the
 /// system package manager. This may elevate with sudo when not running as
@@ -21,7 +21,7 @@ pub(crate) struct BootstrapApplyReport {
 /// Packages can also be given explicitly in `manager:package` form (e.g.
 /// `apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
 /// the config. Explicit packages and `--manager` scope the run to packages
-/// only.
+/// only. `install` is accepted as an alias for this command.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemInstall {
@@ -384,9 +384,9 @@ pub(crate) async fn apply_systemd_with_report(
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap packages install</bold>
-    $ <bold>mise bootstrap packages install apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835</bold>
-    $ <bold>mise bootstrap packages install --dry-run</bold>
-    $ <bold>mise bootstrap packages install --manager apt --yes</bold>
+    $ <bold>mise bootstrap packages apply</bold>
+    $ <bold>mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835</bold>
+    $ <bold>mise bootstrap packages apply --dry-run</bold>
+    $ <bold>mise bootstrap packages apply --manager apt --yes</bold>
 "#
 );

@@ -1,5 +1,5 @@
 //! `[bootstrap.mise_shell_activate]` — declarative mise shell activation
-//! snippets, applied by `mise bootstrap shell apply` or `mise bootstrap`.
+//! snippets, applied by `mise bootstrap mise-shell-activate apply` or `mise bootstrap`.
 
 use std::path::PathBuf;
 

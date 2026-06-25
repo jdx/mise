@@ -21,14 +21,14 @@ EOF
 
 assert_contains "mise bootstrap packages status" "missing"
 
-mise bootstrap packages install --yes
+mise bootstrap packages apply --yes
 assert_contains "mise bootstrap packages status" "installed"
 
 # the poured binary runs at the canonical prefix (relocation + linking worked)
 assert_contains "/home/linuxbrew/.linuxbrew/bin/xz --version" "xz"
 
 # idempotent
-assert_contains "mise bootstrap packages install --yes 2>&1" "already"
+assert_contains "mise bootstrap packages apply --yes 2>&1" "already"
 
 # import previews and writes the currently installed requested formula
 assert_contains "mise bootstrap packages import --manager brew --dry-run --path imported.toml" '"brew:xz" = "latest"'

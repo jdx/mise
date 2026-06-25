@@ -20,19 +20,19 @@ assert_contains "mise bootstrap packages status" "missing"
 assert_fail "mise bootstrap packages status --missing"
 
 # dry-run prints the command without installing
-assert_contains "mise bootstrap packages install --dry-run" "apt-get install -y -- bc"
+assert_contains "mise bootstrap packages apply --dry-run" "apt-get install -y -- bc"
 assert_contains "mise bootstrap packages status" "missing"
 
 # explicit manager:package specs work, configured or not
-assert_contains "mise bootstrap packages install apt:bc --dry-run" "apt-get install -y -- bc"
+assert_contains "mise bootstrap packages apply apt:bc --dry-run" "apt-get install -y -- bc"
 
-mise bootstrap packages install --yes
+mise bootstrap packages apply --yes
 assert_contains "mise bootstrap packages status" "installed"
 assert_succeed "mise bootstrap packages status --missing"
 assert_succeed "bc --version"
 
 # second install is a no-op
-assert_contains "mise bootstrap packages install --yes 2>&1" "already installed"
+assert_contains "mise bootstrap packages apply --yes 2>&1" "already installed"
 
 # upgrade refreshes lists and only touches installed packages
 assert_contains "mise bootstrap packages upgrade --dry-run" "apt-get update"

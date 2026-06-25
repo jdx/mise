@@ -28,7 +28,7 @@ export const commands: { [key: string]: Command } = {
   bootstrap: {
     hide: false,
     subcommands: {
-      launchd: {
+      dotfiles: {
         hide: false,
         subcommands: {
           apply: {
@@ -39,7 +39,72 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      launchd: {
+        hide: true,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      linux: {
+        hide: false,
+        subcommands: {
+          "systemd-units": {
+            hide: false,
+            subcommands: {
+              apply: {
+                hide: false,
+              },
+              status: {
+                hide: false,
+              },
+            },
+          },
+        },
+      },
+      macos: {
+        hide: false,
+        subcommands: {
+          defaults: {
+            hide: false,
+            subcommands: {
+              apply: {
+                hide: false,
+              },
+              status: {
+                hide: false,
+              },
+            },
+          },
+          "launchd-agents": {
+            hide: false,
+            subcommands: {
+              apply: {
+                hide: false,
+              },
+              status: {
+                hide: false,
+              },
+            },
+          },
+        },
+      },
       "macos-defaults": {
+        hide: true,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      "mise-shell-activate": {
         hide: false,
         subcommands: {
           apply: {
@@ -53,6 +118,9 @@ export const commands: { [key: string]: Command } = {
       packages: {
         hide: false,
         subcommands: {
+          apply: {
+            hide: false,
+          },
           brew: {
             hide: false,
             subcommands: {
@@ -65,9 +133,6 @@ export const commands: { [key: string]: Command } = {
             },
           },
           import: {
-            hide: false,
-          },
-          install: {
             hide: false,
           },
           prune: {
@@ -95,22 +160,11 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
-      shell: {
-        hide: false,
-        subcommands: {
-          apply: {
-            hide: false,
-          },
-          status: {
-            hide: false,
-          },
-        },
-      },
       status: {
         hide: false,
       },
       systemd: {
-        hide: false,
+        hide: true,
         subcommands: {
           apply: {
             hide: false,

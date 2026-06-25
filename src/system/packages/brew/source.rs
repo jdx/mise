@@ -167,7 +167,7 @@ pub async fn build(
         if let Err(rm_err) = crate::file::remove_all(&keg) {
             warn!(
                 "failed to remove {} after link failure: {rm_err}\n\
-                 remove it manually, then re-run `mise bootstrap packages install`",
+                 remove it manually, then re-run `mise bootstrap packages apply`",
                 keg.display(),
             );
         }

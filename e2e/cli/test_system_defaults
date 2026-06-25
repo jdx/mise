@@ -20,40 +20,40 @@ tap_to_click = true
 EOF
 
 # status renders on any platform; on non-macOS entries are skipped, not errors
-assert_succeed "mise bootstrap macos-defaults status"
-assert_contains "mise bootstrap macos-defaults status" "com.apple.dock"
-assert_contains "mise bootstrap macos-defaults status" "show-recents"
-assert_contains "mise bootstrap macos-defaults status" "AppleShowAllFiles"
-assert_contains "mise bootstrap macos-defaults status" "InitialKeyRepeat"
-assert_contains "mise bootstrap macos-defaults status" "Clicking"
-assert_contains "mise bootstrap macos-defaults status --json" '"macos_defaults"'
+assert_succeed "mise bootstrap macos defaults status"
+assert_contains "mise bootstrap macos defaults status" "com.apple.dock"
+assert_contains "mise bootstrap macos defaults status" "show-recents"
+assert_contains "mise bootstrap macos defaults status" "AppleShowAllFiles"
+assert_contains "mise bootstrap macos defaults status" "InitialKeyRepeat"
+assert_contains "mise bootstrap macos defaults status" "Clicking"
+assert_contains "mise bootstrap macos defaults status --json" '"macos_defaults"'
 if [[ $(uname) != "Darwin" ]]; then
-  assert_contains "mise bootstrap macos-defaults status" "skipped"
-  assert_contains "mise bootstrap macos-defaults status --json" '"available": false'
+  assert_contains "mise bootstrap macos defaults status" "skipped"
+  assert_contains "mise bootstrap macos defaults status --json" '"available": false'
   # unavailable entries don't count as missing (cross-platform configs)
-  assert_succeed "mise bootstrap macos-defaults status --missing"
+  assert_succeed "mise bootstrap macos defaults status --missing"
   # install skips defaults silently off-macOS
-  assert_succeed "mise bootstrap macos-defaults apply --yes"
+  assert_succeed "mise bootstrap macos defaults apply --yes"
 fi
 
 # dry-run never writes anything
-assert_succeed "mise bootstrap macos-defaults apply --dry-run --yes"
+assert_succeed "mise bootstrap macos defaults apply --dry-run --yes"
 
 # unsupported value types warn but don't fail
 cat <<EOF >mise.toml
 [bootstrap.macos.defaults]
 "com.apple.dock" = { future-array = [1, 2] }
 EOF
-assert_succeed "mise bootstrap macos-defaults status"
-assert_contains "mise bootstrap macos-defaults status 2>&1" "unsupported value type"
+assert_succeed "mise bootstrap macos defaults status"
+assert_contains "mise bootstrap macos defaults status 2>&1" "unsupported value type"
 
 # a domain entry that isn't a table warns but doesn't fail
 cat <<EOF >mise.toml
 [bootstrap.macos.defaults]
 autohide = true
 EOF
-assert_succeed "mise bootstrap macos-defaults status"
-assert_contains "mise bootstrap macos-defaults status 2>&1" "expected a table"
+assert_succeed "mise bootstrap macos defaults status"
+assert_contains "mise bootstrap macos defaults status 2>&1" "expected a table"
 
 # friendly defaults validate keys and enum values
 cat <<EOF >mise.toml
@@ -64,12 +64,12 @@ future_key = true
 [bootstrap.macos.finder]
 preferred_view_style = "coverflow"
 EOF
-assert_succeed "mise bootstrap macos-defaults status"
-assert_contains "mise bootstrap macos-defaults status 2>&1" "invalid value"
-assert_contains "mise bootstrap macos-defaults status 2>&1" "unknown key"
+assert_succeed "mise bootstrap macos defaults status"
+assert_contains "mise bootstrap macos defaults status 2>&1" "invalid value"
+assert_contains "mise bootstrap macos defaults status 2>&1" "unknown key"
 
 # empty [bootstrap.macos.defaults] section
 cat <<EOF >mise.toml
 [bootstrap.macos.defaults]
 EOF
-assert_succeed "mise bootstrap macos-defaults status"
+assert_succeed "mise bootstrap macos defaults status"

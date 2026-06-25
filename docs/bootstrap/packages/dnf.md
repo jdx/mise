@@ -18,7 +18,7 @@ Alma, ...).
 - Version pins are passed to dnf as its native `name-version` /
   `name-version-release` syntax; a version-only pin is satisfied by any
   release of that version.
-- `mise bootstrap packages install --update` adds `--refresh` to force a metadata
+- `mise bootstrap packages apply --update` adds `--refresh` to force a metadata
   refresh; otherwise dnf manages its own metadata expiry.
 - `mise bootstrap packages upgrade` runs `dnf upgrade -y --refresh` for the configured
   packages — only already-installed packages are touched.

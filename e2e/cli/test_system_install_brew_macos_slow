@@ -26,7 +26,7 @@ cat <<EOF >mise.toml
 EOF
 
 assert_contains "mise bootstrap packages status" "missing"
-mise bootstrap packages install --yes
+mise bootstrap packages apply --yes
 
 assert_directory_exists "$cask_app"
 assert_directory_exists "$caskroom"
@@ -41,6 +41,6 @@ if curl --retry 3 --retry-delay 1 --max-time 10 -fsSL https://raw.githubusercont
 [bootstrap.packages]
 "brew:jdx/tap/aube" = "latest"
 EOF
-  mise bootstrap packages install --yes
+  mise bootstrap packages apply --yes
   assert_contains "/opt/homebrew/bin/aube --version" "aube"
 fi

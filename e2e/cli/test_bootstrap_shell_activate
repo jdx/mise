@@ -9,13 +9,13 @@ fish = {enabled = true}
 bash = false
 EOF
 
-assert_fail "mise bootstrap shell status --missing"
+assert_fail "mise bootstrap mise-shell-activate status --missing"
 assert_fail "mise bootstrap status --missing" "zprofile"
 bootstrap_status_json="$(mise bootstrap status --json)"
 assert_contains_text "$bootstrap_status_json" '"mise_shell_activate"'
 assert_contains_text "$bootstrap_status_json" '"target": "zprofile"'
 assert_contains_text "$bootstrap_status_json" '"state": "missing"'
-status_json="$(mise bootstrap shell status --json)"
+status_json="$(mise bootstrap mise-shell-activate status --json)"
 assert_contains_text "$status_json" '"shell": "zsh"'
 assert_contains_text "$status_json" '"target": "zprofile"'
 assert_contains_text "$status_json" '"path": "~/.zprofile"'
@@ -25,7 +25,8 @@ assert_contains_text "$status_json" '"path": "~/.zshrc"'
 assert_contains_text "$status_json" '"mode": "activate"'
 assert_contains_text "$status_json" '"shell": "fish"'
 assert_not_contains_text "$status_json" '"shell": "bash"'
-apply_dry_run="$(mise bootstrap shell apply --dry-run --yes)"
+assert_contains "mise bootstrap shell status" "~/.zshrc"
+apply_dry_run="$(mise bootstrap mise-shell-activate apply --dry-run --yes)"
 assert_contains_text "$apply_dry_run" "edit ~/.zprofile (block:activate)"
 assert_contains_text "$apply_dry_run" "edit ~/.zshrc (block:activate)"
 assert_contains_text "$apply_dry_run" "edit ~/.config/fish/config.fish (block:activate)"
@@ -33,25 +34,25 @@ assert_fail "test -e ~/.zprofile"
 assert_fail "test -e ~/.zshrc"
 assert_fail "test -e ~/.config/fish/config.fish"
 
-assert_succeed "mise bootstrap shell apply --yes"
+assert_succeed "mise bootstrap mise-shell-activate apply --yes"
 assert_contains "cat ~/.zprofile" 'eval "$(mise activate zsh --shims)"'
 assert_contains "cat ~/.zshrc" 'eval "$(mise activate zsh)"'
 assert_contains "cat ~/.config/fish/config.fish" "mise activate fish | source"
 assert_fail "test -e ~/.bash_profile"
 assert_fail "test -e ~/.bashrc"
-assert_succeed "mise bootstrap shell status --missing"
+assert_succeed "mise bootstrap mise-shell-activate status --missing"
 assert_succeed "mise bootstrap status --missing"
-status_json="$(mise bootstrap shell status --json)"
+status_json="$(mise bootstrap mise-shell-activate status --json)"
 assert_contains_text "$status_json" '"state": "applied"'
 
 sed -i.bak 's/eval "$(mise activate zsh)"/echo changed/' ~/.zshrc
-status_json="$(mise bootstrap shell status --json)"
+status_json="$(mise bootstrap mise-shell-activate status --json)"
 assert_contains_text "$status_json" '"state": "differs"'
 assert_contains_text "$status_json" '"reason": "block content differs"'
 assert_fail "mise bootstrap status --missing" "differs"
 
 # idempotent: re-running does not duplicate managed blocks
-assert_succeed "mise bootstrap shell apply --yes"
+assert_succeed "mise bootstrap mise-shell-activate apply --yes"
 assert_not_contains "cat ~/.zshrc" "echo changed"
 assert "grep -c 'mise activate zsh --shims' ~/.zprofile" "1"
 assert "grep -c 'mise activate zsh' ~/.zshrc" "1"
@@ -64,7 +65,7 @@ cat <<'EOF' >mise.toml
 zprofile = "activate"
 zshrc = "shims"
 EOF
-assert_succeed "mise bootstrap shell apply --yes"
+assert_succeed "mise bootstrap mise-shell-activate apply --yes"
 assert_contains "cat ~/.zprofile" 'eval "$(mise activate zsh)"'
 assert_contains "cat ~/.zshrc" 'eval "$(mise activate zsh --shims)"'
 
@@ -129,7 +130,7 @@ cat <<'EOF' >mise.toml
 zshrc = false
 fish = {enabled = true}
 EOF
-status_json="$(mise bootstrap shell status --json)"
+status_json="$(mise bootstrap mise-shell-activate status --json)"
 assert_contains_text "$status_json" '"target": "zprofile"'
 assert_not_contains_text "$status_json" '"target": "zshrc"'
 assert_contains_text "$status_json" '"shell": "bash"'

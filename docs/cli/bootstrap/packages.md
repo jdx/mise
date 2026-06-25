@@ -8,9 +8,9 @@ Manage bootstrap system packages from `[bootstrap.packages]`
 
 ## Subcommands
 
+- [`mise bootstrap packages apply [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/apply.md)
 - [`mise bootstrap packages brew <SUBCOMMAND>`](/cli/bootstrap/packages/brew.md)
 - [`mise bootstrap packages import [FLAGS]`](/cli/bootstrap/packages/import.md)
-- [`mise bootstrap packages install [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/install.md)
 - [`mise bootstrap packages prune [FLAGS]`](/cli/bootstrap/packages/prune.md)
 - [`mise bootstrap packages status [-J --json] [--missing]`](/cli/bootstrap/packages/status.md)
 - [`mise bootstrap packages upgrade [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/upgrade.md)

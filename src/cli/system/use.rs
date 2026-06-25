@@ -111,7 +111,7 @@ impl SystemUse {
             );
         }
 
-        // unlike `mise bootstrap packages install apt:x`, an unavailable manager is not
+        // unlike `mise bootstrap packages apply apt:x`, an unavailable manager is not
         // an error here: writing apt: entries from a mac into a shared repo
         // config is the point of a declarative file. Say so (except in
         // dry-run, where nothing was written), then install best-effort for

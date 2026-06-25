@@ -21,9 +21,9 @@ cat <<EOF >mise.toml
 EOF
 
 assert_contains "mise bootstrap packages status" "missing"
-assert_contains "mise bootstrap packages install --dry-run" "build hello/"
+assert_contains "mise bootstrap packages apply --dry-run" "build hello/"
 
-mise bootstrap packages install --yes
+mise bootstrap packages apply --yes
 assert_contains "mise bootstrap packages status" "installed"
 
 # the built binary runs from the prefix and the keg carries a receipt
@@ -31,4 +31,4 @@ assert_contains "$MISE_SYSTEM_BREW_PREFIX/bin/hello --greeting=mise" "mise"
 assert_contains "cat $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/INSTALL_RECEIPT.json" '"poured_from_bottle":false'
 
 # idempotent
-assert_contains "mise bootstrap packages install --yes 2>&1" "already"
+assert_contains "mise bootstrap packages apply --yes 2>&1" "already"

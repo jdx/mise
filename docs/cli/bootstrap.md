@@ -9,21 +9,22 @@
 Runs the bootstrap steps for the current config in order:
 
 0. `[bootstrap.hooks.pre-packages]` — optional setup hook
-1. `mise bootstrap packages install` — install missing
+1. `mise bootstrap packages apply` — install missing
    `[bootstrap.packages]`
    then `[bootstrap.hooks.post-packages]`
 2. `mise bootstrap repos apply` — clone/update `[bootstrap.repos]`
    surrounded by `pre-repos`/`post-repos` hooks
-3. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-4. `mise bootstrap shell apply` — configure shell activation from
-   `[bootstrap.mise_shell_activate]`
-5. `mise bootstrap macos-defaults apply` — write
+4. `mise bootstrap mise-shell-activate apply` — configure shell activation
+   from `[bootstrap.mise_shell_activate]`
+5. `mise bootstrap macos defaults apply` — write
    `[bootstrap.macos.defaults]` entries (macOS)
    surrounded by `pre-defaults`/`post-defaults` hooks
-6. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
-7. `mise bootstrap systemd apply` — install/start systemd user services
-   (Linux)
+6. `mise bootstrap macos launchd-agents apply` — install/load
+   `[bootstrap.macos.launchd.agents]`
+7. `mise bootstrap linux systemd-units apply` — install/start
+   `[bootstrap.linux.systemd.units]`
 8. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
    (Unix)
    surrounded by `pre-user`/`post-user` hooks
@@ -35,9 +36,8 @@ Runs the bootstrap steps for the current config in order:
 The declarative steps converge — anything already in its desired state
 is skipped, so re-running is safe. The `bootstrap` task runs on every
 invocation; keep it idempotent. Use it for any project-specific setup
-that doesn't fit the declarative sections (auth flows, seeding
-databases, or other one-off project setup) — it runs with the installed
-tools on PATH.
+that doesn't fit the declarative sections (seeding databases, auth flows,
+etc.) — it runs with the installed tools on PATH.
 
 Use `--skip <part>` to skip named parts, or `--only <part>` to run just
 named parts. Both flags can be repeated or comma-separated, but they
@@ -68,9 +68,13 @@ Can be passed multiple times or as a comma-separated list. Cannot be used with `
 - `packages`
 - `repos`
 - `dotfiles`
+- `mise-shell-activate`
 - `shell`
+- `macos-defaults`
 - `defaults`
+- `macos-launchd-agents`
 - `launchd`
+- `linux-systemd-units`
 - `systemd`
 - `user`
 - `tools`
@@ -88,9 +92,13 @@ Can be passed multiple times or as a comma-separated list.
 - `packages`
 - `repos`
 - `dotfiles`
+- `mise-shell-activate`
 - `shell`
+- `macos-defaults`
 - `defaults`
+- `macos-launchd-agents`
 - `launchd`
+- `linux-systemd-units`
 - `systemd`
 - `user`
 - `tools`
@@ -103,29 +111,30 @@ Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-
 
 ## Subcommands
 
-- [`mise bootstrap launchd <SUBCOMMAND>`](/cli/bootstrap/launchd.md)
-- [`mise bootstrap macos-defaults <SUBCOMMAND>`](/cli/bootstrap/macos-defaults.md)
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.md)
+- [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.md)
+- [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.md)
+- [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.md)
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.md)
 - [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.md)
-- [`mise bootstrap shell <SUBCOMMAND>`](/cli/bootstrap/shell.md)
 - [`mise bootstrap status [-J --json] [--missing]`](/cli/bootstrap/status.md)
-- [`mise bootstrap systemd <SUBCOMMAND>`](/cli/bootstrap/systemd.md)
 - [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.md)
 
 Examples:
 
 ```
-mise bootstrap                    # common phases: packages + repos + dotfiles + tools + task
+mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap --only tools       # run just tool installation
 mise bootstrap status --missing
-mise bootstrap packages install --yes
+mise bootstrap packages apply --yes
 mise bootstrap repos status
 mise bootstrap repos apply --dry-run
-mise bootstrap macos-defaults status
-mise bootstrap launchd apply --dry-run
-mise bootstrap systemd apply --dry-run
-mise bootstrap shell apply --dry-run
+mise bootstrap dotfiles status
+mise bootstrap mise-shell-activate apply --dry-run
+mise bootstrap macos defaults status
+mise bootstrap macos launchd-agents apply --dry-run
+mise bootstrap linux systemd-units apply --dry-run
 mise bootstrap user apply --dry-run
 ```

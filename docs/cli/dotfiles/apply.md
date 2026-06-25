@@ -35,7 +35,7 @@ Examples:
 
 ```
 mise dotfiles apply
+mise bootstrap dotfiles apply
 mise dotfiles apply --dry-run
-mise dotfiles apply --dry-run --verbose
 mise dotfiles apply --force --yes
 ```

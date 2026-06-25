@@ -188,7 +188,7 @@ impl Install {
             hint!(
                 "system_packages_missing",
                 "{missing} system package(s) from [bootstrap.packages] are missing. Install them with",
-                "mise bootstrap packages install"
+                "mise bootstrap packages apply"
             );
         }
     }

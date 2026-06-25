@@ -34,11 +34,11 @@ The `[bootstrap]` section can also declare
 [repos](/bootstrap/repos.html) (`[bootstrap.repos]`), applied by
 `mise bootstrap repos apply`, [macOS defaults](/bootstrap/macos-defaults.html)
 (`[bootstrap.macos.defaults]`), applied by
-`mise bootstrap macos-defaults apply`, and macOS [LaunchAgents](/bootstrap/launchd.html)
-(`[bootstrap.macos.launchd.agents]`), applied by `mise bootstrap launchd apply`.
-Linux user services live in
+`mise bootstrap macos defaults apply`, and macOS
+[LaunchAgents](/bootstrap/launchd.html) (`[bootstrap.macos.launchd.agents]`),
+applied by `mise bootstrap macos launchd-agents apply`. Linux user services live in
 [systemd](/bootstrap/systemd.html) (`[bootstrap.linux.systemd.units]`),
-applied by `mise bootstrap systemd apply`. Shell activation snippets live in
+applied by `mise bootstrap linux systemd-units apply`. Shell activation snippets live in
 [Shell Activation](/bootstrap/shell.html) (`[bootstrap.mise_shell_activate]`).
 Current-user
 [login shells](/bootstrap/user.html) (`[bootstrap.user].login_shell`) are
@@ -73,7 +73,7 @@ applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html
   unavailable managers so nothing is silently invisible.
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` will print a one-time hint when packages are
-  missing, but only `mise bootstrap packages install` ever installs anything.
+  missing, but only `mise bootstrap packages apply` ever installs anything.
 - **Unknown managers are ignored with a warning** so configs using managers
   from newer mise versions still parse.
 
@@ -93,12 +93,12 @@ mise bootstrap packages status            # table of requested vs installed pack
 mise bootstrap packages status --json     # machine-readable
 mise bootstrap packages status --missing  # exit 1 if anything is out of sync (CI check)
 
-mise bootstrap packages install           # install whatever is missing (prompts first)
-mise bootstrap packages install apt:curl  # install specific packages (configured or not)
-mise bootstrap packages install --dry-run # print the commands without running them
-mise bootstrap packages install --yes     # skip the confirmation prompt
-mise bootstrap packages install --manager apt
-mise bootstrap packages install --update  # refresh package manager metadata first
+mise bootstrap packages apply           # install whatever is missing (prompts first)
+mise bootstrap packages apply apt:curl  # install specific packages (configured or not)
+mise bootstrap packages apply --dry-run # print the commands without running them
+mise bootstrap packages apply --yes     # skip the confirmation prompt
+mise bootstrap packages apply --manager apt
+mise bootstrap packages apply --update  # refresh package manager metadata first
 
 mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835
 mise bootstrap packages use -g brew:ffmpeg                      # write globally
@@ -146,7 +146,7 @@ configured packages that are already installed to the newest available
 version — apk, apt, and dnf also honor a version pinned in config (pacman, brew,
 brew-cask, and mas [can't install pins](/bootstrap/packages/pacman.html), so
 pinned entries are skipped with a warning). Packages that aren't installed
-yet are skipped — that's `mise bootstrap packages install`'s job. For brew
+yet are skipped — that's `mise bootstrap packages apply`'s job. For brew
 this pours the formula's current bottle and replaces the old keg; for
 brew-cask this installs the current cask artifact; for mas this runs
 `mas upgrade`.
@@ -199,7 +199,7 @@ instead. The `brew` manager never needs sudo except once to create
 In containers you're typically already root, so no prompts occur:
 
 ```sh
-mise bootstrap packages install --yes
+mise bootstrap packages apply --yes
 mise install
 ```
 
