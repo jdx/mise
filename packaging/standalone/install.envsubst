@@ -38,8 +38,6 @@ unsupported_arch() {
   warn "mise does not provide prebuilt binaries for this platform."
   warn "If Rust/Cargo is available, install from source with:"
   warn "  cargo install --locked mise"
-  warn ""
-  warn "Or provide a compatible tarball with MISE_TARBALL_URL."
   exit 1
 }
 #endregion
