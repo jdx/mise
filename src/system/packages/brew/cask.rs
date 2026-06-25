@@ -377,7 +377,11 @@ fn ditto(from: &Path, to: &Path) -> Result<()> {
         .status()
         .wrap_err("failed to run ditto")?;
     if !status.success() {
-        bail!("ditto failed copying {} to {}", from.display(), to.display());
+        bail!(
+            "ditto failed copying {} to {}",
+            from.display(),
+            to.display()
+        );
     }
     Ok(())
 }
@@ -409,11 +413,14 @@ fn stage_binary(stage: &Path, caskroom: &Path, binary: &BinaryArtifact) -> Resul
             prefix::prefix().join("Applications"),
         ]
         .iter()
-        .map(|appdir| {
-            PathBuf::from(binary.source.replace("$APPDIR", &appdir.to_string_lossy()))
-        })
+        .map(|appdir| PathBuf::from(binary.source.replace("$APPDIR", &appdir.to_string_lossy())))
         .find(|p| p.is_file())
-        .ok_or_else(|| eyre!("brew-cask: binary artifact '{}' was not found", binary.source))?;
+        .ok_or_else(|| {
+            eyre!(
+                "brew-cask: binary artifact '{}' was not found",
+                binary.source
+            )
+        })?;
         file::make_symlink(&app_binary, &caskroom_binary)?;
     } else {
         let source = find_artifact(stage, &binary.source)
