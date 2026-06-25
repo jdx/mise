@@ -466,13 +466,15 @@ impl Toolset {
         opts: &Arc<InstallOptions>,
     ) -> Result<ToolVersion> {
         let mpr = MultiProgressReport::get();
-        let backend = tr.backend()?;
-        backend::ensure_backend_enabled(&backend.get_type())?;
+        let pre_resolve_backend = tr.backend()?;
+        backend::ensure_backend_enabled(&pre_resolve_backend.get_type())?;
         let mut resolve_options = opts.resolve_options.clone();
-        if should_refresh_remote_versions(tr, &backend, &resolve_options) {
+        if should_refresh_remote_versions(tr, &pre_resolve_backend, &resolve_options) {
             resolve_options.refresh_remote_versions = true;
         }
         let mut tv = tr.resolve(config, &resolve_options).await?;
+        let backend = tv.backend()?;
+        backend::ensure_backend_enabled(&backend.get_type())?;
         if let Some(dir) = &opts.install_dir {
             let tool_dir_name = tv.ba().tool_dir_name();
             tv.install_path = Some(dir.join(tool_dir_name).join(tv.tv_pathname()));

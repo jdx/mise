@@ -327,6 +327,15 @@ impl BackendArg {
             }
         }
 
+        if self.resolution.explicit {
+            let full = self.full();
+            if let Some((backend, _)) = full.split_once(':')
+                && let Ok(backend_type) = backend.parse()
+            {
+                return backend_type;
+            }
+        }
+
         // Only check install state for non-plugin:tool format entries
         if !self.short.contains(':')
             && let Ok(Some(backend_type)) = install_state::backend_type(&self.short)
