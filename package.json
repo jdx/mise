@@ -22,7 +22,7 @@
   "devDependencies": {
     "@tsconfig/node24": "^24.0.0",
     "@types/markdown-it": "^14.1.2",
-    "@types/node": "^25.0.0",
+    "@types/node": "^26.0.0",
     "@withfig/autocomplete-tools": "^2.11.0",
     "@withfig/autocomplete-types": "^1.31.0",
     "@withfig/eslint-plugin-fig-linter": "^1.4.1",
