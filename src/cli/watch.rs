@@ -190,6 +190,26 @@ impl Watch {
             args.push("--watch-file".to_string());
             args.push(watch_file.to_string_lossy().to_string());
         }
+        // Forward user-supplied filtering/debug flags that are parsed into
+        // WatchexecArgs but were never re-emitted onto the watchexec command
+        // line (#7776). watchexec unions repeated --ignore flags, so these
+        // combine with the source-derived ignores pushed below rather than
+        // clobbering them.
+        if !self.watchexec.ignore_patterns.is_empty() {
+            for pattern in &self.watchexec.ignore_patterns {
+                args.push("--ignore".to_string());
+                args.push(pattern.to_string());
+            }
+        }
+        if !self.watchexec.ignore_files.is_empty() {
+            for path in &self.watchexec.ignore_files {
+                args.push("--ignore-file".to_string());
+                args.push(path.to_string_lossy().to_string());
+            }
+        }
+        if self.watchexec.print_events {
+            args.push("--print-events".to_string());
+        }
         // Filter anchor: the path that --project-origin is set to and that
         // every glob filter is made relative to. watchexec interprets -f
         // patterns relative to the origin and silently rejects absolute
