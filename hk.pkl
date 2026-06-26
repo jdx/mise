@@ -89,6 +89,11 @@ fi
 }
 
 hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = linters
+    }
     ["fix"] {
         fix = true
         steps = linters
