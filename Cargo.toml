@@ -118,7 +118,7 @@ indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 clx = "2"
 indoc = "2"
-itertools = "0.14"
+itertools = "0.15"
 jiff = "0.2"
 junction = "2"
 log = "0.4"

@@ -30,7 +30,7 @@ path = "src/bin.rs"
 [dependencies]
 homedir = "0.3"
 indexmap = { version = "2", features = ["serde"] }
-itertools = "0.14"
+itertools = "0.15"
 log = "0.4"
 mlua = { version = "0.11", features = [
   "async",

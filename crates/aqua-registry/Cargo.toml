@@ -26,7 +26,7 @@ serde_yaml = "0.9"
 thiserror = "2"
 eyre = "0.6"
 indexmap = { version = "2", features = ["serde"] }
-itertools = "0.14"
+itertools = "0.15"
 rkyv = { version = "0.8", features = ["unaligned"] }
 siphasher = "1"
 strum = { version = "0.28", features = ["derive"] }
