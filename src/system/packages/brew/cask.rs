@@ -370,6 +370,8 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
     Ok(())
 }
 
+/// Copy a directory using macOS `ditto`, which preserves resource forks, extended attributes,
+/// and HFS+ metadata that a plain recursive copy would strip.
 fn ditto(from: &Path, to: &Path) -> Result<()> {
     let status = std::process::Command::new("ditto")
         .arg(from)
