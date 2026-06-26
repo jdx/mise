@@ -1,5 +1,33 @@
 # Changelog
 
+## [2026.6.15](https://github.com/jdx/mise/compare/v2026.6.14..v2026.6.15) - 2026-06-26
+
+### 🚀 Features
+
+- **(bootstrap)** prune unmanaged brew formulae by @jdx in [#10618](https://github.com/jdx/mise/pull/10618)
+
+### 🐛 Bug Fixes
+
+- **(brew-cask)** handle raw binaries, $APPDIR paths, and app bundle copying by @arthurh4 in [#10626](https://github.com/jdx/mise/pull/10626)
+- **(hooks)** set MISE_INSTALLED_TOOLS to [] on no-op install (keep running postinstall) by @JamBalaya56562 in [#10615](https://github.com/jdx/mise/pull/10615)
+- **(install)** respect lockfile backend during locked installs by @risu729 in [#10599](https://github.com/jdx/mise/pull/10599)
+- **(install)** suggest source install for unsupported arches by @risu729 in [#10627](https://github.com/jdx/mise/pull/10627)
+- **(oci)** resolve host install symlinks and symlinked paths during `PATH` rebasing by @salim-b in [#10624](https://github.com/jdx/mise/pull/10624)
+- stop forcing no-yjit ruby on older glibc by @jdx in [#10620](https://github.com/jdx/mise/pull/10620)
+
+### New Contributors
+
+- @arthurh4 made their first contribution in [#10626](https://github.com/jdx/mise/pull/10626)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (4)
+
+- [`callumalpass/tasknotes-tui`](https://github.com/callumalpass/tasknotes-tui)
+- `glossia.ai/cli`
+- [`ogulcancelik/herdr`](https://github.com/ogulcancelik/herdr)
+- [`pvolok/dekit`](https://github.com/pvolok/dekit)
+
 ## [2026.6.14](https://github.com/jdx/mise/compare/v2026.6.13..v2026.6.14) - 2026-06-25
 
 ### 🚀 Features
