@@ -22484,6 +22484,50 @@ packages:
           - windows
           - amd64
   - type: github_release
+    repo_owner: callumalpass
+    repo_name: tasknotes-tui
+    description: Terminal interface for managing markdown-based tasks
+    files:
+      - name: tasknotes-tui
+        src: tasknotes-tui-{{.Version}}-{{.OS}}-{{.Arch}}/tasknotes-tui
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        asset: tasknotes-tui-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: "true"
+        asset: tasknotes-tui-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+  - type: github_release
     repo_owner: cameron-martin
     repo_name: bazel-lsp
     description: A language server implementation for Bazel
@@ -41734,21 +41778,25 @@ packages:
         github_artifact_attestations:
           predicate_type: https://spdx.dev/Document/v2.3
           signer_workflow: gleam-lang/gleam/\.github/workflows/release\.yaml
-  - type: github_release
-    repo_owner: glossia
-    repo_name: cli
+  - type: http
+    name: glossia.ai/cli
     aliases:
-      - name: glossia.ai/cli
+      - name: glossia/cli
+    link: https://glossia.ai/en/docs/reference/cli/
     description: Localize like you ship software
     files:
       - name: glossia
     version_constraint: "false"
     version_overrides:
-      - version_constraint: semver("< 0.15.1")
-        version_prefix: cli-v
-        type: http
+      - version_constraint: Version startsWith "cli-v" or Version startsWith "v"
+        error_message: Remove the prefix "cli-v" from the version
+      - version_constraint: Version startsWith "v"
+        error_message: Remove the prefix "v" from the version
+      - version_constraint: semver("<= 0.14.0")
+        error_message: The version is too old. Please upgrade to 0.16.0 or later.
+      - version_constraint: "true"
         windows_arm_emulation: true
-        url: https://glossia-releases.t3.storage.dev/cli/{{.SemVer}}/glossia-{{.OS}}-{{.Arch}}.{{.Format}}
+        url: https://releases.glossia.ai/cli/{{.Version}}/glossia-{{.OS}}-{{.Arch}}.{{.Format}}
         replacements:
           amd64: x64
         format: tar.gz
@@ -41757,21 +41805,8 @@ packages:
             format: zip
         checksum:
           type: http
-          url: https://glossia-releases.t3.storage.dev/cli/{{.SemVer}}/SHA256SUMS
+          url: https://releases.glossia.ai/cli/{{.Version}}/SHA256SUMS
           algorithm: sha256
-      - version_constraint: "true"
-        asset: glossia-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        replacements:
-          amd64: x64
-        checksum:
-          type: github_release
-          asset: SHA256SUMS
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
   - type: github_release
     repo_owner: go-acme
     repo_name: lego
@@ -68957,6 +68992,31 @@ packages:
       - name: exa
         src: bin/exa
   - type: github_release
+    repo_owner: ogulcancelik
+    repo_name: herdr
+    description: agent multiplexer that lives in your terminal
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.4.0"
+        asset: herdr-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: herdr-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: ohkrab
     repo_name: krab
     description: Krab is a migration and automation tool for PostgreSQL based on HCL syntax
@@ -75540,8 +75600,12 @@ packages:
           - darwin
   - type: github_release
     repo_owner: pvolok
-    repo_name: mprocs
+    repo_name: dekit
+    aliases:
+      - name: pvolok/mprocs
     description: Run multiple commands in parallel
+    files:
+      - name: mprocs
     version_constraint: "false"
     version_overrides:
       - version_constraint: semver("<= 0.0.1")
