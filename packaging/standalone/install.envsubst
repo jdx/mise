@@ -30,6 +30,16 @@ error() {
   echo "$@" >&2
   exit 1
 }
+
+unsupported_arch() {
+  arch="$1"
+  warn "unsupported architecture: $arch"
+  warn ""
+  warn "mise does not provide prebuilt binaries for this platform."
+  warn "If Rust/Cargo is available, install from source with:"
+  warn "  cargo install --locked mise"
+  exit 1
+}
 #endregion
 
 #region environment setup
@@ -67,7 +77,7 @@ get_arch() {
   elif [ "$arch" = armv7l ]; then
     echo "armv7$musl"
   else
-    error "unsupported architecture: $arch"
+    unsupported_arch "$arch"
   fi
 }
 
