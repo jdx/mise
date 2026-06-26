@@ -267,6 +267,13 @@ async fn fetch_archive(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<Pat
     ));
     if !archive.exists() {
         HTTP_FETCH.download_file(&cask.url, &archive, pr).await?;
+        // Strip macOS quarantine so it doesn't propagate into extracted/copied artifacts.
+        let _ = std::process::Command::new("xattr")
+            .args(["-d", "com.apple.quarantine"])
+            .arg(&archive)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
     }
     match cask.sha256.as_deref() {
         Some("no_check") => {}
@@ -291,22 +298,30 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
         file::un_dmg(archive, &extract_dir)?;
     } else {
         let format = ExtractionFormat::from_file_name(filename);
-        if !format.is_archive() {
+        if format == ExtractionFormat::Raw {
+            // Raw executable binary — copy it using the original URL filename so find_artifact
+            // can match against the binary stanza source name (e.g. "claude").
+            let url_filename = archive_filename(&cask.url).unwrap_or_else(|| filename.to_string());
+            let dest = extract_dir.join(&url_filename);
+            file::copy(archive, &dest)?;
+            file::make_executable(&dest)?;
+        } else if !format.is_archive() {
             bail!(
                 "brew-cask:{}: unsupported archive type for {}",
                 cask.token,
                 filename
             );
+        } else {
+            file::extract_archive(
+                archive,
+                &extract_dir,
+                format,
+                &ExtractOptions {
+                    pr,
+                    ..Default::default()
+                },
+            )?;
         }
-        file::extract_archive(
-            archive,
-            &extract_dir,
-            format,
-            &ExtractOptions {
-                pr,
-                ..Default::default()
-            },
-        )?;
     }
     Ok(extract_dir)
 }
@@ -316,7 +331,7 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
         .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
     let caskroom_app = caskroom.join(app_bundle_name(app.target_name())?);
     file::remove_all(&caskroom_app)?;
-    file::copy_dir_all(&source, &caskroom_app)?;
+    ditto(&source, &caskroom_app)?;
     let target = app_target_path(app.target_name())?;
     if let Some(parent) = target.parent() {
         file::create_dir_all(parent)?;
@@ -326,9 +341,50 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
         crate::hash::hash_to_str(&target.display().to_string())
     ));
     file::remove_all(&tmp_target)?;
-    file::copy_dir_all(&caskroom_app, &tmp_target)?;
-    file::remove_all(&target)?;
-    file::rename(&tmp_target, &target)?;
+    ditto(&caskroom_app, &tmp_target)?;
+    // Atomic swap: rename existing target aside before putting the new one in place so that
+    // a failure during rename leaves the old app intact rather than leaving nothing.
+    let old_target = target.with_extension(format!(
+        "mise-old-{}",
+        crate::hash::hash_to_str(&target.display().to_string())
+    ));
+    file::remove_all(&old_target)?;
+    if target.exists() {
+        file::rename(&target, &old_target)?;
+    }
+    if let Err(e) = file::rename(&tmp_target, &target) {
+        // Restore the old app if the swap failed.
+        if old_target.exists() {
+            let _ = file::rename(&old_target, &target);
+        }
+        return Err(e);
+    }
+    file::remove_all(&old_target)?;
+    // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
+    let _ = std::process::Command::new("xattr")
+        .args(["-r", "-d", "com.apple.quarantine"])
+        .arg(&target)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    Ok(())
+}
+
+/// Copy a directory using macOS `ditto`, which preserves resource forks, extended attributes,
+/// and HFS+ metadata that a plain recursive copy would strip.
+fn ditto(from: &Path, to: &Path) -> Result<()> {
+    let status = std::process::Command::new("ditto")
+        .arg(from)
+        .arg(to)
+        .status()
+        .wrap_err("failed to run ditto")?;
+    if !status.success() {
+        bail!(
+            "ditto failed copying {} to {}",
+            from.display(),
+            to.display()
+        );
+    }
     Ok(())
 }
 
@@ -345,21 +401,41 @@ fn install_pkg(stage: &Path, pkg: &PkgArtifact) -> Result<()> {
 }
 
 fn stage_binary(stage: &Path, caskroom: &Path, binary: &BinaryArtifact) -> Result<()> {
-    let source = find_artifact(stage, &binary.source)
-        .filter(|path| path.is_file())
+    let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
+    file::remove_all(&caskroom_binary)?;
+    if let Some(parent) = caskroom_binary.parent() {
+        file::create_dir_all(parent)?;
+    }
+    if binary.source.contains("$APPDIR") {
+        // $APPDIR is the Applications directory where install_app placed the bundle.
+        // Symlink into the installed app so the CLI wrapper can trace back to find the app.
+        // Check both /Applications and $HOMEBREW_PREFIX/Applications per app_target_path().
+        let app_binary = [
+            PathBuf::from("/Applications"),
+            prefix::prefix().join("Applications"),
+        ]
+        .iter()
+        .map(|appdir| PathBuf::from(binary.source.replace("$APPDIR", &appdir.to_string_lossy())))
+        .find(|p| p.is_file())
         .ok_or_else(|| {
             eyre!(
                 "brew-cask: binary artifact '{}' was not found",
                 binary.source
             )
         })?;
-    let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
-    file::remove_all(&caskroom_binary)?;
-    if let Some(parent) = caskroom_binary.parent() {
-        file::create_dir_all(parent)?;
+        file::make_symlink(&app_binary, &caskroom_binary)?;
+    } else {
+        let source = find_artifact(stage, &binary.source)
+            .filter(|path| path.is_file())
+            .ok_or_else(|| {
+                eyre!(
+                    "brew-cask: binary artifact '{}' was not found",
+                    binary.source
+                )
+            })?;
+        file::copy(&source, &caskroom_binary)?;
+        file::make_executable(&caskroom_binary)?;
     }
-    file::copy(&source, &caskroom_binary)?;
-    file::make_executable(&caskroom_binary)?;
     Ok(())
 }
 
