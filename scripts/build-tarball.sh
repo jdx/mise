@@ -16,6 +16,9 @@ get_os() {
 	*-windows-*)
 		echo "windows"
 		;;
+	*-linux-android)
+		echo "android"
+		;;
 	*-linux-*)
 		echo "linux"
 		;;
@@ -64,7 +67,7 @@ version=$(./scripts/get-version.sh)
 basename=mise-$version-$os-$arch$suffix
 
 case "$os-$arch" in
-linux-arm*)
+linux-arm*|android-*)
 	# don't use sccache
 	unset RUSTC_WRAPPER
 	;;
@@ -75,7 +78,7 @@ if [[ $os == "linux" ]] && [[ $arch == "armv7" ]]; then
 	features="$features,aws-lc-rs"
 fi
 
-if [[ $os == "linux" ]]; then
+if [[ $os == "linux" ]] || [[ $os == "android" ]]; then
 	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 else
 	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
