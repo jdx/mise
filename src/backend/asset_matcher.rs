@@ -1489,8 +1489,8 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
     }
 
     #[test]
-    fn test_asset_picker_functionality_rust_triplets() {
-        // rust triplet platofmrs contain linux OS for Android binaries
+    fn test_asset_picker_functionality_rust_triplets_with_android() {
+        // rust triplet platforms contain linux as segment in filname for Android binaries
         let assets = vec![
             "tool-1.0.0-aarch64-apple-darwin.zip".to_string(),
             "tool-1.0.0-aarch64-linux-android.zip".to_string(),
@@ -1521,6 +1521,38 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
         assert_eq!(picked, "tool-1.0.0-aarch64-linux-android.zip");
     }
 
+    #[test]
+    fn test_asset_picker_functionality_goreleaser_with_android() {
+        let assets = vec![
+            "tool-1.0.0-android-arm64".to_string(),
+            "tool-1.0.0-linux-amd64".to_string(),
+            "tool-1.0.0-linux-arm64".to_string(),
+            "tool-1.0.0-osx-amd64".to_string(),
+            "tool-1.0.0-osx-arm64".to_string(),
+            "tool-1.0.0-windows-amd64.exe".to_string(),
+            "tool-1.0.0-windows-arm64.exe".to_string(),
+        ];
+
+        let picked = AssetPicker::with_libc("linux".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-linux-arm64");
+
+        let picked = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-osx-arm64");
+
+        let picked = AssetPicker::with_libc("windows".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-windows-arm64.exe");
+
+        let picked = AssetPicker::with_libc("android".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-android-arm64");
+    }
 
     #[test]
     fn test_asset_scoring() {
@@ -1529,7 +1561,7 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
         let score_linux = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
         let score_windows = picker.score_asset("tool-1.0.0-windows-x86_64.zip");
         let score_linux_arm = picker.score_asset("tool-1.0.0-linux-arm64.tar.gz");
-        let score_android = picker.score_asset("tool-1.0.0-aarch64-linux-android.tar.gz");
+        let score_android = picker.score_asset("tool-1.0.0-x86_64-linux-android.tar.gz");
 
         assert!(
             score_linux > score_windows,
