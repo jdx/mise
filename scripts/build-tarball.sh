@@ -73,13 +73,13 @@ linux-arm*|android-*)
 	;;
 esac
 
-features="vfox/vendored-lua,openssl/vendored"
+features="vfox/vendored-lua,openssl/vendored,self_update"
 if [[ $os == "android" ]]; then
 	# rustls not yet supported in Android/Termux
 	# https://github.com/rustls/rustls-platform-verifier/issues/219
 	features="$features,native-tls"
 else
-	features="$features,rustls-native-roots,self_update"
+	features="$features,rustls-native-roots"
 fi
 
 if [[ $os == "linux" ]] && [[ $arch == "armv7" ]]; then
