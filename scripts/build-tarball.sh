@@ -67,13 +67,13 @@ version=$(./scripts/get-version.sh)
 basename=mise-$version-$os-$arch$suffix
 
 case "$os-$arch" in
-linux-arm*|android-*)
+linux-arm* | android-*)
 	# don't use sccache
 	unset RUSTC_WRAPPER
 	;;
 esac
 
-features="vfox/vendored-lua,openssl/vendored,self_update"
+features="self_update,vfox/vendored-lua,openssl/vendored"
 if [[ $os == "android" ]]; then
 	# rustls not yet supported in Android/Termux
 	# https://github.com/rustls/rustls-platform-verifier/issues/219
