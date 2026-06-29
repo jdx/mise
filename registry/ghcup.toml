@@ -1,4 +1,3 @@
 backends = ["aqua:haskell/ghcup-hs", "asdf:mise-plugins/mise-ghcup"]
 description = "GHCup is an installer for the general purpose language Haskell"
-os = ["linux", "macos"]
 test = { cmd = "ghcup --version", expected = "The GHCup Haskell installer, version v{{version}}" }
