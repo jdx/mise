@@ -771,8 +771,13 @@ fn verify_public_key_bundle(
                 }
             }
 
-            if scheme.uses_sha256() && scheme.supports_prehashed() {
-                verify_signature_prehashed(public_key, &artifact_hash, &msg_sig.signature, scheme)
+            if scheme.supports_prehashed() {
+                verify_signature_prehashed(
+                    public_key,
+                    artifact_hash.as_bytes(),
+                    &msg_sig.signature,
+                    scheme,
+                )
             } else {
                 verify_signature(public_key, artifact, &msg_sig.signature, scheme)
             }
@@ -1414,7 +1419,7 @@ fn select_tuf_config(override_url: Option<String>) -> TufConfig {
         // mirror. A custom URL has no embedded-root fallback, and the mirror
         // serves identical TUF content; bootstrapping with PRODUCTION_TUF_ROOT
         // means every metadata file is verified against the canonical root.
-        Some(url) => TufConfig::custom(url, PRODUCTION_TUF_ROOT),
+        Some(url) => TufConfig::custom(url).with_root(PRODUCTION_TUF_ROOT),
         // Equivalent to `TrustedRoot::production()` (which is itself
         // `from_tuf(TufConfig::production())`) — the default path is unchanged.
         None => TufConfig::production(),
@@ -1505,7 +1510,7 @@ fn verify_bundle_for_any_artifact(
     let digest = Sha256Hash::from_hex(&artifact.sha256).map_err(|e| {
         AttestationError::Verification(format!("invalid artifact sha256 digest: {e}"))
     })?;
-    match verify_bundle(Artifact::from_digest(digest), bundle, None, root) {
+    match verify_bundle(Artifact::from(&digest), bundle, None, root) {
         Ok(()) => Ok(()),
         Err(e) if is_slsa_subject_mismatch(&e) => {
             Err(AttestationError::SubjectMismatch(e.to_string()))
