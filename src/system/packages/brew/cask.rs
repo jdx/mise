@@ -50,11 +50,18 @@ struct PkgArtifact {
     source: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FontArtifact {
+    source: String,
+    target: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct CaskArtifacts {
     apps: Vec<AppArtifact>,
     binaries: Vec<BinaryArtifact>,
     pkgs: Vec<PkgArtifact>,
+    fonts: Vec<FontArtifact>,
     pkg_ids: Vec<String>,
 }
 
@@ -65,6 +72,8 @@ struct CaskReceipt {
     apps: Vec<PathBuf>,
     #[serde(default)]
     binaries: Vec<PathBuf>,
+    #[serde(default)]
+    fonts: Vec<PathBuf>,
     #[serde(default)]
     pkg_ids: Vec<String>,
 }
@@ -97,10 +106,14 @@ impl BrewCaskManager {
             for pkg in &artifacts.pkgs {
                 miseprintln!("install pkg {}", pkg.source);
             }
+            for font in &artifacts.fonts {
+                miseprintln!("install font {}", font.source);
+            }
             return Ok(cask.version);
         }
         prefix::bootstrap(false)?;
         let previous_binaries = previous_binary_targets(&cask)?;
+        let previous_fonts = previous_font_targets(&cask)?;
         let archive = fetch_archive(&cask, pr).await?;
         let stage = extract_archive(&cask, &archive, pr)?;
         let caskroom_token = caskroom_token_dir(&cask.token);
@@ -117,6 +130,9 @@ impl BrewCaskManager {
         for pkg in &artifacts.pkgs {
             install_pkg(&stage, pkg)?;
         }
+        for font in &artifacts.fonts {
+            stage_font(&stage, &tmp_caskroom, font)?;
+        }
         write_receipt(&tmp_caskroom, &cask, &artifacts)?;
         file::remove_all(&caskroom)?;
         file::rename(&tmp_caskroom, &caskroom)?;
@@ -124,6 +140,10 @@ impl BrewCaskManager {
             link_binary(&caskroom, binary)?;
         }
         remove_obsolete_binary_links(&cask, &previous_binaries, &binary_targets(&artifacts)?)?;
+        for font in &artifacts.fonts {
+            link_font(&caskroom, font)?;
+        }
+        remove_obsolete_fonts(&cask, &previous_fonts, &font_target_paths(&artifacts)?)?;
         remove_stale_versions(&caskroom_token, &cask.version)?;
         file::remove_all(stage)?;
         Ok(cask.version)
@@ -400,6 +420,136 @@ fn install_pkg(stage: &Path, pkg: &PkgArtifact) -> Result<()> {
     sudo::run("installer", &args, &[])
 }
 
+fn stage_font(stage: &Path, caskroom: &Path, font: &FontArtifact) -> Result<()> {
+    let caskroom_font = caskroom_font_path(caskroom, font)?;
+    file::remove_all(&caskroom_font)?;
+    if let Some(parent) = caskroom_font.parent() {
+        file::create_dir_all(parent)?;
+    }
+    let source = find_artifact(stage, &font.source)
+        .filter(|path| path.is_file())
+        .ok_or_else(|| eyre!("brew-cask: font artifact '{}' was not found", font.source))?;
+    ditto(&source, &caskroom_font)?;
+    Ok(())
+}
+
+fn link_font(caskroom: &Path, font: &FontArtifact) -> Result<()> {
+    let caskroom_font = caskroom_font_path(caskroom, font)?;
+    if !caskroom_font.is_file() {
+        bail!("brew-cask: font artifact '{}' was not staged", font.source);
+    }
+    let target = font_target_path(font)?;
+    if let Some(parent) = target.parent() {
+        file::create_dir_all(parent)?;
+    }
+    // Atomic swap: rename existing font aside before copying the new one so
+    // that a failure during copy leaves the old font intact.
+    let old_target = target.with_extension(format!(
+        "mise-old-{}",
+        crate::hash::hash_to_str(&target.display().to_string())
+    ));
+    file::remove_all(&old_target)?;
+    if target.exists() {
+        file::rename(&target, &old_target)?;
+    }
+    if let Err(e) = ditto(&caskroom_font, &target) {
+        if old_target.exists() {
+            let _ = file::rename(&old_target, &target);
+        }
+        return Err(e);
+    }
+    file::remove_all(&old_target)?;
+    Ok(())
+}
+
+fn caskroom_font_path(caskroom: &Path, font: &FontArtifact) -> Result<PathBuf> {
+    let name = font_filename(font)?;
+    Ok(caskroom.join(name))
+}
+
+fn font_filename(font: &FontArtifact) -> Result<String> {
+    match &font.target {
+        Some(target) => Ok(target.clone()),
+        None => Path::new(&font.source)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(str::to_string)
+            .ok_or_else(|| eyre!("brew-cask: invalid font source '{}'", font.source)),
+    }
+}
+
+fn font_target_paths(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
+    artifacts
+        .fonts
+        .iter()
+        .map(font_target_path)
+        .collect::<Result<Vec<_>>>()
+}
+
+fn previous_font_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
+    let Some(version) = installed_version(&cask.token) else {
+        return Ok(Vec::new());
+    };
+    let version_dir = caskroom_version_dir(&cask.token, &version);
+    Ok(read_receipt(&version_dir)?
+        .map(|receipt| receipt.fonts)
+        .unwrap_or_default())
+}
+
+fn remove_obsolete_fonts(
+    cask: &Cask,
+    previous_targets: &[PathBuf],
+    current_targets: &[PathBuf],
+) -> Result<()> {
+    let token_dir = file::desymlink_path(&caskroom_token_dir(&cask.token));
+    for target in previous_targets {
+        if current_targets.contains(target) {
+            continue;
+        }
+        if !target.is_file() {
+            continue;
+        }
+        // Only remove the file if it was staged by us — check that it
+        // resides under ~/Library/Fonts and the caskroom still has a
+        // staged copy (from the previous version directory).
+        let fonts_dir = crate::dirs::HOME.join("Library").join("Fonts");
+        if !target.starts_with(&fonts_dir) {
+            continue;
+        }
+        // Check if any version directory under the token dir contains this font
+        // filename, indicating it was staged by a previous version of this cask.
+        let filename = target.file_name();
+        let has_staged_copy = std::fs::read_dir(&token_dir)
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_type().is_ok_and(|ft| ft.is_dir()))
+            .any(|entry| filename.is_some_and(|f| entry.path().join(f).is_file()));
+        if has_staged_copy {
+            file::remove_file(target)?;
+        }
+    }
+    Ok(())
+}
+
+fn font_target_path(font: &FontArtifact) -> Result<PathBuf> {
+    let name = font_filename(font)?;
+    let name_path = Path::new(&name);
+    if name_path.is_absolute()
+        || name_path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        || name_path.components().next().is_none()
+    {
+        bail!("brew-cask: invalid font target '{}'", name);
+    }
+    Ok(crate::dirs::HOME
+        .join("Library")
+        .join("Fonts")
+        .join(name_path))
+}
+
 fn stage_binary(stage: &Path, caskroom: &Path, binary: &BinaryArtifact) -> Result<()> {
     let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
     file::remove_all(&caskroom_binary)?;
@@ -493,15 +643,23 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
             artifacts.pkgs.push(pkg);
             continue;
         }
+        if let Some(font) = parse_font_artifact(artifact) {
+            artifacts.fonts.push(font);
+            continue;
+        }
         bail!(
             "brew-cask:{}: unsupported artifact type {}",
             cask.token,
             artifact_type
         );
     }
-    if artifacts.apps.is_empty() && artifacts.binaries.is_empty() && artifacts.pkgs.is_empty() {
+    if artifacts.apps.is_empty()
+        && artifacts.binaries.is_empty()
+        && artifacts.pkgs.is_empty()
+        && artifacts.fonts.is_empty()
+    {
         bail!(
-            "brew-cask:{}: no app, binary, or pkg artifact found; only app-bundle, binary, and pkg casks are supported",
+            "brew-cask:{}: no app, binary, pkg, or font artifact found; only app-bundle, binary, pkg, and font casks are supported",
             cask.token
         );
     }
@@ -584,6 +742,22 @@ fn parse_pkg_artifact(value: &Value) -> Result<Option<PkgArtifact>> {
                 }))
         }
         _ => Ok(None),
+    }
+}
+
+fn parse_font_artifact(value: &Value) -> Option<FontArtifact> {
+    let font = value.as_object()?.get("font")?;
+    match font {
+        Value::String(source) => Some(FontArtifact {
+            source: source.clone(),
+            target: None,
+        }),
+        Value::Array(values) => {
+            let source = values.first()?.as_str()?.to_string();
+            let target = artifact_target(value, values);
+            Some(FontArtifact { source, target })
+        }
+        _ => None,
     }
 }
 
@@ -808,9 +982,19 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
             };
             let pkgs_installed =
                 artifacts.pkgs.is_empty() || pkg_ids_installed(&artifacts.pkg_ids)?;
+            let font_targets = if receipt.fonts.is_empty() {
+                artifacts
+                    .fonts
+                    .iter()
+                    .map(font_target_path)
+                    .collect::<Result<Vec<_>>>()?
+            } else {
+                receipt.fonts
+            };
             if app_targets.iter().all(|app| app.exists())
                 && binary_targets.iter().all(|binary| binary.exists())
                 && pkgs_installed
+                && font_targets.iter().all(|font| font.exists())
             {
                 Ok(Some(receipt.version))
             } else {
@@ -831,6 +1015,11 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
             if !artifacts.pkgs.is_empty() && !pkg_ids_installed(&artifacts.pkg_ids)? {
                 return Ok(None);
             }
+            for font in &artifacts.fonts {
+                if !font_target_path(font)?.exists() {
+                    return Ok(None);
+                }
+            }
             Ok(Some(version))
         }
     }
@@ -845,6 +1034,11 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
             .map(|app| app_target_path(app.target_name()))
             .collect::<Result<Vec<_>>>()?,
         binaries: binary_targets(artifacts)?,
+        fonts: artifacts
+            .fonts
+            .iter()
+            .map(font_target_path)
+            .collect::<Result<Vec<_>>>()?,
         pkg_ids: artifacts.pkg_ids.clone(),
     };
     let body = toml::to_string_pretty(&receipt)?;
@@ -910,14 +1104,20 @@ fn artifact_type(value: &Value) -> String {
 fn is_non_install_artifact(kind: &str) -> bool {
     matches!(
         kind,
-        "caveats"
+        "bash_completion"
+            | "caveats"
             | "conflicts_with"
             | "depends_on"
+            | "fish_completion"
             | "generate_completions_from_executable"
+            | "manpage"
             | "postflight"
             | "preflight"
             | "uninstall"
+            | "uninstall_postflight"
+            | "uninstall_preflight"
             | "zap"
+            | "zsh_completion"
     )
 }
 
@@ -1087,6 +1287,84 @@ mod tests {
     }
 
     #[test]
+    fn parses_font_artifact() {
+        let value: Value = serde_json::json!({"font": "SauceCodeProNerdFont-Regular.ttf"});
+        assert_eq!(
+            parse_font_artifact(&value),
+            Some(FontArtifact {
+                source: "SauceCodeProNerdFont-Regular.ttf".to_string(),
+                target: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_font_artifact_with_target() {
+        let value: Value = serde_json::json!({"font": ["SauceCodeProNerdFont-Regular.ttf", {"target": "CustomName.ttf"}]});
+        assert_eq!(
+            parse_font_artifact(&value),
+            Some(FontArtifact {
+                source: "SauceCodeProNerdFont-Regular.ttf".to_string(),
+                target: Some("CustomName.ttf".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_font_cask_artifacts() -> Result<()> {
+        let mut cask = test_cask("font-sauce-code-pro-nerd-font", "3.4.0");
+        cask.artifacts = vec![
+            serde_json::json!({"font": "SauceCodeProNerdFont-Regular.ttf"}),
+            serde_json::json!({"font": "SauceCodeProNerdFont-Bold.ttf"}),
+        ];
+
+        assert_eq!(
+            cask_artifacts(&cask)?,
+            CaskArtifacts {
+                fonts: vec![
+                    FontArtifact {
+                        source: "SauceCodeProNerdFont-Regular.ttf".to_string(),
+                        target: None,
+                    },
+                    FontArtifact {
+                        source: "SauceCodeProNerdFont-Bold.ttf".to_string(),
+                        target: None,
+                    },
+                ],
+                ..Default::default()
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn skips_bash_completion_and_manpage_artifacts() -> Result<()> {
+        let mut cask = test_cask("ghostty", "1.2.0");
+        cask.artifacts = vec![
+            serde_json::json!({"app": "Ghostty.app"}),
+            serde_json::json!({"manpage": ["ghostty.1"]}),
+            serde_json::json!({"bash_completion": ["ghostty"]}),
+            serde_json::json!({"fish_completion": ["ghostty"]}),
+            serde_json::json!({"zsh_completion": ["ghostty"]}),
+        ];
+
+        let artifacts = cask_artifacts(&cask)?;
+        assert_eq!(artifacts.apps.len(), 1);
+        assert_eq!(artifacts.fonts.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn font_only_cask_is_valid() -> Result<()> {
+        let mut cask = test_cask("font-test", "1.0.0");
+        cask.artifacts = vec![serde_json::json!({"font": "TestFont.ttf"})];
+
+        let artifacts = cask_artifacts(&cask)?;
+        assert_eq!(artifacts.fonts.len(), 1);
+        Ok(())
+    }
+
+    #[test]
     fn app_only_casks_ignore_pkgutil_ids() -> Result<()> {
         let mut cask = test_cask("example", "1.0.0");
         cask.artifacts = vec![
@@ -1172,6 +1450,7 @@ mod tests {
             version: cask.version.clone(),
             apps: vec![app_target_path(app.target_name())?],
             binaries: vec![],
+            fonts: vec![],
             pkg_ids: vec!["com.example.helper".to_string()],
         };
         crate::file::write(
@@ -1335,6 +1614,7 @@ mod tests {
             version: cask.version.clone(),
             apps: vec![],
             binaries: vec![],
+            fonts: vec![],
             pkg_ids: vec![],
         };
         crate::file::write(
