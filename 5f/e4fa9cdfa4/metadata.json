@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "5fe4fa9cdfa4",
+  "strategy": "manual-commit",
+  "branch": "codex/task-usage-mount",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/tasks/task-arguments.md",
+    "e2e/tasks/test_task_ls_usage",
+    "src/task/mod.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5f/e4fa9cdfa4/0/metadata.json",
+      "transcript": "/5f/e4fa9cdfa4/0/full.jsonl",
+      "content_hash": "/5f/e4fa9cdfa4/0/content_hash.txt",
+      "prompt": "/5f/e4fa9cdfa4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 284417,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 5811200,
+    "output_tokens": 21664,
+    "api_call_count": 48
+  }
+}
