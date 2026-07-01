@@ -126,6 +126,8 @@ pub enum AttestationError {
     Api(String),
     #[error("Verification failed: {0}")]
     Verification(String),
+    #[error("Workflow verification failed: {0}")]
+    WorkflowMismatch(String),
     #[error("SLSA subject mismatch: {0}")]
     SubjectMismatch(String),
     #[error("Unsupported attestation format: {0}")]
@@ -664,8 +666,8 @@ pub async fn verify_cosign_signature(
     let artifact = tokio::fs::read(artifact_path).await?;
     let mut trust_roots = TrustRoots::default();
     if let Ok(bundle) = Bundle::from_json(&content) {
-        let trusted_root = trust_roots.for_bundle(&bundle).await?;
-        verify_bundle(&artifact, &bundle, None, trusted_root)?;
+        verify_bundle_with_trust_roots(Artifact::from(&artifact), &bundle, None, &mut trust_roots)
+            .await?;
         return Ok(true);
     }
     // Legacy cosign v1 bundle (`{base64Signature, cert, rekorBundle}`).
@@ -845,11 +847,11 @@ pub async fn verify_slsa_provenance_artifacts(
     for candidate in candidates {
         // Bundle::from_json failure falls through to the DSSE envelope path.
         if let Ok(bundle) = Bundle::from_json(candidate) {
-            let result = match trust_roots.for_bundle(&bundle).await {
-                Ok(root) => verify_bundle_for_any_artifact(artifacts, &bundle, root)
-                    .and_then(|_| verify_bundle_slsa_subjects(&bundle, artifacts, min_level)),
-                Err(e) => Err(e),
-            };
+            let result =
+                match verify_bundle_for_any_artifact(artifacts, &bundle, &mut trust_roots).await {
+                    Ok(()) => verify_bundle_slsa_subjects(&bundle, artifacts, min_level),
+                    Err(e) => Err(e),
+                };
             match result {
                 Ok(()) => return Ok(true),
                 Err(e) => errors.push(e),
@@ -1186,14 +1188,14 @@ async fn verify_attestation_bundles(
                 continue;
             }
         };
-        let trusted_root = match trust_roots.for_bundle(&bundle).await {
-            Ok(root) => root,
-            Err(e) => {
-                errors.push(e.to_string());
-                continue;
-            }
-        };
-        match verify_bundle(artifact, &bundle, signer_workflow, trusted_root) {
+        match verify_bundle_with_trust_roots(
+            Artifact::from(artifact),
+            &bundle,
+            signer_workflow,
+            trust_roots,
+        )
+        .await
+        {
             Ok(()) => return Ok(true),
             Err(e) => errors.push(e.to_string()),
         }
@@ -1246,6 +1248,64 @@ fn verify_bundle<'a>(
     verify_signer_workflow_identity(result.identity.as_deref(), signer_workflow)?;
 
     Ok(())
+}
+
+async fn verify_bundle_with_trust_roots<'a>(
+    artifact: Artifact<'a>,
+    bundle: &Bundle,
+    signer_workflow: Option<&str>,
+    trust_roots: &mut TrustRoots,
+) -> Result<()> {
+    if is_github_internal_certificate(bundle) {
+        return verify_github_bundle_with_tuf_retry(artifact, bundle, signer_workflow, trust_roots)
+            .await;
+    }
+
+    let trusted_root = trust_roots.sigstore_root().await?;
+    verify_bundle(artifact, bundle, signer_workflow, trusted_root)
+}
+
+async fn verify_github_bundle_with_tuf_retry<'a>(
+    artifact: Artifact<'a>,
+    bundle: &Bundle,
+    signer_workflow: Option<&str>,
+    trust_roots: &mut TrustRoots,
+) -> Result<()> {
+    let embedded_result = match trust_roots.github_embedded_root() {
+        Ok(trusted_root) => verify_bundle(artifact.clone(), bundle, signer_workflow, trusted_root),
+        Err(e) => Err(e),
+    };
+    verify_github_bundle_with_tuf_retry_after_embedded_result(embedded_result, || async {
+        let trusted_root = trust_roots.github_tuf_root().await?;
+        verify_bundle(artifact, bundle, signer_workflow, trusted_root)
+    })
+    .await
+}
+
+async fn verify_github_bundle_with_tuf_retry_after_embedded_result<F, Fut>(
+    embedded_result: Result<()>,
+    verify_with_tuf: F,
+) -> Result<()>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<()>>,
+{
+    match embedded_result {
+        Ok(()) => Ok(()),
+        Err(e) if is_signer_workflow_mismatch(&e) => Err(e),
+        Err(embedded_err) => match verify_with_tuf().await {
+            Ok(()) => Ok(()),
+            Err(tuf_err) if is_signer_workflow_mismatch(&tuf_err) => Err(tuf_err),
+            Err(tuf_err) => Err(AttestationError::Verification(format!(
+                "GitHub attestation verification failed with embedded trusted root: \
+                 {embedded_err}; GitHub TUF trusted root retry also failed: {tuf_err}"
+            ))),
+        },
+    }
+}
+
+fn is_signer_workflow_mismatch(err: &AttestationError) -> bool {
+    matches!(err, AttestationError::WorkflowMismatch(_))
 }
 
 fn is_github_internal_certificate(bundle: &Bundle) -> bool {
@@ -1434,29 +1494,26 @@ async fn production_trusted_root() -> Result<TrustedRoot> {
     Ok(TrustedRoot::from_tuf(select_tuf_config(override_url)).await?)
 }
 
-fn github_trusted_root() -> Result<TrustedRoot> {
+fn github_embedded_trusted_root() -> Result<TrustedRoot> {
     Ok(TrustedRoot::from_embedded(SigstoreInstance::GitHub)?)
 }
 
+async fn github_tuf_trusted_root() -> Result<TrustedRoot> {
+    Ok(TrustedRoot::from_tuf(TufConfig::github()).await?)
+}
+
 /// Per-process cache so we only fetch the Sigstore TUF root or parse the
-/// embedded GitHub trusted root once per `verify_*` invocation. Each is
-/// loaded lazily — a verification flow that only ever sees GitHub bundles
-/// never triggers a network call to the Sigstore TUF CDN, and vice versa.
+/// GitHub trusted roots once per `verify_*` invocation. Each is loaded lazily:
+/// GitHub bundles use the embedded root first and only fetch GitHub's TUF root
+/// after an embedded-root verification failure.
 #[derive(Default)]
 struct TrustRoots {
     sigstore: Option<TrustedRoot>,
-    github: Option<TrustedRoot>,
+    github_embedded: Option<TrustedRoot>,
+    github_tuf: Option<TrustedRoot>,
 }
 
 impl TrustRoots {
-    async fn for_bundle(&mut self, bundle: &Bundle) -> Result<&TrustedRoot> {
-        if is_github_internal_certificate(bundle) {
-            self.github_root()
-        } else {
-            self.sigstore_root().await
-        }
-    }
-
     async fn sigstore_root(&mut self) -> Result<&TrustedRoot> {
         if self.sigstore.is_none() {
             self.sigstore = Some(production_trusted_root().await?);
@@ -1464,11 +1521,18 @@ impl TrustRoots {
         Ok(self.sigstore.as_ref().unwrap())
     }
 
-    fn github_root(&mut self) -> Result<&TrustedRoot> {
-        if self.github.is_none() {
-            self.github = Some(github_trusted_root()?);
+    fn github_embedded_root(&mut self) -> Result<&TrustedRoot> {
+        if self.github_embedded.is_none() {
+            self.github_embedded = Some(github_embedded_trusted_root()?);
         }
-        Ok(self.github.as_ref().unwrap())
+        Ok(self.github_embedded.as_ref().unwrap())
+    }
+
+    async fn github_tuf_root(&mut self) -> Result<&TrustedRoot> {
+        if self.github_tuf.is_none() {
+            self.github_tuf = Some(github_tuf_trusted_root().await?);
+        }
+        Ok(self.github_tuf.as_ref().unwrap())
     }
 }
 
@@ -1480,13 +1544,13 @@ fn verify_signer_workflow_identity(
         return Ok(());
     };
     let Some(identity) = identity.filter(|identity| !identity.is_empty()) else {
-        return Err(AttestationError::Verification(format!(
-            "Workflow verification failed: expected '{expected}', found no certificate identity"
+        return Err(AttestationError::WorkflowMismatch(format!(
+            "expected '{expected}', found no certificate identity"
         )));
     };
     if !identity.contains(expected) {
-        return Err(AttestationError::Verification(format!(
-            "Workflow verification failed: expected '{expected}', found certificate identity: {identity:?}"
+        return Err(AttestationError::WorkflowMismatch(format!(
+            "expected '{expected}', found certificate identity: {identity:?}"
         )));
     }
     Ok(())
@@ -1497,10 +1561,10 @@ fn verify_signer_workflow_identity(
 /// level is supported, and the artifact's SHA-256 appears in the statement's
 /// `subject` array. The subject check is the load-bearing part — without it,
 /// a valid SLSA bundle signed for *some* artifact would accept *any* artifact.
-fn verify_bundle_for_any_artifact(
+async fn verify_bundle_for_any_artifact(
     artifacts: &[SlsaArtifact],
     bundle: &Bundle,
-    root: &TrustedRoot,
+    trust_roots: &mut TrustRoots,
 ) -> Result<()> {
     let artifact = artifacts.first().ok_or_else(|| {
         AttestationError::SubjectMismatch(
@@ -1510,7 +1574,7 @@ fn verify_bundle_for_any_artifact(
     let digest = Sha256Hash::from_hex(&artifact.sha256).map_err(|e| {
         AttestationError::Verification(format!("invalid artifact sha256 digest: {e}"))
     })?;
-    match verify_bundle(Artifact::from(&digest), bundle, None, root) {
+    match verify_bundle_with_trust_roots(Artifact::from(&digest), bundle, None, trust_roots).await {
         Ok(()) => Ok(()),
         Err(e) if is_slsa_subject_mismatch(&e) => {
             Err(AttestationError::SubjectMismatch(e.to_string()))
@@ -1962,6 +2026,78 @@ mod tests {
     fn embedded_sigstore_root() -> TrustedRoot {
         TrustedRoot::from_json(sigstore_verify::trust_root::SIGSTORE_PRODUCTION_TRUSTED_ROOT)
             .expect("embedded production trusted_root.json parses")
+    }
+
+    #[test]
+    fn github_embedded_root_does_not_load_tuf_root() {
+        let mut roots = TrustRoots::default();
+
+        roots.github_embedded_root().unwrap();
+
+        assert!(roots.github_embedded.is_some());
+        assert!(roots.github_tuf.is_none());
+    }
+
+    #[tokio::test]
+    async fn github_tuf_retry_runs_after_embedded_failure_and_can_succeed() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let tuf_calls = Arc::new(AtomicUsize::new(0));
+        let calls = tuf_calls.clone();
+
+        let result = verify_github_bundle_with_tuf_retry_after_embedded_result(
+            Err(AttestationError::Verification(
+                "embedded root rejected bundle".to_string(),
+            )),
+            || async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(tuf_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn signer_workflow_mismatch_is_not_retryable_with_tuf() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let tuf_calls = Arc::new(AtomicUsize::new(0));
+        let calls = tuf_calls.clone();
+        let err = AttestationError::WorkflowMismatch(
+            "expected 'release.yml', found 'build.yml'".to_string(),
+        );
+
+        let result =
+            verify_github_bundle_with_tuf_retry_after_embedded_result(Err(err), || async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+            .await;
+
+        assert!(matches!(result, Err(AttestationError::WorkflowMismatch(_))));
+        assert_eq!(tuf_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn github_tuf_retry_preserves_workflow_mismatch() {
+        let result = verify_github_bundle_with_tuf_retry_after_embedded_result(
+            Err(AttestationError::Verification(
+                "embedded root rejected bundle".to_string(),
+            )),
+            || async {
+                Err(AttestationError::WorkflowMismatch(
+                    "expected 'release.yml', found 'build.yml'".to_string(),
+                ))
+            },
+        )
+        .await;
+
+        assert!(matches!(result, Err(AttestationError::WorkflowMismatch(_))));
     }
 
     fn slsa_statement(subjects: serde_json::Value) -> Vec<u8> {
