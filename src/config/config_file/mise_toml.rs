@@ -687,7 +687,7 @@ impl MiseToml {
     }
 
     fn parse_template(&self, input: &str) -> eyre::Result<String> {
-        self.parse_template_with_context(&self.context, input)
+        self.parse_template_with_context(&self.template_context(), input)
     }
 
     fn parse_template_with_context(
@@ -705,6 +705,31 @@ impl MiseToml {
             eyre!("failed to parse template {input} in {p}")
         })?;
         Ok(output)
+    }
+
+    fn template_context(&self) -> TeraContext {
+        let mut context = self.context.clone();
+        Self::insert_resolved_vars(&mut context);
+        context
+    }
+
+    fn insert_resolved_vars(context: &mut TeraContext) {
+        if context.get("vars").is_some() {
+            return;
+        }
+        let Some(config) = Config::maybe_get() else {
+            return;
+        };
+        if let Some(vars_results) = config.vars_results_cached() {
+            let vars = vars_results
+                .vars
+                .iter()
+                .map(|(k, (v, _))| (k.clone(), v.clone()))
+                .collect::<IndexMap<_, _>>();
+            context.insert("vars", &vars);
+        } else if !config.vars.is_empty() {
+            context.insert("vars", &config.vars);
+        }
     }
 
     /// Render a tool-option template at config-load time, resolving env/vars but
@@ -928,20 +953,7 @@ impl ConfigFile for MiseToml {
             );
             context.insert("env", &env_vars);
         }
-        if context.get("vars").is_none()
-            && let Some(config) = Config::maybe_get()
-        {
-            if let Some(vars_results) = config.vars_results_cached() {
-                let vars = vars_results
-                    .vars
-                    .iter()
-                    .map(|(k, (v, _))| (k.clone(), v.clone()))
-                    .collect::<IndexMap<_, _>>();
-                context.insert("vars", &vars);
-            } else if !config.vars.is_empty() {
-                context.insert("vars", &config.vars);
-            }
-        }
+        Self::insert_resolved_vars(&mut context);
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
                 let version = self.parse_template_with_context(&context, &tool.tt.to_string())?;
