@@ -234,6 +234,25 @@ static RAW_LOCK: Lazy<tokio::sync::RwLock<()>> = Lazy::new(|| tokio::sync::RwLoc
 
 static RUNNING_PIDS: Lazy<Mutex<HashSet<u32>>> = Lazy::new(Default::default);
 
+struct RunningPidGuard(Option<u32>);
+
+impl RunningPidGuard {
+    fn new(pid: Option<u32>) -> Self {
+        if let Some(pid) = pid {
+            RUNNING_PIDS.lock().unwrap().insert(pid);
+        }
+        Self(pid)
+    }
+}
+
+impl Drop for RunningPidGuard {
+    fn drop(&mut self) {
+        if let Some(pid) = self.0 {
+            RUNNING_PIDS.lock().unwrap().remove(&pid);
+        }
+    }
+}
+
 /// Env var set on every spawned child when this mise process is managing
 /// process groups (calling setpgid + killpg). A nested mise that sees this
 /// var skips its own setpgid so descendants stay in the outer pgid — that
@@ -924,6 +943,66 @@ impl<'a> CmdLineRunner<'a> {
         Ok(())
     }
 
+    /// Run the command and return stdout, even when raw mode is enabled.
+    pub async fn read(mut self) -> Result<String> {
+        let _read_lock = RAW_LOCK.read().await;
+        debug!("$ {self}");
+        self.cmd.kill_on_drop(true);
+        #[cfg(unix)]
+        if should_use_pgroup() {
+            self.cmd.env(TASK_PGID_MANAGED_ENV, "1");
+            unsafe {
+                self.cmd.as_std_mut().pre_exec(|| {
+                    let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
+                    if !std::io::IsTerminal::is_terminal(&stdin) {
+                        let _ = nix::unistd::setpgid(
+                            nix::unistd::Pid::from_raw(0),
+                            nix::unistd::Pid::from_raw(0),
+                        );
+                    }
+                    Ok(())
+                });
+            }
+        }
+        let mut cp = self
+            .spawn_async_with_etxtbsy_retry()
+            .await
+            .wrap_err_with(|| format!("failed to execute command: {self}"))?;
+        let id = cp.id();
+        let _running_pid = RunningPidGuard::new(id);
+        trace!(
+            "Started process: {} for {}",
+            id.unwrap_or_default(),
+            self.get_program()
+        );
+        if let Some(text) = self.stdin.take()
+            && let Some(mut stdin) = cp.stdin.take()
+        {
+            tokio::spawn(async move {
+                let _ = stdin.write_all(text.as_bytes()).await;
+            });
+        }
+
+        let wait = cp.wait_with_output();
+        let output = match self.timeout {
+            Some(timeout) => match tokio::time::timeout(timeout, wait).await {
+                Ok(output) => output?,
+                Err(_) => bail!("timed out after {timeout:?}"),
+            },
+            None => wait.await?,
+        };
+
+        if !output.status.success() {
+            let combined_output = captured_output_lines(&self, &output);
+            self.replay_captured_stderr(&combined_output);
+            self.on_error(combined_output, output.status)?;
+        }
+
+        let stdout = String::from_utf8(output.stdout)
+            .wrap_err_with(|| format!("{} produced invalid UTF-8 output", self.get_program()))?;
+        Ok(stdout.trim_end().to_string())
+    }
+
     fn execute_raw(mut self) -> Result<()> {
         // In raw mode, inherit stdio so the child can interact with the terminal
         // directly. Piped stdout/stderr would deadlock if the child produces >64KB
@@ -1193,6 +1272,14 @@ impl<'a> CmdLineRunner<'a> {
         Err(ScriptFailed(self.get_program(), Some(status)))?
     }
 
+    fn replay_captured_stderr(&self, output: &[(String, OutputSource)]) {
+        for (line, source) in output {
+            if matches!(source, OutputSource::Stderr) {
+                self.on_stderr(line.clone());
+            }
+        }
+    }
+
     fn get_program(&self) -> String {
         display_path(PathBuf::from(self.cmd.as_std().get_program()))
     }
@@ -1243,6 +1330,20 @@ impl Debug for CmdLineRunner<'_> {
 enum OutputSource {
     Stdout,
     Stderr,
+}
+
+fn captured_output_lines(
+    cmd: &CmdLineRunner<'_>,
+    output: &std::process::Output,
+) -> Vec<(String, OutputSource)> {
+    let mut combined = Vec::new();
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        combined.push((cmd.redactor.redact(line), OutputSource::Stdout));
+    }
+    for line in String::from_utf8_lossy(&output.stderr).lines() {
+        combined.push((cmd.redactor.redact(line), OutputSource::Stderr));
+    }
+    combined
 }
 
 enum ChildProcessOutput {
@@ -1366,6 +1467,42 @@ mod tests {
             .unwrap();
         assert_eq!(stdout.lock().unwrap().as_slice(), ["out"]);
         assert_eq!(stderr.lock().unwrap().as_slice(), ["err"]);
+    }
+
+    #[tokio::test]
+    async fn test_cmd_line_runner_read_ignores_raw_mode() {
+        let output = super::CmdLineRunner::new("sh")
+            .args(["-c", "printf out"])
+            .raw(true)
+            .read()
+            .await
+            .unwrap();
+        assert_eq!(output, "out");
+    }
+
+    #[tokio::test]
+    async fn test_cmd_line_runner_read_replays_stderr_on_failure() {
+        let stderr = Arc::new(Mutex::new(Vec::new()));
+        let stderr_clone = stderr.clone();
+        let err = super::CmdLineRunner::new("sh")
+            .args(["-c", "printf err >&2; exit 1"])
+            .with_on_stderr(move |line| stderr_clone.lock().unwrap().push(line))
+            .read()
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("exited with non-zero status"));
+        assert_eq!(stderr.lock().unwrap().as_slice(), ["err"]);
+    }
+
+    #[test]
+    fn test_running_pid_guard_removes_pid() {
+        let pid = 424_242;
+        assert!(!super::RUNNING_PIDS.lock().unwrap().contains(&pid));
+        {
+            let _guard = super::RunningPidGuard::new(Some(pid));
+            assert!(super::RUNNING_PIDS.lock().unwrap().contains(&pid));
+        }
+        assert!(!super::RUNNING_PIDS.lock().unwrap().contains(&pid));
     }
 
     #[test]

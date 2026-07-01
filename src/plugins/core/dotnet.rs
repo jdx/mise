@@ -69,17 +69,31 @@ impl DotnetPlugin {
         let raw_opts = tv.request.options();
         let opts = DotnetOptions::new(&raw_opts);
         if opts.runtime().is_some() {
-            // Skip version check for runtime-only installs — `dotnet --version` exits non-zero without an SDK
+            // Skip SDK check for runtime-only installs; no SDK is expected.
             return Ok(());
         }
-        ctx.pr.set_message("dotnet --version".into());
-        CmdLineRunner::new(DOTNET_BIN)
+        ctx.pr.set_message("dotnet --list-sdks".into());
+        let sdks = CmdLineRunner::new(DOTNET_BIN)
             .with_pr(ctx.pr.as_ref())
-            .arg("--version")
+            .arg("--list-sdks")
             .envs(tv.install_env())
             .envs(self.exec_env(&ctx.config, &ctx.ts, tv).await?)
             .prepend_path(self.list_bin_paths(&ctx.config, tv).await?)?
-            .execute()
+            .read()
+            .await?
+            .lines()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+
+        if sdk_list_contains_version(&sdks, &tv.version) {
+            Ok(())
+        } else {
+            eyre::bail!(
+                "dotnet SDK {} was not found in `dotnet --list-sdks` output:\n{}",
+                tv.version,
+                sdk_list_display(&sdks)
+            )
+        }
     }
 }
 
@@ -293,6 +307,20 @@ fn runtime_framework_name(runtime: &str) -> Option<&'static str> {
     }
 }
 
+fn sdk_list_contains_version(lines: &[String], version: &str) -> bool {
+    lines
+        .iter()
+        .any(|line| line.split_whitespace().next() == Some(version))
+}
+
+fn sdk_list_display(lines: &[String]) -> String {
+    if lines.is_empty() {
+        "(no SDKs listed)".to_string()
+    } else {
+        lines.join("\n")
+    }
+}
+
 fn dotnet_root() -> PathBuf {
     Settings::get()
         .dotnet
@@ -501,6 +529,44 @@ mod tests {
                 .resolve_lockfile_options(&request_no_runtime, &PlatformTarget::from_current())
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn sdk_list_contains_exact_installed_version() {
+        let lines = vec![
+            "8.0.128 [/Users/test/.local/share/mise/dotnet-root/sdk]".to_string(),
+            "10.0.301 [/opt/homebrew/Cellar/dotnet/10.0.301/libexec/sdk]".to_string(),
+        ];
+
+        assert!(sdk_list_contains_version(&lines, "8.0.128"));
+    }
+
+    #[test]
+    fn sdk_list_does_not_match_prefix_or_path_only() {
+        let lines = vec![
+            "8.0.1280 [/Users/test/.local/share/mise/dotnet-root/sdk]".to_string(),
+            "10.0.301 [/tmp/8.0.128/sdk]".to_string(),
+        ];
+
+        assert!(!sdk_list_contains_version(&lines, "8.0.128"));
+    }
+
+    #[test]
+    fn sdk_list_display_explains_empty_output() {
+        assert_eq!(sdk_list_display(&[]), "(no SDKs listed)");
+    }
+
+    #[test]
+    fn sdk_list_display_joins_lines() {
+        let lines = vec![
+            "8.0.128 [/path]".to_string(),
+            "10.0.301 [/path2]".to_string(),
+        ];
+
+        assert_eq!(
+            sdk_list_display(&lines),
+            "8.0.128 [/path]\n10.0.301 [/path2]"
         );
     }
 }
