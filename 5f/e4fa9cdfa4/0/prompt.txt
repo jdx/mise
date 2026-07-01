@@ -1,5 +1,1 @@
-investigate [https://github.com/jdx/mise/discussions/10661](https://github.com/jdx/mise/discussions/10661)
-
----
-
 make a pr in the relevant repo
