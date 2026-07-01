@@ -50,6 +50,17 @@ chmod +x mise-tasks/file-task
 
 assert_contains "mise tasks ls --usage" 'cmd file-task help="A file-based task"'
 
+# Test 3b: File-based tasks can mount generated usage specs
+cat <<'EOF' >mise-tasks/mounted-task
+#!/usr/bin/env bash
+#USAGE mount "mounted --usage-spec"
+exec mounted "$@"
+EOF
+chmod +x mise-tasks/mounted-task
+
+assert_contains "mise tasks ls --usage" 'cmd mounted-task'
+assert_contains "mise tasks ls --usage" 'mount run="mounted --usage-spec"'
+
 # Test 4: Hidden tasks should not appear
 cat <<EOF >mise.toml
 [tasks.visible]

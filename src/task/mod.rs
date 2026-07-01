@@ -536,6 +536,99 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
     }
 }
 
+fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
+    let err = match usage::Spec::parse_script(file) {
+        Ok(spec) => return Ok(spec),
+        Err(err) => err,
+    };
+
+    let raw = extract_usage_from_comments(&std::fs::read_to_string(file)?);
+    let Some(raw) = hoist_root_usage_mounts(&raw) else {
+        return Err(err);
+    };
+    let mut spec: usage::Spec = raw.parse()?;
+    if spec.bin.is_empty() {
+        if let Some(name) = file.file_name().and_then(|n| n.to_str()) {
+            spec.bin = name.to_string();
+        }
+    }
+    if spec.name.is_empty() {
+        spec.name.clone_from(&spec.bin);
+    }
+    if let Some(mount_cmd) = spec.cmd.subcommands.shift_remove("__mise_task_root_mounts") {
+        spec.cmd.mounts.extend(mount_cmd.mounts);
+    }
+    Ok(spec)
+}
+
+fn extract_usage_from_comments(full: &str) -> String {
+    let usage_regex = regex!(r"^(?:#|//|::)(?:USAGE| ?\[USAGE\])(.*)$");
+    let blank_comment_regex = regex!(r"^(?:#|//|::)\s*$");
+    let mut usage = vec![];
+    let mut found = false;
+    for line in full.lines() {
+        if let Some(captures) = usage_regex.captures(line) {
+            found = true;
+            let content = captures.get(1).map_or("", |m| m.as_str());
+            usage.push(content.trim());
+        } else if found {
+            if blank_comment_regex.is_match(line) {
+                continue;
+            }
+            break;
+        }
+    }
+    usage.join("\n")
+}
+
+fn hoist_root_usage_mounts(raw: &str) -> Option<String> {
+    let mut output = vec![];
+    let mut mounts = vec![];
+    let mut depth = 0_i32;
+    for line in raw.lines() {
+        let trimmed = line.trim_start();
+        if depth == 0 && is_mount_node(trimmed) {
+            mounts.push(normalize_root_mount_node(trimmed));
+        } else {
+            output.push(line.to_string());
+        }
+        for ch in line.chars() {
+            match ch {
+                '{' => depth += 1,
+                '}' => depth = (depth - 1).max(0),
+                _ => {}
+            }
+        }
+    }
+    if mounts.is_empty() {
+        return None;
+    }
+    output.push("cmd \"__mise_task_root_mounts\" {".to_string());
+    output.extend(mounts.into_iter().map(|mount| format!("    {mount}")));
+    output.push("}".to_string());
+    Some(output.join("\n"))
+}
+
+fn is_mount_node(line: &str) -> bool {
+    line.strip_prefix("mount")
+        .is_some_and(|rest| match rest.chars().next() {
+            None => true,
+            Some(c) => c.is_whitespace() || c == '{',
+        })
+}
+
+fn normalize_root_mount_node(line: &str) -> String {
+    let Some(rest) = line.strip_prefix("mount") else {
+        return line.to_string();
+    };
+    let rest = rest.trim_start();
+    if rest.starts_with('"') || rest.starts_with("r#") {
+        format!("mount run={rest}")
+    } else {
+        line.to_string()
+    }
+}
+
 impl Task {
     pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
         Ok(Self {
@@ -1005,7 +1098,7 @@ impl Task {
         extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<(usage::Spec, Vec<String>)> {
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
-            let spec = usage::Spec::parse_script(&file)
+            let spec = parse_task_script_usage(&file)
                 .inspect_err(|e| {
                     warn!(
                         "failed to parse task file {} with usage: {e:?}",
@@ -1041,7 +1134,7 @@ impl Task {
     pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
         let dir = self.dir(config).await?;
         let mut spec = if let Some(file) = self.file_path(config).await? {
-            usage::Spec::parse_script(&file)
+            parse_task_script_usage(&file)
                 .inspect_err(|e| {
                     warn!(
                         "failed to parse task file {} with usage: {e:?}",
@@ -2393,6 +2486,54 @@ mod tests {
             script,
             "#!/usr/bin/env bash\n#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
         ));
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_hoists_root_mount() {
+        use std::io::Write;
+
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(
+            r#"#!/usr/bin/env bash
+#USAGE flag "--verbose" help="Show extra output"
+#USAGE mount "shapeme --usage-spec"
+exec shapeme "$@"
+"#
+            .as_bytes(),
+        )
+        .unwrap();
+
+        let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+
+        assert_eq!(spec.cmd.flags.len(), 1);
+        assert_eq!(spec.cmd.mounts.len(), 1);
+        assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
+        assert!(!spec.cmd.subcommands.contains_key("__mise_task_root_mounts"));
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_preserves_nested_mount() {
+        use std::io::Write;
+
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(
+            r#"#!/usr/bin/env bash
+#USAGE cmd "proxy" {
+#USAGE   mount run="proxy --usage-spec"
+#USAGE }
+exec proxy "$@"
+"#
+            .as_bytes(),
+        )
+        .unwrap();
+
+        let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+
+        assert!(spec.cmd.mounts.is_empty());
+        assert_eq!(
+            spec.cmd.subcommands["proxy"].mounts[0].run,
+            "proxy --usage-spec"
+        );
     }
 
     #[cfg(unix)]
