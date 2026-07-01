@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "2213a6b781b8",
+  "strategy": "manual-commit",
+  "branch": "codex/env-shell-expand-default",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "settings.toml",
+    "src/config/env_directive/mod.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/22/13a6b781b8/0/metadata.json",
+      "transcript": "/22/13a6b781b8/0/full.jsonl",
+      "content_hash": "/22/13a6b781b8/0/content_hash.txt",
+      "prompt": "/22/13a6b781b8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 45561,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 460032,
+    "output_tokens": 4912,
+    "api_call_count": 14
+  }
+}
