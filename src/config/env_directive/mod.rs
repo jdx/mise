@@ -743,24 +743,19 @@ impl EnvResults {
         }
 
         // Step 2: Shell-style $VAR expansion
-        if output.contains('$') {
-            match Settings::get().env_shell_expand {
-                Some(false) => {}
-                Some(true) | None => {
-                    let env_vars: BTreeMap<String, String> = ctx
-                        .get("env")
-                        .and_then(|v| serde_json::from_value(v.clone()).ok())
-                        .unwrap_or_default();
-                    let mut missing_vars = Vec::new();
-                    output = shell_expand_env(&output, &env_vars, &mut missing_vars);
-                    for var in missing_vars {
-                        warn_once!(
-                            "env var '{var}' is not defined and will be left unexpanded. \
-                             Use ${{{var}:-}} to default to an empty string and suppress \
-                             this warning."
-                        );
-                    }
-                }
+        if output.contains('$') && Settings::get().env_shell_expand {
+            let env_vars: BTreeMap<String, String> = ctx
+                .get("env")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let mut missing_vars = Vec::new();
+            output = shell_expand_env(&output, &env_vars, &mut missing_vars);
+            for var in missing_vars {
+                warn_once!(
+                    "env var '{var}' is not defined and will be left unexpanded. \
+                     Use ${{{var}:-}} to default to an empty string and suppress \
+                     this warning."
+                );
             }
         }
 

@@ -604,8 +604,7 @@ Supported syntax:
 Expansion runs after Tera template rendering, so both syntaxes can be mixed.
 Undefined variables without a default are left unexpanded and produce a warning.
 
-The setting is a 3-way toggle:
+The setting controls shell expansion:
 
-- **`true`** — enable shell expansion
+- **`true`** or **unset** (default) — enable shell expansion
 - **`false`** — disable shell expansion
-- **unset** (default) — enable shell expansion

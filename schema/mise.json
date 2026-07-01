@@ -792,6 +792,7 @@
           "type": "string"
         },
         "env_shell_expand": {
+          "default": true,
           "description": "Controls shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})",
           "type": "boolean"
         },
