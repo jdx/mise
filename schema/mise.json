@@ -1307,6 +1307,22 @@
           "description": "OS to use for precompiled binaries.",
           "type": "string"
         },
+        "otel": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "[experimental] Enable OpenTelemetry trace export for task executions.",
+              "type": "boolean"
+            },
+            "logs": {
+              "default": false,
+              "description": "[experimental] Enable OpenTelemetry log export for task stdout/stderr.",
+              "type": "boolean"
+            }
+          }
+        },
         "override_config_filenames": {
           "default": [],
           "description": "If set, mise will ignore default config files like `mise.toml` and use these filenames instead.",

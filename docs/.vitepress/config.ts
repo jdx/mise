@@ -209,6 +209,7 @@ export default withMermaid(
             { text: "Task Configuration", link: "/tasks/task-configuration" },
             { text: "Task Templates", link: "/tasks/templates" },
             { text: "Monorepo Tasks", link: "/tasks/monorepo" },
+            { text: "OpenTelemetry", link: "/tasks/opentelemetry" },
             { text: "Sandboxing", link: "/sandboxing" },
           ],
         },
