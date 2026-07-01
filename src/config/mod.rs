@@ -495,6 +495,80 @@ impl Config {
         aliases
     }
 
+    async fn task_render_context_for_dir(
+        config: &Arc<Config>,
+        dir: &Path,
+    ) -> Result<tera::Context> {
+        let (config_paths, idiomatic_filenames) = load_config_hierarchy_from_dir(dir).await?;
+        let config_files =
+            load_config_files_from_paths(&config_paths, &idiomatic_filenames).await?;
+        let vars_results = resolve_vars_from_config_files(config, &config_files).await?;
+        let vars: IndexMap<String, String> = vars_results
+            .vars
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        let mut tera_ctx = config.tera_ctx.clone();
+        tera_ctx.insert("vars", &vars);
+        let env = Self::task_render_env(config, &config_files, &tera_ctx).await?;
+        tera_ctx.insert("env", &env);
+        Ok(tera_ctx)
+    }
+
+    async fn task_render_env(
+        config: &Arc<Config>,
+        config_files: &ConfigMap,
+        tera_ctx: &tera::Context,
+    ) -> Result<EnvMap> {
+        let mut env: EnvMap = env::PRISTINE_ENV.clone().into_iter().collect();
+        if Settings::no_env() || Settings::get().no_env.unwrap_or(false) {
+            return Ok(env);
+        }
+
+        let entries = config_files
+            .iter()
+            .rev()
+            .map(|(source, cf)| {
+                cf.env_entries()
+                    .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        let env_results = EnvResults::resolve(
+            config,
+            tera_ctx.clone(),
+            &env,
+            entries,
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::NonToolsOnly,
+                warn_on_missing_required: false,
+            },
+        )
+        .await?;
+
+        let redactions = env_results.redactions.clone();
+        env.extend(env_results.env.into_iter().map(|(k, (v, _))| (k, v)));
+        for key in env_results.env_remove {
+            env.remove(&key);
+        }
+        if !env_results.env_paths.is_empty() {
+            let mut path_env = crate::path_env::PathEnv::from_iter(env::split_paths(
+                &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
+            ));
+            for path in env_results.env_paths {
+                path_env.add(path);
+            }
+            env.insert(env::PATH_KEY.to_string(), path_env.to_string());
+        }
+        if !redactions.is_empty() {
+            config.add_redactions(redactions, &env);
+        }
+        Ok(env)
+    }
+
     async fn load_all_tasks_with_context(
         &self,
         ctx: Option<&crate::task::TaskLoadContext>,
@@ -2008,15 +2082,24 @@ async fn load_local_tasks_with_context(
                         .collect();
 
                     let found_config = !config_paths.is_empty();
+                    let render_ctx = if found_config {
+                        Some(Config::task_render_context_for_dir(&config, &subdir).await?)
+                    } else {
+                        None
+                    };
                     for config_path in config_paths {
                         match config_file::parse(&config_path).await {
                             Ok(cf) => {
-                                let mut subdir_tasks =
-                                    load_config_and_file_tasks(&config, cf.clone(), &templates).await?;
+                                let mut subdir_tasks = load_config_and_file_tasks(
+                                    &config,
+                                    cf.clone(),
+                                    &templates,
+                                    render_ctx.as_ref(),
+                                )
+                                .await?;
 
                                 prefix_monorepo_task_names(&mut subdir_tasks, &subdir, &monorepo_root);
                                 for task in subdir_tasks.iter_mut() {
-                                    // Store reference to config file for later use
                                     task.cf = Some(cf.clone());
                                 }
 
@@ -2044,7 +2127,7 @@ async fn load_local_tasks_with_context(
                         let includes = task_includes_for_dir(&subdir, &config.config_files)?;
                         for include in includes {
                             let mut subdir_tasks = load_tasks_includes(
-                                &config, &include, &subdir, &None, &templates, true,
+                                &config, &include, &subdir, &None, &templates, None, true,
                             )
                             .await?;
                             if is_global_task_include_path(&include) {
@@ -2335,7 +2418,7 @@ async fn load_global_tasks(
         .collect::<Vec<_>>();
     let mut tasks = vec![];
     for cf in config_files {
-        tasks.extend(load_config_and_file_tasks(config, cf.clone(), templates).await?);
+        tasks.extend(load_config_and_file_tasks(config, cf.clone(), templates, None).await?);
     }
     Ok(tasks)
 }
@@ -2344,10 +2427,13 @@ async fn load_config_and_file_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
     templates: &IndexMap<String, TaskTemplate>,
+    render_ctx: Option<&tera::Context>,
 ) -> Result<Vec<Task>> {
     let config_root = cf.config_root();
-    let config_tasks = load_config_tasks(config, cf.clone(), &config_root, templates).await?;
-    let file_tasks = load_file_tasks(config, cf.clone(), &config_root, templates).await?;
+    let config_tasks =
+        load_config_tasks(config, cf.clone(), &config_root, templates, render_ctx).await?;
+    let file_tasks =
+        load_file_tasks(config, cf.clone(), &config_root, templates, render_ctx).await?;
     Ok(merge_file_and_config_tasks(file_tasks, config_tasks))
 }
 
@@ -2469,6 +2555,7 @@ async fn load_config_tasks(
     cf: Arc<dyn ConfigFile>,
     config_root: &Path,
     templates: &IndexMap<String, TaskTemplate>,
+    render_ctx: Option<&tera::Context>,
 ) -> Result<Vec<Task>> {
     let is_global = is_global_config(cf.get_path());
     let config_root = Arc::new(config_root.to_path_buf());
@@ -2485,7 +2572,12 @@ async fn load_config_tasks(
         }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
-        match t.render(&config, &config_root).await {
+        let render_result = if let Some(render_ctx) = render_ctx {
+            t.render_with_tera_ctx(&config_root, render_ctx)
+        } else {
+            t.render(&config, &config_root).await
+        };
+        match render_result {
             Ok(()) => {
                 tasks.push(t);
             }
@@ -2503,11 +2595,20 @@ async fn load_tasks_includes(
     config_root: &Path,
     task_config_dir: &Option<String>,
     templates: &IndexMap<String, TaskTemplate>,
+    render_ctx: Option<&tera::Context>,
     require_trust: bool,
 ) -> Result<Vec<Task>> {
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
         trust_check_task_include(root, require_trust)?;
-        load_task_file(config, root, config_root, task_config_dir, templates).await
+        load_task_file(
+            config,
+            root,
+            config_root,
+            task_config_dir,
+            templates,
+            render_ctx,
+        )
+        .await
     } else if root.is_dir() {
         let all_files = WalkDir::new(root)
             .follow_links(true)
@@ -2538,7 +2639,15 @@ async fn load_tasks_includes(
         for path in toml_files {
             trust_check_task_include(&path, require_trust)?;
             tasks.extend(
-                load_task_file(config, &path, config_root, task_config_dir, templates).await?,
+                load_task_file(
+                    config,
+                    &path,
+                    config_root,
+                    task_config_dir,
+                    templates,
+                    render_ctx,
+                )
+                .await?,
             );
         }
         let root = Arc::new(root.to_path_buf());
@@ -2554,8 +2663,12 @@ async fn load_tasks_includes(
             {
                 task.dir = Some(if contains_template_syntax(dir) {
                     let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
-                    let tera_ctx = task.tera_ctx(&config).await?;
-                    render_str(&mut tera, dir, &tera_ctx)?
+                    if let Some(render_ctx) = render_ctx {
+                        render_str(&mut tera, dir, render_ctx)?
+                    } else {
+                        let tera_ctx = task.tera_ctx(&config).await?;
+                        render_str(&mut tera, dir, &tera_ctx)?
+                    }
                 } else {
                     dir.clone()
                 });
@@ -2644,6 +2757,7 @@ async fn load_file_tasks(
     cf: Arc<dyn ConfigFile>,
     config_root: &Path,
     templates: &IndexMap<String, TaskTemplate>,
+    render_ctx: Option<&tera::Context>,
 ) -> Result<Vec<Task>> {
     let includes = cf
         .task_config_includes()?
@@ -2670,6 +2784,7 @@ async fn load_file_tasks(
                 &config_root,
                 &task_config_dir,
                 templates,
+                render_ctx,
                 require_task_include_trust,
             )
             .await?;
@@ -2740,7 +2855,7 @@ pub async fn load_tasks_in_dir(
     let mut config_tasks = vec![];
     for cf in &configs {
         let dir = dir.to_path_buf();
-        config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir, templates).await?);
+        config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir, templates, None).await?);
     }
 
     // Find task_config.dir from the highest-precedence config that defines it
@@ -2760,6 +2875,7 @@ pub async fn load_tasks_in_dir(
                 dir,
                 &task_config_dir,
                 templates,
+                None,
                 require_task_include_trust,
             )
             .await?;
@@ -2816,6 +2932,7 @@ async fn load_task_file(
     config_root: &Path,
     task_config_dir: &Option<String>,
     templates: &IndexMap<String, TaskTemplate>,
+    render_ctx: Option<&tera::Context>,
 ) -> Result<Vec<Task>> {
     let raw = file::read_to_string_async(path).await?;
     let mut tasks = toml::from_str::<Tasks>(&raw)
@@ -2833,7 +2950,12 @@ async fn load_task_file(
     for (_, mut task) in tasks {
         let config_root = config_root.to_path_buf();
         resolve_task_template(&mut task, templates)?;
-        if let Err(err) = task.render(config, &config_root).await {
+        let render_result = if let Some(render_ctx) = render_ctx {
+            task.render_with_tera_ctx(&config_root, render_ctx)
+        } else {
+            task.render(config, &config_root).await
+        };
+        if let Err(err) = render_result {
             warn!("rendering task: {err:?}");
         }
         out.push(task);
@@ -3553,6 +3675,7 @@ vars = { target = "linux" }
             temp_dir.path(),
             &None,
             &IndexMap::new(),
+            None,
         )
         .await?;
         assert_eq!(tasks.len(), 1);

@@ -1502,51 +1502,65 @@ impl Task {
             return Ok(());
         }
 
-        let mut tera = get_tera(Some(config_root));
         let tera_ctx = self.tera_ctx(config).await?;
+        self.render_with_tera_ctx(config_root, &tera_ctx)
+    }
+
+    pub(crate) fn render_with_tera_ctx(
+        &mut self,
+        config_root: &Path,
+        tera_ctx: &tera::Context,
+    ) -> Result<()> {
+        if !self.has_render_templates() {
+            self.store_raw_render_inputs();
+            self.parse_plain_depends()?;
+            return Ok(());
+        }
+
+        let mut tera = get_tera(Some(config_root));
         for a in &mut self.aliases {
             if contains_template_syntax(a) {
-                *a = render_str(&mut tera, a, &tera_ctx)?;
+                *a = render_str(&mut tera, a, tera_ctx)?;
             }
         }
 
         if contains_template_syntax(&self.description) {
-            self.description = render_str(&mut tera, &self.description, &tera_ctx)?;
+            self.description = render_str(&mut tera, &self.description, tera_ctx)?;
         }
         for s in &mut self.sources {
             if contains_template_syntax(s) {
-                *s = render_str(&mut tera, s, &tera_ctx)?;
+                *s = render_str(&mut tera, s, tera_ctx)?;
             }
         }
         self.store_raw_render_inputs();
-        self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx)?;
+        self.raw_outputs = self.outputs.render(&mut tera, tera_ctx)?;
         // Render deps that don't contain {{usage.*}} references. Deps with usage
         // references are deferred until render_depends_with_usage() is called with
         // the actual arg values from CLI or parent dependency.
         for d in &mut self.depends {
             if !dep_has_usage_ref(d) {
-                d.render(&mut tera, &tera_ctx)?;
+                d.render(&mut tera, tera_ctx)?;
             }
         }
         for d in &mut self.depends_post {
             if !dep_has_usage_ref(d) {
-                d.render(&mut tera, &tera_ctx)?;
+                d.render(&mut tera, tera_ctx)?;
             }
         }
         for d in &mut self.wait_for {
             if !dep_has_usage_ref(d) {
-                d.render(&mut tera, &tera_ctx)?;
+                d.render(&mut tera, tera_ctx)?;
             }
         }
         if let Some(dir) = &mut self.dir
             && contains_template_syntax(dir)
         {
-            *dir = render_str(&mut tera, dir, &tera_ctx)?;
+            *dir = render_str(&mut tera, dir, tera_ctx)?;
         }
         if let Some(shell) = &mut self.shell
             && contains_template_syntax(shell)
         {
-            *shell = render_str(&mut tera, shell, &tera_ctx)?;
+            *shell = render_str(&mut tera, shell, tera_ctx)?;
         }
         let mut render_sandbox_paths = |paths: &mut Vec<PathBuf>| -> Result<()> {
             let mut rendered = Vec::with_capacity(paths.len());
@@ -1554,7 +1568,7 @@ impl Task {
                 if let Some(path) = p.to_str()
                     && contains_template_syntax(path)
                 {
-                    let path = render_str(&mut tera, path, &tera_ctx)?;
+                    let path = render_str(&mut tera, path, tera_ctx)?;
                     if !path.trim().is_empty() {
                         rendered.push(PathBuf::from(path));
                     }
@@ -1572,18 +1586,18 @@ impl Task {
             match v {
                 TaskToolValue::String(s) => {
                     if contains_template_syntax(s) {
-                        *v = TaskToolValue::String(render_str(&mut tera, s, &tera_ctx)?);
+                        *v = TaskToolValue::String(render_str(&mut tera, s, tera_ctx)?);
                     }
                 }
                 TaskToolValue::Map(map) => {
                     if contains_template_syntax(&map.version) {
-                        map.version = render_str(&mut tera, &map.version, &tera_ctx)?;
+                        map.version = render_str(&mut tera, &map.version, tera_ctx)?;
                     }
                     for (_ok, ov) in &mut map.opts {
                         if let toml::Value::String(s) = ov
                             && contains_template_syntax(s)
                         {
-                            *ov = toml::Value::String(render_str(&mut tera, s, &tera_ctx)?);
+                            *ov = toml::Value::String(render_str(&mut tera, s, tera_ctx)?);
                         }
                     }
                 }

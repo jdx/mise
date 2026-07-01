@@ -13,12 +13,21 @@ run = 'echo root'
 CONFIG
 
 # App subproject task that should appear in completions
-mkdir -p apps/web
+mkdir -p apps/web/src
+echo "snapshot input" >apps/web/src/input.txt
 cat <<'CONFIG' >apps/web/mise.toml
+[env]
+WEB_SOURCE = "src"
+WEB_OUTPUT = "dist"
+
 [tasks.update-snapshots]
 description = "Update monorepo snapshots"
-run = 'echo updating snapshots'
+sources = ["{{env.WEB_SOURCE}}/*.txt"]
+outputs = ["{{env.WEB_OUTPUT}}/done.txt"]
+run = 'mkdir -p "$WEB_OUTPUT" && echo updating snapshots > "$WEB_OUTPUT/done.txt" && echo updating snapshots'
 CONFIG
 
 # Completion output should include the //-prefixed task path with escaped colon
 assert_contains "mise task ls --complete" '//apps/web\:update-snapshots:Update monorepo snapshots'
+assert "mise -q run //apps/web:update-snapshots" "updating snapshots"
+assert "cat apps/web/dist/done.txt" "updating snapshots"
