@@ -743,35 +743,19 @@ impl EnvResults {
         }
 
         // Step 2: Shell-style $VAR expansion
-        if output.contains('$') {
-            debug_assert!(
-                !env!("CARGO_PKG_VERSION").starts_with("2026.7"),
-                "change env_shell_expand default to true and remove this warning"
-            );
-            match Settings::get().env_shell_expand {
-                Some(true) => {
-                    let env_vars: BTreeMap<String, String> = ctx
-                        .get("env")
-                        .and_then(|v| serde_json::from_value(v.clone()).ok())
-                        .unwrap_or_default();
-                    let mut missing_vars = Vec::new();
-                    output = shell_expand_env(&output, &env_vars, &mut missing_vars);
-                    for var in missing_vars {
-                        warn_once!(
-                            "env var '{var}' is not defined and will be left unexpanded. \
-                             Use ${{{var}:-}} to default to an empty string and suppress \
-                             this warning."
-                        );
-                    }
-                }
-                Some(false) => {}
-                None => {
-                    warn_once!(
-                        "env value contains '$' which will be expanded in a future release. \
-                         Set `env_shell_expand = true` to opt in or `env_shell_expand = false` to \
-                         keep current behavior and suppress this warning."
-                    );
-                }
+        if output.contains('$') && Settings::get().env_shell_expand {
+            let env_vars: BTreeMap<String, String> = ctx
+                .get("env")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let mut missing_vars = Vec::new();
+            output = shell_expand_env(&output, &env_vars, &mut missing_vars);
+            for var in missing_vars {
+                warn_once!(
+                    "env var '{var}' is not defined and will be left unexpanded. \
+                     Use ${{{var}:-}} to default to an empty string and suppress \
+                     this warning."
+                );
             }
         }
 

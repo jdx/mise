@@ -623,7 +623,8 @@ optional = true
 type = "Path"
 
 [env_shell_expand]
-description = "Enable shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})"
+default = true
+description = "Controls shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})"
 docs = """
 Controls shell-style variable expansion in `mise.toml` `[env]` values:
 
@@ -635,16 +636,13 @@ BAZ = "${FOO}_suffix"     # "hello_suffix"
 QUX = "${UNDEF:-fallback}" # "fallback"
 ```
 
-- `true` — enable shell expansion
-- `false` — disable shell expansion (no warning)
-- unset — disable shell expansion but warn if `$` is detected in env values
-  (shell expansion will become the default in a future release)
+- `true` or unset — enable shell expansion
+- `false` — disable shell expansion
 
 Expansion happens after Tera template rendering, so both syntaxes can be mixed.
-Undefined variables are left unexpanded (e.g., `$MISSING` stays as `$MISSING`).
+Undefined variables are left unexpanded (e.g., `$MISSING` stays as `$MISSING`) and produce a warning. Use `${MISSING:-}` to suppress the warning.
 """
 env = "MISE_ENV_SHELL_EXPAND"
-optional = true
 type = "Bool"
 
 [erlang.compile]

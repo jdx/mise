@@ -48,7 +48,7 @@ cat <<'EOF' >mise.toml
 BASE_DIR = "/opt/tools"
 TOOL_BIN = { default = "$BASE_DIR/bin", tools = true }
 EOF
-MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep TOOL_BIN" "export TOOL_BIN=/opt/tools/bin"
+assert_contains "mise env -s bash | grep TOOL_BIN" "export TOOL_BIN=/opt/tools/bin"
 
 # tools=true defaults preserve existing non-empty vars too
 cat <<'EOF' >mise.toml
