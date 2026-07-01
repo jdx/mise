@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "531d5f61e1f4",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-lockfile-missing-url-api",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/backend/test_github_url_tracking",
+    "src/backend/github.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/53/1d5f61e1f4/0/metadata.json",
+      "transcript": "/53/1d5f61e1f4/0/full.jsonl",
+      "content_hash": "/53/1d5f61e1f4/0/content_hash.txt",
+      "prompt": "/53/1d5f61e1f4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 77272,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 851200,
+    "output_tokens": 9837,
+    "api_call_count": 22
+  }
+}
