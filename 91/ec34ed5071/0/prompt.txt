@@ -1,0 +1,9 @@
+why is so much failing here? [jdx/mise#10638](https://github.com/jdx/mise/pull/10638)
+
+---
+
+what should we do about 2? is it an issue with jc?
+
+---
+
+just make a pr that disables the registry test for jc to mise. Then make another PR for the debug assertions.
