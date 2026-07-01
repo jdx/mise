@@ -32,6 +32,7 @@ pub enum AssetOs {
     Linux,
     Macos,
     Windows,
+    Android,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -57,6 +58,7 @@ impl AssetOs {
             AssetOs::Linux => target == "linux",
             AssetOs::Macos => target == "macos" || target == "darwin",
             AssetOs::Windows => target == "windows",
+            AssetOs::Android => target == "android",
         }
     }
 }
@@ -100,6 +102,7 @@ impl DetectedPlatform {
             AssetOs::Linux => "linux",
             AssetOs::Macos => "macos",
             AssetOs::Windows => "windows",
+            AssetOs::Android => "android",
         };
 
         let arch_str = match self.arch {
@@ -118,6 +121,10 @@ impl DetectedPlatform {
 // Platform detection patterns
 static OS_PATTERNS: LazyLock<Vec<(AssetOs, Regex)>> = LazyLock::new(|| {
     vec![
+        (
+            AssetOs::Android,
+            Regex::new(r"(?i)(?:\b|_)(?:android)(?:\b|_)").unwrap(),
+        ),
         (
             AssetOs::Linux,
             Regex::new(r"(?i)(?:\b|_)(?:linux|manylinux(?:[0-9_]+)?|musllinux(?:[0-9_]+)?|ubuntu|debian|fedora|centos|rhel|alpine|arch)(?:\b|_|32|64|-)")
@@ -1482,12 +1489,79 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
     }
 
     #[test]
+    fn test_asset_picker_functionality_rust_triplets_with_android() {
+        // rust triplet platforms contain linux as segment in filname for Android binaries
+        let assets = vec![
+            "tool-1.0.0-aarch64-apple-darwin.zip".to_string(),
+            "tool-1.0.0-aarch64-linux-android.zip".to_string(),
+            "tool-1.0.0-aarch64-pc-windows-gnu.zip".to_string(),
+            "tool-1.0.0-aarch64-pc-windows-msvc.zip".to_string(),
+            "tool-1.0.0-aarch64-unknown-linux-gnu.zip".to_string(),
+            "tool-1.0.0-aarch64-unknown-linux-musl.zip".to_string(),
+        ];
+
+        let picked = AssetPicker::with_libc("linux".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-aarch64-unknown-linux-gnu.zip");
+
+        let picked = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-aarch64-apple-darwin.zip");
+
+        let picked = AssetPicker::with_libc("windows".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-aarch64-pc-windows-msvc.zip");
+
+        let picked = AssetPicker::with_libc("android".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-aarch64-linux-android.zip");
+    }
+
+    #[test]
+    fn test_asset_picker_functionality_goreleaser_with_android() {
+        let assets = vec![
+            "tool-1.0.0-android-arm64".to_string(),
+            "tool-1.0.0-linux-amd64".to_string(),
+            "tool-1.0.0-linux-arm64".to_string(),
+            "tool-1.0.0-osx-amd64".to_string(),
+            "tool-1.0.0-osx-arm64".to_string(),
+            "tool-1.0.0-windows-amd64.exe".to_string(),
+            "tool-1.0.0-windows-arm64.exe".to_string(),
+        ];
+
+        let picked = AssetPicker::with_libc("linux".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-linux-arm64");
+
+        let picked = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-osx-arm64");
+
+        let picked = AssetPicker::with_libc("windows".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-windows-arm64.exe");
+
+        let picked = AssetPicker::with_libc("android".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-android-arm64");
+    }
+
+    #[test]
     fn test_asset_scoring() {
         let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
 
         let score_linux = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
         let score_windows = picker.score_asset("tool-1.0.0-windows-x86_64.zip");
         let score_linux_arm = picker.score_asset("tool-1.0.0-linux-arm64.tar.gz");
+        let score_android = picker.score_asset("tool-1.0.0-x86_64-linux-android.tar.gz");
 
         assert!(
             score_linux > score_windows,
@@ -1502,6 +1576,12 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
             score_linux_arm < 0,
             "Architecture mismatch should be negative, got {}",
             score_linux_arm
+        );
+        // Android Linux triplet should have a negative score
+        assert!(
+            score_android < 0,
+            "Platform mismatch should be negative, got {}",
+            score_android
         );
     }
 
@@ -1570,6 +1650,13 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
             libc: None,
         };
         assert_eq!(platform.to_platform_string(), "windows-x86");
+
+        let platform = DetectedPlatform {
+            os: AssetOs::Android,
+            arch: AssetArch::Arm64,
+            libc: None,
+        };
+        assert_eq!(platform.to_platform_string(), "android-arm64");
     }
 
     #[test]
