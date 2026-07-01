@@ -44,7 +44,7 @@ Examples:
 $ mise config set tools.python 3.12
 $ mise config set settings.always_keep_download true
 $ mise config set env.TEST_ENV_VAR ABC
-$ mise config set settings.disable_tools --type list node,rust
+$ mise config set settings.disable_tools node,rust
 
 # Type for `settings` is inferred
 $ mise config set settings.jobs 4

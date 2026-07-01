@@ -6,6 +6,10 @@ mise settings set always_keep_download y
 assert "mise settings get always_keep_download" "true"
 mise settings set status.missing_tools never
 assert "mise settings get status.missing_tools" 'never'
+mise settings set disable_tools "node,, rust,node"
+assert "mise settings get disable_tools" '["node", "rust"]'
+mise settings set disable_tools " [] "
+assert "mise settings get disable_tools" "[]"
 mise settings set plugin_autoupdate_last_check_duration 1
 assert "mise settings get plugin_autoupdate_last_check_duration" '1'
 mise settings set all_compile 1

@@ -95,11 +95,9 @@ impl ConfigSet {
         };
         let type_to_use = match self.type_ {
             TomlValueTypes::Infer => {
-                let expected_type = if !full_key.starts_with("settings.") {
-                    None
-                } else {
-                    SETTINGS_META.get(*last_key)
-                };
+                let expected_type = full_key
+                    .strip_prefix("settings.")
+                    .and_then(|key| SETTINGS_META.get(key));
                 match expected_type {
                     Some(meta) => match meta.type_ {
                         SettingsType::Bool => TomlValueTypes::Bool,
@@ -133,7 +131,13 @@ impl ConfigSet {
                 toml_edit::Item::Value(toml_edit::Value::Array(list))
             }
             TomlValueTypes::Set => {
-                let set = toml_edit::Array::new();
+                let mut set = toml_edit::Array::new();
+                let value = value.trim();
+                if value != "[]" {
+                    for item in value.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                        set.push(item);
+                    }
+                }
                 toml_edit::Item::Value(toml_edit::Value::Array(dedup_toml_array(&set)))
             }
             TomlValueTypes::Infer => bail!("Type not found"),
@@ -160,7 +164,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise config set tools.python 3.12</bold>
     $ <bold>mise config set settings.always_keep_download true</bold>
     $ <bold>mise config set env.TEST_ENV_VAR ABC</bold>
-    $ <bold>mise config set settings.disable_tools --type list node,rust</bold>
+    $ <bold>mise config set settings.disable_tools node,rust</bold>
 
     # Type for `settings` is inferred
     $ <bold>mise config set settings.jobs 4</bold>
