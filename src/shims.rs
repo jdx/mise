@@ -121,7 +121,7 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
         })
         .lock();
 
-    let mise_bin = file::which_no_shims("mise").unwrap_or(env::MISE_BIN.clone());
+    let mise_bin = file::resolve_mise_bin();
     let mise_bin = mise_bin.absolutize()?; // relative paths don't work as shims
 
     #[cfg(windows)]

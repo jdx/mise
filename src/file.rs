@@ -924,6 +924,58 @@ pub fn which_no_shims<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     _which(name, &paths)
 }
 
+/// True if `real` (an already symlink-resolved path) is actually the `mise`
+/// binary rather than some foreign program. Split out from
+/// [`resolve_mise_bin`] so the discriminating logic is unit-testable without
+/// touching the filesystem or PATH. The extension is ignored via `file_stem`
+/// (so `mise.exe` counts), and mise's own Windows shim (`mise-shim`) is
+/// accepted.
+fn canonical_is_mise(real: &Path) -> bool {
+    matches!(
+        real.file_stem().and_then(|s| s.to_str()),
+        Some("mise") | Some("mise-shim")
+    )
+}
+
+/// Resolve which `mise` binary the generated shims should point at.
+///
+/// Shims are symlinked to a *stable* `mise` found on PATH rather than to the
+/// running executable, so they survive in-place upgrades where `current_exe()`
+/// is a versioned/transient path — e.g. Homebrew's
+/// `.../Cellar/mise/<version>/bin/mise`, `cargo install`, or self-update
+/// (#1222). [`which_no_shims`] already skips mise's *own* shim dirs to avoid
+/// the `mise -> mise` self-reference reported in #9071.
+///
+/// But that guard only covers mise's own shim dirs. A *foreign* wrapper named
+/// `mise` sitting earlier on PATH (some third-party shim/launcher directory) is
+/// still returned by `which_no_shims`, and pointing every tool shim at it
+/// produces self-referential shims that loop until they error out. Guard
+/// against it: if the candidate does not symlink-resolve to a file actually
+/// named `mise`, treat it as an impostor and fall back to the running
+/// executable ([`env::MISE_BIN`]).
+///
+/// The returned path is the *un-canonicalized* PATH entry when it passes the
+/// check, preserving the upgrade-stability of #1222 — canonicalization is used
+/// only to verify identity, never as the shim target itself.
+pub fn resolve_mise_bin() -> PathBuf {
+    which_no_shims("mise")
+        .filter(|candidate| {
+            let real = canonicalize_or_self(candidate);
+            let ok = canonical_is_mise(&real);
+            if !ok {
+                warn!(
+                    "a program named `mise` on your PATH ({}) resolves to `{}`, which is not \
+                     the mise binary; using the running executable for shims instead. Remove or \
+                     reorder that PATH entry to silence this warning.",
+                    candidate.display(),
+                    real.display()
+                );
+            }
+            ok
+        })
+        .unwrap_or_else(|| env::MISE_BIN.clone())
+}
+
 fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
     let name = name.as_ref();
     paths.iter().find_map(|path| {
@@ -1754,6 +1806,46 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    #[test]
+    fn test_canonical_is_mise() {
+        // Real mise binaries are accepted regardless of install path/extension.
+        assert!(canonical_is_mise(Path::new(
+            "/opt/homebrew/Cellar/mise/2026.5.10/bin/mise"
+        )));
+        assert!(canonical_is_mise(Path::new("/home/u/.local/bin/mise")));
+        assert!(canonical_is_mise(Path::new("/usr/bin/mise.exe")));
+        // mise's own Windows shim.
+        assert!(canonical_is_mise(Path::new("/x/shims/mise-shim")));
+        // Foreign wrappers named `mise` (once symlink-resolved) are rejected.
+        assert!(!canonical_is_mise(Path::new("/home/u/.local/bin/vt")));
+        assert!(!canonical_is_mise(Path::new("/opt/wrapper/bin/direnv")));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_resolve_mise_bin_sees_through_foreign_wrapper_symlink() {
+        // A PATH entry literally named `mise` that is really a symlink to a
+        // foreign binary (e.g. another tool's launcher shim) must be seen
+        // through: canonicalize_or_self resolves it to the real target, whose
+        // name is not `mise`, so canonical_is_mise rejects it.
+        let dir = tempfile::tempdir().unwrap();
+        let foreign = dir.path().join("vt");
+        fs::write(&foreign, "#!/bin/sh\n").unwrap();
+        let impostor = dir.path().join("mise");
+        symlink(&foreign, &impostor).unwrap();
+        assert!(!canonical_is_mise(&canonicalize_or_self(&impostor)));
+
+        // A symlink `mise` -> a real file also named `mise` (the legitimate
+        // Homebrew/self-update case) is still accepted.
+        let real_dir = dir.path().join("bin");
+        fs::create_dir_all(&real_dir).unwrap();
+        let real_mise = real_dir.join("mise");
+        fs::write(&real_mise, "#!/bin/sh\n").unwrap();
+        let stable = dir.path().join("stable-mise");
+        symlink(&real_mise, &stable).unwrap();
+        assert!(canonical_is_mise(&canonicalize_or_self(&stable)));
+    }
 
     #[test]
     #[cfg(unix)]
