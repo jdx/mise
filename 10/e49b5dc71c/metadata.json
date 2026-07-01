@@ -5,7 +5,6 @@
   "branch": "codex/fix-monorepo-task-env-render",
   "checkpoints_count": 1,
   "files_touched": [
-    "e2e/tasks/test_task_ls_complete_monorepo",
     "src/config/mod.rs",
     "src/task/mod.rs"
   ],
@@ -18,10 +17,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 204479,
+    "input_tokens": 79478,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 5449600,
-    "output_tokens": 20396,
-    "api_call_count": 61
+    "cache_read_tokens": 3215360,
+    "output_tokens": 12891,
+    "api_call_count": 24
   }
 }
