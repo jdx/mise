@@ -13,6 +13,21 @@ mise config set env._.python.venv.path '.venv'
 assert "mise config get env._.python.venv.path" ".venv"
 mise config set env._.python.venv.create true
 assert "mise config get env._.python.venv.create" "true"
+mise config set settings.disable_tools node,rust,node
+assert "mise config get settings.disable_tools" '["node", "rust"]'
+assert_contains "cat mise.toml" 'disable_tools = ["node", "rust"]'
+mise config set settings.disable_tools ""
+assert "mise config get settings.disable_tools" "[]"
+mise config set settings.disable_tools node
+mise config set settings.disable_tools "[]"
+assert "mise config get settings.disable_tools" "[]"
+mise config set settings.disable_tools node
+mise config set settings.disable_tools " [] "
+assert "mise config get settings.disable_tools" "[]"
+mise config set settings.disable_tools "node,, rust,"
+assert "mise config get settings.disable_tools" '["node", "rust"]'
+mise config set settings.task.skip build,test,build
+assert "mise config get settings.task.skip" '["build", "test"]'
 
 # test "config set key=value" format
 mise config set env._.python.venv.path=.venv2
