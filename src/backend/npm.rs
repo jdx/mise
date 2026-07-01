@@ -453,10 +453,11 @@ impl Backend for NPMBackend {
                     && self.npm_supports_allow_scripts_flag(&ctx.config).await;
                 if allow_builds_requested && !supports_allow_scripts {
                     warn!(
-                        "allow_builds for npm:{} requires npm >= {} for per-package script approvals. mise will keep {} for this install. Use aube/pnpm, upgrade npm, or explicitly set `npm_args = \"--ignore-scripts=false\"` if you accept all install scripts.",
+                        "allow_builds for npm:{} requires npm >= {} for per-package script approvals. mise will keep {} for this install. {}",
                         self.tool_name(),
                         NPM_ALLOW_SCRIPTS_VERSION,
-                        NPM_IGNORE_SCRIPTS_ARG
+                        NPM_IGNORE_SCRIPTS_ARG,
+                        Self::npm_lifecycle_script_remediation()
                     );
                 }
                 let (lifecycle_script_args, default_ignore_scripts) =
@@ -855,13 +856,20 @@ impl NPMBackend {
             return;
         };
         warn!(
-            "{}@{} declares npm lifecycle script(s) ({}) in {}, but mise skipped them with {}. Review the package before opting in with `allow_builds` on npm 11.16+ or `npm_args = \"--ignore-scripts=false\"`.",
+            "{}@{} declares npm lifecycle script(s) ({}) in {}, but mise skipped them with {}. Review the package before opting in. {}",
             self.ba().full(),
             tv.version,
             hooks.join(", "),
             package_json_path.display(),
-            NPM_IGNORE_SCRIPTS_ARG
+            NPM_IGNORE_SCRIPTS_ARG,
+            Self::npm_lifecycle_script_remediation()
         );
+    }
+
+    fn npm_lifecycle_script_remediation() -> String {
+        format!(
+            "Use `allow_builds` with npm {NPM_ALLOW_SCRIPTS_VERSION}+, use aube/pnpm, or explicitly set `npm_args = \"--ignore-scripts=false\"` if you accept all install scripts."
+        )
     }
 
     fn installed_package_lifecycle_scripts(
@@ -1359,7 +1367,7 @@ mod tests {
             (vec![OsString::from(NPM_IGNORE_SCRIPTS_ARG)], true)
         );
         assert_eq!(
-            NpmOptions::npm_lifecycle_script_args(AllowBuilds::None, true),
+            NpmOptions::npm_lifecycle_script_args(AllowBuilds::None, false),
             (vec![OsString::from(NPM_IGNORE_SCRIPTS_ARG)], true)
         );
     }

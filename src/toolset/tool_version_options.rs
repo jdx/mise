@@ -862,6 +862,12 @@ mod tests {
                 "esbuild".into()
             )]))
         );
+
+        let opts = parse_tool_options(r#"allow_builds=false"#);
+        assert_eq!(
+            opts.opts.get("allow_builds"),
+            Some(&toml::Value::Boolean(false))
+        );
     }
 
     #[test]
