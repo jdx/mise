@@ -31,6 +31,7 @@ use tokio::sync::Mutex as TokioMutex;
 /// of elapsed time between when mise resolved the cutoff and when it invoked
 /// the package manager.
 const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
+const NPM_ALLOW_SCRIPTS_VERSION: &str = "11.16.0";
 const NPM_MIN_RELEASE_AGE_VERSION: &str = "11.10.0";
 const AUBE_PROGRAM: &str = if cfg!(windows) { "aube.exe" } else { "aube" };
 const BUN_MIN_RELEASE_AGE_VERSION: &str = "1.3.0";
@@ -86,6 +87,12 @@ impl<'a> NpmOptions<'a> {
         match value {
             toml::Value::Boolean(true) => Ok(AllowBuilds::All),
             toml::Value::Boolean(false) => Ok(AllowBuilds::None),
+            toml::Value::String(value) if value.eq_ignore_ascii_case("true") => {
+                Ok(AllowBuilds::All)
+            }
+            toml::Value::String(value) if value.eq_ignore_ascii_case("false") => {
+                Ok(AllowBuilds::None)
+            }
             toml::Value::String(value) => {
                 Ok(Self::canonical_allow_build_packages(vec![value.clone()]))
             }
@@ -115,6 +122,29 @@ impl<'a> NpmOptions<'a> {
                 .map(|package| OsString::from(format!("--allow-build={package}")))
                 .collect(),
         })
+    }
+
+    fn npm_lifecycle_script_args(
+        allow_builds: AllowBuilds,
+        supports_allow_scripts: bool,
+    ) -> (Vec<OsString>, bool) {
+        if !supports_allow_scripts {
+            return (vec![OsString::from(NPM_IGNORE_SCRIPTS_ARG)], true);
+        }
+        match allow_builds {
+            AllowBuilds::None => (vec![OsString::from(NPM_IGNORE_SCRIPTS_ARG)], true),
+            AllowBuilds::All => (
+                vec![OsString::from("--dangerously-allow-all-scripts")],
+                false,
+            ),
+            AllowBuilds::Packages(packages) => (
+                vec![OsString::from(format!(
+                    "--allow-scripts={}",
+                    packages.join(",")
+                ))],
+                false,
+            ),
+        }
     }
 
     fn canonical_allow_build_packages(mut packages: Vec<String>) -> AllowBuilds {
@@ -417,7 +447,22 @@ impl Backend for NPMBackend {
             }
             _ => {
                 let npm_args = options.npm_args().map(shell_words::split).transpose()?;
-                let skipped_lifecycle_scripts = Self::effective_npm_ignore_scripts(&npm_args);
+                let allow_builds = options.allow_builds()?;
+                let allow_builds_requested = !matches!(allow_builds, AllowBuilds::None);
+                let supports_allow_scripts = allow_builds_requested
+                    && self.npm_supports_allow_scripts_flag(&ctx.config).await;
+                if allow_builds_requested && !supports_allow_scripts {
+                    warn!(
+                        "allow_builds for npm:{} requires npm >= {} for per-package script approvals. mise will keep {} for this install. Use aube/pnpm, upgrade npm, or explicitly set `npm_args = \"--ignore-scripts=false\"` if you accept all install scripts.",
+                        self.tool_name(),
+                        NPM_ALLOW_SCRIPTS_VERSION,
+                        NPM_IGNORE_SCRIPTS_ARG
+                    );
+                }
+                let (lifecycle_script_args, default_ignore_scripts) =
+                    NpmOptions::npm_lifecycle_script_args(allow_builds, supports_allow_scripts);
+                let skipped_lifecycle_scripts =
+                    Self::effective_npm_ignore_scripts(default_ignore_scripts, &npm_args);
                 let mut cmd = CmdLineRunner::new(NPM_PROGRAM)
                     .arg("install")
                     .arg("-g")
@@ -436,7 +481,7 @@ impl Backend for NPMBackend {
                             .list_paths(&ctx.config)
                             .await,
                     )?;
-                cmd = cmd.arg(NPM_IGNORE_SCRIPTS_ARG);
+                cmd = cmd.args(lifecycle_script_args);
                 if let Some(args) = &npm_args {
                     cmd = cmd.args(args);
                 }
@@ -581,12 +626,27 @@ impl NPMBackend {
         }
     }
 
-    /// Detect whether the locally installed npm supports --min-release-age.
+    async fn npm_supports_allow_scripts_flag(&self, config: &Arc<Config>) -> bool {
+        self.npm_version_is_at_least(config, NPM_ALLOW_SCRIPTS_VERSION, "--allow-scripts")
+            .await
+    }
+
+    async fn npm_supports_min_release_age_flag(&self, config: &Arc<Config>) -> bool {
+        self.npm_version_is_at_least(config, NPM_MIN_RELEASE_AGE_VERSION, "--min-release-age")
+            .await
+    }
+
+    /// Detect whether the locally installed npm supports a version-gated flag.
     /// When npm is explicitly managed by mise, the version is read from the
     /// dependency ToolSet without spawning a subprocess. Otherwise falls back
     /// to `npm --version`. Returns false on any failure so callers
-    /// transparently fall back to the older --before flag.
-    async fn npm_supports_min_release_age_flag(&self, config: &Arc<Config>) -> bool {
+    /// transparently fall back to older behavior.
+    async fn npm_version_is_at_least(
+        &self,
+        config: &Arc<Config>,
+        min_version: &str,
+        flag: &str,
+    ) -> bool {
         // When npm is explicitly managed by mise (e.g. `mise use npm@11.10.0`),
         // pull the resolved version from the dependency ToolSet and skip the
         // subprocess entirely.
@@ -596,11 +656,10 @@ impl NPMBackend {
                     && let Some(tv) = tvl.versions.first()
                 {
                     debug!(
-                        "npm version detection: found npm {} in ToolSet, skipping subprocess",
-                        tv.version
+                        "npm version detection for {flag}: found npm {} in ToolSet, skipping subprocess",
+                        tv.version,
                     );
-                    return semver_is_at_least(&tv.version, NPM_MIN_RELEASE_AGE_VERSION)
-                        .unwrap_or(false);
+                    return semver_is_at_least(&tv.version, min_version).unwrap_or(false);
                 }
             }
         }
@@ -610,7 +669,7 @@ impl NPMBackend {
             Ok(env) => env,
             Err(e) => {
                 debug!(
-                    "npm version detection: dependency_env failed, using --before fallback: {e:#}"
+                    "npm version detection for {flag}: dependency_env failed, using fallback: {e:#}"
                 );
                 return false;
             }
@@ -623,12 +682,12 @@ impl NPMBackend {
             Ok(s) => s,
             Err(e) => {
                 debug!(
-                    "npm version detection: `npm --version` failed, using --before fallback: {e:#}"
+                    "npm version detection for {flag}: `npm --version` failed, using fallback: {e:#}"
                 );
                 return false;
             }
         };
-        semver_is_at_least(&output, NPM_MIN_RELEASE_AGE_VERSION).unwrap_or(false)
+        semver_is_at_least(&output, min_version).unwrap_or(false)
     }
 
     /// Check dependencies for version checking (always needs npm)
@@ -763,11 +822,11 @@ impl NPMBackend {
         seconds.div_ceil(60)
     }
 
-    fn effective_npm_ignore_scripts(args: &Option<Vec<String>>) -> bool {
+    fn effective_npm_ignore_scripts(default: bool, args: &Option<Vec<String>>) -> bool {
         let Some(args) = args else {
-            return true;
+            return default;
         };
-        let mut ignore_scripts = true;
+        let mut ignore_scripts = default;
         let mut iter = args.iter().peekable();
         while let Some(arg) = iter.next() {
             if arg == "--ignore-scripts" {
@@ -796,7 +855,7 @@ impl NPMBackend {
             return;
         };
         warn!(
-            "{}@{} declares npm lifecycle script(s) ({}) in {}, but mise skipped them with {}. Review the package before opting in with `npm_args = \"--ignore-scripts=false\"`.",
+            "{}@{} declares npm lifecycle script(s) ({}) in {}, but mise skipped them with {}. Review the package before opting in with `allow_builds` on npm 11.16+ or `npm_args = \"--ignore-scripts=false\"`.",
             self.ba().full(),
             tv.version,
             hooks.join(", "),
@@ -1043,42 +1102,52 @@ mod tests {
 
     #[test]
     fn test_effective_npm_ignore_scripts_defaults_to_true() {
-        assert!(NPMBackend::effective_npm_ignore_scripts(&None));
+        assert!(NPMBackend::effective_npm_ignore_scripts(true, &None));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(false, &None));
     }
 
     #[test]
     fn test_effective_npm_ignore_scripts_honors_later_false_arg() {
-        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--ignore-scripts=false".into()
-        ])));
-        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--ignore-scripts=0".into()
-        ])));
-        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--ignore-scripts".into(),
-            "false".into()
-        ])));
-        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--ignore-scripts".into(),
-            "0".into()
-        ])));
-        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--no-ignore-scripts".into()
-        ])));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(
+            true,
+            &Some(vec!["--ignore-scripts=false".into()])
+        ));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(
+            true,
+            &Some(vec!["--ignore-scripts=0".into()])
+        ));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(
+            true,
+            &Some(vec!["--ignore-scripts".into(), "false".into()])
+        ));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(
+            true,
+            &Some(vec!["--ignore-scripts".into(), "0".into()])
+        ));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(
+            true,
+            &Some(vec!["--no-ignore-scripts".into()])
+        ));
     }
 
     #[test]
     fn test_effective_npm_ignore_scripts_later_arg_wins() {
-        assert!(NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--ignore-scripts=false".into(),
-            "--ignore-scripts=true".into()
-        ])));
-        assert!(NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--ignore-scripts".into(),
-            "false".into(),
-            "--ignore-scripts".into(),
-            "1".into()
-        ])));
+        assert!(NPMBackend::effective_npm_ignore_scripts(
+            false,
+            &Some(vec![
+                "--ignore-scripts=false".into(),
+                "--ignore-scripts=true".into()
+            ])
+        ));
+        assert!(NPMBackend::effective_npm_ignore_scripts(
+            false,
+            &Some(vec![
+                "--ignore-scripts".into(),
+                "false".into(),
+                "--ignore-scripts".into(),
+                "1".into()
+            ])
+        ));
     }
 
     #[test]
@@ -1141,6 +1210,19 @@ mod tests {
         );
         assert_eq!(
             crate::semver::semver_is_at_least("11.9.9", NPM_MIN_RELEASE_AGE_VERSION),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn test_npm_allow_scripts_version_requirement() {
+        assert_eq!(NPM_ALLOW_SCRIPTS_VERSION, "11.16.0");
+        assert_eq!(
+            crate::semver::semver_is_at_least("11.16.0", NPM_ALLOW_SCRIPTS_VERSION),
+            Some(true)
+        );
+        assert_eq!(
+            crate::semver::semver_is_at_least("11.15.9", NPM_ALLOW_SCRIPTS_VERSION),
             Some(false)
         );
     }
@@ -1234,6 +1316,51 @@ mod tests {
         assert_eq!(
             NpmOptions::new(&true_options).allow_build_args().unwrap(),
             vec![OsString::from("--dangerously-allow-all-builds")]
+        );
+
+        let mut true_string_options = ToolVersionOptions::default();
+        true_string_options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::String("true".into()),
+        );
+        assert_eq!(
+            NpmOptions::new(&true_string_options)
+                .allow_build_args()
+                .unwrap(),
+            vec![OsString::from("--dangerously-allow-all-builds")]
+        );
+    }
+
+    #[test]
+    fn test_npm_lifecycle_script_args_uses_allow_scripts_when_supported() {
+        assert_eq!(
+            NpmOptions::npm_lifecycle_script_args(
+                AllowBuilds::Packages(vec!["esbuild".into(), "sharp".into()]),
+                true
+            ),
+            (vec![OsString::from("--allow-scripts=esbuild,sharp")], false)
+        );
+        assert_eq!(
+            NpmOptions::npm_lifecycle_script_args(AllowBuilds::All, true),
+            (
+                vec![OsString::from("--dangerously-allow-all-scripts")],
+                false
+            )
+        );
+    }
+
+    #[test]
+    fn test_npm_lifecycle_script_args_keeps_ignore_scripts_without_support() {
+        assert_eq!(
+            NpmOptions::npm_lifecycle_script_args(
+                AllowBuilds::Packages(vec!["esbuild".into()]),
+                false
+            ),
+            (vec![OsString::from(NPM_IGNORE_SCRIPTS_ARG)], true)
+        );
+        assert_eq!(
+            NpmOptions::npm_lifecycle_script_args(AllowBuilds::None, true),
+            (vec![OsString::from(NPM_IGNORE_SCRIPTS_ARG)], true)
         );
     }
 

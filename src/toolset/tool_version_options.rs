@@ -328,7 +328,8 @@ impl ToolOptions {
         if self.insert_core_option(&key, &value)? {
             return Ok(());
         }
-        self.opts.insert(key, normalize_backend_option_value(value));
+        let value = normalize_backend_option_value(&key, value);
+        self.opts.insert(key, value);
         Ok(())
     }
 
@@ -510,11 +511,18 @@ fn env_value_to_string(value: &toml::Value) -> Result<String, String> {
     }
 }
 
-fn normalize_backend_option_value(value: toml::Value) -> toml::Value {
+fn normalize_backend_option_value(key: &str, value: toml::Value) -> toml::Value {
+    if preserves_backend_option_type(key) {
+        return value;
+    }
     match value {
         toml::Value::Table(_) | toml::Value::Array(_) | toml::Value::String(_) => value,
         _ => toml::Value::String(value.to_string().trim_matches('"').to_string()),
     }
+}
+
+fn preserves_backend_option_type(key: &str) -> bool {
+    matches!(key, "allow_builds")
 }
 
 fn scalar_value_to_string(value: &toml::Value) -> Option<String> {
@@ -837,6 +845,23 @@ mod tests {
         let opts = parse_tool_options(input);
         assert_eq!(opts.get("bin_path"), Some("bin"));
         assert_eq!(opts.get("strip_components"), Some("1"));
+    }
+
+    #[test]
+    fn test_parse_tool_options_preserves_allow_builds_type() {
+        let opts = parse_tool_options(r#"allow_builds=true"#);
+        assert_eq!(
+            opts.opts.get("allow_builds"),
+            Some(&toml::Value::Boolean(true))
+        );
+
+        let opts = parse_tool_options(r#"allow_builds=["esbuild"]"#);
+        assert_eq!(
+            opts.opts.get("allow_builds"),
+            Some(&toml::Value::Array(vec![toml::Value::String(
+                "esbuild".into()
+            )]))
+        );
     }
 
     #[test]
