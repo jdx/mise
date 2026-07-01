@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "294b54eb8ed9",
+  "session_id": "019f1fee-351b-7f61-b652-0d62cd621721",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-01T23:21:47.190591Z",
+  "branch": "codex/fix-lockfile-missing-url-api",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/backend/test_github_url_tracking"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "a4369eba1c1b",
+  "checkpoint_transcript_start": 235,
+  "transcript_lines_at_start": 235,
+  "token_usage": {
+    "input_tokens": 40601,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 309632,
+    "output_tokens": 1526,
+    "api_call_count": 5
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-01T23:21:47.181359Z",
+    "agent_lines": 1,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 2,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
