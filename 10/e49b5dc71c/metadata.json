@@ -5,7 +5,8 @@
   "branch": "codex/fix-monorepo-task-env-render",
   "checkpoints_count": 2,
   "files_touched": [
-    "src/config/mod.rs"
+    "src/config/mod.rs",
+    "src/task/mod.rs"
   ],
   "sessions": [
     {
@@ -16,10 +17,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 338104,
+    "input_tokens": 377285,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 11581440,
-    "output_tokens": 40530,
-    "api_call_count": 104
+    "cache_read_tokens": 17459712,
+    "output_tokens": 53424,
+    "api_call_count": 136
   }
 }
