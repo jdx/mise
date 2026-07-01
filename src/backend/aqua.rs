@@ -629,7 +629,9 @@ impl Backend for AquaBackend {
 
         let candidates = cache
             .get_or_try_init_async(async || {
-                let pkg = self.package_with_options(tv, &[&tv.version]).await?;
+                let versions = package_version_candidates(&tv.version);
+                let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+                let pkg = self.package_with_options(tv, &versions).await?;
                 // Pure: no filesystem reads, so a mid-install call can never
                 // cache a transient-empty result.
                 Self::candidate_bin_paths_for_platform(
@@ -2992,6 +2994,14 @@ fn version_with_prefix<'a>(version: &'a str, version_prefix: Option<&str>) -> Co
     }
 }
 
+fn package_version_candidates(version: &str) -> Vec<Cow<'_, str>> {
+    let mut candidates = vec![Cow::Borrowed(version)];
+    if !starts_with_v(version) {
+        candidates.push(Cow::Owned(format!("v{version}")));
+    }
+    candidates.into_iter().unique().collect()
+}
+
 fn version_candidates<'a>(version: &'a str, version_prefix: Option<&str>) -> Vec<Cow<'a, str>> {
     let mut candidates = vec![version_with_prefix(version, version_prefix)];
     if let Some(prefix) = version_prefix {
@@ -3076,7 +3086,7 @@ pub fn is_install_time_option_key(key: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aqua_registry::{AquaFile, AquaVar};
+    use aqua_registry::{AquaFile, AquaVar, ParsedRegistry};
 
     fn aqua_var(name: &str, required: bool) -> AquaVar {
         AquaVar {
@@ -3219,6 +3229,60 @@ mod tests {
             .collect_vec();
 
         assert_eq!(candidates, vec!["tool-v1.2.3"]);
+    }
+
+    #[test]
+    fn test_candidate_bin_paths_use_v_prefixed_package_override() {
+        let registry = ParsedRegistry::parse_yaml(
+            r#"
+packages:
+  - type: github_release
+    repo_owner: sharkdp
+    repo_name: fd
+    files:
+      - name: fd
+        src: "{{.AssetWithoutExt}}/fd"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v10.3.0"
+        asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+      - version_constraint: "true"
+        asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: amd64
+          darwin: apple-darwin
+"#,
+        )
+        .unwrap();
+        let pkg = registry.package("sharkdp/fd").unwrap();
+        let versions = package_version_candidates("10.3.0");
+        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+        let pkg = pkg.with_version(&versions, "darwin", "amd64");
+
+        let candidates = AquaBackend::candidate_bin_paths_for_platform(
+            &pkg,
+            "10.3.0",
+            Path::new("install"),
+            "darwin",
+            "amd64",
+        )
+        .unwrap();
+
+        assert!(
+            candidates.contains(&PathBuf::from("fd-v10.3.0-x86_64-apple-darwin")),
+            "{candidates:?}"
+        );
+        assert!(
+            candidates
+                .iter()
+                .all(|p| !p.to_string_lossy().contains("amd64-apple-darwin")),
+            "{candidates:?}"
+        );
     }
 
     #[test]
