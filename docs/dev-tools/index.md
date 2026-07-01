@@ -21,9 +21,10 @@ It's also compatible
 with asdf `.tool-versions` files as well as [idiomatic version files](/configuration#idiomatic-version-files) like `.node-version` and
 `.ruby-version`. See [configuration](/configuration) for more details.
 
-When specifying tool versions, you can also refer to environment variables defined in your config hierarchy,
-including values produced by env directives like `_.source`, `_.file`, or env modules. These are resolved
-before tool version templates are rendered.
+When specifying tool versions and tool options, you can also refer to environment variables or
+[`vars`](/tasks/task-configuration.html#vars) defined in your config hierarchy, including values
+produced by directives like `_.source`, `_.file`, or env modules. These are resolved before tool
+version and option templates are rendered.
 
 ::: info
 mise is compatible with asdf `.tool-versions` files and can still use asdf

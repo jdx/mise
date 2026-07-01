@@ -73,3 +73,31 @@ EOF
 
 # This should resolve to 20.11.0
 assert_contains "mise ls node" "20.11.0"
+
+# Test vars in nested tool option tables
+cat <<EOF >mise.toml
+[vars]
+PLATFORM_URL = "https://example.com/tool-linux-x64.tar.gz"
+
+[tools."http:nested-options"]
+version = "1.0.0"
+
+[tools."http:nested-options".platforms.linux-x64]
+url = "{{vars.PLATFORM_URL}}"
+EOF
+
+assert_contains "mise tool http:nested-options --tool-options" "https://example.com/tool-linux-x64.tar.gz"
+
+# Nested HTTP url templates should render vars but preserve backend directives
+cat <<EOF >mise.toml
+[vars]
+BASE_URL = "https://example.com/releases"
+
+[tools."http:nested-options"]
+version = "1.0.0"
+
+[tools."http:nested-options".platforms.linux-x64]
+url = "{{vars.BASE_URL}}/{{ version }}/tool-{{ os() }}-{{ arch() }}.tar.gz"
+EOF
+
+assert_contains "mise tool http:nested-options --tool-options" 'https://example.com/releases/{{ version }}/tool-{{ os() }}-{{ arch() }}.tar.gz'

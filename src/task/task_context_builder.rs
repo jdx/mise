@@ -373,6 +373,10 @@ impl TaskContextBuilder {
                 for (k, (v, _)) in &vars_results.vars {
                     vars.insert(k.clone(), v.clone());
                 }
+                config.add_redactions(
+                    vars_results.redactions.iter().cloned(),
+                    &vars.clone().into_iter().collect(),
+                );
                 tera_ctx.insert("vars", &vars);
                 resolved_vars = Some(vars);
             }
