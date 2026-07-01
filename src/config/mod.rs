@@ -206,7 +206,10 @@ impl Config {
 
         measure!("config::load redactions", {
             config.add_redactions(
-                config.redaction_keys(),
+                config
+                    .redaction_keys()
+                    .into_iter()
+                    .chain(vars_results.redactions.iter().cloned()),
                 &config.vars.clone().into_iter().collect(),
             );
         });

@@ -1220,6 +1220,10 @@ impl Task {
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect();
+        config.add_redactions(
+            vars_results.redactions.iter().cloned(),
+            &vars.clone().into_iter().collect(),
+        );
         TASK_VARS_CACHE
             .lock()
             .unwrap()
@@ -1261,11 +1265,18 @@ impl Task {
         )
         .await?;
 
-        Ok(results
+        let vars: IndexMap<String, String> = results
             .vars
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
-            .collect())
+            .collect();
+        let mut redaction_vars: EnvMap = tera_ctx
+            .get("vars")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        redaction_vars.extend(vars.clone());
+        config.add_redactions(results.redactions.iter().cloned(), &redaction_vars);
+        Ok(vars)
     }
 
     pub fn cf<'a>(&'a self, config: &'a Config) -> Option<&'a Arc<dyn ConfigFile>> {

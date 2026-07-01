@@ -727,6 +727,42 @@ impl MiseToml {
         })?;
         Ok(output)
     }
+
+    fn parse_tool_option_value_template(
+        &self,
+        context: &TeraContext,
+        key: Option<&str>,
+        value: &mut toml::Value,
+        defer_os_arch: bool,
+    ) -> eyre::Result<()> {
+        match value {
+            toml::Value::String(s) => {
+                let preserve_os_arch = defer_os_arch && matches!(key, Some("url" | "checksum_url"));
+                *s = if preserve_os_arch {
+                    self.parse_tool_option_template(context, s)?
+                } else {
+                    self.parse_template_with_context(context, s)?
+                };
+            }
+            toml::Value::Array(values) => {
+                for value in values {
+                    self.parse_tool_option_value_template(context, key, value, defer_os_arch)?;
+                }
+            }
+            toml::Value::Table(table) => {
+                for (key, value) in table.iter_mut() {
+                    self.parse_tool_option_value_template(
+                        context,
+                        Some(key),
+                        value,
+                        defer_os_arch,
+                    )?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
 }
 
 impl ConfigFile for MiseToml {
@@ -962,15 +998,12 @@ impl ConfigFile for MiseToml {
                         crate::backend::backend_type::BackendType::Http
                     );
                     for (k, v) in options.opts.iter_mut() {
-                        if let toml::Value::String(s) = v {
-                            let defer =
-                                defer_os_arch && matches!(k.as_str(), "url" | "checksum_url");
-                            *s = if defer {
-                                self.parse_tool_option_template(&opts_context, s)?
-                            } else {
-                                self.parse_template_with_context(&opts_context, s)?
-                            };
-                        }
+                        self.parse_tool_option_value_template(
+                            &opts_context,
+                            Some(k),
+                            v,
+                            defer_os_arch,
+                        )?;
                     }
                     let mut ba = ba.clone();
                     // Start with cached options but filter out install-time-only options
