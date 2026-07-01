@@ -31,6 +31,12 @@
       "matchPackageNames": ["/^rattler($|_)/"],
       "matchManagers": ["cargo"],
       "groupName": "rattler"
+    },
+    {
+      "description": "Sigstore crates are versioned together; bump together.",
+      "matchPackageNames": ["/^sigstore-/"],
+      "matchManagers": ["cargo"],
+      "groupName": "sigstore crates"
     }
   ]
 }
