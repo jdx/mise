@@ -662,6 +662,8 @@ includes = [
 ```
 
 When `task_config.includes` is set, it replaces the default file-task directories for that config scope instead of adding to them.
+Include entries are rendered as Tera templates, so they can reference values such as `config_root`,
+`env`, and resolved `vars`.
 
 The default file-task directories are:
 
