@@ -658,11 +658,12 @@ mod tests {
         let helper = bin.join("helper");
         fs::write(&helper, b"#!/bin/sh\necho hi\n").unwrap();
         fs::set_permissions(&helper, fs::Permissions::from_mode(0o4755)).unwrap();
+        let helper_mode = fs::symlink_metadata(&helper).unwrap().permissions().mode() & 0o7777;
 
         let blob = build_layer_from_dir_preserve_metadata(dir.path(), "").unwrap();
 
         assert_layer_mode(&blob, "bin", 0o1777);
-        assert_layer_mode(&blob, "bin/helper", 0o4755);
+        assert_layer_mode(&blob, "bin/helper", helper_mode);
         let md = fs::symlink_metadata(&helper).unwrap();
         assert_layer_entry_owner(&blob, "bin/helper", md.uid() as u64, md.gid() as u64);
     }
