@@ -157,7 +157,7 @@ impl Backend for AquaBackend {
     }
 
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
-        let pkg = match self.package_with_options(tv, &[&tv.version]).await {
+        let pkg = match self.package_with_version_candidates(tv).await {
             Ok(pkg) => pkg,
             Err(_) => return 3, // fall back to default
         };
@@ -629,9 +629,7 @@ impl Backend for AquaBackend {
 
         let candidates = cache
             .get_or_try_init_async(async || {
-                let versions = package_version_candidates(&tv.version);
-                let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
-                let pkg = self.package_with_options(tv, &versions).await?;
+                let pkg = self.package_with_version_candidates(tv).await?;
                 // Pure: no filesystem reads, so a mid-install call can never
                 // cache a transient-empty result.
                 Self::candidate_bin_paths_for_platform(
@@ -938,6 +936,12 @@ impl AquaBackend {
         let raw_opts = tv.request.options();
         let opts = AquaOptions::new(&raw_opts);
         Self::apply_var_options(pkg, &opts)
+    }
+
+    async fn package_with_version_candidates(&self, tv: &ToolVersion) -> Result<AquaPackage> {
+        let versions = version_candidates(&tv.version, None);
+        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+        self.package_with_options(tv, &versions).await
     }
 
     fn to_aqua_platform(target: &PlatformTarget) -> (&str, &str) {
@@ -2994,14 +2998,6 @@ fn version_with_prefix<'a>(version: &'a str, version_prefix: Option<&str>) -> Co
     }
 }
 
-fn package_version_candidates(version: &str) -> Vec<Cow<'_, str>> {
-    let mut candidates = vec![Cow::Borrowed(version)];
-    if !starts_with_v(version) {
-        candidates.push(Cow::Owned(format!("v{version}")));
-    }
-    candidates.into_iter().unique().collect()
-}
-
 fn version_candidates<'a>(version: &'a str, version_prefix: Option<&str>) -> Vec<Cow<'a, str>> {
     let mut candidates = vec![version_with_prefix(version, version_prefix)];
     if let Some(prefix) = version_prefix {
@@ -3260,7 +3256,7 @@ packages:
         )
         .unwrap();
         let pkg = registry.package("sharkdp/fd").unwrap();
-        let versions = package_version_candidates("10.3.0");
+        let versions = version_candidates("10.3.0", None);
         let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
         let pkg = pkg.with_version(&versions, "darwin", "amd64");
 
