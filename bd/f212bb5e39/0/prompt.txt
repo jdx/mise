@@ -1,0 +1,5 @@
+just make a pr that disables the registry test for jc to mise. Then make another PR for the debug assertions.
+
+---
+
+address pr feedback on 702
