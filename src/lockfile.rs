@@ -1697,8 +1697,10 @@ fn check_single_tool_provenance(
     }
 
     let tools = existing_tools?;
+    let new_version = parse_provenance_version(version)?;
 
-    // Find the highest prior github version with provenance on this platform
+    // Find the highest prior github semver version with provenance on this platform.
+    // Non-semver tags are opaque to mise, so do not guess whether they are upgrades.
     let prior = tools
         .iter()
         .filter(|t| t.version != version)
@@ -1708,12 +1710,12 @@ fn check_single_tool_provenance(
                 .get(platform_key)
                 .is_some_and(|pi| pi.provenance.is_some())
         })
-        .max_by(|a, b| {
-            versions::Versioning::new(&a.version).cmp(&versions::Versioning::new(&b.version))
-        })?;
+        .filter_map(|t| Some((parse_provenance_version(&t.version)?, t)))
+        .max_by(|(a, _), (b, _)| a.cmp(b))
+        .map(|(_, t)| t)?;
 
     // Only flag upgrades — intentional downgrades are allowed
-    if versions::Versioning::new(version) <= versions::Versioning::new(&prior.version) {
+    if new_version <= parse_provenance_version(&prior.version)? {
         return None;
     }
 
@@ -1724,6 +1726,10 @@ fn check_single_tool_provenance(
          attack. Verify the release is authentic before proceeding.",
         prior.version,
     ))
+}
+
+fn parse_provenance_version(version: &str) -> Option<nodejs_semver::Version> {
+    nodejs_semver::Version::parse(version.trim_start_matches(['v', 'V'])).ok()
 }
 
 /// Check if any github backend tool is losing provenance when upgrading versions.
@@ -3918,6 +3924,53 @@ backend = "conda:jq"
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn test_provenance_regression_only_flags_known_semver_upgrades() {
+        let platform = Platform::current().to_key();
+        let mut prior = basic_tool("nightly", "github:owner/repo");
+        prior.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        let existing = vec![prior];
+
+        assert!(
+            check_single_tool_provenance(
+                Some(&existing),
+                "tool",
+                "release",
+                "github:owner/repo",
+                &platform,
+                None,
+            )
+            .is_none()
+        );
+
+        let mut prior = basic_tool("v1.0.0-rc.1", "github:owner/repo");
+        prior.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        let existing = vec![prior];
+
+        let err = check_single_tool_provenance(
+            Some(&existing),
+            "tool",
+            "v1.0.0",
+            "github:owner/repo",
+            &platform,
+            None,
+        )
+        .unwrap();
+        assert!(err.contains("has no provenance verification"));
     }
 
     #[test]
