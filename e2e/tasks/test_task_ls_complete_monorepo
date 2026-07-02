@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Verify task completion output includes monorepo tasks when using // paths
 
-# Root config marks repo as monorepo
+# Root config marks repo as monorepo. WEB_OUTPUT is also defined here with a
+# different value to verify subproject env wins when rendering subproject tasks.
 cat <<'CONFIG' >mise.toml
 monorepo_root = true
+
+[env]
+WEB_OUTPUT = "root-dist"
 
 [monorepo]
 config_roots = ["apps/*"]
@@ -12,13 +16,38 @@ config_roots = ["apps/*"]
 run = 'echo root'
 CONFIG
 
-# App subproject task that should appear in completions
-mkdir -p apps/web
+# App subproject task that should appear in completions. Its sources/outputs
+# reference env vars from the subproject's own [env] section — rendering these
+# from the monorepo root used to fail with "Variable `env...` not found" and
+# break completion for the whole monorepo:
+# https://github.com/jdx/mise/discussions/10126
+mkdir -p apps/web/src
+echo "snapshot input" >apps/web/src/input.txt
 cat <<'CONFIG' >apps/web/mise.toml
+[env]
+WEB_SOURCE = "src"
+WEB_OUTPUT = "dist"
+
 [tasks.update-snapshots]
 description = "Update monorepo snapshots"
-run = 'echo updating snapshots'
+sources = ["{{env.WEB_SOURCE}}/*.txt"]
+outputs = ["{{env.WEB_OUTPUT}}/done.txt"]
+run = 'mkdir -p "$WEB_OUTPUT" && echo updating snapshots > "$WEB_OUTPUT/done.txt" && echo updating snapshots'
 CONFIG
 
 # Completion output should include the //-prefixed task path with escaped colon
+assert_contains "mise task ls --complete" '//apps/web\:update-snapshots:Update monorepo snapshots'
+# Running from the monorepo root renders the task templates with the
+# subproject's env (WEB_OUTPUT=dist, not the root's root-dist)
+assert "mise -q run //apps/web:update-snapshots" "updating snapshots"
+assert "cat apps/web/dist/done.txt" "updating snapshots"
+
+# A task with a template that legitimately fails to render must not break
+# loading tasks from other subprojects
+mkdir -p apps/broken
+cat <<'CONFIG' >apps/broken/mise.toml
+[tasks.broken-task]
+sources = ["{{env.DOES_NOT_EXIST}}/*"]
+run = 'echo broken'
+CONFIG
 assert_contains "mise task ls --complete" '//apps/web\:update-snapshots:Update monorepo snapshots'
