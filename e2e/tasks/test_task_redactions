@@ -31,6 +31,16 @@ run = 'echo secret: \$SECRET_FOO'
 EOF
 assert "mise run a" "secret: [redacted]"
 
+cat <<'TOML' >mise.toml
+redactions = ["*_KEY"]
+[env]
+DISABLE_FEEDBACK_SURVEY = "1"
+
+[tasks.a]
+run = 'echo "version 1.2.3"'
+TOML
+assert "mise run a" "version 1.2.3"
+
 cat <<EOF >mise.toml
 [env]
 SECRET= {value = "my_secret", redact = true}
