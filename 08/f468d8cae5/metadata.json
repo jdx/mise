@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "08f468d8cae5",
+  "strategy": "manual-commit",
+  "branch": "codex/task-include-trust-pipefail",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/tasks/test_task_include_trust"
+  ],
+  "sessions": [
+    {
+      "metadata": "/08/f468d8cae5/0/metadata.json",
+      "transcript": "/08/f468d8cae5/0/full.jsonl",
+      "content_hash": "/08/f468d8cae5/0/content_hash.txt",
+      "prompt": "/08/f468d8cae5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 100522,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 934912,
+    "output_tokens": 7483,
+    "api_call_count": 20
+  }
+}
