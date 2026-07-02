@@ -72,6 +72,8 @@ feature-depth = 1
 ignore = [
   { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 unmaintained - transitive via age/mlua/tabled/rops, no safe upgrade available" },
   { id = "RUSTSEC-2023-0071", reason = "rsa crate Marvin attack vulnerability from sigstore crate - no safe upgrade available" },
+  { id = "RUSTSEC-2026-0194", reason = "quick-xml vulnerability is transitive via plist/rattler_menuinst/self_update; upstream crates do not yet provide a full safe upgrade path" },
+  { id = "RUSTSEC-2026-0195", reason = "quick-xml vulnerability is transitive via plist/rattler_menuinst/self_update; upstream crates do not yet provide a full safe upgrade path" },
   #"RUSTSEC-0000-0000",
   #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
   #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
