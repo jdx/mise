@@ -2885,10 +2885,23 @@ async fn load_task_file(
     for (_, mut task) in tasks {
         let config_root = config_root.to_path_buf();
         resolve_task_template(&mut task, templates)?;
-        if let Err(err) = task.render(config, &config_root).await {
-            warn!("rendering task: {err:?}");
+        match task.render(config, &config_root).await {
+            Ok(()) => {
+                out.push(task);
+            }
+            Err(err) => {
+                if monorepo_cf.is_some() {
+                    warn!(
+                        "Failed to render task {} in {}: {err:#}. Task will not be available.",
+                        task.name,
+                        display_path(path)
+                    );
+                } else {
+                    warn!("rendering task: {err:?}");
+                    out.push(task);
+                }
+            }
         }
-        out.push(task);
     }
     Ok(out)
 }

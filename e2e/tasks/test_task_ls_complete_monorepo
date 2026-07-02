@@ -46,8 +46,18 @@ assert "cat apps/web/dist/done.txt" "updating snapshots"
 # loading tasks from other subprojects
 mkdir -p apps/broken
 cat <<'CONFIG' >apps/broken/mise.toml
+[task_config]
+includes = ["tasks.toml"]
+
 [tasks.broken-task]
 sources = ["{{env.DOES_NOT_EXIST}}/*"]
 run = 'echo broken'
 CONFIG
+cat <<'CONFIG' >apps/broken/tasks.toml
+[broken-included-task]
+sources = ["{{env.DOES_NOT_EXIST}}/*"]
+run = 'echo broken include'
+CONFIG
 assert_contains "mise task ls --complete" '//apps/web\:update-snapshots:Update monorepo snapshots'
+assert_not_contains "mise task ls --complete" '//apps/broken\:broken-task'
+assert_not_contains "mise task ls --complete" '//apps/broken\:broken-included-task'
