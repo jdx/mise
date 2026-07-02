@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "fbc2c8a3b291",
+  "strategy": "manual-commit",
+  "branch": "codex/monorepo-install-lockfile",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/mise-lock.md",
+    "docs/tasks/monorepo.md",
+    "e2e/cli/test_lock_project_root_scope",
+    "e2e/lockfile/test_lockfile_monorepo",
+    "schema/mise.json",
+    "src/config/config_file/mise_toml.rs",
+    "src/config/mod.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fb/c2c8a3b291/0/metadata.json",
+      "transcript": "/fb/c2c8a3b291/0/full.jsonl",
+      "content_hash": "/fb/c2c8a3b291/0/content_hash.txt",
+      "prompt": "/fb/c2c8a3b291/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 171075,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 5303552,
+    "output_tokens": 14667,
+    "api_call_count": 38
+  }
+}
