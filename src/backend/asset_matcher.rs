@@ -726,6 +726,9 @@ pub fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
 
     for (os, pattern) in OS_PATTERNS.iter() {
         if pattern.is_match(&filename) {
+            if filename.contains("android") && *os == AssetOs::Linux {
+                continue;
+            }
             detected_os = Some(*os);
             break;
         }
@@ -1672,6 +1675,14 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
         assert_eq!(platform.os, AssetOs::Windows);
         assert_eq!(platform.arch, AssetArch::X64);
         assert_eq!(platform.to_platform_string(), "windows-x64");
+
+        // Test Android URL
+        //
+        let url = "https://github.com/ajeetdsouza/zoxide/releases/download/v0.9.9/zoxide-0.9.9-aarch64-linux-android.tar.gz";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Android);
+        assert_eq!(platform.arch, AssetArch::Arm64);
+        assert_eq!(platform.to_platform_string(), "android-arm64");
 
         // Test URL without platform info
         let url = "https://example.com/generic-tool.tar.gz";
