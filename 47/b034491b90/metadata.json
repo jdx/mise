@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "47b034491b90",
+  "strategy": "manual-commit",
+  "branch": "codex/monorepo-install-lockfile",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/backend/conda.rs",
+    "src/backend/pkgx.rs",
+    "src/config/mod.rs",
+    "src/lockfile.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/47/b034491b90/0/metadata.json",
+      "transcript": "/47/b034491b90/0/full.jsonl",
+      "content_hash": "/47/b034491b90/0/content_hash.txt",
+      "prompt": "/47/b034491b90/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 116657,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2114816,
+    "output_tokens": 9412,
+    "api_call_count": 19
+  }
+}
