@@ -539,41 +539,10 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
     let script = std::fs::read_to_string(file)?;
     let raw = extract_usage_from_comments(&script);
-    let err = match usage::Spec::parse_script(file) {
-        Ok(spec) => {
-            if !has_parseable_usage_content(&spec) && !raw.trim().is_empty() {
-                None
-            } else {
-                return Ok(spec);
-            }
-        }
-        Err(err) => Some(err),
-    };
-
-    let Some(raw) = hoist_root_usage_mounts(&raw) else {
-        return match err {
-            Some(err) => Err(err),
-            None => parse_task_usage_raw(file, &raw),
-        };
-    };
-    parse_task_usage_raw(file, &raw)
-}
-
-fn has_parseable_usage_content(spec: &usage::Spec) -> bool {
-    !spec.cmd.args.is_empty()
-        || !spec.cmd.flags.is_empty()
-        || !spec.cmd.mounts.is_empty()
-        || !spec.cmd.subcommands.is_empty()
-        || !spec.complete.is_empty()
-        || !spec.examples.is_empty()
-        || spec.about.is_some()
-        || spec.about_long.is_some()
-        || spec.about_md.is_some()
-        || spec.before_help.is_some()
-        || spec.before_help_long.is_some()
-        || spec.after_help.is_some()
-        || spec.after_help_long.is_some()
-        || spec.disable_help.is_some()
+    if raw.trim().is_empty() {
+        return usage::Spec::parse_script(file);
+    }
+    parse_task_usage_raw(file, &hoist_root_usage_mounts(&raw).unwrap_or(raw))
 }
 
 fn parse_task_usage_raw(file: &Path, raw: &str) -> usage::Result<usage::Spec> {
@@ -593,7 +562,7 @@ fn parse_task_usage_raw(file: &Path, raw: &str) -> usage::Result<usage::Spec> {
 }
 
 fn extract_usage_from_comments(full: &str) -> String {
-    let usage_regex = regex!(r"^(?:#|//|::)(?:(USAGE|MISE)| ?\[(USAGE|MISE)\])(.*)$");
+    let usage_regex = regex!(r"^(?:#|//|::)\s*(?:(USAGE|MISE)|\[(USAGE|MISE)\])(.*)$");
     let blank_comment_regex = regex!(r"^(?:#|//|::)\s*$");
     let mise_header_regex = regex!(r"^[a-z0-9_.-]+\s*=");
     let mut usage = vec![];
@@ -606,9 +575,6 @@ fn extract_usage_from_comments(full: &str) -> String {
                 .map_or("", |m| m.as_str());
             let content = captures.get(3).map_or("", |m| m.as_str());
             if marker == "MISE" && mise_header_regex.is_match(content.trim()) {
-                if found {
-                    break;
-                }
                 continue;
             }
             usage.push(content.trim());
@@ -2576,44 +2542,55 @@ mod tests {
     fn test_parse_task_script_usage_hoists_root_mount() {
         use std::io::Write;
 
-        let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        tmp.write_all(
-            r#"#!/usr/bin/env bash
-#USAGE flag "--verbose" help="Show extra output"
-#USAGE mount "shapeme --usage-spec"
+        for marker in ["#USAGE", "# USAGE"] {
+            let mut tmp = tempfile::NamedTempFile::new().unwrap();
+            tmp.write_all(
+                format!(
+                    r#"#!/usr/bin/env bash
+{marker} flag "--verbose" help="Show extra output"
+{marker} mount "shapeme --usage-spec"
 exec shapeme "$@"
 "#
-            .as_bytes(),
-        )
-        .unwrap();
+                )
+                .as_bytes(),
+            )
+            .unwrap();
 
-        let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+            let spec = super::parse_task_script_usage(tmp.path()).unwrap();
 
-        assert_eq!(spec.cmd.flags.len(), 1);
-        assert_eq!(spec.cmd.mounts.len(), 1);
-        assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
-        assert!(!spec.cmd.subcommands.contains_key("__mise_task_root_mounts"));
+            assert_eq!(spec.cmd.flags.len(), 1);
+            assert_eq!(spec.cmd.mounts.len(), 1);
+            assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
+            assert!(!spec.cmd.subcommands.contains_key("__mise_task_root_mounts"));
+        }
     }
 
     #[test]
     fn test_parse_task_script_usage_hoists_mise_root_mount() {
         use std::io::Write;
 
-        let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        tmp.write_all(
-            r#"#!/usr/bin/env bash
-#MISE description="Run the mounted CLI"
-#MISE mount "shapeme --usage-spec"
+        for marker in ["#MISE", "# MISE"] {
+            let mut tmp = tempfile::NamedTempFile::new().unwrap();
+            tmp.write_all(
+                format!(
+                    r#"#!/usr/bin/env bash
+#USAGE flag "--verbose" help="Show extra output"
+{marker} flag "--mise" help="MISE flag"
+{marker} description="Run the mounted CLI"
+{marker} mount "shapeme --usage-spec"
 exec shapeme "$@"
 "#
-            .as_bytes(),
-        )
-        .unwrap();
+                )
+                .as_bytes(),
+            )
+            .unwrap();
 
-        let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+            let spec = super::parse_task_script_usage(tmp.path()).unwrap();
 
-        assert_eq!(spec.cmd.mounts.len(), 1);
-        assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
+            assert_eq!(spec.cmd.flags.len(), 2);
+            assert_eq!(spec.cmd.mounts.len(), 1);
+            assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
+        }
     }
 
     #[test]
