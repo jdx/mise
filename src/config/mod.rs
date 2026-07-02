@@ -2590,10 +2590,9 @@ async fn load_tasks_includes(
             let config_root = config_root.clone();
             let config = config.clone();
             trust_check_task_include(&path, require_trust)?;
-            let mut task = Task::from_path(&config, &path, &root, &config_root).await?;
-            if let Some(monorepo_cf) = monorepo_cf {
-                task.cf = Some(monorepo_cf.clone());
-            }
+            let mut task =
+                Task::from_path_with_cf(&config, &path, &root, &config_root, monorepo_cf.cloned())
+                    .await?;
             if task.dir.is_none()
                 && let Some(ref dir) = *task_config_dir
             {

@@ -181,9 +181,11 @@ Subdirectory tasks automatically use tools and environment variables from parent
 
 `vars` follow the same hierarchy for task templating, so child config vars are available when
 running subdirectory tasks from the monorepo root.
+
 Task templates like <span v-pre>`sources = ["{{env.SRC_DIR}}/*"]`</span> are rendered with env from the
 task's own config hierarchy, so a subproject's `[env]` section applies no matter where the task
 is invoked from.
+
 Child `task_config.includes` templates can also reference inherited vars, which is useful for
 centralized task includes like <span v-pre>`git::https://example.com/tasks.git//go.toml?ref={{vars.central_ref}}`</span>.
 

@@ -556,7 +556,18 @@ impl Task {
         prefix: &Path,
         config_root: &Path,
     ) -> Result<Task> {
+        Self::from_path_with_cf(config, path, prefix, config_root, None).await
+    }
+
+    pub async fn from_path_with_cf(
+        config: &Arc<Config>,
+        path: &Path,
+        prefix: &Path,
+        config_root: &Path,
+        cf: Option<Arc<dyn ConfigFile>>,
+    ) -> Result<Task> {
         let mut task = Task::new(path, prefix, config_root)?;
+        task.cf = cf;
         let info = parse_mise_header_toml(&file::read_to_string(path)?)?
             .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
@@ -1285,10 +1296,7 @@ impl Task {
             .into_iter()
             .flatten()
             .collect();
-        let mut env: EnvMap = tera_ctx
-            .get("env")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_else(|| env::PRISTINE_ENV.clone());
+        let mut env: EnvMap = env::PRISTINE_ENV.clone();
         let mut resolve_ctx = tera_ctx.clone();
         resolve_ctx.insert("config_root", &task_project_root);
         let results = EnvResults::resolve(

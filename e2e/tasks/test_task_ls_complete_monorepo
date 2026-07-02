@@ -34,13 +34,27 @@ sources = ["{{env.WEB_SOURCE}}/*.txt"]
 outputs = ["{{env.WEB_OUTPUT}}/done.txt"]
 run = 'mkdir -p "$WEB_OUTPUT" && echo updating snapshots > "$WEB_OUTPUT/done.txt" && echo updating snapshots'
 CONFIG
+mkdir -p apps/web/mise-tasks
+cat <<'CONFIG' >apps/web/mise-tasks/script-snapshots
+#!/usr/bin/env bash
+#MISE description="Update monorepo script snapshots"
+#MISE sources=["{{env.WEB_SOURCE}}/*.txt"]
+#MISE outputs=["{{env.WEB_OUTPUT}}/script-done.txt"]
+mkdir -p "$WEB_OUTPUT"
+echo script snapshots >"$WEB_OUTPUT/script-done.txt"
+echo script snapshots
+CONFIG
+chmod +x apps/web/mise-tasks/script-snapshots
 
 # Completion output should include the //-prefixed task path with escaped colon
 assert_contains "mise task ls --complete" '//apps/web\:update-snapshots:Update monorepo snapshots'
+assert_contains "mise task ls --complete" '//apps/web\:script-snapshots:Update monorepo script snapshots'
 # Running from the monorepo root renders the task templates with the
 # subproject's env (WEB_OUTPUT=dist, not the root's root-dist)
 assert "mise -q run //apps/web:update-snapshots" "updating snapshots"
 assert "cat apps/web/dist/done.txt" "updating snapshots"
+assert "mise -q run //apps/web:script-snapshots" "script snapshots"
+assert "cat apps/web/dist/script-done.txt" "script snapshots"
 
 # A task with a template that legitimately fails to render must not break
 # loading tasks from other subprojects
