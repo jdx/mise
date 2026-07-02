@@ -10413,6 +10413,41 @@ packages:
           - goos: windows
             asset: envsubst
   - type: github_release
+    repo_owner: aaif-goose
+    repo_name: goose
+    aliases:
+      - name: block/goose
+    description: "an open source, extensible AI agent that goes beyond code suggestions - install, execute, edit, and test with any LLM"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 1.0.0")
+        error_message: |
+          Please use a version later than v1.0.
+      - version_constraint: semver("<= 1.29.1")
+        asset: goose-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.bz2
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: goose-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.bz2
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin
+        github_artifact_attestations:
+          signer_workflow: aaif-goose/goose/.github/workflows/release.yml
+  - type: github_release
     name: aakso/ssh-inscribe/sshi
     repo_owner: aakso
     repo_name: ssh-inscribe
@@ -20073,39 +20108,6 @@ packages:
               - name: blender
                 src: Blender.app/Contents/MacOS/Blender
   - type: github_release
-    repo_owner: block
-    repo_name: goose
-    description: "an open source, extensible AI agent that goes beyond code suggestions - install, execute, edit, and test with any LLM"
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("< 1.0.0")
-        error_message: |
-          Please use a version later than v1.0.
-      - version_constraint: semver("<= 1.25.0")
-        asset: goose-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.bz2
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-        supported_envs:
-          - linux
-          - darwin
-      - version_constraint: "true"
-        asset: goose-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.bz2
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-        supported_envs:
-          - linux
-          - darwin
-        github_artifact_attestations:
-          signer_workflow: block/goose/.github/workflows/release.yml
-  - type: github_release
     repo_owner: blopker
     repo_name: codebook
     description: Spell Checker for Code
@@ -27039,6 +27041,48 @@ packages:
       - version_constraint: "true"
         asset: bombardier-{{.OS}}-{{.Arch}}
         format: raw
+  - type: github_release
+    repo_owner: colbymchenry
+    repo_name: codegraph
+    description: Pre-indexed code knowledge graph for coding agents
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.8.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.9.3")
+        asset: codegraph-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: codegraph
+            src: "{{.AssetWithoutExt}}/bin/codegraph"
+        replacements:
+          amd64: x64
+          windows: win32
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: codegraph
+                src: "{{.AssetWithoutExt}}/bin/codegraph.cmd"
+      - version_constraint: "true"
+        asset: codegraph-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: codegraph
+            src: "{{.AssetWithoutExt}}/bin/codegraph"
+        replacements:
+          amd64: x64
+          windows: win32
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: codegraph
+                src: "{{.AssetWithoutExt}}/bin/codegraph.cmd"
   - type: github_release
     repo_owner: commercialhaskell
     repo_name: stack
@@ -55100,6 +55144,22 @@ packages:
         checksum:
           enabled: false
   - type: github_release
+    repo_owner: kayac
+    repo_name: lamvms
+    description: lamvms is a deployment and lifecycle management tool for AWS Lambda MicroVMs
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: lamvms_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: kcl-lang
     repo_name: cli
     description: The KCL Command Line Interface (CLI)
@@ -63812,19 +63872,20 @@ packages:
     link: https://code.visualstudio.com/
     search_words:
       - visual studio code
-    url: https://update.code.visualstudio.com/{{trimV .Version}}/cli-{{.OS}}-{{.Arch}}/stable
-    replacements:
-      windows: win32
-      amd64: x64
-    format: tar.gz
-    append_ext: false
-    overrides:
-      - goos: windows
-        format: zip
-    version_constraint: semver(">= 1.73.0")
+    version_constraint: "false"
     version_overrides:
       - version_constraint: semver("< 1.73.0")
         no_asset: true
+      - version_constraint: "true"
+        url: https://update.code.visualstudio.com/{{trimV .Version}}/cli-{{.OS}}-{{.Arch}}/stable
+        replacements:
+          windows: win32
+          amd64: x64
+        format: zip
+        append_ext: false
+        overrides:
+          - goos: linux
+            format: tar.gz
   - type: github_release
     repo_owner: mike-engel
     repo_name: jwt-cli
@@ -64018,11 +64079,41 @@ packages:
       - darwin
       - linux
       - amd64
-    # https://github.com/mikefarah/yq/issues/801#issuecomment-853523411
-    version_constraint: semver(">= 4.9.6")
+    version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("< 4.35.1")
+        rosetta2: true
+      - version_constraint: semver("< 4.53.0")
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums-bsd
+          file_format: regexp
+          algorithm: sha512
+          pattern:
+            # rhash bsd format, https://rhash.sourceforge.io/manpage.php#sect6
+            checksum: ^SHA512\s+\([^)]+\)\s+=\s+([A-Fa-f0-9]{128})$
+            file: ^SHA512\s+\(([^)]+)\)\s+=\s+[A-Fa-f0-9]{128}$
       - version_constraint: "true"
         rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums-bsd
+          file_format: regexp
+          algorithm: sha512
+          pattern:
+            # rhash bsd format, https://rhash.sourceforge.io/manpage.php#sect6
+            checksum: ^SHA512\s+\([^)]+\)\s+=\s+([A-Fa-f0-9]{128})$
+            file: ^SHA512\s+\(([^)]+)\)\s+=\s+[A-Fa-f0-9]{128}$
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums-bsd.bundle
+            opts:
+              - --certificate-identity
+              - https://github.com/mikefarah/yq/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
   - type: github_release
     repo_owner: miku
     repo_name: zek
@@ -66699,6 +66790,18 @@ packages:
         overrides:
           - goos: windows
             format: zip
+  - type: go_install
+    repo_owner: mxschmitt
+    repo_name: playwright-go
+    aliases:
+      - name: playwright-community/playwright-go
+    description: Playwright for Go a browser automation library to control Chromium, Firefox and WebKit with a single API
+    files:
+      - name: playwright
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        path: github.com/playwright-community/playwright-go/cmd/playwright
   - type: github_release
     repo_owner: nabeken
     repo_name: go-github-apps
@@ -73897,16 +74000,6 @@ packages:
       type: github_release
       asset: pscale_{{trimV .Version}}_checksums.txt
       algorithm: sha256
-  - type: go_install
-    repo_owner: playwright-community
-    repo_name: playwright-go
-    description: Playwright for Go a browser automation library to control Chromium, Firefox and WebKit with a single API
-    files:
-      - name: playwright
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: "true"
-        path: github.com/playwright-community/playwright-go/cmd/playwright
   - type: github_release
     repo_owner: plexsystems
     repo_name: sinker
@@ -78395,7 +78488,7 @@ packages:
         supported_envs:
           - linux
           - darwin
-      - version_constraint: semver("<= 2.12.6")
+      - version_constraint: semver("< 3.0.0")
         asset: roc_{{trimV .Version}}_{{.OS}}_{{.Arch}}
         format: raw
         checksum:
@@ -89343,7 +89436,14 @@ packages:
           algorithm: sha256
         overrides:
           - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
             asset: tailwindcss-{{.OS}}-{{.Arch}}-musl
+            variants:
+              - key: libc
+                value: musl
   - type: github_release
     repo_owner: tak848
     repo_name: ccgate
@@ -93615,6 +93715,112 @@ packages:
       - darwin
       - linux
   - type: github_release
+    repo_owner: twitchdev
+    repo_name: twitch-cli
+    description: The official Twitch CLI to make developing on Twitch easier
+    files:
+      - name: twitch
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.1.3"
+        asset: twitch-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.2.1")
+        asset: twitch-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            asset: twitch-{{.OS}}-10.6-{{.Arch}}
+          - goos: windows
+            asset: twitch-{{.OS}}-4.0-{{.Arch}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.1.1")
+        asset: twitch-cli_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.1.6")
+        asset: twitch-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: twitch
+            src: twitch-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}/twitch
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: twitch-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: twitch
+            src: twitch-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}/twitch
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: twpayne
     repo_name: chezmoi
     description: Manage your dotfiles across multiple diverse machines, securely
@@ -97864,6 +98070,21 @@ packages:
         supported_envs:
           - linux
           - darwin
+  - type: github_release
+    repo_owner: whisper-sec
+    repo_name: whisper-cli
+    description: Official CLI to give your agent a real, routable Whisper IPv6 identity
+    files:
+      - name: whisper
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: whisper-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
   - type: github_release
     repo_owner: windvalley
     repo_name: gossh

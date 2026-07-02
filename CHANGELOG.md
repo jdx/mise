@@ -1,5 +1,105 @@
 # Changelog
 
+## [2026.7.0](https://github.com/jdx/mise/compare/v2026.6.14..v2026.7.0) - 2026-07-02
+
+### 🚀 Features
+
+- **(bootstrap)** prune unmanaged brew formulae by @jdx in [#10618](https://github.com/jdx/mise/pull/10618)
+- **(brew)** add support for font artifact types and extend non-install artifacts by @roele in [#10671](https://github.com/jdx/mise/pull/10671)
+- **(env)** enable shell expansion by default by @jdx in [#10702](https://github.com/jdx/mise/pull/10702)
+- **(github)** allow disabling attestations per tool by @jdx in [#10694](https://github.com/jdx/mise/pull/10694)
+- **(monorepo)** add install union and unified lockfiles by @jdx in [#10707](https://github.com/jdx/mise/pull/10707)
+- **(task)** support mounted usage specs in file tasks by @jdx in [#10704](https://github.com/jdx/mise/pull/10704)
+- **(upgrade)** show release date and eligibility in minimum_release_age warning by @jdx in [#10705](https://github.com/jdx/mise/pull/10705)
+- Android asset detection by @bltavares in [#10653](https://github.com/jdx/mise/pull/10653)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** resolve bin paths with v-prefixed overrides by @jdx in [#10696](https://github.com/jdx/mise/pull/10696)
+- **(aqua)** download private release assets via the GitHub API asset endpoint by @yacchi in [#10622](https://github.com/jdx/mise/pull/10622)
+- **(brew-cask)** handle raw binaries, $APPDIR paths, and app bundle copying by @arthurh4 in [#10626](https://github.com/jdx/mise/pull/10626)
+- **(config)** preserve set values in config set by @KrishRVH in [#10647](https://github.com/jdx/mise/pull/10647)
+- **(config)** use vars in task include templates by @jdx in [#10700](https://github.com/jdx/mise/pull/10700)
+- **(config)** support required and redacted vars by @jdx in [#10697](https://github.com/jdx/mise/pull/10697)
+- **(copr)** drop retired Fedora 42 chroots by @jdx in [#10698](https://github.com/jdx/mise/pull/10698)
+- **(dotnet)** validate SDK installs with list-sdks by @jdx in [#10691](https://github.com/jdx/mise/pull/10691)
+- **(generate)** respect lockfile_platforms for tool stubs by @JamBalaya56562 in [#10709](https://github.com/jdx/mise/pull/10709)
+- **(github)** handle missing lockfile url_api by @jdx in [#10703](https://github.com/jdx/mise/pull/10703)
+- **(hooks)** set MISE_INSTALLED_TOOLS to [] on no-op install (keep running postinstall) by @JamBalaya56562 in [#10615](https://github.com/jdx/mise/pull/10615)
+- **(http)** don't let netrc clobber forge tokens for un-redirected URLs by @yacchi in [#10713](https://github.com/jdx/mise/pull/10713)
+- **(install)** respect lockfile backend during locked installs by @risu729 in [#10599](https://github.com/jdx/mise/pull/10599)
+- **(install)** suggest source install for unsupported arches by @risu729 in [#10627](https://github.com/jdx/mise/pull/10627)
+- **(install-into)** refuse to overwrite a non-empty target directory without --yes by @JamBalaya56562 in [#10630](https://github.com/jdx/mise/pull/10630)
+- **(lockfile)** merge platform data when a tool's options newly diverge from an empty on-disk entry by @JamBalaya56562 in [#10710](https://github.com/jdx/mise/pull/10710)
+- **(npm)** support allow_builds with npm allow-scripts by @jdx in [#10690](https://github.com/jdx/mise/pull/10690)
+- **(oci)** resolve host install symlinks and symlinked paths during `PATH` rebasing by @salim-b in [#10624](https://github.com/jdx/mise/pull/10624)
+- **(oci)** account for darwin mode stripping by @laozc in [#10681](https://github.com/jdx/mise/pull/10681)
+- **(sigstore)** retry GitHub attestations with TUF root by @jdx in [#10695](https://github.com/jdx/mise/pull/10695)
+- **(task)** render monorepo subproject task templates with their own env by @jdx in [#10706](https://github.com/jdx/mise/pull/10706)
+- **(task)** correct env for `task.show_full_cmd` setting by @muzimuzhi in [#10714](https://github.com/jdx/mise/pull/10714)
+- **(vfox)** make os.getenv use mise env by @jdx in [#10719](https://github.com/jdx/mise/pull/10719)
+- **(watch)** forward --ignore, --ignore-file, and --print-events to watchexec by @JamBalaya56562 in [#10629](https://github.com/jdx/mise/pull/10629)
+- stop forcing no-yjit ruby on older glibc by @jdx in [#10620](https://github.com/jdx/mise/pull/10620)
+- allow GHCUp to be installed on Windows by @cprecioso in [#10670](https://github.com/jdx/mise/pull/10670)
+
+### 🧪 Testing
+
+- **(task)** avoid pipefail in trust include assertions by @jdx in [#10708](https://github.com/jdx/mise/pull/10708)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 7cdf593 by @renovate[bot] in [#10632](https://github.com/jdx/mise/pull/10632)
+- update ghcr.io/jdx/mise:deb docker digest to 7f8a538 by @renovate[bot] in [#10633](https://github.com/jdx/mise/pull/10633)
+- update rattler by @renovate[bot] in [#10637](https://github.com/jdx/mise/pull/10637)
+- update ghcr.io/jdx/mise:rpm docker digest to 4d4b300 by @renovate[bot] in [#10634](https://github.com/jdx/mise/pull/10634)
+- update rust-lang/crates-io-auth-action action to v1.0.5 by @renovate[bot] in [#10636](https://github.com/jdx/mise/pull/10636)
+- update rust docker digest to 6df234c by @renovate[bot] in [#10635](https://github.com/jdx/mise/pull/10635)
+- update rust crate itertools to 0.15 by @renovate[bot] in [#10639](https://github.com/jdx/mise/pull/10639)
+- update actions/checkout action to v7 by @renovate[bot] in [#10641](https://github.com/jdx/mise/pull/10641)
+- update dependency @types/node to v26 by @renovate[bot] in [#10642](https://github.com/jdx/mise/pull/10642)
+- update ubuntu docker tag to resolute-20260610 by @renovate[bot] in [#10649](https://github.com/jdx/mise/pull/10649)
+- update actions/cache digest to caa2961 by @renovate[bot] in [#10652](https://github.com/jdx/mise/pull/10652)
+- update sigstore-verify to 0.10.0 by @sinelaw in [#10677](https://github.com/jdx/mise/pull/10677)
+- group sigstore renovate updates by @jdx in [#10693](https://github.com/jdx/mise/pull/10693)
+
+### 📦 Registry
+
+- disable jc test by @jdx in [#10701](https://github.com/jdx/mise/pull/10701)
+
+### Chore
+
+- **(ci)** make nightly rust informational by @jdx in [#10689](https://github.com/jdx/mise/pull/10689)
+
+### Security
+
+- ignore quick-xml advisories pending upstream fixes by @jdx in [#10717](https://github.com/jdx/mise/pull/10717)
+
+### New Contributors
+
+- @yacchi made their first contribution in [#10713](https://github.com/jdx/mise/pull/10713)
+- @bltavares made their first contribution in [#10653](https://github.com/jdx/mise/pull/10653)
+- @sinelaw made their first contribution in [#10677](https://github.com/jdx/mise/pull/10677)
+- @KrishRVH made their first contribution in [#10647](https://github.com/jdx/mise/pull/10647)
+- @arthurh4 made their first contribution in [#10626](https://github.com/jdx/mise/pull/10626)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (6)
+
+- [`aaif-goose/goose`](https://github.com/aaif-goose/goose)
+- [`colbymchenry/codegraph`](https://github.com/colbymchenry/codegraph)
+- [`kayac/lamvms`](https://github.com/kayac/lamvms)
+- [`mxschmitt/playwright-go`](https://github.com/mxschmitt/playwright-go)
+- [`twitchdev/twitch-cli`](https://github.com/twitchdev/twitch-cli)
+- [`whisper-sec/whisper-cli`](https://github.com/whisper-sec/whisper-cli)
+
+#### Updated Packages (4)
+
+- [`microsoft/vscode/code`](https://github.com/microsoft/vscode)
+- [`mikefarah/yq`](https://github.com/mikefarah/yq)
+- [`runs-on/cli`](https://github.com/runs-on/cli)
+- [`tailwindlabs/tailwindcss`](https://github.com/tailwindlabs/tailwindcss)
+
 ## [2026.6.15](https://github.com/jdx/mise/compare/v2026.6.14..v2026.6.15) - 2026-06-26
 
 ### 🚀 Features
