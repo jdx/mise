@@ -786,7 +786,7 @@ fn release_eligible_at(created_at: Timestamp, age: &str) -> Option<Timestamp> {
 fn release_is_eligible_at(created_at: Timestamp, now: Timestamp, age: &Span) -> bool {
     now.to_zoned(jiff::tz::TimeZone::UTC)
         .checked_sub(age)
-        .is_ok_and(|cutoff| cutoff.timestamp() >= created_at)
+        .is_ok_and(|cutoff| cutoff.timestamp() > created_at)
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -823,7 +823,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::format_hidden_release_details;
+    use super::{format_hidden_release_details, release_is_eligible_at};
     use jiff::tz::TimeZone;
 
     #[test]
@@ -860,6 +860,17 @@ mod tests {
             " (released 2019-01-31, eligible 2019-03-01 00:00 UTC)"
         );
         assert_eq!(age, " (1mo)");
+    }
+
+    #[test]
+    fn test_release_is_eligible_at_uses_strict_cutoff() {
+        let created = "2024-01-01T00:00:00Z".parse().unwrap();
+        let age = "24h".parse().unwrap();
+        let exact_cutoff = "2024-01-02T00:00:00Z".parse().unwrap();
+        let after_cutoff = "2024-01-02T00:00:00.000000001Z".parse().unwrap();
+
+        assert!(!release_is_eligible_at(created, exact_cutoff, &age));
+        assert!(release_is_eligible_at(created, after_cutoff, &age));
     }
 
     #[test]
