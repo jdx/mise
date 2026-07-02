@@ -1,9 +1,1 @@
-investigate [https://github.com/jdx/mise/discussions/10439](https://github.com/jdx/mise/discussions/10439)
-
----
-
-why do we use github instead of aqua?
-
----
-
 did you find any discussions about pi that might answer? if not, just make a pr to fix this
