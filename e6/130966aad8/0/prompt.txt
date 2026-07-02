@@ -1,0 +1,5 @@
+I think we need to think of the rollout more carefully here, similar to other debug_assert rollouts. I think we make it a triple-state initially and not change behavior so users can upgrade for a few months (6 months to be precise) then 6 months later we show a warning that the default is going to change to this new behavior
+
+---
+
+they only see the warning if they're using monorepo and mise.lock correct?

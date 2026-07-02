@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "e6130966aad8",
+  "session_id": "019f2016-8a7a-7440-a3d7-85ddf269a3d6",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T01:01:23.725957Z",
+  "branch": "codex/monorepo-install-lockfile",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/mise-lock.md",
+    "docs/tasks/monorepo.md",
+    "src/config/mod.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "e9b3a663f742",
+  "checkpoint_transcript_start": 1520,
+  "transcript_lines_at_start": 1520,
+  "token_usage": {
+    "input_tokens": 59118,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1540480,
+    "output_tokens": 4979,
+    "api_call_count": 9
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-02T01:01:23.672654Z",
+    "agent_lines": 84,
+    "agent_removed": 9,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 84,
+    "total_lines_changed": 93,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
