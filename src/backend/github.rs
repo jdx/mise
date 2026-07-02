@@ -1106,30 +1106,7 @@ impl UnifiedGitBackend {
                 || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
                 || asset.url_api.starts_with(DEFAULT_FORGEJO_API_BASE_URL)
             {
-                // check if url is reachable, 404 might indicate a private repo or asset.
-                // This is needed, because private repos and assets cannot be downloaded
-                // via browser url, therefore a fallback to api_url is needed in such cases.
-                // Also check Content-Type - if it's text/html, we got a login page (private repo).
-                true => match HTTP.head(asset.url.clone()).await {
-                    Ok(resp) => {
-                        let content_type = resp
-                            .headers()
-                            .get("content-type")
-                            .and_then(|v| v.to_str().ok())
-                            .unwrap_or("");
-                        if content_type.contains("text/html") {
-                            debug!("Browser URL returned HTML (likely auth page), using API URL");
-                            asset.url_api.clone()
-                        } else {
-                            asset.url.clone()
-                        }
-                    }
-                    Err(_) => asset.url_api.clone(),
-                },
-
-                // Custom API URLs usually imply that a custom GitHub/GitLab instance is used.
-                // Often times such instances do not allow browser URL downloads, e.g. due to
-                // upstream company SSOs. Therefore, using the api_url for downloading is the safer approach.
+                true => github::pick_reachable_asset_url(&asset.url, &asset.url_api).await,
                 false => {
                     debug!(
                         "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
