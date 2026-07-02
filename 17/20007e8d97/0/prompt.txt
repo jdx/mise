@@ -1,5 +1,1 @@
-address pr feedback on [jdx/mise#10706](https://github.com/jdx/mise/pull/10706)
-
----
-
 address pr feedback
