@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "4812ee462dfd",
+  "strategy": "manual-commit",
+  "branch": "codex/simplify-robustness",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deny.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/48/12ee462dfd/0/metadata.json",
+      "transcript": "/48/12ee462dfd/0/full.jsonl",
+      "content_hash": "/48/12ee462dfd/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 113669,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3852544,
+    "output_tokens": 9650,
+    "api_call_count": 44
+  }
+}
