@@ -547,10 +547,10 @@ fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
 
 fn parse_task_usage_raw(file: &Path, raw: &str) -> usage::Result<usage::Spec> {
     let mut spec: usage::Spec = raw.parse()?;
-    if spec.bin.is_empty() {
-        if let Some(name) = file.file_name().and_then(|n| n.to_str()) {
-            spec.bin = name.to_string();
-        }
+    if spec.bin.is_empty()
+        && let Some(name) = file.file_name().and_then(|n| n.to_str())
+    {
+        spec.bin = name.to_string();
     }
     if spec.name.is_empty() {
         spec.name.clone_from(&spec.bin);
