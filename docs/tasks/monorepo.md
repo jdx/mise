@@ -243,18 +243,25 @@ mise install --monorepo node
 
 ## Lockfiles
 
-By default, monorepos use one lockfile at the monorepo root. Tools from `packages/api/mise.toml` write to `<monorepo_root>/mise.lock`, while environment and local variants write to root files such as `mise.ci.lock` and `mise.local.lock`.
+Monorepos can use one lockfile at the monorepo root. Tools from `packages/api/mise.toml` write to `<monorepo_root>/mise.lock`, while environment and local variants write to root files such as `mise.ci.lock` and `mise.local.lock`.
+
+This is rolling out as a tri-state setting. During the rollout window, unset keeps today's per-subproject lockfile behavior. Set `lockfile = true` to opt into root lockfiles now:
+
+```toml
+[monorepo]
+lockfile = true
+```
 
 If mise finds old subproject lockfiles, it migrates them into the root lockfile the next time a lock-aware command runs. Root entries win on conflicts, unique subproject entries are preserved, and migrated subproject lockfiles are removed.
 
-To keep lockfiles next to each subproject config, opt out in the monorepo root:
+To keep lockfiles next to each subproject config after the default changes, pin the old behavior in the monorepo root:
 
 ```toml
 [monorepo]
 lockfile = false
 ```
 
-Older mise versions do not understand unified monorepo lockfiles for subproject-owned tools. Teams that need mixed-version compatibility should use `lockfile = false` until everyone has upgraded.
+Unset will start warning in mise `2026.12.0` and will default to root lockfiles in mise `2027.6.0`. Older mise versions do not understand unified monorepo lockfiles for subproject-owned tools. Teams that need mixed-version compatibility should use `lockfile = false` until everyone has upgraded.
 
 ## Config Roots
 

@@ -137,9 +137,9 @@ mise lock --local node python  # update specific tools in mise.local.lock
 
 ## Monorepos
 
-When `monorepo_root = true`, mise uses a single lockfile at the monorepo root by default. Subproject configs listed in `[monorepo].config_roots` write to root lockfile variants such as `mise.lock`, `mise.ci.lock`, and `mise.local.lock`.
+When `monorepo_root = true`, mise can use a single lockfile at the monorepo root. Set `[monorepo] lockfile = true` to opt into root lockfile variants such as `mise.lock`, `mise.ci.lock`, and `mise.local.lock`.
 
-Existing subproject lockfiles are migrated into the root lockfile on the next lock-aware command. Older mise versions do not understand this layout for subproject-owned tools, so projects that need mixed-version compatibility can opt out:
+Existing subproject lockfiles are migrated into the root lockfile on the next lock-aware command. Unset keeps per-subproject lockfiles during the rollout, starts warning in mise `2026.12.0`, and defaults to root lockfiles in mise `2027.6.0`. Older mise versions do not understand this layout for subproject-owned tools, so projects that need mixed-version compatibility can pin the old behavior:
 
 ```toml
 [monorepo]

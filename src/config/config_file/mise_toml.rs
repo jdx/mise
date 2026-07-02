@@ -220,7 +220,7 @@ pub struct MonorepoConfig {
     #[serde(default)]
     pub config_roots: Vec<String>,
     /// Use a single lockfile at the monorepo root for descendant config roots.
-    /// Defaults to true. Set to false to keep lockfiles next to subproject configs.
+    /// None follows the rollout default; true opts in, false keeps colocated locks.
     pub lockfile: Option<bool>,
 }
 

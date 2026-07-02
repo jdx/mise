@@ -86,6 +86,8 @@ pub struct Alias {
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 static _REDACTOR: Lazy<Mutex<Redactor>> = Lazy::new(Default::default);
+const MONOREPO_LOCKFILE_WARN_AT: &str = "2026.12.0";
+const MONOREPO_LOCKFILE_DEFAULT_AT: &str = "2027.6.0";
 
 pub fn is_loaded() -> bool {
     _CONFIG.read().unwrap().is_some()
@@ -220,6 +222,7 @@ impl Config {
         }
 
         warn_if_auto_env_files_exist();
+        warn_if_monorepo_lockfile_default_changes(&config);
 
         time!("load done");
 
@@ -407,7 +410,8 @@ impl Config {
 
     pub fn monorepo_lockfile_root(&self) -> Option<PathBuf> {
         let cf = find_monorepo_config(&self.config_files)?;
-        if cf.monorepo().and_then(|m| m.lockfile).unwrap_or(true) {
+        let setting = cf.monorepo().and_then(|m| m.lockfile);
+        if monorepo_lockfile_enabled_for_version(&version::V, setting) {
             cf.project_root().map(|p| p.to_path_buf())
         } else {
             None
@@ -1308,6 +1312,53 @@ fn should_warn_auto_env(
         && !auto_envs_active
         && *version >= versions::Versioning::new("2026.12.0").unwrap()
         && !env::auto_env_default_for_version(version)
+}
+
+/// Default for monorepo lockfile routing when `[monorepo].lockfile` is unset.
+/// Keep legacy colocated lockfiles until the scheduled default flip.
+fn monorepo_lockfile_default_for_version(version: &versions::Versioning) -> bool {
+    *version >= versions::Versioning::new(MONOREPO_LOCKFILE_DEFAULT_AT).unwrap()
+}
+
+fn monorepo_lockfile_enabled_for_version(
+    version: &versions::Versioning,
+    setting: Option<bool>,
+) -> bool {
+    setting.unwrap_or_else(|| monorepo_lockfile_default_for_version(version))
+}
+
+/// Whether to emit the phase-2 monorepo lockfile rollout warning. Pure for unit testing.
+/// Warns only when the user has not explicitly chosen `lockfile = true` or `false`
+/// and the mise version is in the warning window before the default flip.
+fn should_warn_monorepo_lockfile_default(
+    version: &versions::Versioning,
+    setting: Option<bool>,
+) -> bool {
+    setting.is_none()
+        && *version >= versions::Versioning::new(MONOREPO_LOCKFILE_WARN_AT).unwrap()
+        && !monorepo_lockfile_default_for_version(version)
+}
+
+fn warn_if_monorepo_lockfile_default_changes(config: &Config) {
+    // Dead code once the default flips on: unset configs use the new behavior,
+    // so this warning path should be removed when the rollout completes.
+    debug_assert!(
+        !monorepo_lockfile_default_for_version(&version::V),
+        "monorepo lockfiles are now default-on; remove warn_if_monorepo_lockfile_default_changes() and should_warn_monorepo_lockfile_default()"
+    );
+    let Some(cf) = find_monorepo_config(&config.config_files) else {
+        return;
+    };
+    let setting = cf.monorepo().and_then(|m| m.lockfile);
+    if !should_warn_monorepo_lockfile_default(&version::V, setting) {
+        return;
+    }
+
+    warn_once!(
+        "Monorepo lockfiles will default to a single root lockfile starting in mise {MONOREPO_LOCKFILE_DEFAULT_AT}. \
+        Set `[monorepo] lockfile = true` in {} to opt in now, or `lockfile = false` to keep per-subproject lockfiles and silence this warning.",
+        display_path(cf.get_path())
+    );
 }
 
 /// Phase-2 rollout warning for auto_env: starting with 2026.12.0, tell users about
@@ -3189,6 +3240,41 @@ mod tests {
         // default flipped on: warning is obsolete
         assert!(!should_warn_auto_env(&v("2027.6.0"), None, true));
         assert!(!should_warn_auto_env(&v("2027.6.0"), Some(false), false));
+    }
+
+    #[test]
+    fn test_monorepo_lockfile_rollout() {
+        let v = |s: &str| versions::Versioning::new(s).unwrap();
+
+        assert!(!monorepo_lockfile_enabled_for_version(
+            &v("2026.6.15"),
+            None
+        ));
+        assert!(monorepo_lockfile_enabled_for_version(
+            &v("2026.6.15"),
+            Some(true)
+        ));
+        assert!(!monorepo_lockfile_enabled_for_version(
+            &v("2027.6.0"),
+            Some(false)
+        ));
+        assert!(monorepo_lockfile_enabled_for_version(&v("2027.6.0"), None));
+
+        assert!(!should_warn_monorepo_lockfile_default(
+            &v("2026.11.9"),
+            None
+        ));
+        assert!(should_warn_monorepo_lockfile_default(&v("2026.12.0"), None));
+        assert!(should_warn_monorepo_lockfile_default(&v("2027.5.9"), None));
+        assert!(!should_warn_monorepo_lockfile_default(
+            &v("2026.12.0"),
+            Some(true)
+        ));
+        assert!(!should_warn_monorepo_lockfile_default(
+            &v("2026.12.0"),
+            Some(false)
+        ));
+        assert!(!should_warn_monorepo_lockfile_default(&v("2027.6.0"), None));
     }
 
     #[tokio::test]

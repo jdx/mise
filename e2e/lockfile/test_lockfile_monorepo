@@ -6,12 +6,31 @@ export MISE_LOCKFILE=1
 ln -sf "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
 ln -sf "$ROOT/test/data/plugins/dummy" "$MISE_DATA_DIR/plugins/dummy"
 
-echo "=== default monorepo lockfile routes subprojects to root ==="
+echo "=== unset [monorepo].lockfile keeps subproject lockfiles during rollout ==="
+mkdir -p monorepo-unset/packages/a
+cat >monorepo-unset/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-unset/packages/a/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+touch monorepo-unset/packages/a/mise.lock
+
+assert "cd monorepo-unset/packages/a && mise install"
+assert_contains "cat monorepo-unset/packages/a/mise.lock" '[[tools.tiny]]'
+assert_fail "test -f monorepo-unset/mise.lock"
+
+echo "=== [monorepo] lockfile = true routes subprojects to root ==="
 mkdir -p monorepo/packages/a monorepo/packages/b
 cat >monorepo/mise.toml <<'EOF'
 monorepo_root = true
 
 [monorepo]
+lockfile = true
 config_roots = ["packages/*"]
 EOF
 cat >monorepo/packages/a/mise.toml <<'EOF'
@@ -52,6 +71,7 @@ cat >monorepo-migrate/mise.toml <<'EOF'
 monorepo_root = true
 
 [monorepo]
+lockfile = true
 config_roots = ["packages/*"]
 EOF
 cat >monorepo-migrate/packages/a/mise.toml <<'EOF'
