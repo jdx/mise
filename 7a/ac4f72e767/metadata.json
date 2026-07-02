@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "7aac4f72e767",
+  "strategy": "manual-commit",
+  "branch": "codex/simplify-robustness",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/test.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7a/ac4f72e767/0/metadata.json",
+      "transcript": "/7a/ac4f72e767/0/full.jsonl",
+      "content_hash": "/7a/ac4f72e767/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 99608,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6194048,
+    "output_tokens": 6823,
+    "api_call_count": 33
+  }
+}
