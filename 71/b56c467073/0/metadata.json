@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "71b56c467073",
+  "session_id": "019f23cc-e43b-72b0-98ab-630b08ce1f7f",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T17:55:02.723006Z",
+  "branch": "codex/fix-redaction-wildcards",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "e2e/tasks/test_task_redactions",
+    "src/cli/env.rs",
+    "src/wildcard.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "0c3a6ca1e9a0",
+  "token_usage": {
+    "input_tokens": 222289,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1569920,
+    "output_tokens": 10796,
+    "api_call_count": 27
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-02T17:55:02.709612Z",
+    "agent_lines": 86,
+    "agent_removed": 58,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 86,
+    "total_lines_changed": 144,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 86,
+      "agent_lines_removed": 58
+    }
+  ]
+}

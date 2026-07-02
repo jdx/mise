@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "71b56c467073",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-redaction-wildcards",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/tasks/test_task_redactions",
+    "src/cli/env.rs",
+    "src/wildcard.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/71/b56c467073/0/metadata.json",
+      "transcript": "/71/b56c467073/0/full.jsonl",
+      "content_hash": "/71/b56c467073/0/content_hash.txt",
+      "prompt": "/71/b56c467073/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 222289,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1569920,
+    "output_tokens": 10796,
+    "api_call_count": 27
+  }
+}
