@@ -367,11 +367,8 @@ impl CondaBackend {
 
     fn read_lockfile_for_tool(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<Lockfile> {
         match tv.request.source() {
-            ToolSource::MiseToml(_) => {
-                let (lockfile_path, _) =
-                    lockfile::lockfile_path_for_tool_source(&ctx.config, tv.request.source())
-                        .ok_or_else(|| eyre::eyre!("could not determine conda lockfile path"))?;
-                Lockfile::read(&lockfile_path)
+            ToolSource::MiseToml(path) => {
+                Ok(lockfile::read_lockfile_for_config_path(&ctx.config, path))
             }
             _ => Ok(Lockfile::default()),
         }

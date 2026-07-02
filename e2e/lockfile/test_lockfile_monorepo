@@ -2,6 +2,7 @@
 
 export MISE_EXPERIMENTAL=1
 export MISE_LOCKFILE=1
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=dummy
 
 rm -rf "$MISE_DATA_DIR/plugins/tiny"
 ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
@@ -99,6 +100,36 @@ assert_contains "cat monorepo-migrate/mise.lock" 'version = "1.0.0"'
 assert_contains "cat monorepo-migrate/mise.lock" '[[tools.dummy]]'
 assert_fail "test -f monorepo-migrate/packages/a/mise.lock"
 assert_fail "test -f monorepo-migrate/packages/b/.mise/mise.lock"
+
+echo "=== idiomatic roots migrate colocated lockfiles into root lockfiles ==="
+mkdir -p monorepo-idiomatic-migrate/packages/a
+cat >monorepo-idiomatic-migrate/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+echo "2" >monorepo-idiomatic-migrate/packages/a/.dummy-version
+cat >monorepo-idiomatic-migrate/packages/a/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "2.0.0"
+backend = "asdf:dummy"
+EOF
+cat >monorepo-idiomatic-migrate/packages/a/mise.ci.lock <<'EOF'
+[[tools.dummy]]
+version = "2.0.0"
+backend = "asdf:dummy"
+EOF
+
+output=$(cd monorepo-idiomatic-migrate && mise lock --platform linux-x64 2>&1)
+assert_contains "echo '$output'" "migrated 2 subproject lockfile"
+assert_contains "cat monorepo-idiomatic-migrate/mise.lock" '[[tools.dummy]]'
+assert_contains "cat monorepo-idiomatic-migrate/mise.lock" 'version = "2.0.0"'
+assert_contains "cat monorepo-idiomatic-migrate/mise.ci.lock" '[[tools.dummy]]'
+assert_contains "cat monorepo-idiomatic-migrate/mise.ci.lock" 'version = "2.0.0"'
+assert_fail "test -f monorepo-idiomatic-migrate/packages/a/mise.lock"
+assert_fail "test -f monorepo-idiomatic-migrate/packages/a/mise.ci.lock"
 
 echo "=== dry-run reads legacy subproject lockfiles without migrating ==="
 mkdir -p monorepo-dry-run/packages/a

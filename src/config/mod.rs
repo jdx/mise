@@ -425,12 +425,28 @@ impl Config {
         if patterns.is_empty() {
             return None;
         }
-        let config_roots = expand_config_roots(&monorepo_root, patterns, None).ok()?;
+        let config_roots = expand_config_root_dirs(&monorepo_root, patterns, None).ok()?;
         (!config_roots.is_empty()).then_some(monorepo_root)
     }
 
-    pub fn monorepo_config_root_dirs(&self) -> Result<Vec<PathBuf>> {
-        self.monorepo_config_root_dirs_with_filenames(&DEFAULT_CONFIG_FILENAMES)
+    pub(crate) fn monorepo_config_root_dirs_for_lockfiles(&self) -> Result<Vec<PathBuf>> {
+        let monorepo_config = find_monorepo_config(&self.config_files)
+            .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
+        let monorepo_root = monorepo_config
+            .project_root()
+            .ok_or_else(|| eyre!("monorepo root config has no project root"))?;
+        let patterns = &monorepo_config
+            .monorepo()
+            .ok_or_else(|| eyre!("[monorepo].config_roots is required for monorepo operations"))?
+            .config_roots;
+        if patterns.is_empty() {
+            bail!("[monorepo].config_roots is required for monorepo operations");
+        }
+        let roots = expand_config_root_dirs(&monorepo_root, patterns, None)?;
+        if roots.is_empty() {
+            bail!("[monorepo].config_roots did not match any config roots");
+        }
+        Ok(roots)
     }
 
     fn monorepo_config_root_dirs_with_filenames(
@@ -454,10 +470,6 @@ impl Config {
             bail!("[monorepo].config_roots did not match any config roots");
         }
         Ok(roots)
-    }
-
-    pub async fn monorepo_union_config_files(self: &Arc<Self>) -> Result<ConfigMap> {
-        Ok(self.monorepo_union().await?.config_files)
     }
 
     pub async fn monorepo_union_tool_request_set(self: &Arc<Self>) -> Result<ToolRequestSet> {
@@ -1419,9 +1431,13 @@ fn monorepo_lockfiles_exist(config: &Config, monorepo_config: &Arc<dyn ConfigFil
     }
 
     if let Some(monorepo) = monorepo_config.monorepo()
-        && let Ok(config_roots) = expand_config_roots(&monorepo_root, &monorepo.config_roots, None)
+        && let Ok(config_roots) =
+            expand_config_root_dirs(&monorepo_root, &monorepo.config_roots, None)
     {
         for config_root in config_roots {
+            for lockfile_path in lockfile::lockfile_variant_paths_in_dir(&config_root) {
+                lockfile_paths.insert(lockfile_path);
+            }
             for config_path in config_paths_in_dir(&config_root) {
                 lockfile_paths.insert(lockfile::lockfile_path_for_config(&config_path, None).0);
                 lockfile_paths.insert(
@@ -2292,11 +2308,28 @@ fn expand_config_roots(
     expand_config_roots_with_filenames(root, patterns, ctx, &DEFAULT_CONFIG_FILENAMES)
 }
 
+fn expand_config_root_dirs(
+    root: &Path,
+    patterns: &[String],
+    ctx: Option<&crate::task::TaskLoadContext>,
+) -> Result<Vec<PathBuf>> {
+    expand_config_roots_inner(root, patterns, ctx, None)
+}
+
 fn expand_config_roots_with_filenames(
     root: &Path,
     patterns: &[String],
     ctx: Option<&crate::task::TaskLoadContext>,
     filenames: &[String],
+) -> Result<Vec<PathBuf>> {
+    expand_config_roots_inner(root, patterns, ctx, Some(filenames))
+}
+
+fn expand_config_roots_inner(
+    root: &Path,
+    patterns: &[String],
+    ctx: Option<&crate::task::TaskLoadContext>,
+    filenames: Option<&[String]>,
 ) -> Result<Vec<PathBuf>> {
     let mut subdirs = Vec::new();
 
@@ -2335,7 +2368,10 @@ fn expand_config_roots_with_filenames(
                                     );
                                     continue;
                                 }
-                                if path.is_dir() && has_mise_config_with_filenames(&path, filenames)
+                                if path.is_dir()
+                                    && filenames.is_none_or(|filenames| {
+                                        has_mise_config_with_filenames(&path, filenames)
+                                    })
                                 {
                                     subdirs.push(path);
                                 }
@@ -2365,7 +2401,9 @@ fn expand_config_roots_with_filenames(
                 continue;
             }
             if path.is_dir() {
-                if has_mise_config_with_filenames(&path, filenames) {
+                if filenames
+                    .is_none_or(|filenames| has_mise_config_with_filenames(&path, filenames))
+                {
                     subdirs.push(path);
                 } else {
                     warn!(
@@ -2395,8 +2433,13 @@ fn expand_config_roots_with_filenames(
 }
 
 fn has_mise_config_with_filenames(dir: &Path, filenames: &[String]) -> bool {
-    filenames.iter().any(|f| dir.join(f).exists())
-        || dir.join(".mise/tasks").is_dir()
+    filenames.iter().any(|f| {
+        if f.contains('*') {
+            !glob(dir, f).unwrap_or_default().is_empty()
+        } else {
+            dir.join(f).exists()
+        }
+    }) || dir.join(".mise/tasks").is_dir()
         || dir.join("mise-tasks").is_dir()
 }
 
@@ -3096,6 +3139,21 @@ mod tests {
         assert!(config_set_contains(&set, &aliased_file));
         // an unrelated path is not a member
         assert!(!config_set_contains(&set, &real_dir.join("other.toml")));
+    }
+
+    #[test]
+    fn test_has_mise_config_with_glob_filenames() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let confd = tmp.path().join(".config/mise/conf.d");
+        fs::create_dir_all(&confd)?;
+        fs::write(confd.join("tools.toml"), "[tools]\n")?;
+
+        assert!(has_mise_config_with_filenames(
+            tmp.path(),
+            &[".config/mise/conf.d/*.toml".to_string()]
+        ));
+
+        Ok(())
     }
 
     #[test]
@@ -3818,7 +3876,10 @@ config_roots = ["apps/api", "apps/web"]
         };
         let config = Arc::new(config);
 
-        assert_eq!(config.monorepo_config_root_dirs()?, vec![api, web]);
+        assert_eq!(
+            config.monorepo_config_root_dirs_with_filenames(&DEFAULT_CONFIG_FILENAMES)?,
+            vec![api, web]
+        );
         let trs = config.monorepo_union_tool_request_set().await?;
         let fixture_versions = trs
             .iter()

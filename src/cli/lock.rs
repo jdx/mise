@@ -89,18 +89,19 @@ impl Lock {
             before_date,
             ..Default::default()
         };
-        let monorepo_config_files = if !self.global && config.monorepo_lockfile_root().is_some() {
-            Some(config.monorepo_union_config_files().await?)
+        let monorepo_union = if !self.global && config.monorepo_lockfile_root().is_some() {
+            Some(config.monorepo_union().await?)
         } else {
             None
         };
-        let effective_config_files = monorepo_config_files
+        let effective_config_files = monorepo_union
             .as_ref()
+            .map(|monorepo_union| &monorepo_union.config_files)
             .unwrap_or(&config.config_files);
 
         let ts_owned;
-        let ts = if monorepo_config_files.is_some() {
-            let mut monorepo_ts: Toolset = config.monorepo_union_tool_request_set().await?.into();
+        let ts = if let Some(monorepo_union) = &monorepo_union {
+            let mut monorepo_ts: Toolset = monorepo_union.tool_request_set.clone().into();
             monorepo_ts
                 .resolve_with_opts(&config, &lock_resolve_options)
                 .await?;

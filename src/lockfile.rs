@@ -1334,7 +1334,7 @@ fn monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf> {
     let Some(monorepo_root) = config.monorepo_lockfile_root() else {
         return IndexSet::new();
     };
-    let Ok(config_roots) = config.monorepo_config_root_dirs() else {
+    let Ok(config_roots) = config.monorepo_config_root_dirs_for_lockfiles() else {
         return IndexSet::new();
     };
     let mut source_lockfiles = IndexSet::new();
@@ -1342,6 +1342,11 @@ fn monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf> {
     for config_root in config_roots {
         if config_root == monorepo_root {
             continue;
+        }
+        for source in lockfile_variant_paths_in_dir(&config_root) {
+            if source.parent() != Some(monorepo_root.as_path()) {
+                source_lockfiles.insert(source);
+            }
         }
         for config_path in crate::config::config_paths_in_dir(&config_root) {
             if let Some(source) =
@@ -1353,6 +1358,22 @@ fn monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf> {
     }
 
     source_lockfiles
+}
+
+pub(crate) fn lockfile_variant_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
+    let mut paths = IndexSet::new();
+
+    for path in crate::config::glob(dir, "mise*.lock").unwrap_or_default() {
+        paths.insert(path);
+    }
+    for env_name in env::MISE_ENV.iter().chain(env::AUTO_ENV_NAMES.iter()) {
+        paths.insert(dir.join(format!("mise.{env_name}.local.lock")));
+        paths.insert(dir.join(format!("mise.{env_name}.lock")));
+    }
+    paths.insert(dir.join("mise.local.lock"));
+    paths.insert(dir.join("mise.lock"));
+
+    paths.into_iter().collect()
 }
 
 fn legacy_lockfile_path_for_config(
@@ -2286,6 +2307,10 @@ fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
     let lockfile = Arc::new(lockfile);
     cache.insert(cache_key, Arc::clone(&lockfile));
     lockfile
+}
+
+pub(crate) fn read_lockfile_for_config_path(config: &Config, path: &Path) -> Lockfile {
+    read_lockfile_for(config, path).as_ref().clone()
 }
 
 pub fn get_locked_version(
