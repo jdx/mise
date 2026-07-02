@@ -94,14 +94,14 @@ pub struct Upgrade {
     #[clap(long, alias = "before", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
+    /// Upgrade tools across every [monorepo].config_roots config root
+    #[clap(long, verbatim_doc_comment)]
+    monorepo: bool,
+
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
-
-    /// Upgrade tools across every [monorepo].config_roots config root
-    #[clap(long, verbatim_doc_comment)]
-    monorepo: bool,
 }
 
 impl Upgrade {

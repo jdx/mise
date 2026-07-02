@@ -68,6 +68,13 @@ pub struct Ls {
     #[clap(long, conflicts_with_all = &["current", "global", "local", "prunable"])]
     all_sources: bool,
 
+    /// List tools from every [monorepo].config_roots config root
+    ///
+    /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+    /// [monorepo].config_roots in the monorepo root config.
+    #[clap(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
+    monorepo: bool,
+
     /// Don't display headers
     #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = &["json"])]
     no_header: bool,
@@ -83,13 +90,6 @@ pub struct Ls {
     /// List only tools that can be pruned with `mise prune`
     #[clap(long)]
     prunable: bool,
-
-    /// List tools from every [monorepo].config_roots config root
-    ///
-    /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
-    /// [monorepo].config_roots in the monorepo root config.
-    #[clap(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
-    monorepo: bool,
 }
 
 impl Ls {

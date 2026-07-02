@@ -43,13 +43,13 @@ pub struct Prune {
     #[clap(long, verbatim_doc_comment)]
     pub dry_run_code: bool,
 
-    /// Prune only unused versions of tools
-    #[clap(long)]
-    pub tools: bool,
-
     /// Prune tools across every [monorepo].config_roots config root
     #[clap(long, verbatim_doc_comment)]
     pub monorepo: bool,
+
+    /// Prune only unused versions of tools
+    #[clap(long)]
+    pub tools: bool,
 }
 
 impl Prune {

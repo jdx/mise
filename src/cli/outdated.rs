@@ -48,13 +48,13 @@ pub struct Outdated {
     #[clap(long, verbatim_doc_comment)]
     pub local: bool,
 
-    /// Don't show table header
-    #[clap(long)]
-    pub no_header: bool,
-
     /// Show outdated tools across every [monorepo].config_roots config root
     #[clap(long, verbatim_doc_comment)]
     pub monorepo: bool,
+
+    /// Don't show table header
+    #[clap(long)]
+    pub no_header: bool,
 }
 
 impl Outdated {

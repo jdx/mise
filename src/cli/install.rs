@@ -66,6 +66,13 @@ pub struct Install {
     #[clap(long, alias = "before", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
+    /// Install tools from every [monorepo].config_roots config root
+    ///
+    /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+    /// [monorepo].config_roots in the monorepo root config.
+    #[clap(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
+    monorepo: bool,
+
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
     #[clap(long, overrides_with = "jobs")]
@@ -84,13 +91,6 @@ pub struct Install {
     /// May require elevated permissions (e.g. sudo).
     #[clap(long, verbatim_doc_comment, conflicts_with = "shared")]
     system: bool,
-
-    /// Install tools from every [monorepo].config_roots config root
-    ///
-    /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
-    /// [monorepo].config_roots in the monorepo root config.
-    #[clap(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
-    monorepo: bool,
 }
 
 impl Install {

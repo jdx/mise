@@ -78,13 +78,13 @@ This can be useful for reproducibility or security purposes.
 This only affects fuzzy version matches like "20" or "latest".
 Explicitly pinned versions like "22.5.0" are not filtered.
 
-### `--raw`
-
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
-
 ### `--monorepo`
 
 Upgrade tools across every [monorepo].config_roots config root
+
+### `--raw`
+
+Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
 
 Examples:
 

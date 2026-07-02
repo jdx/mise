@@ -1706,6 +1706,14 @@ Supports absolute dates like "2024-06-01" and relative durations like "90d" or "
 """#
         arg <MINIMUM_RELEASE_AGE>
     }
+    flag --monorepo help="Install tools from every [monorepo].config_roots config root" {
+        long_help #"""
+Install tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
+"""#
+    }
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     flag --shared help="Install tool(s) to a shared directory" {
         long_help #"""
@@ -1722,14 +1730,6 @@ Install tool(s) to the system-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
-"""#
-    }
-    flag --monorepo help="Install tools from every [monorepo].config_roots config root" {
-        long_help #"""
-Install tools from every [monorepo].config_roots config root
-
-Uses the active MISE_ENV and requires monorepo_root = true plus explicit
-[monorepo].config_roots in the monorepo root config.
 """#
     }
     arg "[TOOL@VERSION]…" help="Tool(s) to install e.g.: node@20" required=#false var=#true
@@ -1971,12 +1971,6 @@ Examples:
         arg <TOOL_FLAG>
     }
     flag --all-sources help="Display all tracked config sources for tools"
-    flag --no-header help="Don't display headers"
-    flag --outdated help="Display whether a version is outdated"
-    flag --prefix help="Display versions matching this prefix" {
-        arg <PREFIX>
-    }
-    flag --prunable help="List only tools that can be pruned with `mise prune`"
     flag --monorepo help="List tools from every [monorepo].config_roots config root" {
         long_help #"""
 List tools from every [monorepo].config_roots config root
@@ -1985,6 +1979,12 @@ Uses the active MISE_ENV and requires monorepo_root = true plus explicit
 [monorepo].config_roots in the monorepo root config.
 """#
     }
+    flag --no-header help="Don't display headers"
+    flag --outdated help="Display whether a version is outdated"
+    flag --prefix help="Display versions matching this prefix" {
+        arg <PREFIX>
+    }
+    flag --prunable help="List only tools that can be pruned with `mise prune`"
     arg "[INSTALLED_TOOL]…" help="Only show tool versions from [TOOL]" required=#false var=#true
 }
 cmd ls-remote help="List runtime versions available for install." {
@@ -2395,8 +2395,8 @@ This will only show tools that are defined in project-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
 """#
     }
-    flag --no-header help="Don't show table header"
     flag --monorepo help="Show outdated tools across every [monorepo].config_roots config root"
+    flag --no-header help="Don't show table header"
     arg "[TOOL@VERSION]…" help=#"""
 Tool(s) to show outdated versions for
 e.g.: node@20 python@3.10
@@ -2740,8 +2740,8 @@ Like --dry-run but exits with code 1 if there are tools to prune
 This is useful for scripts to check if tools need to be pruned.
 """#
     }
-    flag --tools help="Prune only unused versions of tools"
     flag --monorepo help="Prune tools across every [monorepo].config_roots config root"
+    flag --tools help="Prune only unused versions of tools"
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
 }
 cmd registry help="List available tools to install" {
@@ -4182,8 +4182,8 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 """#
         arg <MINIMUM_RELEASE_AGE>
     }
-    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     flag --monorepo help="Upgrade tools across every [monorepo].config_roots config root"
+    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     arg "[INSTALLED_TOOL@VERSION]…" help=#"""
 Tool(s) to upgrade
 e.g.: node@20 python@3.10

@@ -35,13 +35,13 @@ Like --dry-run but exits with code 1 if there are tools to prune
 
 This is useful for scripts to check if tools need to be pruned.
 
-### `--tools`
-
-Prune only unused versions of tools
-
 ### `--monorepo`
 
 Prune tools across every [monorepo].config_roots config root
+
+### `--tools`
+
+Prune only unused versions of tools
 
 Examples:
 
