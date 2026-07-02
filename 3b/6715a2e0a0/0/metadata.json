@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "3b6715a2e0a0",
+  "session_id": "019f2023-b8ba-7322-bcbd-e7f1c9b21cc1",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T00:30:59.250901Z",
+  "branch": "claude/serene-rosalind-aad21f",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/tasks/test_task_ls_complete_monorepo",
+    "src/config/mod.rs",
+    "src/task/mod.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "7325c3714316",
+  "checkpoint_transcript_start": 370,
+  "transcript_lines_at_start": 370,
+  "token_usage": {
+    "input_tokens": 165641,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1592960,
+    "output_tokens": 4777,
+    "api_call_count": 11
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-02T00:30:59.234271Z",
+    "agent_lines": 38,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 38,
+    "total_lines_changed": 43,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
