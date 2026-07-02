@@ -61,7 +61,7 @@ assert "cat apps/web/dist/script-done.txt" "script snapshots"
 mkdir -p apps/broken
 cat <<'CONFIG' >apps/broken/mise.toml
 [task_config]
-includes = ["tasks.toml"]
+includes = ["tasks.toml", "mise-tasks"]
 
 [tasks.broken-task]
 sources = ["{{env.DOES_NOT_EXIST}}/*"]
@@ -72,6 +72,14 @@ cat <<'CONFIG' >apps/broken/tasks.toml
 sources = ["{{env.DOES_NOT_EXIST}}/*"]
 run = 'echo broken include'
 CONFIG
+mkdir -p apps/broken/mise-tasks
+cat <<'CONFIG' >apps/broken/mise-tasks/broken-script
+#!/usr/bin/env bash
+#MISE sources=["{{env.DOES_NOT_EXIST}}/*"]
+echo broken script
+CONFIG
+chmod +x apps/broken/mise-tasks/broken-script
 assert_contains "mise task ls --complete" '//apps/web\:update-snapshots:Update monorepo snapshots'
 assert_not_contains "mise task ls --complete" '//apps/broken\:broken-task'
 assert_not_contains "mise task ls --complete" '//apps/broken\:broken-included-task'
+assert_not_contains "mise task ls --complete" '//apps/broken\:broken-script'

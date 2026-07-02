@@ -2590,9 +2590,24 @@ async fn load_tasks_includes(
             let config_root = config_root.clone();
             let config = config.clone();
             trust_check_task_include(&path, require_trust)?;
-            let mut task =
-                Task::from_path_with_cf(&config, &path, &root, &config_root, monorepo_cf.cloned())
-                    .await?;
+            let mut task = Task::from_path_unrendered_with_cf(
+                &path,
+                &root,
+                &config_root,
+                monorepo_cf.cloned(),
+            )?;
+            if let Err(err) = task.render(&config, &config_root).await {
+                if monorepo_cf.is_some() {
+                    warn!(
+                        "Failed to render task {} in {}: {err:#}. Task will not be available.",
+                        task.name,
+                        display_path(&path)
+                    );
+                    continue;
+                } else {
+                    return Err(err);
+                }
+            }
             if task.dir.is_none()
                 && let Some(ref dir) = *task_config_dir
             {

@@ -566,6 +566,17 @@ impl Task {
         config_root: &Path,
         cf: Option<Arc<dyn ConfigFile>>,
     ) -> Result<Task> {
+        let mut task = Self::from_path_unrendered_with_cf(path, prefix, config_root, cf)?;
+        task.render(config, config_root).await?;
+        Ok(task)
+    }
+
+    pub(crate) fn from_path_unrendered_with_cf(
+        path: &Path,
+        prefix: &Path,
+        config_root: &Path,
+        cf: Option<Arc<dyn ConfigFile>>,
+    ) -> Result<Task> {
         let mut task = Task::new(path, prefix, config_root)?;
         task.cf = cf;
         let info = parse_mise_header_toml(&file::read_to_string(path)?)?
@@ -692,7 +703,6 @@ impl Task {
             let fields: Vec<String> = p.parsed_keys().map(|s| s.to_string()).collect();
             tests::capture_parsed_fields(fields);
         }
-        task.render(config, config_root).await?;
         Ok(task)
     }
 
