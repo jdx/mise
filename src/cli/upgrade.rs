@@ -4,7 +4,6 @@ use std::sync::Arc;
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, config_file};
-use crate::duration::parse_duration;
 use crate::errors::split_install_result;
 use crate::file::display_path;
 use crate::install_before::{
@@ -24,7 +23,7 @@ use crate::{config, exit, runtime_symlinks, ui};
 use console::Term;
 use demand::DemandOption;
 use eyre::{Context, Result, eyre};
-use jiff::Timestamp;
+use jiff::{Span, Timestamp, civil::date};
 
 /// Upgrades outdated tools
 ///
@@ -614,20 +613,25 @@ impl Upgrade {
             };
             match (eligible_latest, baseline_latest) {
                 (Some(eligible), Some(baseline)) if is_outdated_version(&eligible, &baseline) => {
-                    let (released, age) =
-                        hidden_release_details(config, &tv, &baseline, age.as_deref()).await;
-                    warn!(
-                        "newer {} release {baseline}{released} ignored by minimum_release_age{age}; latest eligible release is {eligible}",
-                        tv.ba().short
-                    );
+                    let suffix = format!("latest eligible release is {eligible}");
+                    warn_hidden_release_ignored_by_minimum_release_age(
+                        config,
+                        &tv,
+                        &baseline,
+                        age.as_deref(),
+                        &suffix,
+                    )
+                    .await;
                 }
                 (None, Some(baseline)) => {
-                    let (released, age) =
-                        hidden_release_details(config, &tv, &baseline, age.as_deref()).await;
-                    warn!(
-                        "newer {} release {baseline}{released} ignored by minimum_release_age{age}; no eligible release found",
-                        tv.ba().short
-                    );
+                    warn_hidden_release_ignored_by_minimum_release_age(
+                        config,
+                        &tv,
+                        &baseline,
+                        age.as_deref(),
+                        "no eligible release found",
+                    )
+                    .await;
                 }
                 _ => {}
             }
@@ -679,6 +683,20 @@ fn backend_matches(backends: &HashSet<String>, ba: &BackendArg) -> bool {
         || backends.contains(&ba.full_without_opts())
 }
 
+async fn warn_hidden_release_ignored_by_minimum_release_age(
+    config: &Arc<Config>,
+    tv: &ToolVersion,
+    hidden_version: &str,
+    age: Option<&str>,
+    suffix: &str,
+) {
+    let (released, age) = hidden_release_details(config, tv, hidden_version, age).await;
+    warn!(
+        "newer {} release {hidden_version}{released} ignored by minimum_release_age{age}; {suffix}",
+        tv.ba().short
+    );
+}
+
 /// Fragments for the minimum_release_age warning: when the hidden release came
 /// out and when it becomes eligible, plus the configured age value. The remote
 /// version list is already cached in memory by the resolution that found the
@@ -715,10 +733,8 @@ fn format_hidden_release_details(
         Some(created) => {
             // An age given as an absolute date is a fixed cutoff, so the
             // release never becomes eligible — only show when it will for
-            // duration-style ages.
-            let eligible_at = age
-                .and_then(|age| parse_duration(age).ok())
-                .and_then(|age| created.checked_add(age).ok());
+            // relative ages.
+            let eligible_at = age.and_then(|age| release_eligible_at(created, age));
             let released = created.to_zoned(tz.clone()).strftime("%Y-%m-%d");
             match eligible_at {
                 Some(at) => format!(
@@ -731,6 +747,46 @@ fn format_hidden_release_details(
         None => String::new(),
     };
     (released_fragment, age_fragment)
+}
+
+fn release_eligible_at(created_at: Timestamp, age: &str) -> Option<Timestamp> {
+    const DAY_NANOS: i128 = 86_400 * 1_000_000_000;
+
+    let span = age.parse::<Span>().ok()?;
+    let duration = span.to_duration(date(2025, 1, 1)).ok()?;
+    if duration.is_negative() {
+        return None;
+    }
+    let mut high = created_at
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .checked_add(&span)
+        .ok()
+        .map(|eligible| eligible.timestamp())?;
+
+    for _ in 0..370 {
+        if release_is_eligible_at(created_at, high, &span) {
+            let mut low_nanos = created_at.as_nanosecond();
+            let mut high_nanos = high.as_nanosecond();
+            while low_nanos < high_nanos {
+                let mid_nanos = low_nanos + (high_nanos - low_nanos) / 2;
+                let mid = Timestamp::from_nanosecond(mid_nanos).ok()?;
+                if release_is_eligible_at(created_at, mid, &span) {
+                    high_nanos = mid_nanos;
+                } else {
+                    low_nanos = mid_nanos + 1;
+                }
+            }
+            return Timestamp::from_nanosecond(high_nanos).ok();
+        }
+        high = Timestamp::from_nanosecond(high.as_nanosecond().checked_add(DAY_NANOS)?).ok()?;
+    }
+    None
+}
+
+fn release_is_eligible_at(created_at: Timestamp, now: Timestamp, age: &Span) -> bool {
+    now.to_zoned(jiff::tz::TimeZone::UTC)
+        .checked_sub(age)
+        .is_ok_and(|cutoff| cutoff.timestamp() >= created_at)
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -780,6 +836,30 @@ mod tests {
             " (released 2026-06-26, eligible 2026-06-29 14:03 UTC)"
         );
         assert_eq!(age, " (3d)");
+    }
+
+    #[test]
+    fn test_format_hidden_release_details_with_calendar_age() {
+        let created = "2023-03-01T14:03:00Z".parse().unwrap();
+        let (released, age) =
+            format_hidden_release_details(Some(created), Some("1y"), TimeZone::UTC);
+        assert_eq!(
+            released,
+            " (released 2023-03-01, eligible 2024-03-01 14:03 UTC)"
+        );
+        assert_eq!(age, " (1y)");
+    }
+
+    #[test]
+    fn test_format_hidden_release_details_with_non_reversible_calendar_age() {
+        let created = "2019-01-31T15:30:00Z".parse().unwrap();
+        let (released, age) =
+            format_hidden_release_details(Some(created), Some("1mo"), TimeZone::UTC);
+        assert_eq!(
+            released,
+            " (released 2019-01-31, eligible 2019-03-01 00:00 UTC)"
+        );
+        assert_eq!(age, " (1mo)");
     }
 
     #[test]
