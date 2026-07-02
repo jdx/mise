@@ -1485,6 +1485,11 @@ pub fn update_lockfiles(
             .or_default()
             .push(config_path.clone());
     }
+    for source in tools_by_source.keys() {
+        if let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, source) {
+            lockfile_configs.entry(lockfile_path).or_default();
+        }
+    }
 
     debug!("updating {} lockfiles", lockfile_configs.len());
 

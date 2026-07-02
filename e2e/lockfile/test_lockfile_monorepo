@@ -161,6 +161,53 @@ assert_contains "echo '$output'" "tiny@1.0.0"
 assert "test -f monorepo-dry-run/packages/a/mise.lock"
 assert_fail "test -f monorepo-dry-run/mise.lock"
 
+echo "=== install --monorepo updates colocated subproject lockfiles ==="
+mkdir -p monorepo-install-colocated/packages/a monorepo-install-colocated/packages/b
+cat >monorepo-install-colocated/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = false
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-install-colocated/packages/a/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+cat >monorepo-install-colocated/packages/b/mise.toml <<'EOF'
+[tools]
+tiny = "2.1.0"
+EOF
+touch monorepo-install-colocated/packages/a/mise.lock
+touch monorepo-install-colocated/packages/b/mise.lock
+
+rm -rf "$MISE_DATA_DIR/installs/tiny"
+assert "cd monorepo-install-colocated && mise install --monorepo"
+assert_contains "cat monorepo-install-colocated/packages/a/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-install-colocated/packages/b/mise.lock" 'version = "2.1.0"'
+assert_fail "test -f monorepo-install-colocated/mise.lock"
+
+echo "=== lockfile = true still routes to root when config_roots are invalid ==="
+mkdir -p monorepo-bad-roots/packages/a
+cat >monorepo-bad-roots/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["missing/*"]
+EOF
+cat >monorepo-bad-roots/packages/a/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+touch monorepo-bad-roots/mise.lock
+
+rm -rf "$MISE_DATA_DIR/installs/tiny"
+output=$(cd monorepo-bad-roots/packages/a && mise install 2>&1)
+assert_contains "echo '$output'" "lockfile = true is set"
+assert_contains "cat monorepo-bad-roots/mise.lock" 'version = "1.0.0"'
+assert_fail "test -f monorepo-bad-roots/packages/a/mise.lock"
+
 echo "=== [monorepo] lockfile = false keeps subproject lockfiles ==="
 mkdir -p monorepo-optout/packages/a
 cat >monorepo-optout/mise.toml <<'EOF'

@@ -206,7 +206,7 @@ impl Install {
     #[async_backtrace::framed]
     async fn install_runtimes(
         &self,
-        mut config: Arc<Config>,
+        config: Arc<Config>,
         runtimes: &[ToolArg],
         original_tool_args: Vec<ToolArg>,
     ) -> Result<()> {
@@ -215,6 +215,9 @@ impl Install {
         } else {
             None
         };
+        let mut install_config = self
+            .effective_config(&config, monorepo_union.as_ref())
+            .await?;
         let trs = match &monorepo_union {
             Some(union) => union.tool_request_set.clone(),
             None => config.get_tool_request_set().await?.clone(),
@@ -291,7 +294,7 @@ impl Install {
                 .await?;
             }
             split_install_result(
-                ts.install_all_versions(&mut config, tool_versions, &self.install_opts()?)
+                ts.install_all_versions(&mut install_config, tool_versions, &self.install_opts()?)
                     .await,
             )
         };
@@ -300,7 +303,7 @@ impl Install {
             if self.dry_run_code {
                 let has_work = versions.iter().any(|tv| {
                     if let Ok(backend) = tv.backend() {
-                        !backend.is_version_installed(&config, tv, true)
+                        !backend.is_version_installed(&install_config, tv, true)
                     } else {
                         true
                     }
@@ -319,19 +322,20 @@ impl Install {
                 .unwrap()
                 .clone_from(&original_tool_args);
             let config = Config::reset().await?;
+            let rebuild_config = self.effective_config(&config, None).await?;
             let ts_owned;
             let ts = if self.monorepo {
-                ts_owned = Self::resolved_toolset_from_trs(&config, trs.clone()).await?;
+                ts_owned = Self::resolved_toolset_from_trs(&rebuild_config, trs.clone()).await?;
                 &ts_owned
             } else {
-                config.get_toolset().await?
+                rebuild_config.get_toolset().await?
             };
             let current_versions = ts.list_current_versions();
             // ensure that only current versions are sent to lockfile rebuild
             versions.retain(|tv| current_versions.iter().any(|(_, cv)| tv == cv));
 
             config::rebuild_shims_and_runtime_symlinks(
-                &config,
+                &rebuild_config,
                 ts,
                 &versions,
                 crate::lockfile::LockfileUpdateMode::Normal,
@@ -434,7 +438,7 @@ impl Install {
         Ok(requests)
     }
 
-    async fn install_missing_runtimes(&self, mut config: Arc<Config>) -> eyre::Result<()> {
+    async fn install_missing_runtimes(&self, config: Arc<Config>) -> eyre::Result<()> {
         let monorepo_union = if self.monorepo {
             Some(config.monorepo_union().await?)
         } else {
@@ -446,6 +450,9 @@ impl Install {
                 None => config.get_tool_request_set().await?.clone(),
             }
         });
+        let mut install_config = self
+            .effective_config(&config, monorepo_union.as_ref())
+            .await?;
 
         // Install plugins from [plugins] config section first
         // This must happen before checking for missing tools so env-only plugins get installed
@@ -467,7 +474,7 @@ impl Install {
             ba.backend()?;
         }
         let missing = measure!("fetching missing runtimes", {
-            trs.missing_tools(&config)
+            trs.missing_tools(&install_config)
                 .await
                 .into_iter()
                 .cloned()
@@ -482,20 +489,27 @@ impl Install {
                 // can guard on actual installs. (#10574)
                 let ts_owned;
                 let ts = if self.monorepo {
-                    ts_owned = Self::resolved_toolset_from_trs(&config, trs.clone()).await?;
+                    ts_owned =
+                        Self::resolved_toolset_from_trs(&install_config, trs.clone()).await?;
                     &ts_owned
                 } else {
-                    config.get_toolset().await?
+                    install_config.get_toolset().await?
                 };
-                hooks::run_one_hook_with_context(&config, ts, Hooks::Postinstall, None, Some(&[]))
-                    .await;
+                hooks::run_one_hook_with_context(
+                    &install_config,
+                    ts,
+                    Hooks::Postinstall,
+                    None,
+                    Some(&[]),
+                )
+                .await;
                 (vec![], Ok(()))
             })
         } else {
             let mut ts = Toolset::from(trs.clone());
             measure!("install_all_versions", {
                 split_install_result(
-                    ts.install_all_versions(&mut config, missing, &self.install_opts()?)
+                    ts.install_all_versions(&mut install_config, missing, &self.install_opts()?)
                         .await,
                 )
             })
@@ -508,15 +522,17 @@ impl Install {
         }
         if install_error.is_ok() || !versions.is_empty() {
             measure!("rebuild_shims_and_runtime_symlinks", {
+                let rebuild_config = self.effective_config(&install_config, None).await?;
                 let ts_owned;
                 let ts = if self.monorepo {
-                    ts_owned = Self::resolved_toolset_from_trs(&config, trs.clone()).await?;
+                    ts_owned =
+                        Self::resolved_toolset_from_trs(&rebuild_config, trs.clone()).await?;
                     &ts_owned
                 } else {
-                    config.get_toolset().await?
+                    rebuild_config.get_toolset().await?
                 };
                 config::rebuild_shims_and_runtime_symlinks(
-                    &config,
+                    &rebuild_config,
                     ts,
                     &versions,
                     crate::lockfile::LockfileUpdateMode::Normal,
@@ -526,6 +542,21 @@ impl Install {
         }
         install_error?;
         Ok(())
+    }
+
+    async fn effective_config(
+        &self,
+        config: &Arc<Config>,
+        monorepo_union: Option<&config::MonorepoUnion>,
+    ) -> Result<Arc<Config>> {
+        if !self.monorepo {
+            return Ok(config.clone());
+        }
+        let config_files = match monorepo_union {
+            Some(union) => union.config_files.clone(),
+            None => config.monorepo_union().await?.config_files,
+        };
+        Ok(config.with_config_files(config_files))
     }
 
     async fn resolved_toolset_from_trs(

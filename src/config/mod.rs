@@ -129,6 +129,30 @@ impl Config {
         Config::load().await
     }
 
+    pub(crate) fn with_config_files(&self, config_files: ConfigMap) -> Arc<Self> {
+        let project_root = get_project_root(&config_files).or_else(|| self.project_root.clone());
+        let repo_urls = load_plugins(&config_files).unwrap_or_else(|_| self.repo_urls.clone());
+        Arc::new(Self {
+            tera_ctx: self.tera_ctx.clone(),
+            config_files,
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: self.shorthands.clone(),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: self.all_aliases.clone(),
+            aliases: self.aliases.clone(),
+            project_root,
+            repo_urls,
+            shell_aliases: self.shell_aliases.clone(),
+            tera_files: self.tera_files.clone(),
+            vars: self.vars.clone(),
+            vars_results: OnceCell::new(),
+        })
+    }
+
     #[async_backtrace::framed]
     pub async fn load() -> Result<Arc<Self>> {
         backend::load_tools().await?;
@@ -426,8 +450,29 @@ impl Config {
             return None;
         }
         let monorepo_root = cf.project_root().map(|p| p.to_path_buf())?;
-        let config_roots = self.monorepo_config_root_dirs(None).ok()?;
-        (!config_roots.is_empty()).then_some(monorepo_root)
+        match self.monorepo_config_root_dirs(None) {
+            Ok(config_roots) if !config_roots.is_empty() => Some(monorepo_root),
+            Ok(_) => {
+                if setting == Some(true) {
+                    warn_once!(
+                        "[monorepo] lockfile = true is set, but [monorepo].config_roots did not match any directories; using root lockfiles without migration"
+                    );
+                    Some(monorepo_root)
+                } else {
+                    None
+                }
+            }
+            Err(err) => {
+                if setting == Some(true) {
+                    warn_once!(
+                        "[monorepo] lockfile = true is set, but [monorepo].config_roots could not be resolved: {err:#}; using root lockfiles without migration"
+                    );
+                    Some(monorepo_root)
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     pub(crate) fn monorepo_config_root_dirs_for_lockfiles(&self) -> Result<Vec<PathBuf>> {
