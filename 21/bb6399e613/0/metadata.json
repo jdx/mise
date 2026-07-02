@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "21bb6399e613",
+  "session_id": "019f2016-8a7a-7440-a3d7-85ddf269a3d6",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T02:05:03.27672Z",
+  "branch": "codex/monorepo-install-lockfile",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_install_monorepo",
+    "src/cli/install.rs",
+    "src/cli/ls.rs",
+    "src/cli/outdated.rs",
+    "src/cli/prune.rs",
+    "src/cli/upgrade.rs",
+    "src/config/mod.rs",
+    "src/toolset/tool_request_set.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "5eebce27a469",
+  "checkpoint_transcript_start": 2390,
+  "transcript_lines_at_start": 2390,
+  "token_usage": {
+    "input_tokens": 175218,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 8636928,
+    "output_tokens": 23913,
+    "api_call_count": 68
+  },
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-02T02:05:03.19461Z",
+    "agent_lines": 69,
+    "agent_removed": 19,
+    "human_added": 12,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 81,
+    "total_lines_changed": 112,
+    "agent_percentage": 78.57142857142857,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
