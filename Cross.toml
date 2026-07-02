@@ -42,3 +42,9 @@ image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5"
 
 [target.armv7-unknown-linux-musleabi]
 image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabi:0.2.5"
+
+## Android target
+[target.aarch64-linux-android]
+# Needs to use main to avoid -lunwind error while cross 0.3 is not released
+# https://github.com/cross-rs/cross/issues/1222
+image = "ghcr.io/cross-rs/aarch64-linux-android:main"

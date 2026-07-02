@@ -16,6 +16,9 @@ get_os() {
 	*-windows-*)
 		echo "windows"
 		;;
+	*-linux-android)
+		echo "android"
+		;;
 	*-linux-*)
 		echo "linux"
 		;;
@@ -64,18 +67,26 @@ version=$(./scripts/get-version.sh)
 basename=mise-$version-$os-$arch$suffix
 
 case "$os-$arch" in
-linux-arm*)
+linux-arm* | android-*)
 	# don't use sccache
 	unset RUSTC_WRAPPER
 	;;
 esac
 
-features="rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored"
+features="self_update,vfox/vendored-lua,openssl/vendored"
+if [[ $os == "android" ]]; then
+	# rustls not yet supported in Android/Termux
+	# https://github.com/rustls/rustls-platform-verifier/issues/219
+	features="$features,native-tls"
+else
+	features="$features,rustls-native-roots"
+fi
+
 if [[ $os == "linux" ]] && [[ $arch == "armv7" ]]; then
 	features="$features,aws-lc-rs"
 fi
 
-if [[ $os == "linux" ]]; then
+if [[ $os == "linux" ]] || [[ $os == "android" ]]; then
 	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 else
 	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"

@@ -135,7 +135,7 @@ path-absolutize = { version = "3", features = ["unsafe_cache"] }
 petgraph = "0.8"
 phf = "0.13"
 rand = "0.10"
-rattler = { version = "0.45", default-features = false }
+rattler = { version = "0.46", default-features = false }
 rattler_conda_types = { version = "0.47", default-features = false }
 rattler_repodata_gateway = { version = "0.29", default-features = false, features = [
   "gateway",
@@ -215,7 +215,6 @@ self_update = { version = "0.44", optional = true, default-features = false, fea
   "compression-flate2",
   "signatures",
   "reqwest",
-  "rustls",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -228,7 +227,6 @@ self_update = { version = "0.44", optional = true, default-features = false, fea
   "compression-zip-deflate",
   "signatures",
   "reqwest",
-  "rustls",
 ] }
 zipsign-api = "0.2"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
@@ -264,6 +262,7 @@ native-tls = [
   "ubi/native-tls",
   "vfox/native-tls",
   "xx/native-tls",
+  "self_update?/default-tls",
 ]
 rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",
@@ -274,6 +273,7 @@ rustls = [
   "ubi/rustls-tls",
   "vfox/rustls",
   "xx/rustls",
+  "self_update?/rustls",
 ]
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
@@ -284,6 +284,7 @@ rustls-native-roots = [
   "ubi/rustls-tls-native-roots",
   "vfox/rustls-native-roots",
   "xx/rustls-native-roots",
+  "self_update?/rustls",
 ]
 
 [package.metadata.binstall]
@@ -298,6 +299,8 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-arm64{ 
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ archive-suffix }"
 [package.metadata.binstall.overrides.armv7-unknown-linux-gnueabihf]
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
+[package.metadata.binstall.overrides.aarch64-linux-android]
+pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-android-arm64{ archive-suffix }"
 
 [package.metadata.cargo-machete]
 ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl", "phf_codegen"]
