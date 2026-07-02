@@ -2473,7 +2473,7 @@ type = "Bool"
 
 [task.show_full_cmd]
 description = "Disable truncation of command lines in task execution output. When true, the full command line will be shown."
-env = "MISE_TASK_SHOW_CMD_NO_TRUNC"
+env = "MISE_TASK_SHOW_FULL_CMD"
 type = "Bool"
 
 [task.skip]
