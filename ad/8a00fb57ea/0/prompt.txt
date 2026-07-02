@@ -1,5 +1,1 @@
-address pr feedback
-
----
-
 [https://github.com/jdx/mise/actions/runs/28556353731/job/84664836139?pr=10704](https://github.com/jdx/mise/actions/runs/28556353731/job/84664836139?pr=10704)
