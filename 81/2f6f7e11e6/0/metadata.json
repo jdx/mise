@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "812f6f7e11e6",
+  "session_id": "019f23cb-e0d9-7593-a96d-651f11dc44f1",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T17:15:18.176317Z",
+  "branch": "codex/pi-aqua-default",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "registry/pi.toml"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "1756d6083714",
+  "token_usage": {
+    "input_tokens": 155966,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1728256,
+    "output_tokens": 10704,
+    "api_call_count": 26
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-02T17:15:18.139544Z",
+    "agent_lines": 1,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 2,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
