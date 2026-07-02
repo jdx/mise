@@ -759,7 +759,7 @@ fn release_eligible_at(created_at: Timestamp, age: &str) -> Option<Timestamp> {
     }
     let mut high = created_at
         .to_zoned(jiff::tz::TimeZone::UTC)
-        .checked_add(&span)
+        .checked_add(span)
         .ok()
         .map(|eligible| eligible.timestamp())?;
 
