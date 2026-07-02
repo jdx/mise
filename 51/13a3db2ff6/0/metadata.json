@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "5113a3db2ff6",
+  "session_id": "019f201a-9f76-70b2-bd06-2bdba43c1d6c",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T00:04:59.900029Z",
+  "branch": "claude/admiring-wiles-fd474d",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/cli/upgrade.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "28dd2b6b767e",
+  "token_usage": {
+    "input_tokens": 134252,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2552960,
+    "output_tokens": 16915,
+    "api_call_count": 31
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-02T00:04:59.888006Z",
+    "agent_lines": 29,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 10,
+    "total_committed": 29,
+    "total_lines_changed": 39,
+    "agent_percentage": 74.35897435897436,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 166,
+      "user_lines_removed": 10,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "src/cli/upgrade.rs": 166
+      },
+      "user_removed_per_file": {
+        "src/cli/upgrade.rs": 10
+      }
+    }
+  ]
+}
