@@ -1,0 +1,1 @@
+address feedback on [jdx/mise#10722](https://github.com/jdx/mise/pull/10722)
