@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "4b165a36ccb0",
+  "strategy": "manual-commit",
+  "branch": "codex/restore-jdx-asset-host",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "SECURITY.md",
+    "cloudflare/workers/mise-run.js",
+    "docs/contributing.md",
+    "docs/installing-mise.md",
+    "docs/plugin-publishing.md",
+    "e2e-win/7z.Tests.ps1",
+    "e2e/assert.sh",
+    "e2e/backend/test_aqua_vars",
+    "e2e/backend/test_forgejo",
+    "e2e/backend/test_github",
+    "e2e/backend/test_gitlab",
+    "e2e/backend/test_http",
+    "e2e/backend/test_http_caching",
+    "e2e/backend/test_http_format",
+    "e2e/backend/test_http_platform_switch",
+    "e2e/backend/test_http_rename_exe",
+    "e2e/backend/test_http_upgrade",
+    "e2e/cli/test_tool_stub_errors",
+    "e2e/cli/test_tool_stub_http",
+    "e2e/lockfile/test_lockfile_locked_idempotent_http",
+    "packaging/mise.run/shell.envsubst",
+    "packaging/rpm/mise.repo",
+    "packaging/standalone/install.envsubst",
+    "scripts/test-standalone.sh",
+    "src/cli/generate/bootstrap.rs",
+    "src/cli/generate/tool_stub.rs",
+    "src/cli/version.rs",
+    "src/lockfile.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4b/165a36ccb0/0/metadata.json",
+      "transcript": "/4b/165a36ccb0/0/full.jsonl",
+      "content_hash": "/4b/165a36ccb0/0/content_hash.txt",
+      "prompt": "/4b/165a36ccb0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 302530,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4973056,
+    "output_tokens": 21244,
+    "api_call_count": 48
+  }
+}

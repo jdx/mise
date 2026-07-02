@@ -1,0 +1,88 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "4b165a36ccb0",
+  "session_id": "019f23e1-fdcd-7241-8967-9988fc5743e2",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T17:44:11.57486Z",
+  "branch": "codex/restore-jdx-asset-host",
+  "checkpoints_count": 2,
+  "save_step_count": 2,
+  "files_touched": [
+    "SECURITY.md",
+    "cloudflare/workers/mise-run.js",
+    "docs/contributing.md",
+    "docs/installing-mise.md",
+    "docs/plugin-publishing.md",
+    "e2e-win/7z.Tests.ps1",
+    "e2e/assert.sh",
+    "e2e/backend/test_aqua_vars",
+    "e2e/backend/test_forgejo",
+    "e2e/backend/test_github",
+    "e2e/backend/test_gitlab",
+    "e2e/backend/test_http",
+    "e2e/backend/test_http_caching",
+    "e2e/backend/test_http_format",
+    "e2e/backend/test_http_platform_switch",
+    "e2e/backend/test_http_rename_exe",
+    "e2e/backend/test_http_upgrade",
+    "e2e/cli/test_tool_stub_errors",
+    "e2e/cli/test_tool_stub_http",
+    "e2e/lockfile/test_lockfile_locked_idempotent_http",
+    "packaging/mise.run/shell.envsubst",
+    "packaging/rpm/mise.repo",
+    "packaging/standalone/install.envsubst",
+    "scripts/test-standalone.sh",
+    "src/cli/generate/bootstrap.rs",
+    "src/cli/generate/tool_stub.rs",
+    "src/cli/version.rs",
+    "src/lockfile.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "e241246d09f2",
+  "token_usage": {
+    "input_tokens": 302530,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4973056,
+    "output_tokens": 21244,
+    "api_call_count": 48
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-02T17:44:11.559147Z",
+    "agent_lines": 142,
+    "agent_removed": 98,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 142,
+    "total_lines_changed": 240,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 94,
+      "agent_lines_removed": 94
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 144,
+      "agent_lines_removed": 100
+    }
+  ]
+}
