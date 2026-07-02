@@ -49,7 +49,7 @@ pub fn resolve_before_date(
 ) -> Result<Option<Timestamp>> {
     Ok(
         resolve_before_date_with_excludes(None, before_date, minimum_release_age, false)?
-            .map(|(ts, _)| ts),
+            .map(|(ts, _, _)| ts),
     )
 }
 
@@ -65,7 +65,10 @@ pub fn resolve_cli_minimum_release_age(
             DISABLED_MINIMUM_RELEASE_AGE_CUTOFF,
         )?));
     }
-    Ok(resolve_before_date_with_excludes(None, None, minimum_release_age, true)?.map(|(ts, _)| ts))
+    Ok(
+        resolve_before_date_with_excludes(None, None, minimum_release_age, true)?
+            .map(|(ts, _, _)| ts),
+    )
 }
 
 pub fn resolve_before_date_for_tool(
@@ -87,12 +90,34 @@ pub fn resolve_before_date_for_tool_with_source(
     before_date: Option<Timestamp>,
     minimum_release_age: Option<&str>,
 ) -> Result<Option<(Timestamp, BeforeDateSource)>> {
-    resolve_before_date_with_excludes(
+    Ok(resolve_before_date_with_excludes(
         Some(backend_arg),
         before_date,
         minimum_release_age,
         is_minimum_release_age_excluded(backend_arg),
+    )?
+    .map(|(ts, source, _)| (ts, source)))
+}
+
+/// The raw `minimum_release_age` value (e.g. `"3d"`, `"24h"`, `"2024-01-01"`)
+/// that produces the effective cutoff for a tool, for display in user-facing
+/// messages. Follows the same precedence as
+/// `resolve_before_date_for_tool_with_source`, except cutoffs pre-resolved by
+/// the caller (e.g. the CLI flag) are not visible here — the caller already
+/// knows those. Returns `None` when no cutoff applies to the tool.
+pub fn effective_minimum_release_age_for_tool(
+    backend_arg: &BackendArg,
+    minimum_release_age: Option<&str>,
+) -> Option<String> {
+    resolve_before_date_with_excludes(
+        Some(backend_arg),
+        None,
+        minimum_release_age,
+        is_minimum_release_age_excluded(backend_arg),
     )
+    .ok()
+    .flatten()
+    .and_then(|(_, _, age)| age)
 }
 
 fn resolve_before_date_with_excludes(
@@ -100,9 +125,9 @@ fn resolve_before_date_with_excludes(
     before_date: Option<Timestamp>,
     minimum_release_age: Option<&str>,
     excluded: bool,
-) -> Result<Option<(Timestamp, BeforeDateSource)>> {
+) -> Result<Option<(Timestamp, BeforeDateSource, Option<String>)>> {
     if let Some(before_date) = before_date {
-        return Ok(Some((before_date, BeforeDateSource::Provided)));
+        return Ok(Some((before_date, BeforeDateSource::Provided, None)));
     }
     if let Some(before) = minimum_release_age {
         if parse_duration(before).is_ok_and(|duration| duration.is_zero()) {
@@ -111,6 +136,7 @@ fn resolve_before_date_with_excludes(
         return Ok(Some((
             parse_into_timestamp(before)?,
             BeforeDateSource::Explicit,
+            Some(before.to_string()),
         )));
     }
     if !excluded && let Some(before) = &Settings::get().minimum_release_age {
@@ -120,12 +146,14 @@ fn resolve_before_date_with_excludes(
         return Ok(Some((
             parse_into_timestamp(before)?,
             BeforeDateSource::Explicit,
+            Some(before.to_string()),
         )));
     }
     if !excluded && backend_arg.is_some_and(default_minimum_release_age_applies) {
         return Ok(Some((
             parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE)?,
             BeforeDateSource::Default,
+            Some(DEFAULT_MINIMUM_RELEASE_AGE.to_string()),
         )));
     }
     Ok(None)
@@ -199,8 +227,9 @@ pub(crate) async fn resolve_before_date_for_backend<B: Backend + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::{
-        BeforeDateSource, DEFAULT_MINIMUM_RELEASE_AGE, resolve_before_date,
-        resolve_before_date_for_tool, resolve_before_date_for_tool_with_source,
+        BeforeDateSource, DEFAULT_MINIMUM_RELEASE_AGE, effective_minimum_release_age_for_tool,
+        resolve_before_date, resolve_before_date_for_tool,
+        resolve_before_date_for_tool_with_source,
     };
     use crate::cli::args::BackendArg;
     use crate::config::settings::{Settings, SettingsPartial};
@@ -401,6 +430,39 @@ mod tests {
             .unwrap();
         assert_eq!(ts, cli_before);
         assert_eq!(source, BeforeDateSource::Provided);
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_effective_minimum_release_age_for_tool_reports_raw_value() {
+        Settings::reset(None);
+        let ba: BackendArg = "npm:prettier".into();
+
+        // Built-in default
+        assert_eq!(
+            effective_minimum_release_age_for_tool(&ba, None).as_deref(),
+            Some(DEFAULT_MINIMUM_RELEASE_AGE)
+        );
+
+        // Per-tool option
+        assert_eq!(
+            effective_minimum_release_age_for_tool(&ba, Some("7d")).as_deref(),
+            Some("7d")
+        );
+
+        // Explicit global setting
+        let mut partial = SettingsPartial::empty();
+        partial.minimum_release_age = Some("3d".to_string());
+        Settings::reset(Some(partial));
+        assert_eq!(
+            effective_minimum_release_age_for_tool(&ba, None).as_deref(),
+            Some("3d")
+        );
+        Settings::reset(None);
+
+        // Backend without release timestamps → no cutoff, no value
+        let asdf_ba: BackendArg = "asdf:tiny".into();
+        assert_eq!(effective_minimum_release_age_for_tool(&asdf_ba, None), None);
         Settings::reset(None);
     }
 

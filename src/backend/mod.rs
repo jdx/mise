@@ -237,7 +237,7 @@ fn is_false(v: &bool) -> bool {
 }
 
 impl VersionInfo {
-    fn created_at_timestamp(&self) -> Option<Timestamp> {
+    pub fn created_at_timestamp(&self) -> Option<Timestamp> {
         match &self.created_at {
             Some(ts) => {
                 let created = parse_into_timestamp(ts);

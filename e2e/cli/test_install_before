@@ -47,6 +47,8 @@ mise uninstall jq --all 2>/dev/null || true
 mise install jq@1.6
 output=$(mise upgrade jq --minimum-release-age 2019-01-01 --dry-run 2>&1)
 assert_contains "echo '$output'" "newer jq release"
+# The warning includes the effective minimum_release_age value
+assert_contains "echo '$output'" "ignored by minimum_release_age (2019-01-01)"
 
 # Test: install --minimum-release-age with relative duration "90d"
 mise uninstall tiny --all 2>/dev/null || true
