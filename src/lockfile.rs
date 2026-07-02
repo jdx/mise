@@ -1711,11 +1711,12 @@ fn check_single_tool_provenance(
                 .is_some_and(|pi| pi.provenance.is_some())
         })
         .filter_map(|t| Some((parse_provenance_version(&t.version)?, t)))
-        .max_by(|(a, _), (b, _)| a.cmp(b))
-        .map(|(_, t)| t)?;
+        .max_by(|(a, _), (b, _)| a.cmp(b))?;
+
+    let (prior_version, prior) = prior;
 
     // Only flag upgrades — intentional downgrades are allowed
-    if new_version <= parse_provenance_version(&prior.version)? {
+    if new_version <= prior_version {
         return None;
     }
 
@@ -1729,7 +1730,7 @@ fn check_single_tool_provenance(
 }
 
 fn parse_provenance_version(version: &str) -> Option<nodejs_semver::Version> {
-    nodejs_semver::Version::parse(version.trim_start_matches(['v', 'V'])).ok()
+    nodejs_semver::Version::parse(strip_leading_v(version)).ok()
 }
 
 /// Check if any github backend tool is losing provenance when upgrading versions.
@@ -2494,8 +2495,8 @@ fn lockfile_version_matches(prefix: &str, version: &str) -> bool {
 
 fn strip_leading_v(version: &str) -> &str {
     version
-        .strip_prefix('v')
-        .or_else(|| version.strip_prefix('V'))
+        .strip_prefix(['v', 'V'])
+        .filter(|stripped| stripped.chars().next().is_some_and(|c| c.is_ascii_digit()))
         .unwrap_or(version)
 }
 
@@ -3069,6 +3070,9 @@ options = { exe = "rg" }
         assert!(lockfile_version_matches("v1.2", "1.2.3"));
         assert!(lockfile_version_matches("V1.2", "v1.2.3"));
         assert!(!lockfile_version_matches("1.3", "v1.2.3"));
+        assert!(!lockfile_version_matches("v", "1.2.3"));
+        assert!(!lockfile_version_matches("v", "v1.2.3"));
+        assert!(lockfile_version_matches("v", "versioned"));
     }
 
     #[test]
@@ -3952,7 +3956,7 @@ backend = "conda:jq"
             check_single_tool_provenance(
                 Some(&existing),
                 "tool",
-                "release",
+                "v1.0.0",
                 "github:owner/repo",
                 &platform,
                 None,
@@ -3980,6 +3984,14 @@ backend = "conda:jq"
         )
         .unwrap();
         assert!(err.contains("has no provenance verification"));
+    }
+
+    #[test]
+    fn test_parse_provenance_version_strips_single_semver_v_prefix() {
+        assert!(parse_provenance_version("v1.2.3").is_some());
+        assert!(parse_provenance_version("V1.2.3").is_some());
+        assert!(parse_provenance_version("vv1.2.3").is_none());
+        assert!(parse_provenance_version("v").is_none());
     }
 
     #[test]
