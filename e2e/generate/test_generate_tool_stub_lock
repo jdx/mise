@@ -48,17 +48,30 @@ assert_not_contains "cat bin/tiny" 'version = "1.'
 assert_contains "cat bin/tiny" "[lock.platforms."
 assert_contains "cat bin/tiny" "url ="
 
-# Test 3: Re-lock preserves version (idempotent)
+# Test 3: Execute the locked stub to verify it works
+if mise version | grep -q "windows-"; then
+  echo "Skipping locked stub execution on Windows because jdx/tiny has no Windows release asset"
+else
+  assert_contains "mise tool-stub bin/tiny" "tiny v2."
+fi
+
+# Test 4: Re-lock preserves version and respects lockfile_platforms
 locked_version=$(grep 'version = ' bin/tiny | head -1 | sed 's/.*"\(.*\)".*/\1/')
+export MISE_LOCKFILE_PLATFORMS=macos-arm64,linux-x64
+export MISE_OS=macos
+export MISE_ARCH=x64
 assert_succeed "mise generate tool-stub bin/tiny --lock"
 
 # Version should be the same after re-locking
 assert_contains "cat bin/tiny" "version = \"$locked_version\""
 
-# Test 4: Lock fails on nonexistent file
-assert_fail "mise generate tool-stub bin/nonexistent --lock"
+assert_contains "cat bin/tiny" "lock.platforms.macos-arm64"
+assert_contains "cat bin/tiny" "lock.platforms.linux-x64"
+assert_contains "cat bin/tiny" "lock.platforms.macos-x64"
+assert_not_contains "cat bin/tiny" "lock.platforms.windows-x64"
+unset MISE_LOCKFILE_PLATFORMS MISE_OS MISE_ARCH
 
-# Test 5: Execute the locked stub to verify it works
-assert_contains "mise tool-stub bin/tiny" "tiny v2."
+# Test 5: Lock fails on nonexistent file
+assert_fail "mise generate tool-stub bin/nonexistent --lock"
 
 echo "All tool-stub lock tests passed!"
