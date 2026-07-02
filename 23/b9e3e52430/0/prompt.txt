@@ -1,0 +1,5 @@
+they only see the warning if they're using monorepo and mise.lock correct?
+
+---
+
+address pr feedback
