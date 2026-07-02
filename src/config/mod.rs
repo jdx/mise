@@ -1333,8 +1333,12 @@ fn monorepo_lockfile_enabled_for_version(
 fn should_warn_monorepo_lockfile_default(
     version: &versions::Versioning,
     setting: Option<bool>,
+    lockfile_enabled: bool,
+    monorepo_lockfiles_exist: bool,
 ) -> bool {
     setting.is_none()
+        && lockfile_enabled
+        && monorepo_lockfiles_exist
         && *version >= versions::Versioning::new(MONOREPO_LOCKFILE_WARN_AT).unwrap()
         && !monorepo_lockfile_default_for_version(version)
 }
@@ -1350,7 +1354,12 @@ fn warn_if_monorepo_lockfile_default_changes(config: &Config) {
         return;
     };
     let setting = cf.monorepo().and_then(|m| m.lockfile);
-    if !should_warn_monorepo_lockfile_default(&version::V, setting) {
+    if !should_warn_monorepo_lockfile_default(
+        &version::V,
+        setting,
+        Settings::get().lockfile_enabled(),
+        monorepo_lockfiles_exist(config, cf),
+    ) {
         return;
     }
 
@@ -1359,6 +1368,39 @@ fn warn_if_monorepo_lockfile_default_changes(config: &Config) {
         Set `[monorepo] lockfile = true` in {} to opt in now, or `lockfile = false` to keep per-subproject lockfiles and silence this warning.",
         display_path(cf.get_path())
     );
+}
+
+fn monorepo_lockfiles_exist(config: &Config, monorepo_config: &Arc<dyn ConfigFile>) -> bool {
+    let Some(monorepo_root) = monorepo_config.project_root() else {
+        return false;
+    };
+    let mut lockfile_paths = IndexSet::new();
+
+    for (config_path, cf) in &config.config_files {
+        if !config_path.starts_with(&monorepo_root) || !cf.source().is_mise_toml() {
+            continue;
+        }
+        lockfile_paths.insert(lockfile::lockfile_path_for_config(config_path, None).0);
+        lockfile_paths.insert(
+            lockfile::lockfile_path_for_config(config_path, Some(monorepo_root.as_path())).0,
+        );
+    }
+
+    if let Some(monorepo) = monorepo_config.monorepo()
+        && let Ok(config_roots) = expand_config_roots(&monorepo_root, &monorepo.config_roots, None)
+    {
+        for config_root in config_roots {
+            for config_path in config_paths_in_dir(&config_root) {
+                lockfile_paths.insert(lockfile::lockfile_path_for_config(&config_path, None).0);
+                lockfile_paths.insert(
+                    lockfile::lockfile_path_for_config(&config_path, Some(monorepo_root.as_path()))
+                        .0,
+                );
+            }
+        }
+    }
+
+    lockfile_paths.iter().any(|path| path.exists())
 }
 
 /// Phase-2 rollout warning for auto_env: starting with 2026.12.0, tell users about
@@ -3262,19 +3304,52 @@ mod tests {
 
         assert!(!should_warn_monorepo_lockfile_default(
             &v("2026.11.9"),
-            None
+            None,
+            true,
+            true
         ));
-        assert!(should_warn_monorepo_lockfile_default(&v("2026.12.0"), None));
-        assert!(should_warn_monorepo_lockfile_default(&v("2027.5.9"), None));
+        assert!(should_warn_monorepo_lockfile_default(
+            &v("2026.12.0"),
+            None,
+            true,
+            true
+        ));
+        assert!(should_warn_monorepo_lockfile_default(
+            &v("2027.5.9"),
+            None,
+            true,
+            true
+        ));
         assert!(!should_warn_monorepo_lockfile_default(
             &v("2026.12.0"),
-            Some(true)
+            None,
+            false,
+            true
         ));
         assert!(!should_warn_monorepo_lockfile_default(
             &v("2026.12.0"),
-            Some(false)
+            None,
+            true,
+            false
         ));
-        assert!(!should_warn_monorepo_lockfile_default(&v("2027.6.0"), None));
+        assert!(!should_warn_monorepo_lockfile_default(
+            &v("2026.12.0"),
+            Some(true),
+            true,
+            true
+        ));
+        assert!(!should_warn_monorepo_lockfile_default(
+            &v("2026.12.0"),
+            Some(false),
+            true,
+            true
+        ));
+        assert!(!should_warn_monorepo_lockfile_default(
+            &v("2027.6.0"),
+            None,
+            true,
+            true
+        ));
     }
 
     #[tokio::test]
