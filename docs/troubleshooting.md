@@ -1,6 +1,6 @@
 # Troubleshooting
 
-If you're looking for help with a specific error message, see [Errors](/errors) — this
+If you're looking for help with a specific error message, see [Errors](/errors.html) — this
 page is organized by symptom instead.
 
 ## `mise activate` doesn't work in `~/.profile`, `~/.bash_profile`, `~/.zprofile`

@@ -1,7 +1,7 @@
 # Errors
 
 This page lists common error messages mise emits, what causes them, and how to fix them.
-It complements [Troubleshooting](/troubleshooting), which is organized by symptom
+It complements [Troubleshooting](/troubleshooting.html), which is organized by symptom
 (wrong tool version, slow prompts, activation issues) rather than by error message.
 
 Every error is followed by a generic footer like this:
