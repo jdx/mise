@@ -54,6 +54,13 @@ Only install versions released before this date or older than this duration
 
 Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
 
+### `--monorepo`
+
+Install tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
+
 ### `--raw`
 
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1

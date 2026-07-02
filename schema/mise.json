@@ -2077,6 +2077,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "lockfile": {
+          "description": "Use a single lockfile at the monorepo root for descendant config roots. true opts in now, false keeps lockfiles next to subproject configs, and unset keeps the current behavior until the scheduled default flip.",
+          "type": "boolean"
         }
       }
     },

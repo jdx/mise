@@ -2420,6 +2420,12 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--monorepo",
+          description:
+            "Install tools from every [monorepo].config_roots config root",
+          isRepeatable: false,
+        },
+        {
           name: "--raw",
           description:
             "Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1",
@@ -2615,6 +2621,12 @@ const completionSpec: Fig.Spec = {
         {
           name: "--all-sources",
           description: "Display all tracked config sources for tools",
+          isRepeatable: false,
+        },
+        {
+          name: "--monorepo",
+          description:
+            "List tools from every [monorepo].config_roots config root",
           isRepeatable: false,
         },
         {
@@ -3007,6 +3019,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--monorepo",
+          description:
+            "Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet.",
+          isRepeatable: false,
+        },
+        {
           name: "--no-header",
           description: "Don't show table header",
           isRepeatable: false,
@@ -3362,6 +3380,12 @@ const completionSpec: Fig.Spec = {
           name: "--dry-run-code",
           description:
             "Like --dry-run but exits with code 1 if there are tools to prune",
+          isRepeatable: false,
+        },
+        {
+          name: "--monorepo",
+          description:
+            "Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.",
           isRepeatable: false,
         },
         {
@@ -5050,6 +5074,12 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "minimum_release_age",
           },
+        },
+        {
+          name: "--monorepo",
+          description:
+            "Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.",
+          isRepeatable: false,
         },
         {
           name: "--raw",

@@ -35,6 +35,10 @@ Like --dry-run but exits with code 1 if there are tools to prune
 
 This is useful for scripts to check if tools need to be pruned.
 
+### `--monorepo`
+
+Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
+
 ### `--tools`
 
 Prune only unused versions of tools

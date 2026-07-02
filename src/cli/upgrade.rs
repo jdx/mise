@@ -96,6 +96,10 @@ pub struct Upgrade {
     #[clap(long, alias = "before", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
+    /// Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.
+    #[clap(long, verbatim_doc_comment)]
+    monorepo: bool,
+
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
     #[clap(long, overrides_with = "jobs")]
@@ -116,7 +120,13 @@ impl Upgrade {
     }
 
     pub async fn run(self) -> Result<()> {
+        if self.monorepo {
+            unimplemented!("mise upgrade --monorepo is not implemented yet");
+        }
         let mut config = Config::get().await?;
+        if !self.is_dry_run() {
+            crate::lockfile::migrate_monorepo_lockfiles(&config)?;
+        }
         let ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .with_scope(self.scope())

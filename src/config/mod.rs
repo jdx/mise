@@ -56,6 +56,12 @@ type AliasMap = IndexMap<String, Alias>;
 pub(crate) type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
 pub type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 
+pub(crate) struct MonorepoUnion {
+    pub config_files: ConfigMap,
+    pub tool_request_set: ToolRequestSet,
+    pub repo_urls: HashMap<String, String>,
+}
+
 pub struct Config {
     pub config_files: ConfigMap,
     pub project_root: Option<PathBuf>,
@@ -86,6 +92,8 @@ pub struct Alias {
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 static _REDACTOR: Lazy<Mutex<Redactor>> = Lazy::new(Default::default);
+const MONOREPO_LOCKFILE_WARN_AT: &str = "2026.12.0";
+const MONOREPO_LOCKFILE_DEFAULT_AT: &str = "2027.6.0";
 
 pub fn is_loaded() -> bool {
     _CONFIG.read().unwrap().is_some()
@@ -119,6 +127,30 @@ impl Config {
         )
         .await?;
         Config::load().await
+    }
+
+    pub(crate) fn with_config_files(&self, config_files: ConfigMap) -> Arc<Self> {
+        let project_root = get_project_root(&config_files).or_else(|| self.project_root.clone());
+        let repo_urls = load_plugins(&config_files).unwrap_or_else(|_| self.repo_urls.clone());
+        Arc::new(Self {
+            tera_ctx: self.tera_ctx.clone(),
+            config_files,
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: self.shorthands.clone(),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: self.all_aliases.clone(),
+            aliases: self.aliases.clone(),
+            project_root,
+            repo_urls,
+            shell_aliases: self.shell_aliases.clone(),
+            tera_files: self.tera_files.clone(),
+            vars: self.vars.clone(),
+            vars_results: OnceCell::new(),
+        })
     }
 
     #[async_backtrace::framed]
@@ -223,6 +255,7 @@ impl Config {
         }
 
         warn_if_auto_env_files_exist();
+        warn_if_monorepo_lockfile_default_changes(&config);
 
         time!("load done");
 
@@ -406,6 +439,143 @@ impl Config {
 
     pub fn monorepo_root(&self) -> Option<PathBuf> {
         find_monorepo_root(&self.config_files)
+    }
+
+    /// Returns the root lockfile directory when unified monorepo lockfiles are active.
+    ///
+    /// Lockfile discovery is intentionally lenient: it only requires
+    /// `[monorepo].config_roots` to match directories, because legacy lockfiles
+    /// can exist in roots whose live config is idiomatic-only or was removed.
+    pub fn monorepo_lockfile_root(&self) -> Option<PathBuf> {
+        let cf = find_monorepo_config(&self.config_files)?;
+        let setting = cf.monorepo().and_then(|m| m.lockfile);
+        if !monorepo_lockfile_enabled_for_version(&version::V, setting) {
+            return None;
+        }
+        let monorepo_root = cf.project_root().map(|p| p.to_path_buf())?;
+        match self.monorepo_config_root_dirs(None) {
+            Ok(config_roots) if !config_roots.is_empty() => Some(monorepo_root),
+            Ok(_) => {
+                if setting == Some(true) {
+                    warn_once!(
+                        "[monorepo] lockfile = true is set, but [monorepo].config_roots did not match any directories; using root lockfiles without migration"
+                    );
+                    Some(monorepo_root)
+                } else {
+                    None
+                }
+            }
+            Err(err) => {
+                if setting == Some(true) {
+                    warn_once!(
+                        "[monorepo] lockfile = true is set, but [monorepo].config_roots could not be resolved: {err:#}; using root lockfiles without migration"
+                    );
+                    Some(monorepo_root)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    pub(crate) fn monorepo_config_root_dirs_for_lockfiles(&self) -> Result<Vec<PathBuf>> {
+        self.monorepo_config_root_dirs(None)
+    }
+
+    fn monorepo_config_root_dirs_with_filenames(
+        &self,
+        filenames: &[String],
+    ) -> Result<Vec<PathBuf>> {
+        self.monorepo_config_root_dirs(Some(filenames))
+    }
+
+    /// Resolve `[monorepo].config_roots`.
+    ///
+    /// `None` matches any existing directory and is used for lockfile migration
+    /// and routing. `Some(filenames)` requires a recognized config or idiomatic
+    /// version file and is used for full monorepo union/task loading.
+    fn monorepo_config_root_dirs(&self, filenames: Option<&[String]>) -> Result<Vec<PathBuf>> {
+        let monorepo_config = find_monorepo_config(&self.config_files)
+            .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
+        let monorepo_root = monorepo_config
+            .project_root()
+            .ok_or_else(|| eyre!("monorepo root config has no project root"))?;
+        let patterns = &monorepo_config
+            .monorepo()
+            .ok_or_else(|| eyre!("[monorepo].config_roots is required for monorepo operations"))?
+            .config_roots;
+        if patterns.is_empty() {
+            bail!("[monorepo].config_roots is required for monorepo operations");
+        }
+        let roots = match filenames {
+            Some(filenames) => {
+                expand_config_roots_with_filenames(&monorepo_root, patterns, None, filenames)?
+            }
+            None => expand_config_root_dirs(&monorepo_root, patterns, None)?,
+        };
+        if roots.is_empty() {
+            bail!("[monorepo].config_roots did not match any config roots");
+        }
+        Ok(roots)
+    }
+
+    pub async fn monorepo_union_tool_request_set(self: &Arc<Self>) -> Result<ToolRequestSet> {
+        Ok(self.monorepo_union().await?.tool_request_set)
+    }
+
+    pub(crate) async fn monorepo_union(self: &Arc<Self>) -> Result<MonorepoUnion> {
+        let idiomatic_filenames = load_idiomatic_filenames().await;
+        let config_filenames = idiomatic_filenames
+            .keys()
+            .chain(DEFAULT_CONFIG_FILENAMES.iter())
+            .cloned()
+            .collect_vec();
+        let roots = self.monorepo_config_root_dirs_with_filenames(&config_filenames)?;
+        let mut config_files = self.config_files.clone();
+        let mut base_config_files = self.config_files.clone();
+        base_config_files.retain(|path, _| {
+            is_global_config(path) || !roots.iter().any(|root| path.starts_with(root))
+        });
+
+        let mut union = ToolRequestSet::new();
+        for root in roots {
+            let root_paths = config_paths_in_dir_with_filenames(&root, &config_filenames);
+            let mut root_config_files =
+                load_config_files_from_paths(&root_paths, &idiomatic_filenames).await?;
+            for (path, cf) in root_config_files.clone() {
+                config_files.entry(path).or_insert(cf);
+            }
+            for (path, cf) in base_config_files.clone() {
+                root_config_files.entry(path).or_insert(cf);
+            }
+
+            let root_trs = ToolRequestSetBuilder::new()
+                .with_config_files(root_config_files)
+                .without_runtime_args()
+                .build(self)
+                .await?;
+            union.unknown_tools.extend(root_trs.unknown_tools.clone());
+            for (_ba, requests, source) in root_trs.iter() {
+                for request in requests {
+                    let already_present = union.tools.get(request.ba()).is_some_and(|existing| {
+                        existing.iter().any(|r| {
+                            r.version() == request.version() && r.options() == request.options()
+                        })
+                    });
+                    if !already_present {
+                        union.add_version(request.clone(), source);
+                    }
+                }
+            }
+        }
+
+        union.unknown_tools = union.unknown_tools.into_iter().unique().collect();
+        let repo_urls = load_plugins(&config_files)?;
+        Ok(MonorepoUnion {
+            config_files,
+            tool_request_set: union,
+            repo_urls,
+        })
     }
 
     pub async fn tasks(&self) -> Result<Arc<BTreeMap<String, Task>>> {
@@ -1115,6 +1285,31 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
         .collect()
 }
 
+pub(crate) fn config_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
+    config_paths_in_dir_with_filenames(dir, &DEFAULT_CONFIG_FILENAMES)
+}
+
+fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> Vec<PathBuf> {
+    let config_paths: Vec<PathBuf> = filenames
+        .iter()
+        .rev()
+        .flat_map(|f| {
+            if f.contains('*') {
+                glob(dir, f).unwrap_or_default().into_iter().rev().collect()
+            } else {
+                let path = dir.join(f);
+                if path.exists() { vec![path] } else { vec![] }
+            }
+        })
+        .collect();
+
+    let mut seen = std::collections::HashSet::new();
+    config_paths
+        .into_iter()
+        .filter(|p| seen.insert(p.clone()))
+        .collect()
+}
+
 fn all_dirs() -> Result<Vec<PathBuf>> {
     file::all_dirs(env::current_dir()?, &env::MISE_CEILING_PATHS)
 }
@@ -1208,6 +1403,99 @@ fn should_warn_auto_env(
         && !auto_envs_active
         && *version >= versions::Versioning::new("2026.12.0").unwrap()
         && !env::auto_env_default_for_version(version)
+}
+
+/// Default for monorepo lockfile routing when `[monorepo].lockfile` is unset.
+/// Keep legacy colocated lockfiles until the scheduled default flip.
+fn monorepo_lockfile_default_for_version(version: &versions::Versioning) -> bool {
+    *version >= versions::Versioning::new(MONOREPO_LOCKFILE_DEFAULT_AT).unwrap()
+}
+
+fn monorepo_lockfile_enabled_for_version(
+    version: &versions::Versioning,
+    setting: Option<bool>,
+) -> bool {
+    setting.unwrap_or_else(|| monorepo_lockfile_default_for_version(version))
+}
+
+/// Whether to emit the phase-2 monorepo lockfile rollout warning. Pure for unit testing.
+/// Warns only when the user has not explicitly chosen `lockfile = true` or `false`
+/// and the mise version is in the warning window before the default flip.
+fn should_warn_monorepo_lockfile_default(
+    version: &versions::Versioning,
+    setting: Option<bool>,
+    lockfile_enabled: bool,
+    monorepo_lockfiles_exist: bool,
+) -> bool {
+    setting.is_none()
+        && lockfile_enabled
+        && monorepo_lockfiles_exist
+        && *version >= versions::Versioning::new(MONOREPO_LOCKFILE_WARN_AT).unwrap()
+        && !monorepo_lockfile_default_for_version(version)
+}
+
+fn warn_if_monorepo_lockfile_default_changes(config: &Config) {
+    // Dead code once the default flips on: unset configs use the new behavior,
+    // so this warning path should be removed when the rollout completes.
+    debug_assert!(
+        !monorepo_lockfile_default_for_version(&version::V),
+        "monorepo lockfiles are now default-on; remove warn_if_monorepo_lockfile_default_changes() and should_warn_monorepo_lockfile_default()"
+    );
+    let Some(cf) = find_monorepo_config(&config.config_files) else {
+        return;
+    };
+    let setting = cf.monorepo().and_then(|m| m.lockfile);
+    if !should_warn_monorepo_lockfile_default(
+        &version::V,
+        setting,
+        Settings::get().lockfile_enabled(),
+        monorepo_lockfiles_exist(config, cf),
+    ) {
+        return;
+    }
+
+    warn_once!(
+        "Monorepo lockfiles will default to a single root lockfile starting in mise {MONOREPO_LOCKFILE_DEFAULT_AT}. \
+        Set `[monorepo] lockfile = true` in {} to opt in now, or `lockfile = false` to keep per-subproject lockfiles and silence this warning.",
+        display_path(cf.get_path())
+    );
+}
+
+fn monorepo_lockfiles_exist(config: &Config, monorepo_config: &Arc<dyn ConfigFile>) -> bool {
+    let Some(monorepo_root) = monorepo_config.project_root() else {
+        return false;
+    };
+    let mut lockfile_paths = IndexSet::new();
+
+    for (config_path, cf) in &config.config_files {
+        if !config_path.starts_with(&monorepo_root) || !cf.source().is_mise_toml() {
+            continue;
+        }
+        lockfile_paths.insert(lockfile::lockfile_path_for_config(config_path, None).0);
+        lockfile_paths.insert(
+            lockfile::lockfile_path_for_config(config_path, Some(monorepo_root.as_path())).0,
+        );
+    }
+
+    if let Some(monorepo) = monorepo_config.monorepo()
+        && let Ok(config_roots) =
+            expand_config_root_dirs(&monorepo_root, &monorepo.config_roots, None)
+    {
+        for config_root in config_roots {
+            for lockfile_path in lockfile::lockfile_variant_paths_in_dir(&config_root) {
+                lockfile_paths.insert(lockfile_path);
+            }
+            for config_path in config_paths_in_dir(&config_root) {
+                lockfile_paths.insert(lockfile::lockfile_path_for_config(&config_path, None).0);
+                lockfile_paths.insert(
+                    lockfile::lockfile_path_for_config(&config_path, Some(monorepo_root.as_path()))
+                        .0,
+                );
+            }
+        }
+    }
+
+    lockfile_paths.iter().any(|path| path.exists())
 }
 
 /// Phase-2 rollout warning for auto_env: starting with 2026.12.0, tell users about
@@ -1874,6 +2162,7 @@ pub async fn rebuild_shims_and_runtime_symlinks(
             .await
             .wrap_err("failed to rebuild shims")?;
     });
+    lockfile::migrate_monorepo_lockfiles(config)?;
     // Snapshot the lockfiles' platform keys BEFORE update_lockfiles writes
     // current-platform entries — auto-lock uses this to tell a curated lockfile
     // (existing entries are authoritative) from a fresh one (expand to common).
@@ -1983,32 +2272,7 @@ async fn load_local_tasks_with_context(
                     // Later inserts win, so file tasks override config tasks with the same name
                     let mut task_map: IndexMap<String, Task> = IndexMap::new();
 
-                    // Load config files from subdirectory
-                    // Use .rev() so later files (like mise.local.toml) have higher precedence
-                    // Use glob() with .rev() for conf.d patterns so later files (02-override.toml) override earlier ones
-                    let config_paths: Vec<PathBuf> = DEFAULT_CONFIG_FILENAMES
-                        .iter()
-                        .rev()
-                        .flat_map(|f| {
-                            if f.contains('*') {
-                                glob(&subdir, f).unwrap_or_default().into_iter().rev().collect()
-                            } else {
-                                let path = subdir.join(f);
-                                if path.exists() {
-                                    vec![path]
-                                } else {
-                                    vec![]
-                                }
-                            }
-                        })
-                        .collect();
-
-                    // Deduplicate config paths while preserving precedence order
-                    let mut seen = std::collections::HashSet::new();
-                    let config_paths: Vec<PathBuf> = config_paths
-                        .into_iter()
-                        .filter(|p| seen.insert(p.clone()))
-                        .collect();
+                    let config_paths = config_paths_in_dir(&subdir);
 
                     let found_config = !config_paths.is_empty();
                     for config_path in config_paths {
@@ -2093,6 +2357,32 @@ fn expand_config_roots(
     patterns: &[String],
     ctx: Option<&crate::task::TaskLoadContext>,
 ) -> Result<Vec<PathBuf>> {
+    expand_config_roots_with_filenames(root, patterns, ctx, &DEFAULT_CONFIG_FILENAMES)
+}
+
+fn expand_config_root_dirs(
+    root: &Path,
+    patterns: &[String],
+    ctx: Option<&crate::task::TaskLoadContext>,
+) -> Result<Vec<PathBuf>> {
+    expand_config_roots_inner(root, patterns, ctx, None)
+}
+
+fn expand_config_roots_with_filenames(
+    root: &Path,
+    patterns: &[String],
+    ctx: Option<&crate::task::TaskLoadContext>,
+    filenames: &[String],
+) -> Result<Vec<PathBuf>> {
+    expand_config_roots_inner(root, patterns, ctx, Some(filenames))
+}
+
+fn expand_config_roots_inner(
+    root: &Path,
+    patterns: &[String],
+    ctx: Option<&crate::task::TaskLoadContext>,
+    filenames: Option<&[String]>,
+) -> Result<Vec<PathBuf>> {
     let mut subdirs = Vec::new();
 
     for pattern in patterns {
@@ -2130,7 +2420,11 @@ fn expand_config_roots(
                                     );
                                     continue;
                                 }
-                                if path.is_dir() && has_mise_config(&path) {
+                                if path.is_dir()
+                                    && filenames.is_none_or(|filenames| {
+                                        has_mise_config_with_filenames(&path, filenames)
+                                    })
+                                {
                                     subdirs.push(path);
                                 }
                             }
@@ -2159,7 +2453,9 @@ fn expand_config_roots(
                 continue;
             }
             if path.is_dir() {
-                if has_mise_config(&path) {
+                if filenames
+                    .is_none_or(|filenames| has_mise_config_with_filenames(&path, filenames))
+                {
                     subdirs.push(path);
                 } else {
                     warn!(
@@ -2188,12 +2484,14 @@ fn expand_config_roots(
     Ok(subdirs)
 }
 
-/// Check if a directory contains a mise config file or file tasks directory
-fn has_mise_config(dir: &Path) -> bool {
-    DEFAULT_CONFIG_FILENAMES
-        .iter()
-        .any(|f| dir.join(f).exists())
-        || dir.join(".mise/tasks").is_dir()
+fn has_mise_config_with_filenames(dir: &Path, filenames: &[String]) -> bool {
+    filenames.iter().any(|f| {
+        if f.contains('*') {
+            !glob(dir, f).unwrap_or_default().is_empty()
+        } else {
+            dir.join(f).exists()
+        }
+    }) || dir.join(".mise/tasks").is_dir()
         || dir.join("mise-tasks").is_dir()
 }
 
@@ -2970,6 +3268,21 @@ mod tests {
     }
 
     #[test]
+    fn test_has_mise_config_with_glob_filenames() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let confd = tmp.path().join(".config/mise/conf.d");
+        fs::create_dir_all(&confd)?;
+        fs::write(confd.join("tools.toml"), "[tools]\n")?;
+
+        assert!(has_mise_config_with_filenames(
+            tmp.path(),
+            &[".config/mise/conf.d/*.toml".to_string()]
+        ));
+
+        Ok(())
+    }
+
+    #[test]
     fn test_prefer_windows_file_task_siblings_keeps_windows_native_script() {
         let file_tasks = vec![
             Task {
@@ -3192,6 +3505,74 @@ mod tests {
         // default flipped on: warning is obsolete
         assert!(!should_warn_auto_env(&v("2027.6.0"), None, true));
         assert!(!should_warn_auto_env(&v("2027.6.0"), Some(false), false));
+    }
+
+    #[test]
+    fn test_monorepo_lockfile_rollout() {
+        let v = |s: &str| versions::Versioning::new(s).unwrap();
+
+        assert!(!monorepo_lockfile_enabled_for_version(
+            &v("2026.6.15"),
+            None
+        ));
+        assert!(monorepo_lockfile_enabled_for_version(
+            &v("2026.6.15"),
+            Some(true)
+        ));
+        assert!(!monorepo_lockfile_enabled_for_version(
+            &v("2027.6.0"),
+            Some(false)
+        ));
+        assert!(monorepo_lockfile_enabled_for_version(&v("2027.6.0"), None));
+
+        assert!(!should_warn_monorepo_lockfile_default(
+            &v("2026.11.9"),
+            None,
+            true,
+            true
+        ));
+        assert!(should_warn_monorepo_lockfile_default(
+            &v("2026.12.0"),
+            None,
+            true,
+            true
+        ));
+        assert!(should_warn_monorepo_lockfile_default(
+            &v("2027.5.9"),
+            None,
+            true,
+            true
+        ));
+        assert!(!should_warn_monorepo_lockfile_default(
+            &v("2026.12.0"),
+            None,
+            false,
+            true
+        ));
+        assert!(!should_warn_monorepo_lockfile_default(
+            &v("2026.12.0"),
+            None,
+            true,
+            false
+        ));
+        assert!(!should_warn_monorepo_lockfile_default(
+            &v("2026.12.0"),
+            Some(true),
+            true,
+            true
+        ));
+        assert!(!should_warn_monorepo_lockfile_default(
+            &v("2026.12.0"),
+            Some(false),
+            true,
+            true
+        ));
+        assert!(!should_warn_monorepo_lockfile_default(
+            &v("2027.6.0"),
+            None,
+            true,
+            true
+        ));
     }
 
     #[tokio::test]
@@ -3559,6 +3940,86 @@ mod tests {
         }
 
         result
+    }
+
+    #[tokio::test]
+    async fn test_monorepo_union_tool_request_set_preserves_matching_tools() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root = temp_dir.path();
+        let api = root.join("apps/api");
+        let web = root.join("apps/web");
+        fs::create_dir_all(&api)?;
+        fs::create_dir_all(&web)?;
+
+        let root_config = root.join(".test.mise.toml");
+        fs::write(
+            &root_config,
+            r#"
+monorepo_root = true
+
+[monorepo]
+config_roots = ["apps/api", "apps/web"]
+"#,
+        )?;
+        fs::write(
+            api.join(".test.mise.toml"),
+            r#"
+[tools]
+"github:jdx/mise-test-fixtures" = "1"
+"#,
+        )?;
+        fs::write(
+            web.join(".test.mise.toml"),
+            r#"
+[tools]
+"github:jdx/mise-test-fixtures" = "2"
+"#,
+        )?;
+
+        let mut config_files: ConfigMap = Default::default();
+        config_files.insert(
+            root_config.clone(),
+            Arc::new(config_file::mise_toml::MiseToml::from_file(&root_config)?),
+        );
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files,
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: Default::default(),
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls: Default::default(),
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_results: OnceCell::new(),
+        };
+        let config = Arc::new(config);
+
+        assert_eq!(
+            config.monorepo_config_root_dirs_with_filenames(&DEFAULT_CONFIG_FILENAMES)?,
+            vec![api, web]
+        );
+        let trs = config.monorepo_union_tool_request_set().await?;
+        let fixture_versions = trs
+            .iter()
+            .find(|(ba, _, _)| ba.short.contains("mise-test-fixtures"))
+            .map(|(_, requests, _)| {
+                requests
+                    .iter()
+                    .map(|request| request.version().to_string())
+                    .collect_vec()
+            })
+            .unwrap_or_default();
+
+        assert_eq!(fixture_versions, vec!["1", "2"]);
+        Ok(())
     }
 
     #[tokio::test]

@@ -219,6 +219,9 @@ pub struct MonorepoConfig {
     /// Supports single-level glob patterns (*).
     #[serde(default)]
     pub config_roots: Vec<String>,
+    /// Use a single lockfile at the monorepo root for descendant config roots.
+    /// None follows the rollout default; true opts in, false keeps colocated locks.
+    pub lockfile: Option<bool>,
 }
 
 impl EnvList {

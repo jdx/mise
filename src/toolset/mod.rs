@@ -695,7 +695,8 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
             ..Default::default()
         };
         if use_locked_version && Settings::get().lockfile_enabled() {
-            let (lockfile_path, _) = lockfile_path_for_config(&path);
+            let (lockfile_path, _) =
+                lockfile_path_for_config(&path, config.monorepo_lockfile_root().as_deref());
             match Lockfile::read(&lockfile_path) {
                 Ok(lockfile) => {
                     for (short, tools) in lockfile.tools() {

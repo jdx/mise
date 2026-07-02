@@ -1706,6 +1706,14 @@ Supports absolute dates like "2024-06-01" and relative durations like "90d" or "
 """#
         arg <MINIMUM_RELEASE_AGE>
     }
+    flag --monorepo help="Install tools from every [monorepo].config_roots config root" {
+        long_help #"""
+Install tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
+"""#
+    }
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     flag --shared help="Install tool(s) to a shared directory" {
         long_help #"""
@@ -1963,6 +1971,14 @@ Examples:
         arg <TOOL_FLAG>
     }
     flag --all-sources help="Display all tracked config sources for tools"
+    flag --monorepo help="List tools from every [monorepo].config_roots config root" {
+        long_help #"""
+List tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
+"""#
+    }
     flag --no-header help="Don't display headers"
     flag --outdated help="Display whether a version is outdated"
     flag --prefix help="Display versions matching this prefix" {
@@ -2379,6 +2395,7 @@ This will only show tools that are defined in project-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
 """#
     }
+    flag --monorepo help="Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet."
     flag --no-header help="Don't show table header"
     arg "[TOOL@VERSION]…" help=#"""
 Tool(s) to show outdated versions for
@@ -2723,6 +2740,7 @@ Like --dry-run but exits with code 1 if there are tools to prune
 This is useful for scripts to check if tools need to be pruned.
 """#
     }
+    flag --monorepo help="Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet."
     flag --tools help="Prune only unused versions of tools"
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
 }
@@ -4164,6 +4182,7 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 """#
         arg <MINIMUM_RELEASE_AGE>
     }
+    flag --monorepo help="Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet."
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     arg "[INSTALLED_TOOL@VERSION]…" help=#"""
 Tool(s) to upgrade

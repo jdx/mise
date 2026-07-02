@@ -8,12 +8,13 @@ use crate::file;
 use crate::file::display_path;
 use crate::path::PathExt;
 use crate::platform::Platform;
-use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
+use crate::toolset::{ToolSource, ToolVersion, Toolset};
 use eyre::{Report, Result, bail, eyre};
+use indexmap::IndexSet;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
@@ -29,7 +30,7 @@ use xx::regex;
 /// Global caches for lockfile data - declared here so invalidation can access them
 static ALL_LOCKFILES_CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> =
     Lazy::new(Default::default);
-static SINGLE_LOCKFILE_CACHE: Lazy<Mutex<HashMap<PathBuf, Arc<Lockfile>>>> =
+static SINGLE_LOCKFILE_CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> =
     Lazy::new(Default::default);
 
 /// Invalidate all lockfile caches. Call this after modifying a lockfile.
@@ -1151,7 +1152,10 @@ impl Lockfile {
 /// - `.config/mise.toml` -> `.config/mise.lock`
 /// - `.mise/config.toml` -> `.mise/mise.lock`
 /// - `.mise/conf.d/foo.toml` -> `.mise/mise.lock` (conf.d files share parent's lockfile)
-pub fn lockfile_path_for_config(config_path: &Path) -> (PathBuf, bool) {
+pub fn lockfile_path_for_config(
+    config_path: &Path,
+    monorepo_root: Option<&Path>,
+) -> (PathBuf, bool) {
     let is_local = is_local_config(config_path);
     let env = extract_env_from_config_path(config_path);
     let lockfile_name = match (&env, is_local) {
@@ -1174,6 +1178,15 @@ pub fn lockfile_path_for_config(config_path: &Path) -> (PathBuf, bool) {
         parent
     };
 
+    let lockfile_dir = if let Some(root) = monorepo_root
+        && config_path.starts_with(root)
+        && lockfile_dir != root
+    {
+        root
+    } else {
+        lockfile_dir
+    };
+
     (lockfile_dir.join(lockfile_name), is_local)
 }
 
@@ -1188,8 +1201,17 @@ pub fn lockfile_path_for_tool_source(
     config: &Config,
     source: &ToolSource,
 ) -> Option<(PathBuf, bool)> {
+    let monorepo_root = config.monorepo_lockfile_root();
+    lockfile_path_for_tool_source_with_root(config, source, monorepo_root.as_deref())
+}
+
+fn lockfile_path_for_tool_source_with_root(
+    config: &Config,
+    source: &ToolSource,
+    monorepo_root: Option<&Path>,
+) -> Option<(PathBuf, bool)> {
     match source {
-        ToolSource::MiseToml(path) => Some(lockfile_path_for_config(path)),
+        ToolSource::MiseToml(path) => Some(lockfile_path_for_config(path, monorepo_root)),
         ToolSource::IdiomaticVersionFile(path) => config
             .config_files
             .iter()
@@ -1205,7 +1227,7 @@ pub fn lockfile_path_for_tool_source(
                         is_base,
                         // Tie-break same-root base configs by config_files order.
                         idx,
-                        lockfile_path_for_config(config_path),
+                        lockfile_path_for_config(config_path, monorepo_root),
                     )
                 })
             })
@@ -1259,6 +1281,160 @@ impl LockfileUpdateMode {
     }
 }
 
+pub fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
+    if !Settings::get().lockfile_enabled() {
+        return Ok(());
+    }
+    let Some(monorepo_root) = config.monorepo_lockfile_root() else {
+        return Ok(());
+    };
+    let mut migrated = 0usize;
+
+    for source in monorepo_legacy_lockfile_paths(config) {
+        if !source.exists() {
+            continue;
+        }
+        let Some(filename) = source.file_name() else {
+            continue;
+        };
+        let target = monorepo_root.join(filename);
+        if source == target {
+            continue;
+        }
+        let _lock = crate::lock_file::LockFile::new(&target)
+            .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+            .lock()?;
+        let mut root_lockfile =
+            Lockfile::read(&target).unwrap_or_else(|err| handle_lockfile_read_error(err, &target));
+        let subproject_lockfile = match Lockfile::read(&source) {
+            Ok(lockfile) => lockfile,
+            Err(err) if is_not_found_report(&err) => continue,
+            Err(err) => return Err(err),
+        };
+        merge_lockfile_preserving_root(&mut root_lockfile, subproject_lockfile);
+        root_lockfile.save(&target)?;
+        if let Err(err) = fs::remove_file(&source)
+            && err.kind() != ErrorKind::NotFound
+        {
+            return Err(err.into());
+        }
+        migrated += 1;
+    }
+
+    if migrated > 0 {
+        miseprintln!(
+            "migrated {migrated} subproject lockfile(s) into {} (monorepo uses a single root lockfile)",
+            display_path(&monorepo_root)
+        );
+    }
+
+    Ok(())
+}
+
+fn is_not_found_report(err: &Report) -> bool {
+    err.downcast_ref::<std::io::Error>()
+        .is_some_and(|err| err.kind() == ErrorKind::NotFound)
+}
+
+fn monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf> {
+    let Some(monorepo_root) = config.monorepo_lockfile_root() else {
+        return IndexSet::new();
+    };
+    let Ok(config_roots) = config.monorepo_config_root_dirs_for_lockfiles() else {
+        return IndexSet::new();
+    };
+    let mut source_lockfiles = IndexSet::new();
+
+    for config_root in config_roots {
+        if config_root == monorepo_root {
+            continue;
+        }
+        for source in lockfile_variant_paths_in_dir(&config_root) {
+            if source.parent() != Some(monorepo_root.as_path()) {
+                source_lockfiles.insert(source);
+            }
+        }
+        for config_path in crate::config::config_paths_in_dir(&config_root) {
+            if let Some(source) =
+                legacy_lockfile_path_for_config(config, &config_path, &monorepo_root)
+            {
+                source_lockfiles.insert(source);
+            }
+        }
+    }
+
+    source_lockfiles
+}
+
+pub(crate) fn lockfile_variant_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
+    let mut paths = IndexSet::new();
+
+    for path in crate::config::glob(dir, "mise*.lock").unwrap_or_default() {
+        paths.insert(path);
+    }
+    for env_name in env::MISE_ENV.iter().chain(env::AUTO_ENV_NAMES.iter()) {
+        paths.insert(dir.join(format!("mise.{env_name}.local.lock")));
+        paths.insert(dir.join(format!("mise.{env_name}.lock")));
+    }
+    paths.insert(dir.join("mise.local.lock"));
+    paths.insert(dir.join("mise.lock"));
+
+    paths.into_iter().collect()
+}
+
+fn legacy_lockfile_path_for_config(
+    config: &Config,
+    config_path: &Path,
+    monorepo_root: &Path,
+) -> Option<PathBuf> {
+    if !config_path.starts_with(monorepo_root) || config.monorepo_lockfile_root().is_none() {
+        return None;
+    }
+    let (source, _) = lockfile_path_for_config(config_path, None);
+    (source.parent() != Some(monorepo_root)).then_some(source)
+}
+
+fn merge_legacy_lockfile_if_present(lockfile: &mut Lockfile, legacy_path: &Path) -> Result<()> {
+    match Lockfile::read(legacy_path) {
+        Ok(legacy) => {
+            merge_lockfile_preserving_root(lockfile, legacy);
+            Ok(())
+        }
+        Err(err) if is_not_found_report(&err) => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
+    for (short, tools) in other.tools {
+        let root_tools = root.tools.entry(short).or_default();
+        let mut keys: HashSet<(String, BTreeMap<String, String>)> = root_tools
+            .iter()
+            .map(|tool| (tool.version.clone(), tool.options.clone()))
+            .collect();
+        for tool in tools {
+            let key = (tool.version.clone(), tool.options.clone());
+            if keys.insert(key) {
+                root_tools.push(tool);
+            }
+        }
+    }
+
+    for (platform, packages) in other.conda_packages {
+        let root_packages = root.conda_packages.entry(platform).or_default();
+        for (basename, info) in packages {
+            root_packages.entry(basename).or_insert(info);
+        }
+    }
+
+    for (platform, packages) in other.pkgx_packages {
+        let root_packages = root.pkgx_packages.entry(platform).or_default();
+        for (id, info) in packages {
+            root_packages.entry(id).or_insert(info);
+        }
+    }
+}
+
 pub fn update_lockfiles(
     config: &Config,
     ts: &Toolset,
@@ -1270,13 +1446,16 @@ pub fn update_lockfiles(
     }
 
     // Collect tools by source (config file)
-    let mut tools_by_source: HashMap<ToolSource, HashMap<String, ToolVersionList>> = HashMap::new();
-    for (source, group) in &ts.versions.iter().chunk_by(|(_, tvl)| &tvl.source) {
-        for (ba, tvl) in group {
+    let mut tools_by_source: HashMap<ToolSource, HashMap<String, Vec<ToolVersion>>> =
+        HashMap::new();
+    for (ba, tvl) in &ts.versions {
+        for tv in &tvl.versions {
             tools_by_source
-                .entry(source.clone())
+                .entry(tv.request.source().clone())
                 .or_default()
-                .insert(ba.short.to_string(), tvl.clone());
+                .entry(ba.short.to_string())
+                .or_default()
+                .push(tv.clone());
         }
     }
 
@@ -1286,17 +1465,10 @@ pub fn update_lockfiles(
         let source = tvs[0].request.source().clone();
         let source_tools = tools_by_source.entry(source.clone()).or_default();
 
-        if let Some(existing_tvl) = source_tools.get_mut(&backend.short) {
-            for new_tv in tvs {
-                existing_tvl
-                    .versions
-                    .retain(|tv| tv.request.version() != new_tv.request.version());
-                existing_tvl.versions.push(new_tv);
-            }
-        } else {
-            let mut tvl = ToolVersionList::new(Arc::new(backend.clone()), source.clone());
-            tvl.versions.extend(tvs);
-            source_tools.insert(backend.short.to_string(), tvl);
+        let existing_versions = source_tools.entry(backend.short.to_string()).or_default();
+        for new_tv in tvs {
+            existing_versions.retain(|tv| tv.request.version() != new_tv.request.version());
+            existing_versions.push(new_tv);
         }
     }
 
@@ -1306,11 +1478,17 @@ pub fn update_lockfiles(
         if !cf.source().is_mise_toml() {
             continue;
         }
-        let (lockfile_path, _is_local) = lockfile_path_for_config(config_path);
+        let (lockfile_path, _is_local) =
+            lockfile_path_for_config(config_path, config.monorepo_lockfile_root().as_deref());
         lockfile_configs
             .entry(lockfile_path)
             .or_default()
             .push(config_path.clone());
+    }
+    for source in tools_by_source.keys() {
+        if let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, source) {
+            lockfile_configs.entry(lockfile_path).or_default();
+        }
     }
 
     debug!("updating {} lockfiles", lockfile_configs.len());
@@ -1323,6 +1501,12 @@ pub fn update_lockfiles(
         if !lockfile_path.exists() {
             continue;
         }
+        let is_monorepo_root_lockfile = config
+            .monorepo_lockfile_root()
+            .is_some_and(|root| lockfile_path.parent() == Some(root.as_path()));
+        let _lock = crate::lock_file::LockFile::new(&lockfile_path)
+            .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+            .lock()?;
 
         let mut existing_lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
@@ -1340,11 +1524,11 @@ pub fn update_lockfiles(
             };
             if source_lockfile == lockfile_path {
                 contributing_sources += 1;
-                for (short, tvl) in tools {
+                for (short, versions) in tools {
                     tool_versions_by_short
                         .entry(short.clone())
                         .or_default()
-                        .extend(tvl.versions.clone());
+                        .extend(versions.clone());
                 }
             }
         }
@@ -1440,7 +1624,13 @@ pub fn update_lockfiles(
             if regressing_tools.contains(&short) {
                 continue;
             }
-            let merged_tools = merge_tool_entries(entries, existing_lockfile.tools.get(&short));
+            let mut merged_tools = merge_tool_entries(entries, existing_lockfile.tools.get(&short));
+            if is_monorepo_root_lockfile {
+                preserve_absent_tool_entries(
+                    &mut merged_tools,
+                    existing_lockfile.tools.get(&short),
+                );
+            }
             existing_lockfile.tools.insert(short, merged_tools);
         }
 
@@ -1695,6 +1885,9 @@ pub async fn auto_lock_new_versions(
             continue;
         }
 
+        let _lock = crate::lock_file::LockFile::new(&lockfile_path)
+            .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+            .lock()?;
         let mut lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
 
@@ -1983,9 +2176,37 @@ fn merge_tool_entries(
         .collect()
 }
 
+fn preserve_absent_tool_entries(
+    merged_tools: &mut Vec<LockfileTool>,
+    existing_tools: Option<&Vec<LockfileTool>>,
+) {
+    let Some(existing_tools) = existing_tools else {
+        return;
+    };
+    let mut keys: HashSet<(String, BTreeMap<String, String>)> = merged_tools
+        .iter()
+        .map(|tool| (tool.version.clone(), tool.options.clone()))
+        .collect();
+
+    for existing_tool in existing_tools {
+        let key = (existing_tool.version.clone(), existing_tool.options.clone());
+        if keys.insert(key) {
+            merged_tools.push(existing_tool.clone());
+        }
+    }
+}
+
 fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
     // Create a cache key from the config file paths
-    let cache_key: Vec<PathBuf> = config.config_files.keys().cloned().collect();
+    let monorepo_root = config.monorepo_lockfile_root();
+    let legacy_lockfiles = monorepo_legacy_lockfile_paths(config);
+    let cache_key: Vec<PathBuf> = config
+        .config_files
+        .keys()
+        .map(|path| lockfile_path_for_config(path, monorepo_root.as_deref()).0)
+        .chain(legacy_lockfiles.iter().cloned())
+        .unique()
+        .collect();
 
     // Use unwrap_or_else to recover from poisoned mutex (thread panicked while holding lock)
     let mut cache = ALL_LOCKFILES_CACHE
@@ -2003,7 +2224,7 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
             continue;
         }
 
-        let (lockfile_path, _) = lockfile_path_for_config(path);
+        let (lockfile_path, _) = lockfile_path_for_config(path, monorepo_root.as_deref());
         let root = lockfile_path.parent().unwrap_or(path).to_path_buf();
         if seen_roots.contains(&root) {
             continue;
@@ -2038,6 +2259,11 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
             all.push(main);
         }
     }
+    for legacy_path in legacy_lockfiles {
+        if let Ok(legacy) = Lockfile::read(&legacy_path) {
+            all.push(legacy);
+        }
+    }
 
     let result = all.into_iter().fold(Lockfile::default(), |mut acc, l| {
         for (short, tools) in l.tools {
@@ -2060,23 +2286,72 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
     result
 }
 
-fn read_lockfile_for(path: &Path) -> Arc<Lockfile> {
+fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
+    let monorepo_root = config.monorepo_lockfile_root();
+    let (lockfile_path, _is_local) = lockfile_path_for_config(path, monorepo_root.as_deref());
+    let legacy_path = monorepo_root
+        .as_deref()
+        .and_then(|root| legacy_lockfile_path_for_config(config, path, root));
+
+    read_lockfile_at(lockfile_path, legacy_path)
+}
+
+fn read_lockfile_at(lockfile_path: PathBuf, legacy_path: Option<PathBuf>) -> Arc<Lockfile> {
+    let cache_key: Vec<PathBuf> = std::iter::once(lockfile_path.clone())
+        .chain(legacy_path.iter().cloned())
+        .collect();
+
     // Use unwrap_or_else to recover from poisoned mutex (thread panicked while holding lock)
     let mut cache = SINGLE_LOCKFILE_CACHE
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    if let Some(cached) = cache.get(path) {
+    if let Some(cached) = cache.get(&cache_key) {
         return Arc::clone(cached);
     }
 
-    // Only compute lockfile path when not cached
-    let (lockfile_path, _is_local) = lockfile_path_for_config(path);
-    let lockfile = Lockfile::read(&lockfile_path)
+    let mut lockfile = Lockfile::read(&lockfile_path)
         .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
+    if let Some(legacy_path) = &legacy_path
+        && let Err(err) = merge_legacy_lockfile_if_present(&mut lockfile, legacy_path)
+    {
+        warn!(
+            "failed to read legacy monorepo lockfile {} (possible corruption): {err:?}",
+            display_path(legacy_path)
+        );
+    }
 
     let lockfile = Arc::new(lockfile);
-    cache.insert(path.to_path_buf(), Arc::clone(&lockfile));
+    cache.insert(cache_key, Arc::clone(&lockfile));
     lockfile
+}
+
+pub(crate) fn read_lockfile_for_config_path(config: &Config, path: &Path) -> Lockfile {
+    read_lockfile_for(config, path).as_ref().clone()
+}
+
+pub(crate) fn read_lockfile_for_tool_source(
+    config: &Config,
+    source: &ToolSource,
+) -> Result<Lockfile> {
+    if let ToolSource::MiseToml(path) = source {
+        return Ok(read_lockfile_for_config_path(config, path));
+    }
+
+    let monorepo_root = config.monorepo_lockfile_root();
+    let Some((lockfile_path, _)) =
+        lockfile_path_for_tool_source_with_root(config, source, monorepo_root.as_deref())
+    else {
+        return Ok(Lockfile::default());
+    };
+    let legacy_path = monorepo_root
+        .as_deref()
+        .and_then(|_| lockfile_path_for_tool_source_with_root(config, source, None))
+        .map(|(path, _)| path)
+        .filter(|path| path != &lockfile_path);
+
+    Ok(read_lockfile_at(lockfile_path, legacy_path)
+        .as_ref()
+        .clone())
 }
 
 pub fn get_locked_version(
@@ -2097,7 +2372,7 @@ pub fn get_locked_version(
                 "[{short}@{prefix}] reading lockfile for {}",
                 display_path(path)
             );
-            read_lockfile_for(path)
+            read_lockfile_for(config, path)
         }
         None => {
             trace!("[{short}@{prefix}] reading all lockfiles");
@@ -2708,36 +2983,123 @@ options = { exe = "rg" }
     #[test]
     fn test_lockfile_path_for_config() {
         // Simple case: mise.toml in project root
-        let (path, is_local) = lockfile_path_for_config(Path::new("/foo/bar/mise.toml"));
+        let (path, is_local) = lockfile_path_for_config(Path::new("/foo/bar/mise.toml"), None);
         assert_eq!(path, PathBuf::from("/foo/bar/mise.lock"));
         assert!(!is_local);
 
         // Local config
-        let (path, is_local) = lockfile_path_for_config(Path::new("/foo/bar/mise.local.toml"));
+        let (path, is_local) =
+            lockfile_path_for_config(Path::new("/foo/bar/mise.local.toml"), None);
         assert_eq!(path, PathBuf::from("/foo/bar/mise.local.lock"));
         assert!(is_local);
 
         // Config in .config directory
-        let (path, is_local) = lockfile_path_for_config(Path::new("/foo/bar/.config/mise.toml"));
+        let (path, is_local) =
+            lockfile_path_for_config(Path::new("/foo/bar/.config/mise.toml"), None);
         assert_eq!(path, PathBuf::from("/foo/bar/.config/mise.lock"));
         assert!(!is_local);
 
         // Config in .mise directory
-        let (path, is_local) = lockfile_path_for_config(Path::new("/foo/bar/.mise/config.toml"));
+        let (path, is_local) =
+            lockfile_path_for_config(Path::new("/foo/bar/.mise/config.toml"), None);
         assert_eq!(path, PathBuf::from("/foo/bar/.mise/mise.lock"));
         assert!(!is_local);
 
         // Config in conf.d directory - should go to parent of conf.d
         let (path, is_local) =
-            lockfile_path_for_config(Path::new("/foo/bar/.mise/conf.d/foo.toml"));
+            lockfile_path_for_config(Path::new("/foo/bar/.mise/conf.d/foo.toml"), None);
         assert_eq!(path, PathBuf::from("/foo/bar/.mise/mise.lock"));
         assert!(!is_local);
 
         // Config in .config/mise/conf.d directory
         let (path, is_local) =
-            lockfile_path_for_config(Path::new("/foo/bar/.config/mise/conf.d/foo.toml"));
+            lockfile_path_for_config(Path::new("/foo/bar/.config/mise/conf.d/foo.toml"), None);
         assert_eq!(path, PathBuf::from("/foo/bar/.config/mise/mise.lock"));
         assert!(!is_local);
+    }
+
+    #[test]
+    fn test_lockfile_path_for_config_monorepo_root_routing() {
+        let monorepo_root = Path::new("/repo");
+
+        let (path, is_local) = lockfile_path_for_config(
+            Path::new("/repo/packages/api/mise.toml"),
+            Some(monorepo_root),
+        );
+        assert_eq!(path, PathBuf::from("/repo/mise.lock"));
+        assert!(!is_local);
+
+        let (path, is_local) = lockfile_path_for_config(
+            Path::new("/repo/packages/api/mise.ci.toml"),
+            Some(monorepo_root),
+        );
+        assert_eq!(path, PathBuf::from("/repo/mise.ci.lock"));
+        assert!(!is_local);
+
+        let (path, is_local) = lockfile_path_for_config(
+            Path::new("/repo/packages/api/mise.local.toml"),
+            Some(monorepo_root),
+        );
+        assert_eq!(path, PathBuf::from("/repo/mise.local.lock"));
+        assert!(is_local);
+
+        let (path, is_local) =
+            lockfile_path_for_config(Path::new("/repo/mise.toml"), Some(monorepo_root));
+        assert_eq!(path, PathBuf::from("/repo/mise.lock"));
+        assert!(!is_local);
+
+        let (path, is_local) =
+            lockfile_path_for_config(Path::new("/outside/mise.toml"), Some(monorepo_root));
+        assert_eq!(path, PathBuf::from("/outside/mise.lock"));
+        assert!(!is_local);
+
+        let (path, is_local) = lockfile_path_for_config(
+            Path::new("/repo/packages/api/.mise/conf.d/foo.toml"),
+            Some(monorepo_root),
+        );
+        assert_eq!(path, PathBuf::from("/repo/mise.lock"));
+        assert!(!is_local);
+    }
+
+    #[test]
+    fn test_preserve_absent_tool_entries_for_monorepo_upsert() {
+        let existing = vec![basic_tool("20.0.0", "core:node")];
+        let mut merged =
+            merge_tool_entries(vec![basic_tool("22.0.0", "core:node")], Some(&existing));
+
+        preserve_absent_tool_entries(&mut merged, Some(&existing));
+
+        let versions = merged
+            .iter()
+            .map(|tool| tool.version.as_str())
+            .collect_vec();
+        assert_eq!(versions.len(), 2);
+        assert!(versions.contains(&"20.0.0"));
+        assert!(versions.contains(&"22.0.0"));
+    }
+
+    #[test]
+    fn test_merge_lockfile_preserving_root_keeps_root_on_conflict() {
+        let mut root = Lockfile::default();
+        root.tools
+            .insert("node".to_string(), vec![basic_tool("20.0.0", "core:node")]);
+
+        let mut subproject = Lockfile::default();
+        subproject.tools.insert(
+            "node".to_string(),
+            vec![
+                basic_tool("20.0.0", "core:node-alt"),
+                basic_tool("22.0.0", "core:node"),
+            ],
+        );
+
+        merge_lockfile_preserving_root(&mut root, subproject);
+
+        let tools = root.tools.get("node").unwrap();
+        assert_eq!(tools.len(), 2);
+        assert_eq!(tools[0].version, "20.0.0");
+        assert_eq!(tools[0].backend.as_deref(), Some("core:node"));
+        assert_eq!(tools[1].version, "22.0.0");
     }
 
     #[test]
