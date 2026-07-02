@@ -30,8 +30,12 @@ use xx::regex;
 static TASK_VARS_CACHE: Lazy<std::sync::Mutex<IndexMap<PathBuf, IndexMap<String, String>>>> =
     Lazy::new(|| std::sync::Mutex::new(IndexMap::new()));
 
+static TASK_ENV_CACHE: Lazy<std::sync::Mutex<IndexMap<PathBuf, EnvMap>>> =
+    Lazy::new(|| std::sync::Mutex::new(IndexMap::new()));
+
 pub(crate) fn reset() {
     TASK_VARS_CACHE.lock().unwrap().clear();
+    TASK_ENV_CACHE.lock().unwrap().clear();
 }
 
 /// Type alias for tracking failed tasks with their exit codes
@@ -695,7 +699,29 @@ impl Task {
         prefix: &Path,
         config_root: &Path,
     ) -> Result<Task> {
+        Self::from_path_with_cf(config, path, prefix, config_root, None).await
+    }
+
+    pub async fn from_path_with_cf(
+        config: &Arc<Config>,
+        path: &Path,
+        prefix: &Path,
+        config_root: &Path,
+        cf: Option<Arc<dyn ConfigFile>>,
+    ) -> Result<Task> {
+        let mut task = Self::from_path_unrendered_with_cf(path, prefix, config_root, cf)?;
+        task.render(config, config_root).await?;
+        Ok(task)
+    }
+
+    pub(crate) fn from_path_unrendered_with_cf(
+        path: &Path,
+        prefix: &Path,
+        config_root: &Path,
+        cf: Option<Arc<dyn ConfigFile>>,
+    ) -> Result<Task> {
         let mut task = Task::new(path, prefix, config_root)?;
+        task.cf = cf;
         let info = parse_mise_header_toml(&file::read_to_string(path)?)?
             .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
@@ -820,7 +846,6 @@ impl Task {
             let fields: Vec<String> = p.parsed_keys().map(|s| s.to_string()).collect();
             tests::capture_parsed_fields(fields);
         }
-        task.render(config, config_root).await?;
         Ok(task)
     }
 
@@ -1328,6 +1353,7 @@ impl Task {
         // Insert base vars first so that task-level var templates can reference them
         // (e.g. a task var `foo = "{{vars.bar}}"` can read a config-level `bar`).
         tera_ctx.insert("vars", &vars);
+        self.resolve_base_env(config, &mut tera_ctx).await?;
         vars.extend(self.resolve_task_vars(config, &tera_ctx).await?);
         // Re-insert with task-level vars merged in so callers see the final combined map,
         // with task-level values taking precedence over config-level ones.
@@ -1372,6 +1398,100 @@ impl Task {
             .unwrap()
             .insert(config_path, vars.clone());
         Ok(vars)
+    }
+
+    /// For tasks belonging to a different config hierarchy than the current one
+    /// (monorepo subproject tasks loaded from outside their directory), replace the
+    /// `env` in the tera context with env resolved from the task's own config
+    /// hierarchy. Otherwise templates like `{{env.FOO}}` in `sources`/`outputs`
+    /// only see the caller's env and fail or render stale values
+    /// (https://github.com/jdx/mise/discussions/10126).
+    async fn resolve_base_env(
+        &self,
+        config: &Arc<Config>,
+        tera_ctx: &mut tera::Context,
+    ) -> Result<()> {
+        if config::Settings::no_env() || config::Settings::get().no_env.unwrap_or(false) {
+            return Ok(());
+        }
+        // Remote tasks use the full config hierarchy, not a task-local one
+        if self.is_remote() {
+            return Ok(());
+        }
+        let Some(task_cf) = self.cf(config) else {
+            return Ok(());
+        };
+        // Global/system configs have no project root; their env is already in the
+        // base context. Only tasks from a *different* project hierarchy need this.
+        let Some(task_project_root) = task_cf.project_root() else {
+            return Ok(());
+        };
+        if Some(&task_project_root) == config.project_root.as_ref() {
+            return Ok(());
+        }
+
+        let config_path = task_cf.get_path().to_path_buf();
+        if let Some(env) = TASK_ENV_CACHE.lock().unwrap().get(&config_path) {
+            tera_ctx.insert("env", env);
+            return Ok(());
+        }
+
+        let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
+        let (config_paths, idiomatic_filenames) =
+            crate::config::load_config_hierarchy_from_dir(task_dir).await?;
+        let task_config_files =
+            crate::config::load_config_files_from_paths(&config_paths, &idiomatic_filenames)
+                .await?;
+        let entries: Vec<(EnvDirective, PathBuf)> = task_config_files
+            .iter()
+            .rev()
+            .map(|(source, cf)| {
+                cf.env_entries()
+                    .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        let mut env: EnvMap = env::PRISTINE_ENV.clone();
+        let mut resolve_ctx = tera_ctx.clone();
+        resolve_ctx.insert("config_root", &task_project_root);
+        let results = EnvResults::resolve(
+            config,
+            resolve_ctx,
+            &env,
+            entries,
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::NonToolsOnly,
+                warn_on_missing_required: false,
+            },
+        )
+        .await?;
+        for (k, (v, _)) in results.env {
+            env.insert(k, v);
+        }
+        for key in &results.env_remove {
+            env.remove(key);
+        }
+        if !results.env_paths.is_empty() {
+            let mut path_env = PathEnv::from_iter(env::split_paths(
+                &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
+            ));
+            for path in results.env_paths {
+                path_env.add(path);
+            }
+            env.insert(env::PATH_KEY.to_string(), path_env.to_string());
+        }
+        if !results.redactions.is_empty() {
+            config.add_redactions(results.redactions, &env);
+        }
+        TASK_ENV_CACHE
+            .lock()
+            .unwrap()
+            .insert(config_path, env.clone());
+        tera_ctx.insert("env", &env);
+        Ok(())
     }
 
     async fn resolve_task_vars(

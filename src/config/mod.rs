@@ -2014,14 +2014,19 @@ async fn load_local_tasks_with_context(
                     for config_path in config_paths {
                         match config_file::parse(&config_path).await {
                             Ok(cf) => {
-                                let mut subdir_tasks =
-                                    load_config_and_file_tasks(&config, cf.clone(), &templates).await?;
+                                // Pass the owning config file so tasks get `task.cf` set
+                                // before templates render — Task::tera_ctx needs it to
+                                // resolve vars/env from the subproject's own config
+                                // hierarchy rather than the caller's.
+                                let mut subdir_tasks = load_config_and_file_tasks(
+                                    &config,
+                                    cf.clone(),
+                                    &templates,
+                                    Some(&cf),
+                                )
+                                .await?;
 
                                 prefix_monorepo_task_names(&mut subdir_tasks, &subdir, &monorepo_root);
-                                for task in subdir_tasks.iter_mut() {
-                                    // Store reference to config file for later use
-                                    task.cf = Some(cf.clone());
-                                }
 
                                 // Add tasks to map - later tasks override earlier ones with same name
                                 for task in subdir_tasks {
@@ -2047,7 +2052,7 @@ async fn load_local_tasks_with_context(
                         let includes = task_includes_for_dir(&subdir, &config.config_files)?;
                         for include in includes {
                             let mut subdir_tasks = load_tasks_includes(
-                                &config, &include, &subdir, &None, &templates, true,
+                                &config, &include, &subdir, &None, &templates, None, true,
                             )
                             .await?;
                             if is_global_task_include_path(&include) {
@@ -2338,19 +2343,27 @@ async fn load_global_tasks(
         .collect::<Vec<_>>();
     let mut tasks = vec![];
     for cf in config_files {
-        tasks.extend(load_config_and_file_tasks(config, cf.clone(), templates).await?);
+        tasks.extend(load_config_and_file_tasks(config, cf.clone(), templates, None).await?);
     }
     Ok(tasks)
 }
 
+/// `monorepo_cf` is the owning config file when loading a monorepo subdirectory
+/// outside the current config hierarchy. It is stored on each task as `task.cf`
+/// *before* rendering so templates resolve vars/env from the subproject's own
+/// config hierarchy, and it makes render errors non-fatal so one broken
+/// subproject doesn't break task loading for the whole monorepo.
 async fn load_config_and_file_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
     templates: &IndexMap<String, TaskTemplate>,
+    monorepo_cf: Option<&Arc<dyn ConfigFile>>,
 ) -> Result<Vec<Task>> {
     let config_root = cf.config_root();
-    let config_tasks = load_config_tasks(config, cf.clone(), &config_root, templates).await?;
-    let file_tasks = load_file_tasks(config, cf.clone(), &config_root, templates).await?;
+    let config_tasks =
+        load_config_tasks(config, cf.clone(), &config_root, templates, monorepo_cf).await?;
+    let file_tasks =
+        load_file_tasks(config, cf.clone(), &config_root, templates, monorepo_cf).await?;
     Ok(merge_file_and_config_tasks(file_tasks, config_tasks))
 }
 
@@ -2472,6 +2485,7 @@ async fn load_config_tasks(
     cf: Arc<dyn ConfigFile>,
     config_root: &Path,
     templates: &IndexMap<String, TaskTemplate>,
+    monorepo_cf: Option<&Arc<dyn ConfigFile>>,
 ) -> Result<Vec<Task>> {
     let is_global = is_global_config(cf.get_path());
     let config_root = Arc::new(config_root.to_path_buf());
@@ -2486,6 +2500,9 @@ async fn load_config_tasks(
         if t.config_root.is_none() {
             t.config_root = Some(config_root.to_path_buf());
         }
+        if let Some(monorepo_cf) = monorepo_cf {
+            t.cf = Some(monorepo_cf.clone());
+        }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
         match t.render(&config, &config_root).await {
@@ -2493,7 +2510,15 @@ async fn load_config_tasks(
                 tasks.push(t);
             }
             Err(e) => {
-                return Err(e);
+                if monorepo_cf.is_some() {
+                    warn!(
+                        "Failed to render task {} in {}: {e:#}. Task will not be available.",
+                        t.name,
+                        display_path(cf.get_path())
+                    );
+                } else {
+                    return Err(e);
+                }
             }
         }
     }
@@ -2506,11 +2531,20 @@ async fn load_tasks_includes(
     config_root: &Path,
     task_config_dir: &Option<String>,
     templates: &IndexMap<String, TaskTemplate>,
+    monorepo_cf: Option<&Arc<dyn ConfigFile>>,
     require_trust: bool,
 ) -> Result<Vec<Task>> {
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
         trust_check_task_include(root, require_trust)?;
-        load_task_file(config, root, config_root, task_config_dir, templates).await
+        load_task_file(
+            config,
+            root,
+            config_root,
+            task_config_dir,
+            templates,
+            monorepo_cf,
+        )
+        .await
     } else if root.is_dir() {
         let all_files = WalkDir::new(root)
             .follow_links(true)
@@ -2541,7 +2575,15 @@ async fn load_tasks_includes(
         for path in toml_files {
             trust_check_task_include(&path, require_trust)?;
             tasks.extend(
-                load_task_file(config, &path, config_root, task_config_dir, templates).await?,
+                load_task_file(
+                    config,
+                    &path,
+                    config_root,
+                    task_config_dir,
+                    templates,
+                    monorepo_cf,
+                )
+                .await?,
             );
         }
         let root = Arc::new(root.to_path_buf());
@@ -2551,7 +2593,24 @@ async fn load_tasks_includes(
             let config_root = config_root.clone();
             let config = config.clone();
             trust_check_task_include(&path, require_trust)?;
-            let mut task = Task::from_path(&config, &path, &root, &config_root).await?;
+            let mut task = Task::from_path_unrendered_with_cf(
+                &path,
+                &root,
+                &config_root,
+                monorepo_cf.cloned(),
+            )?;
+            if let Err(err) = task.render(&config, &config_root).await {
+                if monorepo_cf.is_some() {
+                    warn!(
+                        "Failed to render task {} in {}: {err:#}. Task will not be available.",
+                        task.name,
+                        display_path(&path)
+                    );
+                    continue;
+                } else {
+                    return Err(err);
+                }
+            }
             if task.dir.is_none()
                 && let Some(ref dir) = *task_config_dir
             {
@@ -2647,6 +2706,7 @@ async fn load_file_tasks(
     cf: Arc<dyn ConfigFile>,
     config_root: &Path,
     templates: &IndexMap<String, TaskTemplate>,
+    monorepo_cf: Option<&Arc<dyn ConfigFile>>,
 ) -> Result<Vec<Task>> {
     let includes = cf
         .task_config_includes()?
@@ -2673,6 +2733,7 @@ async fn load_file_tasks(
                 &config_root,
                 &task_config_dir,
                 templates,
+                monorepo_cf,
                 require_task_include_trust,
             )
             .await?;
@@ -2743,7 +2804,7 @@ pub async fn load_tasks_in_dir(
     let mut config_tasks = vec![];
     for cf in &configs {
         let dir = dir.to_path_buf();
-        config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir, templates).await?);
+        config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir, templates, None).await?);
     }
 
     // Find task_config.dir from the highest-precedence config that defines it
@@ -2763,6 +2824,7 @@ pub async fn load_tasks_in_dir(
                 dir,
                 &task_config_dir,
                 templates,
+                None,
                 require_task_include_trust,
             )
             .await?;
@@ -2819,6 +2881,7 @@ async fn load_task_file(
     config_root: &Path,
     task_config_dir: &Option<String>,
     templates: &IndexMap<String, TaskTemplate>,
+    monorepo_cf: Option<&Arc<dyn ConfigFile>>,
 ) -> Result<Vec<Task>> {
     let raw = file::read_to_string_async(path).await?;
     let mut tasks = toml::from_str::<Tasks>(&raw)
@@ -2831,15 +2894,31 @@ async fn load_task_file(
         if task.dir.is_none() {
             task.dir = task_config_dir.clone();
         }
+        if let Some(monorepo_cf) = monorepo_cf {
+            task.cf = Some(monorepo_cf.clone());
+        }
     }
     let mut out = vec![];
     for (_, mut task) in tasks {
         let config_root = config_root.to_path_buf();
         resolve_task_template(&mut task, templates)?;
-        if let Err(err) = task.render(config, &config_root).await {
-            warn!("rendering task: {err:?}");
+        match task.render(config, &config_root).await {
+            Ok(()) => {
+                out.push(task);
+            }
+            Err(err) => {
+                if monorepo_cf.is_some() {
+                    warn!(
+                        "Failed to render task {} in {}: {err:#}. Task will not be available.",
+                        task.name,
+                        display_path(path)
+                    );
+                } else {
+                    warn!("rendering task: {err:?}");
+                    out.push(task);
+                }
+            }
         }
-        out.push(task);
     }
     Ok(out)
 }
@@ -3556,6 +3635,7 @@ vars = { target = "linux" }
             temp_dir.path(),
             &None,
             &IndexMap::new(),
+            None,
         )
         .await?;
         assert_eq!(tasks.len(), 1);
