@@ -1,0 +1,57 @@
+# Files mentioned by the user:
+
+## PR: mise install --monorepo + unified monorepo lockfile Context Implements both…: /Users/jdx/.codex/attachments/a954e20c-8b65-47a3-9c19-219b7be05c8f/pasted-text.txt
+
+## My request for Codex:
+i want to implement this. While I think it's good default behavior for monorepo, i think there should be an option to disable it to have mise.lock files inside.
+
+---
+
+i want you to stub out --monorepo to the other commands in this PR with unimplemented!() macros.
+
+Answer me this question before continuing: what will the behavior be for projects with multiple lockfiles when they upgrade mise to the version with this change? will it auto-migrate? what will happen to older mise versions on the same project? is it just that they won't respect the lockfile?
+
+---
+
+PLEASE IMPLEMENT THIS PLAN:
+# Monorepo Install, Lockfiles, And Stubs
+
+## Summary
+Add `mise install --monorepo`, `mise ls --monorepo`, and unified monorepo root lockfiles by default. Add the project opt-out:
+
+```toml
+[monorepo]
+lockfile = false
+```
+
+When the opt-out is set, mise keeps today’s per-subproject `mise.lock` behavior.
+
+## Key Changes
+- Add `MonorepoConfig.lockfile: Option<bool>`; default `None`/`true` means route descendant config locks to the monorepo root, `false` keeps colocated locks.
+- Add monorepo union helpers requiring explicit `[monorepo].config_roots` for full-view operations.
+- Add `ToolRequestSetBuilder::with_config_files` and build monorepo unions as request sets so `node@20` and `node@22` across roots both survive.
+- Add CLI support:
+  - `install --monorepo` installs the union across config roots; filtered args install every matching request.
+  - `ls --monorepo` lists/resolves the same union.
+  - Add stub `--monorepo` flags to `upgrade`, `prune`, and `outdated`; if set, immediately call `unimplemented!()`. These stubs should be CLI-only, not `MISE_MONOREPO` env-bound yet.
+
+## Lockfile Behavior
+- Centralize lockfile path routing so all reads/writes use root variants when unified monorepo lockfiles are enabled.
+- Auto-migrate existing subproject lockfiles before lock-aware mutating flows such as `mise lock`, `mise install`, and `mise upgrade` resolve/write lock data.
+- Migration is enabled only when global lockfiles are enabled, monorepo unified lockfiles are enabled, and explicit `config_roots` are present.
+- Migration maps variants one-for-one, e.g. `pkg/mise.lock` to root `mise.lock`, `pkg/mise.ci.lock` to root `mise.ci.lock`; root entries win on conflicts, unique subproject entries are appended, migrated subproject locks are deleted.
+- Install-time lockfile updates use upsert-only semantics for unified root locks so partial subproject views do not delete sibling entries. Full pruning remains `mise lock` only.
+- Document that older mise versions do not understand unified root lockfiles for subproject-owned tools; mixed-version teams should set `[monorepo] lockfile = false` until upgraded.
+
+## Tests
+- Unit tests for monorepo lockfile setting, routing enabled/disabled, union request preservation, upsert preservation, and migration skip/merge behavior.
+- E2E tests for `install --monorepo`, `ls --monorepo`, default unified root lockfiles, migration, pruning via full-view `mise lock`, and `[monorepo] lockfile = false`.
+- Update existing monorepo lock scope tests to expect full-view root lock behavior by default and old active-root behavior only with the opt-out.
+- Add focused tests that `upgrade --monorepo`, `prune --monorepo`, and `outdated --monorepo` reach the `unimplemented!()` path.
+
+## Verification
+Run `mise run build`, focused config/tool_request_set/lockfile unit tests, targeted e2e tests for monorepo install/lockfile/stubs, `mise run render:usage`, and `mise run lint-fix`.
+
+---
+
+make a pr then post a reply to the discussion when done
