@@ -1202,10 +1202,16 @@ pub fn lockfile_path_for_tool_source(
     source: &ToolSource,
 ) -> Option<(PathBuf, bool)> {
     let monorepo_root = config.monorepo_lockfile_root();
+    lockfile_path_for_tool_source_with_root(config, source, monorepo_root.as_deref())
+}
+
+fn lockfile_path_for_tool_source_with_root(
+    config: &Config,
+    source: &ToolSource,
+    monorepo_root: Option<&Path>,
+) -> Option<(PathBuf, bool)> {
     match source {
-        ToolSource::MiseToml(path) => {
-            Some(lockfile_path_for_config(path, monorepo_root.as_deref()))
-        }
+        ToolSource::MiseToml(path) => Some(lockfile_path_for_config(path, monorepo_root)),
         ToolSource::IdiomaticVersionFile(path) => config
             .config_files
             .iter()
@@ -1221,7 +1227,7 @@ pub fn lockfile_path_for_tool_source(
                         is_base,
                         // Tie-break same-root base configs by config_files order.
                         idx,
-                        lockfile_path_for_config(config_path, monorepo_root.as_deref()),
+                        lockfile_path_for_config(config_path, monorepo_root),
                     )
                 })
             })
@@ -2281,6 +2287,11 @@ fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
     let legacy_path = monorepo_root
         .as_deref()
         .and_then(|root| legacy_lockfile_path_for_config(config, path, root));
+
+    read_lockfile_at(lockfile_path, legacy_path)
+}
+
+fn read_lockfile_at(lockfile_path: PathBuf, legacy_path: Option<PathBuf>) -> Arc<Lockfile> {
     let cache_key: Vec<PathBuf> = std::iter::once(lockfile_path.clone())
         .chain(legacy_path.iter().cloned())
         .collect();
@@ -2311,6 +2322,31 @@ fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
 
 pub(crate) fn read_lockfile_for_config_path(config: &Config, path: &Path) -> Lockfile {
     read_lockfile_for(config, path).as_ref().clone()
+}
+
+pub(crate) fn read_lockfile_for_tool_source(
+    config: &Config,
+    source: &ToolSource,
+) -> Result<Lockfile> {
+    if let ToolSource::MiseToml(path) = source {
+        return Ok(read_lockfile_for_config_path(config, path));
+    }
+
+    let monorepo_root = config.monorepo_lockfile_root();
+    let Some((lockfile_path, _)) =
+        lockfile_path_for_tool_source_with_root(config, source, monorepo_root.as_deref())
+    else {
+        return Ok(Lockfile::default());
+    };
+    let legacy_path = monorepo_root
+        .as_deref()
+        .and_then(|_| lockfile_path_for_tool_source_with_root(config, source, None))
+        .map(|(path, _)| path)
+        .filter(|path| path != &lockfile_path);
+
+    Ok(read_lockfile_at(lockfile_path, legacy_path)
+        .as_ref()
+        .clone())
 }
 
 pub fn get_locked_version(

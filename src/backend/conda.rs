@@ -11,7 +11,6 @@ use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{self, Lockfile, PlatformInfo};
-use crate::toolset::ToolSource;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::{backend::Backend, dirs, parallel};
 use crate::{file, hash};
@@ -366,12 +365,7 @@ impl CondaBackend {
     }
 
     fn read_lockfile_for_tool(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<Lockfile> {
-        match tv.request.source() {
-            ToolSource::MiseToml(path) => {
-                Ok(lockfile::read_lockfile_for_config_path(&ctx.config, path))
-            }
-            _ => Ok(Lockfile::default()),
-        }
+        lockfile::read_lockfile_for_tool_source(&ctx.config, tv.request.source())
     }
 
     /// Install from a fresh solve (no lockfile deps).

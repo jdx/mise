@@ -414,6 +414,11 @@ impl Config {
         find_monorepo_root(&self.config_files)
     }
 
+    /// Returns the root lockfile directory when unified monorepo lockfiles are active.
+    ///
+    /// Lockfile discovery is intentionally lenient: it only requires
+    /// `[monorepo].config_roots` to match directories, because legacy lockfiles
+    /// can exist in roots whose live config is idiomatic-only or was removed.
     pub fn monorepo_lockfile_root(&self) -> Option<PathBuf> {
         let cf = find_monorepo_config(&self.config_files)?;
         let setting = cf.monorepo().and_then(|m| m.lockfile);
@@ -421,38 +426,27 @@ impl Config {
             return None;
         }
         let monorepo_root = cf.project_root().map(|p| p.to_path_buf())?;
-        let patterns = &cf.monorepo()?.config_roots;
-        if patterns.is_empty() {
-            return None;
-        }
-        let config_roots = expand_config_root_dirs(&monorepo_root, patterns, None).ok()?;
+        let config_roots = self.monorepo_config_root_dirs(None).ok()?;
         (!config_roots.is_empty()).then_some(monorepo_root)
     }
 
     pub(crate) fn monorepo_config_root_dirs_for_lockfiles(&self) -> Result<Vec<PathBuf>> {
-        let monorepo_config = find_monorepo_config(&self.config_files)
-            .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
-        let monorepo_root = monorepo_config
-            .project_root()
-            .ok_or_else(|| eyre!("monorepo root config has no project root"))?;
-        let patterns = &monorepo_config
-            .monorepo()
-            .ok_or_else(|| eyre!("[monorepo].config_roots is required for monorepo operations"))?
-            .config_roots;
-        if patterns.is_empty() {
-            bail!("[monorepo].config_roots is required for monorepo operations");
-        }
-        let roots = expand_config_root_dirs(&monorepo_root, patterns, None)?;
-        if roots.is_empty() {
-            bail!("[monorepo].config_roots did not match any config roots");
-        }
-        Ok(roots)
+        self.monorepo_config_root_dirs(None)
     }
 
     fn monorepo_config_root_dirs_with_filenames(
         &self,
         filenames: &[String],
     ) -> Result<Vec<PathBuf>> {
+        self.monorepo_config_root_dirs(Some(filenames))
+    }
+
+    /// Resolve `[monorepo].config_roots`.
+    ///
+    /// `None` matches any existing directory and is used for lockfile migration
+    /// and routing. `Some(filenames)` requires a recognized config or idiomatic
+    /// version file and is used for full monorepo union/task loading.
+    fn monorepo_config_root_dirs(&self, filenames: Option<&[String]>) -> Result<Vec<PathBuf>> {
         let monorepo_config = find_monorepo_config(&self.config_files)
             .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
         let monorepo_root = monorepo_config
@@ -465,7 +459,12 @@ impl Config {
         if patterns.is_empty() {
             bail!("[monorepo].config_roots is required for monorepo operations");
         }
-        let roots = expand_config_roots_with_filenames(&monorepo_root, patterns, None, filenames)?;
+        let roots = match filenames {
+            Some(filenames) => {
+                expand_config_roots_with_filenames(&monorepo_root, patterns, None, filenames)?
+            }
+            None => expand_config_root_dirs(&monorepo_root, patterns, None)?,
+        };
         if roots.is_empty() {
             bail!("[monorepo].config_roots did not match any config roots");
         }

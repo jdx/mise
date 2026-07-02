@@ -8,7 +8,7 @@ use crate::hash;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::{self, Lockfile, PlatformInfo};
-use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{backend::Backend, file};
 use async_trait::async_trait;
 use eyre::{Result, WrapErr, bail};
@@ -192,17 +192,7 @@ impl PkgxBackend {
     }
 
     fn read_lockfile_for_tool(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<Lockfile> {
-        match tv.request.source() {
-            ToolSource::MiseToml(path) => {
-                Ok(lockfile::read_lockfile_for_config_path(&ctx.config, path))
-            }
-            source => {
-                let (lockfile_path, _) =
-                    lockfile::lockfile_path_for_tool_source(&ctx.config, source)
-                        .ok_or_else(|| eyre::eyre!("could not determine pkgx lockfile path"))?;
-                Lockfile::read(&lockfile_path)
-            }
-        }
+        lockfile::read_lockfile_for_tool_source(&ctx.config, tv.request.source())
     }
 
     async fn install_from_locked(
