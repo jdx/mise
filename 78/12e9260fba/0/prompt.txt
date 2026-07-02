@@ -1,0 +1,13 @@
+why is this failing [jdx/mise#10638](https://github.com/jdx/mise/pull/10638)
+
+---
+
+make a pr
+
+---
+
+is it possible to bump deps to get rid of it?
+
+---
+
+ok make a pr to fix

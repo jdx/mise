@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "7812e9260fba",
+  "strategy": "manual-commit",
+  "branch": "codex/ignore-quick-xml-advisories",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deny.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/78/12e9260fba/0/metadata.json",
+      "transcript": "/78/12e9260fba/0/full.jsonl",
+      "content_hash": "/78/12e9260fba/0/content_hash.txt",
+      "prompt": "/78/12e9260fba/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 525112,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4068992,
+    "output_tokens": 17774,
+    "api_call_count": 44
+  }
+}
