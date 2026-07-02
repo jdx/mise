@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ae8126035b0b",
+  "strategy": "manual-commit",
+  "branch": "claude/admiring-wiles-fd474d",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/cli/upgrade.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ae/8126035b0b/0/metadata.json",
+      "transcript": "/ae/8126035b0b/0/full.jsonl",
+      "content_hash": "/ae/8126035b0b/0/content_hash.txt",
+      "prompt": "/ae/8126035b0b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 157967,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 825728,
+    "output_tokens": 2601,
+    "api_call_count": 13
+  }
+}
