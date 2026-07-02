@@ -10,10 +10,11 @@ use crate::path::PathExt;
 use crate::platform::Platform;
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
 use eyre::{Report, Result, bail, eyre};
+use indexmap::IndexSet;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
@@ -1285,40 +1286,52 @@ pub fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
         Ok(roots) => roots,
         Err(_) => return Ok(()),
     };
-    let lockfile_name_re = regex!(r"^mise(\.[^.]+)?(\.local)?\.lock$");
-    let mut migrated = 0usize;
+    let mut source_lockfiles = IndexSet::new();
 
     for config_root in config_roots {
         if config_root == monorepo_root {
             continue;
         }
-        let Ok(entries) = fs::read_dir(&config_root) else {
+        for config_path in crate::config::config_paths_in_dir(&config_root) {
+            let (source, _) = lockfile_path_for_config(&config_path, None);
+            if source.parent() == Some(monorepo_root.as_path()) {
+                continue;
+            }
+            source_lockfiles.insert(source);
+        }
+    }
+
+    let mut migrated = 0usize;
+
+    for source in source_lockfiles {
+        if !source.exists() {
+            continue;
+        }
+        let Some(filename) = source.file_name() else {
             continue;
         };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-            if !lockfile_name_re.is_match(filename) {
-                continue;
-            }
-
-            let target = monorepo_root.join(filename);
-            let _lock = crate::lock_file::LockFile::new(&target)
-                .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
-                .lock()?;
-            let mut root_lockfile = Lockfile::read(&target)
-                .unwrap_or_else(|err| handle_lockfile_read_error(err, &target));
-            let subproject_lockfile = Lockfile::read(&path)?;
-            merge_lockfile_preserving_root(&mut root_lockfile, subproject_lockfile);
-            root_lockfile.save(&target)?;
-            fs::remove_file(&path)?;
-            migrated += 1;
+        let target = monorepo_root.join(filename);
+        if source == target {
+            continue;
         }
+        let _lock = crate::lock_file::LockFile::new(&target)
+            .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+            .lock()?;
+        let mut root_lockfile =
+            Lockfile::read(&target).unwrap_or_else(|err| handle_lockfile_read_error(err, &target));
+        let subproject_lockfile = match Lockfile::read(&source) {
+            Ok(lockfile) => lockfile,
+            Err(err) if is_not_found_report(&err) => continue,
+            Err(err) => return Err(err),
+        };
+        merge_lockfile_preserving_root(&mut root_lockfile, subproject_lockfile);
+        root_lockfile.save(&target)?;
+        if let Err(err) = fs::remove_file(&source)
+            && err.kind() != ErrorKind::NotFound
+        {
+            return Err(err.into());
+        }
+        migrated += 1;
     }
 
     if migrated > 0 {
@@ -1329,6 +1342,11 @@ pub fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn is_not_found_report(err: &Report) -> bool {
+    err.downcast_ref::<std::io::Error>()
+        .is_some_and(|err| err.kind() == ErrorKind::NotFound)
 }
 
 fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
@@ -1370,7 +1388,6 @@ pub fn update_lockfiles(
     if !Settings::get().lockfile_enabled() || (Settings::get().locked && !mode.allow_locked()) {
         return Ok(());
     }
-    migrate_monorepo_lockfiles(config)?;
 
     // Collect tools by source (config file)
     let mut tools_by_source: HashMap<ToolSource, HashMap<String, Vec<ToolVersion>>> =

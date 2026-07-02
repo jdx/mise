@@ -66,7 +66,7 @@ assert_contains "cat monorepo/mise.lock" 'version = "1.0.0"'
 assert_contains "cat monorepo/mise.lock" 'version = "2.1.0"'
 
 echo "=== subproject lockfiles migrate into root lockfiles ==="
-mkdir -p monorepo-migrate/packages/a
+mkdir -p monorepo-migrate/packages/a monorepo-migrate/packages/b/.mise
 cat >monorepo-migrate/mise.toml <<'EOF'
 monorepo_root = true
 
@@ -83,11 +83,22 @@ cat >monorepo-migrate/packages/a/mise.lock <<'EOF'
 version = "1.0.0"
 backend = "asdf:tiny"
 EOF
+cat >monorepo-migrate/packages/b/.mise/config.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+cat >monorepo-migrate/packages/b/.mise/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
 
 output=$(cd monorepo-migrate && mise lock --platform linux-x64 2>&1)
-assert_contains "echo '$output'" "migrated 1 subproject lockfile"
+assert_contains "echo '$output'" "migrated 2 subproject lockfile"
 assert_contains "cat monorepo-migrate/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-migrate/mise.lock" '[[tools.dummy]]'
 assert_fail "test -f monorepo-migrate/packages/a/mise.lock"
+assert_fail "test -f monorepo-migrate/packages/b/.mise/mise.lock"
 
 echo "=== [monorepo] lockfile = false keeps subproject lockfiles ==="
 mkdir -p monorepo-optout/packages/a

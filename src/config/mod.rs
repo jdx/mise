@@ -56,6 +56,12 @@ type AliasMap = IndexMap<String, Alias>;
 pub(crate) type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
 pub type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 
+pub(crate) struct MonorepoUnion {
+    pub config_files: ConfigMap,
+    pub tool_request_set: ToolRequestSet,
+    pub repo_urls: HashMap<String, String>,
+}
+
 pub struct Config {
     pub config_files: ConfigMap,
     pub project_root: Option<PathBuf>,
@@ -411,11 +417,16 @@ impl Config {
     pub fn monorepo_lockfile_root(&self) -> Option<PathBuf> {
         let cf = find_monorepo_config(&self.config_files)?;
         let setting = cf.monorepo().and_then(|m| m.lockfile);
-        if monorepo_lockfile_enabled_for_version(&version::V, setting) {
-            cf.project_root().map(|p| p.to_path_buf())
-        } else {
-            None
+        if !monorepo_lockfile_enabled_for_version(&version::V, setting) {
+            return None;
         }
+        let monorepo_root = cf.project_root().map(|p| p.to_path_buf())?;
+        let patterns = &cf.monorepo()?.config_roots;
+        if patterns.is_empty() {
+            return None;
+        }
+        let config_roots = expand_config_roots(&monorepo_root, patterns, None).ok()?;
+        (!config_roots.is_empty()).then_some(monorepo_root)
     }
 
     pub fn monorepo_config_root_dirs(&self) -> Result<Vec<PathBuf>> {
@@ -435,25 +446,17 @@ impl Config {
     }
 
     pub async fn monorepo_union_config_files(self: &Arc<Self>) -> Result<ConfigMap> {
-        let roots = self.monorepo_config_root_dirs()?;
-        let idiomatic_filenames = load_idiomatic_filenames().await;
-        let mut config_files = self.config_files.clone();
-
-        for root in roots {
-            let root_paths = config_paths_in_dir(&root);
-            let root_config_files =
-                load_config_files_from_paths(&root_paths, &idiomatic_filenames).await?;
-            for (path, cf) in root_config_files {
-                config_files.entry(path).or_insert(cf);
-            }
-        }
-
-        Ok(config_files)
+        Ok(self.monorepo_union().await?.config_files)
     }
 
     pub async fn monorepo_union_tool_request_set(self: &Arc<Self>) -> Result<ToolRequestSet> {
+        Ok(self.monorepo_union().await?.tool_request_set)
+    }
+
+    pub(crate) async fn monorepo_union(self: &Arc<Self>) -> Result<MonorepoUnion> {
         let roots = self.monorepo_config_root_dirs()?;
         let idiomatic_filenames = load_idiomatic_filenames().await;
+        let mut config_files = self.config_files.clone();
         let mut base_config_files = self.config_files.clone();
         base_config_files.retain(|path, _| {
             is_global_config(path) || !roots.iter().any(|root| path.starts_with(root))
@@ -464,6 +467,9 @@ impl Config {
             let root_paths = config_paths_in_dir(&root);
             let mut root_config_files =
                 load_config_files_from_paths(&root_paths, &idiomatic_filenames).await?;
+            for (path, cf) in root_config_files.clone() {
+                config_files.entry(path).or_insert(cf);
+            }
             for (path, cf) in base_config_files.clone() {
                 root_config_files.entry(path).or_insert(cf);
             }
@@ -488,7 +494,12 @@ impl Config {
         }
 
         union.unknown_tools = union.unknown_tools.into_iter().unique().collect();
-        Ok(union)
+        let repo_urls = load_plugins(&config_files)?;
+        Ok(MonorepoUnion {
+            config_files,
+            tool_request_set: union,
+            repo_urls,
+        })
     }
 
     pub async fn tasks(&self) -> Result<Arc<BTreeMap<String, Task>>> {
@@ -1198,7 +1209,7 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
         .collect()
 }
 
-fn config_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
+pub(crate) fn config_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
     let config_paths: Vec<PathBuf> = DEFAULT_CONFIG_FILENAMES
         .iter()
         .rev()
