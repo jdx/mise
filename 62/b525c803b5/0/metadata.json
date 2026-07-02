@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "62b525c803b5",
+  "session_id": "019f2327-20cc-7dc3-80bb-599334b89926",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T14:17:29.351743Z",
+  "branch": "codex/lua-getenv-mise-env",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/vfox/src/lua_mod/cmd.rs",
+    "e2e/env/test_env_module_os_getenv"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "a498bbccd79b",
+  "token_usage": {
+    "input_tokens": 176344,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2408448,
+    "output_tokens": 12713,
+    "api_call_count": 32
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-02T14:17:29.340305Z",
+    "agent_lines": 88,
+    "agent_removed": 7,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 88,
+    "total_lines_changed": 95,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

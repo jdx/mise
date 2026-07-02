@@ -1,0 +1,5 @@
+explain [https://github.com/jdx/mise/discussions/10711](https://github.com/jdx/mise/discussions/10711)
+
+---
+
+ok make a pr and reply to discussion

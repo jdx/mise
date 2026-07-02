@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "62b525c803b5",
+  "strategy": "manual-commit",
+  "branch": "codex/lua-getenv-mise-env",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/vfox/src/lua_mod/cmd.rs",
+    "e2e/env/test_env_module_os_getenv"
+  ],
+  "sessions": [
+    {
+      "metadata": "/62/b525c803b5/0/metadata.json",
+      "transcript": "/62/b525c803b5/0/full.jsonl",
+      "content_hash": "/62/b525c803b5/0/content_hash.txt",
+      "prompt": "/62/b525c803b5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 176344,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2408448,
+    "output_tokens": 12713,
+    "api_call_count": 32
+  }
+}
