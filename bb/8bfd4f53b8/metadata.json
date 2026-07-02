@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "bb8bfd4f53b8",
+  "strategy": "manual-commit",
+  "branch": "claude/serene-rosalind-aad21f",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/tasks/test_task_ls_complete_monorepo",
+    "src/config/mod.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bb/8bfd4f53b8/0/metadata.json",
+      "transcript": "/bb/8bfd4f53b8/0/full.jsonl",
+      "content_hash": "/bb/8bfd4f53b8/0/content_hash.txt",
+      "prompt": "/bb/8bfd4f53b8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 162983,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 919168,
+    "output_tokens": 7102,
+    "api_call_count": 19
+  }
+}
