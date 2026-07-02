@@ -405,6 +405,88 @@ impl Config {
         find_monorepo_root(&self.config_files)
     }
 
+    pub fn monorepo_lockfile_root(&self) -> Option<PathBuf> {
+        let cf = find_monorepo_config(&self.config_files)?;
+        if cf.monorepo().and_then(|m| m.lockfile).unwrap_or(true) {
+            cf.project_root().map(|p| p.to_path_buf())
+        } else {
+            None
+        }
+    }
+
+    pub fn monorepo_config_root_dirs(&self) -> Result<Vec<PathBuf>> {
+        let monorepo_config = find_monorepo_config(&self.config_files)
+            .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
+        let monorepo_root = monorepo_config
+            .project_root()
+            .ok_or_else(|| eyre!("monorepo root config has no project root"))?;
+        let patterns = &monorepo_config
+            .monorepo()
+            .ok_or_else(|| eyre!("[monorepo].config_roots is required for monorepo operations"))?
+            .config_roots;
+        if patterns.is_empty() {
+            bail!("[monorepo].config_roots is required for monorepo operations");
+        }
+        expand_config_roots(&monorepo_root, patterns, None)
+    }
+
+    pub async fn monorepo_union_config_files(self: &Arc<Self>) -> Result<ConfigMap> {
+        let roots = self.monorepo_config_root_dirs()?;
+        let idiomatic_filenames = load_idiomatic_filenames().await;
+        let mut config_files = self.config_files.clone();
+
+        for root in roots {
+            let root_paths = config_paths_in_dir(&root);
+            let root_config_files =
+                load_config_files_from_paths(&root_paths, &idiomatic_filenames).await?;
+            for (path, cf) in root_config_files {
+                config_files.entry(path).or_insert(cf);
+            }
+        }
+
+        Ok(config_files)
+    }
+
+    pub async fn monorepo_union_tool_request_set(self: &Arc<Self>) -> Result<ToolRequestSet> {
+        let roots = self.monorepo_config_root_dirs()?;
+        let idiomatic_filenames = load_idiomatic_filenames().await;
+        let mut base_config_files = self.config_files.clone();
+        base_config_files.retain(|path, _| {
+            is_global_config(path) || !roots.iter().any(|root| path.starts_with(root))
+        });
+
+        let mut union = ToolRequestSet::new();
+        for root in roots {
+            let root_paths = config_paths_in_dir(&root);
+            let mut root_config_files =
+                load_config_files_from_paths(&root_paths, &idiomatic_filenames).await?;
+            for (path, cf) in base_config_files.clone() {
+                root_config_files.entry(path).or_insert(cf);
+            }
+
+            let root_trs = ToolRequestSetBuilder::new()
+                .with_config_files(root_config_files)
+                .build(self)
+                .await?;
+            union.unknown_tools.extend(root_trs.unknown_tools.clone());
+            for (_ba, requests, source) in root_trs.iter() {
+                for request in requests {
+                    let already_present = union.tools.get(request.ba()).is_some_and(|existing| {
+                        existing.iter().any(|r| {
+                            r.version() == request.version() && r.options() == request.options()
+                        })
+                    });
+                    if !already_present {
+                        union.add_version(request.clone(), source);
+                    }
+                }
+            }
+        }
+
+        union.unknown_tools = union.unknown_tools.into_iter().unique().collect();
+        Ok(union)
+    }
+
     pub async fn tasks(&self) -> Result<Arc<BTreeMap<String, Task>>> {
         self.tasks_with_context(None).await
     }
@@ -1109,6 +1191,27 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
     DEFAULT_CONFIG_FILENAMES
         .iter()
         .flat_map(|f| glob(dir, f).unwrap_or_default())
+        .collect()
+}
+
+fn config_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
+    let config_paths: Vec<PathBuf> = DEFAULT_CONFIG_FILENAMES
+        .iter()
+        .rev()
+        .flat_map(|f| {
+            if f.contains('*') {
+                glob(dir, f).unwrap_or_default().into_iter().rev().collect()
+            } else {
+                let path = dir.join(f);
+                if path.exists() { vec![path] } else { vec![] }
+            }
+        })
+        .collect();
+
+    let mut seen = std::collections::HashSet::new();
+    config_paths
+        .into_iter()
+        .filter(|p| seen.insert(p.clone()))
         .collect()
 }
 
@@ -1871,6 +1974,7 @@ pub async fn rebuild_shims_and_runtime_symlinks(
             .await
             .wrap_err("failed to rebuild shims")?;
     });
+    lockfile::migrate_monorepo_lockfiles(config)?;
     // Snapshot the lockfiles' platform keys BEFORE update_lockfiles writes
     // current-platform entries — auto-lock uses this to tell a curated lockfile
     // (existing entries are authoritative) from a fresh one (expand to common).
@@ -1980,32 +2084,7 @@ async fn load_local_tasks_with_context(
                     // Later inserts win, so file tasks override config tasks with the same name
                     let mut task_map: IndexMap<String, Task> = IndexMap::new();
 
-                    // Load config files from subdirectory
-                    // Use .rev() so later files (like mise.local.toml) have higher precedence
-                    // Use glob() with .rev() for conf.d patterns so later files (02-override.toml) override earlier ones
-                    let config_paths: Vec<PathBuf> = DEFAULT_CONFIG_FILENAMES
-                        .iter()
-                        .rev()
-                        .flat_map(|f| {
-                            if f.contains('*') {
-                                glob(&subdir, f).unwrap_or_default().into_iter().rev().collect()
-                            } else {
-                                let path = subdir.join(f);
-                                if path.exists() {
-                                    vec![path]
-                                } else {
-                                    vec![]
-                                }
-                            }
-                        })
-                        .collect();
-
-                    // Deduplicate config paths while preserving precedence order
-                    let mut seen = std::collections::HashSet::new();
-                    let config_paths: Vec<PathBuf> = config_paths
-                        .into_iter()
-                        .filter(|p| seen.insert(p.clone()))
-                        .collect();
+                    let config_paths = config_paths_in_dir(&subdir);
 
                     let found_config = !config_paths.is_empty();
                     for config_path in config_paths {
@@ -3477,6 +3556,83 @@ mod tests {
         }
 
         result
+    }
+
+    #[tokio::test]
+    async fn test_monorepo_union_tool_request_set_preserves_matching_tools() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root = temp_dir.path();
+        let api = root.join("apps/api");
+        let web = root.join("apps/web");
+        fs::create_dir_all(&api)?;
+        fs::create_dir_all(&web)?;
+
+        let root_config = root.join(".test.mise.toml");
+        fs::write(
+            &root_config,
+            r#"
+monorepo_root = true
+
+[monorepo]
+config_roots = ["apps/api", "apps/web"]
+"#,
+        )?;
+        fs::write(
+            api.join(".test.mise.toml"),
+            r#"
+[tools]
+"github:jdx/mise-test-fixtures" = "1"
+"#,
+        )?;
+        fs::write(
+            web.join(".test.mise.toml"),
+            r#"
+[tools]
+"github:jdx/mise-test-fixtures" = "2"
+"#,
+        )?;
+
+        let mut config_files: ConfigMap = Default::default();
+        config_files.insert(
+            root_config.clone(),
+            Arc::new(config_file::mise_toml::MiseToml::from_file(&root_config)?),
+        );
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files,
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: Default::default(),
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls: Default::default(),
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_results: OnceCell::new(),
+        };
+        let config = Arc::new(config);
+
+        assert_eq!(config.monorepo_config_root_dirs()?, vec![api, web]);
+        let trs = config.monorepo_union_tool_request_set().await?;
+        let fixture_versions = trs
+            .iter()
+            .find(|(ba, _, _)| ba.short.contains("mise-test-fixtures"))
+            .map(|(_, requests, _)| {
+                requests
+                    .iter()
+                    .map(|request| request.version().to_string())
+                    .collect_vec()
+            })
+            .unwrap_or_default();
+
+        assert_eq!(fixture_versions, vec!["1", "2"]);
+        Ok(())
     }
 
     #[tokio::test]

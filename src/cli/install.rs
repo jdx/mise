@@ -84,6 +84,13 @@ pub struct Install {
     /// May require elevated permissions (e.g. sudo).
     #[clap(long, verbatim_doc_comment, conflicts_with = "shared")]
     system: bool,
+
+    /// Install tools from every [monorepo].config_roots config root
+    ///
+    /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+    /// [monorepo].config_roots in the monorepo root config.
+    #[clap(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
+    monorepo: bool,
 }
 
 impl Install {
@@ -103,6 +110,9 @@ impl Install {
     #[async_backtrace::framed]
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
+        if !self.is_dry_run() {
+            crate::lockfile::migrate_monorepo_lockfiles(&config)?;
+        }
         match &self.tool {
             Some(runtime) => {
                 let original_tool_args = env::TOOL_ARGS.read().unwrap().clone();
@@ -200,7 +210,11 @@ impl Install {
         runtimes: &[ToolArg],
         original_tool_args: Vec<ToolArg>,
     ) -> Result<()> {
-        let trs = config.get_tool_request_set().await?;
+        let trs = if self.monorepo {
+            config.monorepo_union_tool_request_set().await?
+        } else {
+            config.get_tool_request_set().await?.clone()
+        };
 
         // Expand wildcards (e.g., "pipx:*") to actual ToolArgs from config
         let mut has_unmatched_wildcard = false;
@@ -242,8 +256,12 @@ impl Install {
         // load_runtime_args overrides the underlying source with
         // ToolSource::Argument whenever the user passes TOOL@VERSION, so config-
         // and env-sourced tools become indistinguishable from CLI-only ones.
-        let configured_tools: HashSet<String> = config
-            .config_files
+        let configured_config_files = if self.monorepo {
+            config.monorepo_union_config_files().await?
+        } else {
+            config.config_files.clone()
+        };
+        let configured_tools: HashSet<String> = configured_config_files
             .values()
             .filter_map(|cf| cf.to_tool_request_set().ok())
             .flat_map(|cf_trs| cf_trs.tools.into_keys().map(|ba| ba.short.clone()))
@@ -290,7 +308,16 @@ impl Install {
                 .unwrap()
                 .clone_from(&original_tool_args);
             let config = Config::reset().await?;
-            let ts = config.get_toolset().await?;
+            let ts_owned;
+            let ts = if self.monorepo {
+                let mut monorepo_ts: Toolset =
+                    config.monorepo_union_tool_request_set().await?.into();
+                monorepo_ts.resolve(&config).await?;
+                ts_owned = monorepo_ts;
+                &ts_owned
+            } else {
+                config.get_toolset().await?
+            };
             let current_versions = ts.list_current_versions();
             // ensure that only current versions are sent to lockfile rebuild
             versions.retain(|tv| current_versions.iter().any(|(_, cv)| tv == cv));
@@ -398,7 +425,11 @@ impl Install {
 
     async fn install_missing_runtimes(&self, mut config: Arc<Config>) -> eyre::Result<()> {
         let trs = measure!("get_tool_request_set", {
-            config.get_tool_request_set().await?
+            if self.monorepo {
+                config.monorepo_union_tool_request_set().await?
+            } else {
+                config.get_tool_request_set().await?.clone()
+            }
         });
 
         // Install plugins from [plugins] config section first
@@ -452,7 +483,16 @@ impl Install {
         }
         if install_error.is_ok() || !versions.is_empty() {
             measure!("rebuild_shims_and_runtime_symlinks", {
-                let ts = config.get_toolset().await?;
+                let ts_owned;
+                let ts = if self.monorepo {
+                    let mut monorepo_ts: Toolset =
+                        config.monorepo_union_tool_request_set().await?.into();
+                    monorepo_ts.resolve(&config).await?;
+                    ts_owned = monorepo_ts;
+                    &ts_owned
+                } else {
+                    config.get_toolset().await?
+                };
                 config::rebuild_shims_and_runtime_symlinks(
                     &config,
                     ts,

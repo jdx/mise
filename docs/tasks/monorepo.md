@@ -225,6 +225,37 @@ run = "npm run build"  # Uses node 20 and LOG_LEVEL=info from root
 2. **Subdirectory override**: Tools and environment defined in the subdirectory's config file are merged on top, allowing overrides
 3. **Task-specific tools and environment**: Values defined in the task's `tools` and `env` properties take highest precedence
 
+## Tools
+
+Use `mise install --monorepo` to install the union of tools from every directory listed in `[monorepo].config_roots`. This is useful in CI when you want to warm a cache for all projects in the repository:
+
+```bash
+MISE_ENV=ci mise install --monorepo
+```
+
+Passing a tool name filters the union while preserving multiple configured versions:
+
+```bash
+mise install --monorepo node
+```
+
+`mise ls --monorepo` lists the same union and can be used to inspect cache keys or debug which config roots are contributing tools. Both commands require `monorepo_root = true` and explicit `[monorepo].config_roots`.
+
+## Lockfiles
+
+By default, monorepos use one lockfile at the monorepo root. Tools from `packages/api/mise.toml` write to `<monorepo_root>/mise.lock`, while environment and local variants write to root files such as `mise.ci.lock` and `mise.local.lock`.
+
+If mise finds old subproject lockfiles, it migrates them into the root lockfile the next time a lock-aware command runs. Root entries win on conflicts, unique subproject entries are preserved, and migrated subproject lockfiles are removed.
+
+To keep lockfiles next to each subproject config, opt out in the monorepo root:
+
+```toml
+[monorepo]
+lockfile = false
+```
+
+Older mise versions do not understand unified monorepo lockfiles for subproject-owned tools. Teams that need mixed-version compatibility should use `lockfile = false` until everyone has upgraded.
+
 ## Config Roots
 
 You must explicitly list your config roots using the `[monorepo]` section:

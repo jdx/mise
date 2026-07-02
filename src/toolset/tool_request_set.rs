@@ -6,7 +6,7 @@ use std::{
 
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::{Config, Settings};
+use crate::config::{Config, ConfigMap, Settings};
 use crate::env;
 use crate::registry::{REGISTRY, tool_enabled};
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
@@ -138,6 +138,7 @@ pub struct ToolRequestSetBuilder {
     disable_tools: BTreeSet<BackendArg>,
     /// tools which will be enabled
     enable_tools: Option<BTreeSet<BackendArg>>,
+    config_files: Option<ConfigMap>,
 }
 
 impl ToolRequestSetBuilder {
@@ -162,6 +163,12 @@ impl ToolRequestSetBuilder {
     //     self
     // }
     //
+
+    /// Use custom config files instead of config.config_files.
+    pub fn with_config_files(mut self, config_files: ConfigMap) -> Self {
+        self.config_files = Some(config_files);
+        self
+    }
 
     pub async fn build(&self, config: &Arc<Config>) -> eyre::Result<ToolRequestSet> {
         let mut trs = ToolRequestSet::default();
@@ -206,7 +213,8 @@ impl ToolRequestSetBuilder {
         config: &Arc<Config>,
         mut trs: ToolRequestSet,
     ) -> eyre::Result<ToolRequestSet> {
-        for cf in config.config_files.values().rev() {
+        let config_files = self.config_files.as_ref().unwrap_or(&config.config_files);
+        for cf in config_files.values().rev() {
             trs = merge(trs, cf.to_tool_request_set()?);
         }
         Ok(trs)

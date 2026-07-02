@@ -98,6 +98,10 @@ pub struct Upgrade {
     /// Implies --jobs=1
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
+
+    /// Upgrade tools across every [monorepo].config_roots config root
+    #[clap(long, verbatim_doc_comment)]
+    monorepo: bool,
 }
 
 impl Upgrade {
@@ -114,7 +118,13 @@ impl Upgrade {
     }
 
     pub async fn run(self) -> Result<()> {
+        if self.monorepo {
+            unimplemented!("mise upgrade --monorepo is not implemented yet");
+        }
         let mut config = Config::get().await?;
+        if !self.is_dry_run() {
+            crate::lockfile::migrate_monorepo_lockfiles(&config)?;
+        }
         let ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .with_scope(self.scope())

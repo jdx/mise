@@ -65,6 +65,13 @@ Display versions matching this prefix
 
 List only tools that can be pruned with `mise prune`
 
+### `--monorepo`
+
+List tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
+
 Examples:
 
 ```

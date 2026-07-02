@@ -135,6 +135,19 @@ mise lock --local              # update mise.local.lock
 mise lock --local node python  # update specific tools in mise.local.lock
 ```
 
+## Monorepos
+
+When `monorepo_root = true`, mise uses a single lockfile at the monorepo root by default. Subproject configs listed in `[monorepo].config_roots` write to root lockfile variants such as `mise.lock`, `mise.ci.lock`, and `mise.local.lock`.
+
+Existing subproject lockfiles are migrated into the root lockfile on the next lock-aware command. Older mise versions do not understand this layout for subproject-owned tools, so projects that need mixed-version compatibility can opt out:
+
+```toml
+[monorepo]
+lockfile = false
+```
+
+See [Monorepo Tasks](/tasks/monorepo.html#lockfiles) for details.
+
 ## Strict Lockfile Mode
 
 The `locked` setting enforces that all tools have pre-resolved URLs in the lockfile before installation. This prevents API calls to GitHub, aqua registry, etc., ensuring fully reproducible installations.

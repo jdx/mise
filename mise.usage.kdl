@@ -1724,6 +1724,14 @@ Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
 """#
     }
+    flag --monorepo help="Install tools from every [monorepo].config_roots config root" {
+        long_help #"""
+Install tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
+"""#
+    }
     arg "[TOOL@VERSION]…" help="Tool(s) to install e.g.: node@20" required=#false var=#true
 }
 cmd install-into help="Install a tool version to a specific path" {
@@ -1969,6 +1977,14 @@ Examples:
         arg <PREFIX>
     }
     flag --prunable help="List only tools that can be pruned with `mise prune`"
+    flag --monorepo help="List tools from every [monorepo].config_roots config root" {
+        long_help #"""
+List tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
+"""#
+    }
     arg "[INSTALLED_TOOL]…" help="Only show tool versions from [TOOL]" required=#false var=#true
 }
 cmd ls-remote help="List runtime versions available for install." {
@@ -2380,6 +2396,7 @@ will skip tools defined in the global config (~/.config/mise/config.toml).
 """#
     }
     flag --no-header help="Don't show table header"
+    flag --monorepo help="Show outdated tools across every [monorepo].config_roots config root"
     arg "[TOOL@VERSION]…" help=#"""
 Tool(s) to show outdated versions for
 e.g.: node@20 python@3.10
@@ -2724,6 +2741,7 @@ This is useful for scripts to check if tools need to be pruned.
 """#
     }
     flag --tools help="Prune only unused versions of tools"
+    flag --monorepo help="Prune tools across every [monorepo].config_roots config root"
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
 }
 cmd registry help="List available tools to install" {
@@ -4165,6 +4183,7 @@ Explicitly pinned versions like "22.5.0" are not filtered.
         arg <MINIMUM_RELEASE_AGE>
     }
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
+    flag --monorepo help="Upgrade tools across every [monorepo].config_roots config root"
     arg "[INSTALLED_TOOL@VERSION]…" help=#"""
 Tool(s) to upgrade
 e.g.: node@20 python@3.10

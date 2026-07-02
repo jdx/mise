@@ -82,6 +82,10 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
 
+### `--monorepo`
+
+Upgrade tools across every [monorepo].config_roots config root
+
 Examples:
 
 ```

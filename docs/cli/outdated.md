@@ -48,6 +48,10 @@ will skip tools defined in the global config (~/.config/mise/config.toml).
 
 Don't show table header
 
+### `--monorepo`
+
+Show outdated tools across every [monorepo].config_roots config root
+
 Examples:
 
 ```

@@ -39,6 +39,10 @@ This is useful for scripts to check if tools need to be pruned.
 
 Prune only unused versions of tools
 
+### `--monorepo`
+
+Prune tools across every [monorepo].config_roots config root
+
 Examples:
 
 ```

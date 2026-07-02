@@ -83,6 +83,13 @@ pub struct Ls {
     /// List only tools that can be pruned with `mise prune`
     #[clap(long)]
     prunable: bool,
+
+    /// List tools from every [monorepo].config_roots config root
+    ///
+    /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+    /// [monorepo].config_roots in the monorepo root config.
+    #[clap(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
+    monorepo: bool,
 }
 
 impl Ls {
@@ -266,7 +273,11 @@ impl Ls {
         )
     }
     async fn get_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
-        let mut trs = config.get_tool_request_set().await?.clone();
+        let mut trs = if self.monorepo {
+            config.monorepo_union_tool_request_set().await?
+        } else {
+            config.get_tool_request_set().await?.clone()
+        };
         if self.global {
             trs = trs
                 .iter()

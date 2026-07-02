@@ -365,10 +365,12 @@ impl CondaBackend {
         })
     }
 
-    fn read_lockfile_for_tool(&self, tv: &ToolVersion) -> Result<Lockfile> {
+    fn read_lockfile_for_tool(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<Lockfile> {
         match tv.request.source() {
-            ToolSource::MiseToml(path) => {
-                let (lockfile_path, _) = lockfile::lockfile_path_for_config(path);
+            ToolSource::MiseToml(_) => {
+                let (lockfile_path, _) =
+                    lockfile::lockfile_path_for_tool_source(&ctx.config, tv.request.source())
+                        .ok_or_else(|| eyre::eyre!("could not determine conda lockfile path"))?;
                 Lockfile::read(&lockfile_path)
             }
             _ => Ok(Lockfile::default()),
@@ -492,7 +494,7 @@ impl CondaBackend {
         let main_checksum = platform_info.checksum.clone();
 
         let dep_basenames = platform_info.conda_deps.clone().unwrap_or_default();
-        let lockfile = self.read_lockfile_for_tool(tv)?;
+        let lockfile = self.read_lockfile_for_tool(ctx, tv)?;
 
         // Extract python info from basenames for noarch python packages
         let python_info =

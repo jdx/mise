@@ -51,10 +51,17 @@ pub struct Outdated {
     /// Don't show table header
     #[clap(long)]
     pub no_header: bool,
+
+    /// Show outdated tools across every [monorepo].config_roots config root
+    #[clap(long, verbatim_doc_comment)]
+    pub monorepo: bool,
 }
 
 impl Outdated {
     pub async fn run(self) -> Result<()> {
+        if self.monorepo {
+            unimplemented!("mise outdated --monorepo is not implemented yet");
+        }
         let config = Config::get().await?;
         let scope = if self.local {
             ConfigScope::LocalOnly
