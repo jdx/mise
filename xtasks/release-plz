@@ -12,15 +12,46 @@ fi
 git config user.name mise-en-dev
 git config user.email release@mise.jdx.dev
 
+release_workflow_active_for_tag() {
+	local tag="$1"
+	local active
+
+	active="$(
+		gh run list \
+			--workflow release.yml \
+			--branch "$tag" \
+			--limit 10 \
+			--json status,conclusion \
+			--jq 'any(.[]; .status != "completed")' \
+			2>/dev/null || echo false
+	)"
+	[[ $active == "true" ]]
+}
+
+trigger_release_workflow_if_missing() {
+	local tag="$1"
+
+	if [[ -z $tag ]]; then
+		return
+	fi
+
+	if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --silent 2>/dev/null; then
+		return
+	fi
+
+	if release_workflow_active_for_tag "$tag"; then
+		echo "Tag $tag has no GitHub Release, but release workflow already exists"
+		return
+	fi
+
+	echo "Tag $tag has no GitHub Release - triggering release workflow"
+	gh workflow run release.yml --ref "$tag"
+}
+
 # Check if the most recent tag has a matching GitHub Release.
 # If not, the previous release workflow likely failed to fire — re-trigger it.
 latest_tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1 || true)"
-if [[ -n $latest_tag ]]; then
-	if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$latest_tag" --silent 2>/dev/null; then
-		echo "Tag $latest_tag has no GitHub Release — triggering release workflow"
-		gh workflow run release.yml --ref "$latest_tag"
-	fi
-fi
+trigger_release_workflow_if_missing "$latest_tag"
 
 exists_on_crates() {
 	crate="$1"
@@ -227,6 +258,10 @@ if [[ $cur_version != "$latest_version" ]]; then
 
 	# Push all tags (mise + any subcrate tags)
 	git push --tags
+	# Give GitHub time to enqueue tag-triggered workflows before falling back
+	# to workflow_dispatch.
+	sleep 15
+	trigger_release_workflow_if_missing "v$cur_version"
 	exit 0
 fi
 
