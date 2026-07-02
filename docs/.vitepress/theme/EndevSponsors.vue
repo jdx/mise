@@ -36,7 +36,7 @@ import { onMounted, ref } from "vue";
 
 const sponsors = ref([]);
 const error = ref(false);
-const footerTiers = new Set(["anchor", "premier", "partner"]);
+const footerTiers = new Set(["title", "premier", "partner"]);
 const sponsorFeedTimeoutMs = 5000;
 
 const sponsorItems = (items) => (Array.isArray(items) ? items : []);
