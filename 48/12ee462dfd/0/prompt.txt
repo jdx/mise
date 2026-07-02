@@ -1,0 +1,1 @@
+/goal simplify this repo, make sure to de-slop it continue until you are happy, make sure to backfill tests and validate any significant change. The output of this should be a PR with green CI, reviewed that simplify and makes the codebase more robust and elegant. Work on one branch for now but make commits that could later be split into stacked PRs for better reviewing.
