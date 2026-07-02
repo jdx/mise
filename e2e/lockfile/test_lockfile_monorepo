@@ -3,8 +3,8 @@
 export MISE_EXPERIMENTAL=1
 export MISE_LOCKFILE=1
 
-ln -sf "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
-ln -sf "$ROOT/test/data/plugins/dummy" "$MISE_DATA_DIR/plugins/dummy"
+rm -rf "$MISE_DATA_DIR/plugins/tiny"
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
 
 echo "=== unset [monorepo].lockfile keeps subproject lockfiles during rollout ==="
 mkdir -p monorepo-unset/packages/a
@@ -99,6 +99,36 @@ assert_contains "cat monorepo-migrate/mise.lock" 'version = "1.0.0"'
 assert_contains "cat monorepo-migrate/mise.lock" '[[tools.dummy]]'
 assert_fail "test -f monorepo-migrate/packages/a/mise.lock"
 assert_fail "test -f monorepo-migrate/packages/b/.mise/mise.lock"
+
+echo "=== dry-run reads legacy subproject lockfiles without migrating ==="
+mkdir -p monorepo-dry-run/packages/a
+cat >monorepo-dry-run/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-dry-run/packages/a/mise.toml <<'EOF'
+[tools]
+tiny = "latest"
+EOF
+cat >monorepo-dry-run/packages/a/mise.lock <<'EOF'
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:tiny"
+EOF
+
+rm -rf "$MISE_DATA_DIR/installs/tiny"
+output=$(cd monorepo-dry-run/packages/a && mise install --dry-run 2>&1)
+assert_contains "echo '$output'" "tiny@1.0.0"
+assert "test -f monorepo-dry-run/packages/a/mise.lock"
+assert_fail "test -f monorepo-dry-run/mise.lock"
+
+output=$(cd monorepo-dry-run && mise lock --dry-run --platform linux-x64 2>&1)
+assert_contains "echo '$output'" "tiny@1.0.0"
+assert "test -f monorepo-dry-run/packages/a/mise.lock"
+assert_fail "test -f monorepo-dry-run/mise.lock"
 
 echo "=== [monorepo] lockfile = false keeps subproject lockfiles ==="
 mkdir -p monorepo-optout/packages/a

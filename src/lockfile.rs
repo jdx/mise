@@ -30,7 +30,7 @@ use xx::regex;
 /// Global caches for lockfile data - declared here so invalidation can access them
 static ALL_LOCKFILES_CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> =
     Lazy::new(Default::default);
-static SINGLE_LOCKFILE_CACHE: Lazy<Mutex<HashMap<PathBuf, Arc<Lockfile>>>> =
+static SINGLE_LOCKFILE_CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> =
     Lazy::new(Default::default);
 
 /// Invalidate all lockfile caches. Call this after modifying a lockfile.
@@ -1282,28 +1282,9 @@ pub fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
     let Some(monorepo_root) = config.monorepo_lockfile_root() else {
         return Ok(());
     };
-    let config_roots = match config.monorepo_config_root_dirs() {
-        Ok(roots) => roots,
-        Err(_) => return Ok(()),
-    };
-    let mut source_lockfiles = IndexSet::new();
-
-    for config_root in config_roots {
-        if config_root == monorepo_root {
-            continue;
-        }
-        for config_path in crate::config::config_paths_in_dir(&config_root) {
-            let (source, _) = lockfile_path_for_config(&config_path, None);
-            if source.parent() == Some(monorepo_root.as_path()) {
-                continue;
-            }
-            source_lockfiles.insert(source);
-        }
-    }
-
     let mut migrated = 0usize;
 
-    for source in source_lockfiles {
+    for source in monorepo_legacy_lockfile_paths(config) {
         if !source.exists() {
             continue;
         }
@@ -1347,6 +1328,54 @@ pub fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
 fn is_not_found_report(err: &Report) -> bool {
     err.downcast_ref::<std::io::Error>()
         .is_some_and(|err| err.kind() == ErrorKind::NotFound)
+}
+
+fn monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf> {
+    let Some(monorepo_root) = config.monorepo_lockfile_root() else {
+        return IndexSet::new();
+    };
+    let Ok(config_roots) = config.monorepo_config_root_dirs() else {
+        return IndexSet::new();
+    };
+    let mut source_lockfiles = IndexSet::new();
+
+    for config_root in config_roots {
+        if config_root == monorepo_root {
+            continue;
+        }
+        for config_path in crate::config::config_paths_in_dir(&config_root) {
+            if let Some(source) =
+                legacy_lockfile_path_for_config(config, &config_path, &monorepo_root)
+            {
+                source_lockfiles.insert(source);
+            }
+        }
+    }
+
+    source_lockfiles
+}
+
+fn legacy_lockfile_path_for_config(
+    config: &Config,
+    config_path: &Path,
+    monorepo_root: &Path,
+) -> Option<PathBuf> {
+    if !config_path.starts_with(monorepo_root) || config.monorepo_lockfile_root().is_none() {
+        return None;
+    }
+    let (source, _) = lockfile_path_for_config(config_path, None);
+    (source.parent() != Some(monorepo_root)).then_some(source)
+}
+
+fn merge_legacy_lockfile_if_present(lockfile: &mut Lockfile, legacy_path: &Path) -> Result<()> {
+    match Lockfile::read(legacy_path) {
+        Ok(legacy) => {
+            merge_lockfile_preserving_root(lockfile, legacy);
+            Ok(())
+        }
+        Err(err) if is_not_found_report(&err) => Ok(()),
+        Err(err) => Err(err),
+    }
 }
 
 fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
@@ -2138,10 +2167,12 @@ fn preserve_absent_tool_entries(
 fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
     // Create a cache key from the config file paths
     let monorepo_root = config.monorepo_lockfile_root();
+    let legacy_lockfiles = monorepo_legacy_lockfile_paths(config);
     let cache_key: Vec<PathBuf> = config
         .config_files
         .keys()
         .map(|path| lockfile_path_for_config(path, monorepo_root.as_deref()).0)
+        .chain(legacy_lockfiles.iter().cloned())
         .unique()
         .collect();
 
@@ -2196,6 +2227,11 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
             all.push(main);
         }
     }
+    for legacy_path in legacy_lockfiles {
+        if let Ok(legacy) = Lockfile::read(&legacy_path) {
+            all.push(legacy);
+        }
+    }
 
     let result = all.into_iter().fold(Lockfile::default(), |mut acc, l| {
         for (short, tools) in l.tools {
@@ -2219,22 +2255,36 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
 }
 
 fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
-    let (lockfile_path, _is_local) =
-        lockfile_path_for_config(path, config.monorepo_lockfile_root().as_deref());
+    let monorepo_root = config.monorepo_lockfile_root();
+    let (lockfile_path, _is_local) = lockfile_path_for_config(path, monorepo_root.as_deref());
+    let legacy_path = monorepo_root
+        .as_deref()
+        .and_then(|root| legacy_lockfile_path_for_config(config, path, root));
+    let cache_key: Vec<PathBuf> = std::iter::once(lockfile_path.clone())
+        .chain(legacy_path.iter().cloned())
+        .collect();
 
     // Use unwrap_or_else to recover from poisoned mutex (thread panicked while holding lock)
     let mut cache = SINGLE_LOCKFILE_CACHE
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    if let Some(cached) = cache.get(&lockfile_path) {
+    if let Some(cached) = cache.get(&cache_key) {
         return Arc::clone(cached);
     }
 
-    let lockfile = Lockfile::read(&lockfile_path)
+    let mut lockfile = Lockfile::read(&lockfile_path)
         .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
+    if let Some(legacy_path) = &legacy_path
+        && let Err(err) = merge_legacy_lockfile_if_present(&mut lockfile, legacy_path)
+    {
+        warn!(
+            "failed to read legacy monorepo lockfile {} (possible corruption): {err:?}",
+            display_path(legacy_path)
+        );
+    }
 
     let lockfile = Arc::new(lockfile);
-    cache.insert(lockfile_path, Arc::clone(&lockfile));
+    cache.insert(cache_key, Arc::clone(&lockfile));
     lockfile
 }
 

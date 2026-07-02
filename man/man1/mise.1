@@ -2052,6 +2052,12 @@ Only install versions released before this date or older than this duration
 
 Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
 .TP
+\fB\-\-monorepo\fR
+Install tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
+.TP
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
 .TP
@@ -2218,6 +2224,12 @@ Don't fetch information such as outdated versions
 .TP
 \fB\-\-all\-sources\fR
 Display all tracked config sources for tools
+.TP
+\fB\-\-monorepo\fR
+List tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
 .TP
 \fB\-\-no\-header\fR
 Don't display headers
@@ -2474,6 +2486,9 @@ Only show outdated tools defined in local config files
 
 This will only show tools that are defined in project\-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
+.TP
+\fB\-\-monorepo\fR
+Show outdated tools across every [monorepo].config_roots config root
 .TP
 \fB\-\-no\-header\fR
 Don't show table header
@@ -2807,6 +2822,9 @@ Prune only tracked and trusted configuration links that point to nonexistent con
 Like \-\-dry\-run but exits with code 1 if there are tools to prune
 
 This is useful for scripts to check if tools need to be pruned.
+.TP
+\fB\-\-monorepo\fR
+Prune tools across every [monorepo].config_roots config root
 .TP
 \fB\-\-tools\fR
 Prune only unused versions of tools
@@ -4166,6 +4184,9 @@ This can be useful for reproducibility or security purposes.
 
 This only affects fuzzy version matches like "20" or "latest".
 Explicitly pinned versions like "22.5.0" are not filtered.
+.TP
+\fB\-\-monorepo\fR
+Upgrade tools across every [monorepo].config_roots config root
 .TP
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1

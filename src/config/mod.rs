@@ -442,7 +442,11 @@ impl Config {
         if patterns.is_empty() {
             bail!("[monorepo].config_roots is required for monorepo operations");
         }
-        expand_config_roots(&monorepo_root, patterns, None)
+        let roots = expand_config_roots(&monorepo_root, patterns, None)?;
+        if roots.is_empty() {
+            bail!("[monorepo].config_roots did not match any config roots");
+        }
+        Ok(roots)
     }
 
     pub async fn monorepo_union_config_files(self: &Arc<Self>) -> Result<ConfigMap> {

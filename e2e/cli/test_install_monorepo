@@ -2,8 +2,8 @@
 
 export MISE_EXPERIMENTAL=1
 
-ln -sf "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
-ln -sf "$ROOT/test/data/plugins/dummy" "$MISE_DATA_DIR/plugins/dummy"
+rm -rf "$MISE_DATA_DIR/plugins/tiny"
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
 
 echo "=== install --monorepo installs every configured root ==="
 mkdir -p monorepo/packages/a monorepo/packages/b
@@ -43,12 +43,19 @@ assert_contains "echo '$output'" "2.1.0"
 assert_contains "echo '$output'" "dummy"
 
 echo "=== --monorepo requires monorepo_root and explicit config_roots ==="
-mkdir -p outside no-roots
+mkdir -p outside no-roots empty-roots
 cat >no-roots/mise.toml <<'EOF'
 monorepo_root = true
 EOF
+cat >empty-roots/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
 assert_fail_contains "cd outside && mise install --monorepo 2>&1" "monorepo_root = true"
 assert_fail_contains "cd no-roots && mise install --monorepo 2>&1" "[monorepo].config_roots is required"
+assert_fail_contains "cd empty-roots && mise install --monorepo 2>&1" "did not match any config roots"
 
 echo "=== deferred --monorepo commands are explicit stubs ==="
 assert_fail_contains "cd monorepo && mise upgrade --monorepo 2>&1" "not implemented"
