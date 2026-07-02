@@ -1722,8 +1722,10 @@ fn check_single_tool_provenance(
     }
 
     let tools = existing_tools?;
+    let new_version = parse_provenance_version(version)?;
 
-    // Find the highest prior github version with provenance on this platform
+    // Find the highest prior github semver version with provenance on this platform.
+    // Non-semver tags are opaque to mise, so do not guess whether they are upgrades.
     let prior = tools
         .iter()
         .filter(|t| t.version != version)
@@ -1733,12 +1735,13 @@ fn check_single_tool_provenance(
                 .get(platform_key)
                 .is_some_and(|pi| pi.provenance.is_some())
         })
-        .max_by(|a, b| {
-            versions::Versioning::new(&a.version).cmp(&versions::Versioning::new(&b.version))
-        })?;
+        .filter_map(|t| Some((parse_provenance_version(&t.version)?, t)))
+        .max_by(|(a, _), (b, _)| a.cmp(b))?;
+
+    let (prior_version, prior) = prior;
 
     // Only flag upgrades — intentional downgrades are allowed
-    if versions::Versioning::new(version) <= versions::Versioning::new(&prior.version) {
+    if new_version <= prior_version {
         return None;
     }
 
@@ -1749,6 +1752,10 @@ fn check_single_tool_provenance(
          attack. Verify the release is authentic before proceeding.",
         prior.version,
     ))
+}
+
+fn parse_provenance_version(version: &str) -> Option<nodejs_semver::Version> {
+    nodejs_semver::Version::parse(strip_leading_v(version)).ok()
 }
 
 /// Check if any github backend tool is losing provenance when upgrading versions.
@@ -2486,18 +2493,7 @@ pub fn get_locked_version(
         let mut matching: Vec<_> = tools
             .iter()
             .filter(|v| {
-                let norm_prefix = prefix
-                    .strip_prefix('v')
-                    .or(prefix.strip_prefix('V'))
-                    .unwrap_or(prefix);
-                let norm_version = v
-                    .version
-                    .strip_prefix('v')
-                    .or(v.version.strip_prefix('V'))
-                    .unwrap_or(&v.version);
-                let version_matches = prefix == "latest" || norm_version.starts_with(norm_prefix);
-                let options_match = &v.options == request_options;
-                version_matches && options_match
+                lockfile_version_matches(prefix, &v.version) && &v.options == request_options
             })
             .collect();
 
@@ -2516,6 +2512,17 @@ pub fn get_locked_version(
     }
 
     Ok(None)
+}
+
+fn lockfile_version_matches(prefix: &str, version: &str) -> bool {
+    prefix == "latest" || strip_leading_v(version).starts_with(strip_leading_v(prefix))
+}
+
+fn strip_leading_v(version: &str) -> &str {
+    version
+        .strip_prefix(['v', 'V'])
+        .filter(|stripped| stripped.chars().next().is_some_and(|c| c.is_ascii_digit()))
+        .unwrap_or(version)
 }
 
 /// Get the backend for a tool from the lockfile, ignoring options.
@@ -3098,6 +3105,18 @@ options = { exe = "rg" }
         assert_eq!(lockfile.tools["ripgrep"].len(), 2);
         assert_eq!(lockfile.tools["ripgrep"][0].options.len(), 2);
         assert_eq!(lockfile.tools["ripgrep"][1].options.len(), 1);
+    }
+
+    #[test]
+    fn test_lockfile_version_matches_normalizes_v_prefix() {
+        assert!(lockfile_version_matches("latest", "not-a-semver"));
+        assert!(lockfile_version_matches("1.2", "v1.2.3"));
+        assert!(lockfile_version_matches("v1.2", "1.2.3"));
+        assert!(lockfile_version_matches("V1.2", "v1.2.3"));
+        assert!(!lockfile_version_matches("1.3", "v1.2.3"));
+        assert!(!lockfile_version_matches("v", "1.2.3"));
+        assert!(!lockfile_version_matches("v", "v1.2.3"));
+        assert!(lockfile_version_matches("v", "versioned"));
     }
 
     #[test]
@@ -3962,6 +3981,61 @@ backend = "conda:jq"
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn test_provenance_regression_only_flags_known_semver_upgrades() {
+        let platform = Platform::current().to_key();
+        let mut prior = basic_tool("nightly", "github:owner/repo");
+        prior.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        let existing = vec![prior];
+
+        assert!(
+            check_single_tool_provenance(
+                Some(&existing),
+                "tool",
+                "v1.0.0",
+                "github:owner/repo",
+                &platform,
+                None,
+            )
+            .is_none()
+        );
+
+        let mut prior = basic_tool("v1.0.0-rc.1", "github:owner/repo");
+        prior.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        let existing = vec![prior];
+
+        let err = check_single_tool_provenance(
+            Some(&existing),
+            "tool",
+            "v1.0.0",
+            "github:owner/repo",
+            &platform,
+            None,
+        )
+        .unwrap();
+        assert!(err.contains("has no provenance verification"));
+    }
+
+    #[test]
+    fn test_parse_provenance_version_strips_single_semver_v_prefix() {
+        assert!(parse_provenance_version("v1.2.3").is_some());
+        assert!(parse_provenance_version("V1.2.3").is_some());
+        assert!(parse_provenance_version("vv1.2.3").is_none());
+        assert!(parse_provenance_version("v").is_none());
     }
 
     #[test]

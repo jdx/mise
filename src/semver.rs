@@ -4,28 +4,17 @@ use versions::{Mess, Versioning};
 
 /// splits a version number into an optional prefix and the remaining version string
 pub fn split_version_prefix(version: &str) -> (String, String) {
-    version
-        .char_indices()
-        .find_map(|(i, c)| {
-            if c.is_ascii_digit() {
-                if i == 0 {
-                    return Some(i);
-                }
-                // If the previous char is a delimiter or 'v', we found a split point.
-                let prev_char = version.chars().nth(i - 1).unwrap();
-                if ['-', '_', '/', '.', 'v', 'V'].contains(&prev_char) {
-                    return Some(i);
-                }
-            }
-            None
-        })
-        .map_or_else(
-            || ("".into(), version.into()),
-            |i| {
-                let (prefix, version) = version.split_at(i);
-                (prefix.into(), version.into())
-            },
-        )
+    let mut prev_char = None;
+    for (i, c) in version.char_indices() {
+        if c.is_ascii_digit()
+            && (i == 0 || prev_char.is_some_and(|c| ['-', '_', '/', '.', 'v', 'V'].contains(&c)))
+        {
+            let (prefix, version) = version.split_at(i);
+            return (prefix.into(), version.into());
+        }
+        prev_char = Some(c);
+    }
+    ("".into(), version.into())
 }
 
 /// split a version number into chunks
@@ -149,6 +138,10 @@ mod tests {
         assert_eq!(
             split_version_prefix("temurin-17.0.7+7"),
             ("temurin-".into(), "17.0.7+7".into())
+        );
+        assert_eq!(
+            split_version_prefix("\u{5de5}\u{5177}-v1.2.3"),
+            ("\u{5de5}\u{5177}-v".into(), "1.2.3".into())
         );
         assert_eq!(split_version_prefix("1.2"), ("".into(), "1.2".into()));
         assert_eq!(
