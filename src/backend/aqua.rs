@@ -880,9 +880,7 @@ impl Backend for AquaBackend {
                 .resolve_slsa_url(&pkg, &v, target_os, target_arch)
                 .await
             {
-                // Store the canonical URL in the lockfile; the transport URL is only
-                // resolved at download time (and may differ for private repos).
-                Ok((canonical_url, _transport_url)) => {
+                Ok((canonical_url, _url_api)) => {
                     provenance = Some(ProvenanceType::Slsa {
                         url: Some(canonical_url),
                     });
@@ -1383,18 +1381,19 @@ impl AquaBackend {
         }
     }
 
-    /// Resolve the SLSA provenance `(canonical_url, transport_url)` for a target platform
-    /// without downloading. Uses cached GitHub release data or template-based URL
-    /// construction. `canonical_url` carries the real filename and is what gets stored as
-    /// the lockfile provenance URL; `transport_url` is where the file is actually fetched
-    /// from (see `github_release_asset_urls`).
+    /// Resolve the SLSA provenance canonical URL and optional API URL for a target
+    /// platform without downloading or probing. `canonical_url` carries the real
+    /// filename and is what gets stored as the lockfile provenance URL; `api_url`
+    /// (if present) is the GitHub API asset endpoint that can serve private-repo
+    /// assets — the actual reachability probe is deferred to download time (see
+    /// `run_slsa_check`).
     async fn resolve_slsa_url(
         &self,
         pkg: &AquaPackage,
         v: &str,
         target_os: &str,
         target_arch: &str,
-    ) -> Result<(String, String)> {
+    ) -> Result<(String, Option<String>)> {
         let slsa = pkg
             .slsa_provenance
             .as_ref()
@@ -1407,13 +1406,12 @@ impl AquaBackend {
         match slsa.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
                 let asset_strs = slsa.asset_strs(&slsa_pkg, v, target_os, target_arch)?;
-                self.github_release_asset_urls(&slsa_pkg, v, asset_strs)
-                    .await
+                let (url, url_api, _) = self.github_release_asset(&slsa_pkg, v, asset_strs).await?;
+                Ok((url, url_api))
             }
-            // Non-release URLs have no separate transport endpoint.
             "http" => slsa
                 .url(&slsa_pkg, v, target_os, target_arch)
-                .map(|url| (url.clone(), url)),
+                .map(|url| (url, None)),
             t => Err(eyre!("unsupported slsa type: {t}")),
         }
     }
@@ -1428,9 +1426,11 @@ impl AquaBackend {
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
-        let (provenance_url, download_url) = self.resolve_slsa_url(pkg, v, os(), arch()).await?;
-        // Name the file from the canonical URL, but download from the transport URL so
-        // private-repo provenance assets resolve via the API endpoint.
+        let (provenance_url, url_api) = self.resolve_slsa_url(pkg, v, os(), arch()).await?;
+        let download_url = match url_api.as_deref() {
+            Some(url_api) => github::pick_reachable_asset_url(&provenance_url, url_api).await,
+            None => provenance_url.clone(),
+        };
         let provenance_path = download_dir.join(get_filename_from_url(&provenance_url));
         HTTP.download_file(&download_url, &provenance_path, pr)
             .await?;
