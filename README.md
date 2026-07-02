@@ -29,8 +29,8 @@
 </p>
 
 <p align="center">
-  Sponsored by <a href="https://37signals.com">37signals</a>.<br>
-  <a href="https://en.dev/sponsors.html">View all sponsors</a>.
+  Sponsored by <a href="https://entire.io">entire.io</a>, <a href="https://37signals.com">37signals</a>, <a href="https://coderabbit.link/mise">CodeRabbit</a>, and <a href="https://supabase.com">Supabase</a>.<br>
+  <a href="https://jdx.dev/sponsors.html">View all sponsors</a>.
 </p>
 
 <hr />
@@ -38,7 +38,7 @@
 </div>
 
 > [!TIP]
-> My latest project, [aube](https://aube.en.dev) just hit stable! It's the fastest Node.js package manager with strong security defaults and is compatible with npm/pnpm/yarn lockfiles!
+> My latest project, [aube](https://aube.jdx.dev) just hit stable! It's the fastest Node.js package manager with strong security defaults and is compatible with npm/pnpm/yarn lockfiles!
 
 ## What is it?
 

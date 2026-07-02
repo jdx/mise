@@ -68,12 +68,12 @@ hero:
     </div>
   </div>
 
-  <a class="landing-aube" href="https://aube.en.dev/" aria-label="Try aube">
+  <a class="landing-aube" href="https://aube.jdx.dev/" aria-label="Try aube">
     <div>
       <p class="landing-kicker">Chef's Special</p>
       <h2>Meet <em>aube</em>, a fast Node.js package manager.</h2>
       <p>
-        New from en.dev by @jdx. aube uses your existing lockfile and is ready
+        New from @jdx. aube uses your existing lockfile and is ready
         to try in beta.
       </p>
     </div>

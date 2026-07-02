@@ -9,11 +9,11 @@ use crate::{dirs, duration, file};
 
 /// Show the individuals supporting mise as Patron-tier members
 ///
-/// Lists the individuals on the Patron tier from <https://en.dev/patrons.json>.
+/// Lists the individuals on the Patron tier from <https://jdx.dev/patrons.json>.
 /// The list refreshes daily; supporting terminals will render each patron's
 /// name as a clickable link via OSC 8 hyperlinks.
 ///
-/// To appear here, become a patron at <https://en.dev>.
+/// To appear here, become a patron at <https://jdx.dev/sponsors.html>.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Patrons {
@@ -43,8 +43,8 @@ struct Patron {
     url: Option<String>,
 }
 
-const PATRONS_URL: &str = "https://en.dev/patrons.json";
-const SPONSOR_URL: &str = "https://en.dev";
+const PATRONS_URL: &str = "https://jdx.dev/patrons.json";
+const SPONSOR_URL: &str = "https://jdx.dev/sponsors.html";
 const CACHE_TTL: Duration = duration::DAILY;
 
 impl Patrons {
