@@ -1,0 +1,61 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "cfea2ad1c034",
+  "session_id": "019f2387-40a7-7151-a232-8ebb871f52ba",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T16:00:38.666105Z",
+  "branch": "codex/simplify-robustness",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/lockfile.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "8ee7fb50b5e5",
+  "checkpoint_transcript_start": 306,
+  "transcript_lines_at_start": 306,
+  "token_usage": {
+    "input_tokens": 18148,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 935040,
+    "output_tokens": 2970,
+    "api_call_count": 7
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-codex-goal-2026-07-02T15:51:35.536496Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "goal"
+      },
+      "source": {
+        "agent": "codex",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "8ee7fb50b5e5",
+      "timestamp": "2026-07-02T15:51:35.536496Z",
+      "native": {
+        "command": "/goal"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/goal",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "initial_attribution": {
+    "calculated_at": "2026-07-02T16:00:38.64822Z",
+    "agent_lines": 21,
+    "agent_removed": 12,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 21,
+    "total_lines_changed": 33,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
