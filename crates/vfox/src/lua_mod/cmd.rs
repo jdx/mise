@@ -10,13 +10,14 @@ pub fn mod_cmd(lua: &Lua) -> LuaResult<()> {
     loaded.set("cmd", cmd.clone())?;
     loaded.set("vfox.cmd", cmd)?;
 
-    // Route Lua's `os.execute` through mise's sanitized env (registry `mise_env`),
-    // matching cmd.exec. Stock `os.execute` inherits mise's raw process env, which
-    // during a combined `mise install` can carry stale `tools = true` values
-    // (e.g. a `CLOUDSDK_PYTHON` rendered before its python dependency was
-    // installed). Plugins that shell out via `os.execute` (e.g. vfox-gcloud's
-    // install.sh) would otherwise use the stale value and fail. When `mise_env`
-    // is unset, `os.execute` behaves exactly as stock. (#10282)
+    // Route Lua's `os.execute` and `os.getenv` through mise's sanitized env
+    // (registry `mise_env`), matching cmd.exec. Stock `os.execute` inherits
+    // mise's raw process env, which during a combined `mise install` can carry
+    // stale `tools = true` values (e.g. a `CLOUDSDK_PYTHON` rendered before its
+    // python dependency was installed). Plugins that shell out via `os.execute`
+    // (e.g. vfox-gcloud's install.sh) would otherwise use the stale value and
+    // fail. When `mise_env` is unset, `os.execute`/`os.getenv` behave like stock.
+    // (#10282, #10711)
     //
     // Reuse the existing `os` table so `os.time`/`os.date`/etc. are preserved; only
     // create one if `os` is absent (`nil`). A non-table `os` propagates the error
@@ -31,6 +32,7 @@ pub fn mod_cmd(lua: &Lua) -> LuaResult<()> {
         }
     };
     os.set("execute", lua.create_function(os_execute)?)?;
+    os.set("getenv", lua.create_function(os_getenv)?)?;
     Ok(())
 }
 
@@ -136,6 +138,31 @@ fn os_execute(lua: &Lua, command: Option<String>) -> LuaResult<i64> {
         .status()
         .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")))?;
     Ok(status.code().unwrap_or(-1) as i64)
+}
+
+/// Drop-in replacement for Lua's `os.getenv` that reads from the same
+/// mise-constructed environment as `os.execute` when one is available. This
+/// keeps in-process env reads consistent with shell-outs from env module hooks
+/// when the user's shell has not run `mise activate`. (#10711)
+fn os_getenv(lua: &Lua, key: String) -> LuaResult<Option<String>> {
+    if let Ok(mise_env) = lua.named_registry_value::<Table>("mise_env") {
+        return lookup_env_table(&mise_env, &key);
+    }
+    Ok(std::env::var(key).ok())
+}
+
+fn lookup_env_table(env: &Table, key: &str) -> LuaResult<Option<String>> {
+    let exact = env.get::<Option<String>>(key)?;
+    if exact.is_some() || !cfg!(windows) {
+        return Ok(exact);
+    }
+    for pair in env.pairs::<String, String>() {
+        let (env_key, env_value) = pair?;
+        if env_key.eq_ignore_ascii_case(key) {
+            return Ok(Some(env_value));
+        }
+    }
+    Ok(None)
 }
 
 fn cmd_shell(lua: &Lua) -> LuaResult<Vec<String>> {
@@ -256,6 +283,23 @@ mod tests {
             assert(ok == 0, "mise_env not applied to os.execute: " .. tostring(ok))
             local bad = os.execute('[ "$MISE_OS_EXEC_MARKER" = no ]')
             assert(bad ~= 0, "expected non-zero exit on false test")
+        "#,
+        )
+        .exec()
+        .unwrap();
+    }
+
+    #[test]
+    fn test_os_getenv_applies_mise_env() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let env = lua.create_table().unwrap();
+        env.set("MISE_OS_GETENV_MARKER", "yes").unwrap();
+        lua.set_named_registry_value("mise_env", env).unwrap();
+        lua.load(
+            r#"
+            assert(os.getenv("MISE_OS_GETENV_MARKER") == "yes")
+            assert(os.getenv("MISE_OS_GETENV_MISSING") == nil)
         "#,
         )
         .exec()
