@@ -2467,18 +2467,7 @@ pub fn get_locked_version(
         let mut matching: Vec<_> = tools
             .iter()
             .filter(|v| {
-                let norm_prefix = prefix
-                    .strip_prefix('v')
-                    .or(prefix.strip_prefix('V'))
-                    .unwrap_or(prefix);
-                let norm_version = v
-                    .version
-                    .strip_prefix('v')
-                    .or(v.version.strip_prefix('V'))
-                    .unwrap_or(&v.version);
-                let version_matches = prefix == "latest" || norm_version.starts_with(norm_prefix);
-                let options_match = &v.options == request_options;
-                version_matches && options_match
+                lockfile_version_matches(prefix, &v.version) && &v.options == request_options
             })
             .collect();
 
@@ -2497,6 +2486,17 @@ pub fn get_locked_version(
     }
 
     Ok(None)
+}
+
+fn lockfile_version_matches(prefix: &str, version: &str) -> bool {
+    prefix == "latest" || strip_leading_v(version).starts_with(strip_leading_v(prefix))
+}
+
+fn strip_leading_v(version: &str) -> &str {
+    version
+        .strip_prefix('v')
+        .or_else(|| version.strip_prefix('V'))
+        .unwrap_or(version)
 }
 
 /// Get the backend for a tool from the lockfile, ignoring options.
@@ -3060,6 +3060,15 @@ options = { exe = "rg" }
         assert_eq!(lockfile.tools["ripgrep"].len(), 2);
         assert_eq!(lockfile.tools["ripgrep"][0].options.len(), 2);
         assert_eq!(lockfile.tools["ripgrep"][1].options.len(), 1);
+    }
+
+    #[test]
+    fn test_lockfile_version_matches_normalizes_v_prefix() {
+        assert!(lockfile_version_matches("latest", "not-a-semver"));
+        assert!(lockfile_version_matches("1.2", "v1.2.3"));
+        assert!(lockfile_version_matches("v1.2", "1.2.3"));
+        assert!(lockfile_version_matches("V1.2", "v1.2.3"));
+        assert!(!lockfile_version_matches("1.3", "v1.2.3"));
     }
 
     #[test]
