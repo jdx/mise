@@ -537,15 +537,46 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
 }
 
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
+    let script = std::fs::read_to_string(file)?;
+    let raw = extract_usage_from_comments(&script);
     let err = match usage::Spec::parse_script(file) {
-        Ok(spec) => return Ok(spec),
-        Err(err) => err,
+        Ok(spec) => {
+            if !has_parseable_usage_content(&spec) && !raw.trim().is_empty() {
+                None
+            } else {
+                return Ok(spec);
+            }
+        }
+        Err(err) => Some(err),
     };
 
-    let raw = extract_usage_from_comments(&std::fs::read_to_string(file)?);
     let Some(raw) = hoist_root_usage_mounts(&raw) else {
-        return Err(err);
+        return match err {
+            Some(err) => Err(err),
+            None => parse_task_usage_raw(file, &raw),
+        };
     };
+    parse_task_usage_raw(file, &raw)
+}
+
+fn has_parseable_usage_content(spec: &usage::Spec) -> bool {
+    !spec.cmd.args.is_empty()
+        || !spec.cmd.flags.is_empty()
+        || !spec.cmd.mounts.is_empty()
+        || !spec.cmd.subcommands.is_empty()
+        || !spec.complete.is_empty()
+        || !spec.examples.is_empty()
+        || spec.about.is_some()
+        || spec.about_long.is_some()
+        || spec.about_md.is_some()
+        || spec.before_help.is_some()
+        || spec.before_help_long.is_some()
+        || spec.after_help.is_some()
+        || spec.after_help_long.is_some()
+        || spec.disable_help.is_some()
+}
+
+fn parse_task_usage_raw(file: &Path, raw: &str) -> usage::Result<usage::Spec> {
     let mut spec: usage::Spec = raw.parse()?;
     if spec.bin.is_empty() {
         if let Some(name) = file.file_name().and_then(|n| n.to_str()) {
@@ -562,15 +593,26 @@ fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
 }
 
 fn extract_usage_from_comments(full: &str) -> String {
-    let usage_regex = regex!(r"^(?:#|//|::)(?:USAGE| ?\[USAGE\])(.*)$");
+    let usage_regex = regex!(r"^(?:#|//|::)(?:(USAGE|MISE)| ?\[(USAGE|MISE)\])(.*)$");
     let blank_comment_regex = regex!(r"^(?:#|//|::)\s*$");
+    let mise_header_regex = regex!(r"^[a-z0-9_.-]+\s*=");
     let mut usage = vec![];
     let mut found = false;
     for line in full.lines() {
         if let Some(captures) = usage_regex.captures(line) {
-            found = true;
-            let content = captures.get(1).map_or("", |m| m.as_str());
+            let marker = captures
+                .get(1)
+                .or_else(|| captures.get(2))
+                .map_or("", |m| m.as_str());
+            let content = captures.get(3).map_or("", |m| m.as_str());
+            if marker == "MISE" && mise_header_regex.is_match(content.trim()) {
+                if found {
+                    break;
+                }
+                continue;
+            }
             usage.push(content.trim());
+            found = true;
         } else if found {
             if blank_comment_regex.is_match(line) {
                 continue;
@@ -585,28 +627,70 @@ fn hoist_root_usage_mounts(raw: &str) -> Option<String> {
     let mut output = vec![];
     let mut mounts = vec![];
     let mut depth = 0_i32;
-    for line in raw.lines() {
+    let lines = raw.lines().collect::<Vec<_>>();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
         let trimmed = line.trim_start();
         if depth == 0 && is_mount_node(trimmed) {
-            mounts.push(normalize_root_mount_node(trimmed));
+            let (mount, next) = collect_mount_node(&lines, i);
+            mounts.push(mount);
+            i = next;
+            continue;
         } else {
             output.push(line.to_string());
         }
-        for ch in line.chars() {
-            match ch {
-                '{' => depth += 1,
-                '}' => depth = (depth - 1).max(0),
-                _ => {}
-            }
-        }
+        depth = (depth + structural_brace_delta(line)).max(0);
+        i += 1;
     }
     if mounts.is_empty() {
         return None;
     }
     output.push("cmd \"__mise_task_root_mounts\" {".to_string());
-    output.extend(mounts.into_iter().map(|mount| format!("    {mount}")));
+    for mount in mounts {
+        output.extend(mount.lines().map(|line| format!("    {line}")));
+    }
     output.push("}".to_string());
     Some(output.join("\n"))
+}
+
+fn collect_mount_node(lines: &[&str], start: usize) -> (String, usize) {
+    let mut node = vec![normalize_root_mount_node(lines[start].trim_start())];
+    let mut depth = structural_brace_delta(lines[start]).max(0);
+    let mut next = start + 1;
+    while depth > 0 && next < lines.len() {
+        node.push(lines[next].trim_start().to_string());
+        depth = (depth + structural_brace_delta(lines[next])).max(0);
+        next += 1;
+    }
+    (node.join("\n"), next)
+}
+
+fn structural_brace_delta(line: &str) -> i32 {
+    let mut delta = 0;
+    let mut chars = line.chars().peekable();
+    let mut in_string = false;
+    let mut escaped = false;
+    while let Some(ch) = chars.next() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '/' if chars.peek() == Some(&'/') => break,
+            '{' => delta += 1,
+            '}' => delta -= 1,
+            _ => {}
+        }
+    }
+    delta
 }
 
 fn is_mount_node(line: &str) -> bool {
@@ -2509,6 +2593,87 @@ exec shapeme "$@"
         assert_eq!(spec.cmd.mounts.len(), 1);
         assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
         assert!(!spec.cmd.subcommands.contains_key("__mise_task_root_mounts"));
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_hoists_mise_root_mount() {
+        use std::io::Write;
+
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(
+            r#"#!/usr/bin/env bash
+#MISE description="Run the mounted CLI"
+#MISE mount "shapeme --usage-spec"
+exec shapeme "$@"
+"#
+            .as_bytes(),
+        )
+        .unwrap();
+
+        let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+
+        assert_eq!(spec.cmd.mounts.len(), 1);
+        assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_hoists_root_mount_block() {
+        use std::io::Write;
+
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(
+            r#"#!/usr/bin/env bash
+#USAGE flag "--template <template>" help="Use {name} template"
+#USAGE mount {
+#USAGE   run "first --usage-spec"
+#USAGE }
+#USAGE mount "second --usage-spec"
+exec shapeme "$@"
+"#
+            .as_bytes(),
+        )
+        .unwrap();
+
+        let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+
+        assert_eq!(spec.cmd.flags.len(), 1);
+        assert_eq!(spec.cmd.mounts.len(), 2);
+        assert_eq!(spec.cmd.mounts[0].run, "first --usage-spec");
+        assert_eq!(spec.cmd.mounts[1].run, "second --usage-spec");
+    }
+
+    #[test]
+    fn test_task_usage_comment_extraction_matches_usage_lib() {
+        use std::io::Write;
+
+        let script = r#"#!/usr/bin/env bash
+#USAGE flag "--verbose" help="Show extra output"
+#USAGE arg "<file>" help="Input file"
+exec tool "$@"
+"#;
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(script.as_bytes()).unwrap();
+
+        let parsed_by_usage_lib = usage::Spec::parse_script(tmp.path()).unwrap();
+        let raw = super::extract_usage_from_comments(script);
+        let parsed_by_fallback: usage::Spec = raw.parse().unwrap();
+
+        assert_eq!(
+            parsed_by_usage_lib.cmd.flags.len(),
+            parsed_by_fallback.cmd.flags.len()
+        );
+        assert_eq!(
+            parsed_by_usage_lib.cmd.args.len(),
+            parsed_by_fallback.cmd.args.len()
+        );
+        assert_eq!(
+            parsed_by_usage_lib.cmd.flags[0].usage(),
+            parsed_by_fallback.cmd.flags[0].usage()
+        );
+        assert_eq!(
+            parsed_by_usage_lib.cmd.args[0].usage,
+            parsed_by_fallback.cmd.args[0].usage
+        );
     }
 
     #[test]

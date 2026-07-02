@@ -61,6 +61,16 @@ chmod +x mise-tasks/mounted-task
 assert_contains "mise tasks ls --usage" 'cmd mounted-task'
 assert_contains "mise tasks ls --usage" 'mount run="mounted --usage-spec"'
 
+cat <<'EOF' >mise-tasks/mise-mounted-task
+#!/usr/bin/env bash
+#MISE mount "mise-mounted --usage-spec"
+exec mise-mounted "$@"
+EOF
+chmod +x mise-tasks/mise-mounted-task
+
+assert_contains "mise tasks ls --usage" 'cmd mise-mounted-task'
+assert_contains "mise tasks ls --usage" 'mount run="mise-mounted --usage-spec"'
+
 # Test 4: Hidden tasks should not appear
 cat <<EOF >mise.toml
 [tasks.visible]
