@@ -3021,7 +3021,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--monorepo",
           description:
-            "Show outdated tools across every [monorepo].config_roots config root",
+            "Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet.",
           isRepeatable: false,
         },
         {
@@ -3385,7 +3385,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--monorepo",
           description:
-            "Prune tools across every [monorepo].config_roots config root",
+            "Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.",
           isRepeatable: false,
         },
         {
@@ -5078,7 +5078,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--monorepo",
           description:
-            "Upgrade tools across every [monorepo].config_roots config root",
+            "Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.",
           isRepeatable: false,
         },
         {

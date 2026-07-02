@@ -94,7 +94,7 @@ pub struct Upgrade {
     #[clap(long, alias = "before", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
-    /// Upgrade tools across every [monorepo].config_roots config root
+    /// Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.
     #[clap(long, verbatim_doc_comment)]
     monorepo: bool,
 

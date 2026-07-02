@@ -46,7 +46,7 @@ will skip tools defined in the global config (~/.config/mise/config.toml).
 
 ### `--monorepo`
 
-Show outdated tools across every [monorepo].config_roots config root
+Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet.
 
 ### `--no-header`
 

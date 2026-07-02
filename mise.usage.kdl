@@ -2395,7 +2395,7 @@ This will only show tools that are defined in project-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
 """#
     }
-    flag --monorepo help="Show outdated tools across every [monorepo].config_roots config root"
+    flag --monorepo help="Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet."
     flag --no-header help="Don't show table header"
     arg "[TOOL@VERSION]…" help=#"""
 Tool(s) to show outdated versions for
@@ -2740,7 +2740,7 @@ Like --dry-run but exits with code 1 if there are tools to prune
 This is useful for scripts to check if tools need to be pruned.
 """#
     }
-    flag --monorepo help="Prune tools across every [monorepo].config_roots config root"
+    flag --monorepo help="Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet."
     flag --tools help="Prune only unused versions of tools"
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
 }
@@ -4182,7 +4182,7 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 """#
         arg <MINIMUM_RELEASE_AGE>
     }
-    flag --monorepo help="Upgrade tools across every [monorepo].config_roots config root"
+    flag --monorepo help="Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet."
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     arg "[INSTALLED_TOOL@VERSION]…" help=#"""
 Tool(s) to upgrade

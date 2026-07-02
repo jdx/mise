@@ -413,9 +413,12 @@ impl Install {
                                 requests.push(tvr.clone());
                             }
                         }
-                        // in this case the user specified a tool which is not in config
-                        // so we default to @latest with no options
+                        // In normal install mode, a bare tool absent from config defaults to
+                        // @latest. In monorepo mode, bare tools are filters over the union.
                         None => {
+                            if self.monorepo {
+                                continue;
+                            }
                             let tvr = ToolRequest::Version {
                                 backend: ta.ba.clone(),
                                 version: "latest".into(),

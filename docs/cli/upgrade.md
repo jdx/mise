@@ -80,7 +80,7 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 
 ### `--monorepo`
 
-Upgrade tools across every [monorepo].config_roots config root
+Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.
 
 ### `--raw`
 

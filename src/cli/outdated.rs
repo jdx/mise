@@ -48,7 +48,7 @@ pub struct Outdated {
     #[clap(long, verbatim_doc_comment)]
     pub local: bool,
 
-    /// Show outdated tools across every [monorepo].config_roots config root
+    /// Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet.
     #[clap(long, verbatim_doc_comment)]
     pub monorepo: bool,
 

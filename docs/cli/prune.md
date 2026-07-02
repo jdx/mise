@@ -37,7 +37,7 @@ This is useful for scripts to check if tools need to be pruned.
 
 ### `--monorepo`
 
-Prune tools across every [monorepo].config_roots config root
+Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
 
 ### `--tools`
 

@@ -43,7 +43,7 @@ pub struct Prune {
     #[clap(long, verbatim_doc_comment)]
     pub dry_run_code: bool,
 
-    /// Prune tools across every [monorepo].config_roots config root
+    /// Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
     #[clap(long, verbatim_doc_comment)]
     pub monorepo: bool,
 

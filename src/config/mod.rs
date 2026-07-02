@@ -430,6 +430,13 @@ impl Config {
     }
 
     pub fn monorepo_config_root_dirs(&self) -> Result<Vec<PathBuf>> {
+        self.monorepo_config_root_dirs_with_filenames(&DEFAULT_CONFIG_FILENAMES)
+    }
+
+    fn monorepo_config_root_dirs_with_filenames(
+        &self,
+        filenames: &[String],
+    ) -> Result<Vec<PathBuf>> {
         let monorepo_config = find_monorepo_config(&self.config_files)
             .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
         let monorepo_root = monorepo_config
@@ -442,7 +449,7 @@ impl Config {
         if patterns.is_empty() {
             bail!("[monorepo].config_roots is required for monorepo operations");
         }
-        let roots = expand_config_roots(&monorepo_root, patterns, None)?;
+        let roots = expand_config_roots_with_filenames(&monorepo_root, patterns, None, filenames)?;
         if roots.is_empty() {
             bail!("[monorepo].config_roots did not match any config roots");
         }
@@ -458,8 +465,13 @@ impl Config {
     }
 
     pub(crate) async fn monorepo_union(self: &Arc<Self>) -> Result<MonorepoUnion> {
-        let roots = self.monorepo_config_root_dirs()?;
         let idiomatic_filenames = load_idiomatic_filenames().await;
+        let config_filenames = idiomatic_filenames
+            .keys()
+            .chain(DEFAULT_CONFIG_FILENAMES.iter())
+            .cloned()
+            .collect_vec();
+        let roots = self.monorepo_config_root_dirs_with_filenames(&config_filenames)?;
         let mut config_files = self.config_files.clone();
         let mut base_config_files = self.config_files.clone();
         base_config_files.retain(|path, _| {
@@ -468,7 +480,7 @@ impl Config {
 
         let mut union = ToolRequestSet::new();
         for root in roots {
-            let root_paths = config_paths_in_dir(&root);
+            let root_paths = config_paths_in_dir_with_filenames(&root, &config_filenames);
             let mut root_config_files =
                 load_config_files_from_paths(&root_paths, &idiomatic_filenames).await?;
             for (path, cf) in root_config_files.clone() {
@@ -480,6 +492,7 @@ impl Config {
 
             let root_trs = ToolRequestSetBuilder::new()
                 .with_config_files(root_config_files)
+                .without_runtime_args()
                 .build(self)
                 .await?;
             union.unknown_tools.extend(root_trs.unknown_tools.clone());
@@ -1214,7 +1227,11 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
 }
 
 pub(crate) fn config_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
-    let config_paths: Vec<PathBuf> = DEFAULT_CONFIG_FILENAMES
+    config_paths_in_dir_with_filenames(dir, &DEFAULT_CONFIG_FILENAMES)
+}
+
+fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> Vec<PathBuf> {
+    let config_paths: Vec<PathBuf> = filenames
         .iter()
         .rev()
         .flat_map(|f| {
@@ -2272,6 +2289,15 @@ fn expand_config_roots(
     patterns: &[String],
     ctx: Option<&crate::task::TaskLoadContext>,
 ) -> Result<Vec<PathBuf>> {
+    expand_config_roots_with_filenames(root, patterns, ctx, &DEFAULT_CONFIG_FILENAMES)
+}
+
+fn expand_config_roots_with_filenames(
+    root: &Path,
+    patterns: &[String],
+    ctx: Option<&crate::task::TaskLoadContext>,
+    filenames: &[String],
+) -> Result<Vec<PathBuf>> {
     let mut subdirs = Vec::new();
 
     for pattern in patterns {
@@ -2309,7 +2335,8 @@ fn expand_config_roots(
                                     );
                                     continue;
                                 }
-                                if path.is_dir() && has_mise_config(&path) {
+                                if path.is_dir() && has_mise_config_with_filenames(&path, filenames)
+                                {
                                     subdirs.push(path);
                                 }
                             }
@@ -2338,7 +2365,7 @@ fn expand_config_roots(
                 continue;
             }
             if path.is_dir() {
-                if has_mise_config(&path) {
+                if has_mise_config_with_filenames(&path, filenames) {
                     subdirs.push(path);
                 } else {
                     warn!(
@@ -2367,11 +2394,8 @@ fn expand_config_roots(
     Ok(subdirs)
 }
 
-/// Check if a directory contains a mise config file or file tasks directory
-fn has_mise_config(dir: &Path) -> bool {
-    DEFAULT_CONFIG_FILENAMES
-        .iter()
-        .any(|f| dir.join(f).exists())
+fn has_mise_config_with_filenames(dir: &Path, filenames: &[String]) -> bool {
+    filenames.iter().any(|f| dir.join(f).exists())
         || dir.join(".mise/tasks").is_dir()
         || dir.join("mise-tasks").is_dir()
 }

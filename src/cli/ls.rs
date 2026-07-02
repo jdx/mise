@@ -72,7 +72,12 @@ pub struct Ls {
     ///
     /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
     /// [monorepo].config_roots in the monorepo root config.
-    #[clap(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
+    #[clap(
+        long,
+        env = "MISE_MONOREPO",
+        verbatim_doc_comment,
+        conflicts_with_all = &["all_sources", "prunable"]
+    )]
     monorepo: bool,
 
     /// Don't display headers

@@ -139,6 +139,7 @@ pub struct ToolRequestSetBuilder {
     /// tools which will be enabled
     enable_tools: Option<BTreeSet<BackendArg>>,
     config_files: Option<ConfigMap>,
+    skip_runtime_args: bool,
 }
 
 impl ToolRequestSetBuilder {
@@ -170,11 +171,18 @@ impl ToolRequestSetBuilder {
         self
     }
 
+    pub fn without_runtime_args(mut self) -> Self {
+        self.skip_runtime_args = true;
+        self
+    }
+
     pub async fn build(&self, config: &Arc<Config>) -> eyre::Result<ToolRequestSet> {
         let mut trs = ToolRequestSet::default();
         trs = self.load_config_files(config, trs).await?;
         trs = self.load_runtime_env(trs)?;
-        trs = self.load_runtime_args(trs)?;
+        if !self.skip_runtime_args {
+            trs = self.load_runtime_args(trs)?;
+        }
 
         for ba in trs.tools.keys().cloned().collect_vec() {
             if self.is_disabled(&ba) {
