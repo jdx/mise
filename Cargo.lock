@@ -1532,7 +1532,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum 0.28.0",
- "tera",
+ "tera 1.20.1",
  "thiserror 2.0.18",
  "unicode-width 0.2.2",
 ]
@@ -5412,7 +5412,7 @@ dependencies = [
  "taplo",
  "tar",
  "tempfile",
- "tera",
+ "tera 2.0.0",
  "terminal_size",
  "test-log",
  "thiserror 2.0.18",
@@ -8811,6 +8811,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tera"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38ea62bd58771b570262e11ffa274fa9eda9986bd886e6e3a1f7f42afef8024c"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "termcolor"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9575,7 +9584,7 @@ dependencies = [
  "serde",
  "shell-words",
  "strum 0.28.0",
- "tera",
+ "tera 1.20.1",
  "thiserror 2.0.18",
  "versions",
  "xx",
