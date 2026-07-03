@@ -23,7 +23,7 @@ use crate::{backend::Backend, forgejo, github, gitlab};
 use async_trait::async_trait;
 use eyre::Result;
 use regex::Regex;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 use xx::regex;
@@ -2257,11 +2257,11 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
     // Register target-aware os() and arch() functions that use the target platform
     // instead of the compile-time platform
     let make_remapping_fn = |value: String| {
-        move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
-            if let Some(s) = args.get(value.as_str()).and_then(|v| v.as_str()) {
-                Ok(tera::Value::String(s.to_string()))
+        move |args: tera::Kwargs, _: &tera::State| -> tera::TeraResult<tera::Value> {
+            if let Some(s) = args.get::<&str>(&value)? {
+                Ok(tera::Value::from(s))
             } else {
-                Ok(tera::Value::String(value.clone()))
+                Ok(tera::Value::from(value.clone()))
             }
         }
     };
