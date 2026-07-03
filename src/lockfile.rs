@@ -1848,6 +1848,12 @@ fn tool_version_needs_auto_lock(
         .iter()
         .find(|tool| tool.version == expected.version && tool.options == expected.options)
     else {
+        debug!(
+            "auto-lock candidate {}@{} skipped in lockfile because no matching entry with options {:?} was found",
+            tv.short(),
+            tv.version,
+            expected.options
+        );
         return Ok(false);
     };
     let backend = tv.request.backend()?;
@@ -1960,6 +1966,8 @@ pub async fn auto_lock_new_versions(
 
     let empty_keys: BTreeSet<String> = BTreeSet::new();
     let mut candidate_versions_by_lockfile: HashMap<PathBuf, Vec<ToolVersion>> = HashMap::new();
+    let mut seen_candidates: HashMap<PathBuf, HashSet<(String, String, String, ToolSource)>> =
+        HashMap::new();
     for tv in ts
         .versions
         .values()
@@ -1974,16 +1982,21 @@ pub async fn auto_lock_new_versions(
         }
         if let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, tv.request.source())
         {
-            let versions = candidate_versions_by_lockfile
-                .entry(lockfile_path)
-                .or_default();
-            if !versions.iter().any(|existing| {
-                existing.ba() == tv.ba()
-                    && existing.version == tv.version
-                    && existing.request.version() == tv.request.version()
-                    && existing.request.source() == tv.request.source()
-            }) {
-                versions.push(tv.clone());
+            let candidate_key = (
+                tv.ba().short.clone(),
+                tv.version.clone(),
+                tv.request.version().to_string(),
+                tv.request.source().clone(),
+            );
+            if seen_candidates
+                .entry(lockfile_path.clone())
+                .or_default()
+                .insert(candidate_key)
+            {
+                candidate_versions_by_lockfile
+                    .entry(lockfile_path)
+                    .or_default()
+                    .push(tv.clone());
             }
         }
     }
@@ -2867,7 +2880,12 @@ mod tests {
         let tool_name = backend
             .rsplit_once('/')
             .map(|(_, name)| name)
-            .unwrap_or_else(|| backend.rsplit_once(':').map(|(_, name)| name).unwrap_or(backend))
+            .unwrap_or_else(|| {
+                backend
+                    .rsplit_once(':')
+                    .map(|(_, name)| name)
+                    .unwrap_or(backend)
+            })
             .to_string();
         let short = tool_name.clone();
         let request = crate::toolset::ToolRequest::Version {
