@@ -221,7 +221,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -232,7 +232,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4413,7 +4413,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -7309,9 +7309,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "1.7.0"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0810a9f717d9828f475fe1f629f4c305c8464b7f496c3a854b58d29e65f4058e"
+checksum = "1d1f571c72940a19d9532fe52dbea8bc9912bf1d766c2970bb824056b86f3f59"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -7331,9 +7331,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp-macros"
-version = "1.7.0"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6aefac48c364756e97f04c0401ba3231e8607882c7c1d92da0437dc16307904d"
+checksum = "1aad0035b69380782d78ea95b508327e6deaa2235909053e596eea8f27b5e1d5"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -8198,7 +8198,7 @@ version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
- "errno 0.2.8",
+ "errno 0.3.14",
  "libc",
 ]
 
@@ -8491,7 +8491,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
