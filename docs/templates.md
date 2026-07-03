@@ -33,7 +33,7 @@ You will find more examples in the [cookbook](./mise-cookbook/index.md).
 
 ## Template Rendering
 
-Mise uses [tera](https://keats.github.io/tera/docs/) to provide the template feature.
+Mise uses [tera](https://keats.github.io/tera/) to provide the template feature.
 In the template, there are 3 kinds of delimiters:
 
 - <span v-pre>`{{`</span> and <span v-pre>`}}`</span> for expressions
@@ -54,7 +54,7 @@ Additionally, use `raw` block to skip rendering tera delimiters:
 
 This will become <span v-pre>`Hello {{name}}`</span>.
 
-Tera supports [literals](https://keats.github.io/tera/docs/#literals), including:
+Tera supports [literals](https://keats.github.io/tera/#literals), including:
 
 - booleans: `true` (or `True`) and `false` (or `False`)
 - integers
@@ -69,7 +69,7 @@ For complex attributes, use:
 - dot `.`, e.g. <span v-pre>`{{ product.name }}`</span>
 - square brackets `[]`, e.g. <span v-pre>`{{ product["name"] }}`</span>
 
-Tera also supports powerful [expressions](https://keats.github.io/tera/docs/#expressions):
+Tera also supports powerful [expressions](https://keats.github.io/tera/#expressions):
 
 - mathematical expressions
   - `+`
@@ -92,11 +92,11 @@ Tera also supports powerful [expressions](https://keats.github.io/tera/docs/#exp
 - in checking, e.g. <span v-pre>`{{ some_var in [1, 2, 3] }}`</span>
 
 Tera also supports [control structures such as <span v-pre>`if`</span> and
-<span v-pre>`for`</span>](https://keats.github.io/tera/docs/#control-structures).
+<span v-pre>`for`</span>](https://keats.github.io/tera/#control-structures).
 
 ### Tera Filters
 
-You can modify variables using [filters](https://keats.github.io/tera/docs/#filters).
+You can modify variables using [filters](https://keats.github.io/tera/#filters).
 You can filter a variable by a pipe symbol (`|`) and may have named arguments
 in parentheses. You can also chain multiple filters.
 e.g. <span v-pre>`{{ "Doctor Who" | lower | replace(from="doctor", to="Dr.") }}`</span>
@@ -104,12 +104,12 @@ will output `Dr. who`.
 
 ### Tera Functions
 
-[Functions](https://keats.github.io/tera/docs/#functions) provide
+[Functions](https://keats.github.io/tera/#functions) provide
 additional features to templates.
 
 ### Tera Tests
 
-You can also uses [tests](https://keats.github.io/tera/docs/#tests) to examine variables.
+You can also uses [tests](https://keats.github.io/tera/#tests) to examine variables.
 
 ```
 {% if my_number is not odd %}
@@ -123,7 +123,7 @@ Mise provides additional variables, functions, filters, and tests on top of tera
 
 ### Variables
 
-Mise exposes several [variables](https://keats.github.io/tera/docs/#variables).
+Mise exposes several [variables](https://keats.github.io/tera/#variables).
 These variables offer key information about the current environment:
 
 - `env: HashMap<String, String>` – Accesses current environment variables as
@@ -181,7 +181,7 @@ echo "tag count={{ usage.tags | length }}"
 
 #### Tera Built-In Functions
 
-Tera offers many [built-in functions](https://keats.github.io/tera/docs/#built-in-functions).
+Tera offers many [built-in functions](https://keats.github.io/tera/#built-in-functions).
 `[]` indicates an optional function argument.
 Some functions:
 
@@ -207,7 +207,7 @@ Some functions:
   - `default: String`: a default value in case the environment variable is not found.
     Throws when can't find the environment variable and `default` is not set.
 
-Tera offers more functions. Read more on [tera documentation](https://keats.github.io/tera/docs/#functions).
+Tera offers more functions. Read more on [tera documentation](https://keats.github.io/tera/#functions).
 
 #### Additional Mise Functions
 
@@ -281,7 +281,7 @@ The `exec` function supports the following options:
 
 ### Filters
 
-Tera offers many [built-in filters](https://keats.github.io/tera/docs/#built-in-filters).
+Tera offers many [built-in filters](https://keats.github.io/tera/#built-in-filters).
 `[]` indicates an optional filter argument.
 Some filters:
 
@@ -322,7 +322,7 @@ Some filters:
 - `str | default(value) -> String` – Returns the default value
   if the variable is not defined or is empty.
 
-Tera offers more filters. Read more on [tera documentation](https://keats.github.io/tera/docs/#built-in-filters).
+Tera offers more filters. Read more on [tera documentation](https://keats.github.io/tera/#built-in-filters).
 
 #### Hash
 
@@ -378,7 +378,7 @@ PROJECT_CONFIG = "{{ [config_root] | concat(with='bar.txt') | join_path }}"
 
 ### Tests
 
-Tera offers many [built-in tests](https://keats.github.io/tera/docs/#built-in-tests).
+Tera offers many [built-in tests](https://keats.github.io/tera/#built-in-tests).
 Some tests:
 
 - `defined` - Returns `true` if the given variable is defined.
@@ -392,7 +392,7 @@ Some tests:
 - `matching` - Returns `true` if the given variable is a string and matches the regex
   in the argument.
 
-Tera offers more tests. Read more on [tera documentation](https://keats.github.io/tera/docs/#built-in-tests).
+Tera offers more tests. Read more on [tera documentation](https://keats.github.io/tera/#built-in-tests).
 
 Mise offers additional tests:
 
