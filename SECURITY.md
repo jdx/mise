@@ -20,9 +20,9 @@ the project. I only select dependencies with broad usage across the Rust communi
 I'm open to PRs or suggestions on reducing dependency count even at the cost of functionality because it will make
 mise more secure.
 
-## mise.en.dev
+## mise.jdx.dev
 
-mise.en.dev is the asset host for mise. It's used to host precompiled mise CLI binaries, and hosts a "[VERSION](https://mise.en.dev/VERSION)"
+mise.jdx.dev is the asset host for mise. It's used to host precompiled mise CLI binaries, and hosts a "[VERSION](https://mise.jdx.dev/VERSION)"
 which mise uses to occasionally check for a new version being released. Everything hosted there uses a single
 vendor to reduce surface area.
 

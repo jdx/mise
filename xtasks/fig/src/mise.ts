@@ -4055,7 +4055,7 @@ const completionSpec: Fig.Spec = {
     {
       name: "sponsors",
       description:
-        "Show the companies sponsoring mise and the en.dev project family",
+        "Show the companies sponsoring mise and the jdx.dev open source tools",
     },
     {
       name: "sync",

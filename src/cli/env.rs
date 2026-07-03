@@ -6,6 +6,7 @@ use crate::config::Config;
 use crate::env_diff::EnvMap;
 use crate::shell::{ShellType, get_shell};
 use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
+use crate::wildcard::wildcard_match;
 use indexmap::IndexSet;
 
 /// Exports env vars to activate mise a single time
@@ -231,24 +232,9 @@ impl Env {
     }
 
     fn should_include_key(&self, key: &str, redacted_keys: &IndexSet<String>) -> bool {
-        // Check if key matches any redaction pattern (supporting wildcards)
-        redacted_keys.iter().any(|pattern| {
-            if pattern.contains('*') {
-                // Handle wildcard patterns
-                if pattern == "*" {
-                    true
-                } else if let Some(prefix) = pattern.strip_suffix('*') {
-                    key.starts_with(prefix)
-                } else if let Some(suffix) = pattern.strip_prefix('*') {
-                    key.ends_with(suffix)
-                } else {
-                    // Pattern has * in the middle, not supported yet
-                    false
-                }
-            } else {
-                key == pattern
-            }
-        })
+        redacted_keys
+            .iter()
+            .any(|pattern| wildcard_match(key, pattern))
     }
 }
 

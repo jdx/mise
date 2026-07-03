@@ -242,6 +242,7 @@ export default withMermaid(
             { text: "Glossary", link: "/glossary" },
             { text: "FAQs", link: "/faq" },
             { text: "Troubleshooting", link: "/troubleshooting" },
+            { text: "Errors", link: "/errors" },
             { text: "Tips & Tricks", link: "/tips-and-tricks" },
             {
               text: "Cookbook",

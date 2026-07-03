@@ -2407,11 +2407,11 @@ cmd patrons help="Show the individuals supporting mise as Patron-tier members" {
     long_help #"""
 Show the individuals supporting mise as Patron-tier members
 
-Lists the individuals on the Patron tier from <https://en.dev/patrons.json>.
+Lists the individuals on the Patron tier from <https://jdx.dev/patrons.json>.
 The list refreshes daily; supporting terminals will render each patron's
 name as a clickable link via OSC 8 hyperlinks.
 
-To appear here, become a patron at <https://en.dev>.
+To appear here, become a patron at <https://jdx.dev/sponsors.html>.
 """#
     after_long_help #"""
 Examples:
@@ -3350,7 +3350,7 @@ Examples:
         arg <shell_alias> help="The alias to remove"
     }
 }
-cmd sponsors help="Show the companies sponsoring mise and the en.dev project family"
+cmd sponsors help="Show the companies sponsoring mise and the jdx.dev open source tools"
 cmd sync subcommand_required=#true help="Synchronize tools from other version managers with mise" {
     cmd node help="Symlinks all tool versions from an external tool into mise" {
         long_help #"""
@@ -4342,7 +4342,7 @@ This command uses the `watchexec` tool to watch for changes to files and rerun t
 It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.
 
 For more advanced process management (daemon management, auto-restart, readiness checks,
-cron scheduling), see mise's sister project: https://pitchfork.en.dev
+cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 """#
     after_long_help #"""
 Examples:

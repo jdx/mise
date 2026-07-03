@@ -9,7 +9,7 @@ The code for this is inside of the mise repository at [`./src/backend/npm.rs`](h
 
 This relies on having `npm` installed for resolving package versions.
 With the default `npm.package_manager = "auto"` setting, mise uses
-[`aube`](https://aube.en.dev/) for installing npm packages when it is installed,
+[`aube`](https://aube.jdx.dev/) for installing npm packages when it is installed,
 similar to how the pipx backend uses `uv` when available.
 If you use `aube`, `pnpm`, or `bun` as the package manager, that package manager
 must also be installed.
@@ -88,7 +88,7 @@ npm 11.16.0+.
 
 ### `aube`
 
-[`aube`](https://aube.en.dev/package-manager/lifecycle-scripts) follows the pnpm v11 build approval
+[`aube`](https://aube.jdx.dev/package-manager/lifecycle-scripts) follows the pnpm v11 build approval
 model: dependency lifecycle scripts are denied unless explicitly allowlisted. Use `allow_builds` for
 reviewed dependency builds:
 

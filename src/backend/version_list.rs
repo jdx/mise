@@ -51,16 +51,17 @@ pub fn parse_version_list(
 ) -> Result<Vec<String>> {
     let mut versions = Vec::new();
     let trimmed = content.trim();
+    let mut parsed_json_path = false;
 
     // If a JSON path is provided (like ".[].version" or ".versions"), try to use it
-    // but fall back to text parsing if JSON parsing fails
+    // but fall back to text parsing only when the body is not JSON.
     if let Some(json_path) = version_json_path {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed)
-            && let Ok(extracted) = jq::extract(&json, json_path)
-        {
-            versions = extracted;
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            parsed_json_path = true;
+            if let Ok(extracted) = jq::extract(&json, json_path) {
+                versions = extracted;
+            }
         }
-        // If JSON parsing failed or path extraction failed, fall through to text parsing below
     }
     // If a regex is provided, use it to extract versions
     else if let Some(pattern) = version_regex {
@@ -95,7 +96,7 @@ pub fn parse_version_list(
     // When version_regex or version_expr is set, zero matches means the content
     // didn't contain the expected data — don't fall through to line-splitting
     // which would emit garbage (e.g. raw HTML lines as "versions").
-    let explicit_method = version_regex.is_some() || version_expr.is_some();
+    let explicit_method = version_regex.is_some() || version_expr.is_some() || parsed_json_path;
     if versions.is_empty() && !explicit_method {
         for line in trimmed.lines() {
             let line = line.trim();
@@ -329,13 +330,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_json_path_with_wrong_path_falls_back_to_text() {
-        // When version_json_path doesn't match the JSON structure,
-        // it should fall back to text parsing
+    fn test_parse_json_path_with_wrong_path_returns_empty_for_json() {
+        // When version_json_path doesn't match a valid JSON document, it should
+        // return no versions instead of treating the JSON body as a version.
         let content = r#"{"other": "data"}"#;
         let versions = parse_version_list(content, None, Some(".[].version"), None).unwrap();
-        // Falls back to treating JSON as a single line of text
-        assert_eq!(versions, vec![r#"{"other": "data"}"#]);
+        assert!(versions.is_empty());
     }
 
     #[test]

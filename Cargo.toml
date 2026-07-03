@@ -9,7 +9,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.6.15"
+version = "2026.7.0"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -135,7 +135,7 @@ path-absolutize = { version = "3", features = ["unsafe_cache"] }
 petgraph = "0.8"
 phf = "0.13"
 rand = "0.10"
-rattler = { version = "0.45", default-features = false }
+rattler = { version = "0.46", default-features = false }
 rattler_conda_types = { version = "0.47", default-features = false }
 rattler_repodata_gateway = { version = "0.29", default-features = false, features = [
   "gateway",
