@@ -33,7 +33,7 @@ if [[ -f $marker ]]; then
   exit 1
 fi
 
-if echo "$output" | grep -qi "not trusted"; then
+if grep -qi "not trusted" <<<"$output"; then
   echo "PASS: Untrusted task include file was blocked"
 else
   echo "FAIL: Expected trust-related error, got: $output"
@@ -73,7 +73,7 @@ if [[ -f $marker ]]; then
   exit 1
 fi
 
-if echo "$output" | grep -qi "not trusted"; then
+if grep -qi "not trusted" <<<"$output"; then
   echo "PASS: Untrusted monorepo task include file was blocked"
 else
   echo "FAIL: Expected trust-related monorepo error, got: $output"

@@ -123,10 +123,16 @@ fn parse_list_by_colon(value: &str) -> Result<toml_edit::Value> {
 }
 
 fn parse_set_by_comma(value: &str) -> Result<toml_edit::Value> {
+    let value = value.trim();
     if value.is_empty() || value == "[]" {
         return Ok(toml_edit::Array::new().into());
     }
-    let array: toml_edit::Array = value.split(',').map(|s| s.trim().to_string()).collect();
+    let array: toml_edit::Array = value
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
     Ok(dedup_toml_array(&array).into())
 }
 

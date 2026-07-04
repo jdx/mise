@@ -341,6 +341,24 @@ For GitHub Enterprise or self-hosted GitHub instances, specify the API URL. mise
 "github:myorg/mytool" = { version = "latest", api_url = "https://github.mycompany.com/api/v3" }
 ```
 
+### `github_attestations`
+
+By default, mise checks GitHub Artifact Attestations when they are available for a
+GitHub release asset. Set `github_attestations = false` on a single tool to skip
+that check while keeping GitHub attestation verification enabled globally:
+
+```toml
+[tools]
+"github:myorg/mytool" = { version = "latest", github_attestations = false }
+```
+
+Use this as a temporary escape hatch for a specific tool if GitHub's attestation
+service or trusted-root data is causing installs to fail. Other verification
+paths, such as checksums and SLSA provenance, still run when they are configured
+and available. If `mise.lock` already records `github-attestations` provenance
+for the tool, re-run `mise lock` after disabling this option so the lockfile no
+longer requires a verifier that the tool config has turned off.
+
 ### `prerelease`
 
 By default, releases flagged `prerelease: true` on GitHub are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:

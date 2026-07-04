@@ -44,4 +44,16 @@ mise install
 # Should still work with cached URL
 assert_contains "mise x -- hello-world" "hello world"
 
+# Lockfiles created before url_api tracking can have a cached browser URL with
+# no matching API URL. Reinstalling from that lockfile should still use the
+# browser URL instead of treating the missing API URL as a custom API endpoint.
+echo "=== Reinstall from cached URL without url_api ==="
+mise uninstall "github:jdx/mise-test-fixtures@1.0.0"
+grep -v 'url_api = "' mise.lock >mise.lock.tmp
+mv mise.lock.tmp mise.lock
+assert_not_contains "cat mise.lock" 'url_api = "'
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+assert_not_contains "cat mise.lock" 'url_api = "'
+
 echo "Test completed successfully!"

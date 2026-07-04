@@ -69,6 +69,10 @@ impl<'a> GitBackendOptions<'a> {
             .to_string()
     }
 
+    fn github_attestations(&self) -> bool {
+        self.values.bool_with_default("github_attestations", true)
+    }
+
     fn version_prefix(&self) -> Option<&'a str> {
         self.values.str("version_prefix")
     }
@@ -176,6 +180,14 @@ impl<'a> GitBackendOptions<'a> {
 /// don't have to disable `MISE_GITHUB_ATTESTATIONS` globally for GHE tools.
 fn attestations_supported(api_url: &str) -> bool {
     api_url.trim_end_matches('/') == DEFAULT_GITHUB_API_BASE_URL
+}
+
+fn github_attestations_disabled_for_tool_error(tv: &ToolVersion) -> eyre::Report {
+    eyre::eyre!(
+        "Lockfile requires github-attestations provenance for {tv} but \
+         github_attestations is disabled for this tool. Re-run `mise lock` \
+         to refresh the lockfile, or remove github_attestations = false."
+    )
 }
 
 /// Status returned from verification attempts
@@ -663,7 +675,7 @@ impl Backend for UnifiedGitBackend {
                 }
                 Ok(PlatformInfo {
                     url: Some(asset.url),
-                    url_api: Some(asset.url_api),
+                    url_api: (!asset.url_api.is_empty()).then_some(asset.url_api),
                     checksum: asset.digest,
                     provenance,
                     github_attestations: None,
@@ -761,6 +773,7 @@ impl UnifiedGitBackend {
         // Uses the asset digest from the GitHub API to query attestations without downloading
         if settings.github_attestations
             && settings.github.github_attestations
+            && opts.github_attestations()
             && attestations_supported(api_url)
             && let Some(digest) = asset_digest
         {
@@ -879,6 +892,7 @@ impl UnifiedGitBackend {
         // Try GitHub artifact attestations first (highest priority)
         if settings.github_attestations
             && settings.github.github_attestations
+            && opts.github_attestations()
             && attestations_supported(api_url)
         {
             let parts: Vec<&str> = repo.split('/').collect();
@@ -1079,46 +1093,27 @@ impl UnifiedGitBackend {
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
         platform_info.url = Some(asset.url.clone());
-        platform_info.url_api = Some(asset.url_api.clone());
+        platform_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
         if let Some(digest) = &asset.digest {
             debug!("using GitHub API digest for checksum verification");
             platform_info.checksum = Some(digest.clone());
         }
 
-        let url = match asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
-            || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
-            || asset.url_api.starts_with(DEFAULT_FORGEJO_API_BASE_URL)
-        {
-            // check if url is reachable, 404 might indicate a private repo or asset.
-            // This is needed, because private repos and assets cannot be downloaded
-            // via browser url, therefore a fallback to api_url is needed in such cases.
-            // Also check Content-Type - if it's text/html, we got a login page (private repo).
-            true => match HTTP.head(asset.url.clone()).await {
-                Ok(resp) => {
-                    let content_type = resp
-                        .headers()
-                        .get("content-type")
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or("");
-                    if content_type.contains("text/html") {
-                        debug!("Browser URL returned HTML (likely auth page), using API URL");
-                        asset.url_api.clone()
-                    } else {
-                        asset.url.clone()
-                    }
+        let url = if asset.url_api.is_empty() {
+            asset.url.clone()
+        } else {
+            match asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
+                || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
+                || asset.url_api.starts_with(DEFAULT_FORGEJO_API_BASE_URL)
+            {
+                true => github::pick_reachable_asset_url(&asset.url, &asset.url_api).await,
+                false => {
+                    debug!(
+                        "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
+                        asset.url_api
+                    );
+                    asset.url_api.clone()
                 }
-                Err(_) => asset.url_api.clone(),
-            },
-
-            // Custom API URLs usually imply that a custom GitHub/GitLab instance is used.
-            // Often times such instances do not allow browser URL downloads, e.g. due to
-            // upstream company SSOs. Therefore, using the api_url for downloading is the safer approach.
-            false => {
-                debug!(
-                    "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
-                    asset.url_api
-                );
-                asset.url_api.clone()
             }
         };
 
@@ -1756,6 +1751,18 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         platform_key: &str,
     ) -> Result<()> {
+        let raw_opts = tv.request.options();
+        let opts = self.options(&raw_opts);
+        if !opts.github_attestations()
+            && let Some(provenance) = tv
+                .lock_platforms
+                .get(platform_key)
+                .and_then(|pi| pi.provenance.as_ref())
+            && provenance.is_github_attestations()
+        {
+            return Err(github_attestations_disabled_for_tool_error(tv));
+        }
+
         super::ensure_provenance_setting_enabled(tv, platform_key, |provenance| {
             let settings = Settings::get();
             match provenance {
@@ -1828,11 +1835,18 @@ impl UnifiedGitBackend {
                  Re-run `mise lock` to refresh the lockfile, or remove the custom api_url."
             ));
         }
+        if !opts.github_attestations()
+            && let Some(expected) = expected_provenance
+            && expected.is_github_attestations()
+        {
+            return Err(github_attestations_disabled_for_tool_error(tv));
+        }
 
         // Try GitHub artifact attestations first (if enabled globally and for github backend)
         if !skip_attestations
             && settings.github_attestations
             && settings.github.github_attestations
+            && opts.github_attestations()
             && attestations_supported(&api_url)
         {
             match self
@@ -2492,6 +2506,43 @@ mod tests {
                 ("version_prefix".to_string(), "release-".to_string()),
             ])
         );
+    }
+
+    #[test]
+    fn test_github_attestations_option_defaults_enabled() {
+        let backend = create_test_backend();
+        let opts = ToolVersionOptions::default();
+
+        assert!(backend.options(&opts).github_attestations());
+    }
+
+    #[test]
+    fn test_github_attestations_option_can_disable() {
+        let backend = create_test_backend();
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "github_attestations".to_string(),
+            toml::Value::Boolean(false),
+        );
+
+        assert!(!backend.options(&opts).github_attestations());
+    }
+
+    #[test]
+    fn test_github_attestations_disabled_error_is_actionable() {
+        let backend = Arc::new(BackendArg::new(
+            "github:test/repo".to_string(),
+            Some("github:test/repo".to_string()),
+        ));
+        let request =
+            ToolRequest::new(backend, "1.0.0", crate::toolset::ToolSource::Unknown).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".to_string());
+
+        let msg = github_attestations_disabled_for_tool_error(&tv).to_string();
+
+        assert!(msg.contains("github_attestations is disabled for this tool"));
+        assert!(msg.contains("mise lock"));
+        assert!(msg.contains("remove github_attestations = false"));
     }
 
     #[test]

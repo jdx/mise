@@ -575,7 +575,7 @@ Removes a shell alias
 .RE
 .TP
 \fBsponsors\fR
-Show the companies sponsoring mise and the en.dev project family
+Show the companies sponsoring mise and the jdx.dev open source tools
 .TP
 \fBsync\fR
 Synchronize tools from other version managers with mise
@@ -2052,6 +2052,12 @@ Only install versions released before this date or older than this duration
 
 Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
 .TP
+\fB\-\-monorepo\fR
+Install tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
+.TP
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
 .TP
@@ -2218,6 +2224,12 @@ Don't fetch information such as outdated versions
 .TP
 \fB\-\-all\-sources\fR
 Display all tracked config sources for tools
+.TP
+\fB\-\-monorepo\fR
+List tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
 .TP
 \fB\-\-no\-header\fR
 Don't display headers
@@ -2475,6 +2487,9 @@ Only show outdated tools defined in local config files
 This will only show tools that are defined in project\-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
 .TP
+\fB\-\-monorepo\fR
+Placeholder for future monorepo outdated checks; `mise outdated \-\-monorepo` is not implemented yet.
+.TP
 \fB\-\-no\-header\fR
 Don't show table header
 \fBArguments:\fR
@@ -2487,11 +2502,11 @@ If not specified, all tools in global and local configs will be shown
 .SH "MISE PATRONS"
 Show the individuals supporting mise as Patron\-tier members
 
-Lists the individuals on the Patron tier from <https://en.dev/patrons.json>.
+Lists the individuals on the Patron tier from <https://jdx.dev/patrons.json>.
 The list refreshes daily; supporting terminals will render each patron's
 name as a clickable link via OSC 8 hyperlinks.
 
-To appear here, become a patron at <https://en.dev>.
+To appear here, become a patron at <https://jdx.dev/sponsors.html>.
 .PP
 \fBUsage:\fR mise patrons [OPTIONS]
 .PP
@@ -2807,6 +2822,9 @@ Prune only tracked and trusted configuration links that point to nonexistent con
 Like \-\-dry\-run but exits with code 1 if there are tools to prune
 
 This is useful for scripts to check if tools need to be pruned.
+.TP
+\fB\-\-monorepo\fR
+Placeholder for future monorepo pruning; `mise prune \-\-monorepo` is not implemented yet.
 .TP
 \fB\-\-tools\fR
 Prune only unused versions of tools
@@ -4167,6 +4185,9 @@ This can be useful for reproducibility or security purposes.
 This only affects fuzzy version matches like "20" or "latest".
 Explicitly pinned versions like "22.5.0" are not filtered.
 .TP
+\fB\-\-monorepo\fR
+Placeholder for future monorepo upgrades; `mise upgrade \-\-monorepo` is not implemented yet.
+.TP
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
 \fBArguments:\fR
@@ -4285,7 +4306,7 @@ This command uses the `watchexec` tool to watch for changes to files and rerun t
 It must be installed for this command to work, but you can install it with `mise use \-g watchexec@latest`.
 
 For more advanced process management (daemon management, auto\-restart, readiness checks,
-cron scheduling), see mise's sister project: https://pitchfork.en.dev
+cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 .PP
 \fBUsage:\fR mise watch [OPTIONS] [<TASK>] [<ARGS>] ...
 .PP

@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 /// It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.
 ///
 /// For more advanced process management (daemon management, auto-restart, readiness checks,
-/// cron scheduling), see mise's sister project: https://pitchfork.en.dev
+/// cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "w", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Watch {

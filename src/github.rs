@@ -559,6 +559,46 @@ pub fn is_github_api_url(url: &url::Url) -> bool {
             && is_ghes_api_path(url.path()))
 }
 
+/// Pick which URL to download a release asset from.
+///
+/// Public repositories serve the asset at the browser download URL
+/// (`github.com/.../releases/download/...`), so it is used when reachable. Private
+/// repositories return 404 — or a 200 HTML login page — there even with a valid token; in
+/// that case the asset can only be fetched from the API asset endpoint
+/// (`api.github.com/.../releases/assets/{id}`), which serves the bytes when authenticated
+/// (`get_headers`/`host_auth_headers` add the bearer token and
+/// `Accept: application/octet-stream`). Shared by the github and aqua backends so both
+/// resolve private assets the same way.
+pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> String {
+    if browser_url == api_url {
+        return browser_url.to_string();
+    }
+    match crate::http::HTTP.head(browser_url).await {
+        Ok(resp) => {
+            let is_html = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                // HTTP media types are case-insensitive, and the header may carry params
+                // (e.g. `text/html; charset=utf-8`), so lowercase before matching.
+                .is_some_and(|ct| ct.to_ascii_lowercase().contains("text/html"));
+            if is_html {
+                debug!(
+                    "browser URL returned HTML (likely an auth page), \
+                     using the API asset endpoint"
+                );
+                api_url.to_string()
+            } else {
+                browser_url.to_string()
+            }
+        }
+        Err(e) => {
+            debug!("HEAD on browser URL failed ({e}), using the API asset endpoint");
+            api_url.to_string()
+        }
+    }
+}
+
 /// Resolve the GitHub token for the given hostname, returning the token and its source.
 ///
 /// Priority:
@@ -810,6 +850,97 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ASSET_API_URL: &str = "https://api.github.com/repos/o/r/releases/assets/1";
+
+    #[tokio::test]
+    async fn test_pick_reachable_asset_url_keeps_browser_url_when_reachable() {
+        // Public repos: the browser URL serves the asset (not HTML), so it is kept and the
+        // API endpoint is not used.
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("HEAD", "/asset.tar.gz")
+            .with_status(200)
+            .with_header("content-type", "application/octet-stream")
+            .create_async()
+            .await;
+        let browser_url = format!("{}/asset.tar.gz", server.url());
+        assert_eq!(
+            pick_reachable_asset_url(&browser_url, ASSET_API_URL).await,
+            browser_url
+        );
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_pick_reachable_asset_url_falls_back_on_404() {
+        // Private repos: the browser URL 404s even with a valid token, so fall back to the
+        // API asset endpoint.
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("HEAD", "/asset.tar.gz")
+            .with_status(404)
+            .create_async()
+            .await;
+        let browser_url = format!("{}/asset.tar.gz", server.url());
+        assert_eq!(
+            pick_reachable_asset_url(&browser_url, ASSET_API_URL).await,
+            ASSET_API_URL
+        );
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_pick_reachable_asset_url_falls_back_on_html_login_page() {
+        // Some private repos return a 200 HTML login page at the browser URL instead of a
+        // 404; that is also treated as unreachable and falls back to the API endpoint.
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("HEAD", "/asset.tar.gz")
+            .with_status(200)
+            .with_header("content-type", "text/html; charset=utf-8")
+            .create_async()
+            .await;
+        let browser_url = format!("{}/asset.tar.gz", server.url());
+        assert_eq!(
+            pick_reachable_asset_url(&browser_url, ASSET_API_URL).await,
+            ASSET_API_URL
+        );
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_pick_reachable_asset_url_falls_back_on_uppercase_html_content_type() {
+        // HTTP media types are case-insensitive; a `Content-Type` such as `TEXT/HTML` must
+        // still be recognized as an auth page and fall back to the API endpoint.
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("HEAD", "/asset.tar.gz")
+            .with_status(200)
+            .with_header("content-type", "TEXT/HTML; charset=UTF-8")
+            .create_async()
+            .await;
+        let browser_url = format!("{}/asset.tar.gz", server.url());
+        assert_eq!(
+            pick_reachable_asset_url(&browser_url, ASSET_API_URL).await,
+            ASSET_API_URL
+        );
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_pick_reachable_asset_url_skips_probe_when_urls_equal() {
+        // When both URLs are identical there is nothing to fall back to, so no request is
+        // made and the URL is returned as-is.
+        assert_eq!(
+            pick_reachable_asset_url(ASSET_API_URL, ASSET_API_URL).await,
+            ASSET_API_URL
+        );
+    }
 
     fn with_github_token<F, R>(test_fn: F) -> R
     where

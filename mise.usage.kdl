@@ -847,7 +847,7 @@ Examples:
     $ mise config set tools.python 3.12
     $ mise config set settings.always_keep_download true
     $ mise config set env.TEST_ENV_VAR ABC
-    $ mise config set settings.disable_tools --type list node,rust
+    $ mise config set settings.disable_tools node,rust
 
     # Type for `settings` is inferred
     $ mise config set settings.jobs 4
@@ -1706,6 +1706,14 @@ Supports absolute dates like "2024-06-01" and relative durations like "90d" or "
 """#
         arg <MINIMUM_RELEASE_AGE>
     }
+    flag --monorepo help="Install tools from every [monorepo].config_roots config root" {
+        long_help #"""
+Install tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
+"""#
+    }
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     flag --shared help="Install tool(s) to a shared directory" {
         long_help #"""
@@ -1963,6 +1971,14 @@ Examples:
         arg <TOOL_FLAG>
     }
     flag --all-sources help="Display all tracked config sources for tools"
+    flag --monorepo help="List tools from every [monorepo].config_roots config root" {
+        long_help #"""
+List tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
+"""#
+    }
     flag --no-header help="Don't display headers"
     flag --outdated help="Display whether a version is outdated"
     flag --prefix help="Display versions matching this prefix" {
@@ -2379,6 +2395,7 @@ This will only show tools that are defined in project-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
 """#
     }
+    flag --monorepo help="Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet."
     flag --no-header help="Don't show table header"
     arg "[TOOL@VERSION]…" help=#"""
 Tool(s) to show outdated versions for
@@ -2390,11 +2407,11 @@ cmd patrons help="Show the individuals supporting mise as Patron-tier members" {
     long_help #"""
 Show the individuals supporting mise as Patron-tier members
 
-Lists the individuals on the Patron tier from <https://en.dev/patrons.json>.
+Lists the individuals on the Patron tier from <https://jdx.dev/patrons.json>.
 The list refreshes daily; supporting terminals will render each patron's
 name as a clickable link via OSC 8 hyperlinks.
 
-To appear here, become a patron at <https://en.dev>.
+To appear here, become a patron at <https://jdx.dev/sponsors.html>.
 """#
     after_long_help #"""
 Examples:
@@ -2723,6 +2740,7 @@ Like --dry-run but exits with code 1 if there are tools to prune
 This is useful for scripts to check if tools need to be pruned.
 """#
     }
+    flag --monorepo help="Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet."
     flag --tools help="Prune only unused versions of tools"
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
 }
@@ -3332,7 +3350,7 @@ Examples:
         arg <shell_alias> help="The alias to remove"
     }
 }
-cmd sponsors help="Show the companies sponsoring mise and the en.dev project family"
+cmd sponsors help="Show the companies sponsoring mise and the jdx.dev open source tools"
 cmd sync subcommand_required=#true help="Synchronize tools from other version managers with mise" {
     cmd node help="Symlinks all tool versions from an external tool into mise" {
         long_help #"""
@@ -4164,6 +4182,7 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 """#
         arg <MINIMUM_RELEASE_AGE>
     }
+    flag --monorepo help="Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet."
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     arg "[INSTALLED_TOOL@VERSION]…" help=#"""
 Tool(s) to upgrade
@@ -4323,7 +4342,7 @@ This command uses the `watchexec` tool to watch for changes to files and rerun t
 It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.
 
 For more advanced process management (daemon management, auto-restart, readiness checks,
-cron scheduling), see mise's sister project: https://pitchfork.en.dev
+cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 """#
     after_long_help #"""
 Examples:

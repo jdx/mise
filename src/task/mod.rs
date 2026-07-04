@@ -30,8 +30,12 @@ use xx::regex;
 static TASK_VARS_CACHE: Lazy<std::sync::Mutex<IndexMap<PathBuf, IndexMap<String, String>>>> =
     Lazy::new(|| std::sync::Mutex::new(IndexMap::new()));
 
+static TASK_ENV_CACHE: Lazy<std::sync::Mutex<IndexMap<PathBuf, EnvMap>>> =
+    Lazy::new(|| std::sync::Mutex::new(IndexMap::new()));
+
 pub(crate) fn reset() {
     TASK_VARS_CACHE.lock().unwrap().clear();
+    TASK_ENV_CACHE.lock().unwrap().clear();
 }
 
 /// Type alias for tracking failed tasks with their exit codes
@@ -536,6 +540,149 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
     }
 }
 
+fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
+    let script = std::fs::read_to_string(file)?;
+    let raw = extract_usage_from_comments(&script);
+    if raw.trim().is_empty() {
+        return usage::Spec::parse_script(file);
+    }
+    parse_task_usage_raw(file, &hoist_root_usage_mounts(&raw).unwrap_or(raw))
+}
+
+fn parse_task_usage_raw(file: &Path, raw: &str) -> usage::Result<usage::Spec> {
+    let mut spec: usage::Spec = raw.parse()?;
+    if spec.bin.is_empty()
+        && let Some(name) = file.file_name().and_then(|n| n.to_str())
+    {
+        spec.bin = name.to_string();
+    }
+    if spec.name.is_empty() {
+        spec.name.clone_from(&spec.bin);
+    }
+    if let Some(mount_cmd) = spec.cmd.subcommands.shift_remove("__mise_task_root_mounts") {
+        spec.cmd.mounts.extend(mount_cmd.mounts);
+    }
+    Ok(spec)
+}
+
+fn extract_usage_from_comments(full: &str) -> String {
+    let usage_regex = regex!(r"^(?:#|//|::)\s*(?:(USAGE|MISE)|\[(USAGE|MISE)\])(.*)$");
+    let blank_comment_regex = regex!(r"^(?:#|//|::)\s*$");
+    let mise_header_regex = regex!(r"^[a-z0-9_.-]+\s*=");
+    let mut usage = vec![];
+    let mut found = false;
+    for line in full.lines() {
+        if let Some(captures) = usage_regex.captures(line) {
+            let marker = captures
+                .get(1)
+                .or_else(|| captures.get(2))
+                .map_or("", |m| m.as_str());
+            let content = captures.get(3).map_or("", |m| m.as_str());
+            if marker == "MISE" && mise_header_regex.is_match(content.trim()) {
+                continue;
+            }
+            usage.push(content.trim());
+            found = true;
+        } else if found {
+            if blank_comment_regex.is_match(line) {
+                continue;
+            }
+            break;
+        }
+    }
+    usage.join("\n")
+}
+
+fn hoist_root_usage_mounts(raw: &str) -> Option<String> {
+    let mut output = vec![];
+    let mut mounts = vec![];
+    let mut depth = 0_i32;
+    let lines = raw.lines().collect::<Vec<_>>();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        if depth == 0 && is_mount_node(trimmed) {
+            let (mount, next) = collect_mount_node(&lines, i);
+            mounts.push(mount);
+            i = next;
+            continue;
+        } else {
+            output.push(line.to_string());
+        }
+        depth = (depth + structural_brace_delta(line)).max(0);
+        i += 1;
+    }
+    if mounts.is_empty() {
+        return None;
+    }
+    output.push("cmd \"__mise_task_root_mounts\" {".to_string());
+    for mount in mounts {
+        output.extend(mount.lines().map(|line| format!("    {line}")));
+    }
+    output.push("}".to_string());
+    Some(output.join("\n"))
+}
+
+fn collect_mount_node(lines: &[&str], start: usize) -> (String, usize) {
+    let mut node = vec![normalize_root_mount_node(lines[start].trim_start())];
+    let mut depth = structural_brace_delta(lines[start]).max(0);
+    let mut next = start + 1;
+    while depth > 0 && next < lines.len() {
+        node.push(lines[next].trim_start().to_string());
+        depth = (depth + structural_brace_delta(lines[next])).max(0);
+        next += 1;
+    }
+    (node.join("\n"), next)
+}
+
+fn structural_brace_delta(line: &str) -> i32 {
+    let mut delta = 0;
+    let mut chars = line.chars().peekable();
+    let mut in_string = false;
+    let mut escaped = false;
+    while let Some(ch) = chars.next() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '/' if chars.peek() == Some(&'/') => break,
+            '{' => delta += 1,
+            '}' => delta -= 1,
+            _ => {}
+        }
+    }
+    delta
+}
+
+fn is_mount_node(line: &str) -> bool {
+    line.strip_prefix("mount")
+        .is_some_and(|rest| match rest.chars().next() {
+            None => true,
+            Some(c) => c.is_whitespace() || c == '{',
+        })
+}
+
+fn normalize_root_mount_node(line: &str) -> String {
+    let Some(rest) = line.strip_prefix("mount") else {
+        return line.to_string();
+    };
+    let rest = rest.trim_start();
+    if rest.starts_with('"') || rest.starts_with("r#") {
+        format!("mount run={rest}")
+    } else {
+        line.to_string()
+    }
+}
+
 impl Task {
     pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
         Ok(Self {
@@ -552,7 +699,29 @@ impl Task {
         prefix: &Path,
         config_root: &Path,
     ) -> Result<Task> {
+        Self::from_path_with_cf(config, path, prefix, config_root, None).await
+    }
+
+    pub async fn from_path_with_cf(
+        config: &Arc<Config>,
+        path: &Path,
+        prefix: &Path,
+        config_root: &Path,
+        cf: Option<Arc<dyn ConfigFile>>,
+    ) -> Result<Task> {
+        let mut task = Self::from_path_unrendered_with_cf(path, prefix, config_root, cf)?;
+        task.render(config, config_root).await?;
+        Ok(task)
+    }
+
+    pub(crate) fn from_path_unrendered_with_cf(
+        path: &Path,
+        prefix: &Path,
+        config_root: &Path,
+        cf: Option<Arc<dyn ConfigFile>>,
+    ) -> Result<Task> {
         let mut task = Task::new(path, prefix, config_root)?;
+        task.cf = cf;
         let info = parse_mise_header_toml(&file::read_to_string(path)?)?
             .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
@@ -677,7 +846,6 @@ impl Task {
             let fields: Vec<String> = p.parsed_keys().map(|s| s.to_string()).collect();
             tests::capture_parsed_fields(fields);
         }
-        task.render(config, config_root).await?;
         Ok(task)
     }
 
@@ -1005,7 +1173,7 @@ impl Task {
         extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<(usage::Spec, Vec<String>)> {
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
-            let spec = usage::Spec::parse_script(&file)
+            let spec = parse_task_script_usage(&file)
                 .inspect_err(|e| {
                     warn!(
                         "failed to parse task file {} with usage: {e:?}",
@@ -1041,7 +1209,7 @@ impl Task {
     pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
         let dir = self.dir(config).await?;
         let mut spec = if let Some(file) = self.file_path(config).await? {
-            usage::Spec::parse_script(&file)
+            parse_task_script_usage(&file)
                 .inspect_err(|e| {
                     warn!(
                         "failed to parse task file {} with usage: {e:?}",
@@ -1185,6 +1353,7 @@ impl Task {
         // Insert base vars first so that task-level var templates can reference them
         // (e.g. a task var `foo = "{{vars.bar}}"` can read a config-level `bar`).
         tera_ctx.insert("vars", &vars);
+        self.resolve_base_env(config, &mut tera_ctx).await?;
         vars.extend(self.resolve_task_vars(config, &tera_ctx).await?);
         // Re-insert with task-level vars merged in so callers see the final combined map,
         // with task-level values taking precedence over config-level ones.
@@ -1220,11 +1389,109 @@ impl Task {
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect();
+        config.add_redactions(
+            vars_results.redactions.iter().cloned(),
+            &vars.clone().into_iter().collect(),
+        );
         TASK_VARS_CACHE
             .lock()
             .unwrap()
             .insert(config_path, vars.clone());
         Ok(vars)
+    }
+
+    /// For tasks belonging to a different config hierarchy than the current one
+    /// (monorepo subproject tasks loaded from outside their directory), replace the
+    /// `env` in the tera context with env resolved from the task's own config
+    /// hierarchy. Otherwise templates like `{{env.FOO}}` in `sources`/`outputs`
+    /// only see the caller's env and fail or render stale values
+    /// (https://github.com/jdx/mise/discussions/10126).
+    async fn resolve_base_env(
+        &self,
+        config: &Arc<Config>,
+        tera_ctx: &mut tera::Context,
+    ) -> Result<()> {
+        if config::Settings::no_env() || config::Settings::get().no_env.unwrap_or(false) {
+            return Ok(());
+        }
+        // Remote tasks use the full config hierarchy, not a task-local one
+        if self.is_remote() {
+            return Ok(());
+        }
+        let Some(task_cf) = self.cf(config) else {
+            return Ok(());
+        };
+        // Global/system configs have no project root; their env is already in the
+        // base context. Only tasks from a *different* project hierarchy need this.
+        let Some(task_project_root) = task_cf.project_root() else {
+            return Ok(());
+        };
+        if Some(&task_project_root) == config.project_root.as_ref() {
+            return Ok(());
+        }
+
+        let config_path = task_cf.get_path().to_path_buf();
+        if let Some(env) = TASK_ENV_CACHE.lock().unwrap().get(&config_path) {
+            tera_ctx.insert("env", env);
+            return Ok(());
+        }
+
+        let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
+        let (config_paths, idiomatic_filenames) =
+            crate::config::load_config_hierarchy_from_dir(task_dir).await?;
+        let task_config_files =
+            crate::config::load_config_files_from_paths(&config_paths, &idiomatic_filenames)
+                .await?;
+        let entries: Vec<(EnvDirective, PathBuf)> = task_config_files
+            .iter()
+            .rev()
+            .map(|(source, cf)| {
+                cf.env_entries()
+                    .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        let mut env: EnvMap = env::PRISTINE_ENV.clone();
+        let mut resolve_ctx = tera_ctx.clone();
+        resolve_ctx.insert("config_root", &task_project_root);
+        let results = EnvResults::resolve(
+            config,
+            resolve_ctx,
+            &env,
+            entries,
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::NonToolsOnly,
+                warn_on_missing_required: false,
+            },
+        )
+        .await?;
+        for (k, (v, _)) in results.env {
+            env.insert(k, v);
+        }
+        for key in &results.env_remove {
+            env.remove(key);
+        }
+        if !results.env_paths.is_empty() {
+            let mut path_env = PathEnv::from_iter(env::split_paths(
+                &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
+            ));
+            for path in results.env_paths {
+                path_env.add(path);
+            }
+            env.insert(env::PATH_KEY.to_string(), path_env.to_string());
+        }
+        if !results.redactions.is_empty() {
+            config.add_redactions(results.redactions, &env);
+        }
+        TASK_ENV_CACHE
+            .lock()
+            .unwrap()
+            .insert(config_path, env.clone());
+        tera_ctx.insert("env", &env);
+        Ok(())
     }
 
     async fn resolve_task_vars(
@@ -1261,11 +1528,18 @@ impl Task {
         )
         .await?;
 
-        Ok(results
+        let vars: IndexMap<String, String> = results
             .vars
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
-            .collect())
+            .collect();
+        let mut redaction_vars: EnvMap = tera_ctx
+            .get("vars")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        redaction_vars.extend(vars.clone());
+        config.add_redactions(results.redactions.iter().cloned(), &redaction_vars);
+        Ok(vars)
     }
 
     pub fn cf<'a>(&'a self, config: &'a Config) -> Option<&'a Arc<dyn ConfigFile>> {
@@ -2393,6 +2667,146 @@ mod tests {
             script,
             "#!/usr/bin/env bash\n#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
         ));
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_hoists_root_mount() {
+        use std::io::Write;
+
+        for marker in ["#USAGE", "# USAGE"] {
+            let mut tmp = tempfile::NamedTempFile::new().unwrap();
+            tmp.write_all(
+                format!(
+                    r#"#!/usr/bin/env bash
+{marker} flag "--verbose" help="Show extra output"
+{marker} mount "shapeme --usage-spec"
+exec shapeme "$@"
+"#
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+
+            let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+
+            assert_eq!(spec.cmd.flags.len(), 1);
+            assert_eq!(spec.cmd.mounts.len(), 1);
+            assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
+            assert!(!spec.cmd.subcommands.contains_key("__mise_task_root_mounts"));
+        }
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_hoists_mise_root_mount() {
+        use std::io::Write;
+
+        for marker in ["#MISE", "# MISE"] {
+            let mut tmp = tempfile::NamedTempFile::new().unwrap();
+            tmp.write_all(
+                format!(
+                    r#"#!/usr/bin/env bash
+#USAGE flag "--verbose" help="Show extra output"
+{marker} flag "--mise" help="MISE flag"
+{marker} description="Run the mounted CLI"
+{marker} mount "shapeme --usage-spec"
+exec shapeme "$@"
+"#
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+
+            let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+
+            assert_eq!(spec.cmd.flags.len(), 2);
+            assert_eq!(spec.cmd.mounts.len(), 1);
+            assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
+        }
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_hoists_root_mount_block() {
+        use std::io::Write;
+
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(
+            r#"#!/usr/bin/env bash
+#USAGE flag "--template <template>" help="Use {name} template"
+#USAGE mount {
+#USAGE   run "first --usage-spec"
+#USAGE }
+#USAGE mount "second --usage-spec"
+exec shapeme "$@"
+"#
+            .as_bytes(),
+        )
+        .unwrap();
+
+        let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+
+        assert_eq!(spec.cmd.flags.len(), 1);
+        assert_eq!(spec.cmd.mounts.len(), 2);
+        assert_eq!(spec.cmd.mounts[0].run, "first --usage-spec");
+        assert_eq!(spec.cmd.mounts[1].run, "second --usage-spec");
+    }
+
+    #[test]
+    fn test_task_usage_comment_extraction_matches_usage_lib() {
+        use std::io::Write;
+
+        let script = r#"#!/usr/bin/env bash
+#USAGE flag "--verbose" help="Show extra output"
+#USAGE arg "<file>" help="Input file"
+exec tool "$@"
+"#;
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(script.as_bytes()).unwrap();
+
+        let parsed_by_usage_lib = usage::Spec::parse_script(tmp.path()).unwrap();
+        let raw = super::extract_usage_from_comments(script);
+        let parsed_by_fallback: usage::Spec = raw.parse().unwrap();
+
+        assert_eq!(
+            parsed_by_usage_lib.cmd.flags.len(),
+            parsed_by_fallback.cmd.flags.len()
+        );
+        assert_eq!(
+            parsed_by_usage_lib.cmd.args.len(),
+            parsed_by_fallback.cmd.args.len()
+        );
+        assert_eq!(
+            parsed_by_usage_lib.cmd.flags[0].usage(),
+            parsed_by_fallback.cmd.flags[0].usage()
+        );
+        assert_eq!(
+            parsed_by_usage_lib.cmd.args[0].usage,
+            parsed_by_fallback.cmd.args[0].usage
+        );
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_preserves_nested_mount() {
+        use std::io::Write;
+
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(
+            r#"#!/usr/bin/env bash
+#USAGE cmd "proxy" {
+#USAGE   mount run="proxy --usage-spec"
+#USAGE }
+exec proxy "$@"
+"#
+            .as_bytes(),
+        )
+        .unwrap();
+
+        let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+
+        assert!(spec.cmd.mounts.is_empty());
+        assert_eq!(
+            spec.cmd.subcommands["proxy"].mounts[0].run,
+            "proxy --usage-spec"
+        );
     }
 
     #[cfg(unix)]

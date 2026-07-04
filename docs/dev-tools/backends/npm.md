@@ -9,7 +9,7 @@ The code for this is inside of the mise repository at [`./src/backend/npm.rs`](h
 
 This relies on having `npm` installed for resolving package versions.
 With the default `npm.package_manager = "auto"` setting, mise uses
-[`aube`](https://aube.en.dev/) for installing npm packages when it is installed,
+[`aube`](https://aube.jdx.dev/) for installing npm packages when it is installed,
 similar to how the pipx backend uses `uv` when available.
 If you use `aube`, `pnpm`, or `bun` as the package manager, that package manager
 must also be installed.
@@ -83,12 +83,12 @@ explicitly. The `allow_builds`, `aube_args`, `pnpm_args`, `bun_args`, and `npm_a
 affect the package manager that is actually used; an approval option for one package manager does
 not change the behavior of another.
 
-For tools that need reviewed dependency build scripts, consider using `aube` or `pnpm` because they
-support package-level build approvals.
+For tools that need reviewed dependency build scripts, use `allow_builds` with `aube`, `pnpm`, or
+npm 11.16.0+.
 
 ### `aube`
 
-[`aube`](https://aube.en.dev/package-manager/lifecycle-scripts) follows the pnpm v11 build approval
+[`aube`](https://aube.jdx.dev/package-manager/lifecycle-scripts) follows the pnpm v11 build approval
 model: dependency lifecycle scripts are denied unless explicitly allowlisted. Use `allow_builds` for
 reviewed dependency builds:
 
@@ -140,13 +140,28 @@ script trust:
 
 ### `npm`
 
-`npm` normally runs lifecycle scripts by default and does not provide a native per-dependency build
-approval allowlist in its current docs. mise passes
+`npm` normally runs lifecycle scripts by default. mise passes
 [`--ignore-scripts=true`](https://docs.npmjs.com/cli/v11/using-npm/config/#ignore-scripts) by
 default for npm-backed installs.
 
-You can opt into npm's default script behavior with `npm_args` when you accept that every package in
-the install graph can run lifecycle scripts:
+With npm 11.16.0+, `allow_builds = ["<pkg>"]` is passed as
+[`--allow-scripts=<pkg>`](https://docs.npmjs.com/cli/v11/using-npm/config/#allow-scripts) for
+reviewed global installs. When `allow_builds` is used and npm supports `--allow-scripts`, mise does
+not pass `--ignore-scripts=true` because npm's `ignore-scripts` setting takes precedence over the
+allowlist.
+
+```toml
+[tools]
+"npm:some-tool" = { version = "latest", allow_builds = ["esbuild"] }
+```
+
+Set `allow_builds = true` to pass
+[`--dangerously-allow-all-scripts`](https://docs.npmjs.com/cli/v11/using-npm/config/#dangerously-allow-all-scripts)
+when you explicitly accept that every dependency build script may run.
+
+For older npm versions, mise keeps `--ignore-scripts=true`; use `aube`/`pnpm`, upgrade npm, or opt
+into npm's default script behavior with `npm_args` when you accept that every package in the install
+graph can run lifecycle scripts:
 
 ```toml
 [tools]
@@ -161,8 +176,8 @@ go in `[tools]` in `mise.toml`.
 ### `allow_builds`
 
 Packages whose dependency lifecycle build scripts should be approved when
-`settings.npm.package_manager = "aube"` or `"pnpm"`. Use this instead of spelling out
-`--allow-build` in both `aube_args` and `pnpm_args`.
+`settings.npm.package_manager = "aube"`, `"pnpm"`, or npm 11.16.0+. Use this instead of spelling out
+package-manager-specific approval flags in `aube_args`, `pnpm_args`, or `npm_args`.
 
 For example, to allow one verified dependency build script:
 
@@ -185,8 +200,9 @@ To allow all dependency build scripts for the install:
 "npm:some-tool" = { version = "latest", allow_builds = true }
 ```
 
-`allow_builds` does not affect `npm` or `bun` installs because those package managers do not expose
-the same package-level build approval model for this global install path.
+`allow_builds` does not affect `bun` installs because mise's Bun path is a global install and does
+not write a per-transitive `trustedDependencies` allowlist. For npm installs, `allow_builds`
+requires npm 11.16.0+.
 
 ### `aube_args`
 

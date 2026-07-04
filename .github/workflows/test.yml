@@ -132,6 +132,8 @@ jobs:
   nightly:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux-nightly
     timeout-minutes: 10
+    # Track rolling nightly for early rustc regressions without blocking PRs on upstream compiler ICEs.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -342,10 +344,6 @@ jobs:
           fi
           if [ "${{ needs.unit.result }}" != "success" ]; then
             echo "unit failed or was skipped"
-            exit 1
-          fi
-          if [ "${{ needs.nightly.result }}" != "success" ]; then
-            echo "nightly failed or was skipped"
             exit 1
           fi
           if [ "${{ needs.lint.result }}" != "success" ]; then

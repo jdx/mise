@@ -43,6 +43,10 @@ pub struct Prune {
     #[clap(long, verbatim_doc_comment)]
     pub dry_run_code: bool,
 
+    /// Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
+    #[clap(long, verbatim_doc_comment)]
+    pub monorepo: bool,
+
     /// Prune only unused versions of tools
     #[clap(long)]
     pub tools: bool,
@@ -54,6 +58,9 @@ impl Prune {
     }
 
     pub async fn run(self) -> Result<()> {
+        if self.monorepo {
+            unimplemented!("mise prune --monorepo is not implemented yet");
+        }
         let mut config = Config::get().await?;
         if self.configs || !self.tools {
             self.prune_configs()?;

@@ -49,6 +49,13 @@ Display missing tool versions
 
 Display all tracked config sources for tools
 
+### `--monorepo`
+
+List tools from every [monorepo].config_roots config root
+
+Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+[monorepo].config_roots in the monorepo root config.
+
 ### `--no-header`
 
 Don't display headers

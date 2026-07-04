@@ -48,6 +48,10 @@ pub struct Outdated {
     #[clap(long, verbatim_doc_comment)]
     pub local: bool,
 
+    /// Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet.
+    #[clap(long, verbatim_doc_comment)]
+    pub monorepo: bool,
+
     /// Don't show table header
     #[clap(long)]
     pub no_header: bool,
@@ -55,6 +59,9 @@ pub struct Outdated {
 
 impl Outdated {
     pub async fn run(self) -> Result<()> {
+        if self.monorepo {
+            unimplemented!("mise outdated --monorepo is not implemented yet");
+        }
         let config = Config::get().await?;
         let scope = if self.local {
             ConfigScope::LocalOnly

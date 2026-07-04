@@ -182,6 +182,13 @@ Subdirectory tasks automatically use tools and environment variables from parent
 `vars` follow the same hierarchy for task templating, so child config vars are available when
 running subdirectory tasks from the monorepo root.
 
+Task templates like <span v-pre>`sources = ["{{env.SRC_DIR}}/*"]`</span> are rendered with env from the
+task's own config hierarchy, so a subproject's `[env]` section applies no matter where the task
+is invoked from.
+
+Child `task_config.includes` templates can also reference inherited vars, which is useful for
+centralized task includes like <span v-pre>`git::https://example.com/tasks.git//go.toml?ref={{vars.central_ref}}`</span>.
+
 ### Layering Example
 
 ```toml
@@ -222,6 +229,44 @@ run = "npm run build"  # Uses node 20 and LOG_LEVEL=info from root
 1. **Base toolset and environment**: Tasks start with tools and environment from all global config files (including parent configs in the hierarchy)
 2. **Subdirectory override**: Tools and environment defined in the subdirectory's config file are merged on top, allowing overrides
 3. **Task-specific tools and environment**: Values defined in the task's `tools` and `env` properties take highest precedence
+
+## Tools
+
+Use `mise install --monorepo` to install the union of tools from every directory listed in `[monorepo].config_roots`. This is useful in CI when you want to warm a cache for all projects in the repository:
+
+```bash
+MISE_ENV=ci mise install --monorepo
+```
+
+Passing a tool name filters the union while preserving multiple configured versions:
+
+```bash
+mise install --monorepo node
+```
+
+`mise ls --monorepo` lists the same union and can be used to inspect cache keys or debug which config roots are contributing tools. Both commands require `monorepo_root = true` and explicit `[monorepo].config_roots`.
+
+## Lockfiles
+
+Monorepos can use one lockfile at the monorepo root. Tools from `packages/api/mise.toml` write to `<monorepo_root>/mise.lock`, while environment and local variants write to root files such as `mise.ci.lock` and `mise.local.lock`.
+
+This is rolling out as a tri-state setting. During the rollout window, unset keeps today's per-subproject lockfile behavior. Set `lockfile = true` to opt into root lockfiles now:
+
+```toml
+[monorepo]
+lockfile = true
+```
+
+If mise finds old subproject lockfiles, it migrates them into the root lockfile the next time a lock-aware command runs. Root entries win on conflicts, unique subproject entries are preserved, and migrated subproject lockfiles are removed.
+
+To keep lockfiles next to each subproject config after the default changes, pin the old behavior in the monorepo root:
+
+```toml
+[monorepo]
+lockfile = false
+```
+
+Unset monorepos that use `mise*.lock` files will start warning in mise `2026.12.0` and will default to root lockfiles in mise `2027.6.0`. Older mise versions do not understand unified monorepo lockfiles for subproject-owned tools. Teams that need mixed-version compatibility should use `lockfile = false` until everyone has upgraded.
 
 ## Config Roots
 

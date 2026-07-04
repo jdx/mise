@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::config::Config;
+use crate::config::{Config, ConfigMap};
 use crate::file::display_path;
 use crate::install_before::resolve_cli_minimum_release_age;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
@@ -81,25 +81,43 @@ impl Lock {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::get();
         let config = Config::get().await?;
+        if !self.dry_run {
+            lockfile::migrate_monorepo_lockfiles(&config)?;
+        }
         let before_date = self.get_before_date()?;
         let lock_resolve_options = ResolveOptions {
             before_date,
             ..Default::default()
         };
+        let monorepo_union = if !self.global && config.monorepo_lockfile_root().is_some() {
+            Some(config.monorepo_union().await?)
+        } else {
+            None
+        };
+        let effective_config_files = monorepo_union
+            .as_ref()
+            .map(|monorepo_union| &monorepo_union.config_files)
+            .unwrap_or(&config.config_files);
 
         let ts_owned;
-        let ts = if before_date.is_some() {
-            ts_owned = ToolsetBuilder::new()
-                .with_resolve_options(lock_resolve_options.clone())
-                .build(&config)
+        let ts = if let Some(monorepo_union) = &monorepo_union {
+            let mut monorepo_ts: Toolset = monorepo_union.tool_request_set.clone().into();
+            monorepo_ts
+                .resolve_with_opts(&config, &lock_resolve_options)
                 .await?;
+            ts_owned = monorepo_ts;
+            &ts_owned
+        } else if before_date.is_some() {
+            let builder = ToolsetBuilder::new().with_resolve_options(lock_resolve_options.clone());
+            ts_owned = builder.build(&config).await?;
             &ts_owned
         } else {
             config.get_toolset().await?
         };
 
-        let scoped_config_paths = self.config_paths_in_lock_scope(&config);
-        let lockfile_targets = self.get_lockfile_targets(&config, &scoped_config_paths);
+        let scoped_config_paths = self.config_paths_in_lock_scope(&config, effective_config_files);
+        let lockfile_targets =
+            self.get_lockfile_targets(&config, effective_config_files, &scoped_config_paths);
         let mut has_lock_targets = false;
         let mut all_provenance_errors: Vec<String> = Vec::new();
 
@@ -110,6 +128,7 @@ impl Lock {
                     ts,
                     lockfile_path,
                     config_paths,
+                    effective_config_files,
                     &lock_resolve_options,
                 )
                 .await?;
@@ -117,14 +136,18 @@ impl Lock {
             if tools.is_empty() {
                 // `tools` can be empty either because config has no tools, or because a filter excludes all.
                 // For unfiltered runs (`mise lock`), this means "prune all stale lockfile entries".
-                let mut lockfile = Lockfile::read(lockfile_path)?;
                 if self.dry_run {
+                    let lockfile = Lockfile::read(lockfile_path)?;
                     let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools);
                     self.show_stale_prune_message(lockfile_path, &stale_tools, true)?;
                     if !stale_tools.is_empty() {
                         has_lock_targets = true;
                     }
                 } else {
+                    let _lock = crate::lock_file::LockFile::new(lockfile_path)
+                        .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+                        .lock()?;
+                    let mut lockfile = Lockfile::read(lockfile_path)?;
                     let pruned_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
                     if !pruned_tools.is_empty() {
                         lockfile.write(lockfile_path)?;
@@ -174,6 +197,9 @@ impl Lock {
             }
 
             // Process tools and update lockfile
+            let _lock = crate::lock_file::LockFile::new(lockfile_path)
+                .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+                .lock()?;
             let mut lockfile = Lockfile::read(lockfile_path)?;
             let stale_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
             self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
@@ -427,19 +453,30 @@ impl Lock {
         Ok(())
     }
 
-    fn config_paths_in_lock_scope(&self, config: &Config) -> BTreeSet<PathBuf> {
+    fn config_paths_in_lock_scope(
+        &self,
+        config: &Config,
+        effective_config_files: &ConfigMap,
+    ) -> BTreeSet<PathBuf> {
         if self.global {
-            return config
-                .config_files
+            return effective_config_files
                 .keys()
                 .filter(|path| crate::config::is_global_config(path))
                 .cloned()
                 .collect();
         }
+        if let Some(monorepo_root) = config.monorepo_lockfile_root() {
+            return effective_config_files
+                .keys()
+                .filter(|path| {
+                    !crate::config::is_global_config(path) && path.starts_with(&monorepo_root)
+                })
+                .cloned()
+                .collect();
+        }
         let target_root = Self::target_lock_scope_root(config);
 
-        config
-            .config_files
+        effective_config_files
             .iter()
             .filter_map(|(path, cf)| {
                 if crate::config::is_global_config(path) {
@@ -472,17 +509,21 @@ impl Lock {
     fn get_lockfile_targets(
         &self,
         config: &Config,
+        effective_config_files: &ConfigMap,
         scoped_config_paths: &BTreeSet<PathBuf>,
     ) -> indexmap::IndexMap<PathBuf, Vec<PathBuf>> {
         let mut targets: indexmap::IndexMap<PathBuf, Vec<PathBuf>> = indexmap::IndexMap::new();
-        for (path, cf) in config.config_files.iter() {
+        for (path, cf) in effective_config_files.iter() {
             if !scoped_config_paths.contains(path) {
                 continue;
             }
             if !cf.source().is_mise_toml() {
                 continue;
             }
-            let (lockfile_path, is_local) = lockfile::lockfile_path_for_config(path);
+            let (lockfile_path, is_local) = lockfile::lockfile_path_for_config(
+                path,
+                config.monorepo_lockfile_root().as_deref(),
+            );
             if self.local && !is_local {
                 continue;
             }
@@ -508,6 +549,7 @@ impl Lock {
         ts: &Toolset,
         target_lockfile_path: &Path,
         config_paths: &[PathBuf],
+        effective_config_files: &ConfigMap,
         base_resolve_options: &ResolveOptions,
     ) -> Result<Vec<LockTool>> {
         let config_paths_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
@@ -551,7 +593,7 @@ impl Lock {
 
         // Second pass: iterate config files matching this lockfile to catch
         // tools that were overridden by a higher-priority config
-        for (path, cf) in config.config_files.iter() {
+        for (path, cf) in effective_config_files.iter() {
             let source = cf.source();
             let source_lockfile_matches = lockfile::lockfile_path_for_tool_source(config, &source)
                 .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path);

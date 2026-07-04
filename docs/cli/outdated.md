@@ -44,6 +44,10 @@ Only show outdated tools defined in local config files
 This will only show tools that are defined in project-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
 
+### `--monorepo`
+
+Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet.
+
 ### `--no-header`
 
 Don't show table header

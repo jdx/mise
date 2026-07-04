@@ -792,7 +792,8 @@
           "type": "string"
         },
         "env_shell_expand": {
-          "description": "Enable shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})",
+          "default": true,
+          "description": "Controls shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})",
           "type": "boolean"
         },
         "erlang": {
@@ -2076,6 +2077,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "lockfile": {
+          "description": "Use a single lockfile at the monorepo root for descendant config roots. true opts in now, false keeps lockfiles next to subproject configs, and unset keeps the current behavior until the scheduled default flip.",
+          "type": "boolean"
         }
       }
     },
