@@ -33,6 +33,22 @@ mise use -g rust@1.82
 cargo build
 ```
 
+## Toolchain files
+
+With [idiomatic version files](/configuration.html#idiomatic-version-files) enabled for rust
+(`mise settings add idiomatic_version_file_enable_tools rust`), mise reads the same toolchain
+files rustup does: `rust-toolchain.toml` and the extensionless `rust-toolchain`. Both must
+contain the TOML format:
+
+```toml
+[toolchain]
+channel = "1.84.0"
+```
+
+rustup's legacy format—a bare channel name on a single line—is not supported; such files are
+ignored. If both files exist in the same directory, `rust-toolchain` takes precedence over
+`rust-toolchain.toml`, matching rustup's behavior.
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `rust` backend—these

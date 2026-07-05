@@ -322,7 +322,7 @@ impl Backend for RustPlugin {
     }
 
     async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec!["rust-toolchain.toml".into()])
+        Ok(vec!["rust-toolchain.toml".into(), "rust-toolchain".into()])
     }
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
@@ -338,6 +338,18 @@ impl Backend for RustPlugin {
         &self,
         path: &Path,
     ) -> Result<Vec<IdiomaticVersion>> {
+        // rustup reads the extensionless `rust-toolchain` file when both it and
+        // `rust-toolchain.toml` exist in the same directory
+        let extensionless = path.with_extension("");
+        if path.extension().is_some() && extensionless.is_file() {
+            warn_once!(
+                "both {} and {} exist; using {}",
+                file::display_path(&extensionless),
+                file::display_path(path),
+                file::display_path(&extensionless),
+            );
+            return Ok(vec![]);
+        }
         let rt = parse_idiomatic_file(path)?;
         if rt.channel.is_empty() {
             return Ok(vec![]);
@@ -498,6 +510,9 @@ fn string_array(values: &[String]) -> toml::Value {
 
 fn parse_idiomatic_file(path: &Path) -> Result<RustToolchain> {
     let content = file::read_to_string(path)?;
+    // only the TOML format is supported; extensionless `rust-toolchain` files
+    // in rustup's legacy format (a bare channel name) fail to parse and are
+    // skipped like any other unparseable idiomatic version file
     let toml: toml::Value = toml::de::from_str(&content)?;
     let mut rt = RustToolchain::default();
     if let Some(toolchain) = toml.get("toolchain") {
@@ -821,6 +836,51 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
                 ("targets".to_string(), "wasm32-wasip1".to_string()),
             ])
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rust_idiomatic_file_supports_toml_without_extension() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("rust-toolchain");
+        std::fs::write(&path, "[toolchain]\nchannel = \"nightly-2026-04-11\"\n")?;
+
+        let plugin = RustPlugin::new();
+        let versions = plugin.parse_idiomatic_file_with_options(&path).await?;
+        assert_eq!(versions.into_iter().next().unwrap().0, "nightly-2026-04-11");
+        Ok(())
+    }
+
+    #[test]
+    fn rust_legacy_format_is_not_supported() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("rust-toolchain");
+        // rustup's legacy format: a bare channel name on a single line
+        std::fs::write(&path, "nightly-2026-04-11\n")?;
+
+        assert!(parse_idiomatic_file(&path).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rust_toolchain_file_takes_precedence_over_toml() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        std::fs::write(
+            dir.path().join("rust-toolchain"),
+            "[toolchain]\nchannel = \"1.84.0\"\n",
+        )?;
+        let toml_path = dir.path().join("rust-toolchain.toml");
+        std::fs::write(&toml_path, "[toolchain]\nchannel = \"1.85.0\"\n")?;
+
+        // like rustup, the extensionless file wins when both exist
+        let plugin = RustPlugin::new();
+        let versions = plugin.parse_idiomatic_file_with_options(&toml_path).await?;
+        assert!(versions.is_empty());
+
+        let versions = plugin
+            .parse_idiomatic_file_with_options(&dir.path().join("rust-toolchain"))
+            .await?;
+        assert_eq!(versions.into_iter().next().unwrap().0, "1.84.0");
         Ok(())
     }
 
