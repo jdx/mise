@@ -2,6 +2,16 @@ use std::collections::HashSet;
 use std::sync::LazyLock;
 use std::sync::Mutex;
 
+/// Like `eprintln!`, but ignores write failures instead of panicking when
+/// stderr is unwritable (e.g. the process that spawned mise closed its end
+/// of the pipe).
+#[macro_export]
+macro_rules! safe_eprintln {
+    ($($arg:tt)*) => {{
+        let _ = calm_io::stderrln!($($arg)*);
+    }};
+}
+
 #[macro_export]
 macro_rules! prefix_println {
     ($prefix:expr, $($arg:tt)*) => {{
@@ -13,7 +23,7 @@ macro_rules! prefix_println {
 macro_rules! prefix_eprintln {
     ($prefix:expr, $($arg:tt)*) => {{
         let msg = format!($($arg)*);
-        let _ = calm_io::stderrln!("{} {}", $prefix, msg);
+        $crate::safe_eprintln!("{} {}", $prefix, msg);
     }};
 }
 

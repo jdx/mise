@@ -116,16 +116,15 @@ fn main() -> eyre::Result<()> {
 
 async fn main_() -> eyre::Result<()> {
     // Configure color-eyre based on color preferences
-    if *env::CLICOLOR == Some(false) {
+    let hook_builder = if *env::CLICOLOR == Some(false) {
         // Use blank theme (no colors) when colors are disabled
-        color_eyre::config::HookBuilder::new()
-            .theme(color_eyre::config::Theme::new())
-            .install()?;
+        color_eyre::config::HookBuilder::new().theme(color_eyre::config::Theme::new())
     } else {
-        // Use default installation with colors
-        color_eyre::install()?;
-    }
-    install_panic_hook();
+        color_eyre::config::HookBuilder::default()
+    };
+    let (panic_hook, eyre_hook) = hook_builder.into_hooks();
+    eyre_hook.install()?;
+    install_panic_hook(panic_hook);
     if std::env::current_dir().is_ok() {
         unsafe {
             path_absolutize::update_cwd();
@@ -161,7 +160,7 @@ fn handle_err(err: Report) -> eyre::Result<()> {
     // Check for miette diagnostic errors and render them specially
     if let Some(diagnostic) = err.downcast_ref::<config::config_file::diagnostic::MiseDiagnostic>()
     {
-        eprintln!("{}", diagnostic.render());
+        safe_eprintln!("{}", diagnostic.render());
         exit(1);
     }
 
@@ -215,8 +214,7 @@ fn stop_multi_progress() {
 
 static ASYNC_PANIC_OCCURRED: AtomicBool = AtomicBool::new(false);
 
-pub fn install_panic_hook() {
-    let default_hook = panic::take_hook();
+pub fn install_panic_hook(panic_hook: color_eyre::config::PanicHook) {
     panic::set_hook(Box::new(move |panic_info| {
         if tokio::runtime::Handle::try_current().is_ok()
             && !ASYNC_PANIC_OCCURRED.swap(true, Ordering::SeqCst)
@@ -232,7 +230,9 @@ pub fn install_panic_hook() {
                 bt_buffer.push_str("[no accessible async backtrace]");
             }
             let all = async_backtrace::taskdump_tree(true);
-            eprintln!(
+            // A panic hook must never panic: a panic while the hook runs
+            // aborts the process with SIGABRT.
+            safe_eprintln!(
                 "=== Async Backtrace (panic occurred in tokio runtime) ===\n\
                 {bt_buffer}\n\
                 ------- TASK DUMP TREE -------\n\
@@ -241,7 +241,10 @@ pub fn install_panic_hook() {
             );
         }
 
-        default_hook(panic_info);
+        // color_eyre's own panic hook prints its report with eprintln!, which
+        // panics when stderr is unwritable — render the report ourselves
+        // instead of chaining to it
+        safe_eprintln!("{}", panic_hook.panic_report(panic_info));
     }));
 }
 
