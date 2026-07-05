@@ -48,7 +48,7 @@ When mise needs configuration, it follows this process:
 
 ```
 /
-├── etc/mise/                         # System-wide config (highest precedence)
+├── etc/mise/                         # System-wide config (lowest precedence)
 │   ├── conf.d/*.toml                 # System fragments, loaded alphabetically
 │   ├── config.toml                   # System defaults
 │   └── config.<env>.toml             # Env-specific system config (MISE_ENV or -E)
@@ -67,7 +67,7 @@ When mise needs configuration, it follows this process:
             ├── mise.<env>.toml       # Env-specific project config
             ├── mise.<env>.local.toml # Env-specific project local overrides
             └── backend/
-                └── mise.toml         # Service-specific config (lowest precedence)
+                └── mise.toml         # Service-specific config (highest precedence)
 ```
 
 ### Merge Behavior by Section
