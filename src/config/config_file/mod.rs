@@ -664,6 +664,10 @@ mod tests {
             detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")).await,
             Some(ConfigFileType::IdiomaticVersion(_))
         ));
+        assert!(matches!(
+            detect_config_file_type(Path::new("/foo/bar/rust-toolchain")).await,
+            Some(ConfigFileType::IdiomaticVersion(_))
+        ));
     }
 
     #[test]

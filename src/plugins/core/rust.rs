@@ -15,7 +15,7 @@ use crate::toolset::{ResolveOptions, ToolRequest, ToolVersion, ToolVersionOption
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, github, plugins};
 use async_trait::async_trait;
-use eyre::Result;
+use eyre::{Result, WrapErr, eyre};
 use xx::regex;
 
 #[derive(Debug)]
@@ -200,7 +200,7 @@ impl Backend for RustPlugin {
     }
 
     async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec!["rust-toolchain.toml".into()])
+        Ok(vec!["rust-toolchain.toml".into(), "rust-toolchain".into()])
     }
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
@@ -216,6 +216,20 @@ impl Backend for RustPlugin {
         &self,
         path: &Path,
     ) -> Result<Vec<IdiomaticVersion>> {
+        // rustup reads the extensionless `rust-toolchain` file when both it and
+        // `rust-toolchain.toml` exist in the same directory
+        if path.file_name().is_some_and(|f| f == "rust-toolchain.toml")
+            && let Some(rust_toolchain) = path.parent().map(|d| d.join("rust-toolchain"))
+            && rust_toolchain.is_file()
+        {
+            warn_once!(
+                "both {} and {} exist; using contents of {}",
+                file::display_path(&rust_toolchain),
+                file::display_path(path),
+                file::display_path(&rust_toolchain),
+            );
+            return Ok(vec![]);
+        }
         let rt = parse_idiomatic_file(path)?;
         if rt.channel.is_empty() {
             return Ok(vec![]);
@@ -388,39 +402,70 @@ fn string_array(values: &[String]) -> toml::Value {
 
 fn parse_idiomatic_file(path: &Path) -> Result<RustToolchain> {
     let content = file::read_to_string(path)?;
-    let toml: toml::Value = toml::de::from_str(&content)?;
+    // rustup only accepts the legacy one-line format in the extensionless
+    // `rust-toolchain` file; `rust-toolchain.toml` must be TOML
+    let legacy_allowed = path.file_name().is_some_and(|f| f == "rust-toolchain");
+    parse_toolchain_contents(&content, legacy_allowed)
+        .wrap_err_with(|| format!("failed to parse {}", file::display_path(path)))
+}
+
+fn parse_toolchain_contents(content: &str, legacy_allowed: bool) -> Result<RustToolchain> {
+    let toml: toml::Value = match toml::de::from_str(content) {
+        Ok(toml) => toml,
+        Err(err) => {
+            if legacy_allowed {
+                // legacy format: a bare channel name on a single line
+                let channel = content.trim();
+                if !channel.is_empty() && !channel.contains('\n') {
+                    return Ok(RustToolchain {
+                        channel: channel.to_string(),
+                        ..Default::default()
+                    });
+                }
+            }
+            return Err(err.into());
+        }
+    };
     let mut rt = RustToolchain::default();
     if let Some(toolchain) = toml.get("toolchain") {
         if let Some(channel) = toolchain.get("channel") {
-            rt.channel = channel.as_str().unwrap().to_string();
+            rt.channel = toml_str(channel, "channel")?.to_string();
         }
         if let Some(profile) = toolchain.get("profile") {
-            rt.profile = Some(profile.as_str().unwrap().to_string());
+            rt.profile = Some(toml_str(profile, "profile")?.to_string());
         }
         if let Some(components) = toolchain.get("components") {
-            let components = components
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|c| c.as_str().unwrap().to_string())
-                .collect::<Vec<_>>();
+            let components = toml_str_array(components, "components")?;
             if !components.is_empty() {
                 rt.components = Some(components);
             }
         }
         if let Some(targets) = toolchain.get("targets") {
-            let targets = targets
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|c| c.as_str().unwrap().to_string())
-                .collect::<Vec<_>>();
+            let targets = toml_str_array(targets, "targets")?;
             if !targets.is_empty() {
                 rt.targets = Some(targets);
             }
         }
     }
     Ok(rt)
+}
+
+fn toml_str<'a>(value: &'a toml::Value, key: &str) -> Result<&'a str> {
+    value.as_str().ok_or_else(|| {
+        eyre!(
+            "`toolchain.{key}` must be a string (got {})",
+            value.type_str()
+        )
+    })
+}
+
+fn toml_str_array(value: &toml::Value, key: &str) -> Result<Vec<String>> {
+    value
+        .as_array()
+        .ok_or_else(|| eyre!("`toolchain.{key}` must be an array"))?
+        .iter()
+        .map(|v| toml_str(v, key).map(|s| s.to_string()))
+        .collect()
 }
 
 #[cfg(unix)]
@@ -580,6 +625,91 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
                 ("targets".to_string(), "wasm32-wasip1".to_string()),
             ])
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rust_idiomatic_file_supports_toml_without_extension() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("rust-toolchain");
+        std::fs::write(
+            &path,
+            r#"
+[toolchain]
+channel = "nightly-2026-04-11"
+components = ["clippy"]
+"#,
+        )?;
+
+        let plugin = RustPlugin::new();
+        let versions = plugin.parse_idiomatic_file_with_options(&path).await?;
+        let (version, options) = versions.into_iter().next().unwrap();
+
+        assert_eq!(version, "nightly-2026-04-11");
+        assert_eq!(
+            RustOptions::new(&options).lockfile_options(),
+            BTreeMap::from([("components".to_string(), "clippy".to_string())])
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rust_idiomatic_file_supports_legacy_format() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("rust-toolchain");
+        std::fs::write(&path, "nightly-2026-04-11  \n\n")?;
+
+        let plugin = RustPlugin::new();
+        let versions = plugin.parse_idiomatic_file_with_options(&path).await?;
+        let (version, options) = versions.into_iter().next().unwrap();
+
+        assert_eq!(version, "nightly-2026-04-11");
+        assert!(options.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn rust_legacy_format_only_allowed_without_extension() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("rust-toolchain.toml");
+        std::fs::write(&path, "1.85.0\n")?;
+
+        assert!(parse_idiomatic_file(&path).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn rust_legacy_format_rejects_multiple_lines() {
+        // rustup does not accept comments or extra lines in legacy files
+        assert!(parse_toolchain_contents("# comment\nnightly\n", true).is_err());
+        assert!(parse_toolchain_contents("stable\nbeta\n", true).is_err());
+    }
+
+    #[test]
+    fn rust_toolchain_file_rejects_invalid_types() {
+        let err = parse_toolchain_contents("[toolchain]\nchannel = 123\n", true).unwrap_err();
+        assert!(err.to_string().contains("`toolchain.channel`"));
+        let err =
+            parse_toolchain_contents("[toolchain]\ncomponents = \"clippy\"\n", true).unwrap_err();
+        assert!(err.to_string().contains("`toolchain.components`"));
+    }
+
+    #[tokio::test]
+    async fn rust_toolchain_file_takes_precedence_over_toml() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        std::fs::write(dir.path().join("rust-toolchain"), "1.84.0\n")?;
+        let toml_path = dir.path().join("rust-toolchain.toml");
+        std::fs::write(&toml_path, "[toolchain]\nchannel = \"1.85.0\"\n")?;
+
+        // like rustup, the extensionless file wins when both exist
+        let plugin = RustPlugin::new();
+        let versions = plugin.parse_idiomatic_file_with_options(&toml_path).await?;
+        assert!(versions.is_empty());
+
+        let versions = plugin
+            .parse_idiomatic_file_with_options(&dir.path().join("rust-toolchain"))
+            .await?;
+        assert_eq!(versions.into_iter().next().unwrap().0, "1.84.0");
         Ok(())
     }
 

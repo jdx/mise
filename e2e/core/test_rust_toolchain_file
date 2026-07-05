@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# Test that the extensionless rust-toolchain file works like rust-toolchain.toml,
+# in both content formats rustup accepts
+
+mise settings set idiomatic_version_file_enable_tools rust
+
+# extensionless rust-toolchain in TOML format
+cat <<EOF >rust-toolchain
+[toolchain]
+channel = "1.84.0"
+EOF
+assert "mise current rust" "1.84.0"
+
+# extensionless rust-toolchain in rustup's legacy format (bare channel name)
+echo "nightly-2025-01-01" >rust-toolchain
+assert "mise current rust" "nightly-2025-01-01"
+
+# when both files exist, rust-toolchain takes precedence, matching rustup
+cat <<EOF >rust-toolchain.toml
+[toolchain]
+channel = "1.85.0"
+EOF
+assert "mise current rust" "nightly-2025-01-01"
+
+rm rust-toolchain
+assert "mise current rust" "1.85.0"
