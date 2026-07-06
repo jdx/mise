@@ -292,6 +292,21 @@ mise use -g cargo-binstall
 env = "MISE_CARGO_BINSTALL"
 type = "Bool"
 
+[cargo.binstall_native]
+default = true
+description = "[experimental] Use mise's native cargo binary installer when cargo-binstall is unavailable."
+docs = """
+When `experimental = true`, `cargo.binstall_native = true`, and `cargo-binstall`
+is not installed, mise will try to download precompiled binaries using
+`package.metadata.binstall` from the crate's `Cargo.toml`.
+
+This is a best-effort fast path. If the crate does not declare compatible
+metadata, the artifact is unavailable, or the install uses Cargo build options
+that cannot affect a downloaded binary, mise falls back to `cargo install`.
+"""
+env = "MISE_CARGO_BINSTALL_NATIVE"
+type = "Bool"
+
 [cargo.binstall_only]
 default = false
 description = "Only use cargo-binstall for installation, fail if not available."
