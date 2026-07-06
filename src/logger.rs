@@ -93,7 +93,7 @@ impl log::Log for Logger {
             if !out.is_empty() {
                 // Use clx pause/resume for clean logging during progress display
                 progress::pause();
-                eprintln!("{out}");
+                safe_eprintln!("{out}");
                 progress::resume();
             }
         }
@@ -115,7 +115,7 @@ impl Logger {
             if let Ok(log_file) = init_log_file(log_file) {
                 logger.log_file = Some(Mutex::new(log_file));
             } else {
-                eprintln!("mise: could not open log file: {log_file:?}");
+                safe_eprintln!("mise: could not open log file: {log_file:?}");
             }
         }
 
@@ -187,7 +187,7 @@ pub fn init() {
         let file_level = env::MISE_LOG_FILE_LEVEL.unwrap_or(settings.log_level());
         let logger = LOGGER.get_or_init(|| Logger::init(term_level, file_level));
         if let Err(err) = log::set_logger(logger) {
-            eprintln!("mise: could not initialize logger: {err}");
+            safe_eprintln!("mise: could not initialize logger: {err}");
         }
     }
     log::set_max_level(term_level);
