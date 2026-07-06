@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use async_trait::async_trait;
@@ -317,7 +318,7 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
     if filename.ends_with(".dmg") {
         file::un_dmg(archive, &extract_dir)?;
     } else {
-        let format = ExtractionFormat::from_file_name(filename);
+        let format = cask_extraction_format(archive, filename)?;
         if format == ExtractionFormat::Raw {
             // Raw executable binary — copy it using the original URL filename so find_artifact
             // can match against the binary stanza source name (e.g. "claude").
@@ -344,6 +345,25 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
         }
     }
     Ok(extract_dir)
+}
+
+fn cask_extraction_format(archive: &Path, filename: &str) -> Result<ExtractionFormat> {
+    let format = ExtractionFormat::from_file_name(filename);
+    if format != ExtractionFormat::Raw {
+        return Ok(format);
+    }
+    Ok(detect_extraction_format(archive)?.unwrap_or(format))
+}
+
+fn detect_extraction_format(archive: &Path) -> Result<Option<ExtractionFormat>> {
+    let mut file = std::fs::File::open(archive)?;
+    let mut magic = [0; 8];
+    let len = file.read(&mut magic)?;
+    let magic = &magic[..len];
+    if magic.starts_with(b"PK\x03\x04") {
+        return Ok(Some(ExtractionFormat::Zip));
+    }
+    Ok(None)
 }
 
 fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
@@ -1157,6 +1177,32 @@ mod tests {
             sha256: Some("no_check".to_string()),
             artifacts: Vec::new(),
         }
+    }
+
+    #[test]
+    fn detects_suffixless_zip_archives() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("stable");
+        std::fs::write(&archive, b"PK\x03\x04suffixless zip")?;
+
+        assert_eq!(
+            cask_extraction_format(&archive, "visual-studio-code-1.127.0-stable")?,
+            ExtractionFormat::Zip
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn leaves_suffixless_raw_binaries_raw() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("claude");
+        std::fs::write(&archive, b"#!/bin/sh\necho raw\n")?;
+
+        assert_eq!(
+            cask_extraction_format(&archive, "claude-1.0.0-claude")?,
+            ExtractionFormat::Raw
+        );
+        Ok(())
     }
 
     #[test]
