@@ -6,7 +6,7 @@ use crate::config::{Alias, Config};
 use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
 use crate::semver::split_version_prefix;
-use crate::toolset::Toolset;
+use crate::toolset::{ToolRequest, Toolset};
 use crate::{backend, env, file};
 use eyre::Result;
 use indexmap::IndexMap;
@@ -16,7 +16,7 @@ use versions::Versioning;
 pub async fn rebuild_for_toolset(config: &Config, ts: &Toolset) -> Result<()> {
     for backend in ts.list_cached_and_current_backends() {
         for installs_dir in install_dirs_for(&backend) {
-            rebuild_symlinks_in_dir(config, &backend, &installs_dir)?;
+            rebuild_symlinks_in_dir(config, ts, &backend, &installs_dir)?;
         }
     }
     Ok(())
@@ -51,6 +51,7 @@ fn install_dirs_for(backend: &Arc<dyn Backend>) -> Vec<PathBuf> {
 
 fn rebuild_symlinks_in_dir(
     config: &Config,
+    ts: &Toolset,
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
@@ -58,7 +59,7 @@ fn rebuild_symlinks_in_dir(
         .into_iter()
         .filter(|v| is_concrete_install(v))
         .collect::<std::collections::HashSet<_>>();
-    let symlinks = list_symlinks_for_dir(config, backend, installs_dir);
+    let symlinks = list_symlinks_for_dir(config, Some(ts), backend, installs_dir);
     for (from, to) in symlinks {
         let from_name = from.clone();
         let from = installs_dir.join(from);
@@ -99,7 +100,7 @@ fn migrate_real_dirs_in_dir(
         .into_iter()
         .filter(|v| is_concrete_install(v))
         .collect::<std::collections::HashSet<_>>();
-    let symlinks = list_symlinks_for_dir(config, backend, installs_dir);
+    let symlinks = list_symlinks_for_dir(config, None, backend, installs_dir);
     for (from, to) in symlinks {
         let from_name = from.clone();
         let from = installs_dir.join(from);
@@ -116,6 +117,7 @@ fn migrate_real_dirs_in_dir(
 /// Build symlinks for versions found in a specific install directory.
 fn list_symlinks_for_dir(
     config: &Config,
+    ts: Option<&Toolset>,
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> IndexMap<String, PathBuf> {
@@ -150,6 +152,29 @@ fn list_symlinks_for_dir(
                 continue;
             }
             symlinks.insert(format!("{prefix}{from}"), rel_path(&v));
+        }
+    }
+    if let Some(ts) = ts {
+        for (b, tv) in ts.list_current_versions() {
+            if b.ba() != backend.ba() {
+                continue;
+            }
+            if !matches!(tv.request, ToolRequest::Sub { .. }) {
+                continue;
+            }
+            let Some(from) = tv.runtime_pathname() else {
+                continue;
+            };
+            let install_path = tv.install_path();
+            if install_path.parent() != Some(installs_dir) || !install_path.exists() {
+                continue;
+            }
+            if let Some(to) = install_path
+                .file_name()
+                .map(|to| PathBuf::from(".").join(to))
+            {
+                symlinks.insert(from, to);
+            }
         }
     }
     symlinks = symlinks
