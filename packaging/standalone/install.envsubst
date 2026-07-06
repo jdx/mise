@@ -300,6 +300,10 @@ install_mise() {
     tar -xf "$cache_file"
   fi
   mv mise/bin/mise "$install_path"
+  if [ "$(id -u)" = "0" ]; then
+    chown 0:0 "$install_path"
+    chmod 755 "$install_path"
+  fi
 
   # cleanup
   cd / # Move out of $extract_dir before removing it
