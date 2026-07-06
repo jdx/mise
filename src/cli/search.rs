@@ -160,16 +160,9 @@ impl Search {
             return vec![];
         }
 
-        let package_ids = match self.match_type {
-            MatchType::Fuzzy => crate::aqua::aqua_registry_wrapper::aqua_suggest(name),
-            MatchType::Equal | MatchType::Contains => crate::aqua::standard_registry::package_ids()
-                .into_iter()
-                .map(|s| s.to_string())
-                .collect(),
-        };
-
-        package_ids
+        crate::aqua::standard_registry::package_ids()
             .into_iter()
+            .map(|s| s.to_string())
             .filter_map(|id| {
                 let tool_name = id.rsplit_once('/').map_or(id.as_str(), |(_, name)| name);
                 let score = match self.match_type {
@@ -277,17 +270,17 @@ fn get_backends(backends: Vec<&'static str>) -> Vec<String> {
 }
 
 fn get_aqua_description(id: &str) -> String {
-    let fallback = format!("https://github.com/{id}");
+    let fallback = format!("aqua:{id}");
     let Ok(pkg) =
         crate::aqua::standard_registry::package(id).unwrap_or_else(|| Ok(Default::default()))
     else {
         return fallback;
     };
 
-    let backend = if pkg.repo_owner.is_empty() || pkg.repo_name.is_empty() {
-        fallback
-    } else {
+    let backend = if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
         format!("https://github.com/{}/{}", pkg.repo_owner, pkg.repo_name)
+    } else {
+        fallback
     };
 
     match pkg.description.as_deref().filter(|d| !d.is_empty()) {
