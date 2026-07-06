@@ -369,7 +369,11 @@ impl CargoBackend {
         let pkg_fmt = binstall.pkg_fmt.unwrap_or_else(|| "tgz".to_string());
         let package_format = native_package_format(&pkg_fmt)?;
         let binary_ext = if cfg!(windows) { ".exe" } else { "" };
-        let archive_suffix = format!(".{}", package_format.template_value);
+        let archive_suffix = if package_format.extraction_format.is_some() {
+            format!(".{}", package_format.template_value)
+        } else {
+            binary_ext.to_string()
+        };
         let template_ctx = BinstallTemplateContext {
             package: &package,
             crate_name: &crate_name,
@@ -811,7 +815,12 @@ fn find_native_bin(
 ) -> Result<PathBuf> {
     if let Some(bin_dir) = bin_dir {
         let candidate = extract_dir.join(expand_binstall_template(bin_dir, vars));
-        if candidate.is_file() {
+        let file_name = format!("{}{}", vars.bin, vars.binary_ext);
+        let names_requested_bin = candidate
+            .file_name()
+            .and_then(|file_name| file_name.to_str())
+            .is_some_and(|candidate_name| candidate_name == file_name);
+        if candidate.is_file() && (template_contains_var(bin_dir, "bin") || names_requested_bin) {
             return Ok(candidate);
         }
     }
@@ -998,6 +1007,40 @@ mod tests {
         );
         assert_eq!(native_package_format("tgz").unwrap().template_value, "tgz");
         assert!(native_package_format("pkg").is_err());
+    }
+
+    #[test]
+    fn raw_binary_archive_suffix_uses_binary_extension() {
+        let package_format = native_package_format("bin").unwrap();
+        let binary_ext = ".exe";
+        let archive_suffix = if package_format.extraction_format.is_some() {
+            format!(".{}", package_format.template_value)
+        } else {
+            binary_ext.to_string()
+        };
+
+        assert_eq!(archive_suffix, ".exe");
+    }
+
+    #[test]
+    fn fixed_bin_dir_only_matches_requested_binary() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let bin_dir = temp_dir.path().join("bin");
+        file::create_dir_all(&bin_dir).unwrap();
+        fs::write(bin_dir.join("actual"), "").unwrap();
+
+        let vars = BinstallTemplateVars {
+            repo: "",
+            name: "demo",
+            version: "1.2.3",
+            target: "x86_64-unknown-linux-gnu",
+            archive_format: "tgz",
+            archive_suffix: ".tgz",
+            bin: "expected",
+            binary_ext: "",
+        };
+
+        assert!(find_native_bin(temp_dir.path(), Some("bin/actual"), &vars).is_err());
     }
 
     #[test]
