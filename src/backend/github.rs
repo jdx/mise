@@ -100,15 +100,25 @@ impl<'a> GitBackendOptions<'a> {
     }
 
     fn filter_bins(&self) -> Option<Vec<String>> {
-        self.values
-            .platform_string("filter_bins")
-            .map(|filter_bins| {
+        let bins: Vec<String> =
+            if let Some(filter_bins) = self.values.platform_string("filter_bins") {
                 filter_bins
                     .split(',')
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect()
-            })
+            } else {
+                let value = self.values.raw().opts.get("filter_bins")?;
+                match value {
+                    toml::Value::Array(values) => values
+                        .iter()
+                        .filter_map(|value| value.as_str().map(|s| s.trim().to_string()))
+                        .filter(|s| !s.is_empty())
+                        .collect(),
+                    _ => return None,
+                }
+            };
+        if bins.is_empty() { None } else { Some(bins) }
     }
 
     /// Substring an asset name must contain to remain a candidate, applied as a
@@ -2301,6 +2311,35 @@ mod tests {
             "forgejo:test/repo".to_string(),
             Some("forgejo:test/repo".to_string()),
         ))
+    }
+
+    #[test]
+    fn test_filter_bins_accepts_string_or_array() {
+        let backend = create_test_backend();
+
+        let mut string_opts = ToolVersionOptions::default();
+        string_opts.opts.insert(
+            "filter_bins".to_string(),
+            toml::Value::String("foo, bar, ".to_string()),
+        );
+        assert_eq!(
+            backend.options(&string_opts).filter_bins(),
+            Some(vec!["foo".to_string(), "bar".to_string()])
+        );
+
+        let mut array_opts = ToolVersionOptions::default();
+        array_opts.opts.insert(
+            "filter_bins".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("foo".to_string()),
+                toml::Value::String(" bar ".to_string()),
+                toml::Value::String("".to_string()),
+            ]),
+        );
+        assert_eq!(
+            backend.options(&array_opts).filter_bins(),
+            Some(vec!["foo".to_string(), "bar".to_string()])
+        );
     }
 
     #[test]
