@@ -44,16 +44,21 @@ impl EnvResults {
                 .map(|e| e.to_string_lossy().to_string())
                 .unwrap_or_default();
             *env = match ext.as_str() {
-                "json" => Self::json(config, &p, parse_template).await?,
-                "yaml" => Self::yaml(config, &p, parse_template).await?,
-                "toml" => Self::toml(config, &p, parse_template).await?,
+                "json" => Self::json(config, exec_env, &p, parse_template).await?,
+                "yaml" => Self::yaml(config, exec_env, &p, parse_template).await?,
+                "toml" => Self::toml(config, exec_env, &p, parse_template).await?,
                 _ => Self::dotenv(&p).await?,
             };
         }
         Ok(out)
     }
 
-    async fn json<PT>(config: &Arc<Config>, p: &Path, parse_template: PT) -> Result<EnvMap>
+    async fn json<PT>(
+        config: &Arc<Config>,
+        exec_env: &TeraEnvMap,
+        p: &Path,
+        parse_template: PT,
+    ) -> Result<EnvMap>
     where
         PT: FnMut(String) -> Result<String>,
     {
@@ -61,9 +66,14 @@ impl EnvResults {
         if let Ok(raw) = file::read_to_string(p) {
             let mut f: Env<serde_json::Value> = serde_json::from_str(&raw).wrap_err_with(errfn)?;
             if !f.sops.is_empty() {
-                let decrypted =
-                    sops::decrypt::<_, JsonFileFormat>(config, &raw, parse_template, "json")
-                        .await?;
+                let decrypted = sops::decrypt::<_, JsonFileFormat>(
+                    config,
+                    exec_env,
+                    &raw,
+                    parse_template,
+                    "json",
+                )
+                .await?;
                 if !decrypted.is_empty() {
                     f = serde_json::from_str(&decrypted).wrap_err_with(errfn)?;
                 } else {
@@ -89,7 +99,12 @@ impl EnvResults {
         }
     }
 
-    async fn yaml<PT>(config: &Arc<Config>, p: &Path, parse_template: PT) -> Result<EnvMap>
+    async fn yaml<PT>(
+        config: &Arc<Config>,
+        exec_env: &TeraEnvMap,
+        p: &Path,
+        parse_template: PT,
+    ) -> Result<EnvMap>
     where
         PT: FnMut(String) -> Result<String>,
     {
@@ -97,9 +112,14 @@ impl EnvResults {
         if let Ok(raw) = file::read_to_string(p) {
             let mut f: Env<serde_yaml::Value> = serde_yaml::from_str(&raw).wrap_err_with(errfn)?;
             if !f.sops.is_empty() {
-                let decrypted =
-                    sops::decrypt::<_, YamlFileFormat>(config, &raw, parse_template, "yaml")
-                        .await?;
+                let decrypted = sops::decrypt::<_, YamlFileFormat>(
+                    config,
+                    exec_env,
+                    &raw,
+                    parse_template,
+                    "yaml",
+                )
+                .await?;
                 if !decrypted.is_empty() {
                     f = serde_yaml::from_str(&decrypted).wrap_err_with(errfn)?;
                 } else {
@@ -125,7 +145,12 @@ impl EnvResults {
         }
     }
 
-    async fn toml<PT>(config: &Arc<Config>, p: &Path, parse_template: PT) -> Result<EnvMap>
+    async fn toml<PT>(
+        config: &Arc<Config>,
+        exec_env: &TeraEnvMap,
+        p: &Path,
+        parse_template: PT,
+    ) -> Result<EnvMap>
     where
         PT: FnMut(String) -> Result<String>,
     {
@@ -133,9 +158,14 @@ impl EnvResults {
         if let Ok(raw) = file::read_to_string(p) {
             let mut f: Env<toml::Value> = toml::from_str(&raw).wrap_err_with(errfn)?;
             if !f.sops.is_empty() {
-                let decrypted =
-                    sops::decrypt::<_, TomlFileFormat>(config, &raw, parse_template, "toml")
-                        .await?;
+                let decrypted = sops::decrypt::<_, TomlFileFormat>(
+                    config,
+                    exec_env,
+                    &raw,
+                    parse_template,
+                    "toml",
+                )
+                .await?;
                 if !decrypted.is_empty() {
                     f = toml::from_str(&decrypted).wrap_err_with(errfn)?;
                 } else {
@@ -209,7 +239,8 @@ mod tests {
             .to_string();
         file::write(&p, encrypted).unwrap();
 
-        let env = EnvResults::toml(&config, &p, Ok).await.unwrap();
+        let exec_env = TeraEnvMap::new();
+        let env = EnvResults::toml(&config, &exec_env, &p, Ok).await.unwrap();
         assert_eq!(env.get("SECRET").unwrap(), "mysecret");
 
         match prev_age_key {
@@ -244,7 +275,10 @@ mod tests {
             .to_string();
         file::write(&p, encrypted).unwrap();
 
-        let err = EnvResults::toml(&config, &p, Ok).await.unwrap_err();
+        let exec_env = TeraEnvMap::new();
+        let err = EnvResults::toml(&config, &exec_env, &p, Ok)
+            .await
+            .unwrap_err();
         assert!(
             err.to_string()
                 .contains("sops.rops=false is not supported for TOML SOPS files"),

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::backend::configured_toolset_or_path_which;
 use crate::config::{Config, Settings};
 use crate::env;
+use crate::env_diff::EnvMap;
 use crate::file::replace_path;
 use crate::{dirs, file, result};
 use eyre::{WrapErr, eyre};
@@ -10,10 +11,11 @@ use rops::cryptography::cipher::AES256GCM;
 use rops::cryptography::hasher::SHA512;
 use rops::file::RopsFile;
 use rops::file::state::EncryptedFile;
-use tokio::sync::{Mutex, OnceCell};
+use tokio::sync::Mutex;
 
 pub async fn decrypt<PT, F>(
     config: &Arc<Config>,
+    exec_env: &EnvMap,
     input: &str,
     mut parse_template: PT,
     format: &str,
@@ -22,8 +24,6 @@ where
     PT: FnMut(String) -> result::Result<String>,
     F: rops::file::format::FileFormat,
 {
-    static AGE_KEY: OnceCell<Option<String>> = OnceCell::const_new();
-    static AGE_KEY_FILE: OnceCell<Option<std::path::PathBuf>> = OnceCell::const_new();
     static MUTEX: Mutex<()> = Mutex::const_new(());
 
     let use_rops = Settings::get().sops.rops;
@@ -33,100 +33,7 @@ where
         ));
     }
 
-    let age = AGE_KEY
-        .get_or_init(async || {
-            // 1. Check mise-specific MISE_SOPS_AGE_KEY setting first (highest priority)
-            if let Some(age_key) = &Settings::get().sops.age_key
-                && !age_key.is_empty()
-            {
-                return Some(age_key.clone());
-            }
-
-            // 2. Check mise-specific MISE_SOPS_AGE_KEY_FILE setting
-            if let Some(key_file) = &Settings::get().sops.age_key_file {
-                let p = replace_path(
-                    match parse_template(key_file.to_string_lossy().to_string()) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            warn!("failed to parse MISE_SOPS_AGE_KEY_FILE: {}", e);
-                            return None;
-                        }
-                    },
-                );
-                if p.exists()
-                    && let Ok(raw) = file::read_to_string(&p)
-                {
-                    let key = raw
-                        .trim()
-                        .lines()
-                        .filter(|l| !l.starts_with('#'))
-                        .collect::<String>();
-                    if !key.trim().is_empty() {
-                        // Store the path for later use by sops CLI
-                        let _ = AGE_KEY_FILE.get_or_init(|| async { Some(p.clone()) }).await;
-                        return Some(key);
-                    }
-                }
-            }
-
-            // 3. Check standard SOPS_AGE_KEY_FILE environment variable
-            if let Ok(key_file_path) = env::var("SOPS_AGE_KEY_FILE") {
-                let p = replace_path(match parse_template(key_file_path.clone()) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        warn!("failed to parse SOPS_AGE_KEY_FILE: {}", e);
-                        return None;
-                    }
-                });
-                if p.exists()
-                    && let Ok(raw) = file::read_to_string(&p)
-                {
-                    let key = raw
-                        .trim()
-                        .lines()
-                        .filter(|l| !l.starts_with('#'))
-                        .collect::<String>();
-                    if !key.trim().is_empty() {
-                        // Store the path for later use by sops CLI
-                        let _ = AGE_KEY_FILE.get_or_init(|| async { Some(p.clone()) }).await;
-                        return Some(key);
-                    }
-                }
-            }
-
-            // 4. Check standard SOPS_AGE_KEY environment variable (direct key content)
-            if let Ok(key) = env::var("SOPS_AGE_KEY")
-                && !key.trim().is_empty()
-            {
-                return Some(key.trim().to_string());
-            }
-
-            // 5. Fall back to default path ~/.config/mise/age.txt
-            let p = dirs::CONFIG.join("age.txt");
-            let p = replace_path(match parse_template(p.to_string_lossy().to_string()) {
-                Ok(p) => p,
-                Err(e) => {
-                    warn!("failed to parse default sops age key file: {}", e);
-                    return None;
-                }
-            });
-            if p.exists()
-                && let Ok(raw) = file::read_to_string(p.clone())
-            {
-                let key = raw
-                    .trim()
-                    .lines()
-                    .filter(|l| !l.starts_with('#'))
-                    .collect::<String>();
-                if !key.trim().is_empty() {
-                    // Store the path for later use by sops CLI
-                    let _ = AGE_KEY_FILE.get_or_init(|| async { Some(p.clone()) }).await;
-                    return Some(key);
-                }
-            }
-            None
-        })
-        .await;
+    let (age, age_key_file) = resolve_age_key(exec_env, &mut parse_template);
 
     if age.is_none() && !Settings::get().sops.strict {
         debug!("age key not found, skipping decryption in non-strict mode");
@@ -139,7 +46,7 @@ where
     let prev_age_key_file = env::var("SOPS_AGE_KEY_FILE").ok();
 
     // Set SOPS_AGE_KEY_FILE with expanded path if we found one, so sops CLI can use it
-    if let Some(expanded_path) = AGE_KEY_FILE.get().and_then(|f| f.as_ref()) {
+    if let Some(expanded_path) = &age_key_file {
         env::set_var(
             "SOPS_AGE_KEY_FILE",
             expanded_path.to_string_lossy().to_string(),
@@ -254,4 +161,108 @@ where
         env::remove_var("SOPS_AGE_KEY_FILE");
     }
     Ok(output.unwrap_or_default())
+}
+
+fn resolve_age_key<PT>(
+    env: &EnvMap,
+    parse_template: &mut PT,
+) -> (Option<String>, Option<std::path::PathBuf>)
+where
+    PT: FnMut(String) -> result::Result<String>,
+{
+    // 1. Check mise-specific MISE_SOPS_AGE_KEY setting first (highest priority)
+    if let Some(age_key) = &Settings::get().sops.age_key
+        && !age_key.is_empty()
+    {
+        return (Some(age_key.clone()), None);
+    }
+
+    // 2. Check mise-specific MISE_SOPS_AGE_KEY_FILE setting
+    if let Some(key_file) = &Settings::get().sops.age_key_file
+        && let Some((key, path)) = read_age_key_file(
+            key_file.to_string_lossy().to_string(),
+            parse_template,
+            "MISE_SOPS_AGE_KEY_FILE",
+        )
+    {
+        return (Some(key), Some(path));
+    }
+
+    // 3. Check ordered env directives that have already been resolved
+    if let Some(age_key) = env.get("MISE_SOPS_AGE_KEY").filter(|key| !key.is_empty()) {
+        return (Some(age_key.clone()), None);
+    }
+
+    if let Some(key_file) = env.get("MISE_SOPS_AGE_KEY_FILE")
+        && let Some((key, path)) =
+            read_age_key_file(key_file.clone(), parse_template, "MISE_SOPS_AGE_KEY_FILE")
+    {
+        return (Some(key), Some(path));
+    }
+
+    if let Some(key_file) = env.get("SOPS_AGE_KEY_FILE")
+        && let Some((key, path)) =
+            read_age_key_file(key_file.clone(), parse_template, "SOPS_AGE_KEY_FILE")
+    {
+        return (Some(key), Some(path));
+    }
+
+    if let Some(age_key) = env.get("SOPS_AGE_KEY").filter(|key| !key.trim().is_empty()) {
+        return (Some(age_key.trim().to_string()), None);
+    }
+
+    // 4. Check standard SOPS environment variables
+    if let Ok(key_file_path) = env::var("SOPS_AGE_KEY_FILE")
+        && let Some((key, path)) =
+            read_age_key_file(key_file_path, parse_template, "SOPS_AGE_KEY_FILE")
+    {
+        return (Some(key), Some(path));
+    }
+
+    if let Ok(key) = env::var("SOPS_AGE_KEY")
+        && !key.trim().is_empty()
+    {
+        return (Some(key.trim().to_string()), None);
+    }
+
+    // 5. Fall back to default path ~/.config/mise/age.txt
+    if let Some((key, path)) = read_age_key_file(
+        dirs::CONFIG.join("age.txt").to_string_lossy().to_string(),
+        parse_template,
+        "default sops age key file",
+    ) {
+        return (Some(key), Some(path));
+    }
+
+    (None, None)
+}
+
+fn read_age_key_file<PT>(
+    key_file_path: String,
+    parse_template: &mut PT,
+    source: &str,
+) -> Option<(String, std::path::PathBuf)>
+where
+    PT: FnMut(String) -> result::Result<String>,
+{
+    let p = replace_path(match parse_template(key_file_path) {
+        Ok(p) => p,
+        Err(e) => {
+            warn!("failed to parse {source}: {e}");
+            return None;
+        }
+    });
+    if p.exists()
+        && let Ok(raw) = file::read_to_string(&p)
+    {
+        let key = raw
+            .trim()
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .collect::<String>();
+        if !key.trim().is_empty() {
+            return Some((key, p));
+        }
+    }
+    None
 }
