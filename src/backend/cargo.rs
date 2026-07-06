@@ -207,7 +207,7 @@ impl Backend for CargoBackend {
                 BinstallStatus::Disabled if Settings::get().cargo.binstall_only => {
                     bail!("cargo-binstall is disabled, but cargo.binstall_only is set");
                 }
-                BinstallStatus::Unavailable
+                BinstallStatus::Disabled | BinstallStatus::Unavailable
                     if Settings::get().experimental
                         && Settings::get().cargo.binstall_native
                         && !Settings::get().cargo.binstall_only
@@ -349,6 +349,9 @@ impl CargoBackend {
         let opts = CargoOptions::new(&request_options);
         let version = tv.version.as_str();
         let crate_name = opts.crate_arg().unwrap_or_else(|| self.tool_name());
+        if Settings::get().cargo.registry_name.is_some() {
+            return Ok(false);
+        }
         let package = CratesIoPackage::fetch(&crate_name, version).await?;
         let target = cargo_target_triple(&PlatformTarget::from_current())
             .ok_or_else(|| eyre!("unsupported platform for native cargo binary install"))?;
@@ -364,20 +367,49 @@ impl CargoBackend {
             None => vec![crate_name.clone()],
         };
         let pkg_fmt = binstall.pkg_fmt.unwrap_or_else(|| "tgz".to_string());
-        let archive_format = archive_format(&pkg_fmt)?;
+        let package_format = native_package_format(&pkg_fmt)?;
         let binary_ext = if cfg!(windows) { ".exe" } else { "" };
+        let archive_suffix = format!(".{}", package_format.template_value);
+
+        let bin_root = tv.install_path().join("bin");
+        file::create_dir_all(&bin_root)?;
+
+        if package_format.extraction_format.is_none() {
+            for bin in &bins {
+                let dest = bin_root.join(format!("{bin}{binary_ext}"));
+                let vars = binstall_template_vars(
+                    &package,
+                    &crate_name,
+                    version,
+                    &target,
+                    package_format.template_value,
+                    &archive_suffix,
+                    bin,
+                    binary_ext,
+                );
+                let archive_url = expand_binstall_template(&binstall.pkg_url, &vars);
+                ctx.pr
+                    .set_message(format!("download {}", get_filename_from_url(&archive_url)));
+                HTTP.download_file(&archive_url, &dest, Some(ctx.pr.as_ref()))
+                    .await?;
+                make_executable(&dest)?;
+            }
+            info!("installed {crate_name}@{version} from native cargo binary artifact");
+            return Ok(true);
+        }
+
         let archive_url = expand_binstall_template(
             &binstall.pkg_url,
-            &BinstallTemplateVars {
-                repo: package.repository.as_deref().unwrap_or_default(),
-                name: &crate_name,
+            &binstall_template_vars(
+                &package,
+                &crate_name,
                 version,
-                target: &target,
-                archive_format: &archive_format,
-                archive_suffix: &format!(".{archive_format}"),
-                bin: bins.first().map(String::as_str).unwrap_or(&crate_name),
+                &target,
+                package_format.template_value,
+                &archive_suffix,
+                bins.first().map(String::as_str).unwrap_or(&crate_name),
                 binary_ext,
-            },
+            ),
         );
 
         let archive_path = tv.download_path().join(get_filename_from_url(&archive_url));
@@ -395,7 +427,7 @@ impl CargoBackend {
         file::extract_archive(
             &archive_path,
             extract_dir.path(),
-            ExtractionFormat::from_file_name(&archive_path.to_string_lossy()),
+            package_format.extraction_format.unwrap(),
             &ExtractOptions {
                 strip_components: 0,
                 pr: Some(ctx.pr.as_ref()),
@@ -403,15 +435,18 @@ impl CargoBackend {
             },
         )?;
 
-        let bin_root = tv.install_path().join("bin");
-        file::create_dir_all(&bin_root)?;
         for bin in &bins {
-            let src = find_native_bin(
-                extract_dir.path(),
-                binstall.bin_dir.as_deref(),
+            let vars = binstall_template_vars(
+                &package,
+                &crate_name,
+                version,
+                &target,
+                package_format.template_value,
+                &archive_suffix,
                 bin,
                 binary_ext,
-            )?;
+            );
+            let src = find_native_bin(extract_dir.path(), binstall.bin_dir.as_deref(), &vars)?;
             let dest = bin_root.join(format!("{bin}{binary_ext}"));
             fs::copy(&src, &dest).wrap_err_with(|| {
                 format!(
@@ -420,13 +455,7 @@ impl CargoBackend {
                     file::display_path(&dest)
                 )
             })?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mut perms = fs::metadata(&dest)?.permissions();
-                perms.set_mode(perms.mode() | 0o755);
-                fs::set_permissions(&dest, perms)?;
-            }
+            make_executable(&dest)?;
         }
         info!("installed {crate_name}@{version} from native cargo binary artifact");
         Ok(true)
@@ -459,7 +488,7 @@ struct CratesIoPackageResponse {
 
 #[derive(Debug, serde::Deserialize)]
 struct CratesIoPackage {
-    #[serde(rename = "crate")]
+    #[serde(rename = "crate", deserialize_with = "deserialize_crate_name")]
     name: String,
     num: String,
     dl_path: String,
@@ -477,6 +506,22 @@ impl CratesIoPackage {
 
     fn download_url(&self) -> String {
         format!("https://crates.io{}", self.dl_path)
+    }
+}
+
+fn deserialize_crate_name<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum CrateName {
+        Name(String),
+        Object { name: String },
+    }
+
+    match <CrateName as serde::Deserialize>::deserialize(deserializer)? {
+        CrateName::Name(name) | CrateName::Object { name } => Ok(name),
     }
 }
 
@@ -538,6 +583,28 @@ struct BinstallTemplateVars<'a> {
     binary_ext: &'a str,
 }
 
+fn binstall_template_vars<'a>(
+    package: &'a CratesIoPackage,
+    crate_name: &'a str,
+    version: &'a str,
+    target: &'a str,
+    archive_format: &'a str,
+    archive_suffix: &'a str,
+    bin: &'a str,
+    binary_ext: &'a str,
+) -> BinstallTemplateVars<'a> {
+    BinstallTemplateVars {
+        repo: package.repository.as_deref().unwrap_or_default(),
+        name: crate_name,
+        version,
+        target,
+        archive_format,
+        archive_suffix,
+        bin,
+        binary_ext,
+    }
+}
+
 async fn download_crate_manifest(
     package: &CratesIoPackage,
     tv: &ToolVersion,
@@ -546,7 +613,11 @@ async fn download_crate_manifest(
     let crate_path = tv
         .download_path()
         .join(format!("{}-{}.crate", package.name, package.num));
-    HTTP.download_file(package.download_url(), &crate_path, None)
+    ctx.pr.set_message(format!(
+        "download {}",
+        crate_path.file_name().unwrap().to_string_lossy()
+    ));
+    HTTP.download_file(package.download_url(), &crate_path, Some(ctx.pr.as_ref()))
         .await?;
 
     let temp_dir = tempfile::Builder::new()
@@ -587,12 +658,42 @@ fn cargo_target_triple(target: &PlatformTarget) -> Option<String> {
     }
 }
 
-fn archive_format(pkg_fmt: &str) -> Result<String> {
+#[derive(Debug, Clone, Copy)]
+struct NativePackageFormat<'a> {
+    template_value: &'a str,
+    extraction_format: Option<ExtractionFormat>,
+}
+
+fn native_package_format(pkg_fmt: &str) -> Result<NativePackageFormat<'_>> {
     match pkg_fmt {
-        "tgz" => Ok("tar.gz".to_string()),
-        "txz" => Ok("tar.xz".to_string()),
-        "tbz" | "tbz2" => Ok("tar.bz2".to_string()),
-        "zip" | "tar" => Ok(pkg_fmt.to_string()),
+        "tgz" => Ok(NativePackageFormat {
+            template_value: pkg_fmt,
+            extraction_format: Some(ExtractionFormat::TarGz),
+        }),
+        "txz" => Ok(NativePackageFormat {
+            template_value: pkg_fmt,
+            extraction_format: Some(ExtractionFormat::TarXz),
+        }),
+        "tbz" | "tbz2" => Ok(NativePackageFormat {
+            template_value: pkg_fmt,
+            extraction_format: Some(ExtractionFormat::TarBz2),
+        }),
+        "tzst" | "tzstd" => Ok(NativePackageFormat {
+            template_value: pkg_fmt,
+            extraction_format: Some(ExtractionFormat::TarZst),
+        }),
+        "zip" => Ok(NativePackageFormat {
+            template_value: pkg_fmt,
+            extraction_format: Some(ExtractionFormat::Zip),
+        }),
+        "tar" => Ok(NativePackageFormat {
+            template_value: pkg_fmt,
+            extraction_format: Some(ExtractionFormat::Tar),
+        }),
+        "bin" => Ok(NativePackageFormat {
+            template_value: pkg_fmt,
+            extraction_format: None,
+        }),
         other => Err(eyre!(
             "unsupported native cargo binary package format: {other}"
         )),
@@ -618,42 +719,40 @@ fn expand_binstall_template(template: &str, vars: &BinstallTemplateVars<'_>) -> 
     out
 }
 
-fn expand_bin_dir(template: &str, bin: &str, binary_ext: &str) -> String {
-    expand_binstall_template(
-        template,
-        &BinstallTemplateVars {
-            repo: "",
-            name: "",
-            version: "",
-            target: "",
-            archive_format: "",
-            archive_suffix: "",
-            bin,
-            binary_ext,
-        },
-    )
-}
-
 fn find_native_bin(
     extract_dir: &std::path::Path,
     bin_dir: Option<&str>,
-    bin: &str,
-    binary_ext: &str,
+    vars: &BinstallTemplateVars<'_>,
 ) -> Result<PathBuf> {
     if let Some(bin_dir) = bin_dir {
-        let candidate = extract_dir.join(expand_bin_dir(bin_dir, bin, binary_ext));
+        let candidate = extract_dir.join(expand_binstall_template(bin_dir, vars));
         if candidate.is_file() {
             return Ok(candidate);
         }
     }
 
-    let file_name = format!("{bin}{binary_ext}");
+    let file_name = format!("{}{}", vars.bin, vars.binary_ext);
     WalkDir::new(extract_dir)
         .into_iter()
         .filter_map(|entry| entry.ok())
         .find(|entry| entry.file_type().is_file() && entry.file_name() == file_name.as_str())
         .map(|entry| entry.into_path())
         .ok_or_else(|| eyre!("native cargo binary artifact did not contain {file_name}"))
+}
+
+fn make_executable(path: &std::path::Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(path)?.permissions();
+        perms.set_mode(perms.mode() | 0o755);
+        fs::set_permissions(path, perms)?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+    Ok(())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -783,10 +882,70 @@ mod tests {
     }
 
     #[test]
-    fn archive_format_normalizes_binstall_aliases() {
-        assert_eq!(archive_format("tgz").unwrap(), "tar.gz");
-        assert_eq!(archive_format("txz").unwrap(), "tar.xz");
-        assert_eq!(archive_format("zip").unwrap(), "zip");
-        assert!(archive_format("pkg").is_err());
+    fn expand_binstall_template_honors_bin_dir_metadata_vars() {
+        let rendered = expand_binstall_template(
+            "{ name }-{ version }/{ bin }{ binary-ext }",
+            &BinstallTemplateVars {
+                repo: "https://example.com",
+                name: "demo",
+                version: "1.2.3",
+                target: "x86_64-pc-windows-msvc",
+                archive_format: "zip",
+                archive_suffix: ".zip",
+                bin: "demo-cli",
+                binary_ext: ".exe",
+            },
+        );
+
+        assert_eq!(rendered, "demo-1.2.3/demo-cli.exe");
+    }
+
+    #[test]
+    fn native_package_format_handles_binstall_aliases() {
+        assert_eq!(
+            native_package_format("tgz").unwrap().extraction_format,
+            Some(ExtractionFormat::TarGz)
+        );
+        assert_eq!(
+            native_package_format("txz").unwrap().extraction_format,
+            Some(ExtractionFormat::TarXz)
+        );
+        assert_eq!(
+            native_package_format("tzstd").unwrap().extraction_format,
+            Some(ExtractionFormat::TarZst)
+        );
+        assert_eq!(
+            native_package_format("bin").unwrap().extraction_format,
+            None
+        );
+        assert_eq!(native_package_format("tgz").unwrap().template_value, "tgz");
+        assert!(native_package_format("pkg").is_err());
+    }
+
+    #[test]
+    fn crates_io_package_deserializes_string_or_object_crate_field() {
+        let string_field: CratesIoPackageResponse = serde_json::from_value(serde_json::json!({
+            "version": {
+                "crate": "demo",
+                "num": "1.2.3",
+                "dl_path": "/api/v1/crates/demo/1.2.3/download",
+                "repository": null,
+                "bin_names": ["demo"]
+            }
+        }))
+        .unwrap();
+        let object_field: CratesIoPackageResponse = serde_json::from_value(serde_json::json!({
+            "version": {
+                "crate": { "name": "demo" },
+                "num": "1.2.3",
+                "dl_path": "/api/v1/crates/demo/1.2.3/download",
+                "repository": null,
+                "bin_names": ["demo"]
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(string_field.version.name, "demo");
+        assert_eq!(object_field.version.name, "demo");
     }
 }
