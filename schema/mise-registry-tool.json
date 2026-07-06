@@ -65,6 +65,10 @@
     "toolId": {
       "type": "string",
       "pattern": "^[a-zA-Z0-9_.-]+$"
+    },
+    "toolArg": {
+      "type": "string",
+      "pattern": "^\\S+$"
     }
   },
   "properties": {
@@ -175,9 +179,9 @@
         "tools": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/toolId"
+            "$ref": "#/$defs/toolArg"
           },
-          "description": "Additional mise tools to install before running test.cmd. Used only by mise test-tool."
+          "description": "Additional mise tool arguments to install before running test.cmd. Used only by mise test-tool."
         }
       },
       "required": ["cmd", "expected"],
