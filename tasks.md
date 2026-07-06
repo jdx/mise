@@ -178,14 +178,6 @@ Run all render tasks
 
 Generate shell completions
 
-## `render:fig`
-
-- Depends: docs:setup
-
-- **Usage**: `render:fig`
-
-Generate Fig completion spec
-
 ## `render:help`
 
 - Depends: build
