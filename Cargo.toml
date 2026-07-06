@@ -186,7 +186,7 @@ tabled = { version = "0.21", features = ["ansi"] }
 taplo = "0.14"
 tar = "0.4"
 tempfile = "3"
-tera = "1"
+tera = "2"
 terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }

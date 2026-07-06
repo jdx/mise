@@ -13,7 +13,6 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 use tera::Context as TeraContext;
-use tera::Value as TeraValue;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
 
@@ -973,10 +972,10 @@ impl ConfigFile for MiseToml {
             && let Some(env_results) = config.env_results_cached()
         {
             let mut env_vars: EnvMap =
-                if let Some(TeraValue::Object(existing_env)) = context.get("env") {
+                if let Some(existing_env) = context.get("env").and_then(|v| v.as_map()) {
                     existing_env
                         .iter()
-                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.to_string(), s.to_string())))
                         .collect()
                 } else {
                     env::PRISTINE_ENV.clone()
