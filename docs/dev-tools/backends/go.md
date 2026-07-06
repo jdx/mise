@@ -29,6 +29,22 @@ $ hivemind --help
 Hivemind version 1.1.0
 ```
 
+You can also pin a specific Go module version, including an unreleased
+pseudo-version:
+
+```toml
+[tools]
+"go:github.com/grafana/oats" = "v0.7.1-0.20260703092802-96201f1b8136"
+```
+
+If you need to resolve an unreleased revision directly from VCS instead of the
+module proxy, combine the pinned version with [`install_env`](#install_env):
+
+```toml
+[tools]
+"go:github.com/grafana/oats" = { version = "v0.7.1-0.20260703092802-96201f1b8136", install_env = { GOPROXY = "direct", GONOSUMDB = "github.com/grafana/oats" } }
+```
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `go` backend—these
