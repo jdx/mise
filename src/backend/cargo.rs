@@ -25,6 +25,9 @@ use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 
+const CARGO_NATIVE_BINSTALL_WARN_AT: &str = "2027.1.0";
+const CARGO_NATIVE_BINSTALL_DEFAULT_AT: &str = "2027.7.0";
+
 #[derive(Debug)]
 pub struct CargoBackend {
     ba: Arc<BackendArg>,
@@ -92,6 +95,12 @@ enum BinstallStatus {
     Disabled,
     Unavailable,
     UnsupportedOptions(Vec<&'static str>),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NativeBinstallAction {
+    Install,
+    WarnOnly,
 }
 
 #[async_trait]
@@ -207,16 +216,27 @@ impl Backend for CargoBackend {
                 BinstallStatus::Disabled if Settings::get().cargo.binstall_only => {
                     bail!("cargo-binstall is disabled, but cargo.binstall_only is set");
                 }
-                BinstallStatus::Unavailable
-                    if Settings::get().experimental
-                        && Settings::get().cargo.binstall_native
-                        && !Settings::get().cargo.binstall_only
-                        && self.native_binstall(ctx, &tv).await? =>
-                {
-                    return Ok(tv.clone());
-                }
                 _ if Settings::get().cargo.binstall_only => {
                     bail!("cargo-binstall is not available, but cargo.binstall_only is set");
+                }
+                BinstallStatus::Unavailable => {
+                    match Settings::get().cargo.binstall_native {
+                        Some(true) => {
+                            if self
+                                .native_binstall(ctx, &tv, NativeBinstallAction::Install)
+                                .await?
+                            {
+                                return Ok(tv.clone());
+                            }
+                        }
+                        Some(false) => {}
+                        None if native_binstall_rollout_warning_active() => {
+                            self.native_binstall(ctx, &tv, NativeBinstallAction::WarnOnly)
+                                .await?;
+                        }
+                        None => {}
+                    }
+                    cmd.arg(install_arg)
                 }
                 BinstallStatus::UnsupportedOptions(options) => {
                     let options = format_tool_options(&options);
@@ -333,8 +353,13 @@ impl CargoBackend {
         BinstallStatus::Unavailable
     }
 
-    async fn native_binstall(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<bool> {
-        match self.native_binstall_result(ctx, tv).await {
+    async fn native_binstall(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        action: NativeBinstallAction,
+    ) -> Result<bool> {
+        match self.native_binstall_result(ctx, tv, action).await {
             Ok(true) => Ok(true),
             Ok(false) => Ok(false),
             Err(err) => {
@@ -344,7 +369,12 @@ impl CargoBackend {
         }
     }
 
-    async fn native_binstall_result(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<bool> {
+    async fn native_binstall_result(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        action: NativeBinstallAction,
+    ) -> Result<bool> {
         let request_options = tv.request.options();
         let opts = CargoOptions::new(&request_options);
         let version = tv.version.as_str();
@@ -385,12 +415,16 @@ impl CargoBackend {
         };
 
         let bin_root = tv.install_path().join("bin");
-        file::create_dir_all(&bin_root)?;
 
         if package_format.extraction_format.is_none() {
             if !raw_binary_url_supports_bins(&binstall.pkg_url, &bins) {
                 return Ok(false);
             }
+            if matches!(action, NativeBinstallAction::WarnOnly) {
+                warn_native_binstall_rollout();
+                return Ok(false);
+            }
+            file::create_dir_all(&bin_root)?;
             let download_dir = tempfile::Builder::new()
                 .prefix("mise-cargo-binstall-bin-")
                 .tempdir()?;
@@ -419,6 +453,13 @@ impl CargoBackend {
             info!("installed {crate_name}@{version} from native cargo binary artifact");
             return Ok(true);
         }
+
+        if matches!(action, NativeBinstallAction::WarnOnly) {
+            warn_native_binstall_rollout();
+            return Ok(false);
+        }
+
+        file::create_dir_all(&bin_root)?;
 
         if template_contains_var(&binstall.pkg_url, "bin") {
             let download_dir = tempfile::Builder::new()
@@ -811,6 +852,28 @@ fn template_contains_var(template: &str, key: &str) -> bool {
     template.contains(&format!("{{ {key} }}")) || template.contains(&format!("{{{key}}}"))
 }
 
+fn native_binstall_rollout_warning_active() -> bool {
+    native_binstall_rollout_warning_active_for(&crate::cli::version::V)
+}
+
+fn native_binstall_rollout_warning_active_for(current: &versions::Versioning) -> bool {
+    use versions::Versioning;
+
+    debug_assert!(
+        *current < Versioning::new(CARGO_NATIVE_BINSTALL_DEFAULT_AT).unwrap(),
+        "native cargo binary installs should be the default now; make cargo.binstall_native a two-way switch"
+    );
+    *current >= Versioning::new(CARGO_NATIVE_BINSTALL_WARN_AT).unwrap()
+}
+
+fn warn_native_binstall_rollout() {
+    warn_once!(
+        "mise will install cargo packages from native precompiled binary artifacts by default in {CARGO_NATIVE_BINSTALL_DEFAULT_AT} when cargo-binstall is unavailable.\n\
+         To use native cargo binaries now: mise settings cargo.binstall_native=true\n\
+         To keep using cargo install: mise settings cargo.binstall_native=false"
+    );
+}
+
 fn raw_binary_url_supports_bins(template: &str, bins: &[String]) -> bool {
     bins.len() <= 1 || template_contains_var(template, "bin")
 }
@@ -1044,6 +1107,17 @@ mod tests {
             "https://example.com/{ name }",
             &["one".to_string()]
         ));
+    }
+
+    #[test]
+    fn native_binstall_rollout_warning_dates_match_rollout() {
+        use versions::Versioning;
+
+        let before_warning = Versioning::new("2026.12.0").unwrap();
+        let warning_starts = Versioning::new(CARGO_NATIVE_BINSTALL_WARN_AT).unwrap();
+
+        assert!(!native_binstall_rollout_warning_active_for(&before_warning));
+        assert!(native_binstall_rollout_warning_active_for(&warning_starts));
     }
 
     #[test]

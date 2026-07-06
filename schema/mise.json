@@ -615,7 +615,6 @@
               "type": "boolean"
             },
             "binstall_native": {
-              "default": true,
               "description": "[experimental] Use mise's native cargo binary installer when cargo-binstall is unavailable.",
               "type": "boolean"
             },
