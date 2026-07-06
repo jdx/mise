@@ -24,6 +24,7 @@ use crate::http::HTTP;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
+use crate::ui::progress_report::SingleReport;
 
 const CARGO_NATIVE_BINSTALL_WARN_AT: &str = "2027.1.0";
 const CARGO_NATIVE_BINSTALL_DEFAULT_AT: &str = "2027.7.0";
@@ -436,8 +437,7 @@ impl CargoBackend {
                 let dest = bin_root.join(format!("{bin}{binary_ext}"));
                 ctx.pr
                     .set_message(format!("download {}", get_filename_from_url(&archive_url)));
-                HTTP.download_file(&archive_url, &src, Some(ctx.pr.as_ref()))
-                    .await?;
+                download_native_binstall_file(&archive_url, &src, Some(ctx.pr.as_ref())).await?;
                 pending.push((src, dest));
             }
             for (src, dest) in pending {
@@ -475,7 +475,7 @@ impl CargoBackend {
                 let extract_dir = download_dir.path().join(format!("{bin}-extract"));
                 ctx.pr
                     .set_message(format!("download {}", get_filename_from_url(&archive_url)));
-                HTTP.download_file(&archive_url, &archive_path, Some(ctx.pr.as_ref()))
+                download_native_binstall_file(&archive_url, &archive_path, Some(ctx.pr.as_ref()))
                     .await?;
                 file::create_dir_all(&extract_dir)?;
                 file::extract_archive(
@@ -516,8 +516,7 @@ impl CargoBackend {
             "download {}",
             archive_path.file_name().unwrap().to_string_lossy()
         ));
-        HTTP.download_file(&archive_url, &archive_path, Some(ctx.pr.as_ref()))
-            .await?;
+        download_native_binstall_file(&archive_url, &archive_path, Some(ctx.pr.as_ref())).await?;
 
         let extract_dir = tempfile::Builder::new()
             .prefix("mise-cargo-binstall-")
@@ -769,6 +768,51 @@ async fn download_crate_manifest(
     let manifest = fs::read_to_string(&manifest_path)
         .wrap_err_with(|| format!("failed to read {}", file::display_path(&manifest_path)))?;
     Ok(toml::from_str(&manifest)?)
+}
+
+async fn download_native_binstall_file(
+    url: &str,
+    path: &std::path::Path,
+    pr: Option<&dyn SingleReport>,
+) -> Result<()> {
+    let download_url = resolve_native_binstall_download_url(url).await;
+    HTTP.download_file(&download_url, path, pr).await
+}
+
+async fn resolve_native_binstall_download_url(url: &str) -> String {
+    let Some((repo, tag, asset_name)) = github_release_asset_from_url(url) else {
+        return url.to_string();
+    };
+
+    match crate::github::get_release(&repo, &tag).await {
+        Ok(release) => {
+            if let Some(asset) = release.assets.iter().find(|asset| asset.name == asset_name) {
+                crate::github::pick_reachable_asset_url(&asset.browser_download_url, &asset.url)
+                    .await
+            } else {
+                debug!("GitHub release {repo}@{tag} did not include asset {asset_name}");
+                url.to_string()
+            }
+        }
+        Err(err) => {
+            debug!("failed to resolve GitHub release asset {repo}@{tag}/{asset_name}: {err:#}");
+            url.to_string()
+        }
+    }
+}
+
+fn github_release_asset_from_url(url: &str) -> Option<(String, String, String)> {
+    let url = Url::parse(url).ok()?;
+    if url.host_str()? != "github.com" {
+        return None;
+    }
+    let segments = url.path_segments()?.collect::<Vec<_>>();
+    let [owner, repo, "releases", "download", tag, asset] = segments.as_slice() else {
+        return None;
+    };
+    let tag = urlencoding::decode(tag).ok()?.into_owned();
+    let asset = urlencoding::decode(asset).ok()?.into_owned();
+    Some((format!("{owner}/{repo}"), tag, asset))
 }
 
 fn cargo_target_triple(target: &PlatformTarget) -> Option<String> {
@@ -1047,6 +1091,50 @@ mod tests {
         );
 
         assert_eq!(rendered, "demo-1.2.3/demo-cli.exe");
+    }
+
+    #[test]
+    fn github_release_asset_from_url_parses_browser_download_urls() {
+        assert_eq!(
+            github_release_asset_from_url(
+                "https://github.com/owner/repo/releases/download/v1.2.3/tool-aarch64.tar.gz"
+            ),
+            Some((
+                "owner/repo".to_string(),
+                "v1.2.3".to_string(),
+                "tool-aarch64.tar.gz".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn github_release_asset_from_url_decodes_tag_and_asset() {
+        assert_eq!(
+            github_release_asset_from_url(
+                "https://github.com/owner/repo/releases/download/v1%2Bmeta/tool%20name.tar.gz"
+            ),
+            Some((
+                "owner/repo".to_string(),
+                "v1+meta".to_string(),
+                "tool name.tar.gz".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn github_release_asset_from_url_ignores_non_release_urls() {
+        assert_eq!(
+            github_release_asset_from_url(
+                "https://example.com/owner/repo/releases/download/v1/tool"
+            ),
+            None
+        );
+        assert_eq!(
+            github_release_asset_from_url(
+                "https://github.com/owner/repo/archive/refs/tags/v1.tar.gz"
+            ),
+            None
+        );
     }
 
     #[test]
