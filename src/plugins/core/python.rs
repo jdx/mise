@@ -1046,7 +1046,16 @@ fn python_precompiled_url_path(settings: &Settings) -> String {
 
 fn validate_python_precompiled_settings(settings: &Settings) -> Result<()> {
     if let Some(arch) = &settings.python.precompiled_arch
-        && looks_like_python_precompiled_os(arch)
+        && let Some((precompiled_arch, precompiled_os)) = split_python_precompiled_triple(arch)
+    {
+        bail!(
+            "invalid python.precompiled_arch={arch:?}: this looks like a target triple. \
+             Set python.precompiled_arch={precompiled_arch:?} and \
+             python.precompiled_os={precompiled_os:?} instead."
+        );
+    }
+    if let Some(arch) = &settings.python.precompiled_arch
+        && looks_like_python_precompiled_os_value(arch)
     {
         bail!(
             "invalid python.precompiled_arch={arch:?}: this looks like an OS value. \
@@ -1057,7 +1066,16 @@ fn validate_python_precompiled_settings(settings: &Settings) -> Result<()> {
     Ok(())
 }
 
-fn looks_like_python_precompiled_os(value: &str) -> bool {
+fn split_python_precompiled_triple(value: &str) -> Option<(&str, &str)> {
+    ["-unknown-linux", "-apple-darwin", "-pc-windows"]
+        .iter()
+        .find_map(|os_marker| {
+            let index = value.find(os_marker)?;
+            (index > 0).then(|| (&value[..index], &value[index + 1..]))
+        })
+}
+
+fn looks_like_python_precompiled_os_value(value: &str) -> bool {
     value.contains("unknown-linux")
         || value.contains("apple-darwin")
         || value.contains("pc-windows")
@@ -1255,6 +1273,17 @@ plugins/python-build/share/python-build/patches/3.14.5/foo.patch
 
         let err = validate_python_precompiled_settings(&settings).unwrap_err();
         assert!(err.to_string().contains("python.precompiled_os"));
+    }
+
+    #[test]
+    fn test_validate_python_precompiled_settings_rejects_triple_as_arch() {
+        let mut settings = Settings::default();
+        settings.python.precompiled_arch = Some("x86_64-unknown-linux-musl".to_string());
+
+        let err = validate_python_precompiled_settings(&settings).unwrap_err();
+        let err = err.to_string();
+        assert!(err.contains("python.precompiled_arch=\"x86_64\""));
+        assert!(err.contains("python.precompiled_os=\"unknown-linux-musl\""));
     }
 
     #[test]
