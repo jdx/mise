@@ -79,9 +79,9 @@ installation.
 With the default `npm.package_manager = "auto"` setting, mise installs through `aube` when `aube` is
 installed. If `aube` is not installed, mise installs through `npm`. Setting
 `npm.package_manager = "aube"`, `"pnpm"`, `"bun"`, or `"npm"` chooses that package manager
-explicitly. The `allow_builds`, `aube_args`, `pnpm_args`, `bun_args`, and `npm_args` options only
-affect the package manager that is actually used; an approval option for one package manager does
-not change the behavior of another.
+explicitly. The `allow_builds`, `trust_policy_excludes`, `aube_args`, `pnpm_args`, `bun_args`, and
+`npm_args` options only affect the package manager that is actually used; an approval option for one
+package manager does not change the behavior of another.
 
 For tools that need reviewed dependency build scripts, use `allow_builds` with `aube`, `pnpm`, or
 npm 11.16.0+.
@@ -98,7 +98,8 @@ reviewed dependency builds:
 ```
 
 `allow_builds` is passed to `aube add --global` as one `--allow-build=<pkg>` flag per package.
-Use `aube_args` for other raw aube flags.
+Use `trust_policy_excludes` for reviewed aube trust-policy exceptions, or `aube_args` for other
+raw aube flags.
 Set `allow_builds = true` to pass `--dangerously-allow-all-builds` when you explicitly accept that
 every dependency build script may run.
 
@@ -203,6 +204,29 @@ To allow all dependency build scripts for the install:
 `allow_builds` does not affect `bun` installs because mise's Bun path is a global install and does
 not write a per-transitive `trustedDependencies` allowlist. For npm installs, `allow_builds`
 requires npm 11.16.0+.
+
+### `trust_policy_excludes`
+
+Packages or package version ranges that should be exempt from aube's `trustPolicy=no-downgrade`
+check when `settings.npm.package_manager = "aube"`. Use this for reviewed dependency provenance
+metadata churn without disabling the trust policy for the whole install.
+
+For example, to exempt every version of a dependency:
+
+```toml
+[tools]
+"npm:some-tool" = { version = "latest", trust_policy_excludes = ["undici"] }
+```
+
+To exempt only selected versions, use aube's package-version pattern syntax:
+
+```toml
+[tools]
+"npm:some-tool" = { version = "latest", trust_policy_excludes = ["undici@^5 || >=6 <7"] }
+```
+
+`trust_policy_excludes` is written to the aube install `.npmrc` as `trustPolicyExclude`. It does
+not affect `npm`, `pnpm`, or `bun` installs.
 
 ### `aube_args`
 
