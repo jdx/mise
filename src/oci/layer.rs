@@ -646,6 +646,40 @@ mod tests {
         assert_layer_owner(&blob, 1000, 1000);
     }
 
+    #[test]
+    fn synthetic_layer_entries_preserve_special_permission_bits() {
+        let dir = tempdir().unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let helper = bin.join("helper");
+        let contents = b"#!/bin/sh\necho hi\n";
+        fs::write(&helper, contents).unwrap();
+
+        let entries = vec![
+            Entry {
+                rel: PathBuf::from("bin"),
+                abs: bin,
+                kind: EntryKind::Dir,
+                mode: 0o1777,
+                owner: LayerOwner::default(),
+                size: 0,
+            },
+            Entry {
+                rel: PathBuf::from("bin/helper"),
+                abs: helper,
+                kind: EntryKind::File,
+                mode: 0o4755,
+                owner: LayerOwner::default(),
+                size: contents.len() as u64,
+            },
+        ];
+
+        let blob = build_layer_from_entries(&entries, "", LayerOwner::default()).unwrap();
+
+        assert_layer_mode(&blob, "bin", 0o1777);
+        assert_layer_mode(&blob, "bin/helper", 0o4755);
+    }
+
     #[cfg(unix)]
     #[test]
     fn preserve_metadata_dir_layer_keeps_special_permission_bits() {
@@ -703,7 +737,6 @@ mod tests {
         assert!(entries_seen > 0, "expected at least one tar entry");
     }
 
-    #[cfg(unix)]
     fn assert_layer_mode(blob: &LayerBlob, expected_path: &str, expected_mode: u32) {
         let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
         let mut archive = tar::Archive::new(decoder);
