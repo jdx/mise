@@ -8,7 +8,7 @@ use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::{io::Write, sync::OnceLock};
 
-use crate::{config, env, ui};
+use crate::{env, ui};
 use log::{Level, LevelFilter, Metadata, Record};
 
 #[derive(Debug)]
@@ -75,10 +75,11 @@ impl log::Log for Logger {
 
         // Redact once for all outputs (Aho-Corasick makes this efficient)
         let args = record.args().to_string();
-        let args = if config::is_loaded() {
-            Config::get_().redact(&args)
-        } else {
-            args
+        // maybe_get instead of is_loaded + get_: another thread may unload the
+        // config (Config::reset) between the two calls, and get_ panics on None
+        let args = match Config::maybe_get() {
+            Some(config) => config.redact(&args),
+            None => args,
         };
 
         if will_log_file && let Some(log_file) = &self.log_file {
