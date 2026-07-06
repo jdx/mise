@@ -108,7 +108,8 @@ impl Search {
         let name = self.name.as_deref().unwrap_or("");
         let mut fuzzy_matcher = FuzzyMatcher::default();
         let fuzzy_pattern = FuzzyPattern::new(&name.to_lowercase());
-        self.get_tools()
+        let mut matches = self
+            .get_tools()
             .iter()
             .filter_map(|(short, rt)| {
                 if name.is_empty() {
@@ -135,8 +136,68 @@ impl Search {
                     }
                 }
             })
-            .sorted_by_key(|(score, _short, _rt)| std::cmp::Reverse(*score))
-            .map(|(_score, short, rt)| (short.to_string(), get_description(rt)))
+            .map(|(score, short, rt)| (score, short.to_string(), get_description(rt)))
+            .collect_vec();
+
+        if matches.is_empty() {
+            matches.extend(self.get_aqua_matches(name, &mut fuzzy_matcher, &fuzzy_pattern));
+        }
+
+        matches
+            .into_iter()
+            .sorted_by_key(|(score, _short, _description)| std::cmp::Reverse(*score))
+            .map(|(_score, short, description)| (short, description))
+            .collect()
+    }
+
+    fn get_aqua_matches(
+        &self,
+        name: &str,
+        fuzzy_matcher: &mut FuzzyMatcher,
+        fuzzy_pattern: &FuzzyPattern,
+    ) -> Vec<(u32, String, String)> {
+        if name.is_empty() {
+            return vec![];
+        }
+
+        let package_ids = match self.match_type {
+            MatchType::Fuzzy => crate::aqua::aqua_registry_wrapper::aqua_suggest(name),
+            MatchType::Equal | MatchType::Contains => crate::aqua::standard_registry::package_ids()
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect(),
+        };
+
+        package_ids
+            .into_iter()
+            .filter_map(|id| {
+                let tool_name = id.rsplit_once('/').map_or(id.as_str(), |(_, name)| name);
+                let score = match self.match_type {
+                    MatchType::Equal => {
+                        if tool_name == name || id == name || format!("aqua:{id}") == name {
+                            Some(0)
+                        } else {
+                            None
+                        }
+                    }
+                    MatchType::Contains => {
+                        if tool_name.contains(name) || id.contains(name) {
+                            Some(0)
+                        } else {
+                            None
+                        }
+                    }
+                    MatchType::Fuzzy => {
+                        fuzzy_matcher.score_pattern(&tool_name.to_lowercase(), fuzzy_pattern)
+                    }
+                }?;
+
+                Some((
+                    score,
+                    format!("aqua:{id}"),
+                    get_aqua_description(id.as_str()),
+                ))
+            })
             .collect()
     }
 
@@ -213,4 +274,24 @@ fn get_backends(backends: Vec<&'static str>) -> Vec<String> {
             }
         })
         .collect()
+}
+
+fn get_aqua_description(id: &str) -> String {
+    let fallback = format!("https://github.com/{id}");
+    let Ok(pkg) =
+        crate::aqua::standard_registry::package(id).unwrap_or_else(|| Ok(Default::default()))
+    else {
+        return fallback;
+    };
+
+    let backend = if pkg.repo_owner.is_empty() || pkg.repo_name.is_empty() {
+        fallback
+    } else {
+        format!("https://github.com/{}/{}", pkg.repo_owner, pkg.repo_name)
+    };
+
+    match pkg.description.as_deref().filter(|d| !d.is_empty()) {
+        Some(description) => format!("{description}. {backend}"),
+        None => backend,
+    }
 }
