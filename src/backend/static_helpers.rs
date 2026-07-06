@@ -12,7 +12,9 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-use super::platform_tokens::{BINARY_ARCH_TOKENS, BINARY_OS_TOKENS};
+use super::platform_tokens::{
+    BINARY_ARCH_TOKENS, BINARY_OS_TOKENS, is_arch_token, is_os_token, is_platform_or_version_token,
+};
 
 /// Regex pattern for matching version suffixes like -v1.2.3, _1.2.3, etc.
 static VERSION_PATTERN: LazyLock<regex::Regex> =
@@ -552,13 +554,20 @@ pub fn install_artifact(
         let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
 
         // Determine the destination path with support for bin_path
+        let rename_exe = lookup_with_fallback(opts, "rename_exe");
         let dest = if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
             let bin_path = template_string(&bin_path_template, tv);
             let bin_dir = install_path.join(&bin_path);
             file::create_dir_all(&bin_dir)?;
-            bin_dir.join(decompressed_name)
+            if let Some(rename_to) = rename_exe {
+                bin_dir.join(rename_binary_name(decompressed_name, &rename_to))
+            } else {
+                bin_dir.join(decompressed_name)
+            }
         } else if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
             install_path.join(&bin_name)
+        } else if let Some(rename_to) = rename_exe {
+            install_path.join(rename_binary_name(decompressed_name, &rename_to))
         } else {
             // Auto-clean binary names by removing OS/arch suffixes
             let cleaned_name = clean_binary_name(decompressed_name, Some(&tv.ba().tool_name));
@@ -574,12 +583,21 @@ pub fn install_artifact(
             let bin_path = template_string(&bin_path_template, tv);
             let bin_dir = install_path.join(&bin_path);
             file::create_dir_all(&bin_dir)?;
-            let dest = bin_dir.join(file_path.file_name().unwrap());
+            let original_name = file_path.file_name().unwrap().to_string_lossy();
+            let dest_name = lookup_with_fallback(opts, "rename_exe")
+                .map(|rename_to| rename_binary_name(&original_name, &rename_to))
+                .unwrap_or_else(|| original_name.to_string());
+            let dest = bin_dir.join(dest_name);
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
         } else if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
             // If bin is specified, rename the file to this name
             let dest = install_path.join(&bin_name);
+            file::copy(file_path, &dest)?;
+            file::make_executable(&dest)?;
+        } else if let Some(rename_to) = lookup_with_fallback(opts, "rename_exe") {
+            let original_name = file_path.file_name().unwrap().to_string_lossy();
+            let dest = install_path.join(rename_binary_name(&original_name, &rename_to));
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
         } else {
@@ -954,6 +972,17 @@ fn keep_extensions(
     target_path
 }
 
+pub fn rename_binary_name(original_name: &str, new_name: &str) -> String {
+    for ext in [".exe", ".cmd", ".bat", ".sh", ".ps1", ".AppImage"] {
+        if original_name.to_lowercase().ends_with(&ext.to_lowercase())
+            && !new_name.to_lowercase().ends_with(&ext.to_lowercase())
+        {
+            return format!("{new_name}{ext}");
+        }
+    }
+    new_name.to_string()
+}
+
 /// Cleans a binary name by removing OS/arch suffixes and version numbers.
 /// This is useful when downloading single binaries that have platform-specific names.
 /// Executable extensions (.exe, .bat, .sh, etc.) are preserved.
@@ -999,6 +1028,12 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
 
     // Try to find and remove platform suffixes
     let mut cleaned = name_without_ext.to_string();
+
+    if let Some(stripped) = strip_platform_token_suffix(&cleaned) {
+        cleaned = stripped;
+        let result = clean_version_suffix(&cleaned, tool_name);
+        return with_ext(result);
+    }
 
     // First try combined OS-arch patterns
     for os in BINARY_OS_TOKENS {
@@ -1077,6 +1112,65 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
 
     // Add the extension back if we had one
     with_ext(cleaned)
+}
+
+fn strip_platform_token_suffix(name: &str) -> Option<String> {
+    let mut separators = name
+        .char_indices()
+        .filter_map(|(idx, c)| matches!(c, '-' | '_').then_some(idx))
+        .collect::<Vec<_>>();
+    separators.sort_unstable_by(|a, b| b.cmp(a));
+
+    for idx in separators {
+        if separator_inside_platform_token(name, idx) {
+            continue;
+        }
+        let suffix = &name[idx + 1..];
+        let tokens = suffix
+            .split(['-', '_'])
+            .filter(|token| !token.is_empty())
+            .collect::<Vec<_>>();
+        if tokens.len() < 2 {
+            continue;
+        }
+        if !tokens
+            .iter()
+            .all(|token| is_platform_or_version_token(token))
+        {
+            continue;
+        }
+        if !tokens.iter().any(|token| is_os_token(token)) {
+            continue;
+        }
+        if !tokens.iter().any(|token| is_arch_token(token)) {
+            continue;
+        }
+
+        let prefix = &name[..idx];
+        if !prefix.is_empty() {
+            return Some(prefix.to_string());
+        }
+    }
+
+    None
+}
+
+fn separator_inside_platform_token(name: &str, idx: usize) -> bool {
+    if !name[idx..].starts_with('_') {
+        return false;
+    }
+
+    let token_start = name[..idx]
+        .rfind(['-', '_'])
+        .map(|pos| pos + 1)
+        .unwrap_or(0);
+    let token_end = name[idx + 1..]
+        .find(['-', '_'])
+        .map(|pos| idx + 1 + pos)
+        .unwrap_or(name.len());
+    let token = &name[token_start..token_end];
+
+    is_platform_or_version_token(token)
 }
 
 /// Remove version suffixes from binary names.
@@ -1293,6 +1387,13 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
         // Test arch before OS
         assert_eq!(clean_binary_name("tool-x86_64-linux", None), "tool");
         assert_eq!(clean_binary_name("tool_amd64_windows", None), "tool");
+        assert_eq!(
+            clean_binary_name(
+                "code2prompt-x86_64-pc-windows-msvc.exe",
+                Some("mufeedvh/code2prompt")
+            ),
+            "code2prompt.exe"
+        );
 
         // Test with tool name hint
         assert_eq!(
@@ -1359,6 +1460,30 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
         // Test edge cases
         assert_eq!(clean_binary_name("linux", None), "linux"); // Just OS name
         assert_eq!(clean_binary_name("", None), "");
+    }
+
+    #[test]
+    fn test_rename_binary_name_preserves_executable_extension() {
+        assert_eq!(
+            rename_binary_name("code2prompt-x86_64-pc-windows-msvc.exe", "code2prompt"),
+            "code2prompt.exe"
+        );
+        assert_eq!(
+            rename_binary_name("tool-linux-x64", "tool-renamed"),
+            "tool-renamed"
+        );
+    }
+
+    #[test]
+    fn test_strip_platform_token_suffix_uses_nearest_valid_suffix() {
+        assert_eq!(
+            strip_platform_token_suffix("code2prompt-x86_64-pc-windows-msvc"),
+            Some("code2prompt".to_string())
+        );
+        assert_eq!(
+            strip_platform_token_suffix("tool-v1.2.3-linux-x86_64"),
+            Some("tool-v1.2.3".to_string())
+        );
     }
 
     #[test]
