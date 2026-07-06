@@ -28,7 +28,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.toml"]
+include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.toml", "mise-vars.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -90,6 +90,23 @@ _.source = [{ path = "env.sh", tools = true, redact = true, required = "source e
 _.path = { paths = ["./bin", "./scripts"], tools = true }
 TOML
 
+cat >"$HOME/workdir/mise-vars.toml" <<'TOML'
+[vars]
+STRING = "value"
+INTEGER = 123
+TRUE_BOOL = true
+VALUE_STRING = { value = "value", redact = true }
+VALUE_INTEGER = { value = 123 }
+VALUE_TRUE = { value = true }
+VALUE_DEFAULT = { default = 123, redact = true }
+REQUIRED_TRUE = { required = true, redact = true }
+REQUIRED_HELP = { required = "set REQUIRED_HELP in mise.local.toml" }
+SECRET_SIMPLE = { age = "AGE-SECRET", redact = false }
+SECRET_COMPLEX = { age = { value = "AGE-SECRET", format = "raw", redact = true } }
+_.file = ".env"
+_.source = ["env.sh"]
+TOML
+
 cat >"$HOME/workdir/mise-os.toml" <<'TOML'
 [tools]
 node = { version = "latest", os = ["linux", "macos/arm64", "darwin/aarch64", "win/amd64"], backend_options = { nested = true } }
@@ -121,6 +138,7 @@ cd "$HOME/workdir"
 assert_succeed "$TOMBI_LINT mise.toml"
 assert_succeed "$TOMBI_LINT mise-age.toml"
 assert_succeed "$TOMBI_LINT mise-env-directives.toml"
+assert_succeed "$TOMBI_LINT mise-vars.toml"
 assert_succeed "$TOMBI_LINT mise-os.toml"
 assert_succeed "$TOMBI_LINT mise-task-os.toml"
 assert_succeed "$TOMBI_LINT mise-registry-tool.toml"
@@ -142,7 +160,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -184,6 +202,18 @@ _.file = { path = ".env", required = 123 }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-env-directive.toml"
+
+cat >"$HOME/workdir/mise-bad-vars.toml" <<'TOML'
+[vars]
+FALSE_BOOL = false
+VALUE_FALSE = { value = false }
+REQUIRED_FALSE = { required = false }
+FLOAT = 1.23
+VALUE_FLOAT = { value = 1.23 }
+TOOLS_FILTERED = { value = "not actually resolved as a var", tools = true }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-vars.toml"
 
 # Verify that extends is rejected on task_templates (not supported at runtime)
 cat >"$HOME/workdir/mise-bad-tmpl.toml" <<'TOML'
