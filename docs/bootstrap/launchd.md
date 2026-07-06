@@ -9,7 +9,6 @@ mise can declare macOS user LaunchAgents in
 program = "~/.local/bin/my-sync"
 args = ["--watch"]
 run_at_load = true
-start_interval = 300
 start_calendar_interval = { hour = 2, minute = 0 }
 environment = { PATH = "/opt/homebrew/bin:/usr/bin:/bin" }
 working_directory = "~"
@@ -44,7 +43,15 @@ numbers, `.`, `_`, and `-`. mise owns only the plist files it creates with the
 `args` are passed through exactly as written.
 `start_calendar_interval` accepts `minute` (0-59), `hour` (0-23), `day`
 (1-31), `weekday` (0-7), and `month` (1-12), and writes the corresponding
-launchd calendar keys.
+launchd calendar keys. For multiple independent calendar schedules, use an
+array of inline tables:
+
+```toml
+start_calendar_interval = [{ hour = 3 }, { hour = 12, weekday = 1 }]
+```
+
+`start_interval` and `start_calendar_interval` are independent launchd
+triggers. If both are set, launchd can start the agent from either schedule.
 
 ## Semantics
 

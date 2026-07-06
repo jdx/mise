@@ -25,7 +25,7 @@ pub struct LaunchdTomlConfig {
     #[serde(default)]
     pub start_interval: Option<u64>,
     #[serde(default)]
-    pub start_calendar_interval: Option<LaunchdCalendarInterval>,
+    pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
     #[serde(default)]
     pub environment: IndexMap<String, String>,
     #[serde(default)]
@@ -52,6 +52,13 @@ pub struct LaunchdCalendarInterval {
     pub month: Option<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum LaunchdCalendarIntervals {
+    Single(LaunchdCalendarInterval),
+    Multiple(Vec<LaunchdCalendarInterval>),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchdRequest {
     pub name: String,
@@ -61,7 +68,7 @@ pub struct LaunchdRequest {
     pub run_at_load: bool,
     pub keep_alive: bool,
     pub start_interval: Option<u64>,
-    pub start_calendar_interval: Option<LaunchdCalendarInterval>,
+    pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
     pub environment: IndexMap<String, String>,
     pub working_directory: Option<String>,
     pub stdout_path: Option<String>,
@@ -133,6 +140,23 @@ impl LaunchdCalendarInterval {
         validate_range(agent_name, "weekday", self.weekday, 0, 7)?;
         validate_range(agent_name, "month", self.month, 1, 12)?;
         Ok(())
+    }
+}
+
+impl LaunchdCalendarIntervals {
+    fn validate(&self, agent_name: &str) -> Result<()> {
+        match self {
+            Self::Single(interval) => interval.validate(agent_name),
+            Self::Multiple(intervals) => {
+                if intervals.is_empty() {
+                    bail!("agent '{agent_name}' `start_calendar_interval` must not be empty");
+                }
+                for interval in intervals {
+                    interval.validate(agent_name)?;
+                }
+                Ok(())
+            }
+        }
     }
 }
 
@@ -294,7 +318,7 @@ fn plist_value(request: &LaunchdRequest) -> Value {
     if let Some(interval) = &request.start_calendar_interval {
         dict.insert(
             "StartCalendarInterval".into(),
-            Value::Dictionary(calendar_interval_value(interval)),
+            calendar_intervals_value(interval),
         );
     }
     if !request.environment.is_empty() {
@@ -323,6 +347,20 @@ fn plist_value(request: &LaunchdRequest) -> Value {
         );
     }
     Value::Dictionary(dict)
+}
+
+fn calendar_intervals_value(intervals: &LaunchdCalendarIntervals) -> Value {
+    match intervals {
+        LaunchdCalendarIntervals::Single(interval) => {
+            Value::Dictionary(calendar_interval_value(interval))
+        }
+        LaunchdCalendarIntervals::Multiple(intervals) => Value::Array(
+            intervals
+                .iter()
+                .map(|interval| Value::Dictionary(calendar_interval_value(interval)))
+                .collect(),
+        ),
+    }
 }
 
 fn calendar_interval_value(interval: &LaunchdCalendarInterval) -> Dictionary {
@@ -478,7 +516,9 @@ mod tests {
                 "my-agent".to_string(),
                 LaunchdTomlConfig {
                     program: Some("/bin/echo".to_string()),
-                    start_calendar_interval: Some(Default::default()),
+                    start_calendar_interval: Some(LaunchdCalendarIntervals::Single(
+                        Default::default(),
+                    )),
                     ..Default::default()
                 },
             )
@@ -489,10 +529,23 @@ mod tests {
                 "my-agent".to_string(),
                 LaunchdTomlConfig {
                     program: Some("/bin/echo".to_string()),
-                    start_calendar_interval: Some(LaunchdCalendarInterval {
-                        hour: Some(24),
-                        ..Default::default()
-                    }),
+                    start_calendar_interval: Some(LaunchdCalendarIntervals::Single(
+                        LaunchdCalendarInterval {
+                            hour: Some(24),
+                            ..Default::default()
+                        }
+                    )),
+                    ..Default::default()
+                },
+            )
+            .is_err()
+        );
+        assert!(
+            LaunchdRequest::from_toml(
+                "my-agent".to_string(),
+                LaunchdTomlConfig {
+                    program: Some("/bin/echo".to_string()),
+                    start_calendar_interval: Some(LaunchdCalendarIntervals::Multiple(vec![])),
                     ..Default::default()
                 },
             )
@@ -512,11 +565,13 @@ mod tests {
             run_at_load: true,
             keep_alive: true,
             start_interval: Some(60),
-            start_calendar_interval: Some(LaunchdCalendarInterval {
-                hour: Some(2),
-                minute: Some(0),
-                ..Default::default()
-            }),
+            start_calendar_interval: Some(LaunchdCalendarIntervals::Single(
+                LaunchdCalendarInterval {
+                    hour: Some(2),
+                    minute: Some(0),
+                    ..Default::default()
+                },
+            )),
             environment,
             working_directory: Some("~".to_string()),
             stdout_path: Some("~/Library/Logs/sync.log".to_string()),
@@ -583,6 +638,61 @@ mod tests {
             value => panic!("expected EnvironmentVariables dictionary, got {value:?}"),
         }
         assert!(plist_matches(&plist, &request));
+    }
+
+    #[test]
+    fn test_render_plist_multiple_calendar_intervals() {
+        let request = LaunchdRequest {
+            name: "sync".to_string(),
+            label: "dev.mise.sync".to_string(),
+            program: "/bin/echo".to_string(),
+            args: vec![],
+            run_at_load: false,
+            keep_alive: false,
+            start_interval: None,
+            start_calendar_interval: Some(LaunchdCalendarIntervals::Multiple(vec![
+                LaunchdCalendarInterval {
+                    hour: Some(3),
+                    minute: Some(0),
+                    ..Default::default()
+                },
+                LaunchdCalendarInterval {
+                    hour: Some(12),
+                    weekday: Some(1),
+                    ..Default::default()
+                },
+            ])),
+            environment: IndexMap::new(),
+            working_directory: None,
+            stdout_path: None,
+            stderr_path: None,
+            kickstart: false,
+        };
+        let plist = render_plist(&request).unwrap();
+        let dict = match Value::from_reader_xml(Cursor::new(plist.as_slice())).unwrap() {
+            Value::Dictionary(dict) => dict,
+            value => panic!("expected dictionary, got {value:?}"),
+        };
+        match dict.get("StartCalendarInterval") {
+            Some(Value::Array(intervals)) => {
+                assert_eq!(intervals.len(), 2);
+                match &intervals[0] {
+                    Value::Dictionary(interval) => {
+                        assert_eq!(interval.get("Hour"), Some(&Value::Integer(3.into())));
+                        assert_eq!(interval.get("Minute"), Some(&Value::Integer(0.into())));
+                    }
+                    value => panic!("expected first calendar interval dictionary, got {value:?}"),
+                }
+                match &intervals[1] {
+                    Value::Dictionary(interval) => {
+                        assert_eq!(interval.get("Hour"), Some(&Value::Integer(12.into())));
+                        assert_eq!(interval.get("Weekday"), Some(&Value::Integer(1.into())));
+                    }
+                    value => panic!("expected second calendar interval dictionary, got {value:?}"),
+                }
+            }
+            value => panic!("expected StartCalendarInterval array, got {value:?}"),
+        }
     }
 
     #[cfg(unix)]

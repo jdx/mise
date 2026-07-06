@@ -2531,6 +2531,10 @@ mod tests {
         working_directory = "~"
         stdout_path = "~/Library/Logs/my-sync.log"
         kickstart = true
+
+        [bootstrap.macos.launchd.agents.my-backup]
+        program = "~/.local/bin/my-backup"
+        start_calendar_interval = [{ hour = 3 }, { hour = 12, weekday = 1 }]
         "#,
         )
         .unwrap();
@@ -2541,14 +2545,13 @@ mod tests {
         assert_eq!(agent.args, vec!["--watch"]);
         assert!(agent.run_at_load);
         assert_eq!(agent.start_interval, Some(300));
-        assert_eq!(
-            agent.start_calendar_interval.as_ref().unwrap().hour,
-            Some(2)
-        );
-        assert_eq!(
-            agent.start_calendar_interval.as_ref().unwrap().minute,
-            Some(0)
-        );
+        let crate::system::launchd::LaunchdCalendarIntervals::Single(interval) =
+            agent.start_calendar_interval.as_ref().unwrap()
+        else {
+            panic!("expected single calendar interval");
+        };
+        assert_eq!(interval.hour, Some(2));
+        assert_eq!(interval.minute, Some(0));
         assert_eq!(
             agent.environment.get("PATH").map(String::as_str),
             Some("/usr/bin:/bin")
@@ -2559,6 +2562,16 @@ mod tests {
             Some("~/Library/Logs/my-sync.log")
         );
         assert!(agent.kickstart);
+        let backup = system.macos.launchd.agents.get("my-backup").unwrap();
+        let crate::system::launchd::LaunchdCalendarIntervals::Multiple(intervals) =
+            backup.start_calendar_interval.as_ref().unwrap()
+        else {
+            panic!("expected multiple calendar intervals");
+        };
+        assert_eq!(intervals.len(), 2);
+        assert_eq!(intervals[0].hour, Some(3));
+        assert_eq!(intervals[1].hour, Some(12));
+        assert_eq!(intervals[1].weekday, Some(1));
         file::remove_file(&p).unwrap();
     }
 
