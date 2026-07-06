@@ -50,7 +50,7 @@ impl<'a> CargoOptions<'a> {
         self.values.platform_string_for_target("bin", target)
     }
 
-    fn locked(&self) -> bool {
+    pub(super) fn locked(&self) -> bool {
         self.values
             .raw()
             .get_string("locked")
@@ -213,6 +213,7 @@ impl Backend for CargoBackend {
                 BinstallStatus::Unavailable => {
                     match Settings::get().cargo.binstall_native {
                         Some(true) => {
+                            Settings::get().ensure_experimental("cargo.binstall_native")?;
                             if self
                                 .native_binstall(ctx, &tv, NativeBinstallAction::Install)
                                 .await?
@@ -429,6 +430,13 @@ mod tests {
 
         assert_eq!(lock_opts.get("crate").map(String::as_str), Some("demo"));
         assert_eq!(lock_opts.get("locked").map(String::as_str), Some("false"));
+    }
+
+    #[test]
+    fn cargo_options_defaults_to_locked() {
+        let opts = ToolVersionOptions::default();
+
+        assert!(CargoOptions::new(&opts).locked());
     }
 
     #[test]

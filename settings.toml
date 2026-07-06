@@ -297,6 +297,7 @@ description = "[experimental] Use mise's native cargo binary installer when carg
 docs = """
 Controls mise's native cargo binary installer, which downloads precompiled binaries using
 `package.metadata.binstall` from the crate's `Cargo.toml` when `cargo-binstall` is not installed.
+This setting is experimental and requires `experimental = true` when explicitly enabled.
 
 - If `true`: Try mise's native cargo binary installer first, fall back to `cargo install` if unavailable.
 - If `false`: Do not use mise's native cargo binary installer.
@@ -309,7 +310,8 @@ native cargo binary installer.
 
 This is a best-effort fast path. If the crate does not declare compatible
 metadata, the artifact is unavailable, or the install uses Cargo build options
-that cannot affect a downloaded binary, mise falls back to `cargo install`.
+that cannot affect a downloaded binary (including `locked = true`), mise falls
+back to `cargo install`.
 """
 env = "MISE_CARGO_BINSTALL_NATIVE"
 optional = true

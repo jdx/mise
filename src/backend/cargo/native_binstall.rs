@@ -33,6 +33,9 @@ pub async fn install(
 ) -> Result<bool> {
     let request_options = tv.request.options();
     let opts = CargoOptions::new(&request_options);
+    if opts.locked() {
+        return Ok(false);
+    }
     let version = tv.version.as_str();
     let crate_name = opts.crate_arg().unwrap_or_else(|| tool_name.to_string());
     if Settings::get().cargo.registry_name.is_some() {
