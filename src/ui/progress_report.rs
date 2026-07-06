@@ -188,7 +188,7 @@ impl VerboseReport {
 
 impl SingleReport for VerboseReport {
     fn println(&self, message: String) {
-        eprintln!("{message}");
+        safe_eprintln!("{message}");
     }
     fn set_message(&self, message: String) {
         let mut prev_message = self.prev_message.lock().unwrap();
