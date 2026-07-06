@@ -1,12 +1,11 @@
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Component, Path, PathBuf};
 use std::{fmt::Debug, fs, sync::Arc};
 
 use async_trait::async_trait;
 use color_eyre::Section;
 use eyre::{Context, bail, eyre};
 use url::Url;
-use walkdir::WalkDir;
 
 use crate::Result;
 use crate::backend::Backend;
@@ -387,16 +386,20 @@ impl CargoBackend {
         let target = cargo_target_triple(&PlatformTarget::from_current())
             .ok_or_else(|| eyre!("unsupported platform for native cargo binary install"))?;
 
+        let target_platform = PlatformTarget::from_current();
         let manifest = download_crate_manifest(&package, tv, ctx).await?;
-        let Some(binstall) = NativeBinstallMetadata::from_manifest(&manifest, &target)? else {
+        let Some(binstall) =
+            NativeBinstallMetadata::from_manifest(&manifest, &target, &target_platform)?
+        else {
             return Ok(false);
         };
+        if binstall.disabled_strategies.contains("crate-meta-data") {
+            return Ok(false);
+        }
 
-        let bins = match opts.bin() {
-            Some(bin) => vec![bin],
-            None if !package.bin_names.is_empty() => package.bin_names.clone(),
-            None => vec![crate_name.clone()],
-        };
+        let manifest_bins = native_manifest_bins(&manifest);
+        let bins = native_bins_to_install(opts.bin(), &manifest_bins, &package, &crate_name);
+        let bin_names = bins.iter().map(|bin| bin.name.clone()).collect::<Vec<_>>();
         let pkg_fmt = binstall.pkg_fmt.unwrap_or_else(|| "tgz".to_string());
         let package_format = native_package_format(&pkg_fmt)?;
         let binary_ext = if cfg!(windows) { ".exe" } else { "" };
@@ -418,7 +421,7 @@ impl CargoBackend {
         let bin_root = tv.install_path().join("bin");
 
         if package_format.extraction_format.is_none() {
-            if !raw_binary_url_supports_bins(&binstall.pkg_url, &bins) {
+            if !raw_binary_url_supports_bins(&binstall.pkg_url, &bin_names) {
                 return Ok(false);
             }
             if matches!(action, NativeBinstallAction::WarnOnly) {
@@ -431,10 +434,12 @@ impl CargoBackend {
                 .tempdir()?;
             let mut pending = vec![];
             for bin in &bins {
-                let vars = template_ctx.vars(bin);
+                let vars = template_ctx.vars(&bin.name);
                 let archive_url = expand_binstall_template(&binstall.pkg_url, &vars);
-                let src = download_dir.path().join(format!("{bin}{binary_ext}"));
-                let dest = bin_root.join(format!("{bin}{binary_ext}"));
+                let src = download_dir
+                    .path()
+                    .join(format!("{}{}", bin.name, binary_ext));
+                let dest = bin_root.join(format!("{}{}", bin.name, binary_ext));
                 ctx.pr
                     .set_message(format!("download {}", get_filename_from_url(&archive_url)));
                 download_native_binstall_file(&archive_url, &src, Some(ctx.pr.as_ref())).await?;
@@ -467,12 +472,14 @@ impl CargoBackend {
                 .tempdir()?;
             let mut pending = vec![];
             for bin in &bins {
-                let vars = template_ctx.vars(bin);
+                let vars = template_ctx.vars(&bin.name);
                 let archive_url = expand_binstall_template(&binstall.pkg_url, &vars);
-                let archive_path = download_dir
-                    .path()
-                    .join(format!("{bin}-{}", get_filename_from_url(&archive_url)));
-                let extract_dir = download_dir.path().join(format!("{bin}-extract"));
+                let archive_path = download_dir.path().join(format!(
+                    "{}-{}",
+                    bin.name,
+                    get_filename_from_url(&archive_url)
+                ));
+                let extract_dir = download_dir.path().join(format!("{}-extract", bin.name));
                 ctx.pr
                     .set_message(format!("download {}", get_filename_from_url(&archive_url)));
                 download_native_binstall_file(&archive_url, &archive_path, Some(ctx.pr.as_ref()))
@@ -488,9 +495,28 @@ impl CargoBackend {
                         preserve_mtime: true,
                     },
                 )?;
-                let src = find_native_bin(&extract_dir, binstall.bin_dir.as_deref(), &vars)?;
-                let dest = bin_root.join(format!("{bin}{binary_ext}"));
+                let Some(src) = find_native_bin(&extract_dir, binstall.bin_dir.as_deref(), &vars)?
+                else {
+                    if bin.required_features.is_empty() {
+                        bail!(
+                            "native cargo binary artifact did not contain {}{}",
+                            bin.name,
+                            binary_ext
+                        );
+                    }
+                    debug!(
+                        "native cargo binary artifact skipped optional bin {} requiring features {}",
+                        bin.name,
+                        bin.required_features.join(",")
+                    );
+                    continue;
+                };
+                let dest = bin_root.join(format!("{}{}", bin.name, binary_ext));
                 pending.push((src, dest));
+            }
+            validate_native_bin_sources(&pending)?;
+            if pending.is_empty() {
+                return Ok(false);
             }
             for (src, dest) in pending {
                 fs::copy(&src, &dest).wrap_err_with(|| {
@@ -508,7 +534,11 @@ impl CargoBackend {
 
         let archive_url = expand_binstall_template(
             &binstall.pkg_url,
-            &template_ctx.vars(bins.first().map(String::as_str).unwrap_or(&crate_name)),
+            &template_ctx.vars(
+                bins.first()
+                    .map(|bin| bin.name.as_str())
+                    .unwrap_or(&crate_name),
+            ),
         );
 
         let archive_path = tv.download_path().join(get_filename_from_url(&archive_url));
@@ -535,10 +565,30 @@ impl CargoBackend {
 
         let mut pending = vec![];
         for bin in &bins {
-            let vars = template_ctx.vars(bin);
-            let src = find_native_bin(extract_dir.path(), binstall.bin_dir.as_deref(), &vars)?;
-            let dest = bin_root.join(format!("{bin}{binary_ext}"));
+            let vars = template_ctx.vars(&bin.name);
+            let Some(src) =
+                find_native_bin(extract_dir.path(), binstall.bin_dir.as_deref(), &vars)?
+            else {
+                if bin.required_features.is_empty() {
+                    bail!(
+                        "native cargo binary artifact did not contain {}{}",
+                        bin.name,
+                        binary_ext
+                    );
+                }
+                debug!(
+                    "native cargo binary artifact skipped optional bin {} requiring features {}",
+                    bin.name,
+                    bin.required_features.join(",")
+                );
+                continue;
+            };
+            let dest = bin_root.join(format!("{}{}", bin.name, binary_ext));
             pending.push((src, dest));
+        }
+        validate_native_bin_sources(&pending)?;
+        if pending.is_empty() {
+            return Ok(false);
         }
         for (src, dest) in pending {
             fs::copy(&src, &dest).wrap_err_with(|| {
@@ -655,10 +705,21 @@ struct NativeBinstallMetadata {
     pkg_url: String,
     bin_dir: Option<String>,
     pkg_fmt: Option<String>,
+    disabled_strategies: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeCargoBin {
+    name: String,
+    required_features: Vec<String>,
 }
 
 impl NativeBinstallMetadata {
-    fn from_manifest(manifest: &toml::Value, target: &str) -> Result<Option<Self>> {
+    fn from_manifest(
+        manifest: &toml::Value,
+        target: &str,
+        platform: &PlatformTarget,
+    ) -> Result<Option<Self>> {
         let Some(root) = manifest
             .get("package")
             .and_then(|p| p.get("metadata"))
@@ -669,6 +730,21 @@ impl NativeBinstallMetadata {
         };
 
         let mut merged = root.clone();
+        let cfgs = native_target_cfgs(platform, target);
+        if let Some(overrides) = root.get("overrides").and_then(toml::Value::as_table) {
+            for (key, value) in overrides {
+                if key == target {
+                    continue;
+                }
+                if native_cfg_override_matches(key, &cfgs)
+                    && let Some(target_override) = value.as_table()
+                {
+                    for (key, value) in target_override {
+                        merged.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
         if let Some(target_override) = root
             .get("overrides")
             .and_then(|o| o.get(target))
@@ -693,8 +769,77 @@ impl NativeBinstallMetadata {
                 .get("pkg-fmt")
                 .and_then(toml::Value::as_str)
                 .map(str::to_string),
+            disabled_strategies: merged
+                .get("disabled-strategies")
+                .and_then(toml::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(toml::Value::as_str)
+                .map(str::to_string)
+                .collect(),
         }))
     }
+}
+
+fn native_manifest_bins(manifest: &toml::Value) -> Vec<NativeCargoBin> {
+    manifest
+        .get("bin")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|bin| {
+            let bin = bin.as_table()?;
+            let name = bin.get("name").and_then(toml::Value::as_str)?.to_string();
+            let required_features = bin
+                .get("required-features")
+                .and_then(toml::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(toml::Value::as_str)
+                .map(str::to_string)
+                .collect();
+            Some(NativeCargoBin {
+                name,
+                required_features,
+            })
+        })
+        .collect()
+}
+
+fn native_bins_to_install(
+    requested_bin: Option<String>,
+    manifest_bins: &[NativeCargoBin],
+    package: &CratesIoPackage,
+    crate_name: &str,
+) -> Vec<NativeCargoBin> {
+    if let Some(requested_bin) = requested_bin {
+        let bin = manifest_bins
+            .iter()
+            .find(|bin| bin.name == requested_bin)
+            .cloned()
+            .unwrap_or(NativeCargoBin {
+                name: requested_bin,
+                required_features: vec![],
+            });
+        return vec![bin];
+    }
+    if !manifest_bins.is_empty() {
+        return manifest_bins.to_vec();
+    }
+    if !package.bin_names.is_empty() {
+        return package
+            .bin_names
+            .iter()
+            .map(|name| NativeCargoBin {
+                name: name.clone(),
+                required_features: vec![],
+            })
+            .collect();
+    }
+    vec![NativeCargoBin {
+        name: crate_name.to_string(),
+        required_features: vec![],
+    }]
 }
 
 struct BinstallTemplateVars<'a> {
@@ -815,6 +960,117 @@ fn github_release_asset_from_url(url: &str) -> Option<(String, String, String)> 
     Some((format!("{owner}/{repo}"), tag, asset))
 }
 
+#[derive(Debug)]
+struct NativeTargetCfg {
+    os: String,
+    arch: String,
+    env: Option<String>,
+    family: String,
+}
+
+fn native_target_cfgs(platform: &PlatformTarget, triple: &str) -> NativeTargetCfg {
+    let os = match platform.os_name() {
+        "macos" => "macos",
+        "windows" => "windows",
+        os => os,
+    }
+    .to_string();
+    let arch = match platform.arch_name() {
+        "x64" => "x86_64",
+        "arm64" => "aarch64",
+        arch => arch,
+    }
+    .to_string();
+    let env = if triple.contains("-musl") {
+        Some("musl".to_string())
+    } else if triple.contains("-gnu") || triple.contains("-gnueabihf") {
+        Some("gnu".to_string())
+    } else if triple.contains("-msvc") {
+        Some("msvc".to_string())
+    } else {
+        None
+    };
+    let family = if os == "windows" { "windows" } else { "unix" }.to_string();
+    NativeTargetCfg {
+        os,
+        arch,
+        env,
+        family,
+    }
+}
+
+fn native_cfg_override_matches(key: &str, cfgs: &NativeTargetCfg) -> bool {
+    let Some(expr) = key
+        .strip_prefix("cfg(")
+        .and_then(|key| key.strip_suffix(')'))
+    else {
+        return false;
+    };
+    native_cfg_expr_matches(expr.trim(), cfgs)
+}
+
+fn native_cfg_expr_matches(expr: &str, cfgs: &NativeTargetCfg) -> bool {
+    let expr = expr.trim();
+    if expr == "unix" {
+        return cfgs.family == "unix";
+    }
+    if expr == "windows" {
+        return cfgs.family == "windows";
+    }
+    if let Some(inner) = expr
+        .strip_prefix("not(")
+        .and_then(|expr| expr.strip_suffix(')'))
+    {
+        return !native_cfg_expr_matches(inner, cfgs);
+    }
+    if let Some(inner) = expr
+        .strip_prefix("all(")
+        .and_then(|expr| expr.strip_suffix(')'))
+    {
+        let parts = split_native_cfg_args(inner);
+        return !parts.is_empty() && parts.iter().all(|part| native_cfg_expr_matches(part, cfgs));
+    }
+    if let Some(inner) = expr
+        .strip_prefix("any(")
+        .and_then(|expr| expr.strip_suffix(')'))
+    {
+        return split_native_cfg_args(inner)
+            .iter()
+            .any(|part| native_cfg_expr_matches(part, cfgs));
+    }
+    if let Some((key, value)) = expr.split_once('=') {
+        let key = key.trim();
+        let value = value.trim().trim_matches('"');
+        return match key {
+            "target_os" => cfgs.os == value,
+            "target_arch" => cfgs.arch == value,
+            "target_env" => cfgs.env.as_deref() == Some(value),
+            "target_family" => cfgs.family == value,
+            _ => false,
+        };
+    }
+    false
+}
+
+fn split_native_cfg_args(args: &str) -> Vec<&str> {
+    let mut parts = vec![];
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (index, ch) in args.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(args[start..index].trim());
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(args[start..].trim());
+    parts.into_iter().filter(|part| !part.is_empty()).collect()
+}
+
 fn cargo_target_triple(target: &PlatformTarget) -> Option<String> {
     let libc = target.libc().unwrap_or("gnu");
     match (target.os_name(), target.arch_name(), libc) {
@@ -923,29 +1179,79 @@ fn raw_binary_url_supports_bins(template: &str, bins: &[String]) -> bool {
 }
 
 fn find_native_bin(
-    extract_dir: &std::path::Path,
+    extract_dir: &Path,
     bin_dir: Option<&str>,
     vars: &BinstallTemplateVars<'_>,
-) -> Result<PathBuf> {
-    if let Some(bin_dir) = bin_dir {
-        let candidate = extract_dir.join(expand_binstall_template(bin_dir, vars));
+) -> Result<Option<PathBuf>> {
+    let explicit_bin_dir = bin_dir.is_some();
+    let bin_dir = bin_dir
+        .map(str::to_string)
+        .unwrap_or_else(|| infer_native_bin_dir_template(extract_dir, vars));
+    let rendered = expand_binstall_template(&bin_dir, vars);
+    let relative_path = validate_native_bin_relative_path(&rendered)?;
+    let candidate = extract_dir.join(relative_path);
+    if explicit_bin_dir && !template_contains_var(&bin_dir, "bin") {
         let file_name = format!("{}{}", vars.bin, vars.binary_ext);
         let names_requested_bin = candidate
             .file_name()
             .and_then(|file_name| file_name.to_str())
             .is_some_and(|candidate_name| candidate_name == file_name);
-        if candidate.is_file() && (template_contains_var(bin_dir, "bin") || names_requested_bin) {
-            return Ok(candidate);
+        if !names_requested_bin {
+            return Ok(None);
         }
     }
+    Ok(candidate.is_file().then_some(candidate))
+}
 
-    let file_name = format!("{}{}", vars.bin, vars.binary_ext);
-    WalkDir::new(extract_dir)
-        .into_iter()
-        .filter_map(|entry| entry.ok())
-        .find(|entry| entry.file_type().is_file() && entry.file_name() == file_name.as_str())
-        .map(|entry| entry.into_path())
-        .ok_or_else(|| eyre!("native cargo binary artifact did not contain {file_name}"))
+fn infer_native_bin_dir_template(extract_dir: &Path, vars: &BinstallTemplateVars<'_>) -> String {
+    let candidates = [
+        format!("{}-{}-v{}", vars.name, vars.target, vars.version),
+        format!("{}-{}-{}", vars.name, vars.target, vars.version),
+        format!("{}-{}-{}", vars.name, vars.version, vars.target),
+        format!("{}-v{}-{}", vars.name, vars.version, vars.target),
+        format!("{}-{}", vars.name, vars.target),
+        format!("{}-{}", vars.name, vars.version),
+        format!("{}-v{}", vars.name, vars.version),
+        vars.name.to_string(),
+    ];
+    for candidate in candidates {
+        if extract_dir.join(&candidate).is_dir() {
+            return format!("{candidate}/{{ bin }}{{ binary-ext }}");
+        }
+    }
+    "{ bin }{ binary-ext }".to_string()
+}
+
+fn validate_native_bin_relative_path(path: &str) -> Result<PathBuf> {
+    let path = PathBuf::from(path);
+    if path.components().next().is_none() {
+        bail!("native cargo binary path is empty");
+    }
+    if path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::Prefix(_) | Component::RootDir
+        )
+    }) {
+        bail!(
+            "native cargo binary path must stay inside the artifact: {}",
+            path.display()
+        );
+    }
+    Ok(path)
+}
+
+fn validate_native_bin_sources(pending: &[(PathBuf, PathBuf)]) -> Result<()> {
+    let mut sources = BTreeSet::new();
+    for (src, _) in pending {
+        if !sources.insert(src) {
+            bail!(
+                "native cargo binary artifact maps multiple bins to {}",
+                file::display_path(src)
+            );
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -1044,12 +1350,99 @@ mod tests {
             pkg-fmt = "zip"
         });
 
-        let metadata =
-            NativeBinstallMetadata::from_manifest(&manifest, "x86_64-apple-darwin").unwrap();
+        let metadata = NativeBinstallMetadata::from_manifest(
+            &manifest,
+            "x86_64-apple-darwin",
+            &PlatformTarget::new(Platform::parse("macos-x64").unwrap()),
+        )
+        .unwrap();
         let metadata = metadata.unwrap();
 
         assert_eq!(metadata.pkg_fmt.as_deref(), Some("zip"));
         assert_eq!(metadata.bin_dir.as_deref(), Some("{ bin }{ binary-ext }"));
+    }
+
+    #[test]
+    fn native_binstall_metadata_merges_cfg_overrides() {
+        let manifest: toml::Value = toml::from_str(
+            r#"
+            [package.metadata.binstall]
+            pkg-url = "base"
+            pkg-fmt = "tgz"
+
+            [package.metadata.binstall.overrides.'cfg(unix)']
+            pkg-fmt = "tar"
+
+            [package.metadata.binstall.overrides.'cfg(all(target_os = "linux", target_env = "musl"))']
+            pkg-url = "musl"
+            "#,
+        )
+        .unwrap();
+
+        let metadata = NativeBinstallMetadata::from_manifest(
+            &manifest,
+            "x86_64-unknown-linux-musl",
+            &PlatformTarget::new(Platform::parse("linux-x64-musl").unwrap()),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(metadata.pkg_url, "musl");
+        assert_eq!(metadata.pkg_fmt.as_deref(), Some("tar"));
+    }
+
+    #[test]
+    fn native_binstall_metadata_exact_override_wins_over_cfg() {
+        let manifest: toml::Value = toml::from_str(
+            r#"
+            [package.metadata.binstall]
+            pkg-url = "base"
+            pkg-fmt = "tgz"
+
+            [package.metadata.binstall.overrides.'cfg(unix)']
+            pkg-fmt = "tar"
+
+            [package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+            pkg-fmt = "zip"
+            "#,
+        )
+        .unwrap();
+
+        let metadata = NativeBinstallMetadata::from_manifest(
+            &manifest,
+            "x86_64-unknown-linux-gnu",
+            &PlatformTarget::new(Platform::parse("linux-x64").unwrap()),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(metadata.pkg_fmt.as_deref(), Some("zip"));
+    }
+
+    #[test]
+    fn native_manifest_bins_reads_required_features() {
+        let manifest = toml::Value::Table(toml::toml! {
+            [[bin]]
+            name = "main"
+
+            [[bin]]
+            name = "extra"
+            required-features = ["extras"]
+        });
+
+        assert_eq!(
+            native_manifest_bins(&manifest),
+            vec![
+                NativeCargoBin {
+                    name: "main".to_string(),
+                    required_features: vec![]
+                },
+                NativeCargoBin {
+                    name: "extra".to_string(),
+                    required_features: vec!["extras".to_string()]
+                }
+            ]
+        );
     }
 
     #[test]
@@ -1226,7 +1619,52 @@ mod tests {
             binary_ext: "",
         };
 
-        assert!(find_native_bin(temp_dir.path(), Some("bin/actual"), &vars).is_err());
+        assert!(
+            find_native_bin(temp_dir.path(), Some("bin/actual"), &vars)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn infers_native_bin_dir_from_common_archive_layout() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let artifact_dir = temp_dir.path().join("demo-x86_64-unknown-linux-gnu-v1.2.3");
+        file::create_dir_all(&artifact_dir).unwrap();
+        fs::write(artifact_dir.join("demo"), "").unwrap();
+        let vars = BinstallTemplateVars {
+            repo: "",
+            name: "demo",
+            version: "1.2.3",
+            target: "x86_64-unknown-linux-gnu",
+            archive_format: "tgz",
+            archive_suffix: ".tgz",
+            bin: "demo",
+            binary_ext: "",
+        };
+
+        let src = find_native_bin(temp_dir.path(), None, &vars)
+            .unwrap()
+            .unwrap();
+        assert_eq!(src, artifact_dir.join("demo"));
+    }
+
+    #[test]
+    fn native_bin_dir_rejects_paths_outside_artifact() {
+        assert!(validate_native_bin_relative_path("../bin/demo").is_err());
+        assert!(validate_native_bin_relative_path("/bin/demo").is_err());
+        assert!(validate_native_bin_relative_path("").is_err());
+    }
+
+    #[test]
+    fn native_bin_sources_reject_duplicate_sources() {
+        let src = PathBuf::from("bin/demo");
+        let pending = vec![
+            (src.clone(), PathBuf::from("bin/one")),
+            (src, PathBuf::from("bin/two")),
+        ];
+
+        assert!(validate_native_bin_sources(&pending).is_err());
     }
 
     #[test]
