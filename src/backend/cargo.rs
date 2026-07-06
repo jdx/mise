@@ -370,6 +370,15 @@ impl CargoBackend {
         let package_format = native_package_format(&pkg_fmt)?;
         let binary_ext = if cfg!(windows) { ".exe" } else { "" };
         let archive_suffix = format!(".{}", package_format.template_value);
+        let template_ctx = BinstallTemplateContext {
+            package: &package,
+            crate_name: &crate_name,
+            version,
+            target: &target,
+            archive_format: package_format.template_value,
+            archive_suffix: &archive_suffix,
+            binary_ext,
+        };
 
         let bin_root = tv.install_path().join("bin");
         file::create_dir_all(&bin_root)?;
@@ -380,16 +389,7 @@ impl CargoBackend {
                 .tempdir()?;
             let mut pending = vec![];
             for bin in &bins {
-                let vars = binstall_template_vars(
-                    &package,
-                    &crate_name,
-                    version,
-                    &target,
-                    package_format.template_value,
-                    &archive_suffix,
-                    bin,
-                    binary_ext,
-                );
+                let vars = template_ctx.vars(bin);
                 let archive_url = expand_binstall_template(&binstall.pkg_url, &vars);
                 let src = download_dir.path().join(format!("{bin}{binary_ext}"));
                 let dest = bin_root.join(format!("{bin}{binary_ext}"));
@@ -415,16 +415,7 @@ impl CargoBackend {
 
         let archive_url = expand_binstall_template(
             &binstall.pkg_url,
-            &binstall_template_vars(
-                &package,
-                &crate_name,
-                version,
-                &target,
-                package_format.template_value,
-                &archive_suffix,
-                bins.first().map(String::as_str).unwrap_or(&crate_name),
-                binary_ext,
-            ),
+            &template_ctx.vars(bins.first().map(String::as_str).unwrap_or(&crate_name)),
         );
 
         let archive_path = tv.download_path().join(get_filename_from_url(&archive_url));
@@ -452,16 +443,7 @@ impl CargoBackend {
 
         let mut pending = vec![];
         for bin in &bins {
-            let vars = binstall_template_vars(
-                &package,
-                &crate_name,
-                version,
-                &target,
-                package_format.template_value,
-                &archive_suffix,
-                bin,
-                binary_ext,
-            );
+            let vars = template_ctx.vars(bin);
             let src = find_native_bin(extract_dir.path(), binstall.bin_dir.as_deref(), &vars)?;
             let dest = bin_root.join(format!("{bin}{binary_ext}"));
             pending.push((src, dest));
@@ -602,25 +584,28 @@ struct BinstallTemplateVars<'a> {
     binary_ext: &'a str,
 }
 
-fn binstall_template_vars<'a>(
+struct BinstallTemplateContext<'a> {
     package: &'a CratesIoPackage,
     crate_name: &'a str,
     version: &'a str,
     target: &'a str,
     archive_format: &'a str,
     archive_suffix: &'a str,
-    bin: &'a str,
     binary_ext: &'a str,
-) -> BinstallTemplateVars<'a> {
-    BinstallTemplateVars {
-        repo: package.repository.as_deref().unwrap_or_default(),
-        name: crate_name,
-        version,
-        target,
-        archive_format,
-        archive_suffix,
-        bin,
-        binary_ext,
+}
+
+impl<'a> BinstallTemplateContext<'a> {
+    fn vars(&self, bin: &'a str) -> BinstallTemplateVars<'a> {
+        BinstallTemplateVars {
+            repo: self.package.repository.as_deref().unwrap_or_default(),
+            name: self.crate_name,
+            version: self.version,
+            target: self.target,
+            archive_format: self.archive_format,
+            archive_suffix: self.archive_suffix,
+            bin,
+            binary_ext: self.binary_ext,
+        }
     }
 }
 
