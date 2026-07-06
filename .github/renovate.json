@@ -37,6 +37,12 @@
       "matchPackageNames": ["/^sigstore-/"],
       "matchManagers": ["cargo"],
       "groupName": "sigstore crates"
+    },
+    {
+      "description": "phf runtime and codegen must stay compatible for generated baked registry maps.",
+      "matchPackageNames": ["phf", "phf_codegen"],
+      "matchManagers": ["cargo"],
+      "groupName": "phf"
     }
   ]
 }
