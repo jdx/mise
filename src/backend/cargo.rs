@@ -388,6 +388,9 @@ impl CargoBackend {
         file::create_dir_all(&bin_root)?;
 
         if package_format.extraction_format.is_none() {
+            if !raw_binary_url_supports_bins(&binstall.pkg_url, &bins) {
+                return Ok(false);
+            }
             let download_dir = tempfile::Builder::new()
                 .prefix("mise-cargo-binstall-bin-")
                 .tempdir()?;
@@ -808,6 +811,10 @@ fn template_contains_var(template: &str, key: &str) -> bool {
     template.contains(&format!("{{ {key} }}")) || template.contains(&format!("{{{key}}}"))
 }
 
+fn raw_binary_url_supports_bins(template: &str, bins: &[String]) -> bool {
+    bins.len() <= 1 || template_contains_var(template, "bin")
+}
+
 fn find_native_bin(
     extract_dir: &std::path::Path,
     bin_dir: Option<&str>,
@@ -1020,6 +1027,23 @@ mod tests {
         };
 
         assert_eq!(archive_suffix, ".exe");
+    }
+
+    #[test]
+    fn raw_binary_url_requires_bin_placeholder_for_multiple_bins() {
+        let bins = vec!["one".to_string(), "two".to_string()];
+        assert!(!raw_binary_url_supports_bins(
+            "https://example.com/{ name }",
+            &bins
+        ));
+        assert!(raw_binary_url_supports_bins(
+            "https://example.com/{ bin }",
+            &bins
+        ));
+        assert!(raw_binary_url_supports_bins(
+            "https://example.com/{ name }",
+            &["one".to_string()]
+        ));
     }
 
     #[test]
