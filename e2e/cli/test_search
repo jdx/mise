@@ -11,3 +11,7 @@ jq    Command-line JSON processor. https://github.com/jqlang/jq
 jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp"
 
 assert "mise search --match-type equal jq" "jq  Command-line JSON processor. https://github.com/jqlang/jq"
+
+assert_contains "mise search 7zip" "aqua:ip7z/7zip"
+assert_contains "mise search --match-type contains 7zip" "aqua:ip7z/7zip"
+assert_contains "mise search --match-type equal 7zip" "aqua:ip7z/7zip"
