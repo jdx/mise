@@ -213,6 +213,9 @@ impl TasksAdd {
             if !self.run.is_empty() {
                 task.insert("run", shell_words::join(&self.run).into());
             }
+            if let Some(run_windows) = &self.run_windows {
+                task.insert("run_windows", run_windows.clone().into());
+            }
             tasks.insert(&self.task, Item::Table(task));
             file::write(&path, doc.to_string())?;
             config_file::trust(&config_file::config_trust_root(&path))?;
