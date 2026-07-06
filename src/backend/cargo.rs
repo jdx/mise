@@ -58,7 +58,14 @@ impl<'a> CargoOptions<'a> {
     }
 
     fn features(&self) -> Option<String> {
-        self.values.raw().get_string("features")
+        match self.values.raw().opts.get("features") {
+            Some(toml::Value::Array(features)) => features
+                .iter()
+                .map(|feature| feature.as_str().map(str::to_string))
+                .collect::<Option<Vec<_>>>()
+                .map(|features| features.join(" ")),
+            _ => self.values.raw().get_string("features"),
+        }
     }
 
     fn default_features_disabled(&self) -> bool {
@@ -74,7 +81,10 @@ impl<'a> CargoOptions<'a> {
 
     fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
-        for key in ["features", "default-features", "crate", "locked"] {
+        if let Some(features) = self.features() {
+            result.insert("features".to_string(), features);
+        }
+        for key in ["default-features", "crate", "locked"] {
             if let Some(value) = self.values.raw().get_string(key) {
                 result.insert(key.to_string(), value.to_string());
             }
@@ -307,8 +317,8 @@ impl CargoBackend {
 
     fn cargo_install_required_options(opts: &ToolVersionOptions) -> Vec<&'static str> {
         let mut options = vec![];
-        if opts
-            .get_string("features")
+        if CargoOptions::new(opts)
+            .features()
             .is_some_and(|features| !features.trim().is_empty())
         {
             options.push("features");
@@ -433,6 +443,30 @@ mod tests {
     }
 
     #[test]
+    fn cargo_options_accepts_array_features() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "features".into(),
+            toml::Value::Array(vec![
+                toml::Value::String("postgres".into()),
+                toml::Value::String("rustls".into()),
+            ]),
+        );
+
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let lock_opts = CargoOptions::new(&opts).lockfile_options(&target);
+
+        assert_eq!(
+            CargoOptions::new(&opts).features().as_deref(),
+            Some("postgres rustls")
+        );
+        assert_eq!(
+            lock_opts.get("features").map(String::as_str),
+            Some("postgres rustls")
+        );
+    }
+
+    #[test]
     fn cargo_options_defaults_to_locked() {
         let opts = ToolVersionOptions::default();
 
@@ -446,6 +480,23 @@ mod tests {
         assert_eq!(
             CargoBackend::cargo_install_required_options(&opts),
             vec!["features", "default-features"]
+        );
+    }
+
+    #[test]
+    fn cargo_install_required_options_detects_array_features() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "features".into(),
+            toml::Value::Array(vec![
+                toml::Value::String("postgres".into()),
+                toml::Value::String("rustls".into()),
+            ]),
+        );
+
+        assert_eq!(
+            CargoBackend::cargo_install_required_options(&opts),
+            vec!["features"]
         );
     }
 
