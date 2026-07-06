@@ -407,7 +407,52 @@ impl CargoBackend {
                         file::display_path(&dest)
                     )
                 })?;
-                make_executable(&dest)?;
+                file::make_executable(&dest)?;
+            }
+            info!("installed {crate_name}@{version} from native cargo binary artifact");
+            return Ok(true);
+        }
+
+        if template_contains_var(&binstall.pkg_url, "bin") {
+            let download_dir = tempfile::Builder::new()
+                .prefix("mise-cargo-binstall-archives-")
+                .tempdir()?;
+            let mut pending = vec![];
+            for bin in &bins {
+                let vars = template_ctx.vars(bin);
+                let archive_url = expand_binstall_template(&binstall.pkg_url, &vars);
+                let archive_path = download_dir
+                    .path()
+                    .join(format!("{bin}-{}", get_filename_from_url(&archive_url)));
+                let extract_dir = download_dir.path().join(format!("{bin}-extract"));
+                ctx.pr
+                    .set_message(format!("download {}", get_filename_from_url(&archive_url)));
+                HTTP.download_file(&archive_url, &archive_path, Some(ctx.pr.as_ref()))
+                    .await?;
+                file::create_dir_all(&extract_dir)?;
+                file::extract_archive(
+                    &archive_path,
+                    &extract_dir,
+                    package_format.extraction_format.unwrap(),
+                    &ExtractOptions {
+                        strip_components: 0,
+                        pr: Some(ctx.pr.as_ref()),
+                        preserve_mtime: true,
+                    },
+                )?;
+                let src = find_native_bin(&extract_dir, binstall.bin_dir.as_deref(), &vars)?;
+                let dest = bin_root.join(format!("{bin}{binary_ext}"));
+                pending.push((src, dest));
+            }
+            for (src, dest) in pending {
+                fs::copy(&src, &dest).wrap_err_with(|| {
+                    format!(
+                        "failed to copy native cargo binary {} to {}",
+                        file::display_path(&src),
+                        file::display_path(&dest)
+                    )
+                })?;
+                file::make_executable(&dest)?;
             }
             info!("installed {crate_name}@{version} from native cargo binary artifact");
             return Ok(true);
@@ -456,7 +501,7 @@ impl CargoBackend {
                     file::display_path(&dest)
                 )
             })?;
-            make_executable(&dest)?;
+            file::make_executable(&dest)?;
         }
         info!("installed {crate_name}@{version} from native cargo binary artifact");
         Ok(true)
@@ -484,11 +529,19 @@ fn format_tool_options(options: &[&'static str]) -> String {
 
 #[derive(Debug, serde::Deserialize)]
 struct CratesIoPackageResponse {
-    version: CratesIoPackage,
+    #[serde(rename = "crate")]
+    krate: Option<CratesIoCrate>,
+    version: CratesIoPackageVersion,
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct CratesIoPackage {
+struct CratesIoCrate {
+    name: String,
+    repository: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct CratesIoPackageVersion {
     #[serde(rename = "crate", deserialize_with = "deserialize_crate_name")]
     name: String,
     num: String,
@@ -498,11 +551,35 @@ struct CratesIoPackage {
     bin_names: Vec<String>,
 }
 
+#[derive(Debug)]
+struct CratesIoPackage {
+    name: String,
+    num: String,
+    dl_path: String,
+    repository: Option<String>,
+    bin_names: Vec<String>,
+}
+
 impl CratesIoPackage {
     async fn fetch(crate_name: &str, version: &str) -> Result<Self> {
         let url = format!("https://crates.io/api/v1/crates/{crate_name}/{version}");
         let response: CratesIoPackageResponse = HTTP_FETCH.json(&url).await?;
-        Ok(response.version)
+        let name = response
+            .krate
+            .as_ref()
+            .map(|krate| krate.name.clone())
+            .unwrap_or(response.version.name);
+        let repository = response
+            .krate
+            .and_then(|krate| krate.repository)
+            .or(response.version.repository);
+        Ok(Self {
+            name,
+            num: response.version.num,
+            dl_path: response.version.dl_path,
+            repository,
+            bin_names: response.version.bin_names,
+        })
     }
 
     fn download_url(&self) -> String {
@@ -723,6 +800,10 @@ fn expand_binstall_template(template: &str, vars: &BinstallTemplateVars<'_>) -> 
     out
 }
 
+fn template_contains_var(template: &str, key: &str) -> bool {
+    template.contains(&format!("{{ {key} }}")) || template.contains(&format!("{{{key}}}"))
+}
+
 fn find_native_bin(
     extract_dir: &std::path::Path,
     bin_dir: Option<&str>,
@@ -742,21 +823,6 @@ fn find_native_bin(
         .find(|entry| entry.file_type().is_file() && entry.file_name() == file_name.as_str())
         .map(|entry| entry.into_path())
         .ok_or_else(|| eyre!("native cargo binary artifact did not contain {file_name}"))
-}
-
-fn make_executable(path: &std::path::Path) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(path)?.permissions();
-        perms.set_mode(perms.mode() | 0o755);
-        fs::set_permissions(path, perms)?;
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-    }
-    Ok(())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -959,5 +1025,27 @@ mod tests {
 
         assert_eq!(string_field.version.name, "demo");
         assert_eq!(object_field.version.name, "demo");
+    }
+
+    #[test]
+    fn crates_io_package_uses_top_level_repository_when_present() {
+        let response: CratesIoPackageResponse = serde_json::from_value(serde_json::json!({
+            "crate": {
+                "name": "demo",
+                "repository": "https://example.com/demo"
+            },
+            "version": {
+                "crate": "demo",
+                "num": "1.2.3",
+                "dl_path": "/api/v1/crates/demo/1.2.3/download",
+                "repository": null,
+                "bin_names": ["demo"]
+            }
+        }))
+        .unwrap();
+
+        let repository = response.krate.and_then(|krate| krate.repository);
+
+        assert_eq!(repository.as_deref(), Some("https://example.com/demo"));
     }
 }
