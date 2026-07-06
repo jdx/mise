@@ -25,6 +25,8 @@ pub struct LaunchdTomlConfig {
     #[serde(default)]
     pub start_interval: Option<u64>,
     #[serde(default)]
+    pub start_calendar_interval: Option<LaunchdCalendarInterval>,
+    #[serde(default)]
     pub environment: IndexMap<String, String>,
     #[serde(default)]
     pub working_directory: Option<String>,
@@ -36,6 +38,20 @@ pub struct LaunchdTomlConfig {
     pub kickstart: bool,
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
+pub struct LaunchdCalendarInterval {
+    #[serde(default)]
+    pub minute: Option<u8>,
+    #[serde(default)]
+    pub hour: Option<u8>,
+    #[serde(default)]
+    pub day: Option<u8>,
+    #[serde(default)]
+    pub weekday: Option<u8>,
+    #[serde(default)]
+    pub month: Option<u8>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchdRequest {
     pub name: String,
@@ -45,6 +61,7 @@ pub struct LaunchdRequest {
     pub run_at_load: bool,
     pub keep_alive: bool,
     pub start_interval: Option<u64>,
+    pub start_calendar_interval: Option<LaunchdCalendarInterval>,
     pub environment: IndexMap<String, String>,
     pub working_directory: Option<String>,
     pub stdout_path: Option<String>,
@@ -79,6 +96,9 @@ impl LaunchdRequest {
         if program.is_empty() {
             bail!("agent '{name}' must set a non-empty `program`");
         }
+        if let Some(interval) = &config.start_calendar_interval {
+            interval.validate(&name)?;
+        }
         Ok(Self {
             label: format!("dev.mise.{name}"),
             name,
@@ -87,6 +107,7 @@ impl LaunchdRequest {
             run_at_load: config.run_at_load,
             keep_alive: config.keep_alive,
             start_interval: config.start_interval,
+            start_calendar_interval: config.start_calendar_interval,
             environment: config.environment,
             working_directory: config.working_directory,
             stdout_path: config.stdout_path,
@@ -94,6 +115,42 @@ impl LaunchdRequest {
             kickstart: config.kickstart,
         })
     }
+}
+
+impl LaunchdCalendarInterval {
+    fn validate(&self, agent_name: &str) -> Result<()> {
+        if self.minute.is_none()
+            && self.hour.is_none()
+            && self.day.is_none()
+            && self.weekday.is_none()
+            && self.month.is_none()
+        {
+            bail!("agent '{agent_name}' `start_calendar_interval` must set at least one field");
+        }
+        validate_range(agent_name, "minute", self.minute, 0, 59)?;
+        validate_range(agent_name, "hour", self.hour, 0, 23)?;
+        validate_range(agent_name, "day", self.day, 1, 31)?;
+        validate_range(agent_name, "weekday", self.weekday, 0, 7)?;
+        validate_range(agent_name, "month", self.month, 1, 12)?;
+        Ok(())
+    }
+}
+
+fn validate_range(
+    agent_name: &str,
+    field: &str,
+    value: Option<u8>,
+    min: u8,
+    max: u8,
+) -> Result<()> {
+    if let Some(value) = value
+        && !(min..=max).contains(&value)
+    {
+        bail!(
+            "agent '{agent_name}' `start_calendar_interval.{field}` must be between {min} and {max}"
+        );
+    }
+    Ok(())
 }
 
 impl std::fmt::Display for LaunchdRequest {
@@ -234,6 +291,12 @@ fn plist_value(request: &LaunchdRequest) -> Value {
     if let Some(interval) = request.start_interval {
         dict.insert("StartInterval".into(), Value::Integer(interval.into()));
     }
+    if let Some(interval) = &request.start_calendar_interval {
+        dict.insert(
+            "StartCalendarInterval".into(),
+            Value::Dictionary(calendar_interval_value(interval)),
+        );
+    }
     if !request.environment.is_empty() {
         let mut env = Dictionary::new();
         for (key, value) in &request.environment {
@@ -260,6 +323,26 @@ fn plist_value(request: &LaunchdRequest) -> Value {
         );
     }
     Value::Dictionary(dict)
+}
+
+fn calendar_interval_value(interval: &LaunchdCalendarInterval) -> Dictionary {
+    let mut dict = Dictionary::new();
+    if let Some(value) = interval.minute {
+        dict.insert("Minute".into(), Value::Integer(value.into()));
+    }
+    if let Some(value) = interval.hour {
+        dict.insert("Hour".into(), Value::Integer(value.into()));
+    }
+    if let Some(value) = interval.day {
+        dict.insert("Day".into(), Value::Integer(value.into()));
+    }
+    if let Some(value) = interval.weekday {
+        dict.insert("Weekday".into(), Value::Integer(value.into()));
+    }
+    if let Some(value) = interval.month {
+        dict.insert("Month".into(), Value::Integer(value.into()));
+    }
+    dict
 }
 
 fn plist_matches(current: &[u8], request: &LaunchdRequest) -> bool {
@@ -390,6 +473,31 @@ mod tests {
         .unwrap();
         assert_eq!(request.label, "dev.mise.my-agent");
         assert!(LaunchdRequest::from_toml("bad/name".to_string(), Default::default()).is_err());
+        assert!(
+            LaunchdRequest::from_toml(
+                "my-agent".to_string(),
+                LaunchdTomlConfig {
+                    program: Some("/bin/echo".to_string()),
+                    start_calendar_interval: Some(Default::default()),
+                    ..Default::default()
+                },
+            )
+            .is_err()
+        );
+        assert!(
+            LaunchdRequest::from_toml(
+                "my-agent".to_string(),
+                LaunchdTomlConfig {
+                    program: Some("/bin/echo".to_string()),
+                    start_calendar_interval: Some(LaunchdCalendarInterval {
+                        hour: Some(24),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -404,6 +512,11 @@ mod tests {
             run_at_load: true,
             keep_alive: true,
             start_interval: Some(60),
+            start_calendar_interval: Some(LaunchdCalendarInterval {
+                hour: Some(2),
+                minute: Some(0),
+                ..Default::default()
+            }),
             environment,
             working_directory: Some("~".to_string()),
             stdout_path: Some("~/Library/Logs/sync.log".to_string()),
@@ -422,6 +535,13 @@ mod tests {
         assert_eq!(dict.get("RunAtLoad"), Some(&Value::Boolean(true)));
         assert_eq!(dict.get("KeepAlive"), Some(&Value::Boolean(true)));
         assert_eq!(dict.get("StartInterval"), Some(&Value::Integer(60.into())));
+        match dict.get("StartCalendarInterval") {
+            Some(Value::Dictionary(interval)) => {
+                assert_eq!(interval.get("Hour"), Some(&Value::Integer(2.into())));
+                assert_eq!(interval.get("Minute"), Some(&Value::Integer(0.into())));
+            }
+            value => panic!("expected StartCalendarInterval dictionary, got {value:?}"),
+        }
         assert_eq!(
             dict.get("WorkingDirectory"),
             Some(&Value::String(

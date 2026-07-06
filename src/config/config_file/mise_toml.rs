@@ -2526,6 +2526,7 @@ mod tests {
         args = ["--watch"]
         run_at_load = true
         start_interval = 300
+        start_calendar_interval = { hour = 2, minute = 0 }
         environment = { PATH = "/usr/bin:/bin" }
         working_directory = "~"
         stdout_path = "~/Library/Logs/my-sync.log"
@@ -2540,6 +2541,14 @@ mod tests {
         assert_eq!(agent.args, vec!["--watch"]);
         assert!(agent.run_at_load);
         assert_eq!(agent.start_interval, Some(300));
+        assert_eq!(
+            agent.start_calendar_interval.as_ref().unwrap().hour,
+            Some(2)
+        );
+        assert_eq!(
+            agent.start_calendar_interval.as_ref().unwrap().minute,
+            Some(0)
+        );
         assert_eq!(
             agent.environment.get("PATH").map(String::as_str),
             Some("/usr/bin:/bin")
