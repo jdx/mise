@@ -207,7 +207,7 @@ impl Backend for CargoBackend {
                 BinstallStatus::Disabled if Settings::get().cargo.binstall_only => {
                     bail!("cargo-binstall is disabled, but cargo.binstall_only is set");
                 }
-                BinstallStatus::Disabled | BinstallStatus::Unavailable
+                BinstallStatus::Unavailable
                     if Settings::get().experimental
                         && Settings::get().cargo.binstall_native
                         && !Settings::get().cargo.binstall_only
@@ -375,8 +375,11 @@ impl CargoBackend {
         file::create_dir_all(&bin_root)?;
 
         if package_format.extraction_format.is_none() {
+            let download_dir = tempfile::Builder::new()
+                .prefix("mise-cargo-binstall-bin-")
+                .tempdir()?;
+            let mut pending = vec![];
             for bin in &bins {
-                let dest = bin_root.join(format!("{bin}{binary_ext}"));
                 let vars = binstall_template_vars(
                     &package,
                     &crate_name,
@@ -388,10 +391,22 @@ impl CargoBackend {
                     binary_ext,
                 );
                 let archive_url = expand_binstall_template(&binstall.pkg_url, &vars);
+                let src = download_dir.path().join(format!("{bin}{binary_ext}"));
+                let dest = bin_root.join(format!("{bin}{binary_ext}"));
                 ctx.pr
                     .set_message(format!("download {}", get_filename_from_url(&archive_url)));
-                HTTP.download_file(&archive_url, &dest, Some(ctx.pr.as_ref()))
+                HTTP.download_file(&archive_url, &src, Some(ctx.pr.as_ref()))
                     .await?;
+                pending.push((src, dest));
+            }
+            for (src, dest) in pending {
+                fs::copy(&src, &dest).wrap_err_with(|| {
+                    format!(
+                        "failed to copy native cargo binary {} to {}",
+                        file::display_path(&src),
+                        file::display_path(&dest)
+                    )
+                })?;
                 make_executable(&dest)?;
             }
             info!("installed {crate_name}@{version} from native cargo binary artifact");
@@ -435,6 +450,7 @@ impl CargoBackend {
             },
         )?;
 
+        let mut pending = vec![];
         for bin in &bins {
             let vars = binstall_template_vars(
                 &package,
@@ -448,6 +464,9 @@ impl CargoBackend {
             );
             let src = find_native_bin(extract_dir.path(), binstall.bin_dir.as_deref(), &vars)?;
             let dest = bin_root.join(format!("{bin}{binary_ext}"));
+            pending.push((src, dest));
+        }
+        for (src, dest) in pending {
             fs::copy(&src, &dest).wrap_err_with(|| {
                 format!(
                     "failed to copy native cargo binary {} to {}",
@@ -666,19 +685,19 @@ struct NativePackageFormat<'a> {
 
 fn native_package_format(pkg_fmt: &str) -> Result<NativePackageFormat<'_>> {
     match pkg_fmt {
-        "tgz" => Ok(NativePackageFormat {
+        "tgz" | "tar.gz" => Ok(NativePackageFormat {
             template_value: pkg_fmt,
             extraction_format: Some(ExtractionFormat::TarGz),
         }),
-        "txz" => Ok(NativePackageFormat {
+        "txz" | "tar.xz" => Ok(NativePackageFormat {
             template_value: pkg_fmt,
             extraction_format: Some(ExtractionFormat::TarXz),
         }),
-        "tbz" | "tbz2" => Ok(NativePackageFormat {
+        "tbz" | "tbz2" | "tar.bz2" => Ok(NativePackageFormat {
             template_value: pkg_fmt,
             extraction_format: Some(ExtractionFormat::TarBz2),
         }),
-        "tzst" | "tzstd" => Ok(NativePackageFormat {
+        "tzst" | "tzstd" | "tar.zst" | "tar.zstd" => Ok(NativePackageFormat {
             template_value: pkg_fmt,
             extraction_format: Some(ExtractionFormat::TarZst),
         }),
@@ -911,7 +930,15 @@ mod tests {
             Some(ExtractionFormat::TarXz)
         );
         assert_eq!(
+            native_package_format("tar.xz").unwrap().extraction_format,
+            Some(ExtractionFormat::TarXz)
+        );
+        assert_eq!(
             native_package_format("tzstd").unwrap().extraction_format,
+            Some(ExtractionFormat::TarZst)
+        );
+        assert_eq!(
+            native_package_format("tar.zst").unwrap().extraction_format,
             Some(ExtractionFormat::TarZst)
         );
         assert_eq!(

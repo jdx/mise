@@ -298,7 +298,8 @@ description = "[experimental] Use mise's native cargo binary installer when carg
 docs = """
 When `experimental = true`, `cargo.binstall_native = true`, and `cargo-binstall`
 is not installed, mise will try to download precompiled binaries using
-`package.metadata.binstall` from the crate's `Cargo.toml`.
+`package.metadata.binstall` from the crate's `Cargo.toml`. Set
+`cargo.binstall = false` to force `cargo install` instead.
 
 This is a best-effort fast path. If the crate does not declare compatible
 metadata, the artifact is unavailable, or the install uses Cargo build options
