@@ -217,9 +217,29 @@ mod tests {
     const AGE_PUBLIC_KEY: &str = "age1se5ghfycr4n8kcwc3qwf234ymvmr2lex2a99wh8gpfx97glwt9hqch4569";
     const AGE_PRIVATE_KEY: &str =
         "AGE-SECRET-KEY-1EQUCGFZH8UZKSZ0Z5N5T234YRNDT4U9H7QNYXWRRNJYDDVXE6FWSCPGNJ7";
+    static ENV_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    fn encrypted_toml() -> String {
+        RopsFileBuilder::<TomlFileFormat>::new(r#"SECRET = "mysecret""#)
+            .unwrap()
+            .add_integration_key::<AgeIntegration>(
+                AgeIntegration::parse_key_id(AGE_PUBLIC_KEY).unwrap(),
+            )
+            .encrypt::<AES256GCM, SHA512>()
+            .unwrap()
+            .to_string()
+    }
+
+    fn restore_env_var(key: &str, prev: Option<String>) {
+        match prev {
+            Some(v) => crate::env::set_var(key, v),
+            None => crate::env::remove_var(key),
+        }
+    }
 
     #[tokio::test]
     async fn decrypts_sops_toml_file() {
+        let _lock = ENV_MUTEX.lock().await;
         let prev_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
         let prev_rops = crate::env::var("MISE_SOPS_ROPS").ok();
         crate::env::remove_var("MISE_SOPS_ROPS");
@@ -229,33 +249,82 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let p = tmp.path().join(".env.toml");
 
-        let encrypted = RopsFileBuilder::<TomlFileFormat>::new(r#"SECRET = "mysecret""#)
-            .unwrap()
-            .add_integration_key::<AgeIntegration>(
-                AgeIntegration::parse_key_id(AGE_PUBLIC_KEY).unwrap(),
-            )
-            .encrypt::<AES256GCM, SHA512>()
-            .unwrap()
-            .to_string();
-        file::write(&p, encrypted).unwrap();
+        file::write(&p, encrypted_toml()).unwrap();
 
         let exec_env = TeraEnvMap::new();
         let env = EnvResults::toml(&config, &exec_env, &p, Ok).await.unwrap();
         assert_eq!(env.get("SECRET").unwrap(), "mysecret");
 
-        match prev_age_key {
-            Some(v) => crate::env::set_var("MISE_SOPS_AGE_KEY", v),
-            None => crate::env::remove_var("MISE_SOPS_AGE_KEY"),
-        }
-        match prev_rops {
-            Some(v) => crate::env::set_var("MISE_SOPS_ROPS", v),
-            None => crate::env::remove_var("MISE_SOPS_ROPS"),
-        }
+        restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
+        restore_env_var("MISE_SOPS_ROPS", prev_rops);
+        Settings::reset(None);
+    }
+
+    #[tokio::test]
+    async fn decrypts_sops_toml_file_with_exec_env_mise_age_key_file() {
+        let _lock = ENV_MUTEX.lock().await;
+        let prev_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
+        let prev_age_key_file = crate::env::var("MISE_SOPS_AGE_KEY_FILE").ok();
+        let prev_rops = crate::env::var("MISE_SOPS_ROPS").ok();
+        crate::env::remove_var("MISE_SOPS_AGE_KEY");
+        crate::env::remove_var("MISE_SOPS_AGE_KEY_FILE");
+        crate::env::remove_var("MISE_SOPS_ROPS");
+        Settings::reset(None);
+        let config = Config::reset().await.unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join(".env.toml");
+        let key_file = tmp.path().join("age.txt");
+        file::write(&p, encrypted_toml()).unwrap();
+        file::write(&key_file, AGE_PRIVATE_KEY).unwrap();
+
+        let mut exec_env = TeraEnvMap::new();
+        exec_env.insert(
+            "MISE_SOPS_AGE_KEY_FILE".into(),
+            key_file.to_string_lossy().to_string(),
+        );
+        let env = EnvResults::toml(&config, &exec_env, &p, Ok).await.unwrap();
+        assert_eq!(env.get("SECRET").unwrap(), "mysecret");
+
+        restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
+        restore_env_var("MISE_SOPS_AGE_KEY_FILE", prev_age_key_file);
+        restore_env_var("MISE_SOPS_ROPS", prev_rops);
+        Settings::reset(None);
+    }
+
+    #[tokio::test]
+    async fn ambient_sops_age_key_file_precedes_exec_env_sops_age_key() {
+        let _lock = ENV_MUTEX.lock().await;
+        let prev_mise_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
+        let prev_sops_age_key = crate::env::var("SOPS_AGE_KEY").ok();
+        let prev_sops_age_key_file = crate::env::var("SOPS_AGE_KEY_FILE").ok();
+        let prev_rops = crate::env::var("MISE_SOPS_ROPS").ok();
+        crate::env::remove_var("MISE_SOPS_AGE_KEY");
+        crate::env::remove_var("SOPS_AGE_KEY");
+        crate::env::remove_var("MISE_SOPS_ROPS");
+        Settings::reset(None);
+        let config = Config::reset().await.unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join(".env.toml");
+        let key_file = tmp.path().join("age.txt");
+        file::write(&p, encrypted_toml()).unwrap();
+        file::write(&key_file, AGE_PRIVATE_KEY).unwrap();
+        crate::env::set_var("SOPS_AGE_KEY_FILE", key_file.to_string_lossy().to_string());
+
+        let mut exec_env = TeraEnvMap::new();
+        exec_env.insert("SOPS_AGE_KEY".into(), "not-an-age-key".into());
+        let env = EnvResults::toml(&config, &exec_env, &p, Ok).await.unwrap();
+        assert_eq!(env.get("SECRET").unwrap(), "mysecret");
+
+        restore_env_var("MISE_SOPS_AGE_KEY", prev_mise_age_key);
+        restore_env_var("SOPS_AGE_KEY", prev_sops_age_key);
+        restore_env_var("SOPS_AGE_KEY_FILE", prev_sops_age_key_file);
+        restore_env_var("MISE_SOPS_ROPS", prev_rops);
         Settings::reset(None);
     }
 
     #[tokio::test]
     async fn errors_when_sops_cli_is_configured_for_toml_file() {
+        let _lock = ENV_MUTEX.lock().await;
         let prev_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
         let prev_rops = crate::env::var("MISE_SOPS_ROPS").ok();
         crate::env::set_var("MISE_SOPS_AGE_KEY", AGE_PRIVATE_KEY);
@@ -265,15 +334,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let p = tmp.path().join(".env.toml");
 
-        let encrypted = RopsFileBuilder::<TomlFileFormat>::new(r#"SECRET = "mysecret""#)
-            .unwrap()
-            .add_integration_key::<AgeIntegration>(
-                AgeIntegration::parse_key_id(AGE_PUBLIC_KEY).unwrap(),
-            )
-            .encrypt::<AES256GCM, SHA512>()
-            .unwrap()
-            .to_string();
-        file::write(&p, encrypted).unwrap();
+        file::write(&p, encrypted_toml()).unwrap();
 
         let exec_env = TeraEnvMap::new();
         let err = EnvResults::toml(&config, &exec_env, &p, Ok)
@@ -285,14 +346,8 @@ mod tests {
             "{err}"
         );
 
-        match prev_age_key {
-            Some(v) => crate::env::set_var("MISE_SOPS_AGE_KEY", v),
-            None => crate::env::remove_var("MISE_SOPS_AGE_KEY"),
-        }
-        match prev_rops {
-            Some(v) => crate::env::set_var("MISE_SOPS_ROPS", v),
-            None => crate::env::remove_var("MISE_SOPS_ROPS"),
-        }
+        restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
+        restore_env_var("MISE_SOPS_ROPS", prev_rops);
         Settings::reset(None);
     }
 }

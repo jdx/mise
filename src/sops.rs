@@ -207,16 +207,16 @@ where
         return (Some(key), Some(path));
     }
 
-    if let Some(age_key) = env.get("SOPS_AGE_KEY").filter(|key| !key.trim().is_empty()) {
-        return (Some(age_key.trim().to_string()), None);
-    }
-
     // 4. Check standard SOPS environment variables
     if let Ok(key_file_path) = env::var("SOPS_AGE_KEY_FILE")
         && let Some((key, path)) =
             read_age_key_file(key_file_path, parse_template, "SOPS_AGE_KEY_FILE")
     {
         return (Some(key), Some(path));
+    }
+
+    if let Some(age_key) = env.get("SOPS_AGE_KEY").filter(|key| !key.trim().is_empty()) {
+        return (Some(age_key.trim().to_string()), None);
     }
 
     if let Ok(key) = env::var("SOPS_AGE_KEY")
