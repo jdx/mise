@@ -71,6 +71,9 @@ description = "Lint the project"
 
 [vars]
 e2e_args = { default = "--headless", redact = true }
+
+[tool_alias.java.versions]
+"11.0" = "temurin-11"
 TOML
 
 # Create a separate file for age schema coverage so mise does not try to decrypt
@@ -169,6 +172,10 @@ include = ["mise-bad-task-os.toml", "mise-bad-task-tool-extra.toml"]
 [[schemas]]
 path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
 include = ["mise-bad-registry-tool.toml"]
+
+[[schemas]]
+path = "file://$SCHEMA_PATH"
+include = ["mise-bad-tool-alias.toml"]
 EOF
 
 assert_fail "$TOMBI_LINT mise-bad.toml"
@@ -238,6 +245,13 @@ node = { version = "latest", os = true }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-os.toml"
+
+cat >"$HOME/workdir/mise-bad-tool-alias.toml" <<'TOML'
+[tool_alias.node.versions]
+lts = { bad = true }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-tool-alias.toml"
 
 cat >"$HOME/workdir/mise-bad-watch-files.toml" <<'TOML'
 [[watch_files]]

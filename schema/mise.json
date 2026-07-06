@@ -60,6 +60,39 @@
         }
       ]
     },
+    "tool_alias_versions": {
+      "description": "tool version aliases",
+      "type": "object",
+      "additionalProperties": {
+        "description": "version alias points to",
+        "type": "string"
+      }
+    },
+    "tool_alias_entry": {
+      "oneOf": [
+        {
+          "description": "where the alias goes",
+          "type": "string"
+        },
+        {
+          "description": "tool to set aliases for",
+          "type": "object",
+          "properties": {
+            "backend": {
+              "description": "where the alias goes",
+              "type": "string"
+            },
+            "versions": {
+              "$ref": "#/$defs/tool_alias_versions"
+            }
+          },
+          "additionalProperties": {
+            "description": "version alias points to",
+            "type": "string"
+          }
+        }
+      ]
+    },
     "env_value": {
       "oneOf": [
         {
@@ -2849,40 +2882,14 @@
       "description": "custom shorthands",
       "type": "object",
       "additionalProperties": {
-        "oneOf": [
-          {
-            "description": "where the alias goes",
-            "type": "string"
-          },
-          {
-            "description": "tool to set aliases for",
-            "type": "object",
-            "additionalProperties": {
-              "description": "version alias points to",
-              "type": "string"
-            }
-          }
-        ]
+        "$ref": "#/$defs/tool_alias_entry"
       }
     },
     "tool_alias": {
       "description": "Tool version aliases",
       "type": "object",
       "additionalProperties": {
-        "oneOf": [
-          {
-            "description": "where the alias goes",
-            "type": "string"
-          },
-          {
-            "description": "tool to set aliases for",
-            "type": "object",
-            "additionalProperties": {
-              "description": "version alias points to",
-              "type": "string"
-            }
-          }
-        ]
+        "$ref": "#/$defs/tool_alias_entry"
       }
     },
     "shell_alias": {
