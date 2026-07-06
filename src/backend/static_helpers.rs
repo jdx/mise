@@ -12,7 +12,9 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-use super::platform_tokens::{BINARY_ARCH_TOKENS, BINARY_OS_TOKENS, is_platform_or_version_token};
+use super::platform_tokens::{
+    BINARY_ARCH_TOKENS, BINARY_OS_TOKENS, is_arch_token, is_os_token, is_platform_or_version_token,
+};
 
 /// Regex pattern for matching version suffixes like -v1.2.3, _1.2.3, etc.
 static VERSION_PATTERN: LazyLock<regex::Regex> =
@@ -1117,9 +1119,12 @@ fn strip_platform_token_suffix(name: &str) -> Option<String> {
         .char_indices()
         .filter_map(|(idx, c)| matches!(c, '-' | '_').then_some(idx))
         .collect::<Vec<_>>();
-    separators.sort_unstable();
+    separators.sort_unstable_by(|a, b| b.cmp(a));
 
     for idx in separators {
+        if separator_inside_platform_token(name, idx) {
+            continue;
+        }
         let suffix = &name[idx + 1..];
         let tokens = suffix
             .split(['-', '_'])
@@ -1150,32 +1155,22 @@ fn strip_platform_token_suffix(name: &str) -> Option<String> {
     None
 }
 
-fn is_os_token(token: &str) -> bool {
-    token.starts_with("manylinux")
-        || token.starts_with("musllinux")
-        || BINARY_OS_TOKENS.contains(&token)
-        || matches!(
-            token,
-            "ubuntu"
-                | "debian"
-                | "fedora"
-                | "centos"
-                | "rhel"
-                | "alpine"
-                | "arch"
-                | "mac"
-                | "macosx"
-                | "win32"
-                | "win64"
-                | "mingw"
-                | "mingw32"
-                | "mingw64"
-                | "w64"
-        )
-}
+fn separator_inside_platform_token(name: &str, idx: usize) -> bool {
+    if !name[idx..].starts_with('_') {
+        return false;
+    }
 
-fn is_arch_token(token: &str) -> bool {
-    BINARY_ARCH_TOKENS.contains(&token) || token == "64"
+    let token_start = name[..idx]
+        .rfind(['-', '_'])
+        .map(|pos| pos + 1)
+        .unwrap_or(0);
+    let token_end = name[idx + 1..]
+        .find(['-', '_'])
+        .map(|pos| idx + 1 + pos)
+        .unwrap_or(name.len());
+    let token = &name[token_start..token_end];
+
+    is_platform_or_version_token(token)
 }
 
 /// Remove version suffixes from binary names.
@@ -1476,6 +1471,18 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
         assert_eq!(
             rename_binary_name("tool-linux-x64", "tool-renamed"),
             "tool-renamed"
+        );
+    }
+
+    #[test]
+    fn test_strip_platform_token_suffix_uses_nearest_valid_suffix() {
+        assert_eq!(
+            strip_platform_token_suffix("code2prompt-x86_64-pc-windows-msvc"),
+            Some("code2prompt".to_string())
+        );
+        assert_eq!(
+            strip_platform_token_suffix("tool-v1.2.3-linux-x86_64"),
+            Some("tool-v1.2.3".to_string())
         );
     }
 
