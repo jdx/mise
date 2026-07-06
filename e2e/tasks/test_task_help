@@ -13,6 +13,33 @@ assert "mise run atask --help 2>&1 || true" "Usage: atask <myarg>
 Arguments:
   <myarg>"
 
+cat <<'EOF' >mise.toml
+[tasks.greet]
+usage = '''
+flag "-v --verbose" default=#false var=#true global=#true help="verbose"
+cmd "hello" help="say hello" {
+  flag "-n --name <name>" help="who to greet"
+}
+cmd "bye" help="say goodbye" {
+  flag "-l --loud" default=#false var=#true help="shout it"
+}
+'''
+run = "echo cmd=$usage_cmd name=$usage_name"
+EOF
+
+assert "mise run greet hello -h 2>&1 || true" "Usage: greet hello [-n --name <name>]
+
+Flags:
+  -n --name <name>  who to greet"
+
+cat <<'EOF' >mise.toml
+[tasks.atask]
+usage = 'arg "<myarg>"'
+run = 'echo $usage_myarg'
+[tasks.npm]
+run = 'echo npm'
+EOF
+
 assert_contains "mise --help 2>&1 || true" "Usage: mise [OPTIONS] [TASK] [COMMAND]"
 assert_contains "mise install --help 2>&1 || true" "Usage: mise install [OPTIONS] [TOOL@VERSION]..."
 assert_contains "mise run --help 2>&1 || true" "Usage: run [OPTIONS] [TASK] [ARGS]..."
