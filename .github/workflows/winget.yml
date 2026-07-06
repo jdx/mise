@@ -26,12 +26,13 @@ jobs:
           KOMAC_FORK_OWNER: jdx
           KOMAC_CREATED_WITH: mise release workflow
           KOMAC_CREATED_WITH_URL: https://github.com/jdx/mise
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           $ErrorActionPreference = "Stop"
 
           $Identifier = "jdx.mise"
           $MaxVersionsToKeep = 5
-          $ReleaseTag = "${{ github.event.release.tag_name || inputs.tag }}"
+          $ReleaseTag = $env:RELEASE_TAG
           if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
             $LatestRelease = Invoke-RestMethod `
               -Uri "https://api.github.com/repos/jdx/mise/releases/latest" `
