@@ -1,0 +1,4 @@
+backends = ["aqua:remko/age-plugin-se"]
+description = "Age plugin for Apple's Secure Enclave"
+os = ["linux", "macos"]
+test = { cmd = "age-plugin-se --version", expected = "v{{version}}" }
