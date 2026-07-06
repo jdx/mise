@@ -7,6 +7,10 @@ use color_eyre::Section;
 use eyre::{bail, eyre};
 use url::Url;
 
+mod native_binstall;
+
+use native_binstall::NativeBinstallAction;
+
 use crate::Result;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
@@ -27,18 +31,18 @@ pub struct CargoBackend {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CargoOptions<'a> {
+pub(super) struct CargoOptions<'a> {
     values: BackendOptions<'a>,
 }
 
 impl<'a> CargoOptions<'a> {
-    fn new(raw: &'a ToolVersionOptions) -> Self {
+    pub(super) fn new(raw: &'a ToolVersionOptions) -> Self {
         Self {
             values: BackendOptions::new(raw),
         }
     }
 
-    fn bin(&self) -> Option<String> {
+    pub(super) fn bin(&self) -> Option<String> {
         self.values.platform_string("bin")
     }
 
@@ -46,7 +50,7 @@ impl<'a> CargoOptions<'a> {
         self.values.platform_string_for_target("bin", target)
     }
 
-    fn locked(&self) -> bool {
+    pub(super) fn locked(&self) -> bool {
         self.values
             .raw()
             .get_string("locked")
@@ -64,7 +68,7 @@ impl<'a> CargoOptions<'a> {
             .is_some_and(|v| v.to_lowercase() == "false")
     }
 
-    fn crate_arg(&self) -> Option<String> {
+    pub(super) fn crate_arg(&self) -> Option<String> {
         self.values.raw().get_string("crate")
     }
 
@@ -206,6 +210,26 @@ impl Backend for CargoBackend {
                 _ if Settings::get().cargo.binstall_only => {
                     bail!("cargo-binstall is not available, but cargo.binstall_only is set");
                 }
+                BinstallStatus::Unavailable => {
+                    match Settings::get().cargo.binstall_native {
+                        Some(true) => {
+                            Settings::get().ensure_experimental("cargo.binstall_native")?;
+                            if self
+                                .native_binstall(ctx, &tv, NativeBinstallAction::Install)
+                                .await?
+                            {
+                                return Ok(tv.clone());
+                            }
+                        }
+                        Some(false) => {}
+                        None if native_binstall::rollout_warning_active() => {
+                            self.native_binstall(ctx, &tv, NativeBinstallAction::WarnOnly)
+                                .await?;
+                        }
+                        None => {}
+                    }
+                    cmd.arg(install_arg)
+                }
                 BinstallStatus::UnsupportedOptions(options) => {
                     let options = format_tool_options(&options);
                     info!(
@@ -321,6 +345,22 @@ impl CargoBackend {
         BinstallStatus::Unavailable
     }
 
+    async fn native_binstall(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        action: NativeBinstallAction,
+    ) -> Result<bool> {
+        match native_binstall::install(ctx, tv, &self.tool_name(), action).await {
+            Ok(true) => Ok(true),
+            Ok(false) => Ok(false),
+            Err(err) => {
+                debug!("native cargo binary install unavailable: {err:#}");
+                Ok(false)
+            }
+        }
+    }
+
     /// if the name is a git repo, return the git url
     fn git_url(&self) -> Option<Url> {
         if let Ok(url) = Url::parse(&self.tool_name()) {
@@ -390,6 +430,13 @@ mod tests {
 
         assert_eq!(lock_opts.get("crate").map(String::as_str), Some("demo"));
         assert_eq!(lock_opts.get("locked").map(String::as_str), Some("false"));
+    }
+
+    #[test]
+    fn cargo_options_defaults_to_locked() {
+        let opts = ToolVersionOptions::default();
+
+        assert!(CargoOptions::new(&opts).locked());
     }
 
     #[test]
