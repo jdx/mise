@@ -6,8 +6,8 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
     clean_binary_name, eval_checksum_expr, fetch_checksum_from_file, fetch_checksum_from_shasums,
-    get_filename_from_url, rename_executable_in_dir, shasums_has_entries, template_string,
-    template_string_for_target, verify_artifact,
+    get_filename_from_url, rename_binary_name, rename_executable_in_dir, shasums_has_entries,
+    template_string, template_string_for_target, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::cli::args::BackendArg;
@@ -351,6 +351,12 @@ impl HttpBackend {
         // Check for explicit bin name first
         if let Some(bin_name) = opts.bin() {
             return bin_name;
+        }
+        if let Some(rename_to) = opts.rename_exe() {
+            return rename_binary_name(
+                &file_path.file_name().unwrap().to_string_lossy(),
+                &rename_to,
+            );
         }
 
         // Auto-clean the binary name
