@@ -6,3 +6,4 @@ full = "npm:vercel"
 
 [backends.options]
 allow_builds = ["esbuild"]
+trust_policy_excludes = ["undici"]
