@@ -134,7 +134,7 @@ it's written in Rust, this is very quick—taking ~10ms on my machine. 4ms if th
 14ms if it's
 a full reload.
 
-tl;dr: asdf adds overhead (~120ms) when calling a runtime, mise adds a small amount of overhead (~
+tl;dr: asdf adds overhead (~~120ms) when calling a runtime, mise adds a small amount of overhead (~~
 5ms)
 when the prompt loads.
 
