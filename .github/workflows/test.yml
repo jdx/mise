@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
+      - uses: namespacelabs/nscloud-cache-action@58bf6e08898e88803c098e2b522668541cd3b2e3 # v1
         with:
           path: |
             ~/.cargo/registry
@@ -98,7 +98,7 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
+      - uses: namespacelabs/nscloud-cache-action@58bf6e08898e88803c098e2b522668541cd3b2e3 # v1
         with:
           path: |
             ~/.cargo/registry
@@ -140,7 +140,7 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
       - run: rustup default nightly
-      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
+      - uses: namespacelabs/nscloud-cache-action@58bf6e08898e88803c098e2b522668541cd3b2e3 # v1
         with:
           path: |
             ~/.cargo/registry
@@ -181,7 +181,7 @@ jobs:
       - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with:
           tool: cargo-deny,cargo-msrv,cargo-machete
-      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
+      - uses: namespacelabs/nscloud-cache-action@58bf6e08898e88803c098e2b522668541cd3b2e3 # v1
         with:
           path: |
             ~/.cargo/registry
