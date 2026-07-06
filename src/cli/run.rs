@@ -892,8 +892,7 @@ fn usage_command_for_args<'a>(spec: &'a usage::Spec, args: &[String]) -> &'a usa
     while idx < args.len() {
         let arg = &args[idx];
         if arg == "-h" || arg == "--help" {
-            idx += 1;
-            continue;
+            break;
         }
         if let Some(subcommand) = cmd.find_subcommand(arg) {
             cmd = subcommand;
@@ -909,14 +908,13 @@ fn usage_command_for_args<'a>(spec: &'a usage::Spec, args: &[String]) -> &'a usa
             idx += 1;
             continue;
         }
-        if !used_default_subcommand {
-            if let Some(default_name) = &spec.default_subcommand {
-                if let Some(subcommand) = cmd.find_subcommand(default_name) {
-                    cmd = subcommand;
-                    used_default_subcommand = true;
-                    continue;
-                }
-            }
+        if !used_default_subcommand
+            && let Some(default_name) = &spec.default_subcommand
+            && let Some(subcommand) = cmd.find_subcommand(default_name)
+        {
+            cmd = subcommand;
+            used_default_subcommand = true;
+            continue;
         }
         break;
     }

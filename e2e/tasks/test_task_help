@@ -31,6 +31,12 @@ assert "mise run greet hello -h 2>&1 || true" "Usage: greet hello [-n --name <na
 
 Flags:
   -n --name <name>  who to greet"
+assert "mise run greet -v hello -h 2>&1 || true" "Usage: greet hello [-n --name <name>]
+
+Flags:
+  -n --name <name>  who to greet"
+assert_contains "mise run greet -h 2>&1 || true" "Usage: greet [-v --verbose…] <SUBCOMMAND>"
+assert_contains "mise run greet -h hello 2>&1 || true" "Usage: greet [-v --verbose…] <SUBCOMMAND>"
 
 cat <<'EOF' >mise.toml
 [tasks.atask]
