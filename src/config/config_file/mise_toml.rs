@@ -678,10 +678,10 @@ impl MiseToml {
                 EnvDirective::Val(key, value, _) => {
                     base_env.insert(key.clone(), value.clone());
                 }
-                EnvDirective::Default(key, value, _) => {
-                    if base_env.get(key).is_none_or(|v| v.is_empty()) {
-                        base_env.insert(key.clone(), value.clone());
-                    }
+                EnvDirective::Default(key, value, _)
+                    if base_env.get(key).is_none_or(|v| v.is_empty()) =>
+                {
+                    base_env.insert(key.clone(), value.clone());
                 }
                 _ => {}
             }
