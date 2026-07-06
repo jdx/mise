@@ -1,0 +1,22 @@
+description = "Command line interface to the Atlassian Teamwork Graph and Cloud services"
+os = ["linux", "macos", "windows"]
+test = { cmd = "twg --version", expected = "{{version}}" }
+
+[[backends]]
+full = "http:twg"
+
+[backends.options]
+bin = "twg"
+checksum_url = "https://teamwork-graph.atlassian.com/cli/SHA256SUMS-v{{ version }}"
+url = 'https://teamwork-graph.atlassian.com/cli/twg-{{ os(macos="darwin") }}-{{ arch() }}-v{{ version }}'
+# Per-version manifest published alongside the binaries; .version tracks the latest stable release
+version_json_path = ".version"
+version_list_url = "https://teamwork-graph.atlassian.com/cli/manifest.json"
+
+[backends.options.platforms.windows-arm64]
+bin = "twg.exe"
+url = "https://teamwork-graph.atlassian.com/cli/twg-windows-arm64-v{{ version }}.exe"
+
+[backends.options.platforms.windows-x64]
+bin = "twg.exe"
+url = "https://teamwork-graph.atlassian.com/cli/twg-windows-x64-v{{ version }}.exe"
