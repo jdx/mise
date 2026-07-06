@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -17,6 +17,7 @@ env:
   MISE_EXPERIMENTAL: 1
 
 permissions:
+  issues: write
   pull-requests: write
 
 jobs:
@@ -160,9 +161,32 @@ jobs:
       - run: cat comment.md >> "$GITHUB_STEP_SUMMARY"
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
       - name: Comment on PR
-        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
         continue-on-error: true
         with:
-          file-path: comment.md
-          comment-tag: hyperfine
+          script: |
+            const fs = require("fs");
+            const marker = "<!-- hyperfine -->";
+            const body = `${marker}\n${fs.readFileSync("comment.md", "utf8")}`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const comment = comments.find((comment) => comment.body?.includes(marker));
+            if (comment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: comment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
