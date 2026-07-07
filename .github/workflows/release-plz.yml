@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
-      - name: Check for fix/feat commits since the latest release
+      - name: Check release age and fix/feat commits
         id: commits
         run: |
           set -euo pipefail
@@ -37,6 +37,15 @@ jobs:
           if [ -n "$latest_tag" ]; then
             range="${latest_tag}..HEAD"
             echo "Checking pending commits since ${latest_tag}"
+            tag_time=$(git log -1 --format=%ct "$latest_tag")
+            now=$(date +%s)
+            min_age=$((7 * 24 * 60 * 60))
+            age=$((now - tag_time))
+            if [ "$age" -lt "$min_age" ]; then
+              echo "Latest release ${latest_tag} is less than 7 days old; skipping autorelease."
+              echo "has_release_commits=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           else
             range="HEAD"
             echo "No v* release tag found; checking all commits"
