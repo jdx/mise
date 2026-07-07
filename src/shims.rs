@@ -32,10 +32,13 @@ pub async fn handle_shim() -> Result<()> {
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
     trace!("shim[{bin_name}] args: {}", args.join(" "));
-    args[0] = which_shim(&mut config, &env::MISE_BIN_NAME)
-        .await?
-        .to_string_lossy()
-        .to_string();
+    let mut ts = ToolsetBuilder::new().build(&config).await?;
+    args[0] = match resolve_docker_compose_shim(&config, &ts, bin_name, &mut args).await? {
+        Some(bin) => bin,
+        None => which_shim(&mut config, &mut ts, &env::MISE_BIN_NAME).await?,
+    }
+    .to_string_lossy()
+    .to_string();
     env::set_var("__MISE_SHIM", "1");
     let exec = Exec {
         tool: vec![],
@@ -60,8 +63,89 @@ pub async fn handle_shim() -> Result<()> {
     exit(0);
 }
 
-async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf> {
-    let mut ts = ToolsetBuilder::new().build(config).await?;
+const DOCKER_COMPOSE_PLUGIN_BIN: &str = "docker-cli-plugin-docker-compose";
+
+async fn resolve_docker_compose_shim(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    bin_name: &str,
+    args: &mut Vec<String>,
+) -> Result<Option<PathBuf>> {
+    let Some(compose_index) = docker_compose_subcommand_index(bin_name, args) else {
+        return Ok(None);
+    };
+
+    if let Some((p, tv)) = ts.which(config, DOCKER_COMPOSE_PLUGIN_BIN).await
+        && let Some(bin) = p.which(config, &tv, DOCKER_COMPOSE_PLUGIN_BIN).await?
+    {
+        trace!(
+            "shim[{bin_name}] Docker Compose ToolVersion: {tv} bin: {bin}",
+            bin = display_path(&bin)
+        );
+        args.remove(compose_index);
+        return Ok(Some(bin));
+    }
+
+    Ok(None)
+}
+
+fn docker_compose_subcommand_index(bin_name: &str, args: &[String]) -> Option<usize> {
+    if !is_docker_shim(bin_name) {
+        return None;
+    }
+
+    let mut i = 1;
+    while let Some(arg) = args.get(i) {
+        if arg == "compose" {
+            return Some(i);
+        }
+        if arg == "--" {
+            return None;
+        }
+        if is_docker_global_option_with_value(arg) {
+            i += 2;
+            continue;
+        }
+        if arg.starts_with("--") || is_docker_short_global_option(arg) {
+            i += 1;
+            continue;
+        }
+        return None;
+    }
+
+    None
+}
+
+fn is_docker_global_option_with_value(arg: &str) -> bool {
+    matches!(
+        arg,
+        "--config"
+            | "--context"
+            | "--host"
+            | "-c"
+            | "-H"
+            | "-l"
+            | "--log-level"
+            | "--tlscacert"
+            | "--tlscert"
+            | "--tlskey"
+    )
+}
+
+fn is_docker_short_global_option(arg: &str) -> bool {
+    matches!(arg, "-D" | "-v" | "--version") || arg.starts_with("-H") || arg.starts_with("-c")
+}
+
+fn is_docker_shim(bin_name: &str) -> bool {
+    let bin_name = bin_name.to_ascii_lowercase();
+    let bin_name = bin_name
+        .strip_suffix(".exe")
+        .or_else(|| bin_name.strip_suffix(".cmd"))
+        .unwrap_or(&bin_name);
+    bin_name == "docker"
+}
+
+async fn which_shim(config: &mut Arc<Config>, ts: &mut Toolset, bin_name: &str) -> Result<PathBuf> {
     if let Some((p, tv)) = ts.which(config, bin_name).await
         && let Some(bin) = p.which(config, &tv, bin_name).await?
     {
@@ -637,7 +721,7 @@ async fn make_shim(target: &Path, shim: &Path) -> Result<()> {
 
 async fn err_no_version_set(
     config: &Arc<Config>,
-    ts: Toolset,
+    ts: &Toolset,
     bin_name: &str,
     tvs: Vec<ToolVersion>,
 ) -> Result<PathBuf> {
@@ -733,6 +817,109 @@ mod tests {
         let bins = list_executables_in_dir(dir.path()).unwrap();
 
         assert!(bins.is_empty());
+    }
+
+    #[test]
+    fn detects_docker_compose_shim_invocation() {
+        assert_eq!(
+            docker_compose_subcommand_index(
+                "docker",
+                &["docker".into(), "compose".into(), "version".into()]
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            docker_compose_subcommand_index(
+                "docker.exe",
+                &["docker.exe".into(), "compose".into(), "version".into()]
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            docker_compose_subcommand_index(
+                "docker.cmd",
+                &["docker.cmd".into(), "compose".into(), "version".into()]
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            docker_compose_subcommand_index(
+                "docker",
+                &[
+                    "docker".into(),
+                    "--tls".into(),
+                    "--host".into(),
+                    "unix:///var/run/docker.sock".into(),
+                    "compose".into(),
+                    "version".into()
+                ]
+            ),
+            Some(4)
+        );
+        assert_eq!(
+            docker_compose_subcommand_index(
+                "docker",
+                &[
+                    "docker".into(),
+                    "--host=unix:///var/run/docker.sock".into(),
+                    "compose".into(),
+                    "version".into()
+                ]
+            ),
+            Some(2)
+        );
+
+        assert_eq!(
+            docker_compose_subcommand_index("docker", &["docker".into(), "--version".into()]),
+            None
+        );
+        assert_eq!(
+            docker_compose_subcommand_index(
+                "docker",
+                &["docker".into(), "build".into(), ".".into()]
+            ),
+            None
+        );
+        assert_eq!(
+            docker_compose_subcommand_index(
+                "docker-compose",
+                &["docker-compose".into(), "version".into()]
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn removes_only_docker_compose_subcommand() {
+        let mut args = vec![
+            "docker".to_string(),
+            "compose".to_string(),
+            "--project-name".to_string(),
+            "app".to_string(),
+            "version".to_string(),
+        ];
+
+        let compose_index = docker_compose_subcommand_index("docker", &args).unwrap();
+        args.remove(compose_index);
+
+        assert_eq!(
+            args,
+            vec![
+                "docker".to_string(),
+                "--project-name".to_string(),
+                "app".to_string(),
+                "version".to_string()
+            ]
+        );
+
+        let mut non_compose_args = vec!["docker".to_string(), "build".to_string(), ".".to_string()];
+        if let Some(compose_index) = docker_compose_subcommand_index("docker", &non_compose_args) {
+            non_compose_args.remove(compose_index);
+        }
+        assert_eq!(
+            non_compose_args,
+            vec!["docker".to_string(), "build".to_string(), ".".to_string()]
+        );
     }
 
     #[test]

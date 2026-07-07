@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+cat >mise.toml <<EOF
+[tools]
+docker-cli = "28.3.3"
+docker-compose = "2.39.1"
+EOF
+
+mise install
+mise reshim
+
+assert_contains "PATH=\"$MISE_DATA_DIR/shims:\$PATH\" docker compose version" "Docker Compose version"
+assert_fail "test -e \"$HOME/.docker/cli-plugins/docker-compose\""
