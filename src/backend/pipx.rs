@@ -56,14 +56,7 @@ impl<'a> PipxOptions<'a> {
     }
 
     fn extras(&self) -> Option<String> {
-        match self.values.raw().opts.get("extras") {
-            Some(toml::Value::Array(extras)) => extras
-                .iter()
-                .map(|extra| extra.as_str().map(str::to_string))
-                .collect::<Option<Vec<_>>>()
-                .map(|extras| extras.join(",")),
-            _ => self.values.raw().get_string("extras"),
-        }
+        self.values.comma_joined("extras")
     }
 
     fn pipx_args(&self) -> Option<&'a str> {
@@ -858,6 +851,7 @@ mod tests {
             "extras".to_string(),
             toml::Value::Array(vec![
                 toml::Value::String("postgres".to_string()),
+                toml::Value::Integer(1),
                 toml::Value::String("s3".to_string()),
             ]),
         );

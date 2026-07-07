@@ -34,6 +34,28 @@ impl<'a> BackendOptions<'a> {
         lookup_platform_value(self.raw, key)
     }
 
+    pub(crate) fn comma_joined(&self, key: &str) -> Option<String> {
+        match self.raw.opts.get(key) {
+            Some(toml::Value::Array(values)) => {
+                let values = values
+                    .iter()
+                    .filter_map(|value| {
+                        value.as_str().map(str::to_string).or_else(|| {
+                            warn!("invalid value in `{key}` array: {value}; expected string");
+                            None
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if values.is_empty() {
+                    None
+                } else {
+                    Some(values.join(","))
+                }
+            }
+            _ => self.raw.get_string(key),
+        }
+    }
+
     pub(crate) fn platform_string_for_target(
         &self,
         key: &str,
@@ -152,6 +174,32 @@ mod tests {
             Some(&toml::Value::Array(vec![toml::Value::String(
                 "platform".into()
             )]))
+        );
+    }
+
+    #[test]
+    fn test_comma_joined_accepts_string_or_array() {
+        let string_opts = opts_with_value("tags", toml::Value::String("sqlite,fts5".into()));
+        assert_eq!(
+            BackendOptions::new(&string_opts)
+                .comma_joined("tags")
+                .as_deref(),
+            Some("sqlite,fts5")
+        );
+
+        let array_opts = opts_with_value(
+            "tags",
+            toml::Value::Array(vec![
+                toml::Value::String("sqlite".into()),
+                toml::Value::Integer(1),
+                toml::Value::String("fts5".into()),
+            ]),
+        );
+        assert_eq!(
+            BackendOptions::new(&array_opts)
+                .comma_joined("tags")
+                .as_deref(),
+            Some("sqlite,fts5")
         );
     }
 

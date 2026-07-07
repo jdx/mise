@@ -43,14 +43,7 @@ impl<'a> GoOptions<'a> {
     }
 
     fn tags(&self) -> Option<String> {
-        match self.values.raw().opts.get("tags") {
-            Some(toml::Value::Array(tags)) => tags
-                .iter()
-                .map(|tag| tag.as_str().map(str::to_string))
-                .collect::<Option<Vec<_>>>()
-                .map(|tags| tags.join(",")),
-            _ => self.values.raw().get_string("tags"),
-        }
+        self.values.comma_joined("tags")
     }
 
     fn lockfile_options(&self) -> BTreeMap<String, String> {
@@ -658,6 +651,7 @@ mod tests {
             "tags".to_string(),
             toml::Value::Array(vec![
                 toml::Value::String("sqlite".to_string()),
+                toml::Value::Integer(1),
                 toml::Value::String("fts5".to_string()),
             ]),
         );

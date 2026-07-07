@@ -67,5 +67,6 @@ Specify go build tags (passed as `go install -tags`):
 ```toml
 [tools]
 "go:github.com/golang-migrate/migrate/v4/cmd/migrate" = { version = "latest", tags = "postgres" }
-"go:github.com/golang-migrate/migrate/v4/cmd/migrate" = { version = "latest", tags = ["postgres", "mysql"] }
+# equivalent array form:
+# "go:github.com/golang-migrate/migrate/v4/cmd/migrate" = { version = "latest", tags = ["postgres", "mysql"] }
 ```
