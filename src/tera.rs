@@ -109,6 +109,23 @@ fn json_path(value: &JsonValue) -> tera1::Result<&str> {
         .ok_or_else(|| tera1_err("filter input must be a string"))
 }
 
+fn insert_tera1_context_value(
+    data: &mut JsonMap<String, JsonValue>,
+    context: &Context,
+    key: &str,
+) -> TeraResult<()> {
+    if data.contains_key(key) {
+        return Ok(());
+    }
+    if let Some(value) = context.get(key) {
+        data.insert(
+            key.to_string(),
+            serde_json::to_value(value).map_err(|e| tera_err(e.to_string()))?,
+        );
+    }
+    Ok(())
+}
+
 fn tera1_context(input: &str, context: &Context) -> TeraResult<tera1::Context> {
     static IDENT_RE: Lazy<Regex> =
         Lazy::new(|| Regex::new(r"[A-Za-z_][A-Za-z0-9_]*").expect("valid ident regex"));
@@ -148,17 +165,15 @@ fn tera1_context(input: &str, context: &Context) -> TeraResult<tera1::Context> {
     });
 
     let mut data = JsonMap::new();
+    for key in ["env", "vars", "tools"] {
+        insert_tera1_context_value(&mut data, context, key)?;
+    }
     for m in IDENT_RE.find_iter(input) {
         let key = m.as_str();
         if RESERVED.contains(key) || data.contains_key(key) {
             continue;
         }
-        if let Some(value) = context.get(key) {
-            data.insert(
-                key.to_string(),
-                serde_json::to_value(value).map_err(|e| tera_err(e.to_string()))?,
-            );
-        }
+        insert_tera1_context_value(&mut data, context, key)?;
     }
     tera1::Context::from_value(JsonValue::Object(data)).map_err(|e| tera_err(e.to_string()))
 }
@@ -2063,6 +2078,24 @@ mod tests {
                 &tera_ctx
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn test_tera_v1_context_preserves_common_nested_roots() {
+        let mut tera_ctx = Context::new();
+        tera_ctx.insert("env", &json!({ "FOO": "bar" }));
+        tera_ctx.insert("vars", &json!({ "nested": { "name": "baz" } }));
+        tera_ctx.insert("tools", &json!([{ "name": "node" }]));
+        let mut tera = TeraEngine::V1(Box::new(TERA1.clone()));
+        assert_eq!(
+            render_str(
+                &mut tera,
+                "{% for tool in tools %}{{ env.FOO }} {{ vars.nested.name }} {{ tool.name }}{% endfor %}",
+                &tera_ctx
+            )
+            .unwrap(),
+            "bar baz node"
         );
     }
 
