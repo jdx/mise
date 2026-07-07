@@ -410,8 +410,13 @@ h1, h2, h3, h4, h5, h6,
 }
 
 /* ═══ Hero section — "The Chef's Counter" ═══ */
+/* VitePress pulls the hero up under the nav with a negative margin
+   (nav height + layout-top banner), so padding-top must include that
+   offset or the hero content hides behind the navbar. */
 .VPHero {
-  padding-top: 76px !important;
+  padding-top: calc(
+    var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 76px
+  ) !important;
   padding-bottom: 64px !important;
   position: relative;
   z-index: 1;
@@ -959,7 +964,9 @@ div[class*="language-"] .copy:hover {
   }
 
   .VPHero {
-    padding-top: 48px !important;
+    padding-top: calc(
+      var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 48px
+    ) !important;
     padding-bottom: 40px !important;
   }
 }
@@ -1010,15 +1017,12 @@ div[class*="language-"] .copy:hover {
 }
 
 /* ═══ Landing page ═══ */
+/* .heading wraps .name; hide it too or it occupies an empty grid row */
+.VPHero .heading,
 .VPHero .name,
 .VPHero .tagline,
 .VPHero .actions {
   display: none !important;
-}
-
-.VPHero {
-  padding-top: 76px !important;
-  padding-bottom: 64px !important;
 }
 
 .VPHero .container {
@@ -1225,6 +1229,9 @@ div[class*="language-"] .copy:hover {
 
 .landing-section h2 {
   margin: 12px 0 0;
+  /* reset vp-doc h2 defaults (top border + padding) on landing headings */
+  border-top: 0;
+  padding-top: 0;
   font-family: "Cormorant Garamond", Georgia, serif;
   font-size: clamp(2.5rem, 5vw, 4rem);
   font-style: italic;
@@ -1540,7 +1547,10 @@ div[class*="language-"] .copy:hover {
   color: var(--vp-c-text-1);
   font-family: "Roc Grotesk", sans-serif;
   font-style: normal;
-  margin-bottom: 24px;
+  /* reset vp-doc h2 defaults (top border + margin) inside the card */
+  margin: 0 0 24px;
+  border-top: 0;
+  padding-top: 0;
 }
 
 .landing-cta .landing-mini-install {
@@ -1581,7 +1591,9 @@ div[class*="language-"] .copy:hover {
 
 @media (max-width: 640px) {
   .VPHero {
-    padding-top: 42px !important;
+    padding-top: calc(
+      var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 42px
+    ) !important;
     padding-bottom: 48px !important;
   }
 
