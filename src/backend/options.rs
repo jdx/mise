@@ -1,6 +1,7 @@
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    list_available_platforms_with_key, lookup_platform_key_for_target, lookup_with_fallback,
+    list_available_platforms_with_key, lookup_platform_key_for_target, lookup_platform_value,
+    lookup_with_fallback,
 };
 use crate::toolset::ToolVersionOptions;
 
@@ -27,6 +28,34 @@ impl<'a> BackendOptions<'a> {
 
     pub(crate) fn platform_string(&self, key: &str) -> Option<String> {
         lookup_with_fallback(self.raw, key)
+    }
+
+    pub(crate) fn platform_value_without_base(&self, key: &str) -> Option<&'a toml::Value> {
+        lookup_platform_value(self.raw, key)
+    }
+
+    /// Returns a comma-separated option value from either a string or an array of
+    /// strings, warning about non-string array entries.
+    pub(crate) fn comma_joined(&self, key: &str) -> Option<String> {
+        match self.raw.opts.get(key) {
+            Some(toml::Value::Array(values)) => {
+                let values = values
+                    .iter()
+                    .filter_map(|value| {
+                        value.as_str().map(str::to_string).or_else(|| {
+                            warn!("invalid value in `{key}` array: {value}; expected string");
+                            None
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if values.is_empty() {
+                    None
+                } else {
+                    Some(values.join(","))
+                }
+            }
+            _ => self.raw.get_string(key),
+        }
     }
 
     pub(crate) fn platform_string_for_target(
@@ -124,6 +153,56 @@ mod tests {
         let mut opts = ToolVersionOptions::default();
         opts.opts.insert(key.to_string(), value);
         opts
+    }
+
+    #[test]
+    fn test_platform_value_prefers_platform_value() {
+        use crate::backend::static_helpers::platform_aliases;
+
+        let mut opts = opts_with_value("filter_bins", toml::Value::String("base".into()));
+        let (os, arch) = platform_aliases().into_iter().next().unwrap();
+        let mut linux = toml::Table::new();
+        linux.insert(
+            "filter_bins".into(),
+            toml::Value::Array(vec![toml::Value::String("platform".into())]),
+        );
+        let mut platforms = toml::Table::new();
+        platforms.insert(format!("{os}-{arch}"), toml::Value::Table(linux));
+        opts.opts
+            .insert("platforms".into(), toml::Value::Table(platforms));
+
+        assert_eq!(
+            BackendOptions::new(&opts).platform_value_without_base("filter_bins"),
+            Some(&toml::Value::Array(vec![toml::Value::String(
+                "platform".into()
+            )]))
+        );
+    }
+
+    #[test]
+    fn test_comma_joined_accepts_string_or_array() {
+        let string_opts = opts_with_value("tags", toml::Value::String("sqlite,fts5".into()));
+        assert_eq!(
+            BackendOptions::new(&string_opts)
+                .comma_joined("tags")
+                .as_deref(),
+            Some("sqlite,fts5")
+        );
+
+        let array_opts = opts_with_value(
+            "tags",
+            toml::Value::Array(vec![
+                toml::Value::String("sqlite".into()),
+                toml::Value::Integer(1),
+                toml::Value::String("fts5".into()),
+            ]),
+        );
+        assert_eq!(
+            BackendOptions::new(&array_opts)
+                .comma_joined("tags")
+                .as_deref(),
+            Some("sqlite,fts5")
+        );
     }
 
     #[test]

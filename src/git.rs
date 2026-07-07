@@ -21,7 +21,7 @@ macro_rules! git_cmd {
     ( $dir:expr $(, $arg:expr )* $(,)? ) => {
         {
             let safe = format!("safe.directory={}", $dir.display());
-            cmd!("git", "-C", $dir, "-c", safe, "-c", "core.autocrlf=false" $(, $arg)*)
+            sanitize_git_env(cmd!("git", "-C", $dir, "-c", safe, "-c", "core.autocrlf=false" $(, $arg)*))
         }
     }
 }
@@ -190,13 +190,15 @@ impl Git {
             pr.abandon();
         }
 
-        let mut cmd = CmdLineRunner::new("git")
-            .arg("clone")
-            .arg("-q")
-            .arg("-o")
-            .arg("origin")
-            .arg("-c")
-            .arg("core.autocrlf=false");
+        let mut cmd = sanitize_git_cmd_runner(
+            CmdLineRunner::new("git")
+                .arg("clone")
+                .arg("-q")
+                .arg("-o")
+                .arg("origin")
+                .arg("-c")
+                .arg("core.autocrlf=false"),
+        );
         // `--depth 1` is incompatible with checking out an arbitrary SHA later,
         // so do a full clone when the caller passed a SHA.
         if sha_branch.is_none() {
@@ -362,6 +364,28 @@ fn get_git_version() -> Result<String> {
     Ok(version.trim().into())
 }
 
+fn sanitize_git_env(cmd: Expression) -> Expression {
+    GIT_CONTEXT_ENV
+        .iter()
+        .fold(cmd, |cmd, env| cmd.env_remove(env))
+}
+
+fn sanitize_git_cmd_runner<'a>(cmd: CmdLineRunner<'a>) -> CmdLineRunner<'a> {
+    GIT_CONTEXT_ENV
+        .iter()
+        .fold(cmd, |cmd, env| cmd.env_remove(env))
+}
+
+const GIT_CONTEXT_ENV: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+];
+
 /// Heuristic for whether a ref string is a commit SHA (full SHA-1 or SHA-256).
 ///
 /// Branch and tag names that happen to be all-hex would also match, but git
@@ -399,7 +423,8 @@ impl<'a> CloneOptions<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CloneOptions, Git, looks_like_sha};
+    use super::{CloneOptions, Git, looks_like_sha, sanitize_git_cmd_runner, sanitize_git_env};
+    use crate::cmd::CmdLineRunner;
     use crate::config::Settings;
     use std::process::Command;
 
@@ -414,6 +439,93 @@ mod tests {
         assert!(!looks_like_sha("abcdef1")); // short SHA not supported
         assert!(!looks_like_sha(""));
         assert!(!looks_like_sha("g123456789abcdef0123456789abcdef01234567")); // non-hex
+    }
+
+    #[test]
+    fn git_commands_ignore_inherited_work_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let cache = tmp.path().join("cache");
+        let work_tree = tmp.path().join("work-tree");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&work_tree).unwrap();
+
+        let git_in = |dir: &std::path::Path, args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .output()
+                .expect("spawn git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            out
+        };
+        git_in(&src, &["-c", "init.defaultBranch=main", "init", "-q"]);
+        std::fs::write(src.join("file.txt"), "hello\n").unwrap();
+        git_in(&src, &["add", "file.txt"]);
+        git_in(
+            &src,
+            &[
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "-m",
+                "main",
+            ],
+        );
+        let url = format!("file://{}", src.display());
+        let clone = Command::new("git")
+            .args(["clone", "-q", &url])
+            .arg(&cache)
+            .output()
+            .expect("spawn git clone");
+        assert!(
+            clone.status.success(),
+            "git clone failed: {}",
+            String::from_utf8_lossy(&clone.stderr)
+        );
+        std::fs::remove_file(cache.join("file.txt")).unwrap();
+
+        let output = sanitize_git_env(
+            git_cmd!(&cache, "checkout", "--force", "HEAD")
+                .env("GIT_WORK_TREE", &work_tree)
+                .env("GIT_INDEX_FILE", work_tree.join("index")),
+        )
+        .stderr_to_stdout()
+        .stdout_capture()
+        .unchecked()
+        .run()
+        .expect("run git checkout");
+        assert!(
+            output.status.success(),
+            "git checkout failed: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+
+        assert!(cache.join("file.txt").exists());
+        assert!(!work_tree.join("file.txt").exists());
+        assert!(!work_tree.join("index").exists());
+
+        let clone_cache = tmp.path().join("clone-cache");
+        sanitize_git_cmd_runner(
+            CmdLineRunner::new("git")
+                .arg("clone")
+                .arg("-q")
+                .arg(&url)
+                .arg(&clone_cache)
+                .env("GIT_WORK_TREE", &work_tree),
+        )
+        .execute()
+        .expect("git clone should ignore inherited GIT_WORK_TREE");
+
+        assert!(clone_cache.join("file.txt").exists());
+        assert!(!work_tree.join("file.txt").exists());
     }
 
     /// Regression test for https://github.com/jdx/mise/discussions/9472:

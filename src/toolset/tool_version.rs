@@ -313,10 +313,13 @@ impl ToolVersion {
         }
         .replace([':', '/'], "-")
     }
-    fn runtime_pathname(&self) -> Option<String> {
+    pub(crate) fn runtime_pathname(&self) -> Option<String> {
         let pathname = match &self.request {
-            ToolRequest::Version { version, .. } if version != &self.version => version,
-            ToolRequest::Prefix { prefix, .. } => prefix,
+            ToolRequest::Version { version, .. } if version != &self.version => version.clone(),
+            ToolRequest::Prefix { prefix, .. } => prefix.clone(),
+            ToolRequest::Sub { .. } if self.request.version() != self.version => {
+                self.request.version()
+            }
             _ => return None,
         };
         Some(pathname.replace([':', '/'], "-"))
@@ -588,6 +591,15 @@ impl ToolVersion {
     ) -> Result<Self> {
         let backend = request.backend()?;
         if v == "latest" && opts.offline {
+            let pathname = request.version().replace([':', '/'], "-");
+            let path = backend.ba().installs_path.join(&pathname);
+            let path = env::find_in_shared_installs(path, &backend.ba().tool_dir_name(), &pathname);
+            if let Ok(Some(target)) = crate::file::resolve_symlink(&path)
+                && target.starts_with("./")
+                && let Some(version) = target.file_name().map(|v| v.to_string_lossy().to_string())
+            {
+                return Box::pin(Self::resolve_version(config, request, &version, opts)).await;
+            }
             // Can't resolve sub-N:latest offline (no remote latest, and
             // applying version_sub to latest_installed_version would shift
             // one step too low). Return the raw spec; callers that care

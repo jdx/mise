@@ -676,6 +676,16 @@ impl ToolStub {
         }; // Drop the lock before await
 
         let stub = ToolStubFile::from_file(&self.file)?;
+
+        // Track the stub so `mise prune` knows its tool is still needed. Stubs
+        // can live anywhere, so execution time is the only chance to find them.
+        // absolute() rather than canonicalize() so a symlinked stub keeps its
+        // invoked filename, which the tool name can be derived from.
+        let stub_path = std::path::absolute(&self.file).unwrap_or_else(|_| self.file.clone());
+        if let Err(err) = crate::config::tracking::Tracker::track_stub(&stub_path) {
+            crate::warn!("tracking tool stub: {err:#}");
+        }
+
         let mut config = Config::get().await?;
 
         return execute_with_tool_request(&stub, &mut config, args, &self.file).await;

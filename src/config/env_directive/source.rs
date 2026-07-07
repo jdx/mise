@@ -9,7 +9,7 @@ impl EnvResults {
     #[allow(clippy::too_many_arguments)]
     pub fn source(
         ctx: &mut tera::Context,
-        tera: &mut Option<tera::Tera>,
+        tera: &mut Option<crate::tera::TeraEngine>,
         paths: &mut Vec<(PathBuf, PathBuf)>,
         r: &mut EnvResults,
         normalize_path: fn(&Path, PathBuf) -> PathBuf,

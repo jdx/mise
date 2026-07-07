@@ -7,6 +7,10 @@ use color_eyre::Section;
 use eyre::{bail, eyre};
 use url::Url;
 
+mod native_binstall;
+
+use native_binstall::NativeBinstallAction;
+
 use crate::Result;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
@@ -27,18 +31,18 @@ pub struct CargoBackend {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CargoOptions<'a> {
+pub(super) struct CargoOptions<'a> {
     values: BackendOptions<'a>,
 }
 
 impl<'a> CargoOptions<'a> {
-    fn new(raw: &'a ToolVersionOptions) -> Self {
+    pub(super) fn new(raw: &'a ToolVersionOptions) -> Self {
         Self {
             values: BackendOptions::new(raw),
         }
     }
 
-    fn bin(&self) -> Option<String> {
+    pub(super) fn bin(&self) -> Option<String> {
         self.values.platform_string("bin")
     }
 
@@ -46,7 +50,7 @@ impl<'a> CargoOptions<'a> {
         self.values.platform_string_for_target("bin", target)
     }
 
-    fn locked(&self) -> bool {
+    pub(super) fn locked(&self) -> bool {
         self.values
             .raw()
             .get_string("locked")
@@ -54,7 +58,27 @@ impl<'a> CargoOptions<'a> {
     }
 
     fn features(&self) -> Option<String> {
-        self.values.raw().get_string("features")
+        match self.values.raw().opts.get("features") {
+            Some(toml::Value::Array(features)) => {
+                let features = features
+                    .iter()
+                    .filter_map(|feature| {
+                        feature.as_str().map(str::to_string).or_else(|| {
+                            warn!(
+                                "invalid value in cargo features array: {feature}; expected string"
+                            );
+                            None
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if features.is_empty() {
+                    None
+                } else {
+                    Some(features.join(" "))
+                }
+            }
+            _ => self.values.raw().get_string("features"),
+        }
     }
 
     fn default_features_disabled(&self) -> bool {
@@ -64,13 +88,16 @@ impl<'a> CargoOptions<'a> {
             .is_some_and(|v| v.to_lowercase() == "false")
     }
 
-    fn crate_arg(&self) -> Option<String> {
+    pub(super) fn crate_arg(&self) -> Option<String> {
         self.values.raw().get_string("crate")
     }
 
     fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
-        for key in ["features", "default-features", "crate", "locked"] {
+        if let Some(features) = self.features() {
+            result.insert("features".to_string(), features);
+        }
+        for key in ["default-features", "crate", "locked"] {
             if let Some(value) = self.values.raw().get_string(key) {
                 result.insert(key.to_string(), value.to_string());
             }
@@ -206,6 +233,26 @@ impl Backend for CargoBackend {
                 _ if Settings::get().cargo.binstall_only => {
                     bail!("cargo-binstall is not available, but cargo.binstall_only is set");
                 }
+                BinstallStatus::Unavailable => {
+                    match Settings::get().cargo.binstall_native {
+                        Some(true) => {
+                            Settings::get().ensure_experimental("cargo.binstall_native")?;
+                            if self
+                                .native_binstall(ctx, &tv, NativeBinstallAction::Install)
+                                .await?
+                            {
+                                return Ok(tv.clone());
+                            }
+                        }
+                        Some(false) => {}
+                        None if native_binstall::rollout_warning_active() => {
+                            self.native_binstall(ctx, &tv, NativeBinstallAction::WarnOnly)
+                                .await?;
+                        }
+                        None => {}
+                    }
+                    cmd.arg(install_arg)
+                }
                 BinstallStatus::UnsupportedOptions(options) => {
                     let options = format_tool_options(&options);
                     info!(
@@ -283,8 +330,8 @@ impl CargoBackend {
 
     fn cargo_install_required_options(opts: &ToolVersionOptions) -> Vec<&'static str> {
         let mut options = vec![];
-        if opts
-            .get_string("features")
+        if CargoOptions::new(opts)
+            .features()
             .is_some_and(|features| !features.trim().is_empty())
         {
             options.push("features");
@@ -319,6 +366,22 @@ impl CargoBackend {
             return BinstallStatus::Enabled(cargo_binstall);
         }
         BinstallStatus::Unavailable
+    }
+
+    async fn native_binstall(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        action: NativeBinstallAction,
+    ) -> Result<bool> {
+        match native_binstall::install(ctx, tv, &self.tool_name(), action).await {
+            Ok(true) => Ok(true),
+            Ok(false) => Ok(false),
+            Err(err) => {
+                debug!("native cargo binary install unavailable: {err:#}");
+                Ok(false)
+            }
+        }
     }
 
     /// if the name is a git repo, return the git url
@@ -393,12 +456,61 @@ mod tests {
     }
 
     #[test]
+    fn cargo_options_accepts_array_features() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "features".into(),
+            toml::Value::Array(vec![
+                toml::Value::String("postgres".into()),
+                toml::Value::Integer(1),
+                toml::Value::String("rustls".into()),
+            ]),
+        );
+
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let lock_opts = CargoOptions::new(&opts).lockfile_options(&target);
+
+        assert_eq!(
+            CargoOptions::new(&opts).features().as_deref(),
+            Some("postgres rustls")
+        );
+        assert_eq!(
+            lock_opts.get("features").map(String::as_str),
+            Some("postgres rustls")
+        );
+    }
+
+    #[test]
+    fn cargo_options_defaults_to_locked() {
+        let opts = ToolVersionOptions::default();
+
+        assert!(CargoOptions::new(&opts).locked());
+    }
+
+    #[test]
     fn cargo_install_required_options_skips_feature_options() {
         let opts = parse_tool_options("features=add,default-features=false");
 
         assert_eq!(
             CargoBackend::cargo_install_required_options(&opts),
             vec!["features", "default-features"]
+        );
+    }
+
+    #[test]
+    fn cargo_install_required_options_detects_array_features() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "features".into(),
+            toml::Value::Array(vec![
+                toml::Value::String("postgres".into()),
+                toml::Value::String("rustls".into()),
+            ]),
+        );
+
+        assert_eq!(
+            CargoBackend::cargo_install_required_options(&opts),
+            vec!["features"]
         );
     }
 

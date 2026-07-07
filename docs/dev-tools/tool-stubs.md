@@ -313,6 +313,17 @@ Tool stubs implement intelligent caching which reduces the overhead mise has whe
 
 Cached stubs have ~4ms of overhead.
 
+## Pruning
+
+Executing a stub tracks it in `~/.local/state/mise/tracked-stubs`, the same way
+config files are tracked when they are used. [`mise prune`](/cli/prune) treats
+tool versions referenced by a tracked stub as needed and will not delete them,
+just like versions required by a tracked config file.
+
+A stub must have been executed at least once on the machine for its tool to be
+protected. If the stub file is later deleted, its tool versions become prunable
+again (unless something else needs them).
+
 ## Alternative: Creating Simple Stubs with `mise x`
 
 For basic use cases, you can quickly create simple tool stubs using the [`mise x`](/cli/exec) command as an alternative to writing TOML configuration manually:

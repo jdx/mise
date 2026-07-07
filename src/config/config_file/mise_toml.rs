@@ -13,7 +13,6 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 use tera::Context as TeraContext;
-use tera::Value as TeraValue;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
 
@@ -678,10 +677,10 @@ impl MiseToml {
                 EnvDirective::Val(key, value, _) => {
                     base_env.insert(key.clone(), value.clone());
                 }
-                EnvDirective::Default(key, value, _) => {
-                    if base_env.get(key).is_none_or(|v| v.is_empty()) {
-                        base_env.insert(key.clone(), value.clone());
-                    }
+                EnvDirective::Default(key, value, _)
+                    if base_env.get(key).is_none_or(|v| v.is_empty()) =>
+                {
+                    base_env.insert(key.clone(), value.clone());
                 }
                 _ => {}
             }
@@ -973,10 +972,10 @@ impl ConfigFile for MiseToml {
             && let Some(env_results) = config.env_results_cached()
         {
             let mut env_vars: EnvMap =
-                if let Some(TeraValue::Object(existing_env)) = context.get("env") {
+                if let Some(existing_env) = context.get("env").and_then(|v| v.as_map()) {
                     existing_env
                         .iter()
-                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.to_string(), s.to_string())))
                         .collect()
                 } else {
                     env::PRISTINE_ENV.clone()
@@ -2526,10 +2525,15 @@ mod tests {
         args = ["--watch"]
         run_at_load = true
         start_interval = 300
+        start_calendar_interval = { hour = 2, minute = 0 }
         environment = { PATH = "/usr/bin:/bin" }
         working_directory = "~"
         stdout_path = "~/Library/Logs/my-sync.log"
         kickstart = true
+
+        [bootstrap.macos.launchd.agents.my-backup]
+        program = "~/.local/bin/my-backup"
+        start_calendar_interval = [{ hour = 3 }, { hour = 12, weekday = 1 }]
         "#,
         )
         .unwrap();
@@ -2540,6 +2544,13 @@ mod tests {
         assert_eq!(agent.args, vec!["--watch"]);
         assert!(agent.run_at_load);
         assert_eq!(agent.start_interval, Some(300));
+        let crate::system::launchd::LaunchdCalendarIntervals::Single(interval) =
+            agent.start_calendar_interval.as_ref().unwrap()
+        else {
+            panic!("expected single calendar interval");
+        };
+        assert_eq!(interval.hour, Some(2));
+        assert_eq!(interval.minute, Some(0));
         assert_eq!(
             agent.environment.get("PATH").map(String::as_str),
             Some("/usr/bin:/bin")
@@ -2550,6 +2561,16 @@ mod tests {
             Some("~/Library/Logs/my-sync.log")
         );
         assert!(agent.kickstart);
+        let backup = system.macos.launchd.agents.get("my-backup").unwrap();
+        let crate::system::launchd::LaunchdCalendarIntervals::Multiple(intervals) =
+            backup.start_calendar_interval.as_ref().unwrap()
+        else {
+            panic!("expected multiple calendar intervals");
+        };
+        assert_eq!(intervals.len(), 2);
+        assert_eq!(intervals[0].hour, Some(3));
+        assert_eq!(intervals[1].hour, Some(12));
+        assert_eq!(intervals[1].weekday, Some(1));
         file::remove_file(&p).unwrap();
     }
 
