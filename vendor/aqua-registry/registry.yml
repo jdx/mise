@@ -56303,6 +56303,29 @@ packages:
             format: zip
   - type: github_release
     repo_owner: koki-develop
+    repo_name: ghasec
+    description: Catch security risks in your GitHub Actions workflows
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.3"
+        no_asset: true
+      - version_constraint: "true"
+        asset: ghasec_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: ghasec_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
+    repo_owner: koki-develop
     repo_name: moview
     description: Play video in terminal
     version_constraint: "false"
@@ -65895,6 +65918,31 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: mpyw
+    repo_name: suve
+    description: Git-like CLI/GUI for AWS Parameter Store / Secrets Manager, Google Cloud Secret Manager, and Azure Key Vault / App Configuration
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 1.3.0")
+        error_message: |
+          suve versions before v1.3.0 are not supported by the aqua registry.
+          The project changed significantly in earlier releases; please use v1.3.0 or later.
+      - version_constraint: "true"
+        asset: suve_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          # The Linux GUI build links against webkit2gtk at runtime, so it can't
+          # run on headless machines. Install the dependency-free CLI-only static
+          # build on Linux instead (the archive still exposes a `suve` binary).
+          - goos: linux
+            asset: suve-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: mr-karan
     repo_name: doggo
@@ -82812,6 +82860,22 @@ packages:
             asset: ccowl-{{.OS}}-{{.Arch}}.exe.{{.Format}}
             checksum:
               enabled: false
+  - type: github_release
+    repo_owner: sivchari
+    repo_name: gopls-lazy
+    description: An LSP proxy that lazily scopes gopls to open files, keeping large monorepos fast
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: gopls-lazy_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: gopls-lazy_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: six-ddc
     repo_name: plow
