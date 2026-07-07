@@ -228,6 +228,14 @@ class CaskContext
     MISE_BREW_PREFIX + "Caskroom"
   end
 
+  def method_missing(name, *args, &block)
+    shim_unsupported!(name)
+  end
+
+  def respond_to_missing?(*args)
+    false
+  end
+
   private
 
   def run_macos_condition(version, method, &block)

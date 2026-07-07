@@ -139,9 +139,6 @@ impl BrewCaskManager {
         for app in &artifacts.apps {
             install_app(&stage, &tmp_caskroom, app)?;
         }
-        for binary in &artifacts.binaries {
-            stage_binary(&stage, &tmp_caskroom, &cask, binary)?;
-        }
         for pkg in &artifacts.pkgs {
             install_pkg(&stage, pkg)?;
         }
@@ -149,6 +146,9 @@ impl BrewCaskManager {
             stage_font(&stage, &tmp_caskroom, font)?;
         }
         execute_lifecycle_hook(&cask, &tmp_caskroom, "postflight", pr).await?;
+        for binary in &artifacts.binaries {
+            stage_binary(&stage, &tmp_caskroom, &cask, binary)?;
+        }
         write_receipt(&tmp_caskroom, &cask, &artifacts)?;
         file::remove_all(&caskroom)?;
         file::rename(&tmp_caskroom, &caskroom)?;
