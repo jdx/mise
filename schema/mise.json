@@ -1789,6 +1789,12 @@
             }
           }
         },
+        "tera_v1": {
+          "default": false,
+          "description": "Use Tera v1 instead of Tera v2 for template rendering.",
+          "type": "boolean",
+          "deprecated": true
+        },
         "task_disable_paths": {
           "description": "Paths that mise will not look for tasks in.",
           "type": "array",

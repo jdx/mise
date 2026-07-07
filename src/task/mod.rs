@@ -4,7 +4,7 @@ use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, 
 use crate::config::{self, Config};
 use crate::path_env::PathEnv;
 use crate::task::task_script_parser::TaskScriptParser;
-use crate::tera::{contains_template_syntax, get_tera, render_str};
+use crate::tera::{TeraEngine, contains_template_syntax, get_tera, render_str};
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
 use console::{measure_text_width, truncate_str};
@@ -156,7 +156,7 @@ impl std::hash::Hash for RunEntry {
 }
 
 impl RunEntry {
-    pub fn render(&self, tera: &mut tera::Tera, tera_ctx: &tera::Context) -> crate::Result<Self> {
+    pub fn render(&self, tera: &mut TeraEngine, tera_ctx: &tera::Context) -> crate::Result<Self> {
         match self {
             RunEntry::Script(s) => Ok(RunEntry::Script(s.clone())),
             RunEntry::SingleTask { task, args, env } => {

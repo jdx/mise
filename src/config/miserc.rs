@@ -18,7 +18,7 @@ use crate::dirs;
 use crate::env;
 use crate::file;
 use crate::tera::{
-    contains_template_syntax, get_miserc_tera, render_str, take_tera_accessed_files,
+    TeraEngine, contains_template_syntax, get_miserc_tera, render_str, take_tera_accessed_files,
 };
 
 static MISERC: OnceLock<MisercSettings> = OnceLock::new();
@@ -88,7 +88,7 @@ pub fn get_override_tool_versions_filenames() -> Option<&'static Vec<String>> {
 /// - `exec()` (depends on Settings, which are not yet loaded)
 /// - `read_file()` (not registered — needs per-file directory context not set up at this stage)
 fn render_miserc_template(
-    tera: &mut Option<tera::Tera>,
+    tera: &mut Option<TeraEngine>,
     content: &str,
     config_root: &Path,
 ) -> String {
@@ -133,7 +133,7 @@ fn load_miserc_settings() -> Result<MisercSettings> {
 
     // Tera is initialized lazily inside render_miserc_template — only paid if a file
     // actually contains template syntax. Shared across all files to avoid redundant clones.
-    let mut tera: Option<tera::Tera> = None;
+    let mut tera: Option<TeraEngine> = None;
 
     for path in files.into_iter().rev() {
         if let Ok(content) = file::read_to_string(&path) {

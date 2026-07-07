@@ -1,6 +1,6 @@
 use crate::dirs;
 use crate::task::Task;
-use crate::tera::{contains_template_syntax, render_str};
+use crate::tera::{TeraEngine, contains_template_syntax, render_str};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -80,7 +80,7 @@ impl TaskOutputs {
 
     pub fn render(
         &mut self,
-        tera: &mut tera::Tera,
+        tera: &mut TeraEngine,
         ctx: &tera::Context,
     ) -> eyre::Result<RawOutputTemplates> {
         match self {

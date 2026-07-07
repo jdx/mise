@@ -2442,6 +2442,24 @@ export MISE_TASK_MONOREPO_DEPTH=3
 env = "MISE_TASK_MONOREPO_DEPTH"
 type = "Integer"
 
+[tera_v1]
+default = false
+deprecated = "tera_v1 is a temporary compatibility escape hatch for templates that still need Tera v1 behavior. Update templates to Tera v2 syntax instead."
+deprecated_remove_at = "2027.4.0"
+deprecated_warn_at = "2026.10.0"
+description = "Use Tera v1 instead of Tera v2 for template rendering."
+docs = """
+Use Tera v1 instead of Tera v2 for template rendering.
+
+This is a temporary escape hatch for users whose templates still rely on Tera v1 behavior that
+cannot be fully emulated by mise's Tera v2 compatibility helpers, such as Tera v1 macros or looser
+undefined variable handling.
+
+New templates should use Tera v2 syntax. This setting is scheduled for removal in mise 2027.4.0.
+"""
+env = "MISE_TERA_V1"
+type = "Bool"
+
 [task.monorepo_exclude_dirs]
 default = []
 description = "Directory patterns to exclude when discovering monorepo subdirectories."

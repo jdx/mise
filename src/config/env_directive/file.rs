@@ -26,7 +26,7 @@ impl EnvResults {
     pub async fn file(
         config: &Arc<Config>,
         ctx: &mut tera::Context,
-        tera: &mut Option<tera::Tera>,
+        tera: &mut Option<crate::tera::TeraEngine>,
         r: &mut EnvResults,
         normalize_path: fn(&Path, PathBuf) -> PathBuf,
         source: &Path,
