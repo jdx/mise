@@ -2095,10 +2095,16 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
 
+        // A rolling release (e.g. a `nightly` tag) keeps the same version string,
+        // so its install dir already existing does NOT mean it's up-to-date.
+        let rolling_reinstall = !ctx.force
+            && self.is_version_installed(&ctx.config, &tv, true)
+            && self.is_rolling_version_outdated(&ctx.config, &tv).await;
+
         // Handle dry-run mode early to avoid plugin installation
         if ctx.dry_run {
             use crate::ui::progress_report::ProgressIcon;
-            if self.is_version_installed(&ctx.config, &tv, true) {
+            if self.is_version_installed(&ctx.config, &tv, true) && !rolling_reinstall {
                 ctx.pr
                     .finish_with_icon("already installed".into(), ProgressIcon::Skipped);
             } else {
@@ -2121,7 +2127,8 @@ pub trait Backend: Debug + Send + Sync {
             tv.install_path = Some(tv.ba().installs_path.join(tv.tv_pathname()));
         }
 
-        let will_uninstall = ctx.force && self.is_version_installed(&ctx.config, &tv, true);
+        let will_uninstall =
+            (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
         // Query backend for operation count and set up progress tracking
         let install_ops = self.install_operation_count(&tv, &ctx).await;
@@ -2136,7 +2143,7 @@ pub trait Backend: Debug + Send + Sync {
             self.uninstall_version(&ctx.config, &tv, ctx.pr.as_ref(), false)
                 .await?;
             ctx.pr.next_operation();
-        } else if self.is_version_installed(&ctx.config, &tv, true) {
+        } else if self.is_version_installed(&ctx.config, &tv, true) && !rolling_reinstall {
             return Ok(tv);
         }
 
@@ -2148,7 +2155,7 @@ pub trait Backend: Debug + Send + Sync {
         let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
 
         // Double-checked (locking) that it wasn't installed while we were waiting for the lock
-        if self.is_version_installed(&ctx.config, &tv, true) && !ctx.force {
+        if self.is_version_installed(&ctx.config, &tv, true) && !ctx.force && !rolling_reinstall {
             return Ok(tv);
         }
 
