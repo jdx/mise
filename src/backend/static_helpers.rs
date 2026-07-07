@@ -495,7 +495,7 @@ pub fn template_string_for_target(
     )
 }
 
-fn render_template(template: &str, version: &str, mut tera: tera::Tera) -> String {
+fn render_template(template: &str, version: &str, mut tera: crate::tera::TeraEngine) -> String {
     // Check for legacy {version} syntax and emit deprecation warning
     if template.contains("{version}") && !template.contains("{{version}}") {
         deprecated_at!(

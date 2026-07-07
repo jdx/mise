@@ -3,7 +3,7 @@ use crate::env_diff::EnvMap;
 use crate::exit::exit;
 use crate::shell::ShellType;
 use crate::task::Task;
-use crate::tera::{contains_template_syntax, get_tera, render_str};
+use crate::tera::{contains_template_syntax, get_tera_v2, render_str_v2};
 use eyre::{Context, Result};
 use heck::ToSnakeCase;
 use indexmap::IndexMap;
@@ -40,7 +40,7 @@ impl TaskScriptParser {
     }
 
     fn get_tera(&self) -> tera::Tera {
-        get_tera(self.dir.as_deref())
+        get_tera_v2(self.dir.as_deref())
     }
 
     /// Inject extra vars (from monorepo task config hierarchy) into the tera context
@@ -64,7 +64,7 @@ impl TaskScriptParser {
         script: &str,
         ctx: &tera::Context,
     ) -> Result<String> {
-        render_str(tera, script.trim(), ctx)
+        render_str_v2(tera, script.trim(), ctx)
             .map_err(Self::task_script_tera_error)
             .with_context(|| format!("Failed to render task script: {}", script))
     }
@@ -83,7 +83,7 @@ impl TaskScriptParser {
         usage: &str,
         ctx: &tera::Context,
     ) -> Result<String> {
-        render_str(tera, usage.trim(), ctx)
+        render_str_v2(tera, usage.trim(), ctx)
             .with_context(|| format!("Failed to render task usage: {}", usage))
     }
 

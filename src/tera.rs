@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -10,6 +11,7 @@ use heck::{
 use path_absolutize::Absolutize;
 use rand::prelude::*;
 use regex::Regex;
+use serde_json::{Map as JsonMap, Value as JsonValue, json};
 use std::sync::LazyLock as Lazy;
 use tera::{Context, Kwargs, State, Tera, TeraResult, Value};
 use versions::{Requirement, Versioning};
@@ -52,12 +54,128 @@ pub fn contains_template_syntax(input: &str) -> bool {
     input.contains("{{") || input.contains("{%") || input.contains("{#")
 }
 
-pub fn render_str(tera: &mut Tera, input: &str, context: &Context) -> TeraResult<String> {
+pub enum TeraEngine {
+    V2(Box<Tera>),
+    V1(Box<tera1::Tera>),
+}
+
+impl TeraEngine {
+    fn render_str(&mut self, input: &str, context: &Context) -> TeraResult<String> {
+        match self {
+            Self::V2(tera) => tera.render_str(input, context, false),
+            Self::V1(tera) => {
+                let context = tera1_context(input, context)?;
+                tera.render_str(input, &context)
+                    .map_err(|e| tera_err(e.to_string()))
+            }
+        }
+    }
+}
+
+pub fn render_str(tera: &mut TeraEngine, input: &str, context: &Context) -> TeraResult<String> {
+    tera.render_str(input, context)
+}
+
+pub fn render_str_v2(tera: &mut Tera, input: &str, context: &Context) -> TeraResult<String> {
     tera.render_str(input, context, false)
 }
 
 fn tera_err(message: impl ToString) -> tera::Error {
     tera::Error::message(message)
+}
+
+fn use_tera_v1() -> bool {
+    Settings::try_get().is_ok_and(|settings| settings.tera_v1)
+}
+
+fn tera1_err(message: impl ToString) -> tera1::Error {
+    tera1::Error::msg(message.to_string())
+}
+
+fn json_arg<'a>(args: &'a HashMap<String, JsonValue>, name: &str) -> tera1::Result<&'a JsonValue> {
+    args.get(name)
+        .ok_or_else(|| tera1_err(format!("missing required argument: {name}")))
+}
+
+fn json_str_arg<'a>(args: &'a HashMap<String, JsonValue>, name: &str) -> tera1::Result<&'a str> {
+    json_arg(args, name)?
+        .as_str()
+        .ok_or_else(|| tera1_err(format!("argument `{name}` must be a string")))
+}
+
+fn json_path(value: &JsonValue) -> tera1::Result<&str> {
+    value
+        .as_str()
+        .ok_or_else(|| tera1_err("filter input must be a string"))
+}
+
+fn insert_tera1_context_value(
+    data: &mut JsonMap<String, JsonValue>,
+    context: &Context,
+    key: &str,
+) -> TeraResult<()> {
+    if data.contains_key(key) {
+        return Ok(());
+    }
+    if let Some(value) = context.get(key) {
+        data.insert(
+            key.to_string(),
+            serde_json::to_value(value).map_err(|e| tera_err(e.to_string()))?,
+        );
+    }
+    Ok(())
+}
+
+fn tera1_context(input: &str, context: &Context) -> TeraResult<tera1::Context> {
+    static IDENT_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"[A-Za-z_][A-Za-z0-9_]*").expect("valid ident regex"));
+    static RESERVED: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+        HashSet::from([
+            "and",
+            "as",
+            "block",
+            "break",
+            "continue",
+            "elif",
+            "else",
+            "endblock",
+            "endfilter",
+            "endif",
+            "endfor",
+            "endmacro",
+            "endraw",
+            "endset",
+            "extends",
+            "false",
+            "filter",
+            "for",
+            "if",
+            "import",
+            "in",
+            "include",
+            "is",
+            "macro",
+            "not",
+            "or",
+            "raw",
+            "set",
+            "set_global",
+            "true",
+        ])
+    });
+
+    let mut data = JsonMap::new();
+    for key in ["env", "vars", "tools"] {
+        insert_tera1_context_value(&mut data, context, key)?;
+    }
+    for m in IDENT_RE.find_iter(input) {
+        let key = m.as_str();
+        if RESERVED.contains(key) || data.contains_key(key) {
+            continue;
+        }
+        insert_tera1_context_value(&mut data, context, key)?;
+    }
+    tera1::Context::from_value(JsonValue::Object(data)).map_err(|e| tera_err(e.to_string()))
 }
 
 fn warn_tera_v1_filter(id: &'static str, name: &str, replacement: &str) {
@@ -290,9 +408,12 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
             let n = args.must_get::<u64>("n")?;
             let alphabet = args.must_get::<&str>("alphabet")?;
             let alphabet = alphabet.chars().collect::<Vec<char>>();
+            if alphabet.is_empty() {
+                return Err(tera_err("choice alphabet must not be empty"));
+            }
             let mut rng = rand::rng();
             let result: String = (0..n)
-                .map(|_| *alphabet.choose(&mut rng).unwrap())
+                .map(|_| *alphabet.choose(&mut rng).expect("alphabet non-empty"))
                 .collect();
             Ok(Value::from(result))
         },
@@ -853,9 +974,15 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         "semver_matching",
         move |version: &str, args: Kwargs, _: &State| -> TeraResult<bool> {
             let requirement = args.must_get::<&str>("requirement")?;
-            let result = Requirement::new(requirement)
-                .unwrap()
-                .matches(&Versioning::new(version).unwrap());
+            let requirement = Requirement::new(requirement).ok_or_else(|| {
+                tera_err(format!(
+                    "semver_matching requirement is invalid: {requirement}"
+                ))
+            })?;
+            let version = Versioning::new(version).ok_or_else(|| {
+                tera_err(format!("semver_matching version is invalid: {version}"))
+            })?;
+            let result = requirement.matches(&version);
             Ok(result)
         },
     );
@@ -863,21 +990,313 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
     tera
 });
 
-/// Returns a Tera instance for use during early initialization (miserc loading).
-/// This is a plain clone of the global `TERA` static. `exec` and `read_file` are absent
-/// because they are only registered in [`get_tera`], not in `TERA` itself — so they
-/// cannot accidentally become available here if `TERA` changes in the future.
-pub fn get_miserc_tera() -> Tera {
-    TERA.clone()
+static TERA1: Lazy<tera1::Tera> = Lazy::new(|| {
+    let mut tera = tera1::Tera::default();
+    tera.register_function("arch", tera1_host_fn(host_arch_name));
+    tera.register_function("os", tera1_host_fn(|| env::consts::OS));
+    tera.register_function("os_family", move |_: &HashMap<String, JsonValue>| {
+        Ok(json!(env::consts::FAMILY))
+    });
+    tera.register_function("num_cpus", move |_: &HashMap<String, JsonValue>| {
+        Ok(json!(num_cpus::get().to_string()))
+    });
+    tera.register_function("choice", move |args: &HashMap<String, JsonValue>| {
+        let n = json_arg(args, "n")?
+            .as_u64()
+            .ok_or_else(|| tera1_err("choice n must be an integer"))?;
+        let alphabet = json_str_arg(args, "alphabet")?
+            .chars()
+            .collect::<Vec<char>>();
+        if alphabet.is_empty() {
+            return Err(tera1_err("choice alphabet must not be empty"));
+        }
+        let mut rng = rand::rng();
+        let result: String = (0..n)
+            .map(|_| *alphabet.choose(&mut rng).expect("alphabet non-empty"))
+            .collect();
+        Ok(json!(result))
+    });
+    tera.register_function("haiku", move |args: &HashMap<String, JsonValue>| {
+        let words = args
+            .get("words")
+            .and_then(JsonValue::as_u64)
+            .unwrap_or(2)
+            .max(1) as usize;
+        let separator = args
+            .get("separator")
+            .and_then(JsonValue::as_str)
+            .unwrap_or("-");
+        let digits = args.get("digits").and_then(JsonValue::as_u64).unwrap_or(2) as usize;
+        Ok(json!(xx::rand::haiku(&xx::rand::HaikuOptions {
+            words,
+            separator,
+            digits,
+        })))
+    });
+
+    tera.register_filter(
+        "hash_file",
+        move |value: &JsonValue, args: &HashMap<String, JsonValue>| {
+            let path = Path::new(json_path(value)?);
+            track_tera_file(path);
+            let mut hash =
+                hash::file_hash_blake3(path, None).map_err(|e| tera1_err(e.to_string()))?;
+            if let Some(len) = args.get("len").and_then(JsonValue::as_u64) {
+                hash = hash.chars().take(len as usize).collect();
+            }
+            Ok(json!(hash))
+        },
+    );
+    tera.register_filter(
+        "hash",
+        move |value: &JsonValue, args: &HashMap<String, JsonValue>| {
+            let s = json_path(value)?;
+            let algorithm = args
+                .get("algorithm")
+                .and_then(JsonValue::as_str)
+                .unwrap_or("sha256");
+            let mut hash = match algorithm {
+                "sha256" => hash::hash_sha256_to_str(s),
+                "blake3" => hash::hash_blake3_to_str(s),
+                _ => return Err(tera1_err(format!("unknown hash algorithm: {algorithm}"))),
+            };
+            if let Some(len) = args.get("len").and_then(JsonValue::as_u64) {
+                hash = hash.chars().take(len as usize).collect();
+            }
+            Ok(json!(hash))
+        },
+    );
+    tera.register_filter(
+        "absolute",
+        tera1_path_filter(|p| Ok(p.absolutize()?.to_path_buf())),
+    );
+    tera.register_filter("canonicalize", tera1_path_filter(|p| p.canonicalize()));
+    tera.register_filter(
+        "dirname",
+        move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
+            let p = Path::new(json_path(value)?);
+            Ok(json!(
+                p.parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            ))
+        },
+    );
+    tera.register_filter(
+        "basename",
+        move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
+            let p = Path::new(json_path(value)?);
+            Ok(json!(
+                p.file_name()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            ))
+        },
+    );
+    tera.register_filter(
+        "extname",
+        move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
+            let p = Path::new(json_path(value)?);
+            Ok(json!(
+                p.extension()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            ))
+        },
+    );
+    tera.register_filter(
+        "file_stem",
+        move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
+            let p = Path::new(json_path(value)?);
+            Ok(json!(
+                p.file_stem()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            ))
+        },
+    );
+    tera.register_filter(
+        "file_size",
+        move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
+            let path = Path::new(json_path(value)?);
+            track_tera_file(path);
+            Ok(json!(
+                path.metadata().map_err(|e| tera1_err(e.to_string()))?.len()
+            ))
+        },
+    );
+    tera.register_filter(
+        "last_modified",
+        move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
+            let path = Path::new(json_path(value)?);
+            track_tera_file(path);
+            Ok(json!(
+                path.metadata()
+                    .map_err(|e| tera1_err(e.to_string()))?
+                    .modified()
+                    .map_err(|e| tera1_err(e.to_string()))?
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|e| tera1_err(e.to_string()))?
+                    .as_secs()
+            ))
+        },
+    );
+    tera.register_filter(
+        "join_path",
+        move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
+            let arr = value
+                .as_array()
+                .ok_or_else(|| tera1_err("join_path input must be an array of strings"))?;
+            let mut path = PathBuf::new();
+            for value in arr {
+                path.push(
+                    value
+                        .as_str()
+                        .ok_or_else(|| tera1_err("join_path input must be an array of strings"))?,
+                );
+            }
+            Ok(json!(path.to_string_lossy().to_string()))
+        },
+    );
+    tera.register_filter(
+        "quote",
+        move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
+            Ok(json!(format!(
+                "'{}'",
+                json_path(value)?.replace("'", "\\'")
+            )))
+        },
+    );
+    tera.register_filter("kebabcase", tera1_string_filter(|s| s.to_kebab_case()));
+    tera.register_filter(
+        "lowercamelcase",
+        tera1_string_filter(|s| s.to_lower_camel_case()),
+    );
+    tera.register_filter(
+        "shoutykebabcase",
+        tera1_string_filter(|s| s.to_shouty_kebab_case()),
+    );
+    tera.register_filter(
+        "shoutysnakecase",
+        tera1_string_filter(|s| s.to_shouty_snake_case()),
+    );
+    tera.register_filter("snakecase", tera1_string_filter(|s| s.to_snake_case()));
+    tera.register_filter(
+        "uppercamelcase",
+        tera1_string_filter(|s| s.to_upper_camel_case()),
+    );
+
+    tera.register_tester("dir", move |value: Option<&JsonValue>, _: &[JsonValue]| {
+        Ok(value
+            .and_then(JsonValue::as_str)
+            .is_some_and(|s| Path::new(s).is_dir()))
+    });
+    tera.register_tester("file", move |value: Option<&JsonValue>, _: &[JsonValue]| {
+        Ok(value
+            .and_then(JsonValue::as_str)
+            .is_some_and(|s| Path::new(s).is_file()))
+    });
+    tera.register_tester(
+        "exists",
+        move |value: Option<&JsonValue>, _: &[JsonValue]| {
+            Ok(value
+                .and_then(JsonValue::as_str)
+                .is_some_and(|s| Path::new(s).exists()))
+        },
+    );
+    tera.register_tester(
+        "semver_matching",
+        move |value: Option<&JsonValue>, args: &[JsonValue]| {
+            let version = value
+                .and_then(JsonValue::as_str)
+                .ok_or_else(|| tera1_err("semver_matching value must be a string"))?;
+            let requirement = args
+                .first()
+                .and_then(JsonValue::as_str)
+                .ok_or_else(|| tera1_err("semver_matching requirement must be a string"))?;
+            let requirement = Requirement::new(requirement).ok_or_else(|| {
+                tera1_err(format!(
+                    "semver_matching requirement is invalid: {requirement}"
+                ))
+            })?;
+            let version = Versioning::new(version).ok_or_else(|| {
+                tera1_err(format!("semver_matching version is invalid: {version}"))
+            })?;
+            Ok(requirement.matches(&version))
+        },
+    );
+
+    tera
+});
+
+fn host_arch_name() -> &'static str {
+    if cfg!(target_arch = "x86_64") {
+        "x64"
+    } else if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        env::consts::ARCH
+    }
 }
 
-pub fn get_tera(dir: Option<&Path>) -> Tera {
+fn tera1_host_fn(
+    default: fn() -> &'static str,
+) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |args| {
+        let value = default();
+        Ok(args
+            .get(value)
+            .and_then(JsonValue::as_str)
+            .map_or_else(|| json!(value), |remapped| json!(remapped)))
+    }
+}
+
+fn tera1_string_filter(
+    f: fn(&str) -> String,
+) -> impl Fn(&JsonValue, &HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |value, _| Ok(json!(f(json_path(value)?)))
+}
+
+fn tera1_path_filter(
+    f: fn(&Path) -> std::io::Result<PathBuf>,
+) -> impl Fn(&JsonValue, &HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |value, _| {
+        let p = f(Path::new(json_path(value)?)).map_err(|e| tera1_err(e.to_string()))?;
+        Ok(json!(p.to_string_lossy().to_string()))
+    }
+}
+
+pub(crate) fn get_tera_v2(dir: Option<&Path>) -> Tera {
     let mut tera = TERA.clone();
     let dir = dir.map(PathBuf::from);
     tera.register_function("exec", tera_exec(dir.clone(), env::PRISTINE_ENV.clone()));
     tera.register_function("read_file", tera_read_file(dir));
-
     tera
+}
+
+fn get_tera_v1(dir: Option<&Path>) -> tera1::Tera {
+    let mut tera = TERA1.clone();
+    let dir = dir.map(PathBuf::from);
+    tera.register_function("exec", tera1_exec(dir.clone(), env::PRISTINE_ENV.clone()));
+    tera.register_function("read_file", tera1_read_file(dir));
+    tera
+}
+
+/// Returns a Tera instance for use during early initialization (miserc loading).
+/// This is a plain clone of the global `TERA` static. `exec` and `read_file` are absent
+/// because they are only registered in [`get_tera`], not in `TERA` itself — so they
+/// cannot accidentally become available here if `TERA` changes in the future. This also
+/// intentionally ignores `tera_v1`, since Settings are not fully loaded at this stage.
+pub fn get_miserc_tera() -> TeraEngine {
+    TeraEngine::V2(Box::new(TERA.clone()))
+}
+
+pub fn get_tera(dir: Option<&Path>) -> TeraEngine {
+    if use_tera_v1() {
+        TeraEngine::V1(Box::new(get_tera_v1(dir)))
+    } else {
+        TeraEngine::V2(Box::new(get_tera_v2(dir)))
+    }
 }
 
 /// Like [`get_tera`] but with `os()` and `arch()` bound to an explicit target
@@ -888,37 +1307,57 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
 /// `arch` a platform arch name (e.g. "x64", "arm64"), matching the values
 /// returned by the host-bound functions. Remap arguments such as
 /// `os(macos="darwin")` and `arch(x64="amd64")` keep the same semantics.
-pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> Tera {
-    let mut tera = get_tera(dir);
-
+pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> TeraEngine {
     // os_family() must follow the target too, not the host.
     let family = if os == "windows" { "windows" } else { "unix" };
-
-    let os = os.to_string();
-    tera.register_function("os", move |args: Kwargs, _: &State| -> TeraResult<Value> {
-        if let Some(remapped) = args.get::<&str>(&os)? {
-            return Ok(Value::from(remapped));
-        }
-        Ok(Value::from(os.clone()))
-    });
-
-    let arch = arch.to_string();
-    tera.register_function(
-        "arch",
-        move |args: Kwargs, _: &State| -> TeraResult<Value> {
-            if let Some(remapped) = args.get::<&str>(&arch)? {
+    if use_tera_v1() {
+        let mut tera = get_tera_v1(dir);
+        let os = os.to_string();
+        tera.register_function("os", move |args: &HashMap<String, JsonValue>| {
+            Ok(args
+                .get(&os)
+                .and_then(JsonValue::as_str)
+                .map_or_else(|| json!(os), |remapped| json!(remapped)))
+        });
+        let arch = arch.to_string();
+        tera.register_function("arch", move |args: &HashMap<String, JsonValue>| {
+            Ok(args
+                .get(&arch)
+                .and_then(JsonValue::as_str)
+                .map_or_else(|| json!(arch), |remapped| json!(remapped)))
+        });
+        tera.register_function("os_family", move |_: &HashMap<String, JsonValue>| {
+            Ok(json!(family))
+        });
+        TeraEngine::V1(Box::new(tera))
+    } else {
+        let mut tera = get_tera_v2(dir);
+        let os = os.to_string();
+        tera.register_function("os", move |args: Kwargs, _: &State| -> TeraResult<Value> {
+            if let Some(remapped) = args.get::<&str>(&os)? {
                 return Ok(Value::from(remapped));
             }
-            Ok(Value::from(arch.clone()))
-        },
-    );
+            Ok(Value::from(os.clone()))
+        });
 
-    tera.register_function(
-        "os_family",
-        move |_: Kwargs, _: &State| -> TeraResult<Value> { Ok(Value::from(family)) },
-    );
+        let arch = arch.to_string();
+        tera.register_function(
+            "arch",
+            move |args: Kwargs, _: &State| -> TeraResult<Value> {
+                if let Some(remapped) = args.get::<&str>(&arch)? {
+                    return Ok(Value::from(remapped));
+                }
+                Ok(Value::from(arch.clone()))
+            },
+        );
 
-    tera
+        tera.register_function(
+            "os_family",
+            move |_: Kwargs, _: &State| -> TeraResult<Value> { Ok(Value::from(family)) },
+        );
+
+        TeraEngine::V2(Box::new(tera))
+    }
 }
 
 /// Like [`get_tera`] but with `os()` and `arch()` rewritten to re-emit
@@ -929,15 +1368,114 @@ pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> Tera {
 /// resolved, but `os()`/`arch()` are deferred so the backend can re-render them
 /// for the host at install time or for an arbitrary target during cross-platform
 /// `mise lock`. Mirrors how `{{ version }}` is preserved via a placeholder.
-pub fn get_tera_preserving_os_arch(dir: Option<&Path>) -> Tera {
-    let mut tera = get_tera(dir);
-    tera.register_function("os", reemit_template_fn("os"));
-    tera.register_function("arch", reemit_template_fn("arch"));
-    // os_family() must be deferred too: it derives from the target OS, so
-    // resolving it against the host here would bake e.g. "unix" into a template
-    // that is later rendered for a windows target.
-    tera.register_function("os_family", reemit_template_fn("os_family"));
-    tera
+pub fn get_tera_preserving_os_arch(dir: Option<&Path>) -> TeraEngine {
+    if use_tera_v1() {
+        let mut tera = get_tera_v1(dir);
+        tera.register_function("os", reemit_template_fn_v1("os"));
+        tera.register_function("arch", reemit_template_fn_v1("arch"));
+        tera.register_function("os_family", reemit_template_fn_v1("os_family"));
+        TeraEngine::V1(Box::new(tera))
+    } else {
+        let mut tera = get_tera_v2(dir);
+        tera.register_function("os", reemit_template_fn("os"));
+        tera.register_function("arch", reemit_template_fn("arch"));
+        // os_family() must be deferred too: it derives from the target OS, so
+        // resolving it against the host here would bake e.g. "unix" into a template
+        // that is later rendered for a windows target.
+        tera.register_function("os_family", reemit_template_fn("os_family"));
+        TeraEngine::V2(Box::new(tera))
+    }
+}
+
+fn reemit_template_fn_v1(
+    name: &'static str,
+) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |args| {
+        let mut parts: Vec<String> = args
+            .iter()
+            .filter_map(|(k, v)| reemit_arg_literal(v).map(|lit| format!("{k}={lit}")))
+            .collect();
+        let rendered = if parts.is_empty() {
+            format!("{{{{ {name}() }}}}")
+        } else {
+            parts.sort();
+            format!("{{{{ {name}({}) }}}}", parts.join(", "))
+        };
+        Ok(json!(rendered))
+    }
+}
+
+pub(crate) fn tera1_exec(
+    dir: Option<PathBuf>,
+    env: EnvMap,
+) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        let command = json_str_arg(args, "command")?;
+        let shell = Settings::get()
+            .default_inline_shell()
+            .map_err(|e| tera1_err(e.to_string()))?;
+        let shell_args = shell
+            .iter()
+            .skip(1)
+            .chain(once(&command.to_string()))
+            .cloned()
+            .collect::<Vec<String>>();
+        let mut env_no_shims = env.clone();
+        if let Some(path_val) = env_no_shims.get(&*env::PATH_KEY).cloned() {
+            env_no_shims.insert(env::PATH_KEY.to_string(), strip_shims_from_path(&path_val));
+        }
+        let run_once = || -> eyre::Result<String> {
+            #[cfg(windows)]
+            {
+                if let Some(mut c) =
+                    crate::path::cmd_verbatim_command(&shell[0], &shell[1..], command)
+                {
+                    c.env_clear();
+                    c.envs(env_no_shims.iter());
+                    if let Some(dir) = &dir {
+                        c.current_dir(dir);
+                    }
+                    let out = c.output()?;
+                    if !out.status.success() {
+                        eyre::bail!(
+                            "exec command failed: {}",
+                            String::from_utf8_lossy(&out.stderr)
+                        );
+                    }
+                    let mut s = String::from_utf8(out.stdout)?;
+                    while s.ends_with('\n') || s.ends_with('\r') {
+                        s.pop();
+                    }
+                    return Ok(s);
+                }
+            }
+            let mut expr: duct::Expression = cmd(&shell[0], &shell_args).full_env(&env_no_shims);
+            if let Some(dir) = &dir {
+                expr = expr.dir(dir);
+            }
+            Ok(expr.read()?)
+        };
+        Ok(json!(
+            run_once().map_err(|e| tera1_err(format!("exec command: {e}")))?
+        ))
+    }
+}
+
+pub(crate) fn tera1_read_file(
+    dir: Option<PathBuf>,
+) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        let path_str = json_str_arg(args, "path")?;
+        let path = if let Some(ref base_dir) = dir {
+            base_dir.join(path_str)
+        } else {
+            PathBuf::from(path_str)
+        };
+        track_tera_file(&path);
+        Ok(json!(std::fs::read_to_string(&path).map_err(|e| {
+            tera1_err(format!("read_file({}): {e}", path.display()))
+        })?))
+    }
 }
 
 fn reemit_template_fn(name: &'static str) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
@@ -1105,10 +1643,30 @@ pub fn tera_read_file(dir: Option<PathBuf>) -> impl Fn(Kwargs, &State) -> TeraRe
 
 #[cfg(test)]
 mod tests {
-    use crate::config::Config;
+    use crate::config::{Config, Settings};
 
     use super::*;
     use pretty_assertions::assert_str_eq;
+
+    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct SettingsGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl SettingsGuard {
+        fn tera_v1() -> Self {
+            let lock = TEST_SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            Settings::override_with(|settings| settings.tera_v1 = Some(true));
+            Self { _lock: lock }
+        }
+    }
+
+    impl Drop for SettingsGuard {
+        fn drop(&mut self) {
+            Settings::reset(None);
+        }
+    }
 
     #[tokio::test]
     async fn test_config_root() {
@@ -1483,6 +2041,62 @@ mod tests {
         tera_ctx.insert("cwd", "/");
         let mut tera = get_tera_for_target(None, os, arch);
         render_str(&mut tera, s, &tera_ctx).unwrap()
+    }
+
+    #[test]
+    fn test_tera_v1_setting_selects_v1_engine() {
+        let _guard = SettingsGuard::tera_v1();
+        assert!(matches!(get_tera(None), TeraEngine::V1(_)));
+    }
+
+    #[test]
+    fn test_miserc_tera_ignores_tera_v1_setting() {
+        let _guard = SettingsGuard::tera_v1();
+        assert!(matches!(get_miserc_tera(), TeraEngine::V2(_)));
+    }
+
+    #[test]
+    fn test_tera_v1_engine_renders_v1_macro() {
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("name", "mise");
+        let mut tera = TeraEngine::V1(Box::new(TERA1.clone()));
+        assert_eq!(
+            render_str(
+                &mut tera,
+                "{% macro greet(name) %}hi {{ name }}{% endmacro %}{{ self::greet(name=name) }}",
+                &tera_ctx
+            )
+            .unwrap(),
+            "hi mise"
+        );
+
+        let mut tera = TeraEngine::V2(Box::new(TERA.clone()));
+        assert!(
+            render_str(
+                &mut tera,
+                "{% macro greet(name) %}hi {{ name }}{% endmacro %}{{ self::greet(name=name) }}",
+                &tera_ctx
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_tera_v1_context_preserves_common_nested_roots() {
+        let mut tera_ctx = Context::new();
+        tera_ctx.insert("env", &json!({ "FOO": "bar" }));
+        tera_ctx.insert("vars", &json!({ "nested": { "name": "baz" } }));
+        tera_ctx.insert("tools", &json!([{ "name": "node" }]));
+        let mut tera = TeraEngine::V1(Box::new(TERA1.clone()));
+        assert_eq!(
+            render_str(
+                &mut tera,
+                "{% for tool in tools %}{{ env.FOO }} {{ vars.nested.name }} {{ tool.name }}{% endfor %}",
+                &tera_ctx
+            )
+            .unwrap(),
+            "bar baz node"
+        );
     }
 
     #[test]

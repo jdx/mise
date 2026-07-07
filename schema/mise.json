@@ -1840,6 +1840,12 @@
           "type": "boolean",
           "deprecated": true
         },
+        "tera_v1": {
+          "default": false,
+          "description": "Use Tera v1 instead of Tera v2 for template rendering.",
+          "type": "boolean",
+          "deprecated": true
+        },
         "terminal_progress": {
           "default": true,
           "description": "Enable terminal progress indicators (OSC 9;4) for compatible terminals.",

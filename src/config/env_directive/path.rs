@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 impl EnvResults {
     pub async fn path(
         ctx: &mut tera::Context,
-        tera: &mut Option<tera::Tera>,
+        tera: &mut Option<crate::tera::TeraEngine>,
         r: &mut EnvResults,
         source: &Path,
         exec_env: &EnvMap,

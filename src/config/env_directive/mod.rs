@@ -4,7 +4,9 @@ use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::path_env::PathEnv;
-use crate::tera::{contains_template_syntax, get_tera, render_str, tera_exec};
+use crate::tera::{
+    TeraEngine, contains_template_syntax, get_tera, render_str, tera_exec, tera1_exec,
+};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -773,7 +775,7 @@ impl EnvResults {
     fn parse_template(
         &self,
         ctx: &tera::Context,
-        tera: &mut Option<tera::Tera>,
+        tera: &mut Option<TeraEngine>,
         path: &Path,
         exec_env: &EnvMap,
         input: &str,
@@ -785,10 +787,17 @@ impl EnvResults {
             trust_check(path)?;
             let tera = tera.get_or_insert_with(|| {
                 let mut tera = get_tera(path.parent());
-                tera.register_function(
-                    "exec",
-                    tera_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
-                );
+                if let TeraEngine::V2(tera) = &mut tera {
+                    tera.register_function(
+                        "exec",
+                        tera_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
+                    );
+                } else if let TeraEngine::V1(tera) = &mut tera {
+                    tera.register_function(
+                        "exec",
+                        tera1_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
+                    );
+                }
                 tera
             });
             output = render_str(tera, input, ctx)

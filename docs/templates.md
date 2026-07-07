@@ -130,6 +130,10 @@ Tera v2 also adds useful syntax that replaces many old helper filters:
 
 Not every Tera v1 behavior can be made compatible. Undefined variable access is
 stricter in Tera v2, and Tera v1 macros are not supported by mise templates.
+As a temporary escape hatch, set `tera_v1 = true` or `MISE_TERA_V1=1` to render
+templates with Tera v1. This setting is scheduled for removal in mise 2027.4.0.
+Because miserc files are rendered before settings are loaded, this escape hatch
+does not apply while loading miserc itself.
 
 ### Tera Filters
 
