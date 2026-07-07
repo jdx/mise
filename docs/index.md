@@ -10,16 +10,18 @@ hero:
 <section class="landing-page" aria-label="mise overview">
   <div class="landing-section landing-metaphor">
     <div>
-      <h2>One file for your whole dev environment.</h2>
-      <p>
-        In a kitchen, <em>mise en place</em> means everything is prepped before
-        cooking starts. mise applies the same idea to your dev environment.
-      </p>
+      <p class="landing-kicker">The Idea</p>
+      <h2>Everything in its place, <em>before</em> you code.</h2>
       <p>
         It installs the tools your project needs, loads its env vars, and runs
         its tasks — all configured in a single <code>mise.toml</code> checked
         into your repo, so every machine gets the same setup.
       </p>
+      <div class="landing-definition">
+        <div class="definition-word">mise en place <span>/meez ahn plahs/</span></div>
+        <p>1. the gathering and arrangement of ingredients and tools before cooking.</p>
+        <p>2. a polyglot tool that keeps your project tools, env, and tasks in one place.</p>
+      </div>
     </div>
     <div class="landing-config" aria-label="Example mise.toml">
 
@@ -41,7 +43,10 @@ run = "pytest"
 
   <div class="landing-section landing-menu">
     <div class="landing-section-heading">
-      <h2>What mise does.</h2>
+      <div>
+        <p class="landing-kicker">The Menu</p>
+        <h2>What mise does.</h2>
+      </div>
       <a href="/getting-started" class="landing-small-button">All docs</a>
     </div>
     <div class="landing-feature-grid">
@@ -64,7 +69,7 @@ run = "pytest"
   </div>
 
   <div class="landing-tools" aria-label="Supported tools">
-    <p>mise installs and manages 900+ tools</p>
+    <p>The pantry · 900+ tools, one config file</p>
     <div class="landing-tools-list">
       <a href="https://mise-versions.jdx.dev/tools/node">node</a>
       <a href="https://mise-versions.jdx.dev/tools/python">python</a>
@@ -86,6 +91,7 @@ run = "pytest"
 
   <a class="landing-aube" href="https://aube.jdx.dev/" aria-label="Try aube">
     <div>
+      <p class="landing-kicker">Chef's Special</p>
       <h2>aube: a fast Node.js package manager.</h2>
       <p>
         From the author of mise. aube works with your existing lockfile — no
@@ -96,6 +102,7 @@ run = "pytest"
 
   <div class="landing-section landing-quickstart">
     <div>
+      <p class="landing-kicker">The Recipe</p>
       <h2>Get set up in four steps.</h2>
     </div>
     <div class="landing-recipe-grid">
@@ -111,23 +118,52 @@ run = "pytest"
       </div>
       <div class="landing-code">
         <div class="recipe-panel recipe-panel-1">
-          <pre><code>$ curl https://mise.run | sh<br /><br />$ mise --version<br />2026.7.0 linux-x64</code></pre>
-        </div>
+
+```shellsession
+$ curl https://mise.run | sh
+
+$ mise --version
+2026.7.0 linux-x64
+```
+
+</div>
         <div class="recipe-panel recipe-panel-2">
-          <pre><code>$ mise use node@24 python@3.13<br />mise node@24.18.0 ✓ installed<br />mise python@3.13.14 ✓ installed<br />mise ./mise.toml tools: node@24.18.0, python@3.13.14</code></pre>
-        </div>
+
+```shellsession
+$ mise use node@24 python@3.13
+mise node@24.18.0 ✓ installed
+mise python@3.13.14 ✓ installed
+mise ./mise.toml tools: node@24.18.0, python@3.13.14
+```
+
+</div>
         <div class="recipe-panel recipe-panel-3">
-          <pre><code>$ cat .env.local<br />DATABASE_URL=postgres://localhost/orders<br /><br />$ mise env -s bash<br />export DATABASE_URL='postgres://localhost/orders'</code></pre>
-        </div>
+
+```shellsession
+$ cat .env.local
+DATABASE_URL=postgres://localhost/orders
+
+$ mise env -s bash
+export DATABASE_URL='postgres://localhost/orders'
+```
+
+</div>
         <div class="recipe-panel recipe-panel-4">
-          <pre><code>$ mise run test<br />[test] $ pytest<br />42 passed in 1.02s</code></pre>
-        </div>
+
+```shellsession
+$ mise run test
+[test] $ pytest
+42 passed in 1.02s
+```
+
+</div>
       </div>
     </div>
   </div>
 
   <div class="landing-section landing-cta">
-    <h2>Get started.</h2>
+    <p class="landing-kicker">Ready When You Are</p>
+    <h2><em>Allez,</em> prep your station.</h2>
     <div class="landing-mini-install"><code>curl https://mise.run | sh</code></div>
     <div class="landing-links">
       <a href="/getting-started">Getting started</a>
