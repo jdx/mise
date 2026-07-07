@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b8f187e80b33",
+  "strategy": "manual-commit",
+  "branch": "codex/tera-v1-engine-setting",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/tera.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b8/f187e80b33/0/metadata.json",
+      "transcript": "/b8/f187e80b33/0/full.jsonl",
+      "content_hash": "/b8/f187e80b33/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23925,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1455360,
+    "output_tokens": 7051,
+    "api_call_count": 14
+  }
+}

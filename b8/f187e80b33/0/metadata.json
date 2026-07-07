@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b8f187e80b33",
+  "session_id": "019f3a7f-3035-7753-91b9-805dd22f04d4",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-07T03:19:01.926098Z",
+  "branch": "codex/tera-v1-engine-setting",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/tera.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "03b72020159a",
+  "checkpoint_transcript_start": 585,
+  "transcript_lines_at_start": 585,
+  "token_usage": {
+    "input_tokens": 23925,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1455360,
+    "output_tokens": 7051,
+    "api_call_count": 14
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-07T03:19:01.895598Z",
+    "agent_lines": 39,
+    "agent_removed": 6,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 39,
+    "total_lines_changed": 45,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
