@@ -179,7 +179,7 @@ pub async fn build(
 
 /// Ensure a mise-managed ruby is installed (precompiled by default) and
 /// return the path to its `ruby` executable.
-async fn ruby_bin() -> Result<PathBuf> {
+pub(crate) async fn ruby_bin() -> Result<PathBuf> {
     let mut config = Config::get().await?;
     let tool: crate::cli::args::ToolArg = "ruby".parse()?;
     let mut ts = ToolsetBuilder::new()
