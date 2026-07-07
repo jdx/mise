@@ -9,18 +9,21 @@ jobs:
   merge:
     if: github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Merge release into main
         run: |
           set -euo pipefail
 
-          latest_tag=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1 || true)
+          latest_tag=$(git describe --tags --match 'v[0-9]*' --abbrev=0 || true)
           if [ -n "$latest_tag" ]; then
             range="${latest_tag}..HEAD"
-            tag_time=$(git log -1 --format=%ct "$latest_tag")
+            tag_time=$(git for-each-ref --format='%(creatordate:unix)' "refs/tags/$latest_tag")
             now=$(date +%s)
             min_age=$((7 * 24 * 60 * 60))
             age=$((now - tag_time))
