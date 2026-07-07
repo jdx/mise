@@ -1,0 +1,1 @@
+address feedback and failing pr checks on [https://github.com/jdx/mise/pull/10817#issue-comment-box](https://github.com/jdx/mise/pull/10817#issue-comment-box)
