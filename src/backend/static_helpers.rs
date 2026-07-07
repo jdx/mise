@@ -323,22 +323,12 @@ pub fn platform_aliases() -> Vec<(String, String)> {
 /// Supports nested format (platforms.macos-x64.url) with os-arch dash notation.
 /// Also supports both "platforms" and "platform" prefixes.
 pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<String> {
-    // Try nested platform structure with os-arch format
-    for (os, arch) in platform_aliases() {
-        for prefix in ["platforms", "platform"] {
-            // Try nested format: platforms.macos-x64.url
-            let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
-            if let Some(val) = opts.get_nested_string(&nested_key) {
-                return Some(val);
-            }
-            // Try flat format: platforms_macos_arm64_url
-            let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
-            if let Some(val) = opts.get_string(&flat_key) {
-                return Some(val);
-            }
-        }
-    }
-    None
+    lookup_platform_value_for_aliases(
+        platform_aliases(),
+        key_type,
+        |key| opts.get_nested_string(key),
+        |key| opts.get_string(key),
+    )
 }
 
 /// Looks up an option value with platform-specific fallback.
@@ -367,6 +357,28 @@ fn lookup_nested_value<'a>(opts: &'a ToolVersionOptions, key: &str) -> Option<&'
         value = table.get(*part)?;
     }
     Some(value)
+}
+
+fn lookup_platform_value_for_aliases<T>(
+    aliases: Vec<(String, String)>,
+    key_type: &str,
+    mut nested_lookup: impl FnMut(&str) -> Option<T>,
+    mut flat_lookup: impl FnMut(&str) -> Option<T>,
+) -> Option<T> {
+    for (os, arch) in aliases {
+        for prefix in ["platforms", "platform"] {
+            let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
+            if let Some(val) = nested_lookup(&nested_key) {
+                return Some(val);
+            }
+
+            let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
+            if let Some(val) = flat_lookup(&flat_key) {
+                return Some(val);
+            }
+        }
+    }
+    None
 }
 
 /// Returns all possible aliases for a given platform target (os, arch).
@@ -405,43 +417,25 @@ pub fn lookup_platform_key_for_target(
     key_type: &str,
     target: &PlatformTarget,
 ) -> Option<String> {
-    // Try nested platform structure with os-arch format
-    for (os, arch) in target_platform_aliases(target) {
-        for prefix in ["platforms", "platform"] {
-            // Try nested format: platforms.macos-x64.url
-            let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
-            if let Some(val) = opts.get_nested_string(&nested_key) {
-                return Some(val);
-            }
-            // Try flat format: platforms_macos_arm64_url
-            let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
-            if let Some(val) = opts.get_string(&flat_key) {
-                return Some(val);
-            }
-        }
-    }
-    None
+    lookup_platform_value_for_aliases(
+        target_platform_aliases(target),
+        key_type,
+        |key| opts.get_nested_string(key),
+        |key| opts.get_string(key),
+    )
 }
 
-/// Looks up a raw option value with platform-specific fallback.
-pub fn lookup_platform_value_with_fallback<'a>(
+/// Looks up a raw platform-specific option value.
+pub fn lookup_platform_value<'a>(
     opts: &'a ToolVersionOptions,
     key_type: &str,
 ) -> Option<&'a toml::Value> {
-    for (os, arch) in platform_aliases() {
-        for prefix in ["platforms", "platform"] {
-            let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
-            if let Some(val) = lookup_nested_value(opts, &nested_key) {
-                return Some(val);
-            }
-
-            let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
-            if let Some(val) = opts.opts.get(&flat_key) {
-                return Some(val);
-            }
-        }
-    }
-    opts.opts.get(key_type)
+    lookup_platform_value_for_aliases(
+        platform_aliases(),
+        key_type,
+        |key| lookup_nested_value(opts, key),
+        |key| opts.opts.get(key),
+    )
 }
 
 /// Lists platform keys (e.g. "macos-x64") for which a given key_type exists (e.g. "url").

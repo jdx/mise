@@ -100,8 +100,12 @@ impl<'a> GitBackendOptions<'a> {
     }
 
     fn filter_bins(&self) -> Option<Vec<String>> {
-        let value = self.values.platform_value("filter_bins")?;
-        let bins: Vec<String> = match value {
+        self.parse_filter_bins(self.values.platform_value_without_base("filter_bins"))
+            .or_else(|| self.parse_filter_bins(self.values.raw().opts.get("filter_bins")))
+    }
+
+    fn parse_filter_bins(&self, value: Option<&toml::Value>) -> Option<Vec<String>> {
+        let bins: Vec<String> = match value? {
             toml::Value::String(filter_bins) => filter_bins
                 .split(',')
                 .map(|s| s.trim().to_string())
@@ -2335,6 +2339,31 @@ mod tests {
         assert_eq!(
             backend.options(&array_opts).filter_bins(),
             Some(vec!["foo".to_string(), "bar".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_filter_bins_falls_back_to_base_when_platform_value_is_empty() {
+        use crate::backend::static_helpers::platform_aliases;
+
+        let backend = create_test_backend();
+        let (os, arch) = platform_aliases().into_iter().next().unwrap();
+        let mut linux = toml::Table::new();
+        linux.insert("filter_bins".into(), toml::Value::Array(vec![]));
+        let mut platforms = toml::Table::new();
+        platforms.insert(format!("{os}-{arch}"), toml::Value::Table(linux));
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "filter_bins".to_string(),
+            toml::Value::String("base-bin".to_string()),
+        );
+        opts.opts
+            .insert("platforms".to_string(), toml::Value::Table(platforms));
+
+        assert_eq!(
+            backend.options(&opts).filter_bins(),
+            Some(vec!["base-bin".to_string()])
         );
     }
 

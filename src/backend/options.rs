@@ -1,7 +1,7 @@
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    list_available_platforms_with_key, lookup_platform_key_for_target,
-    lookup_platform_value_with_fallback, lookup_with_fallback,
+    list_available_platforms_with_key, lookup_platform_key_for_target, lookup_platform_value,
+    lookup_with_fallback,
 };
 use crate::toolset::ToolVersionOptions;
 
@@ -30,8 +30,8 @@ impl<'a> BackendOptions<'a> {
         lookup_with_fallback(self.raw, key)
     }
 
-    pub(crate) fn platform_value(&self, key: &str) -> Option<&'a toml::Value> {
-        lookup_platform_value_with_fallback(self.raw, key)
+    pub(crate) fn platform_value_without_base(&self, key: &str) -> Option<&'a toml::Value> {
+        lookup_platform_value(self.raw, key)
     }
 
     pub(crate) fn platform_string_for_target(
@@ -148,7 +148,7 @@ mod tests {
             .insert("platforms".into(), toml::Value::Table(platforms));
 
         assert_eq!(
-            BackendOptions::new(&opts).platform_value("filter_bins"),
+            BackendOptions::new(&opts).platform_value_without_base("filter_bins"),
             Some(&toml::Value::Array(vec![toml::Value::String(
                 "platform".into()
             )]))
