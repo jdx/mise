@@ -1,0 +1,8 @@
+description = "Secure sandbox runtime that isolates AI coding-agent code with gVisor/runc"
+test = { cmd = "ironctl version", expected = "ironctl v{{version}}" }
+
+[[backends]]
+full = "github:IronSecCo/ironclaw"
+
+[backends.options]
+filter_bins = "ironctl"
