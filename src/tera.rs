@@ -2,12 +2,14 @@ use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, Utc};
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
 };
 use path_absolutize::Absolutize;
 use rand::prelude::*;
+use regex::Regex;
 use std::sync::LazyLock as Lazy;
 use tera::{Context, Kwargs, State, Tera, TeraResult, Value};
 use versions::{Requirement, Versioning};
@@ -56,6 +58,174 @@ pub fn render_str(tera: &mut Tera, input: &str, context: &Context) -> TeraResult
 
 fn tera_err(message: impl ToString) -> tera::Error {
     tera::Error::message(message)
+}
+
+fn warn_tera_v1_filter(id: &'static str, name: &str, replacement: &str) {
+    deprecated_at!(
+        "2026.7.0",
+        "2027.1.0",
+        id,
+        "Tera v1 template helper `{name}` is deprecated in mise templates. {replacement}"
+    );
+}
+
+fn tera_v1_slice_index(index: i64, len: usize) -> usize {
+    if index < 0 {
+        len.saturating_sub(index.unsigned_abs() as usize)
+    } else {
+        (index as usize).min(len)
+    }
+}
+
+fn escape_html(s: &str) -> String {
+    let mut output = String::with_capacity(s.len() * 2);
+    for c in s.chars() {
+        match c {
+            '&' => output.push_str("&amp;"),
+            '<' => output.push_str("&lt;"),
+            '>' => output.push_str("&gt;"),
+            '"' => output.push_str("&quot;"),
+            '\'' => output.push_str("&#x27;"),
+            _ => output.push(c),
+        }
+    }
+    output
+}
+
+fn slugify(s: &str) -> String {
+    let mut out = String::new();
+    let mut previous_dash = false;
+    for c in s.chars().flat_map(char::to_lowercase) {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            previous_dash = false;
+        } else if !previous_dash && !out.is_empty() {
+            out.push('-');
+            previous_dash = true;
+        }
+    }
+    if previous_dash {
+        out.pop();
+    }
+    out
+}
+
+fn tera_v1_truthy(value: &Value) -> bool {
+    if value.is_none() {
+        false
+    } else if let Some(b) = value.as_bool() {
+        b
+    } else if let Some(s) = value.as_str() {
+        !s.is_empty()
+    } else if let Some(arr) = value.as_array() {
+        !arr.is_empty()
+    } else if let Some(map) = value.as_map() {
+        !map.is_empty()
+    } else if let Some(n) = value.as_number() {
+        n.as_integer().is_some_and(|n| n != 0) || value.as_f64().is_some_and(|n| n != 0.0)
+    } else {
+        true
+    }
+}
+
+fn tera_v1_date(value: Value, args: Kwargs) -> TeraResult<Value> {
+    let format = args.get::<&str>("format")?.unwrap_or("%Y-%m-%d");
+    let formatted = if let Some(n) = value.as_number() {
+        let ts = n
+            .as_integer()
+            .ok_or_else(|| tera_err(format!("Filter `date` was invoked on a float: {value}")))?;
+        let ts = i64::try_from(ts)
+            .map_err(|_| tera_err(format!("Filter `date` timestamp is out of range: {value}")))?;
+        DateTime::<Utc>::from_timestamp(ts, 0)
+            .ok_or_else(|| tera_err(format!("Filter `date` timestamp is out of range: {ts}")))?
+            .format(format)
+            .to_string()
+    } else if let Some(s) = value.as_str() {
+        if s.contains('T') {
+            match DateTime::<FixedOffset>::parse_from_rfc3339(s) {
+                Ok(dt) => dt.format(format).to_string(),
+                Err(_) => NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
+                    .map(|dt| dt.format(format).to_string())
+                    .map_err(|_| tera_err(format!("Error parsing `{s:?}` as a date")))?,
+            }
+        } else {
+            NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .map(|dt| dt.format(format).to_string())
+                .map_err(|_| tera_err(format!("Error parsing `{s:?}` as YYYY-MM-DD date")))?
+        }
+    } else {
+        return Err(tera_err(format!(
+            "Filter `date` expected an integer timestamp or string, got {}",
+            value.name()
+        )));
+    };
+
+    Ok(Value::from(formatted))
+}
+
+fn tera_v1_int(value: Value, args: Kwargs) -> TeraResult<Value> {
+    let default = args.get::<i64>("default")?;
+    let base = args.get::<u32>("base")?.unwrap_or(10);
+    if !(2..=36).contains(&base) {
+        return Err(tera_err(format!(
+            "int filter `base` must be between 2 and 36, got {base}"
+        )));
+    }
+
+    let fallback = || {
+        warn_tera_v1_filter(
+            "tera-v1-int-default",
+            "int(default=...)",
+            "Invalid integer conversions should be handled explicitly.",
+        );
+        Ok(Value::from(default.unwrap_or_default()))
+    };
+
+    if let Some(s) = value.as_str() {
+        let s = s.trim();
+        let s = match base {
+            2 => s.trim_start_matches("0b"),
+            8 => s.trim_start_matches("0o"),
+            16 => s.trim_start_matches("0x"),
+            _ => s,
+        };
+        match i128::from_str_radix(s, base) {
+            Ok(v) => Ok(Value::from(v)),
+            Err(_) if s.contains('.') => match s.parse::<f64>() {
+                Ok(f) => Ok(Value::from(f as i128)),
+                Err(_) => fallback(),
+            },
+            Err(_) => fallback(),
+        }
+    } else {
+        value
+            .as_number()
+            .and_then(|n| n.as_integer())
+            .map(Value::from)
+            .ok_or_else(|| tera_err("Filter `int` received an unexpected type"))
+    }
+}
+
+fn tera_v1_float(value: Value, args: Kwargs) -> TeraResult<Value> {
+    let default = args.get::<f64>("default")?;
+    if let Some(s) = value.as_str() {
+        match s.trim().parse::<f64>() {
+            Ok(f) => Ok(Value::from(f)),
+            Err(_) => {
+                warn_tera_v1_filter(
+                    "tera-v1-float-default",
+                    "float(default=...)",
+                    "Invalid float conversions should be handled explicitly.",
+                );
+                Ok(Value::from(default.unwrap_or_default()))
+            }
+        }
+    } else {
+        value
+            .as_f64()
+            .map(Value::from)
+            .ok_or_else(|| tera_err("Filter `float` received an unexpected type"))
+    }
 }
 
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
@@ -258,8 +428,377 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         },
     );
     tera.register_filter("as_str", move |value: Value, _: Kwargs, _: &State| {
+        warn_tera_v1_filter("tera-v1-as-str", "as_str", "Use `str` instead.");
         value.to_string()
     });
+    tera.register_filter("escape", move |s: &str, _: Kwargs, _: &State| {
+        warn_tera_v1_filter("tera-v1-escape", "escape", "Use `escape_html` instead.");
+        Value::from(escape_html(s))
+    });
+    tera.register_filter("linebreaksbr", move |s: &str, _: Kwargs, _: &State| {
+        warn_tera_v1_filter(
+            "tera-v1-linebreaksbr",
+            "linebreaksbr",
+            "Use `newlines_to_br` instead.",
+        );
+        Value::from(s.replace("\r\n", "<br>").replace(['\n', '\r'], "<br>"))
+    });
+    tera.register_filter("addslashes", move |s: &str, _: Kwargs, _: &State| {
+        warn_tera_v1_filter(
+            "tera-v1-addslashes",
+            "addslashes",
+            "Use an explicit string replacement instead.",
+        );
+        Value::from(
+            s.replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\'', "\\'"),
+        )
+    });
+    tera.register_filter("slugify", move |s: &str, _: Kwargs, _: &State| {
+        warn_tera_v1_filter(
+            "tera-v1-slugify",
+            "slugify",
+            "Use an explicit slug value or custom template logic instead.",
+        );
+        Value::from(slugify(s))
+    });
+    tera.register_filter("urlencode", move |s: &str, _: Kwargs, _: &State| {
+        warn_tera_v1_filter(
+            "tera-v1-urlencode",
+            "urlencode",
+            "Pre-encode URL components before rendering.",
+        );
+        Value::from(urlencoding::encode(s).replace("%2F", "/"))
+    });
+    tera.register_filter("urlencode_strict", move |s: &str, _: Kwargs, _: &State| {
+        warn_tera_v1_filter(
+            "tera-v1-urlencode-strict",
+            "urlencode_strict",
+            "Pre-encode URL components before rendering.",
+        );
+        Value::from(urlencoding::encode(s).into_owned())
+    });
+    tera.register_filter("striptags", move |s: &str, _: Kwargs, _: &State| {
+        static STRIPTAGS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"<[^>]*>").unwrap());
+        warn_tera_v1_filter(
+            "tera-v1-striptags",
+            "striptags",
+            "Strip tags before rendering or use custom template logic instead.",
+        );
+        Value::from(STRIPTAGS_RE.replace_all(s, "").to_string())
+    });
+    tera.register_filter("spaceless", move |s: &str, _: Kwargs, _: &State| {
+        static SPACELESS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r">\s+<").unwrap());
+        warn_tera_v1_filter(
+            "tera-v1-spaceless",
+            "spaceless",
+            "Minify whitespace before rendering or use custom template logic instead.",
+        );
+        Value::from(SPACELESS_RE.replace_all(s, "><").to_string())
+    });
+    tera.register_filter(
+        "truncate",
+        move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
+            let length = match args.get::<usize>("length")? {
+                Some(length) => length,
+                None => {
+                    warn_tera_v1_filter(
+                        "tera-v1-truncate-default-length",
+                        "truncate without length",
+                        "Pass `length=...` explicitly.",
+                    );
+                    255
+                }
+            };
+            let end = args.get::<&str>("end")?.unwrap_or("…");
+            match s.char_indices().nth(length) {
+                Some((byte_idx, _)) => Ok(Value::from(s[..byte_idx].to_string() + end)),
+                None => Ok(Value::from(s)),
+            }
+        },
+    );
+    tera.register_filter(
+        "indent",
+        move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
+            let prefix = match args.get::<&str>("prefix")? {
+                Some(prefix) => {
+                    warn_tera_v1_filter(
+                        "tera-v1-indent-prefix",
+                        "indent(prefix=...)",
+                        "Use `indent(width=...)` instead.",
+                    );
+                    prefix.to_string()
+                }
+                None => " ".repeat(args.get::<usize>("width")?.unwrap_or(4).min(1000)),
+            };
+            let first = args.get::<bool>("first")?.unwrap_or(false);
+            let blank = args.get::<bool>("blank")?.unwrap_or(false);
+            let mut out = String::with_capacity(s.len() + prefix.len() * 2);
+            let mut first_line = true;
+            for line in s.lines() {
+                if first_line {
+                    if first {
+                        out.push_str(&prefix);
+                    }
+                    first_line = false;
+                } else {
+                    out.push('\n');
+                    if blank || !line.is_empty() {
+                        out.push_str(&prefix);
+                    }
+                }
+                out.push_str(line);
+            }
+            if s.ends_with('\n') {
+                out.push('\n');
+            }
+            Ok(Value::from(out))
+        },
+    );
+    tera.register_filter(
+        "int",
+        move |value: Value, args: Kwargs, _: &State| -> TeraResult<Value> {
+            tera_v1_int(value, args)
+        },
+    );
+    tera.register_filter(
+        "float",
+        move |value: Value, args: Kwargs, _: &State| -> TeraResult<Value> {
+            tera_v1_float(value, args)
+        },
+    );
+    tera.register_filter("first", move |value: Value, _: Kwargs, _: &State| {
+        if let Some(arr) = value.as_array() {
+            if arr.is_empty() {
+                warn_tera_v1_filter(
+                    "tera-v1-first-empty-string",
+                    "first on an empty array",
+                    "Tera 2 returns null for empty arrays.",
+                );
+                Value::from("")
+            } else {
+                arr[0].clone()
+            }
+        } else if let Some(s) = value.as_str() {
+            Value::from(s.chars().next().map(String::from).unwrap_or_default())
+        } else {
+            Value::from("")
+        }
+    });
+    tera.register_filter("last", move |value: Value, _: Kwargs, _: &State| {
+        if let Some(arr) = value.as_array() {
+            if arr.is_empty() {
+                warn_tera_v1_filter(
+                    "tera-v1-last-empty-string",
+                    "last on an empty array",
+                    "Tera 2 returns null for empty arrays.",
+                );
+                Value::from("")
+            } else {
+                arr[arr.len() - 1].clone()
+            }
+        } else if let Some(s) = value.as_str() {
+            Value::from(s.chars().next_back().map(String::from).unwrap_or_default())
+        } else {
+            Value::from("")
+        }
+    });
+    tera.register_filter(
+        "nth",
+        move |arr: &[Value], args: Kwargs, _: &State| -> TeraResult<Value> {
+            let n = args.must_get::<usize>("n")?;
+            if let Some(value) = arr.get(n) {
+                Ok(value.clone())
+            } else {
+                warn_tera_v1_filter(
+                    "tera-v1-nth-empty-string",
+                    "nth outside array bounds",
+                    "Tera 2 returns null for missing array elements.",
+                );
+                Ok(Value::from(""))
+            }
+        },
+    );
+    tera.register_filter(
+        "unique",
+        move |arr: &[Value], args: Kwargs, _: &State| -> TeraResult<Value> {
+            let case_sensitive = args.get::<bool>("case_sensitive")?.unwrap_or(false);
+            if args.get::<bool>("case_sensitive")?.is_some() {
+                warn_tera_v1_filter(
+                    "tera-v1-unique-case-sensitive",
+                    "unique(case_sensitive=...)",
+                    "Tera 2 `unique` no longer accepts arguments.",
+                );
+            }
+            let mut out = Vec::new();
+            for value in arr {
+                let duplicate = out.iter().any(|existing: &Value| {
+                    if case_sensitive {
+                        existing == value
+                    } else {
+                        existing.to_string().to_lowercase() == value.to_string().to_lowercase()
+                    }
+                });
+                if !duplicate {
+                    out.push(value.clone());
+                }
+            }
+            Ok(Value::from(out))
+        },
+    );
+    tera.register_filter(
+        "json_encode",
+        move |value: Value, args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-json-encode",
+                "json_encode",
+                "Use Tera 2 JSON helpers when available or pre-encode JSON before rendering.",
+            );
+            let pretty = args.get::<bool>("pretty")?.unwrap_or(false);
+            let encoded = if pretty {
+                serde_json::to_string_pretty(&value)
+            } else {
+                serde_json::to_string(&value)
+            }
+            .map_err(|e| tera_err(e.to_string()))?;
+            Ok(Value::from(encoded))
+        },
+    );
+    tera.register_filter(
+        "date",
+        move |value: Value, args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter("tera-v1-date", "date", "Format dates before rendering.");
+            tera_v1_date(value, args)
+        },
+    );
+    tera.register_filter(
+        "filesizeformat",
+        move |value: Value, _: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-filesizeformat",
+                "filesizeformat",
+                "Format file sizes before rendering.",
+            );
+            let size = value
+                .as_number()
+                .and_then(|n| n.as_integer())
+                .and_then(|n| u64::try_from(n).ok())
+                .ok_or_else(|| tera_err("filesizeformat filter expects a non-negative integer"))?;
+            Ok(Value::from(bytesize::ByteSize(size).to_string()))
+        },
+    );
+    tera.register_filter(
+        "trim_start_matches",
+        move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-trim-start-matches",
+                "trim_start_matches",
+                "Use `trim_start(pat=...)` instead.",
+            );
+            let pat = args.must_get::<&str>("pat")?;
+            Ok(Value::from(s.trim_start_matches(pat)))
+        },
+    );
+    tera.register_filter(
+        "trim_end_matches",
+        move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-trim-end-matches",
+                "trim_end_matches",
+                "Use `trim_end(pat=...)` instead.",
+            );
+            let pat = args.must_get::<&str>("pat")?;
+            Ok(Value::from(s.trim_end_matches(pat)))
+        },
+    );
+    tera.register_filter(
+        "slice",
+        move |arr: &[Value], args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-slice",
+                "slice",
+                "Use Tera 2 slice syntax like `array[start:end]` instead.",
+            );
+            let len = arr.len();
+            let start = args
+                .get::<i64>("start")?
+                .map(|start| tera_v1_slice_index(start, len))
+                .unwrap_or_default();
+            let end = args
+                .get::<i64>("end")?
+                .map(|end| tera_v1_slice_index(end, len))
+                .unwrap_or(len);
+
+            if start >= end {
+                Ok(Value::from(Vec::<Value>::new()))
+            } else {
+                Ok(Value::from(arr[start..end].to_vec()))
+            }
+        },
+    );
+    tera.register_filter(
+        "concat",
+        move |arr: &[Value], args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-concat",
+                "concat",
+                "Use Tera 2 spread syntax instead.",
+            );
+            let mut out = arr.to_vec();
+            let value = args.must_get::<Value>("with")?;
+            if let Some(values) = value.as_array() {
+                out.extend_from_slice(values);
+            } else {
+                out.push(value);
+            }
+            Ok(Value::from(out))
+        },
+    );
+    tera.register_filter(
+        "map",
+        move |arr: &[Value], args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-map",
+                "map",
+                "Use Tera 2 list comprehension instead.",
+            );
+            let attribute = args.must_get::<&str>("attribute")?;
+            Ok(Value::from(
+                arr.iter()
+                    .filter_map(|v| v.get_from_path(attribute))
+                    .filter(|v| !v.is_none())
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            ))
+        },
+    );
+    tera.register_filter(
+        "filter",
+        move |arr: &[Value], args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-filter",
+                "filter",
+                "Use Tera 2 list comprehension instead.",
+            );
+            let attribute = args.must_get::<&str>("attribute")?;
+            let expected = args.get::<Value>("value")?;
+            Ok(Value::from(
+                arr.iter()
+                    .filter(|v| {
+                        let Some(actual) = v.get_from_path(attribute) else {
+                            return false;
+                        };
+                        match &expected {
+                            Some(expected) => actual == expected,
+                            None => tera_v1_truthy(actual),
+                        }
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            ))
+        },
+    );
     tera.register_filter("kebabcase", move |s: &str, _: Kwargs, _: &State| {
         Value::from(s.to_kebab_case())
     });
@@ -287,6 +826,29 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
     tera.register_test("exists", move |s: &str, _: Kwargs, _: &State| {
         Path::new(s).exists()
     });
+    tera.register_test("object", move |value: &Value, _: Kwargs, _: &State| {
+        warn_tera_v1_filter("tera-v1-object-test", "object test", "Use `map` instead.");
+        value.is_map()
+    });
+    tera.register_test(
+        "divisibleby",
+        move |value: Value, args: Kwargs, _: &State| -> TeraResult<bool> {
+            warn_tera_v1_filter(
+                "tera-v1-divisibleby-test",
+                "divisibleby test",
+                "Use `divisible_by` instead.",
+            );
+            let divisor = args.must_get::<i128>("divisor")?;
+            if divisor == 0 {
+                return Ok(false);
+            }
+            let value = value
+                .as_number()
+                .and_then(|n| n.as_integer())
+                .ok_or_else(|| tera_err("divisibleby test expects an integer"))?;
+            Ok(value.checked_rem_euclid(divisor).is_some_and(|r| r == 0))
+        },
+    );
     tera.register_test(
         "semver_matching",
         move |version: &str, args: Kwargs, _: &State| -> TeraResult<bool> {
@@ -921,6 +1483,87 @@ mod tests {
         tera_ctx.insert("cwd", "/");
         let mut tera = get_tera_for_target(None, os, arch);
         render_str(&mut tera, s, &tera_ctx).unwrap()
+    }
+
+    #[test]
+    fn test_tera_v1_compat_filters() {
+        assert_eq!(
+            render("v{{ 'v0.80.0' | trim_start_matches(pat='v') }}"),
+            "v0.80.0"
+        );
+        assert_eq!(
+            render("{{ 'v0.80.0' | trim_start_matches(pat='v') }}"),
+            "0.80.0"
+        );
+        assert_eq!(
+            render("{{ '0.80.0.tar.gz' | trim_end_matches(pat='.tar.gz') }}"),
+            "0.80.0"
+        );
+        assert_eq!(
+            render("{{ '1.12.6' | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}"),
+            "1.12"
+        );
+        assert_eq!(
+            render("{{ '1.12.6' | split(pat='.') | slice(start=-2) | join(sep='.') }}"),
+            "12.6"
+        );
+        assert_eq!(
+            render("{{ ('1.12.6' | split(pat='.'))[0:2] | join(sep='.') }}"),
+            "1.12"
+        );
+        assert_eq!(
+            render("{{ ('a/b/c' | split(pat='/'))[0] ~ '/mod.rs' }}"),
+            "a/mod.rs"
+        );
+        assert_eq!(render("{{ ['a'] | concat(with=['b']) | join }}"), "ab");
+        assert_eq!(
+            render(
+                "{{ [{'name': 'alice', 'active': true}, {'name': 'bob', 'active': false}] | map(attribute='name') | join(sep=',') }}"
+            ),
+            "alice,bob"
+        );
+        assert_eq!(
+            render(
+                "{{ [{'name': 'alice', 'active': true}, {'name': 'bob', 'active': false}] | filter(attribute='active', value=true) | length }}"
+            ),
+            "1"
+        );
+        assert_eq!(
+            render(
+                "{{ [{'name': 'alice', 'active': true}, {'name': 'bob', 'active': false}] | filter(attribute='active') | map(attribute='name') | join(sep=',') }}"
+            ),
+            "alice"
+        );
+        assert_eq!(render("{{ '<b>x</b>' | striptags }}"), "x");
+        assert_eq!(
+            render("{{ '<b> x </b> <i>y</i>' | spaceless }}"),
+            "<b> x </b><i>y</i>"
+        );
+        assert_eq!(render(r#"{{ "a'b" | addslashes }}"#), r#"a\'b"#);
+        assert_eq!(render("{{ 'Hello, world!' | slugify }}"), "hello-world");
+        assert_eq!(render("{{ 'a b' | urlencode }}"), "a%20b");
+        assert_eq!(render("{{ 'a/b c' | urlencode }}"), "a/b%20c");
+        assert_eq!(render("{{ 'a/b c' | urlencode_strict }}"), "a%2Fb%20c");
+        assert_eq!(render("{{ '<br>' | escape }}"), "&lt;br&gt;");
+        assert_eq!(render("{{ 'a\nb' | linebreaksbr }}"), "a<br>b");
+        assert_eq!(render("{{ {'ok': true} | json_encode }}"), r#"{"ok":true}"#);
+        assert_eq!(render("{{ 0 | date(format='%Y-%m-%d') }}"), "1970-01-01");
+        assert_eq!(render("{{ 'abc' | truncate }}"), "abc");
+        assert_eq!(render("{{ 'a\nb' | indent(prefix='>') }}"), "a\n>b");
+        assert_eq!(render("{{ 'nope' | int(default=7) }}"), "7");
+        assert_eq!(render("{{ 'nope' | float(default=1.5) }}"), "1.5");
+        assert_eq!(render("{{ [] | first }}"), "");
+        assert_eq!(render("{{ [] | last }}"), "");
+        assert_eq!(render("{{ 'abc' | first }}"), "a");
+        assert_eq!(render("{{ 'abc' | last }}"), "c");
+        assert_eq!(render("{{ [] | nth(n=0) }}"), "");
+        assert_eq!(render("{{ ['a', 'A'] | unique | join }}"), "a");
+        assert_eq!(
+            render("{{ ['a', 'A'] | unique(case_sensitive=false) | join }}"),
+            "a"
+        );
+        assert_eq!(render("{{ {'ok': true} is object }}"), "true");
+        assert_eq!(render("{{ 6 is divisibleby(divisor=3) }}"), "true");
     }
 
     #[tokio::test]
