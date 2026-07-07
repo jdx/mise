@@ -1,5 +1,24 @@
 # Changelog
 
+## [2026.7.2](https://github.com/jdx/mise/compare/v2026.7.1..v2026.7.2) - 2026-07-07
+
+### 🐛 Bug Fixes
+
+- **(config)** restore get_env template helper by @jdx in [#10830](https://github.com/jdx/mise/pull/10830)
+- **(config)** warn for deprecated settings from sources by @jdx in [#10832](https://github.com/jdx/mise/pull/10832)
+- **(file)** support pax sparse tar extraction by @JamBalaya56562 in [#10821](https://github.com/jdx/mise/pull/10821)
+- **(registry)** add rename_exe for podman to fix installed binary name by @konono in [#10822](https://github.com/jdx/mise/pull/10822)
+- **(vfox)** flush downloaded files before returning by @jdx in [#10833](https://github.com/jdx/mise/pull/10833)
+- accept scoped release tags in cached GitHub asset URLs by @zeitlinger in [#10750](https://github.com/jdx/mise/pull/10750)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`koki-develop/ghasec`](https://github.com/koki-develop/ghasec)
+- [`mpyw/suve`](https://github.com/mpyw/suve)
+- [`sivchari/gopls-lazy`](https://github.com/sivchari/gopls-lazy)
+
 ## [2026.7.1](https://github.com/jdx/mise/compare/v2026.7.0..v2026.7.1) - 2026-07-07
 
 ### 🚀 Features
