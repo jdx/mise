@@ -3,5 +3,8 @@ description = "Podman: A tool for managing OCI containers and pods"
 [[backends]]
 full = "github:podman-container-tools/podman"
 
+[backends.options]
+rename_exe = "podman"
+
 [[backends]]
 full = "asdf:tvon/asdf-podman"
