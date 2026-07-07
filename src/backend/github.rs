@@ -23,7 +23,7 @@ use crate::{backend::Backend, forgejo, github, gitlab};
 use async_trait::async_trait;
 use eyre::Result;
 use regex::Regex;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 use xx::regex;
@@ -100,15 +100,25 @@ impl<'a> GitBackendOptions<'a> {
     }
 
     fn filter_bins(&self) -> Option<Vec<String>> {
-        self.values
-            .platform_string("filter_bins")
-            .map(|filter_bins| {
-                filter_bins
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect()
-            })
+        self.parse_filter_bins(self.values.platform_value_without_base("filter_bins"))
+            .or_else(|| self.parse_filter_bins(self.values.raw().opts.get("filter_bins")))
+    }
+
+    fn parse_filter_bins(&self, value: Option<&toml::Value>) -> Option<Vec<String>> {
+        let bins: Vec<String> = match value? {
+            toml::Value::String(filter_bins) => filter_bins
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+            toml::Value::Array(values) => values
+                .iter()
+                .filter_map(|value| value.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect(),
+            _ => return None,
+        };
+        if bins.is_empty() { None } else { Some(bins) }
     }
 
     /// Substring an asset name must contain to remain a candidate, applied as a
@@ -2257,11 +2267,11 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
     // Register target-aware os() and arch() functions that use the target platform
     // instead of the compile-time platform
     let make_remapping_fn = |value: String| {
-        move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
-            if let Some(s) = args.get(value.as_str()).and_then(|v| v.as_str()) {
-                Ok(tera::Value::String(s.to_string()))
+        move |args: tera::Kwargs, _: &tera::State| -> tera::TeraResult<tera::Value> {
+            if let Some(s) = args.get::<&str>(&value)? {
+                Ok(tera::Value::from(s))
             } else {
-                Ok(tera::Value::String(value.clone()))
+                Ok(tera::Value::from(value.clone()))
             }
         }
     };
@@ -2301,6 +2311,60 @@ mod tests {
             "forgejo:test/repo".to_string(),
             Some("forgejo:test/repo".to_string()),
         ))
+    }
+
+    #[test]
+    fn test_filter_bins_accepts_string_or_array() {
+        let backend = create_test_backend();
+
+        let mut string_opts = ToolVersionOptions::default();
+        string_opts.opts.insert(
+            "filter_bins".to_string(),
+            toml::Value::String("foo, bar, ".to_string()),
+        );
+        assert_eq!(
+            backend.options(&string_opts).filter_bins(),
+            Some(vec!["foo".to_string(), "bar".to_string()])
+        );
+
+        let mut array_opts = ToolVersionOptions::default();
+        array_opts.opts.insert(
+            "filter_bins".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("foo".to_string()),
+                toml::Value::String(" bar ".to_string()),
+                toml::Value::String("".to_string()),
+            ]),
+        );
+        assert_eq!(
+            backend.options(&array_opts).filter_bins(),
+            Some(vec!["foo".to_string(), "bar".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_filter_bins_falls_back_to_base_when_platform_value_is_empty() {
+        use crate::backend::static_helpers::platform_aliases;
+
+        let backend = create_test_backend();
+        let (os, arch) = platform_aliases().into_iter().next().unwrap();
+        let mut linux = toml::Table::new();
+        linux.insert("filter_bins".into(), toml::Value::Array(vec![]));
+        let mut platforms = toml::Table::new();
+        platforms.insert(format!("{os}-{arch}"), toml::Value::Table(linux));
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "filter_bins".to_string(),
+            toml::Value::String("base-bin".to_string()),
+        );
+        opts.opts
+            .insert("platforms".to_string(), toml::Value::Table(platforms));
+
+        assert_eq!(
+            backend.options(&opts).filter_bins(),
+            Some(vec!["base-bin".to_string()])
+        );
     }
 
     #[test]

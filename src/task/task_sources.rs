@@ -88,7 +88,7 @@ impl TaskOutputs {
                 let raw = files.clone();
                 let original_env = ctx
                     .get("env")
-                    .and_then(|v| serde_json::from_value(v.clone()).ok());
+                    .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok());
                 for file in files.iter_mut() {
                     if contains_template_syntax(file) {
                         *file = render_str(tera, file, ctx)?;

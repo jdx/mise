@@ -1,0 +1,3 @@
+backends = ["github:microsoft/apm"]
+description = "Agent Package Manager"
+test = { cmd = "apm --version", expected = "{{version}}" }

@@ -4,7 +4,7 @@ description: "Cache and install mise tools with rate limit handling"
 runs:
   using: "composite"
   steps:
-    - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
         restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-

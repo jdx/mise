@@ -1,6 +1,6 @@
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
-use crate::backend::options::{BackendOptions, is_truthy};
+use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::try_with_v_prefix;
@@ -74,7 +74,7 @@ impl<'a> UbiOptions<'a> {
     }
 
     fn extract_all(&self) -> bool {
-        self.values.str("extract_all").is_some_and(is_truthy)
+        self.values.bool("extract_all")
     }
 
     fn exe(&self) -> Option<&'a str> {
@@ -572,4 +572,32 @@ async fn install(
         RT.block_on(async { ubi.install_binary().await })
             .map_err(|e| eyre::eyre!("{e:#}"))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_all_accepts_native_bool_or_string() {
+        let mut bool_opts = ToolVersionOptions::default();
+        bool_opts
+            .opts
+            .insert("extract_all".to_string(), toml::Value::Boolean(true));
+        assert!(UbiOptions::new(&bool_opts).extract_all());
+
+        let mut string_opts = ToolVersionOptions::default();
+        string_opts.opts.insert(
+            "extract_all".to_string(),
+            toml::Value::String("true".to_string()),
+        );
+        assert!(UbiOptions::new(&string_opts).extract_all());
+
+        let mut invalid_opts = ToolVersionOptions::default();
+        invalid_opts.opts.insert(
+            "extract_all".to_string(),
+            toml::Value::String("yes".to_string()),
+        );
+        assert!(!UbiOptions::new(&invalid_opts).extract_all());
+    }
 }

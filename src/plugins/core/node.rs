@@ -129,12 +129,21 @@ impl NodePlugin {
             FetchOutcome::Downloaded => Ok(()),
             FetchOutcome::NotFound => {
                 if ctx.locked {
+                    if let Some(message) = node_flavor_not_found_message(opts) {
+                        bail!("{message}\nlocked mode requires the locked precompiled artifact")
+                    }
                     bail!(
                         "precompiled node archive not found and locked mode requires the locked precompiled artifact"
                     )
                 } else if Settings::get().node.compile != Some(false) {
+                    if let Some(message) = node_flavor_not_found_message(opts) {
+                        warn!("{message}");
+                    }
                     self.install_compiling(ctx, tv, opts).await
                 } else {
+                    if let Some(message) = node_flavor_not_found_message(opts) {
+                        bail!("{message}\ncompilation is disabled")
+                    }
                     bail!("precompiled node archive not found and compilation is disabled")
                 }
             }
@@ -1086,6 +1095,19 @@ fn mirror_url_for(node: &crate::config::settings::SettingsNode, filename: &str) 
     mirror
 }
 
+fn node_flavor_not_found_message(opts: &BuildOpts) -> Option<String> {
+    let settings = Settings::get();
+    let flavor = settings.node.flavor.as_deref()?;
+    Some(format!(
+        "precompiled node archive not found for node.flavor={flavor:?}: {}\n\
+         Node flavors are published by the unofficial builds project. Try:\n  \
+         mise settings set node.mirror_url {UNOFFICIAL_NODE_MIRROR_URL}\n  \
+         mise settings set node.flavor {flavor}\n\
+         or unset node.flavor to use official Node binaries.",
+        opts.binary_tarball_url
+    ))
+}
+
 fn os() -> &'static str {
     NodePlugin::map_os(built_info::CFG_OS)
 }
@@ -1292,6 +1314,39 @@ mod tests {
         let musl = mirror_url_for(&node, "node-v24.14.0-linux-x64-musl.tar.gz");
         assert_eq!(glibc.as_str(), "https://corp.example/node/");
         assert_eq!(musl.as_str(), "https://corp.example/node/");
+    }
+
+    #[test]
+    fn test_node_flavor_not_found_message_is_flavor_specific() {
+        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _guard = SettingsResetGuard { _lock: lock };
+        let mut settings = SettingsPartial::empty();
+        settings.node.flavor = Some("glibc-217".to_string());
+        Settings::reset(Some(settings));
+
+        let opts = BuildOpts {
+            version: "24.14.0".to_string(),
+            path: vec![],
+            install_path: PathBuf::from("node-v24.14.0"),
+            build_dir: PathBuf::from("node-v24.14.0"),
+            configure_cmd: "./configure".to_string(),
+            make_cmd: "make".to_string(),
+            make_install_cmd: "make install".to_string(),
+            source_tarball_name: "node-v24.14.0.tar.gz".to_string(),
+            source_tarball_path: PathBuf::from("node-v24.14.0.tar.gz"),
+            source_tarball_url: Url::parse("https://nodejs.org/dist/v24.14.0/node-v24.14.0.tar.gz")
+                .unwrap(),
+            binary_tarball_name: "node-v24.14.0-linux-x64-glibc-217.tar.gz".to_string(),
+            binary_tarball_path: PathBuf::from("node-v24.14.0-linux-x64-glibc-217.tar.gz"),
+            binary_tarball_url: Url::parse(
+                "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-x64-glibc-217.tar.gz",
+            )
+            .unwrap(),
+        };
+
+        let message = node_flavor_not_found_message(&opts).unwrap();
+        assert!(message.contains("node.flavor=\"glibc-217\""));
+        assert!(message.contains(UNOFFICIAL_NODE_MIRROR_URL));
     }
 
     #[test]

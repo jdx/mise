@@ -394,14 +394,15 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
         BlockSource::File(p) => file::read_to_string(p)?,
     };
     let content = if *template {
-        let mut tera = crate::tera::get_tera(Some(&req.base));
-        tera.render_str(&raw, &config.tera_ctx).map_err(|err| {
-            eyre::eyre!(
-                "[dotfiles].\"{}/{}\": failed to render template: {err}",
-                req.path_raw,
-                req.id
-            )
-        })?
+        let tera = crate::tera::get_tera(Some(&req.base));
+        tera.render_str(&raw, &config.tera_ctx, false)
+            .map_err(|err| {
+                eyre::eyre!(
+                    "[dotfiles].\"{}/{}\": failed to render template: {err}",
+                    req.path_raw,
+                    req.id
+                )
+            })?
     } else {
         raw
     };

@@ -1513,7 +1513,7 @@ impl Task {
         directives.extend(self.overlay_vars.iter().cloned());
         let template_env: EnvMap = tera_ctx
             .get("env")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok())
             .unwrap_or_else(|| env::PRISTINE_ENV.clone());
         let results = EnvResults::resolve(
             config,
@@ -1535,7 +1535,7 @@ impl Task {
             .collect();
         let mut redaction_vars: EnvMap = tera_ctx
             .get("vars")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok())
             .unwrap_or_default();
         redaction_vars.extend(vars.clone());
         config.add_redactions(results.redactions.iter().cloned(), &redaction_vars);
@@ -2611,7 +2611,7 @@ pub async fn parse_usage_values_from_task(
     // Templates referencing `{{ usage.cmd }}` should still resolve (to "") when
     // subcommands are defined in the spec but none was selected.
     if !spec.cmd.subcommands.is_empty() && !values.contains_key("cmd") {
-        values.insert("cmd".to_string(), tera::Value::String(String::new()));
+        values.insert("cmd".to_string(), tera::Value::from(String::new()));
     }
     Ok(values)
 }

@@ -103,16 +103,6 @@ depends = ["render:usage"]
 env = { NO_COLOR = "1" }
 run = "usage generate manpage --file mise.usage.kdl > man/man1/mise.1"
 
-["render:fig"]
-description = 'Generate Fig completion spec'
-wait_for = ["render:completions"]
-run = [
-  "usage generate fig --file mise.usage.kdl --out-file xtasks/fig/src/mise.ts",
-  "tsx xtasks/fig/addCustomGenerators.ts xtasks/fig/src/mise.ts xtasks/fig/src/mise.ts",
-  "bun run lint-fig:fix",
-]
-depends = ['docs:setup']
-
 ["render:help"]
 description = 'Render help documentation'
 depends = ["build"]

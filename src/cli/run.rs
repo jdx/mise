@@ -279,7 +279,7 @@ impl Run {
 
                     if has_any_usage_spec(&spec) {
                         // Task has usage spec defined, render help using usage library
-                        println!("{}", usage::docs::cli::render_help(&spec, &spec.cmd, true));
+                        println!("{}", render_usage_help(&spec, &self.args));
                     } else {
                         // Task has no usage defined, show basic task info
                         display_task_help(task)?;
@@ -877,6 +877,64 @@ fn display_task_help(task: &Task) -> Result<()> {
     miseprintln!("{hint}");
     miseprintln!("See https://mise.en.dev/tasks/task-configuration.html for more information.");
     Ok(())
+}
+
+fn render_usage_help(spec: &usage::Spec, args: &[String]) -> String {
+    let cmd = usage_command_for_args(spec, args);
+    usage::docs::cli::render_help(spec, cmd, true)
+}
+
+fn usage_command_for_args<'a>(spec: &'a usage::Spec, args: &[String]) -> &'a usage::SpecCommand {
+    let mut cmd = &spec.cmd;
+    let mut idx = 0;
+    let mut used_default_subcommand = false;
+
+    while idx < args.len() {
+        let arg = &args[idx];
+        if arg == "-h" || arg == "--help" {
+            break;
+        }
+        if let Some(subcommand) = cmd.find_subcommand(arg) {
+            cmd = subcommand;
+            idx += 1;
+            continue;
+        }
+        if arg.starts_with('-') {
+            if !arg.contains('=')
+                && (flag_takes_value(&spec.cmd, arg) || flag_takes_value(cmd, arg))
+            {
+                idx += 1;
+            }
+            idx += 1;
+            continue;
+        }
+        if !used_default_subcommand
+            && let Some(default_name) = &spec.default_subcommand
+            && let Some(subcommand) = cmd.find_subcommand(default_name)
+        {
+            cmd = subcommand;
+            used_default_subcommand = true;
+            continue;
+        }
+        break;
+    }
+
+    cmd
+}
+
+fn flag_takes_value(cmd: &usage::SpecCommand, flag: &str) -> bool {
+    let flag = flag.split_once('=').map(|(flag, _)| flag).unwrap_or(flag);
+    if let Some(long) = flag.strip_prefix("--") {
+        cmd.flags
+            .iter()
+            .any(|f| f.arg.is_some() && f.long.iter().any(|f| f == long))
+    } else if let Some(short) = flag.strip_prefix('-').and_then(|f| f.chars().next()) {
+        cmd.flags
+            .iter()
+            .any(|f| f.arg.is_some() && f.short.contains(&short))
+    } else {
+        false
+    }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

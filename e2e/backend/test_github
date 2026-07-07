@@ -37,6 +37,16 @@ mise uninstall github:jdx/mise-test-fixtures
 mise install
 assert_contains "mise x -- hello-world" "hello world"
 
+# Test GitHub backend with a raw file asset and rename_exe
+cat <<EOF >mise.toml
+[tools]
+"github:jdx/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world", rename_exe = "hello-renamed" }
+EOF
+
+mise uninstall github:jdx/mise-test-fixtures
+mise install
+assert_contains "mise x -- hello-renamed" "hello world"
+
 # Test GitHub backend with mise.lock checksum generation
 export MISE_LOCKFILE=1
 export MISE_EXPERIMENTAL=1

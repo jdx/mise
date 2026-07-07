@@ -1,16 +1,17 @@
-use std::collections::HashMap;
 use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, Utc};
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
 };
 use path_absolutize::Absolutize;
 use rand::prelude::*;
+use regex::Regex;
 use std::sync::LazyLock as Lazy;
-use tera::{Context, Tera, Value};
+use tera::{Context, Kwargs, State, Tera, TeraResult, Value};
 use versions::{Requirement, Versioning};
 
 use crate::cache::CacheManagerBuilder;
@@ -51,8 +52,180 @@ pub fn contains_template_syntax(input: &str) -> bool {
     input.contains("{{") || input.contains("{%") || input.contains("{#")
 }
 
-pub fn render_str(tera: &mut Tera, input: &str, context: &Context) -> tera::Result<String> {
-    tera.render_str(input, context)
+pub fn render_str(tera: &mut Tera, input: &str, context: &Context) -> TeraResult<String> {
+    tera.render_str(input, context, false)
+}
+
+fn tera_err(message: impl ToString) -> tera::Error {
+    tera::Error::message(message)
+}
+
+fn warn_tera_v1_filter(id: &'static str, name: &str, replacement: &str) {
+    deprecated_at!(
+        "2026.10.0",
+        "2027.4.0",
+        id,
+        "Tera v1 template helper `{name}` is deprecated in mise templates. {replacement}"
+    );
+}
+
+fn tera_v1_slice_index(index: i64, len: usize) -> usize {
+    if index < 0 {
+        len.saturating_sub(index.unsigned_abs() as usize)
+    } else {
+        (index as usize).min(len)
+    }
+}
+
+fn escape_html(s: &str) -> String {
+    let mut output = String::with_capacity(s.len() * 2);
+    for c in s.chars() {
+        match c {
+            '&' => output.push_str("&amp;"),
+            '<' => output.push_str("&lt;"),
+            '>' => output.push_str("&gt;"),
+            '"' => output.push_str("&quot;"),
+            '\'' => output.push_str("&#x27;"),
+            _ => output.push(c),
+        }
+    }
+    output
+}
+
+fn slugify(s: &str) -> String {
+    let mut out = String::new();
+    let mut previous_dash = false;
+    for c in s.chars().flat_map(char::to_lowercase) {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            previous_dash = false;
+        } else if !previous_dash && !out.is_empty() {
+            out.push('-');
+            previous_dash = true;
+        }
+    }
+    if previous_dash {
+        out.pop();
+    }
+    out
+}
+
+fn tera_v1_truthy(value: &Value) -> bool {
+    if value.is_none() {
+        false
+    } else if let Some(b) = value.as_bool() {
+        b
+    } else if let Some(s) = value.as_str() {
+        !s.is_empty()
+    } else if let Some(arr) = value.as_array() {
+        !arr.is_empty()
+    } else if let Some(map) = value.as_map() {
+        !map.is_empty()
+    } else if let Some(n) = value.as_number() {
+        n.as_integer().is_some_and(|n| n != 0) || value.as_f64().is_some_and(|n| n != 0.0)
+    } else {
+        true
+    }
+}
+
+fn tera_v1_date(value: Value, args: Kwargs) -> TeraResult<Value> {
+    let format = args.get::<&str>("format")?.unwrap_or("%Y-%m-%d");
+    let formatted = if let Some(n) = value.as_number() {
+        let ts = n
+            .as_integer()
+            .ok_or_else(|| tera_err(format!("Filter `date` was invoked on a float: {value}")))?;
+        let ts = i64::try_from(ts)
+            .map_err(|_| tera_err(format!("Filter `date` timestamp is out of range: {value}")))?;
+        DateTime::<Utc>::from_timestamp(ts, 0)
+            .ok_or_else(|| tera_err(format!("Filter `date` timestamp is out of range: {ts}")))?
+            .format(format)
+            .to_string()
+    } else if let Some(s) = value.as_str() {
+        if s.contains('T') {
+            match DateTime::<FixedOffset>::parse_from_rfc3339(s) {
+                Ok(dt) => dt.format(format).to_string(),
+                Err(_) => NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
+                    .map(|dt| dt.format(format).to_string())
+                    .map_err(|_| tera_err(format!("Error parsing `{s:?}` as a date")))?,
+            }
+        } else {
+            NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .map(|dt| dt.format(format).to_string())
+                .map_err(|_| tera_err(format!("Error parsing `{s:?}` as YYYY-MM-DD date")))?
+        }
+    } else {
+        return Err(tera_err(format!(
+            "Filter `date` expected an integer timestamp or string, got {}",
+            value.name()
+        )));
+    };
+
+    Ok(Value::from(formatted))
+}
+
+fn tera_v1_int(value: Value, args: Kwargs) -> TeraResult<Value> {
+    let default = args.get::<i64>("default")?;
+    let base = args.get::<u32>("base")?.unwrap_or(10);
+    if !(2..=36).contains(&base) {
+        return Err(tera_err(format!(
+            "int filter `base` must be between 2 and 36, got {base}"
+        )));
+    }
+
+    let fallback = || {
+        warn_tera_v1_filter(
+            "tera-v1-int-default",
+            "int(default=...)",
+            "Invalid integer conversions should be handled explicitly.",
+        );
+        Ok(Value::from(default.unwrap_or_default()))
+    };
+
+    if let Some(s) = value.as_str() {
+        let s = s.trim();
+        let s = match base {
+            2 => s.trim_start_matches("0b"),
+            8 => s.trim_start_matches("0o"),
+            16 => s.trim_start_matches("0x"),
+            _ => s,
+        };
+        match i128::from_str_radix(s, base) {
+            Ok(v) => Ok(Value::from(v)),
+            Err(_) if s.contains('.') => match s.parse::<f64>() {
+                Ok(f) => Ok(Value::from(f as i128)),
+                Err(_) => fallback(),
+            },
+            Err(_) => fallback(),
+        }
+    } else {
+        value
+            .as_number()
+            .and_then(|n| n.as_integer())
+            .map(Value::from)
+            .ok_or_else(|| tera_err("Filter `int` received an unexpected type"))
+    }
+}
+
+fn tera_v1_float(value: Value, args: Kwargs) -> TeraResult<Value> {
+    let default = args.get::<f64>("default")?;
+    if let Some(s) = value.as_str() {
+        match s.trim().parse::<f64>() {
+            Ok(f) => Ok(Value::from(f)),
+            Err(_) => {
+                warn_tera_v1_filter(
+                    "tera-v1-float-default",
+                    "float(default=...)",
+                    "Invalid float conversions should be handled explicitly.",
+                );
+                Ok(Value::from(default.unwrap_or_default()))
+            }
+        }
+    } else {
+        value
+            .as_f64()
+            .map(Value::from)
+            .ok_or_else(|| tera_err("Filter `float` received an unexpected type"))
+    }
 }
 
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
@@ -77,7 +250,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
     let mut tera = Tera::default();
     tera.register_function(
         "arch",
-        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+        move |args: Kwargs, _: &State| -> TeraResult<Value> {
             let arch = if cfg!(target_arch = "x86_64") {
                 "x64"
             } else if cfg!(target_arch = "aarch64") {
@@ -86,71 +259,50 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                 env::consts::ARCH
             };
             // Check if there's a remap for this arch
-            if let Some(remapped) = args.get(arch)
-                && let Some(s) = remapped.as_str()
-            {
-                return Ok(Value::String(s.to_string()));
+            if let Some(remapped) = args.get::<&str>(arch)? {
+                return Ok(Value::from(remapped));
             }
-            Ok(Value::String(arch.to_string()))
+            Ok(Value::from(arch))
         },
     );
     tera.register_function(
         "num_cpus",
-        move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
+        move |_: Kwargs, _: &State| -> TeraResult<Value> {
             let num = num_cpus::get();
-            Ok(Value::String(num.to_string()))
+            Ok(Value::from(num.to_string()))
         },
     );
-    tera.register_function(
-        "os",
-        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-            let os = env::consts::OS;
-            // Check if there's a remap for this OS
-            if let Some(remapped) = args.get(os)
-                && let Some(s) = remapped.as_str()
-            {
-                return Ok(Value::String(s.to_string()));
-            }
-            Ok(Value::String(os.to_string()))
-        },
-    );
+    tera.register_function("os", move |args: Kwargs, _: &State| -> TeraResult<Value> {
+        let os = env::consts::OS;
+        // Check if there's a remap for this OS
+        if let Some(remapped) = args.get::<&str>(os)? {
+            return Ok(Value::from(remapped));
+        }
+        Ok(Value::from(os))
+    });
     tera.register_function(
         "os_family",
-        move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
-            Ok(Value::String(env::consts::FAMILY.to_string()))
-        },
+        move |_: Kwargs, _: &State| -> TeraResult<Value> { Ok(Value::from(env::consts::FAMILY)) },
     );
     tera.register_function(
         "choice",
-        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-            match args.get("n") {
-                Some(Value::Number(n)) => {
-                    let n = n.as_u64().unwrap();
-                    match args.get("alphabet") {
-                        Some(Value::String(alphabet)) => {
-                            let alphabet = alphabet.chars().collect::<Vec<char>>();
-                            let mut rng = rand::rng();
-                            let result =
-                                (0..n).map(|_| alphabet.choose(&mut rng).unwrap()).collect();
-                            Ok(Value::String(result))
-                        }
-                        _ => Err("choice alphabet must be a string".into()),
-                    }
-                }
-                _ => Err("choice n must be an integer".into()),
-            }
+        move |args: Kwargs, _: &State| -> TeraResult<Value> {
+            let n = args.must_get::<u64>("n")?;
+            let alphabet = args.must_get::<&str>("alphabet")?;
+            let alphabet = alphabet.chars().collect::<Vec<char>>();
+            let mut rng = rand::rng();
+            let result: String = (0..n)
+                .map(|_| *alphabet.choose(&mut rng).unwrap())
+                .collect();
+            Ok(Value::from(result))
         },
     );
     tera.register_function(
         "haiku",
-        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-            let words = args
-                .get("words")
-                .and_then(Value::as_u64)
-                .unwrap_or(2)
-                .max(1) as usize;
-            let separator = args.get("separator").and_then(Value::as_str).unwrap_or("-");
-            let digits = args.get("digits").and_then(Value::as_u64).unwrap_or(2) as usize;
+        move |args: Kwargs, _: &State| -> TeraResult<Value> {
+            let words = args.get::<u64>("words")?.unwrap_or(2).max(1) as usize;
+            let separator = args.get::<&str>("separator")?.unwrap_or("-");
+            let digits = args.get::<u64>("digits")?.unwrap_or(2) as usize;
 
             let result = xx::rand::haiku(&xx::rand::HaikuOptions {
                 words,
@@ -158,238 +310,553 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                 digits,
             });
 
-            Ok(Value::String(result))
+            Ok(Value::from(result))
         },
     );
     tera.register_filter(
         "hash_file",
-        move |input: &Value, args: &HashMap<String, Value>| match input {
-            Value::String(s) => {
-                let path = Path::new(s);
-                track_tera_file(path);
-                let mut hash = hash::file_hash_blake3(path, None).unwrap();
-                if let Some(len) = args.get("len").and_then(Value::as_u64) {
-                    hash = hash.chars().take(len as usize).collect();
-                }
-                Ok(Value::String(hash))
+        move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
+            let path = Path::new(s);
+            track_tera_file(path);
+            let mut hash = hash::file_hash_blake3(path, None).unwrap();
+            if let Some(len) = args.get::<u64>("len")? {
+                hash = hash.chars().take(len as usize).collect();
             }
-            _ => Err("hash input must be a string".into()),
+            Ok(Value::from(hash))
         },
     );
     tera.register_filter(
         "hash",
-        move |input: &Value, args: &HashMap<String, Value>| match input {
-            Value::String(s) => {
-                // Get the algorithm, default to sha256
-                let algorithm = args
-                    .get("algorithm")
-                    .and_then(Value::as_str)
-                    .unwrap_or("sha256");
+        move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
+            // Get the algorithm, default to sha256
+            let algorithm = args.get::<&str>("algorithm")?.unwrap_or("sha256");
 
-                let mut hash = match algorithm {
-                    "sha256" => hash::hash_sha256_to_str(s),
-                    "blake3" => hash::hash_blake3_to_str(s),
-                    _ => return Err(format!("unknown hash algorithm: {algorithm}").into()),
-                };
+            let mut hash = match algorithm {
+                "sha256" => hash::hash_sha256_to_str(s),
+                "blake3" => hash::hash_blake3_to_str(s),
+                _ => return Err(tera_err(format!("unknown hash algorithm: {algorithm}"))),
+            };
 
-                if let Some(len) = args.get("len").and_then(Value::as_u64) {
-                    hash = hash.chars().take(len as usize).collect();
-                }
-                Ok(Value::String(hash))
+            if let Some(len) = args.get::<u64>("len")? {
+                hash = hash.chars().take(len as usize).collect();
             }
-            _ => Err("hash input must be a string".into()),
+            Ok(Value::from(hash))
         },
     );
     tera.register_filter(
         "absolute",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => {
-                let p = Path::new(s).absolutize()?;
-                Ok(Value::String(p.to_string_lossy().to_string()))
-            }
-            _ => Err("absolute input must be a string".into()),
+        move |s: &str, _: Kwargs, _: &State| -> TeraResult<Value> {
+            let p = Path::new(s).absolutize()?;
+            Ok(Value::from(p.to_string_lossy().to_string()))
         },
     );
     tera.register_filter(
         "canonicalize",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => {
-                let p = Path::new(s).canonicalize()?;
-                Ok(Value::String(p.to_string_lossy().to_string()))
-            }
-            _ => Err("canonicalize input must be a string".into()),
+        move |s: &str, _: Kwargs, _: &State| -> TeraResult<Value> {
+            let p = Path::new(s).canonicalize()?;
+            Ok(Value::from(p.to_string_lossy().to_string()))
         },
     );
     // Helper to create path filters that handle empty strings gracefully
-    fn path_filter<F>(input: &Value, name: &'static str, f: F) -> tera::Result<Value>
+    fn path_filter<F>(input: &str, _name: &'static str, f: F) -> TeraResult<Value>
     where
         F: FnOnce(&Path) -> Option<String>,
     {
-        match input {
-            Value::String(s) if s.is_empty() => Ok(Value::String(String::new())),
-            Value::String(s) => Ok(Value::String(f(Path::new(s)).unwrap_or_default())),
-            _ => Err(format!("{name} input must be a string").into()),
+        if input.is_empty() {
+            Ok(Value::from(String::new()))
+        } else {
+            Ok(Value::from(f(Path::new(input)).unwrap_or_default()))
         }
     }
-    tera.register_filter(
-        "dirname",
-        move |input: &Value, _args: &HashMap<String, Value>| {
-            path_filter(input, "dirname", |p| {
-                p.parent().map(|p| p.to_string_lossy().to_string())
-            })
-        },
-    );
-    tera.register_filter(
-        "basename",
-        move |input: &Value, _args: &HashMap<String, Value>| {
-            path_filter(input, "basename", |p| {
-                p.file_name().map(|p| p.to_string_lossy().to_string())
-            })
-        },
-    );
-    tera.register_filter(
-        "extname",
-        move |input: &Value, _args: &HashMap<String, Value>| {
-            path_filter(input, "extname", |p| {
-                p.extension().map(|p| p.to_string_lossy().to_string())
-            })
-        },
-    );
-    tera.register_filter(
-        "file_stem",
-        move |input: &Value, _args: &HashMap<String, Value>| {
-            path_filter(input, "file_stem", |p| {
-                p.file_stem().map(|p| p.to_string_lossy().to_string())
-            })
-        },
-    );
+    tera.register_filter("dirname", move |input: &str, _: Kwargs, _: &State| {
+        path_filter(input, "dirname", |p| {
+            p.parent().map(|p| p.to_string_lossy().to_string())
+        })
+    });
+    tera.register_filter("basename", move |input: &str, _: Kwargs, _: &State| {
+        path_filter(input, "basename", |p| {
+            p.file_name().map(|p| p.to_string_lossy().to_string())
+        })
+    });
+    tera.register_filter("extname", move |input: &str, _: Kwargs, _: &State| {
+        path_filter(input, "extname", |p| {
+            p.extension().map(|p| p.to_string_lossy().to_string())
+        })
+    });
+    tera.register_filter("file_stem", move |input: &str, _: Kwargs, _: &State| {
+        path_filter(input, "file_stem", |p| {
+            p.file_stem().map(|p| p.to_string_lossy().to_string())
+        })
+    });
     tera.register_filter(
         "file_size",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => {
-                let p = Path::new(s);
-                track_tera_file(p);
-                let metadata = p.metadata()?;
-                let size = metadata.len();
-                Ok(Value::Number(size.into()))
-            }
-            _ => Err("file_size input must be a string".into()),
+        move |s: &str, _: Kwargs, _: &State| -> TeraResult<Value> {
+            let p = Path::new(s);
+            track_tera_file(p);
+            let metadata = p.metadata()?;
+            let size = metadata.len();
+            Ok(Value::from(size))
         },
     );
     tera.register_filter(
         "last_modified",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => {
-                let p = Path::new(s);
-                track_tera_file(p);
-                let metadata = p.metadata()?;
-                let modified = metadata.modified()?;
-                let modified = modified.duration_since(std::time::UNIX_EPOCH).unwrap();
-                Ok(Value::Number(modified.as_secs().into()))
-            }
-            _ => Err("last_modified input must be a string".into()),
+        move |s: &str, _: Kwargs, _: &State| -> TeraResult<Value> {
+            let p = Path::new(s);
+            track_tera_file(p);
+            let metadata = p.metadata()?;
+            let modified = metadata.modified()?;
+            let modified = modified.duration_since(std::time::UNIX_EPOCH).unwrap();
+            Ok(Value::from(modified.as_secs()))
         },
     );
     tera.register_filter(
         "join_path",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::Array(arr) => arr
-                .iter()
+        move |arr: &[Value], _: Kwargs, _: &State| -> TeraResult<Value> {
+            arr.iter()
                 .map(Value::as_str)
                 .collect::<Option<PathBuf>>()
-                .ok_or("join_path input must be an array of strings".into())
-                .map(|p| Value::String(p.to_string_lossy().to_string())),
-            _ => Err("join_path input must be an array of strings".into()),
+                .ok_or_else(|| tera_err("join_path input must be an array of strings"))
+                .map(|p| Value::from(p.to_string_lossy().to_string()))
         },
     );
     tera.register_filter(
         "quote",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => {
-                let result = format!("'{}'", s.replace("'", "\\'"));
+        move |s: &str, _: Kwargs, _: &State| -> TeraResult<Value> {
+            let result = format!("'{}'", s.replace("'", "\\'"));
 
-                Ok(Value::String(result))
-            }
-            _ => Err("quote input must be a string".into()),
+            Ok(Value::from(result))
         },
     );
+    tera.register_filter("as_str", move |value: Value, _: Kwargs, _: &State| {
+        warn_tera_v1_filter("tera-v1-as-str", "as_str", "Use `str` instead.");
+        value.to_string()
+    });
+    tera.register_filter("escape", move |s: &str, _: Kwargs, _: &State| {
+        warn_tera_v1_filter("tera-v1-escape", "escape", "Use `escape_html` instead.");
+        Value::from(escape_html(s))
+    });
+    tera.register_filter("linebreaksbr", move |s: &str, _: Kwargs, _: &State| {
+        warn_tera_v1_filter(
+            "tera-v1-linebreaksbr",
+            "linebreaksbr",
+            "Use `newlines_to_br` instead.",
+        );
+        Value::from(s.replace("\r\n", "<br>").replace(['\n', '\r'], "<br>"))
+    });
+    tera.register_filter("addslashes", move |s: &str, _: Kwargs, _: &State| {
+        warn_tera_v1_filter(
+            "tera-v1-addslashes",
+            "addslashes",
+            "Use an explicit string replacement instead.",
+        );
+        Value::from(
+            s.replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\'', "\\'"),
+        )
+    });
+    tera.register_filter("slugify", move |s: &str, _: Kwargs, _: &State| {
+        warn_tera_v1_filter(
+            "tera-v1-slugify",
+            "slugify",
+            "Use an explicit slug value or custom template logic instead.",
+        );
+        Value::from(slugify(s))
+    });
+    tera.register_filter("urlencode", move |s: &str, _: Kwargs, _: &State| {
+        warn_tera_v1_filter(
+            "tera-v1-urlencode",
+            "urlencode",
+            "Pre-encode URL components before rendering.",
+        );
+        Value::from(urlencoding::encode(s).replace("%2F", "/"))
+    });
+    tera.register_filter("urlencode_strict", move |s: &str, _: Kwargs, _: &State| {
+        warn_tera_v1_filter(
+            "tera-v1-urlencode-strict",
+            "urlencode_strict",
+            "Pre-encode URL components before rendering.",
+        );
+        Value::from(urlencoding::encode(s).into_owned())
+    });
+    tera.register_filter("striptags", move |s: &str, _: Kwargs, _: &State| {
+        static STRIPTAGS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"<[^>]*>").unwrap());
+        warn_tera_v1_filter(
+            "tera-v1-striptags",
+            "striptags",
+            "Strip tags before rendering or use custom template logic instead.",
+        );
+        Value::from(STRIPTAGS_RE.replace_all(s, "").to_string())
+    });
+    tera.register_filter("spaceless", move |s: &str, _: Kwargs, _: &State| {
+        static SPACELESS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r">\s+<").unwrap());
+        warn_tera_v1_filter(
+            "tera-v1-spaceless",
+            "spaceless",
+            "Minify whitespace before rendering or use custom template logic instead.",
+        );
+        Value::from(SPACELESS_RE.replace_all(s, "><").to_string())
+    });
     tera.register_filter(
-        "kebabcase",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => Ok(Value::String(s.to_kebab_case())),
-            _ => Err("kebabcase input must be a string".into()),
-        },
-    );
-    tera.register_filter(
-        "lowercamelcase",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => Ok(Value::String(s.to_lower_camel_case())),
-            _ => Err("lowercamelcase input must be a string".into()),
-        },
-    );
-    tera.register_filter(
-        "shoutykebabcase",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => Ok(Value::String(s.to_shouty_kebab_case())),
-            _ => Err("shoutykebabcase input must be a string".into()),
-        },
-    );
-    tera.register_filter(
-        "shoutysnakecase",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => Ok(Value::String(s.to_shouty_snake_case())),
-            _ => Err("shoutysnakecase input must be a string".into()),
-        },
-    );
-    tera.register_filter(
-        "snakecase",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => Ok(Value::String(s.to_snake_case())),
-            _ => Err("snakecase input must be a string".into()),
-        },
-    );
-    tera.register_filter(
-        "uppercamelcase",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => Ok(Value::String(s.to_upper_camel_case())),
-            _ => Err("uppercamelcase input must be a string".into()),
-        },
-    );
-    tera.register_tester(
-        "dir",
-        move |input: Option<&Value>, _args: &[Value]| match input {
-            Some(Value::String(s)) => Ok(Path::new(s).is_dir()),
-            _ => Err("is_dir input must be a string".into()),
-        },
-    );
-    tera.register_tester(
-        "file",
-        move |input: Option<&Value>, _args: &[Value]| match input {
-            Some(Value::String(s)) => Ok(Path::new(s).is_file()),
-            _ => Err("is_file input must be a string".into()),
-        },
-    );
-    tera.register_tester(
-        "exists",
-        move |input: Option<&Value>, _args: &[Value]| match input {
-            Some(Value::String(s)) => Ok(Path::new(s).exists()),
-            _ => Err("exists input must be a string".into()),
-        },
-    );
-    tera.register_tester(
-        "semver_matching",
-        move |input: Option<&Value>, args: &[Value]| match input {
-            Some(Value::String(version)) => match args.first() {
-                Some(Value::String(requirement)) => {
-                    println!("{requirement}");
-                    let result = Requirement::new(requirement)
-                        .unwrap()
-                        .matches(&Versioning::new(version).unwrap());
-                    Ok(result)
+        "truncate",
+        move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
+            let length = match args.get::<usize>("length")? {
+                Some(length) => length,
+                None => {
+                    warn_tera_v1_filter(
+                        "tera-v1-truncate-default-length",
+                        "truncate without length",
+                        "Pass `length=...` explicitly.",
+                    );
+                    255
                 }
-                _ => Err("semver_matching argument must be a string".into()),
-            },
-            _ => Err("semver_matching input must be a string".into()),
+            };
+            let end = args.get::<&str>("end")?.unwrap_or("…");
+            match s.char_indices().nth(length) {
+                Some((byte_idx, _)) => Ok(Value::from(s[..byte_idx].to_string() + end)),
+                None => Ok(Value::from(s)),
+            }
+        },
+    );
+    tera.register_filter(
+        "indent",
+        move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
+            let prefix = match args.get::<&str>("prefix")? {
+                Some(prefix) => {
+                    warn_tera_v1_filter(
+                        "tera-v1-indent-prefix",
+                        "indent(prefix=...)",
+                        "Use `indent(width=...)` instead.",
+                    );
+                    prefix.to_string()
+                }
+                None => " ".repeat(args.get::<usize>("width")?.unwrap_or(4).min(1000)),
+            };
+            let first = args.get::<bool>("first")?.unwrap_or(false);
+            let blank = args.get::<bool>("blank")?.unwrap_or(false);
+            let mut out = String::with_capacity(s.len() + prefix.len() * 2);
+            let mut first_line = true;
+            for line in s.lines() {
+                if first_line {
+                    if first {
+                        out.push_str(&prefix);
+                    }
+                    first_line = false;
+                } else {
+                    out.push('\n');
+                    if blank || !line.is_empty() {
+                        out.push_str(&prefix);
+                    }
+                }
+                out.push_str(line);
+            }
+            if s.ends_with('\n') {
+                out.push('\n');
+            }
+            Ok(Value::from(out))
+        },
+    );
+    tera.register_filter(
+        "int",
+        move |value: Value, args: Kwargs, _: &State| -> TeraResult<Value> {
+            tera_v1_int(value, args)
+        },
+    );
+    tera.register_filter(
+        "float",
+        move |value: Value, args: Kwargs, _: &State| -> TeraResult<Value> {
+            tera_v1_float(value, args)
+        },
+    );
+    tera.register_filter("first", move |value: Value, _: Kwargs, _: &State| {
+        if let Some(arr) = value.as_array() {
+            if arr.is_empty() {
+                warn_tera_v1_filter(
+                    "tera-v1-first-empty-string",
+                    "first on an empty array",
+                    "Tera 2 returns null for empty arrays.",
+                );
+                Value::from("")
+            } else {
+                arr[0].clone()
+            }
+        } else if let Some(s) = value.as_str() {
+            Value::from(s.chars().next().map(String::from).unwrap_or_default())
+        } else {
+            Value::from("")
+        }
+    });
+    tera.register_filter("last", move |value: Value, _: Kwargs, _: &State| {
+        if let Some(arr) = value.as_array() {
+            if arr.is_empty() {
+                warn_tera_v1_filter(
+                    "tera-v1-last-empty-string",
+                    "last on an empty array",
+                    "Tera 2 returns null for empty arrays.",
+                );
+                Value::from("")
+            } else {
+                arr[arr.len() - 1].clone()
+            }
+        } else if let Some(s) = value.as_str() {
+            Value::from(s.chars().next_back().map(String::from).unwrap_or_default())
+        } else {
+            Value::from("")
+        }
+    });
+    tera.register_filter(
+        "nth",
+        move |arr: &[Value], args: Kwargs, _: &State| -> TeraResult<Value> {
+            let n = args.must_get::<usize>("n")?;
+            if let Some(value) = arr.get(n) {
+                Ok(value.clone())
+            } else {
+                warn_tera_v1_filter(
+                    "tera-v1-nth-empty-string",
+                    "nth outside array bounds",
+                    "Tera 2 returns null for missing array elements.",
+                );
+                Ok(Value::from(""))
+            }
+        },
+    );
+    tera.register_filter(
+        "unique",
+        move |arr: &[Value], args: Kwargs, _: &State| -> TeraResult<Value> {
+            let case_sensitive = args.get::<bool>("case_sensitive")?.unwrap_or(false);
+            if args.get::<bool>("case_sensitive")?.is_some() {
+                warn_tera_v1_filter(
+                    "tera-v1-unique-case-sensitive",
+                    "unique(case_sensitive=...)",
+                    "Tera 2 `unique` no longer accepts arguments.",
+                );
+            }
+            let mut out = Vec::new();
+            for value in arr {
+                let duplicate = out.iter().any(|existing: &Value| {
+                    if case_sensitive {
+                        existing == value
+                    } else {
+                        existing.to_string().to_lowercase() == value.to_string().to_lowercase()
+                    }
+                });
+                if !duplicate {
+                    out.push(value.clone());
+                }
+            }
+            Ok(Value::from(out))
+        },
+    );
+    tera.register_filter(
+        "json_encode",
+        move |value: Value, args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-json-encode",
+                "json_encode",
+                "Use Tera 2 JSON helpers when available or pre-encode JSON before rendering.",
+            );
+            let pretty = args.get::<bool>("pretty")?.unwrap_or(false);
+            let encoded = if pretty {
+                serde_json::to_string_pretty(&value)
+            } else {
+                serde_json::to_string(&value)
+            }
+            .map_err(|e| tera_err(e.to_string()))?;
+            Ok(Value::from(encoded))
+        },
+    );
+    tera.register_filter(
+        "date",
+        move |value: Value, args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter("tera-v1-date", "date", "Format dates before rendering.");
+            tera_v1_date(value, args)
+        },
+    );
+    tera.register_filter(
+        "filesizeformat",
+        move |value: Value, _: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-filesizeformat",
+                "filesizeformat",
+                "Format file sizes before rendering.",
+            );
+            let size = value
+                .as_number()
+                .and_then(|n| n.as_integer())
+                .and_then(|n| u64::try_from(n).ok())
+                .ok_or_else(|| tera_err("filesizeformat filter expects a non-negative integer"))?;
+            Ok(Value::from(bytesize::ByteSize(size).to_string()))
+        },
+    );
+    tera.register_filter(
+        "trim_start_matches",
+        move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-trim-start-matches",
+                "trim_start_matches",
+                "Use `trim_start(pat=...)` instead.",
+            );
+            let pat = args.must_get::<&str>("pat")?;
+            Ok(Value::from(s.trim_start_matches(pat)))
+        },
+    );
+    tera.register_filter(
+        "trim_end_matches",
+        move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-trim-end-matches",
+                "trim_end_matches",
+                "Use `trim_end(pat=...)` instead.",
+            );
+            let pat = args.must_get::<&str>("pat")?;
+            Ok(Value::from(s.trim_end_matches(pat)))
+        },
+    );
+    tera.register_filter(
+        "slice",
+        move |arr: &[Value], args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-slice",
+                "slice",
+                "Use Tera 2 slice syntax like `array[start:end]` instead.",
+            );
+            let len = arr.len();
+            let start = args
+                .get::<i64>("start")?
+                .map(|start| tera_v1_slice_index(start, len))
+                .unwrap_or_default();
+            let end = args
+                .get::<i64>("end")?
+                .map(|end| tera_v1_slice_index(end, len))
+                .unwrap_or(len);
+
+            if start >= end {
+                Ok(Value::from(Vec::<Value>::new()))
+            } else {
+                Ok(Value::from(arr[start..end].to_vec()))
+            }
+        },
+    );
+    tera.register_filter(
+        "concat",
+        move |arr: &[Value], args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-concat",
+                "concat",
+                "Use Tera 2 spread syntax instead.",
+            );
+            let mut out = arr.to_vec();
+            let value = args.must_get::<Value>("with")?;
+            if let Some(values) = value.as_array() {
+                out.extend_from_slice(values);
+            } else {
+                out.push(value);
+            }
+            Ok(Value::from(out))
+        },
+    );
+    tera.register_filter(
+        "map",
+        move |arr: &[Value], args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-map",
+                "map",
+                "Use Tera 2 list comprehension instead.",
+            );
+            let attribute = args.must_get::<&str>("attribute")?;
+            Ok(Value::from(
+                arr.iter()
+                    .filter_map(|v| v.get_from_path(attribute))
+                    .filter(|v| !v.is_none())
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            ))
+        },
+    );
+    tera.register_filter(
+        "filter",
+        move |arr: &[Value], args: Kwargs, _: &State| -> TeraResult<Value> {
+            warn_tera_v1_filter(
+                "tera-v1-filter",
+                "filter",
+                "Use Tera 2 list comprehension instead.",
+            );
+            let attribute = args.must_get::<&str>("attribute")?;
+            let expected = args.get::<Value>("value")?;
+            Ok(Value::from(
+                arr.iter()
+                    .filter(|v| {
+                        let Some(actual) = v.get_from_path(attribute) else {
+                            return false;
+                        };
+                        match &expected {
+                            Some(expected) => actual == expected,
+                            None => tera_v1_truthy(actual),
+                        }
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            ))
+        },
+    );
+    tera.register_filter("kebabcase", move |s: &str, _: Kwargs, _: &State| {
+        Value::from(s.to_kebab_case())
+    });
+    tera.register_filter("lowercamelcase", move |s: &str, _: Kwargs, _: &State| {
+        Value::from(s.to_lower_camel_case())
+    });
+    tera.register_filter("shoutykebabcase", move |s: &str, _: Kwargs, _: &State| {
+        Value::from(s.to_shouty_kebab_case())
+    });
+    tera.register_filter("shoutysnakecase", move |s: &str, _: Kwargs, _: &State| {
+        Value::from(s.to_shouty_snake_case())
+    });
+    tera.register_filter("snakecase", move |s: &str, _: Kwargs, _: &State| {
+        Value::from(s.to_snake_case())
+    });
+    tera.register_filter("uppercamelcase", move |s: &str, _: Kwargs, _: &State| {
+        Value::from(s.to_upper_camel_case())
+    });
+    tera.register_test("dir", move |s: &str, _: Kwargs, _: &State| {
+        Path::new(s).is_dir()
+    });
+    tera.register_test("file", move |s: &str, _: Kwargs, _: &State| {
+        Path::new(s).is_file()
+    });
+    tera.register_test("exists", move |s: &str, _: Kwargs, _: &State| {
+        Path::new(s).exists()
+    });
+    tera.register_test("object", move |value: &Value, _: Kwargs, _: &State| {
+        warn_tera_v1_filter("tera-v1-object-test", "object test", "Use `map` instead.");
+        value.is_map()
+    });
+    tera.register_test(
+        "divisibleby",
+        move |value: Value, args: Kwargs, _: &State| -> TeraResult<bool> {
+            warn_tera_v1_filter(
+                "tera-v1-divisibleby-test",
+                "divisibleby test",
+                "Use `divisible_by` instead.",
+            );
+            let divisor = args.must_get::<i128>("divisor")?;
+            if divisor == 0 {
+                return Ok(false);
+            }
+            let value = value
+                .as_number()
+                .and_then(|n| n.as_integer())
+                .ok_or_else(|| tera_err("divisibleby test expects an integer"))?;
+            Ok(value.checked_rem_euclid(divisor).is_some_and(|r| r == 0))
+        },
+    );
+    tera.register_test(
+        "semver_matching",
+        move |version: &str, args: Kwargs, _: &State| -> TeraResult<bool> {
+            let requirement = args.must_get::<&str>("requirement")?;
+            let result = Requirement::new(requirement)
+                .unwrap()
+                .matches(&Versioning::new(version).unwrap());
+            Ok(result)
         },
     );
 
@@ -428,32 +895,27 @@ pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> Tera {
     let family = if os == "windows" { "windows" } else { "unix" };
 
     let os = os.to_string();
-    tera.register_function(
-        "os",
-        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-            if let Some(remapped) = args.get(&os).and_then(|v| v.as_str()) {
-                return Ok(Value::String(remapped.to_string()));
-            }
-            Ok(Value::String(os.clone()))
-        },
-    );
+    tera.register_function("os", move |args: Kwargs, _: &State| -> TeraResult<Value> {
+        if let Some(remapped) = args.get::<&str>(&os)? {
+            return Ok(Value::from(remapped));
+        }
+        Ok(Value::from(os.clone()))
+    });
 
     let arch = arch.to_string();
     tera.register_function(
         "arch",
-        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-            if let Some(remapped) = args.get(&arch).and_then(|v| v.as_str()) {
-                return Ok(Value::String(remapped.to_string()));
+        move |args: Kwargs, _: &State| -> TeraResult<Value> {
+            if let Some(remapped) = args.get::<&str>(&arch)? {
+                return Ok(Value::from(remapped));
             }
-            Ok(Value::String(arch.clone()))
+            Ok(Value::from(arch.clone()))
         },
     );
 
     tera.register_function(
         "os_family",
-        move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
-            Ok(Value::String(family.to_string()))
-        },
+        move |_: Kwargs, _: &State| -> TeraResult<Value> { Ok(Value::from(family)) },
     );
 
     tera
@@ -478,10 +940,9 @@ pub fn get_tera_preserving_os_arch(dir: Option<&Path>) -> Tera {
     tera
 }
 
-fn reemit_template_fn(
-    name: &'static str,
-) -> impl Fn(&HashMap<String, Value>) -> tera::Result<Value> {
-    move |args: &HashMap<String, Value>| {
+fn reemit_template_fn(name: &'static str) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
+    move |args: Kwargs, _: &State| {
+        let args = args.deserialize::<std::collections::BTreeMap<String, serde_json::Value>>()?;
         let mut parts: Vec<String> = args
             .iter()
             .filter_map(|(k, v)| reemit_arg_literal(v).map(|lit| format!("{k}={lit}")))
@@ -492,7 +953,7 @@ fn reemit_template_fn(
             parts.sort();
             format!("{{{{ {name}({}) }}}}", parts.join(", "))
         };
-        Ok(Value::String(rendered))
+        Ok(Value::from(rendered))
     }
 }
 
@@ -500,11 +961,11 @@ fn reemit_template_fn(
 /// it round-trips through re-emission. Tera string literals are literal (no
 /// escape sequences), so strings are simply re-quoted; numbers/bools render
 /// natively; other types are dropped (os()/arch() ignore non-string remaps).
-fn reemit_arg_literal(v: &Value) -> Option<String> {
+fn reemit_arg_literal(v: &serde_json::Value) -> Option<String> {
     match v {
-        Value::String(s) => Some(format!("\"{s}\"")),
-        Value::Number(n) => Some(n.to_string()),
-        Value::Bool(b) => Some(b.to_string()),
+        serde_json::Value::String(s) => Some(format!("\"{s}\"")),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
         _ => None,
     }
 }
@@ -512,32 +973,25 @@ fn reemit_arg_literal(v: &Value) -> Option<String> {
 pub fn tera_exec(
     dir: Option<PathBuf>,
     env: EnvMap,
-) -> impl Fn(&HashMap<String, Value>) -> tera::Result<Value> {
-    move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-        let cache = match args.get("cache_key") {
-            Some(Value::String(cache)) => Some(cache),
+) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
+    move |args: Kwargs, _: &State| -> TeraResult<Value> {
+        let cache = args.get::<String>("cache_key")?;
+        let cache_duration = match args.get::<String>("cache_duration")? {
+            Some(duration) => match duration::parse_duration(&duration) {
+                Ok(duration) => Some(duration),
+                Err(e) => return Err(tera_err(format!("exec cache_duration: {e}"))),
+            },
             None => None,
-            _ => return Err("exec cache_key must be a string".into()),
         };
-        let cache_duration = match args.get("cache_duration") {
-            Some(Value::String(duration)) => {
-                match duration::parse_duration(&duration.to_string()) {
-                    Ok(duration) => Some(duration),
-                    Err(e) => return Err(format!("exec cache_duration: {e}").into()),
-                }
-            }
-            None => None,
-            _ => return Err("exec cache_duration must be an integer".into()),
-        };
-        match args.get("command") {
-            Some(Value::String(command)) => {
+        match args.get::<String>("command")? {
+            Some(command) => {
                 let shell = Settings::get()
                     .default_inline_shell()
-                    .map_err(|e| tera::Error::msg(e.to_string()))?;
+                    .map_err(|e| tera_err(e.to_string()))?;
                 let args = shell
                     .iter()
                     .skip(1)
-                    .chain(once(command))
+                    .chain(once(&command))
                     .collect::<Vec<&String>>();
                 // Strip mise shims from PATH to prevent infinite recursion
                 // when the command (e.g. `gh auth token`) is a mise-managed
@@ -557,7 +1011,7 @@ pub fn tera_exec(
                     #[cfg(windows)]
                     {
                         if let Some(mut c) =
-                            crate::path::cmd_verbatim_command(&shell[0], &shell[1..], command)
+                            crate::path::cmd_verbatim_command(&shell[0], &shell[1..], &command)
                         {
                             c.env_clear();
                             c.envs(env_no_shims.iter());
@@ -596,13 +1050,13 @@ pub fn tera_exec(
                             .as_ref()
                             .map(|d| d.to_string_lossy().to_string())
                             .unwrap_or_default()
-                            + command),
+                            + &command),
                     )[..8]
                         .to_string();
                     let mut cacheman =
                         CacheManagerBuilder::new(dirs::CACHE.join("exec").join(cachehash));
                     if let Some(cache) = cache {
-                        cacheman = cacheman.with_cache_key(cache.clone());
+                        cacheman = cacheman.with_cache_key(cache);
                     }
                     if let Some(cache_duration) = cache_duration {
                         cacheman = cacheman.with_fresh_duration(Some(cache_duration));
@@ -610,41 +1064,41 @@ pub fn tera_exec(
                     let cache = cacheman.build();
                     match cache.get_or_try_init(run_once) {
                         Ok(result) => result.clone(),
-                        Err(e) => return Err(format!("exec command: {e}").into()),
+                        Err(e) => return Err(tera_err(format!("exec command: {e}"))),
                     }
                 } else {
-                    run_once().map_err(|e| tera::Error::msg(format!("exec command: {e}")))?
+                    run_once().map_err(|e| tera_err(format!("exec command: {e}")))?
                 };
-                Ok(Value::String(result))
+                Ok(Value::from(result))
             }
-            _ => Err("exec command must be a string".into()),
+            _ => Err(tera_err("exec command must be a string")),
         }
     }
 }
 
-pub fn tera_read_file(
-    dir: Option<PathBuf>,
-) -> impl Fn(&HashMap<String, Value>) -> tera::Result<Value> {
-    move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-        match args.get("path") {
-            Some(Value::String(path_str)) => {
+pub fn tera_read_file(dir: Option<PathBuf>) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
+    move |args: Kwargs, _: &State| -> TeraResult<Value> {
+        match args.get::<String>("path")? {
+            Some(path_str) => {
                 let path = if let Some(ref base_dir) = dir {
                     // Resolve relative to config directory
-                    base_dir.join(path_str)
+                    base_dir.join(&path_str)
                 } else {
                     // Use path as-is if no directory context
-                    PathBuf::from(path_str)
+                    PathBuf::from(&path_str)
                 };
 
                 track_tera_file(&path);
                 match std::fs::read_to_string(&path) {
-                    Ok(contents) => Ok(Value::String(contents)),
-                    Err(e) => {
-                        Err(format!("Failed to read file '{}': {}", path.display(), e).into())
-                    }
+                    Ok(contents) => Ok(Value::from(contents)),
+                    Err(e) => Err(tera_err(format!(
+                        "Failed to read file '{}': {}",
+                        path.display(),
+                        e
+                    ))),
                 }
             }
-            _ => Err("read_file path must be a string".into()),
+            _ => Err(tera_err("read_file path must be a string")),
         }
     }
 }
@@ -798,6 +1252,13 @@ mod tests {
         let _config = Config::get().await.unwrap();
         let s = render("{{ \"quoted'str\" | quote }}");
         assert_eq!(s, "'quoted\\'str'");
+    }
+
+    #[tokio::test]
+    async fn test_as_str() {
+        let _config = Config::get().await.unwrap();
+        assert_eq!(render("{{ true | as_str }}"), "true");
+        assert_eq!(render("{{ \"hello\" | as_str }}"), "hello");
     }
 
     #[tokio::test]
@@ -960,7 +1421,7 @@ mod tests {
     async fn test_semver_matching() {
         let _config = Config::get().await.unwrap();
         let s = render(
-            r#"{% set p = "1.10.2" %}{% if p is semver_matching("^1.10.0") %} ok {% endif %}"#,
+            r#"{% set p = "1.10.2" %}{% if p is semver_matching(requirement="^1.10.0") %} ok {% endif %}"#,
         );
         assert_eq!(s.trim(), "ok");
     }
@@ -1022,6 +1483,87 @@ mod tests {
         tera_ctx.insert("cwd", "/");
         let mut tera = get_tera_for_target(None, os, arch);
         render_str(&mut tera, s, &tera_ctx).unwrap()
+    }
+
+    #[test]
+    fn test_tera_v1_compat_filters() {
+        assert_eq!(
+            render("v{{ 'v0.80.0' | trim_start_matches(pat='v') }}"),
+            "v0.80.0"
+        );
+        assert_eq!(
+            render("{{ 'v0.80.0' | trim_start_matches(pat='v') }}"),
+            "0.80.0"
+        );
+        assert_eq!(
+            render("{{ '0.80.0.tar.gz' | trim_end_matches(pat='.tar.gz') }}"),
+            "0.80.0"
+        );
+        assert_eq!(
+            render("{{ '1.12.6' | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}"),
+            "1.12"
+        );
+        assert_eq!(
+            render("{{ '1.12.6' | split(pat='.') | slice(start=-2) | join(sep='.') }}"),
+            "12.6"
+        );
+        assert_eq!(
+            render("{{ ('1.12.6' | split(pat='.'))[0:2] | join(sep='.') }}"),
+            "1.12"
+        );
+        assert_eq!(
+            render("{{ ('a/b/c' | split(pat='/'))[0] ~ '/mod.rs' }}"),
+            "a/mod.rs"
+        );
+        assert_eq!(render("{{ ['a'] | concat(with=['b']) | join }}"), "ab");
+        assert_eq!(
+            render(
+                "{{ [{'name': 'alice', 'active': true}, {'name': 'bob', 'active': false}] | map(attribute='name') | join(sep=',') }}"
+            ),
+            "alice,bob"
+        );
+        assert_eq!(
+            render(
+                "{{ [{'name': 'alice', 'active': true}, {'name': 'bob', 'active': false}] | filter(attribute='active', value=true) | length }}"
+            ),
+            "1"
+        );
+        assert_eq!(
+            render(
+                "{{ [{'name': 'alice', 'active': true}, {'name': 'bob', 'active': false}] | filter(attribute='active') | map(attribute='name') | join(sep=',') }}"
+            ),
+            "alice"
+        );
+        assert_eq!(render("{{ '<b>x</b>' | striptags }}"), "x");
+        assert_eq!(
+            render("{{ '<b> x </b> <i>y</i>' | spaceless }}"),
+            "<b> x </b><i>y</i>"
+        );
+        assert_eq!(render(r#"{{ "a'b" | addslashes }}"#), r#"a\'b"#);
+        assert_eq!(render("{{ 'Hello, world!' | slugify }}"), "hello-world");
+        assert_eq!(render("{{ 'a b' | urlencode }}"), "a%20b");
+        assert_eq!(render("{{ 'a/b c' | urlencode }}"), "a/b%20c");
+        assert_eq!(render("{{ 'a/b c' | urlencode_strict }}"), "a%2Fb%20c");
+        assert_eq!(render("{{ '<br>' | escape }}"), "&lt;br&gt;");
+        assert_eq!(render("{{ 'a\nb' | linebreaksbr }}"), "a<br>b");
+        assert_eq!(render("{{ {'ok': true} | json_encode }}"), r#"{"ok":true}"#);
+        assert_eq!(render("{{ 0 | date(format='%Y-%m-%d') }}"), "1970-01-01");
+        assert_eq!(render("{{ 'abc' | truncate }}"), "abc");
+        assert_eq!(render("{{ 'a\nb' | indent(prefix='>') }}"), "a\n>b");
+        assert_eq!(render("{{ 'nope' | int(default=7) }}"), "7");
+        assert_eq!(render("{{ 'nope' | float(default=1.5) }}"), "1.5");
+        assert_eq!(render("{{ [] | first }}"), "");
+        assert_eq!(render("{{ [] | last }}"), "");
+        assert_eq!(render("{{ 'abc' | first }}"), "a");
+        assert_eq!(render("{{ 'abc' | last }}"), "c");
+        assert_eq!(render("{{ [] | nth(n=0) }}"), "");
+        assert_eq!(render("{{ ['a', 'A'] | unique | join }}"), "a");
+        assert_eq!(
+            render("{{ ['a', 'A'] | unique(case_sensitive=false) | join }}"),
+            "a"
+        );
+        assert_eq!(render("{{ {'ok': true} is object }}"), "true");
+        assert_eq!(render("{{ 6 is divisibleby(divisor=3) }}"), "true");
     }
 
     #[tokio::test]

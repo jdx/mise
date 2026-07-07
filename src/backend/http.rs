@@ -6,8 +6,8 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
     clean_binary_name, eval_checksum_expr, fetch_checksum_from_file, fetch_checksum_from_shasums,
-    get_filename_from_url, rename_executable_in_dir, shasums_has_entries, template_string,
-    template_string_for_target, verify_artifact,
+    get_filename_from_url, rename_binary_name, rename_executable_in_dir, shasums_has_entries,
+    template_string, template_string_for_target, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::cli::args::BackendArg;
@@ -351,6 +351,14 @@ impl HttpBackend {
         // Check for explicit bin name first
         if let Some(bin_name) = opts.bin() {
             return bin_name;
+        }
+        if let Some(rename_to) = opts.rename_exe() {
+            let source_name = if file_info.is_compressed_binary {
+                file_info.decompressed_name()
+            } else {
+                file_path.file_name().unwrap().to_string_lossy().to_string()
+            };
+            return rename_binary_name(&source_name, &rename_to);
         }
 
         // Auto-clean the binary name
@@ -1287,5 +1295,28 @@ mod tests {
         let lookup_path = HttpBackend::lookup_install_path(&tv);
 
         assert_eq!(lookup_path, install_path);
+    }
+
+    #[test]
+    fn dest_filename_uses_decompressed_name_for_rename_exe_extension() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-code2prompt".to_string(),
+                Some("http:code2prompt".to_string()),
+                "code2prompt".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+        let raw_opts = crate::toolset::parse_tool_options("rename_exe=code2prompt");
+        let opts = HttpOptions::new(&raw_opts);
+        let file_path = Path::new("code2prompt-x86_64-pc-windows-msvc.exe.gz");
+        let file_info = FileInfo::new(file_path, &opts);
+
+        assert!(file_info.is_compressed_binary);
+        assert_eq!(
+            backend.dest_filename(file_path, &file_info, &opts),
+            "code2prompt.exe"
+        );
     }
 }

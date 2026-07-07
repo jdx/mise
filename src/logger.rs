@@ -8,7 +8,7 @@ use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::{io::Write, sync::OnceLock};
 
-use crate::{config, env, ui};
+use crate::{env, ui};
 use log::{Level, LevelFilter, Metadata, Record};
 
 #[derive(Debug)]
@@ -75,10 +75,11 @@ impl log::Log for Logger {
 
         // Redact once for all outputs (Aho-Corasick makes this efficient)
         let args = record.args().to_string();
-        let args = if config::is_loaded() {
-            Config::get_().redact(&args)
-        } else {
-            args
+        // maybe_get instead of is_loaded + get_: another thread may unload the
+        // config (Config::reset) between the two calls, and get_ panics on None
+        let args = match Config::maybe_get() {
+            Some(config) => config.redact(&args),
+            None => args,
         };
 
         if will_log_file && let Some(log_file) = &self.log_file {
@@ -93,7 +94,7 @@ impl log::Log for Logger {
             if !out.is_empty() {
                 // Use clx pause/resume for clean logging during progress display
                 progress::pause();
-                eprintln!("{out}");
+                safe_eprintln!("{out}");
                 progress::resume();
             }
         }
@@ -115,7 +116,7 @@ impl Logger {
             if let Ok(log_file) = init_log_file(log_file) {
                 logger.log_file = Some(Mutex::new(log_file));
             } else {
-                eprintln!("mise: could not open log file: {log_file:?}");
+                safe_eprintln!("mise: could not open log file: {log_file:?}");
             }
         }
 
@@ -187,7 +188,7 @@ pub fn init() {
         let file_level = env::MISE_LOG_FILE_LEVEL.unwrap_or(settings.log_level());
         let logger = LOGGER.get_or_init(|| Logger::init(term_level, file_level));
         if let Err(err) = log::set_logger(logger) {
-            eprintln!("mise: could not initialize logger: {err}");
+            safe_eprintln!("mise: could not initialize logger: {err}");
         }
     }
     log::set_max_level(term_level);

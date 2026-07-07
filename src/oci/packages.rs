@@ -354,14 +354,66 @@ fn run_apt_get(args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+/// Normalize the non-reproducible state that apt/dpkg postinstall scripts
+/// leave behind, so re-running `mise oci build` with identical inputs yields a
+/// byte-identical package layer (the reproducibility guarantee mise documents).
+/// Everything cleared here is a regenerable cache, a timestamped log, or a
+/// first-boot sentinel, never real package content.
 fn clean_apt_transients(rootfs: &Path) -> Result<()> {
+    // apt's own download cache and package lists.
     remove_dir_children(&rootfs.join("var/cache/apt/archives"))?;
     remove_path(&rootfs.join("var/cache/apt/pkgcache.bin"))?;
     remove_path(&rootfs.join("var/cache/apt/srcpkgcache.bin"))?;
-
     remove_dir_children(&rootfs.join("var/lib/apt/lists"))?;
 
-    remove_dir_children(&rootfs.join("var/log/apt"))?;
+    // ldconfig's aux-cache is a binary cache that embeds mtimes; it is rebuilt
+    // automatically at runtime.
+    remove_dir_children(&rootfs.join("var/cache/ldconfig"))?;
+
+    // Every file under /var/log is a timestamped, non-deterministic log
+    // (dpkg.log, alternatives.log, fontconfig.log, apt/*, etc.) and none of it is
+    // package content. Clearing the whole tree rather than enumerating known
+    // files also covers logs that future postinstall scripts invent.
+    remove_files_recursively(&rootfs.join("var/log"))?;
+
+    // machine-id is written by systemd's postinstall. It must remain present
+    // but empty (an empty machine-id is systemd's "first boot" marker), so
+    // truncate rather than remove. The dbus copy is usually a symlink to
+    // /etc/machine-id, which truncate_file_if_regular leaves alone.
+    truncate_file_if_regular(&rootfs.join("etc/machine-id"))?;
+    truncate_file_if_regular(&rootfs.join("var/lib/dbus/machine-id"))?;
+    Ok(())
+}
+
+/// Remove every regular file under `dir` (recursively), leaving the directory
+/// structure and any symlinks intact. A missing `dir` is a no-op.
+fn remove_files_recursively(dir: &Path) -> Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    for entry in WalkDir::new(dir).follow_links(false) {
+        let entry = entry?;
+        if entry.file_type().is_file() {
+            remove_path(entry.path())?;
+        }
+    }
+    Ok(())
+}
+
+/// Truncate `path` to zero length when it is a regular file. Used for first-boot
+/// sentinels (machine-id) that must stay present but empty. Symlinks and missing
+/// files are left untouched.
+fn truncate_file_if_regular(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(md) if md.file_type().is_file() => {
+            file::write(path, "").wrap_err_with(|| format!("truncating {}", path.display()))?;
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(e).wrap_err_with(|| format!("reading metadata for {}", path.display()));
+        }
+    }
     Ok(())
 }
 
@@ -552,4 +604,96 @@ fn set_mode(path: &Path, mode: u32) -> Result<()> {
         let _ = (path, mode);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_file(path: &Path, contents: &str) {
+        file::create_dir_all(path.parent().unwrap()).unwrap();
+        file::write(path, contents).unwrap();
+    }
+
+    #[test]
+    fn clean_apt_transients_normalizes_nondeterministic_state() {
+        let td = TempDir::with_prefix("mise-oci-clean-test-").unwrap();
+        let rootfs = td.path().join("rootfs");
+
+        // Timestamped logs at various depths under /var/log.
+        let logs = [
+            "var/log/dpkg.log",
+            "var/log/alternatives.log",
+            "var/log/fontconfig.log",
+            "var/log/apt/history.log",
+            "var/log/apt/term.log",
+        ];
+        for rel in logs {
+            write_file(&rootfs.join(rel), "2026-07-02 12:00:00 install foo\n");
+        }
+
+        // Regenerable ldconfig cache.
+        let aux_cache = rootfs.join("var/cache/ldconfig/aux-cache");
+        write_file(&aux_cache, "binary-cache-with-mtimes");
+
+        // machine-id sentinel: a regular file that must be truncated, not removed.
+        let etc_machine_id = rootfs.join("etc/machine-id");
+        write_file(&etc_machine_id, "deadbeefdeadbeefdeadbeefdeadbeef\n");
+
+        // Real package content that must survive untouched, including a file
+        // that lives outside the transient trees.
+        let payload = rootfs.join("usr/bin/curl");
+        write_file(&payload, "ELF-payload");
+
+        clean_apt_transients(&rootfs).unwrap();
+
+        // All logs removed, directory structure preserved.
+        for rel in logs {
+            assert!(!rootfs.join(rel).exists(), "{rel} should be removed");
+        }
+        assert!(rootfs.join("var/log").is_dir());
+        assert!(rootfs.join("var/log/apt").is_dir());
+
+        // ldconfig cache cleared, containing dir kept.
+        assert!(!aux_cache.exists());
+        assert!(rootfs.join("var/cache/ldconfig").is_dir());
+
+        // machine-id truncated to empty but still present.
+        assert!(etc_machine_id.is_file());
+        assert_eq!(fs::read_to_string(&etc_machine_id).unwrap(), "");
+
+        // Payload untouched.
+        assert_eq!(fs::read_to_string(&payload).unwrap(), "ELF-payload");
+    }
+
+    #[test]
+    fn clean_apt_transients_is_a_noop_on_a_bare_rootfs() {
+        let td = TempDir::with_prefix("mise-oci-clean-empty-").unwrap();
+        let rootfs = td.path().join("rootfs");
+        file::create_dir_all(&rootfs).unwrap();
+        // No transient paths exist; every helper must tolerate the missing dirs.
+        clean_apt_transients(&rootfs).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn clean_apt_transients_leaves_machine_id_symlink_untouched() {
+        let td = TempDir::with_prefix("mise-oci-clean-symlink-").unwrap();
+        let rootfs = td.path().join("rootfs");
+        write_file(&rootfs.join("etc/machine-id"), "abc\n");
+        file::create_dir_all(rootfs.join("var/lib/dbus")).unwrap();
+        // dbus's machine-id is conventionally a symlink to /etc/machine-id;
+        // truncating through it would clobber the real file, so it's skipped.
+        let dbus = rootfs.join("var/lib/dbus/machine-id");
+        symlink("/etc/machine-id", &dbus).unwrap();
+
+        clean_apt_transients(&rootfs).unwrap();
+
+        let md = fs::symlink_metadata(&dbus).unwrap();
+        assert!(
+            md.file_type().is_symlink(),
+            "dbus machine-id symlink must be preserved"
+        );
+        assert_eq!(fs::read_link(&dbus).unwrap(), Path::new("/etc/machine-id"));
+    }
 }

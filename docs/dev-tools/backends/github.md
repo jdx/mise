@@ -320,11 +320,12 @@ bin_path = "cli-{{ version }}/bin" # expands to cli-1.0.0/bin
 
 ### `filter_bins`
 
-Comma-separated list of binaries to symlink into a filtered `.mise-bins` directory. This is useful when the tool comes with extra binaries that you do not want to expose on PATH.
+List of binaries to symlink into a filtered `.mise-bins` directory. This is useful when the tool comes with extra binaries that you do not want to expose on PATH.
 
 ```toml
 [tools]
 "github:jgm/pandoc" = { version = "latest", filter_bins = "pandoc" }
+"github:owner/repo" = { version = "latest", filter_bins = ["tool", "helper"] }
 ```
 
 When enabled:

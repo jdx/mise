@@ -60,6 +60,39 @@
         }
       ]
     },
+    "tool_alias_versions": {
+      "description": "tool version aliases",
+      "type": "object",
+      "additionalProperties": {
+        "description": "version alias points to",
+        "type": "string"
+      }
+    },
+    "tool_alias_entry": {
+      "oneOf": [
+        {
+          "description": "where the alias goes",
+          "type": "string"
+        },
+        {
+          "description": "tool to set aliases for",
+          "type": "object",
+          "properties": {
+            "backend": {
+              "description": "where the alias goes",
+              "type": "string"
+            },
+            "versions": {
+              "$ref": "#/$defs/tool_alias_versions"
+            }
+          },
+          "additionalProperties": {
+            "description": "version alias points to",
+            "type": "string"
+          }
+        }
+      ]
+    },
     "env_value": {
       "oneOf": [
         {
@@ -612,6 +645,10 @@
             "binstall": {
               "default": true,
               "description": "Use cargo-binstall instead of cargo install if available",
+              "type": "boolean"
+            },
+            "binstall_native": {
+              "description": "[experimental] Use mise's native cargo binary installer when cargo-binstall is unavailable.",
               "type": "boolean"
             },
             "binstall_only": {
@@ -2028,6 +2065,37 @@
             "type": "string"
           },
           {
+            "description": "value of variable",
+            "type": "integer"
+          },
+          {
+            "description": "value of variable",
+            "const": true
+          },
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "const": true
+                  }
+                ]
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["value"],
+            "unevaluatedProperties": false
+          },
+          {
             "type": "object",
             "properties": {
               "default": {
@@ -2038,6 +2106,64 @@
               }
             },
             "required": ["default"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "oneOf": [
+                  {
+                    "const": true
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "required": ["required"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "$ref": "#/$defs/env_age"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["age"],
+            "unevaluatedProperties": false,
+            "description": "[experimental] age-encrypted variable"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "$ref": "#/$defs/env_age_value"
+                  },
+                  "format": {
+                    "$ref": "#/$defs/env_age_format"
+                  },
+                  "redact": {
+                    "$ref": "#/$defs/env_redact"
+                  }
+                },
+                "required": ["value"],
+                "unevaluatedProperties": false,
+                "description": "[experimental] age-encrypted value (complex format)"
+              }
+            },
+            "required": ["age"],
             "unevaluatedProperties": false
           }
         ]
@@ -2760,40 +2886,14 @@
       "description": "custom shorthands",
       "type": "object",
       "additionalProperties": {
-        "oneOf": [
-          {
-            "description": "where the alias goes",
-            "type": "string"
-          },
-          {
-            "description": "tool to set aliases for",
-            "type": "object",
-            "additionalProperties": {
-              "description": "version alias points to",
-              "type": "string"
-            }
-          }
-        ]
+        "$ref": "#/$defs/tool_alias_entry"
       }
     },
     "tool_alias": {
       "description": "Tool version aliases",
       "type": "object",
       "additionalProperties": {
-        "oneOf": [
-          {
-            "description": "where the alias goes",
-            "type": "string"
-          },
-          {
-            "description": "tool to set aliases for",
-            "type": "object",
-            "additionalProperties": {
-              "description": "version alias points to",
-              "type": "string"
-            }
-          }
-        ]
+        "$ref": "#/$defs/tool_alias_entry"
       }
     },
     "shell_alias": {
