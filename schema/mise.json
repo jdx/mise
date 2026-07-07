@@ -1789,12 +1789,6 @@
             }
           }
         },
-        "tera_v1": {
-          "default": false,
-          "description": "Use Tera v1 instead of Tera v2 for template rendering.",
-          "type": "boolean",
-          "deprecated": true
-        },
         "task_disable_paths": {
           "description": "Paths that mise will not look for tasks in.",
           "type": "array",
@@ -1843,6 +1837,12 @@
         },
         "task_timings": {
           "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
+          "type": "boolean",
+          "deprecated": true
+        },
+        "tera_v1": {
+          "default": false,
+          "description": "Use Tera v1 instead of Tera v2 for template rendering.",
           "type": "boolean",
           "deprecated": true
         },

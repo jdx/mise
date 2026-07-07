@@ -55,8 +55,8 @@ pub fn contains_template_syntax(input: &str) -> bool {
 }
 
 pub enum TeraEngine {
-    V2(Tera),
-    V1(tera1::Tera),
+    V2(Box<Tera>),
+    V1(Box<tera1::Tera>),
 }
 
 impl TeraEngine {
@@ -118,12 +118,10 @@ fn tera1_context(input: &str, context: &Context) -> TeraResult<tera1::Context> {
             "as",
             "block",
             "break",
-            "component",
             "continue",
             "elif",
             "else",
             "endblock",
-            "endcomponent",
             "endfilter",
             "endif",
             "endfor",
@@ -395,9 +393,12 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
             let n = args.must_get::<u64>("n")?;
             let alphabet = args.must_get::<&str>("alphabet")?;
             let alphabet = alphabet.chars().collect::<Vec<char>>();
+            if alphabet.is_empty() {
+                return Err(tera_err("choice alphabet must not be empty"));
+            }
             let mut rng = rand::rng();
             let result: String = (0..n)
-                .map(|_| *alphabet.choose(&mut rng).unwrap())
+                .map(|_| *alphabet.choose(&mut rng).expect("alphabet non-empty"))
                 .collect();
             Ok(Value::from(result))
         },
@@ -958,9 +959,15 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         "semver_matching",
         move |version: &str, args: Kwargs, _: &State| -> TeraResult<bool> {
             let requirement = args.must_get::<&str>("requirement")?;
-            let result = Requirement::new(requirement)
-                .unwrap()
-                .matches(&Versioning::new(version).unwrap());
+            let requirement = Requirement::new(requirement).ok_or_else(|| {
+                tera_err(format!(
+                    "semver_matching requirement is invalid: {requirement}"
+                ))
+            })?;
+            let version = Versioning::new(version).ok_or_else(|| {
+                tera_err(format!("semver_matching version is invalid: {version}"))
+            })?;
+            let result = requirement.matches(&version);
             Ok(result)
         },
     );
@@ -985,9 +992,12 @@ static TERA1: Lazy<tera1::Tera> = Lazy::new(|| {
         let alphabet = json_str_arg(args, "alphabet")?
             .chars()
             .collect::<Vec<char>>();
+        if alphabet.is_empty() {
+            return Err(tera1_err("choice alphabet must not be empty"));
+        }
         let mut rng = rand::rng();
         let result: String = (0..n)
-            .map(|_| *alphabet.choose(&mut rng).unwrap())
+            .map(|_| *alphabet.choose(&mut rng).expect("alphabet non-empty"))
             .collect();
         Ok(json!(result))
     });
@@ -1045,7 +1055,7 @@ static TERA1: Lazy<tera1::Tera> = Lazy::new(|| {
         "absolute",
         tera1_path_filter(|p| Ok(p.absolutize()?.to_path_buf())),
     );
-    tera.register_filter("canonicalize", tera1_path_filter(|p| Ok(p.canonicalize()?)));
+    tera.register_filter("canonicalize", tera1_path_filter(|p| p.canonicalize()));
     tera.register_filter(
         "dirname",
         move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
@@ -1189,9 +1199,15 @@ static TERA1: Lazy<tera1::Tera> = Lazy::new(|| {
                 .first()
                 .and_then(JsonValue::as_str)
                 .ok_or_else(|| tera1_err("semver_matching requirement must be a string"))?;
-            Ok(Requirement::new(requirement)
-                .unwrap()
-                .matches(&Versioning::new(version).unwrap()))
+            let requirement = Requirement::new(requirement).ok_or_else(|| {
+                tera1_err(format!(
+                    "semver_matching requirement is invalid: {requirement}"
+                ))
+            })?;
+            let version = Versioning::new(version).ok_or_else(|| {
+                tera1_err(format!("semver_matching version is invalid: {version}"))
+            })?;
+            Ok(requirement.matches(&version))
         },
     );
 
@@ -1257,17 +1273,17 @@ fn get_tera_v1(dir: Option<&Path>) -> tera1::Tera {
 /// cannot accidentally become available here if `TERA` changes in the future.
 pub fn get_miserc_tera() -> TeraEngine {
     if use_tera_v1() {
-        TeraEngine::V1(TERA1.clone())
+        TeraEngine::V1(Box::new(TERA1.clone()))
     } else {
-        TeraEngine::V2(TERA.clone())
+        TeraEngine::V2(Box::new(TERA.clone()))
     }
 }
 
 pub fn get_tera(dir: Option<&Path>) -> TeraEngine {
     if use_tera_v1() {
-        TeraEngine::V1(get_tera_v1(dir))
+        TeraEngine::V1(Box::new(get_tera_v1(dir)))
     } else {
-        TeraEngine::V2(get_tera_v2(dir))
+        TeraEngine::V2(Box::new(get_tera_v2(dir)))
     }
 }
 
@@ -1301,7 +1317,7 @@ pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> TeraEngi
         tera.register_function("os_family", move |_: &HashMap<String, JsonValue>| {
             Ok(json!(family))
         });
-        TeraEngine::V1(tera)
+        TeraEngine::V1(Box::new(tera))
     } else {
         let mut tera = get_tera_v2(dir);
         let os = os.to_string();
@@ -1328,7 +1344,7 @@ pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> TeraEngi
             move |_: Kwargs, _: &State| -> TeraResult<Value> { Ok(Value::from(family)) },
         );
 
-        TeraEngine::V2(tera)
+        TeraEngine::V2(Box::new(tera))
     }
 }
 
@@ -1346,7 +1362,7 @@ pub fn get_tera_preserving_os_arch(dir: Option<&Path>) -> TeraEngine {
         tera.register_function("os", reemit_template_fn_v1("os"));
         tera.register_function("arch", reemit_template_fn_v1("arch"));
         tera.register_function("os_family", reemit_template_fn_v1("os_family"));
-        TeraEngine::V1(tera)
+        TeraEngine::V1(Box::new(tera))
     } else {
         let mut tera = get_tera_v2(dir);
         tera.register_function("os", reemit_template_fn("os"));
@@ -1355,7 +1371,7 @@ pub fn get_tera_preserving_os_arch(dir: Option<&Path>) -> TeraEngine {
         // resolving it against the host here would bake e.g. "unix" into a template
         // that is later rendered for a windows target.
         tera.register_function("os_family", reemit_template_fn("os_family"));
-        TeraEngine::V2(tera)
+        TeraEngine::V2(Box::new(tera))
     }
 }
 
@@ -1377,7 +1393,7 @@ fn reemit_template_fn_v1(
     }
 }
 
-pub fn tera1_exec(
+pub(crate) fn tera1_exec(
     dir: Option<PathBuf>,
     env: EnvMap,
 ) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
@@ -1407,7 +1423,7 @@ pub fn tera1_exec(
     }
 }
 
-pub fn tera1_read_file(
+pub(crate) fn tera1_read_file(
     dir: Option<PathBuf>,
 ) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
     move |args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
@@ -1593,6 +1609,26 @@ mod tests {
 
     use super::*;
     use pretty_assertions::assert_str_eq;
+
+    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct SettingsGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl SettingsGuard {
+        fn tera_v1() -> Self {
+            let lock = TEST_SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            Settings::override_with(|settings| settings.tera_v1 = Some(true));
+            Self { _lock: lock }
+        }
+    }
+
+    impl Drop for SettingsGuard {
+        fn drop(&mut self) {
+            Settings::reset(None);
+        }
+    }
 
     #[tokio::test]
     async fn test_config_root() {
@@ -1971,16 +2007,15 @@ mod tests {
 
     #[test]
     fn test_tera_v1_setting_selects_v1_engine() {
-        Settings::override_with(|settings| settings.tera_v1 = Some(true));
+        let _guard = SettingsGuard::tera_v1();
         assert!(matches!(get_tera(None), TeraEngine::V1(_)));
-        Settings::reset(None);
     }
 
     #[test]
     fn test_tera_v1_engine_renders_v1_macro() {
         let mut tera_ctx = BASE_CONTEXT.clone();
         tera_ctx.insert("name", "mise");
-        let mut tera = TeraEngine::V1(TERA1.clone());
+        let mut tera = TeraEngine::V1(Box::new(TERA1.clone()));
         assert_eq!(
             render_str(
                 &mut tera,
@@ -1991,7 +2026,7 @@ mod tests {
             "hi mise"
         );
 
-        let mut tera = TeraEngine::V2(TERA.clone());
+        let mut tera = TeraEngine::V2(Box::new(TERA.clone()));
         assert!(
             render_str(
                 &mut tera,
