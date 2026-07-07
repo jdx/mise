@@ -96,10 +96,10 @@ Tera also supports [control structures such as <span v-pre>`if`</span> and
 
 ### Tera v2 Migration
 
-mise uses Tera v2. Some Tera v1 syntax and built-ins changed in Tera v2, so
-older templates may show deprecation warnings even when mise can still render
-them for compatibility. Tera v1 compatibility helpers are scheduled for removal
-in mise 2027.1.0.
+mise uses Tera v2. Some Tera v1 syntax and built-ins changed in Tera v2. mise
+can still render many older templates for compatibility. Tera v1 compatibility
+helpers will start warning in mise 2026.10.0 and are scheduled for removal in
+mise 2027.4.0.
 
 Prefer these Tera v2 forms in new templates:
 
@@ -321,8 +321,8 @@ The `exec` function supports the following options:
 Tera offers many [built-in filters](https://keats.github.io/tera/#built-in-filters).
 `[]` indicates an optional filter argument.
 Some Tera v1 filters that were removed or renamed in Tera v2 are still supported
-for compatibility until mise 2027.1.0, but mise emits a deprecation warning when
-they are used.
+for compatibility until mise 2027.4.0. mise starts emitting deprecation warnings
+for them in mise 2026.10.0.
 Some filters:
 
 - `str | lower -> String` – Converts a string to lowercase.

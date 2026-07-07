@@ -62,8 +62,8 @@ fn tera_err(message: impl ToString) -> tera::Error {
 
 fn warn_tera_v1_filter(id: &'static str, name: &str, replacement: &str) {
     deprecated_at!(
-        "2026.7.0",
-        "2027.1.0",
+        "2026.10.0",
+        "2027.4.0",
         id,
         "Tera v1 template helper `{name}` is deprecated in mise templates. {replacement}"
     );
