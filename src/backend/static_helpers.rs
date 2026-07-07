@@ -355,6 +355,20 @@ pub fn lookup_with_fallback(opts: &ToolVersionOptions, key: &str) -> Option<Stri
     lookup_platform_key(opts, key).or_else(|| opts.get_string(key))
 }
 
+fn lookup_nested_value<'a>(opts: &'a ToolVersionOptions, key: &str) -> Option<&'a toml::Value> {
+    let parts: Vec<&str> = key.split('.').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+
+    let mut value = opts.opts.get(parts[0])?;
+    for part in &parts[1..] {
+        let table = value.as_table()?;
+        value = table.get(*part)?;
+    }
+    Some(value)
+}
+
 /// Returns all possible aliases for a given platform target (os, arch).
 fn target_platform_aliases(target: &PlatformTarget) -> Vec<(String, String)> {
     let os = target.os_name();
@@ -407,6 +421,27 @@ pub fn lookup_platform_key_for_target(
         }
     }
     None
+}
+
+/// Looks up a raw option value with platform-specific fallback.
+pub fn lookup_platform_value_with_fallback<'a>(
+    opts: &'a ToolVersionOptions,
+    key_type: &str,
+) -> Option<&'a toml::Value> {
+    for (os, arch) in platform_aliases() {
+        for prefix in ["platforms", "platform"] {
+            let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
+            if let Some(val) = lookup_nested_value(opts, &nested_key) {
+                return Some(val);
+            }
+
+            let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
+            if let Some(val) = opts.opts.get(&flat_key) {
+                return Some(val);
+            }
+        }
+    }
+    opts.opts.get(key_type)
 }
 
 /// Lists platform keys (e.g. "macos-x64") for which a given key_type exists (e.g. "url").

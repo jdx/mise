@@ -376,7 +376,7 @@ List of binaries to symlink into a filtered `.mise-bins` directory. This is usef
 ```toml
 [tools]
 "forgejo:user/repo" = { version = "latest", filter_bins = "tool" }
-"forgejo:user/repo" = { version = "latest", filter_bins = ["tool", "helper"] }
+"forgejo:user/other-repo" = { version = "latest", filter_bins = ["tool", "helper"] }
 ```
 
 When enabled:

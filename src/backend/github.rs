@@ -100,24 +100,20 @@ impl<'a> GitBackendOptions<'a> {
     }
 
     fn filter_bins(&self) -> Option<Vec<String>> {
-        let bins: Vec<String> =
-            if let Some(filter_bins) = self.values.platform_string("filter_bins") {
-                filter_bins
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect()
-            } else {
-                let value = self.values.raw().opts.get("filter_bins")?;
-                match value {
-                    toml::Value::Array(values) => values
-                        .iter()
-                        .filter_map(|value| value.as_str().map(|s| s.trim().to_string()))
-                        .filter(|s| !s.is_empty())
-                        .collect(),
-                    _ => return None,
-                }
-            };
+        let value = self.values.platform_value("filter_bins")?;
+        let bins: Vec<String> = match value {
+            toml::Value::String(filter_bins) => filter_bins
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+            toml::Value::Array(values) => values
+                .iter()
+                .filter_map(|value| value.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect(),
+            _ => return None,
+        };
         if bins.is_empty() { None } else { Some(bins) }
     }
 

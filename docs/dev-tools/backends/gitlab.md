@@ -369,7 +369,7 @@ List of binaries to symlink into a filtered `.mise-bins` directory. This is usef
 ```toml
 [tools]
 "gitlab:myorg/mytool" = { version = "1.0.0", filter_bins = "mybin" }
-"gitlab:myorg/mytool" = { version = "1.0.0", filter_bins = ["mybin", "helper"] }
+"gitlab:myorg/other-tool" = { version = "1.0.0", filter_bins = ["mybin", "helper"] }
 ```
 
 When enabled:
