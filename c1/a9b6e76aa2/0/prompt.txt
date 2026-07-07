@@ -1,0 +1,25 @@
+make a pr, reply to discussion
+
+---
+
+when do we show deprecation messages for v2 and v1?
+
+---
+
+you sure we need to do that?
+
+---
+
+i thought we don't need that becausea the settings.toml config
+
+---
+
+should we have that generic runtime path?
+
+---
+
+see if it's necessary or a good idea
+
+---
+
+make a follow-up pr
