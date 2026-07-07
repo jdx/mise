@@ -1,9 +1,1 @@
-is there a new discussion about get_env?
-
----
-
-should we update docs? pull latest first before looking
-
----
-
-mention in docs that they can use `env.TERA_V1 = true` or whatever to use tera v1 syntax temporarily. This config is better than setting because it won't throw in older mise releases.
+make a pr, reply to discussion
