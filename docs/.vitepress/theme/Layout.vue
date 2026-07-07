@@ -2,18 +2,10 @@
   <DefaultTheme.Layout>
     <template #home-hero-info-before>
       <div class="hero-copy">
-        <div class="hero-eyebrow">mise · pronounced "meez"</div>
         <div class="hero-lockup">
-          <img
-            class="chef-logo chef-logo-light"
-            src="/logo-full-light.svg"
-            alt="mise-en-place"
-          />
-          <img
-            class="chef-logo chef-logo-dark"
-            src="/logo-full-dark.svg"
-            alt="mise-en-place"
-          />
+          <img class="chef-logo chef-logo-light" src="/logo-light.svg" alt="" />
+          <img class="chef-logo chef-logo-dark" src="/logo-dark.svg" alt="" />
+          <span class="lockup-word">mise-en-place</span>
         </div>
         <h1>Your dev environment, prepped and ready</h1>
         <p>One tool that manages dev tools, env vars, and tasks per project.</p>
@@ -79,13 +71,44 @@
 </template>
 
 <script setup lang="ts">
+import { useRoute } from "vitepress";
 import DefaultTheme from "vitepress/theme";
-import { ref } from "vue";
+import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import EndevFooter from "./EndevFooter.vue";
 import EndevSponsors from "./EndevSponsors.vue";
 
 const copied = ref(false);
 const installCommand = "curl https://mise.run | sh";
+
+// Hide the navbar brand while the big hero lockup is on screen so the
+// logo appears exactly once; it fades into the header as you scroll past.
+const route = useRoute();
+
+function updateNavBrand() {
+  const lockup = document.querySelector(".hero-lockup");
+  const navBottom =
+    document.querySelector(".VPNavBar")?.getBoundingClientRect().bottom ?? 64;
+  const hide =
+    !!lockup && lockup.getBoundingClientRect().bottom > navBottom + 8;
+  document.documentElement.classList.toggle("hide-nav-brand", hide);
+}
+
+watch(
+  () => route.path,
+  () => nextTick(updateNavBrand),
+);
+
+onMounted(() => {
+  window.addEventListener("scroll", updateNavBrand, { passive: true });
+  window.addEventListener("resize", updateNavBrand, { passive: true });
+  updateNavBrand();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("scroll", updateNavBrand);
+  window.removeEventListener("resize", updateNavBrand);
+  document.documentElement.classList.remove("hide-nav-brand");
+});
 
 async function copyInstall() {
   if (await copyText(installCommand)) {

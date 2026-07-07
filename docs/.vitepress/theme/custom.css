@@ -176,6 +176,21 @@
   transition: transform 0.25s ease, filter 0.25s ease;
 }
 
+/* On the home page the navbar brand stays hidden while the big hero
+   lockup is on screen (class toggled from Layout.vue), then fades in
+   as you scroll past — one logo that settles into the header. */
+.VPNavBarTitle {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.hide-nav-brand .VPNavBarTitle {
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+}
+
 .VPNavBarTitle:hover .VPImage.logo {
   transform: scale(1.1);
   filter: drop-shadow(0 0 10px rgba(139, 34, 82, 0.4));
@@ -1065,7 +1080,6 @@ div[class*="language-"] .copy:hover {
   min-width: 0;
 }
 
-.hero-eyebrow,
 .landing-kicker {
   font-family: var(--vp-font-family-mono);
   font-size: 0.72rem !important;
@@ -1090,14 +1104,27 @@ div[class*="language-"] .copy:hover {
   display: none;
 }
 
+/* Big brand lockup — same composition as the navbar brand, scaled up.
+   The navbar copy stays hidden until this scrolls past (see .hide-nav-brand). */
 .hero-lockup {
-  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
 }
 
 .hero-lockup .chef-logo {
-  width: min(340px, 72vw);
-  height: auto;
+  width: auto;
+  height: clamp(64px, 9vw, 96px);
   filter: drop-shadow(0 12px 34px rgba(139, 34, 82, 0.16));
+}
+
+.lockup-word {
+  font-family: "Roc Grotesk", sans-serif;
+  font-size: clamp(1.8rem, 3.2vw, 2.5rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--vp-c-text-1);
+  white-space: nowrap;
 }
 
 .hero-lockup .chef-logo-dark {
@@ -1709,11 +1736,24 @@ div[class*="language-"] .copy:hover {
   }
 
   .hero-copy h1 {
-    font-size: 2.75rem;
+    font-size: 2.4rem;
+  }
+
+  .landing-section h2 {
+    font-size: 2.2rem;
   }
 
   .hero-lockup .chef-logo {
-    width: min(260px, 100%);
+    height: 52px;
+  }
+
+  .lockup-word {
+    font-size: 1.5rem;
+  }
+
+  /* panels hold 3-5 lines; don't reserve desktop height on phones */
+  .landing-code .terminal-body {
+    min-height: 180px;
   }
 
   .hero-copy p {
