@@ -71,8 +71,35 @@ class MacOSVersion
     Gem::Version.new(@version) <=> Gem::Version.new(other.to_s)
   end
 
+  def same_release?(other)
+    other = self.class.from_symbol(other) if other.is_a?(Symbol)
+    other = self.class.new(other.to_s) unless other.is_a?(MacOSVersion)
+
+    if major >= 11 || other.major >= 11
+      major == other.major
+    else
+      major == other.major && minor == other.minor
+    end
+  end
+
   def to_s
     @version
+  end
+
+  protected
+
+  def major
+    version_parts[0] || 0
+  end
+
+  def minor
+    version_parts[1] || 0
+  end
+
+  private
+
+  def version_parts
+    @version.split(".").map(&:to_i)
   end
 end
 
@@ -244,7 +271,7 @@ class CaskContext
     matched = case method
     when :or_older then host <= target
     when :or_newer then host >= target
-    when nil then host.to_s == target.to_s
+    when nil then host.same_release?(target)
     else shim_unsupported!("on_#{version} #{method}")
     end
     instance_eval(&block) if matched

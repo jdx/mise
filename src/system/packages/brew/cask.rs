@@ -414,6 +414,9 @@ async fn execute_lifecycle_hook(
 }
 
 fn ensure_cask_shim(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        file::create_dir_all(parent)?;
+    }
     if file::read_to_string(path).is_ok_and(|contents| contents == CASK_SHIM_RB) {
         return Ok(());
     }
@@ -1355,6 +1358,17 @@ mod tests {
             tap_git_head: None,
             raw_base: None,
         }
+    }
+
+    #[test]
+    fn ensure_cask_shim_creates_parent_dir() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let shim_path = tmp.path().join("missing").join("cask_shim.rb");
+
+        ensure_cask_shim(&shim_path)?;
+
+        assert_eq!(file::read_to_string(&shim_path)?, CASK_SHIM_RB);
+        Ok(())
     }
 
     #[test]
