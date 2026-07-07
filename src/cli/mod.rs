@@ -638,6 +638,8 @@ impl Cli {
         // Fast-path for hook-env: exit early if nothing has changed
         // This avoids expensive backend::load_tools() and config loading
         if hook_env_module::should_exit_early_fast() {
+            measure!("logger", { logger::init() });
+            Settings::flush_deprecated_warnings_for_fast_exit();
             return Ok(());
         }
         measure!("logger", { logger::init() });

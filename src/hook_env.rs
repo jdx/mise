@@ -175,6 +175,9 @@ pub fn should_exit_early_fast() -> bool {
     if args.len() < 2 || args[1] != "hook-env" {
         return false;
     }
+    if has_preclap_logging_flag(&args) {
+        return false;
+    }
     // Can't exit early if no previous session
     // Check for dir being set as a proxy for "has valid session"
     // (loaded_configs can be empty if there are no config files)
@@ -401,6 +404,13 @@ fn have_trust_state_dirs_been_modified() -> bool {
         }
     }
     false
+}
+
+fn has_preclap_logging_flag(args: &[String]) -> bool {
+    args.iter().any(|arg| {
+        matches!(arg.as_str(), "-q" | "--quiet" | "--silent" | "--log-level")
+            || arg.starts_with("--log-level=")
+    })
 }
 
 fn have_mise_env_vars_been_modified() -> bool {
@@ -743,4 +753,53 @@ pub fn build_alias_commands(
     }
 
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_preclap_logging_flag;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn detects_logging_flags_that_need_clap_before_fast_exit() {
+        assert!(has_preclap_logging_flag(&args(&[
+            "mise", "hook-env", "-s", "bash", "--quiet"
+        ])));
+        assert!(has_preclap_logging_flag(&args(&["mise", "hook-env", "-q"])));
+        assert!(has_preclap_logging_flag(&args(&[
+            "mise", "hook-env", "--silent"
+        ])));
+        assert!(has_preclap_logging_flag(&args(&[
+            "mise",
+            "hook-env",
+            "--log-level",
+            "error"
+        ])));
+        assert!(has_preclap_logging_flag(&args(&[
+            "mise",
+            "hook-env",
+            "--log-level=error"
+        ])));
+    }
+
+    #[test]
+    fn ignores_logging_flags_that_do_not_suppress_warnings() {
+        assert!(!has_preclap_logging_flag(&args(&[
+            "mise", "hook-env", "-s", "bash"
+        ])));
+        assert!(!has_preclap_logging_flag(&args(&[
+            "mise", "hook-env", "--trace"
+        ])));
+        assert!(!has_preclap_logging_flag(&args(&[
+            "mise", "hook-env", "--debug"
+        ])));
+        assert!(!has_preclap_logging_flag(&args(&[
+            "mise",
+            "hook-env",
+            "--verbose"
+        ])));
+    }
 }
