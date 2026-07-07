@@ -123,6 +123,8 @@ Install additional components.
 ```toml
 [tools]
 "pipx:harlequin" = { version = "latest", extras = "postgres,s3" }
+# equivalent array form:
+# "pipx:harlequin" = { version = "latest", extras = ["postgres", "s3"] }
 ```
 
 ### `pipx_args`
