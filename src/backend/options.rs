@@ -34,6 +34,8 @@ impl<'a> BackendOptions<'a> {
         lookup_platform_value(self.raw, key)
     }
 
+    /// Returns a comma-separated option value from either a string or an array of
+    /// strings, warning about non-string array entries.
     pub(crate) fn comma_joined(&self, key: &str) -> Option<String> {
         match self.raw.opts.get(key) {
             Some(toml::Value::Array(values)) => {
