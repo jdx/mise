@@ -228,7 +228,6 @@ self_update = { version = "0.44", optional = true, default-features = false, fea
   "compression-flate2",
   "signatures",
   "reqwest",
-  "rustls",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -241,7 +240,6 @@ self_update = { version = "0.44", optional = true, default-features = false, fea
   "compression-zip-deflate",
   "signatures",
   "reqwest",
-  "rustls",
 ] }
 zipsign-api = "0.2"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
@@ -277,6 +275,7 @@ native-tls = [
   "ubi/native-tls",
   "vfox/native-tls",
   "xx/native-tls",
+  "self_update?/default-tls",
 ]
 rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",
@@ -287,6 +286,7 @@ rustls = [
   "ubi/rustls-tls",
   "vfox/rustls",
   "xx/rustls",
+  "self_update?/rustls",
 ]
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
@@ -297,6 +297,7 @@ rustls-native-roots = [
   "ubi/rustls-tls-native-roots",
   "vfox/rustls-native-roots",
   "xx/rustls-native-roots",
+  "self_update?/rustls",
 ]
 
 [package.metadata.binstall]
