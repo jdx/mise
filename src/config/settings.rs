@@ -225,6 +225,28 @@ pub struct SettingsFile {
     pub settings: SettingsPartial,
 }
 
+fn parse_boolish_toml_value(value: &toml::Value) -> Option<bool> {
+    match value {
+        toml::Value::Boolean(value) => Some(*value),
+        toml::Value::Integer(0) => Some(false),
+        toml::Value::Integer(1) => Some(true),
+        toml::Value::String(value) => match value.trim().to_ascii_lowercase().as_str() {
+            "y" | "yes" | "true" | "1" | "on" => Some(true),
+            "n" | "no" | "false" | "0" | "off" => Some(false),
+            _ => None,
+        },
+        toml::Value::Table(table) => table.get("value").and_then(parse_boolish_toml_value),
+        _ => None,
+    }
+}
+
+fn tera_v1_from_env_config(raw: &toml::Value) -> Option<bool> {
+    raw.get("env")
+        .and_then(toml::Value::as_table)
+        .and_then(|env| env.get("MISE_TERA_V1"))
+        .and_then(parse_boolish_toml_value)
+}
+
 fn warn_deprecated(key: &str) {
     if let Some(meta) = SETTINGS_META.get(key)
         && let (Some(msg), Some(warn_at), Some(remove_at)) = (
@@ -579,12 +601,16 @@ impl Settings {
     pub fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
         let raw = file::read_to_string(path)?;
         let mut raw: toml::Value = toml::from_str(&raw)?;
+        let tera_v1_from_env = tera_v1_from_env_config(&raw);
         if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
             strip_local_only_settings(settings, path, crate::config::is_global_config(path));
         }
         let settings_file: SettingsFile = raw.try_into()?;
-
-        Ok(normalize_hidden_config_aliases(settings_file.settings))
+        let mut settings = normalize_hidden_config_aliases(settings_file.settings);
+        if settings.tera_v1.is_none() {
+            settings.tera_v1 = tera_v1_from_env;
+        }
+        Ok(settings)
     }
 
     fn all_settings_files() -> Vec<SettingsPartial> {
@@ -1183,6 +1209,62 @@ mod tests {
         assert_eq!(partial.paranoid, None);
         assert_eq!(partial.trusted_config_paths, None);
         assert_eq!(partial.yes, None);
+    }
+
+    #[test]
+    fn test_parse_settings_file_reads_tera_v1_from_env_directive() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            env.MISE_TERA_V1 = true
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.tera_v1, Some(true));
+    }
+
+    #[test]
+    fn test_parse_settings_file_reads_tera_v1_from_env_value_directive() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [env]
+            MISE_TERA_V1 = { value = "1" }
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.tera_v1, Some(true));
+    }
+
+    #[test]
+    fn test_parse_settings_file_prefers_explicit_tera_v1_setting() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [settings]
+            tera_v1 = false
+
+            [env]
+            MISE_TERA_V1 = true
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.tera_v1, Some(false));
     }
 
     #[test]

@@ -130,10 +130,20 @@ Tera v2 also adds useful syntax that replaces many old helper filters:
 
 Not every Tera v1 behavior can be made compatible. Undefined variable access is
 stricter in Tera v2, and Tera v1 macros are not supported by mise templates.
-As a temporary escape hatch, set `tera_v1 = true` or `MISE_TERA_V1=1` to render
-templates with Tera v1. This setting is scheduled for removal in mise 2027.4.0.
-Because miserc files are rendered before settings are loaded, this escape hatch
-does not apply while loading miserc itself.
+As a temporary escape hatch, set `MISE_TERA_V1=1` before running mise to render
+templates with Tera v1. In shared `mise.toml` files, prefer the backward-compatible
+env form because older mise releases treat it as a normal environment variable
+instead of failing on an unknown setting:
+
+```toml
+[env]
+MISE_TERA_V1 = true
+```
+
+The newer `[settings] tera_v1 = true` form also works in mise releases that
+support it, but is less compatible with older releases. This escape hatch is
+scheduled for removal in mise 2027.4.0. Because miserc files are rendered before
+settings are loaded, it does not apply while loading miserc itself.
 
 ### Tera Filters
 
@@ -242,11 +252,6 @@ Some functions:
 - `get_random(end, [start])` - Returns a random integer in a range.
   - `end: usize`: upper end of the range
   - `start: usize`: defaults to 0
-- `get_env(name, [default])`: Returns the environment variable value by name.
-  Prefer `env` variable than this function.
-  - `name: String`: the name of the environment variable
-  - `default: String`: a default value in case the environment variable is not found.
-    Throws when can't find the environment variable and `default` is not set.
 
 Tera offers more functions. Read more on [tera documentation](https://keats.github.io/tera/#functions).
 
@@ -261,6 +266,11 @@ of the task definition they are used in. In other words, their return values are
 across task definition(s).
 
 - `exec(command) -> String` – Runs a shell command and returns its output as a string.
+- `get_env(name, [default]) -> String` – Returns the original process environment
+  variable value by name. This helper is provided by mise for compatibility with
+  older Tera templates. Prefer the `env` variable in new templates when possible.
+  The `default` value is used when the environment variable is not present; empty
+  environment variables are returned as-is.
 - `arch() -> String` – Retrieves the system architecture, such as `x64` or `arm64`.
 - `os() -> String` – Returns the name of the operating system,
   e.g. linux, macos, windows.

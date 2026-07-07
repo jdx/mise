@@ -366,6 +366,7 @@ pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
 
 static TERA: Lazy<Tera> = Lazy::new(|| {
     let mut tera = Tera::default();
+    tera.register_function("get_env", tera_get_env(env::PRISTINE_ENV.clone()));
     tera.register_function(
         "arch",
         move |args: Kwargs, _: &State| -> TeraResult<Value> {
@@ -989,6 +990,19 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
 
     tera
 });
+
+fn tera_get_env(env: EnvMap) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
+    move |args: Kwargs, _: &State| -> TeraResult<Value> {
+        let name = args.must_get::<&str>("name")?;
+        if let Some(value) = env.get(name) {
+            return Ok(Value::from(value.clone()));
+        }
+        if let Some(default) = args.get::<&str>("default")? {
+            return Ok(Value::from(default));
+        }
+        Err(tera_err(format!("Environment variable `{name}` not found")))
+    }
+}
 
 static TERA1: Lazy<tera1::Tera> = Lazy::new(|| {
     let mut tera = tera1::Tera::default();
@@ -1803,6 +1817,45 @@ mod tests {
         let parts: Vec<&str> = result.split('_').collect();
         assert_eq!(parts.len(), 3);
         assert!(parts.iter().all(|p| p.parse::<u32>().is_err())); // no numbers
+    }
+
+    #[test]
+    fn test_get_env_function() {
+        let mut env = EnvMap::new();
+        env.insert("MISE_TEST_GET_ENV".into(), "from-env".into());
+        env.insert("MISE_TEST_EMPTY_ENV".into(), "".into());
+
+        let mut tera = Tera::default();
+        tera.register_function("get_env", tera_get_env(env));
+        let ctx = Context::new();
+
+        assert_eq!(
+            tera.render_str("{{ get_env(name='MISE_TEST_GET_ENV') }}", &ctx, false)
+                .unwrap(),
+            "from-env"
+        );
+        assert_eq!(
+            tera.render_str(
+                "{{ get_env(name='MISE_TEST_MISSING_ENV', default='fallback') }}",
+                &ctx,
+                false
+            )
+            .unwrap(),
+            "fallback"
+        );
+        assert_eq!(
+            tera.render_str(
+                "{{ get_env(name='MISE_TEST_EMPTY_ENV', default='fallback') }}",
+                &ctx,
+                false
+            )
+            .unwrap(),
+            ""
+        );
+        assert!(
+            tera.render_str("{{ get_env(name='MISE_TEST_MISSING_ENV') }}", &ctx, false)
+                .is_err()
+        );
     }
 
     #[tokio::test]

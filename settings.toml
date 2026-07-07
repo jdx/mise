@@ -2642,6 +2642,10 @@ This is a temporary escape hatch for users whose templates still rely on Tera v1
 cannot be fully emulated by mise's Tera v2 compatibility helpers, such as Tera v1 macros or looser
 undefined variable handling.
 
+For shared `mise.toml` files, prefer setting `MISE_TERA_V1 = true` under `[env]` while migrating.
+Older mise releases treat that as a regular environment variable instead of failing on an unknown
+setting.
+
 New templates should use Tera v2 syntax. This setting is scheduled for removal in mise 2027.4.0.
 """
 env = "MISE_TERA_V1"
