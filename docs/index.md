@@ -75,8 +75,8 @@ hero:
     <div>
       <h2>aube: a fast Node.js package manager.</h2>
       <p>
-        From the author of mise. aube works with your existing lockfile and is
-        available in beta.
+        From the author of mise. aube works with your existing lockfile — no
+        migration needed.
       </p>
     </div>
   </a>
