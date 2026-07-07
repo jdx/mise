@@ -55,8 +55,15 @@ impl<'a> PipxOptions<'a> {
         }
     }
 
-    fn extras(&self) -> Option<&'a str> {
-        self.values.str("extras")
+    fn extras(&self) -> Option<String> {
+        match self.values.raw().opts.get("extras") {
+            Some(toml::Value::Array(extras)) => extras
+                .iter()
+                .map(|extra| extra.as_str().map(str::to_string))
+                .collect::<Option<Vec<_>>>()
+                .map(|extras| extras.join(",")),
+            _ => self.values.raw().get_string("extras"),
+        }
     }
 
     fn pipx_args(&self) -> Option<&'a str> {
@@ -73,7 +80,13 @@ impl<'a> PipxOptions<'a> {
 
     fn lockfile_options(&self) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
+        if let Some(value) = self.extras() {
+            result.insert("extras".to_string(), value);
+        }
         for key in install_time_option_keys() {
+            if key == "extras" {
+                continue;
+            }
             if let Some(value) = self.values.raw().get_string(&key) {
                 result.insert(key, value);
             }
@@ -813,11 +826,57 @@ fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use super::{PIPXBackend, PypiPackage, PypiRelease, UV_EXCLUDE_NEWER_VERSION};
+    use super::{
+        PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease, UV_EXCLUDE_NEWER_VERSION,
+    };
     use crate::github::GithubRelease;
+    use crate::toolset::ToolVersionOptions;
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use std::ffi::OsString;
+
+    #[test]
+    fn test_extras_accepts_string_or_array() {
+        let mut string_opts = ToolVersionOptions::default();
+        string_opts.opts.insert(
+            "extras".to_string(),
+            toml::Value::String("postgres,s3".to_string()),
+        );
+        assert_eq!(
+            PipxOptions::new(&string_opts).extras().as_deref(),
+            Some("postgres,s3")
+        );
+        assert_eq!(
+            PipxOptions::new(&string_opts)
+                .lockfile_options()
+                .get("extras"),
+            Some(&"postgres,s3".to_string())
+        );
+
+        let mut array_opts = ToolVersionOptions::default();
+        array_opts.opts.insert(
+            "extras".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("postgres".to_string()),
+                toml::Value::String("s3".to_string()),
+            ]),
+        );
+        assert_eq!(
+            PipxOptions::new(&array_opts).extras().as_deref(),
+            Some("postgres,s3")
+        );
+        assert_eq!(
+            PipxRequest::Pypi("harlequin".to_string())
+                .pipx_request("latest", &PipxOptions::new(&array_opts)),
+            "harlequin[postgres,s3]"
+        );
+        assert_eq!(
+            PipxOptions::new(&array_opts)
+                .lockfile_options()
+                .get("extras"),
+            Some(&"postgres,s3".to_string())
+        );
+    }
 
     #[test]
     fn test_versions_from_pypi_package_skips_yanked_releases() {

@@ -42,14 +42,21 @@ impl<'a> GoOptions<'a> {
         }
     }
 
-    fn tags(&self) -> Option<&'a str> {
-        self.values.str("tags")
+    fn tags(&self) -> Option<String> {
+        match self.values.raw().opts.get("tags") {
+            Some(toml::Value::Array(tags)) => tags
+                .iter()
+                .map(|tag| tag.as_str().map(str::to_string))
+                .collect::<Option<Vec<_>>>()
+                .map(|tags| tags.join(",")),
+            _ => self.values.raw().get_string("tags"),
+        }
     }
 
     fn lockfile_options(&self) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
         if let Some(value) = self.tags() {
-            result.insert("tags".to_string(), value.to_string());
+            result.insert("tags".to_string(), value);
         }
         result
     }
@@ -637,7 +644,25 @@ mod tests {
             toml::Value::String("sqlite,fts5".to_string()),
         );
 
-        assert_eq!(GoOptions::new(&opts).tags(), Some("sqlite,fts5"));
+        assert_eq!(GoOptions::new(&opts).tags().as_deref(), Some("sqlite,fts5"));
+        assert_eq!(
+            GoOptions::new(&opts).lockfile_options(),
+            BTreeMap::from([("tags".to_string(), "sqlite,fts5".to_string())])
+        );
+    }
+
+    #[test]
+    fn go_options_accepts_array_tags() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "tags".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("sqlite".to_string()),
+                toml::Value::String("fts5".to_string()),
+            ]),
+        );
+
+        assert_eq!(GoOptions::new(&opts).tags().as_deref(), Some("sqlite,fts5"));
         assert_eq!(
             GoOptions::new(&opts).lockfile_options(),
             BTreeMap::from([("tags".to_string(), "sqlite,fts5".to_string())])
