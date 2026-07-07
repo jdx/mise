@@ -1500,6 +1500,16 @@ div[class*="language-"] .copy:hover {
   font-size: 0.88rem;
 }
 
+/* strip VitePress's inline-code pill so it doesn't box-in-a-box
+   (needs .landing-page to outweigh `.vp-doc :not(pre) > code`) */
+.landing-page .landing-mini-install code {
+  padding: 0 !important;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit !important;
+}
+
 .landing-quickstart {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);

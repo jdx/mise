@@ -69,7 +69,7 @@ run = "pytest"
   </div>
 
   <div class="landing-tools" aria-label="Supported tools">
-    <p>The pantry · 900+ tools, one config file</p>
+    <p>The pantry · 1000+ tools, one config file</p>
     <div class="landing-tools-list">
       <a href="https://mise-versions.jdx.dev/tools/node">node</a>
       <a href="https://mise-versions.jdx.dev/tools/python">python</a>
@@ -85,7 +85,7 @@ run = "pytest"
       <a href="https://mise-versions.jdx.dev/tools/swift">swift</a>
       <a href="https://mise-versions.jdx.dev/tools/php">php</a>
       <a href="https://mise-versions.jdx.dev/tools/elixir">elixir</a>
-      <a href="/registry">…and 900+ more</a>
+      <a href="/registry">…and 1000+ more</a>
     </div>
   </div>
 
