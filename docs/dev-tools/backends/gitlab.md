@@ -364,11 +364,12 @@ bin_path = "gitlab-runner-{{ version }}/bin" # expands to gitlab-runner-1.0.0/bi
 
 ### `filter_bins`
 
-Comma-separated list of binaries to symlink into a filtered `.mise-bins` directory. This is useful when the tool comes with extra binaries that you do not want to expose on PATH.
+List of binaries to symlink into a filtered `.mise-bins` directory. This is useful when the tool comes with extra binaries that you do not want to expose on PATH.
 
 ```toml
 [tools]
 "gitlab:myorg/mytool" = { version = "1.0.0", filter_bins = "mybin" }
+"gitlab:myorg/other-tool" = { version = "1.0.0", filter_bins = ["mybin", "helper"] }
 ```
 
 When enabled:
