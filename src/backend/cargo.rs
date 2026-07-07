@@ -59,11 +59,24 @@ impl<'a> CargoOptions<'a> {
 
     fn features(&self) -> Option<String> {
         match self.values.raw().opts.get("features") {
-            Some(toml::Value::Array(features)) => features
-                .iter()
-                .map(|feature| feature.as_str().map(str::to_string))
-                .collect::<Option<Vec<_>>>()
-                .map(|features| features.join(" ")),
+            Some(toml::Value::Array(features)) => {
+                let features = features
+                    .iter()
+                    .filter_map(|feature| {
+                        feature.as_str().map(str::to_string).or_else(|| {
+                            warn!(
+                                "invalid value in cargo features array: {feature}; expected string"
+                            );
+                            None
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if features.is_empty() {
+                    None
+                } else {
+                    Some(features.join(" "))
+                }
+            }
             _ => self.values.raw().get_string("features"),
         }
     }
@@ -449,6 +462,7 @@ mod tests {
             "features".into(),
             toml::Value::Array(vec![
                 toml::Value::String("postgres".into()),
+                toml::Value::Integer(1),
                 toml::Value::String("rustls".into()),
             ]),
         );
