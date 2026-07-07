@@ -135,7 +135,7 @@ impl BrewCaskManager {
         let tmp_caskroom = caskroom_tmp_dir(&cask);
         file::remove_all(&tmp_caskroom)?;
         file::create_dir_all(&tmp_caskroom)?;
-        execute_lifecycle_hook(&cask, &tmp_caskroom, "preflight", pr).await?;
+        execute_lifecycle_hook(&cask, &stage, "preflight", pr).await?;
         for app in &artifacts.apps {
             install_app(&stage, &tmp_caskroom, app)?;
         }
