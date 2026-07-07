@@ -191,7 +191,7 @@ class CaskContext
 
   def run_hook(name)
     hook = @hooks[name.to_sym]
-    odie "expected cask hook #{name} was not registered" unless hook
+    return unless hook
 
     instance_eval(&hook)
   end
