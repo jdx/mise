@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn test_task_dep_render_shell_style_env() {
         let mut td: TaskDep = "FOO=bar mytask arg1".parse().unwrap();
-        let mut tera = TeraEngine::V2(Box::new(tera::Tera::default()));
+        let mut tera = TeraEngine::V2(Box::default());
         let ctx = tera::Context::new();
         td.render(&mut tera, &ctx).unwrap();
 
@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn test_task_dep_render_multiple_env() {
         let mut td: TaskDep = "FOO=bar BAZ=qux mytask".parse().unwrap();
-        let mut tera = TeraEngine::V2(Box::new(tera::Tera::default()));
+        let mut tera = TeraEngine::V2(Box::default());
         let ctx = tera::Context::new();
         td.render(&mut tera, &ctx).unwrap();
 
@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn test_task_dep_render_no_env() {
         let mut td: TaskDep = "mytask arg1 arg2".parse().unwrap();
-        let mut tera = TeraEngine::V2(Box::new(tera::Tera::default()));
+        let mut tera = TeraEngine::V2(Box::default());
         let ctx = tera::Context::new();
         td.render(&mut tera, &ctx).unwrap();
 
@@ -336,7 +336,7 @@ mod tests {
     fn test_task_dep_single_token_with_equals() {
         // Single token like "build=release" should be treated as task name, not env var
         let mut td: TaskDep = "build=release".parse().unwrap();
-        let mut tera = TeraEngine::V2(Box::new(tera::Tera::default()));
+        let mut tera = TeraEngine::V2(Box::default());
         let ctx = tera::Context::new();
         td.render(&mut tera, &ctx).unwrap();
 
@@ -349,7 +349,7 @@ mod tests {
     fn test_task_dep_only_env_vars_error() {
         // Only env vars without task name should error
         let mut td: TaskDep = "FOO=bar BAZ=qux".parse().unwrap();
-        let mut tera = TeraEngine::V2(Box::new(tera::Tera::default()));
+        let mut tera = TeraEngine::V2(Box::default());
         let ctx = tera::Context::new();
         let result = td.render(&mut tera, &ctx);
 
