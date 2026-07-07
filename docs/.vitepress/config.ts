@@ -390,8 +390,20 @@ export default withMermaid(
     var d = document.documentElement;
     var p = location.pathname;
     d.classList.add("preboot");
-    if (p === "/" || p === "/index.html") d.classList.add("hide-nav-brand");
-    else d.classList.add("preboot-sidebar");
+    if (p === "/" || p === "/index.html") {
+      d.classList.add("hide-nav-brand");
+      // Scroll restoration on a mid-page reload fires before hydration —
+      // unhide the brand right away instead of waiting for Layout.vue.
+      addEventListener(
+        "scroll",
+        function () {
+          if (scrollY > 300) d.classList.remove("hide-nav-brand");
+        },
+        { once: true },
+      );
+    } else {
+      d.classList.add("preboot-sidebar");
+    }
     var id = localStorage.getItem("jdx-banner-id");
     var h = localStorage.getItem("jdx-banner-height");
     if (id && h && localStorage.getItem("jdx-banner-dismissed") !== id)
