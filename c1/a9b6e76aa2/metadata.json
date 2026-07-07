@@ -5,6 +5,7 @@
   "branch": "codex/deprecated-settings-warnings",
   "checkpoints_count": 1,
   "files_touched": [
+    "src/cli/mod.rs",
     "src/config/settings.rs"
   ],
   "sessions": [
@@ -12,14 +13,14 @@
       "metadata": "/c1/a9b6e76aa2/0/metadata.json",
       "transcript": "/c1/a9b6e76aa2/0/full.jsonl",
       "content_hash": "/c1/a9b6e76aa2/0/content_hash.txt",
-      "prompt": "/c1/a9b6e76aa2/0/prompt.txt"
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 68676,
+    "input_tokens": 27890,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 1289728,
-    "output_tokens": 5414,
-    "api_call_count": 8
+    "cache_read_tokens": 2073216,
+    "output_tokens": 5411,
+    "api_call_count": 11
   }
 }
