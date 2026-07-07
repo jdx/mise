@@ -88,8 +88,10 @@ function updateNavBrand() {
   const lockup = document.querySelector(".hero-lockup");
   const navBottom =
     document.querySelector(".VPNavBar")?.getBoundingClientRect().bottom ?? 64;
-  const hide =
-    !!lockup && lockup.getBoundingClientRect().bottom > navBottom + 8;
+  // On narrow viewports the navbar scrolls away with the page and its
+  // rect bottom goes negative — clamp so the lockup check stays sane.
+  const threshold = Math.max(navBottom, 0) + 8;
+  const hide = !!lockup && lockup.getBoundingClientRect().bottom > threshold;
   document.documentElement.classList.toggle("hide-nav-brand", hide);
 }
 
@@ -102,6 +104,14 @@ onMounted(() => {
   window.addEventListener("scroll", updateNavBrand, { passive: true });
   window.addEventListener("resize", updateNavBrand, { passive: true });
   updateNavBrand();
+  // Hydration is done and the nav state is correct — drop the pre-paint
+  // preboot classes (set by the inline head script in config.ts) after the
+  // corrected state has painted, re-enabling normal transitions.
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() =>
+      document.documentElement.classList.remove("preboot", "preboot-sidebar"),
+    ),
+  );
 });
 
 onUnmounted(() => {

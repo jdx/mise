@@ -191,6 +191,89 @@
   pointer-events: none;
 }
 
+/* SSR renders the navbar without the `home top` state classes, so its
+   divider and solid background flash on first paint until hydration
+   catches up. While the hero lockup is on screen (same pre-paint class),
+   keep the navbar chrome transparent like VitePress's own top-of-home
+   state does. !important because VitePress's scoped selectors
+   (.VPNavBar:not(.home) .divider-line[data-v-*]) out-specify us. */
+.hide-nav-brand .VPNavBar .divider-line {
+  background-color: transparent !important;
+}
+
+.hide-nav-brand .VPNavBar:not(.has-sidebar) {
+  background-color: transparent !important;
+}
+
+/* During "preboot" (pre-paint class from the inline head script, removed
+   by Layout.vue right after hydration) navbar transitions are disabled so
+   state corrections snap invisibly instead of fading in front of the user
+   — e.g. reloading the home page while scrolled down, or the divider's
+   0.5s background fade. */
+.preboot .VPNavBar,
+.preboot .VPNavBarTitle,
+.preboot .VPNavBar .divider-line {
+  transition: none !important;
+}
+
+/* Non-home pages: mirror VitePress's `.VPNavBar.has-sidebar` layout before
+   hydration adds the class, so the search box and menu don't jump right.
+   Values copied from vitepress/dist/client/theme-default (VPNavBar.vue). */
+@media (min-width: 960px) {
+  .preboot-sidebar .VPNavBar .wrapper {
+    padding: 0;
+  }
+
+  .preboot-sidebar .VPNavBar .container {
+    max-width: 100%;
+  }
+
+  .preboot-sidebar .VPNavBar .title {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    padding: 0 32px;
+    width: var(--vp-sidebar-width);
+    height: var(--vp-nav-height);
+    background-color: transparent;
+  }
+
+  .preboot-sidebar .VPNavBar .content {
+    position: relative;
+    z-index: 1;
+    padding-right: 32px;
+    padding-left: var(--vp-sidebar-width);
+  }
+
+  .preboot-sidebar .VPNavBar .divider {
+    padding-left: var(--vp-sidebar-width);
+  }
+}
+
+@media (min-width: 1440px) {
+  .preboot-sidebar .VPNavBar .title {
+    padding-left: max(32px, calc((100% - (var(--vp-layout-max-width) - 64px)) / 2));
+    width: calc(
+      (100% - (var(--vp-layout-max-width) - 64px)) / 2 + var(--vp-sidebar-width) -
+        32px
+    );
+  }
+
+  .preboot-sidebar .VPNavBar .content {
+    padding-right: calc((100vw - var(--vp-layout-max-width)) / 2 + 32px);
+    padding-left: calc(
+      (100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)
+    );
+  }
+
+  .preboot-sidebar .VPNavBar .divider {
+    padding-left: calc(
+      (100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)
+    );
+  }
+}
+
 .VPNavBarTitle:hover .VPImage.logo {
   transform: scale(1.1);
   filter: drop-shadow(0 0 10px rgba(139, 34, 82, 0.4));

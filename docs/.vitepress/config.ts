@@ -373,9 +373,13 @@ export default withMermaid(
         },
       ],
       ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
-      // Pre-paint setup to avoid first-load pop-in:
-      // - hide the navbar brand on the home page before the scroll handler
-      //   in Layout.vue takes over (it fades in after the hero lockup)
+      // Pre-paint setup to avoid first-load pop-in (see custom.css "preboot"
+      // rules; Layout.vue removes the preboot classes right after hydration):
+      // - `preboot` disables navbar transitions so hydration state
+      //   corrections snap instead of visibly fading
+      // - home: hide the navbar brand before the scroll handler takes over
+      // - other pages: pre-apply the has-sidebar navbar layout so the
+      //   search/menu don't jump right when hydration adds the class
       // - reserve the announcement banner's space from the cached height so
       //   the header doesn't jump when the banner arrives (banner.ts)
       [
@@ -385,7 +389,9 @@ export default withMermaid(
   try {
     var d = document.documentElement;
     var p = location.pathname;
+    d.classList.add("preboot");
     if (p === "/" || p === "/index.html") d.classList.add("hide-nav-brand");
+    else d.classList.add("preboot-sidebar");
     var id = localStorage.getItem("jdx-banner-id");
     var h = localStorage.getItem("jdx-banner-height");
     if (id && h && localStorage.getItem("jdx-banner-dismissed") !== id)
