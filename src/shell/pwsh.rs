@@ -70,13 +70,10 @@ impl Shell for Pwsh {
                     }}
                     default {{
                         & "{exe}" $command @remainingArgs
-                        $status = $LASTEXITCODE
                         if ($(Test-Path -Path Function:\_mise_hook)){{
                             _mise_hook
                         }}
                         _reset_output_encoding
-                        # restore exit code from mise after _mise_hook
-                        $global:LASTEXITCODE = $status
                     }}
                 }}
             }}
@@ -87,10 +84,13 @@ impl Shell for Pwsh {
 
             function Global:_mise_hook {{
                 if ($env:MISE_SHELL -eq "pwsh"){{
+                    $status = $global:LASTEXITCODE
                     $output = & "{exe}" hook-env{flags} $args -s pwsh | Out-String
                     if ($output -and $output.Trim()) {{
                         $output | Invoke-Expression
                     }}
+                    # mise hook-env will have set $LASTEXITCODE, restore previous value
+                    $global:LASTEXITCODE = $status
                 }}
             }}
 

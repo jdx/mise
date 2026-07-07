@@ -11,7 +11,7 @@ header = """
 # Changelog\n
 """
 # template for the changelog body
-# https://keats.github.io/tera/docs/#introduction
+# https://keats.github.io/tera/#introduction
 body = """
 {% if version %}\
     {% if previous.version %}\

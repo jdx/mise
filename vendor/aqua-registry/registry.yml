@@ -5763,6 +5763,34 @@ packages:
           asset: checksums.txt
           algorithm: sha256
   - type: github_release
+    repo_owner: Mic92
+    repo_name: nixfmt-rs
+    description: Rust reimplementation of nixfmt with byte-identical output
+    files:
+      - name: nixfmt
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.1.1"
+        no_asset: true
+      - version_constraint: "true"
+        asset: nixfmt-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+        github_artifact_attestations:
+          signer_workflow: Mic92/nixfmt-rs/.github/workflows/release-assets.yml
+        supported_envs:
+          - linux
+          - darwin/arm64
+  - type: github_release
     repo_owner: Mikescher
     repo_name: better-docker-ps
     description: Because `docker ps` is annoying and does not fit my monitor/terminal width
@@ -12305,6 +12333,13 @@ packages:
         supported_envs:
           - linux
           - darwin
+      - version_constraint: semver("<= 1.6.4")
+        asset: opencodereview-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
       - version_constraint: "true"
         asset: opencodereview-{{.OS}}-{{.Arch}}
         format: raw
@@ -12312,6 +12347,8 @@ packages:
           type: github_release
           asset: sha256sum.txt
           algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: alibaba/open-code-review/.github/workflows/release.yml
   - type: github_release
     repo_owner: allero-io
     repo_name: allero
@@ -44310,13 +44347,17 @@ packages:
     version_overrides:
       - version_constraint: semver("<= 0.6.0")
         no_asset: true
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.9.0")
         asset: keep-sorted_{{.OS}}
         format: raw
         supported_envs:
           - darwin
           - windows
           - amd64
+      - version_constraint: "true"
+        asset: keep-sorted_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
   - type: github_release
     repo_owner: google
     repo_name: mtail
@@ -46987,6 +47028,10 @@ packages:
       windows: mingw64
     files:
       - name: ghcup
+    checksum:
+      type: http
+      url: https://downloads.haskell.org/~ghcup/{{trimV .Version}}/SHA256SUMS
+      algorithm: sha256
   - type: github_release
     repo_owner: hasura
     repo_name: graphql-engine
@@ -59020,6 +59065,13 @@ packages:
           - linux/amd64
           - darwin
           - windows
+      - version_constraint: semver("< 4.0.10")
+        asset: kubescape_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.sha256
+          algorithm: sha256
       - version_constraint: "true"
         asset: kubescape_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -59027,6 +59079,8 @@ packages:
           type: github_release
           asset: checksums.sha256
           algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: kubescape/kubescape/.github/workflows/02-release.yaml
   - type: github_release
     repo_owner: kubeshark
     repo_name: kubeshark
@@ -60012,7 +60066,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("< 1.17.2")
         asset: kyverno-cli_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -60031,6 +60085,27 @@ packages:
               - https://token.actions.githubusercontent.com
               - --signature
               - https://github.com/kyverno/kyverno/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: kyverno-cli_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/kyverno/kyverno/.github/workflows/release.yaml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -67324,7 +67399,7 @@ packages:
           algorithm: sha256
         supported_envs:
           - linux/amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.24.0")
         asset: sqly_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -67334,6 +67409,27 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: "true"
+        asset: sqly_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/nao1215/sqly/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: nao1215/sqly/.github/workflows/release.yml
   - type: github_release
     repo_owner: natecraddock
     repo_name: zf
@@ -69949,7 +70045,7 @@ packages:
         supported_envs:
           - linux
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.133.0-alpha.1")
         asset: codex-{{.Arch}}-{{.OS}}.{{.Format}}
         format: zst
         windows_arm_emulation: true
@@ -69965,6 +70061,19 @@ packages:
         overrides:
           - goos: windows
             asset: codex-{{.Arch}}-{{.OS}}.exe.{{.Format}}
+      - version_constraint: "true"
+        asset: codex-package-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: codex
+            src: bin/codex
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
   - type: github_release
     repo_owner: openai
     repo_name: tart
@@ -78511,6 +78620,140 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: russellbanks
+    repo_name: Komac
+    description: The Community Manifest Creator for WinGet
+    files:
+      - name: komac
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 2.0.0")
+        error_message: The version is too old. Please upgrade to v2.0.0 or later.
+      - version_constraint: Version == "v2.0.0"
+        asset: KomacPortable-{{.OS}}-nightly-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: komac
+            src: KomacPortable-{{.OS}}-nightly-{{.Arch}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: raw
+            asset: KomacPortable-nightly-{{.Arch}}
+      - version_constraint: Version == "v2.0.3"
+        asset: KomacPortable-{{.OS}}-{{trimV .Version}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: komac
+            src: KomacPortable-{{.OS}}-{{trimV .Version}}-{{.Arch}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: raw
+            asset: KomacPortable-{{trimV .Version}}-{{.Arch}}
+      - version_constraint: Version == "v2.2.1"
+        asset: KomacPortable-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: komac
+            src: KomacPortable-{{.OS}}-{{.Arch}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: raw
+            asset: KomacPortable-{{.Arch}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: Version == "v2.13.0"
+        asset: komac-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: raw
+            asset: komac-{{trimV .Version}}-{{.Arch}}-{{.OS}}
+      - version_constraint: semver("<= 2.0.2")
+        asset: KomacPortable-{{.OS}}-{{.Version}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: komac
+            src: KomacPortable-{{.OS}}-{{.Version}}-{{.Arch}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: raw
+            asset: KomacPortable-{{.Version}}-{{.Arch}}
+      - version_constraint: semver("<= 2.2.0")
+        asset: KomacPortable-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: komac
+            src: KomacPortable-{{.OS}}-{{.Arch}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: raw
+            asset: KomacPortable-{{.Arch}}
+      - version_constraint: semver("<= 2.12.1")
+        asset: komac-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: raw
+            asset: komac-{{trimV .Version}}-{{.Arch}}-{{.OS}}
+      - version_constraint: "true"
+        asset: komac-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: raw
+            asset: komac-{{trimV .Version}}-{{.Arch}}-{{.OS}}
   - type: github_release
     repo_owner: rust-cross
     repo_name: cargo-zigbuild

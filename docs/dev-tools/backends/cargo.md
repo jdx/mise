@@ -111,6 +111,7 @@ Install additional components (passed as `cargo install --features`):
 ```toml
 [tools]
 "cargo:cargo-edit" = { version = "latest", features = "add" }
+"cargo:sqlx-cli" = { version = "latest", features = ["postgres", "rustls"] }
 ```
 
 This option requires `cargo install`; mise skips `cargo-binstall` when it is set.

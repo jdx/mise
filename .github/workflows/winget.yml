@@ -3,22 +3,85 @@ on:
   release:
     types: [released]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish. Defaults to the latest release."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          repository: jdx/winget-pkgs
-          token: ${{ secrets.MISE_GH_TOKEN }}
-          fetch-depth: 0
-      - run: git config user.name mise-en-dev
-      - run: git config user.email release@mise.jdx.dev
-      - run: git remote add microsoft https://github.com/microsoft/winget-pkgs
-      - run: git pull --rebase microsoft master
-      - run: git push -f origin master
-      - uses: vedantmgoyal9/winget-releaser@7bd472be23763def6e16bd06cc8b1cdfab0e2fd5 # main
-        with:
-          identifier: jdx.mise
-          max-versions-to-keep: 5
-          token: ${{ secrets.MISE_GH_TOKEN }}
+      - name: Install komac
+        run: winget install --id russellbanks.Komac --version 2.16.0 --exact --accept-source-agreements --accept-package-agreements
+
+      - name: Publish to WinGet
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          KOMAC_FORK_OWNER: jdx
+          KOMAC_CREATED_WITH: mise release workflow
+          KOMAC_CREATED_WITH_URL: https://github.com/jdx/mise
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $Identifier = "jdx.mise"
+          $MaxVersionsToKeep = 5
+          $ReleaseTag = $env:RELEASE_TAG
+          if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
+            $LatestRelease = Invoke-RestMethod `
+              -Uri "https://api.github.com/repos/jdx/mise/releases/latest" `
+              -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN" }
+            $ReleaseTag = $LatestRelease.tag_name
+          }
+
+          $ReleaseInfo = Invoke-RestMethod `
+            -Uri "https://api.github.com/repos/jdx/mise/releases/tags/$ReleaseTag" `
+            -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN" }
+
+          $Version = $ReleaseInfo.tag_name -replace "^v", ""
+          $Urls = @(
+            $ReleaseInfo.assets |
+              Where-Object { $_.name -match "\.(exe|msi|msix|appx)(bundle){0,1}$" } |
+              ForEach-Object { $_.browser_download_url }
+          )
+
+          if (-not $Urls) {
+            throw "No WinGet installer assets found for $ReleaseTag"
+          }
+
+          komac sync-fork
+
+          $UpdateArgs = @(
+            "update",
+            $Identifier,
+            "--version",
+            $Version,
+            "--submit",
+            "--urls"
+          ) + $Urls
+          & komac @UpdateArgs
+
+          komac cleanup --only-merged
+
+          $ToNatural = { [regex]::Replace($_, "\d+", { $args[0].Value.PadLeft(20) }) }
+          $Versions = @(
+            komac list-versions $Identifier --json |
+              ConvertFrom-Json -NoEnumerate |
+              Sort-Object $ToNatural -Descending
+          )
+
+          if ($Versions.Count -gt $MaxVersionsToKeep) {
+            $VersionsToDelete = $Versions[$MaxVersionsToKeep..($Versions.Count - 1)]
+            foreach ($OldVersion in $VersionsToDelete) {
+              komac remove $Identifier `
+                --version $OldVersion `
+                --reason "This version is older than what has been set in max-versions-to-keep by the publisher." `
+                --submit
+            }
+          }

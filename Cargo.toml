@@ -9,7 +9,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.7.0"
+version = "2026.7.1"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -126,7 +126,7 @@ minisign-verify = "0.2"
 md-5 = "0.11"
 miette = { version = "7", features = ["fancy"] }
 netrc-rs = "0.1"
-nodejs-semver = "4.2"
+nodejs-semver = "5.0"
 nucleo-matcher = "0.3"
 num_cpus = "1"
 once_cell = "1"
@@ -135,7 +135,7 @@ path-absolutize = { version = "3", features = ["unsafe_cache"] }
 petgraph = "0.8"
 phf = "0.13"
 rand = "0.10"
-rattler = { version = "0.45", default-features = false }
+rattler = { version = "0.46", default-features = false }
 rattler_conda_types = { version = "0.47", default-features = false }
 rattler_repodata_gateway = { version = "0.29", default-features = false, features = [
   "gateway",
@@ -186,7 +186,8 @@ tabled = { version = "0.21", features = ["ansi"] }
 taplo = "0.14"
 tar = "0.4"
 tempfile = "3"
-tera = "1"
+tera = "2"
+tera1 = { package = "tera", version = "1.20.1" }
 terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }

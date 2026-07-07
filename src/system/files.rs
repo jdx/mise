@@ -665,7 +665,7 @@ fn check_content(target: &Path, expected: &[u8]) -> Result<FileState> {
 pub fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
     let raw = file::read_to_string(&req.source)?;
     let mut tera = crate::tera::get_tera(Some(&req.base));
-    let rendered = tera.render_str(&raw, &config.tera_ctx).map_err(|err| {
+    let rendered = crate::tera::render_str(&mut tera, &raw, &config.tera_ctx).map_err(|err| {
         eyre::eyre!(
             "[dotfiles].\"{}\": failed to render template {}: {err}",
             req.target_raw,

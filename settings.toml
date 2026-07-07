@@ -292,6 +292,31 @@ mise use -g cargo-binstall
 env = "MISE_CARGO_BINSTALL"
 type = "Bool"
 
+[cargo.binstall_native]
+description = "[experimental] Use mise's native cargo binary installer when cargo-binstall is unavailable."
+docs = """
+Controls mise's native cargo binary installer, which downloads precompiled binaries using
+`package.metadata.binstall` from the crate's `Cargo.toml` when `cargo-binstall` is not installed.
+This setting is experimental and requires `experimental = true` when explicitly enabled.
+
+- If `true`: Try mise's native cargo binary installer first, fall back to `cargo install` if unavailable.
+- If `false`: Do not use mise's native cargo binary installer.
+- If unset: Native installs are disabled for now. Starting in mise `2027.1.0`, mise will warn when
+  a cargo package could have been installed from a native binary artifact. In mise `2027.7.0`, unset
+  will default to native binary installs and this setting will become a two-way switch.
+
+Set `cargo.binstall = false` to force `cargo install` instead of either `cargo-binstall` or mise's
+native cargo binary installer.
+
+This is a best-effort fast path. If the crate does not declare compatible
+metadata, the artifact is unavailable, or the install uses Cargo build options
+that cannot affect a downloaded binary (including `locked = true`), mise falls
+back to `cargo install`.
+"""
+env = "MISE_CARGO_BINSTALL_NATIVE"
+optional = true
+type = "Bool"
+
 [cargo.binstall_only]
 default = false
 description = "Only use cargo-binstall for installation, fail if not available."
@@ -2602,6 +2627,24 @@ deprecated_warn_at = "2026.8.0"
 description = "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`."
 hide = true
 optional = true
+type = "Bool"
+
+[tera_v1]
+default = false
+deprecated = "tera_v1 is a temporary compatibility escape hatch for templates that still need Tera v1 behavior. Update templates to Tera v2 syntax instead."
+deprecated_remove_at = "2027.4.0"
+deprecated_warn_at = "2026.10.0"
+description = "Use Tera v1 instead of Tera v2 for template rendering."
+docs = """
+Use Tera v1 instead of Tera v2 for template rendering.
+
+This is a temporary escape hatch for users whose templates still rely on Tera v1 behavior that
+cannot be fully emulated by mise's Tera v2 compatibility helpers, such as Tera v1 macros or looser
+undefined variable handling.
+
+New templates should use Tera v2 syntax. This setting is scheduled for removal in mise 2027.4.0.
+"""
+env = "MISE_TERA_V1"
 type = "Bool"
 
 [terminal_progress]

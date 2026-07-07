@@ -18,5 +18,6 @@ pub static INSTALLS: Lazy<&Path> = Lazy::new(|| &env::MISE_INSTALLS_DIR);
 pub static SHIMS: Lazy<&Path> = Lazy::new(|| &env::MISE_SHIMS_DIR);
 
 pub static TRACKED_CONFIGS: Lazy<PathBuf> = Lazy::new(|| STATE.join("tracked-configs"));
+pub static TRACKED_STUBS: Lazy<PathBuf> = Lazy::new(|| STATE.join("tracked-stubs"));
 pub static TRUSTED_CONFIGS: Lazy<PathBuf> = Lazy::new(|| STATE.join("trusted-configs"));
 pub static IGNORED_CONFIGS: Lazy<PathBuf> = Lazy::new(|| STATE.join("ignored-configs"));
