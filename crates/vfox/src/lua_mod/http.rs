@@ -213,6 +213,9 @@ async fn download_file(lua: &Lua, input: MultiValue) -> Result<()> {
     tokio::io::AsyncWriteExt::write_all(&mut file, &bytes)
         .await
         .into_lua_err()?;
+    tokio::io::AsyncWriteExt::flush(&mut file)
+        .await
+        .into_lua_err()?;
     Ok(())
 }
 
@@ -345,6 +348,12 @@ async fn try_download_file(lua: &Lua, input: MultiValue) -> Result<MultiValue> {
         }
     };
     if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await {
+        return Ok(MultiValue::from_vec(vec![
+            Value::Nil,
+            Value::String(lua.create_string(e.to_string())?),
+        ]));
+    }
+    if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut file).await {
         return Ok(MultiValue::from_vec(vec![
             Value::Nil,
             Value::String(lua.create_string(e.to_string())?),
