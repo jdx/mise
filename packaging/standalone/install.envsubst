@@ -295,15 +295,15 @@ install_mise() {
   extract_dir="$(mktemp -d)"
   cd "$extract_dir"
   if [ "$ext" = "tar.zst" ] && ! tar_supports_zstd; then
-    zstd -d -c "$cache_file" | tar -xf -
+    zstd -d -c "$cache_file" | tar --no-same-owner -xf -
   else
-    tar -xf "$cache_file"
+    tar --no-same-owner -xf "$cache_file"
+  fi
+  if [ "$(id -u)" = "0" ]; then
+    chown 0:0 mise/bin/mise
+    chmod 755 mise/bin/mise
   fi
   mv mise/bin/mise "$install_path"
-  if [ "$(id -u)" = "0" ]; then
-    chown 0:0 "$install_path"
-    chmod 755 "$install_path"
-  fi
 
   # cleanup
   cd / # Move out of $extract_dir before removing it
