@@ -1309,13 +1309,6 @@ div[class*="language-"] .copy:hover {
   box-shadow: 0 18px 44px -32px rgba(139, 34, 82, 0.45);
 }
 
-.card-link {
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.1em;
-  color: var(--vp-c-text-3);
-}
-
 .landing-feature-card h3 {
   margin: 0 0 10px;
   font-family: "Roc Grotesk", sans-serif;
@@ -1333,6 +1326,9 @@ div[class*="language-"] .copy:hover {
 .card-link {
   display: inline-block;
   margin-top: 20px;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
   color: var(--vp-c-brand-1);
 }
 
