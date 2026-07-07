@@ -1245,25 +1245,32 @@ div[class*="language-"] .copy:hover {
   color: var(--vp-c-text-2);
 }
 
-.landing-config pre {
+/* Syntax-highlighted mise.toml example — wrap the VitePress code block
+   in the brand-accent panel and let Shiki color the tokens. */
+.landing-config .language-toml {
   margin: 0;
-  padding: 22px;
-  overflow: auto;
   border: 1px solid var(--vp-c-divider);
   border-left: 2px solid var(--vp-c-brand-1);
   border-radius: 0 8px 8px 0;
   background: var(--vp-c-bg-soft);
-  color: var(--vp-c-text-1);
 }
 
-.landing-config code {
+.landing-config .language-toml pre {
+  margin: 0;
+  padding: 22px;
+  overflow: auto;
+  background: transparent;
+}
+
+.landing-config .language-toml code {
   font-family: var(--vp-font-family-mono);
   font-size: 0.88rem;
   line-height: 1.8;
 }
 
-.landing-config .dim {
-  color: var(--vp-c-text-3);
+/* The lang label just repeats "toml"; the copy button is enough */
+.landing-config .language-toml > .lang {
+  display: none;
 }
 
 .landing-section-heading {

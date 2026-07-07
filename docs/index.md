@@ -22,8 +22,21 @@ hero:
       </p>
     </div>
     <div class="landing-config" aria-label="Example mise.toml">
-      <pre><code><span class="dim"># mise.toml</span><br />[tools]<br />node = "24"<br />python = "3.13"<br /><br />[env]<br />_.file = ".env.local"<br /><br />[tasks.test]<br />run = "pytest"</code></pre>
-    </div>
+
+```toml
+# mise.toml
+[tools]
+node = "24"
+python = "3.13"
+
+[env]
+_.file = ".env.local"
+
+[tasks.test]
+run = "pytest"
+```
+
+</div>
   </div>
 
   <div class="landing-section landing-menu">
