@@ -5,22 +5,21 @@
   "branch": "codex/deprecated-settings-warnings",
   "checkpoints_count": 1,
   "files_touched": [
-    "src/cli/mod.rs",
-    "src/config/settings.rs"
+    "src/hook_env.rs"
   ],
   "sessions": [
     {
       "metadata": "/c1/a9b6e76aa2/0/metadata.json",
       "transcript": "/c1/a9b6e76aa2/0/full.jsonl",
       "content_hash": "/c1/a9b6e76aa2/0/content_hash.txt",
-      "prompt": ""
+      "prompt": "/c1/a9b6e76aa2/0/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 27890,
+    "input_tokens": 129685,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 2073216,
-    "output_tokens": 5411,
-    "api_call_count": 11
+    "cache_read_tokens": 1499904,
+    "output_tokens": 9219,
+    "api_call_count": 23
   }
 }
