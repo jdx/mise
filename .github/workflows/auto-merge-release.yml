@@ -11,8 +11,24 @@ jobs:
     if: github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
       - name: Merge release into main
         run: |
+          set -euo pipefail
+
+          latest_tag=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1 || true)
+          if [ -n "$latest_tag" ]; then
+            range="${latest_tag}..HEAD"
+          else
+            range="HEAD"
+          fi
+          if ! git log --format=%s "$range" | grep -Eq '^(fix|feat)(\([^)]+\))?!?: '; then
+            echo "No pending fix/feat commits since the latest release; not auto-merging release PRs"
+            exit 0
+          fi
+
           PR_NUMBER=$(gh pr list -R jdx/mise --base main --head release --state open --json number --jq '.[0].number // empty')
           if [ -z "$PR_NUMBER" ]; then
             echo "No open PR from release to main"
