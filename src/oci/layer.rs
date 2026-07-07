@@ -688,10 +688,16 @@ mod tests {
         let dir = tempdir().unwrap();
         let bin = dir.path().join("bin");
         fs::create_dir_all(&bin).unwrap();
-        fs::set_permissions(&bin, fs::Permissions::from_mode(0o1777)).unwrap();
+        if let Err(err) = fs::set_permissions(&bin, fs::Permissions::from_mode(0o1777)) {
+            eprintln!("skipping test: failed to set sticky bit: {err}");
+            return;
+        }
         let helper = bin.join("helper");
         fs::write(&helper, b"#!/bin/sh\necho hi\n").unwrap();
-        fs::set_permissions(&helper, fs::Permissions::from_mode(0o4755)).unwrap();
+        if let Err(err) = fs::set_permissions(&helper, fs::Permissions::from_mode(0o4755)) {
+            eprintln!("skipping test: failed to set SUID bit: {err}");
+            return;
+        }
         let helper_mode = fs::symlink_metadata(&helper).unwrap().permissions().mode() & 0o7777;
 
         let blob = build_layer_from_dir_preserve_metadata(dir.path(), "").unwrap();
