@@ -1,36 +1,14 @@
 <template>
   <DefaultTheme.Layout>
-    <!-- Atmospheric background layer behind the entire hero -->
-    <template #home-hero-before>
-      <div class="hero-atmosphere" aria-hidden="true">
-        <div class="hero-glow hero-glow-1"></div>
-        <div class="hero-glow hero-glow-2"></div>
-        <div class="hero-glow hero-glow-3"></div>
-        <div class="hero-grain"></div>
-      </div>
-    </template>
-
-    <!-- Landing hero content from the design handoff -->
     <template #home-hero-info-before>
       <div class="hero-copy">
-        <div class="hero-eyebrow">mise · pronounced "meez"</div>
         <div class="hero-lockup">
-          <img
-            class="chef-logo chef-logo-light"
-            src="/logo-full-light.svg"
-            alt="mise-en-place"
-          />
-          <img
-            class="chef-logo chef-logo-dark"
-            src="/logo-full-dark.svg"
-            alt="mise-en-place"
-          />
+          <img class="chef-logo chef-logo-light" src="/logo-light.svg" alt="" />
+          <img class="chef-logo chef-logo-dark" src="/logo-dark.svg" alt="" />
+          <span class="lockup-word">mise-en-place</span>
         </div>
-        <h1>Your dev env,<br /><em>already prepped.</em></h1>
-        <p>
-          One tool to manage languages, env vars, and tasks per project,
-          reproducibly.
-        </p>
+        <h1>Your dev environment, prepped and ready</h1>
+        <p>One tool that manages dev tools, env vars, and tasks per project.</p>
         <div class="hero-actions">
           <a class="action-btn action-btn-brand" href="/getting-started"
             >Getting Started</a
@@ -40,7 +18,6 @@
       </div>
     </template>
 
-    <!-- Right column: terminal-forward proof of the workflow -->
     <template #home-hero-info-after>
       <div class="hero-right">
         <div class="hero-terminal" aria-label="mise terminal example">
@@ -51,26 +28,25 @@
             <strong>~/projects/orders · zsh</strong>
           </div>
           <div class="terminal-body">
-            <div><span class="prompt">$</span> cd ~/projects/orders</div>
             <div>
-              <span class="dim"
-                ># mise picks up mise.toml and updates the shell</span
-              >
-            </div>
-            <div><span class="ok">✓</span> node@24 active</div>
-            <div><span class="ok">✓</span> python@3.13 active</div>
-            <div><span class="ok">✓</span> terraform@1 active</div>
-            <div>
-              <span class="ok">✓</span> DATABASE_URL loaded from .env.local
-            </div>
-            <div><span class="prompt">$</span> mise run deploy</div>
-            <div>
-              <span class="key">→</span> running task "deploy" (4 steps)
+              <span class="prompt">$</span> mise use node@24 python@3.13
             </div>
             <div>
-              <span class="dim"> build · test · migrate · ship ...</span>
+              <span class="dim">mise</span> node@24.18.0
+              <span class="ok">✓ installed</span>
             </div>
-            <div><span class="ok">✓</span> done in 42.1s</div>
+            <div>
+              <span class="dim">mise</span> python@3.13.14
+              <span class="ok">✓ installed</span>
+            </div>
+            <div>
+              <span class="dim">mise</span> ./mise.toml tools: node@24.18.0,
+              python@3.13.14
+            </div>
+            <div><span class="prompt">$</span> node --version</div>
+            <div>v24.18.0</div>
+            <div><span class="prompt">$</span> mise run build</div>
+            <div><span class="key">[build]</span> $ tsc</div>
           </div>
         </div>
         <div class="hero-install">
@@ -95,13 +71,54 @@
 </template>
 
 <script setup lang="ts">
+import { useRoute } from "vitepress";
 import DefaultTheme from "vitepress/theme";
-import { ref } from "vue";
+import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import EndevFooter from "./EndevFooter.vue";
 import EndevSponsors from "./EndevSponsors.vue";
 
 const copied = ref(false);
 const installCommand = "curl https://mise.run | sh";
+
+// Hide the navbar brand while the big hero lockup is on screen so the
+// logo appears exactly once; it fades into the header as you scroll past.
+const route = useRoute();
+
+function updateNavBrand() {
+  const lockup = document.querySelector(".hero-lockup");
+  const navBottom =
+    document.querySelector(".VPNavBar")?.getBoundingClientRect().bottom ?? 64;
+  // On narrow viewports the navbar scrolls away with the page and its
+  // rect bottom goes negative — clamp so the lockup check stays sane.
+  const threshold = Math.max(navBottom, 0) + 8;
+  const hide = !!lockup && lockup.getBoundingClientRect().bottom > threshold;
+  document.documentElement.classList.toggle("hide-nav-brand", hide);
+}
+
+watch(
+  () => route.path,
+  () => nextTick(updateNavBrand),
+);
+
+onMounted(() => {
+  window.addEventListener("scroll", updateNavBrand, { passive: true });
+  window.addEventListener("resize", updateNavBrand, { passive: true });
+  updateNavBrand();
+  // Hydration is done and the nav state is correct — drop the pre-paint
+  // preboot classes (set by the inline head script in config.ts) after the
+  // corrected state has painted, re-enabling normal transitions.
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() =>
+      document.documentElement.classList.remove("preboot", "preboot-sidebar"),
+    ),
+  );
+});
+
+onUnmounted(() => {
+  window.removeEventListener("scroll", updateNavBrand);
+  window.removeEventListener("resize", updateNavBrand);
+  document.documentElement.classList.remove("hide-nav-brand");
+});
 
 async function copyInstall() {
   if (await copyText(installCommand)) {
@@ -133,116 +150,7 @@ async function copyText(text: string) {
 
 <style>
 /* ═══════════════════════════════════════════
-   HERO ATMOSPHERE — radial glows + grain
-   ═══════════════════════════════════════════ */
-.VPHero {
-  position: relative;
-  overflow: hidden;
-}
-
-.hero-atmosphere {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  overflow: clip;
-  contain: paint;
-}
-
-.hero-glow {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.18;
-}
-
-.hero-glow-1 {
-  width: 600px;
-  height: 600px;
-  top: -200px;
-  left: -100px;
-  background: radial-gradient(circle, #8b2252 0%, transparent 70%);
-  animation: glowDrift1 12s ease-in-out infinite;
-}
-
-.hero-glow-2 {
-  width: 500px;
-  height: 500px;
-  top: -100px;
-  right: -80px;
-  background: radial-gradient(circle, #d4a76a 0%, transparent 70%);
-  animation: glowDrift2 15s ease-in-out infinite;
-}
-
-.hero-glow-3 {
-  width: 400px;
-  height: 400px;
-  bottom: -100px;
-  left: 30%;
-  background: radial-gradient(circle, #6b7f4e 0%, transparent 70%);
-  animation: glowDrift3 18s ease-in-out infinite;
-}
-
-/* Dark mode: brighter, moodier glows */
-.dark .hero-glow {
-  opacity: 0.12;
-}
-.dark .hero-glow-1 {
-  background: radial-gradient(circle, #c75b7a 0%, transparent 70%);
-}
-.dark .hero-glow-2 {
-  background: radial-gradient(circle, #d4a76a 0%, transparent 70%);
-}
-.dark .hero-glow-3 {
-  background: radial-gradient(circle, #8fa86e 0%, transparent 70%);
-}
-
-/* Subtle film grain texture */
-.hero-grain {
-  position: absolute;
-  inset: 0;
-  opacity: 0.03;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-  background-repeat: repeat;
-  background-size: 256px 256px;
-}
-
-.dark .hero-grain {
-  opacity: 0.04;
-}
-
-@keyframes glowDrift1 {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(40px, 30px) scale(1.1);
-  }
-}
-
-@keyframes glowDrift2 {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(-30px, 40px) scale(1.15);
-  }
-}
-
-@keyframes glowDrift3 {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(20px, -30px) scale(1.05);
-  }
-}
-
-/* ═══════════════════════════════════════════
-   INSTALL COMMAND — signature dish
+   INSTALL COMMAND
    ═══════════════════════════════════════════ */
 .hero-install {
   display: flex;
@@ -313,34 +221,10 @@ async function copyText(text: string) {
   color: var(--vp-c-brand-1);
 }
 
-@keyframes heroFadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 /* ═══════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════ */
 @media (max-width: 768px) {
-  .hero-glow-1 {
-    width: 350px;
-    height: 350px;
-  }
-  .hero-glow-2 {
-    width: 300px;
-    height: 300px;
-  }
-  .hero-glow-3 {
-    width: 250px;
-    height: 250px;
-  }
-
   .install-command code {
     font-size: 0.85rem;
   }

@@ -373,6 +373,44 @@ export default withMermaid(
         },
       ],
       ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
+      // Pre-paint setup to avoid first-load pop-in (see custom.css "preboot"
+      // rules; Layout.vue removes the preboot classes right after hydration):
+      // - `preboot` disables navbar transitions so hydration state
+      //   corrections snap instead of visibly fading
+      // - home: hide the navbar brand before the scroll handler takes over
+      // - other pages: pre-apply the has-sidebar navbar layout so the
+      //   search/menu don't jump right when hydration adds the class
+      // - reserve the announcement banner's space from the cached height so
+      //   the header doesn't jump when the banner arrives (banner.ts)
+      [
+        "script",
+        {},
+        `(function () {
+  try {
+    var d = document.documentElement;
+    var p = location.pathname;
+    d.classList.add("preboot");
+    if (p === "/" || p === "/index.html") {
+      d.classList.add("hide-nav-brand");
+      // Scroll restoration on a mid-page reload fires before hydration —
+      // unhide the brand right away instead of waiting for Layout.vue.
+      addEventListener(
+        "scroll",
+        function () {
+          if (scrollY > 300) d.classList.remove("hide-nav-brand");
+        },
+        { once: true },
+      );
+    } else {
+      d.classList.add("preboot-sidebar");
+    }
+    var id = localStorage.getItem("jdx-banner-id");
+    var h = localStorage.getItem("jdx-banner-height");
+    if (id && h && localStorage.getItem("jdx-banner-dismissed") !== id)
+      d.style.setProperty("--vp-layout-top-height", h);
+  } catch (e) {}
+})();`,
+      ],
       [
         "link",
         {
