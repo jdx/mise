@@ -373,6 +373,26 @@ export default withMermaid(
         },
       ],
       ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
+      // Pre-paint setup to avoid first-load pop-in:
+      // - hide the navbar brand on the home page before the scroll handler
+      //   in Layout.vue takes over (it fades in after the hero lockup)
+      // - reserve the announcement banner's space from the cached height so
+      //   the header doesn't jump when the banner arrives (banner.ts)
+      [
+        "script",
+        {},
+        `(function () {
+  try {
+    var d = document.documentElement;
+    var p = location.pathname;
+    if (p === "/" || p === "/index.html") d.classList.add("hide-nav-brand");
+    var id = localStorage.getItem("jdx-banner-id");
+    var h = localStorage.getItem("jdx-banner-height");
+    if (id && h && localStorage.getItem("jdx-banner-dismissed") !== id)
+      d.style.setProperty("--vp-layout-top-height", h);
+  } catch (e) {}
+})();`,
+      ],
       [
         "link",
         {

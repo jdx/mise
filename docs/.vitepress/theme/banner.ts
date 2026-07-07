@@ -11,18 +11,38 @@ interface BannerData {
 
 const ENDPOINT = "https://jdx.dev/banner.json";
 const STORAGE_KEY = "jdx-banner-dismissed";
+// Cached by the inline head script (config.ts) to reserve the banner's
+// space before first paint so the header doesn't jump when it arrives.
+const ID_KEY = "jdx-banner-id";
+const HEIGHT_KEY = "jdx-banner-height";
 
 export function initBanner(): void {
   if (typeof window === "undefined") return;
   fetch(ENDPOINT)
     .then((r) => (r.ok ? (r.json() as Promise<BannerData>) : null))
     .then((b) => {
-      if (!b || !b.enabled) return;
-      if (isExpired(b.expires)) return;
-      if (localStorage.getItem(STORAGE_KEY) === b.id) return;
+      if (
+        !b ||
+        !b.enabled ||
+        isExpired(b.expires) ||
+        localStorage.getItem(STORAGE_KEY) === b.id
+      ) {
+        clearReserved();
+        return;
+      }
       render(b);
     })
-    .catch(() => {});
+    .catch(clearReserved);
+}
+
+function clearReserved(): void {
+  document.documentElement.style.removeProperty("--vp-layout-top-height");
+  try {
+    localStorage.removeItem(ID_KEY);
+    localStorage.removeItem(HEIGHT_KEY);
+  } catch {
+    // localStorage unavailable — nothing cached to clear.
+  }
 }
 
 function isExpired(expires: string | undefined): boolean {
@@ -65,6 +85,12 @@ function render(b: BannerData): void {
       "--vp-layout-top-height",
       `${el.offsetHeight}px`,
     );
+    try {
+      localStorage.setItem(ID_KEY, b.id);
+      localStorage.setItem(HEIGHT_KEY, `${el.offsetHeight}px`);
+    } catch {
+      // localStorage unavailable — skip caching; next load just pops in.
+    }
   };
 
   const observer =
@@ -80,7 +106,7 @@ function render(b: BannerData): void {
     localStorage.setItem(STORAGE_KEY, b.id);
     observer?.disconnect();
     el.remove();
-    document.documentElement.style.removeProperty("--vp-layout-top-height");
+    clearReserved();
   });
   el.appendChild(btn);
 
