@@ -1270,13 +1270,10 @@ fn get_tera_v1(dir: Option<&Path>) -> tera1::Tera {
 /// Returns a Tera instance for use during early initialization (miserc loading).
 /// This is a plain clone of the global `TERA` static. `exec` and `read_file` are absent
 /// because they are only registered in [`get_tera`], not in `TERA` itself — so they
-/// cannot accidentally become available here if `TERA` changes in the future.
+/// cannot accidentally become available here if `TERA` changes in the future. This also
+/// intentionally ignores `tera_v1`, since Settings are not fully loaded at this stage.
 pub fn get_miserc_tera() -> TeraEngine {
-    if use_tera_v1() {
-        TeraEngine::V1(Box::new(TERA1.clone()))
-    } else {
-        TeraEngine::V2(Box::new(TERA.clone()))
-    }
+    TeraEngine::V2(Box::new(TERA.clone()))
 }
 
 pub fn get_tera(dir: Option<&Path>) -> TeraEngine {
@@ -1412,13 +1409,39 @@ pub(crate) fn tera1_exec(
         if let Some(path_val) = env_no_shims.get(&*env::PATH_KEY).cloned() {
             env_no_shims.insert(env::PATH_KEY.to_string(), strip_shims_from_path(&path_val));
         }
-        let mut expr: duct::Expression = cmd(&shell[0], shell_args).full_env(&env_no_shims);
-        if let Some(dir) = &dir {
-            expr = expr.dir(dir);
-        }
+        let run_once = || -> eyre::Result<String> {
+            #[cfg(windows)]
+            {
+                if let Some(mut c) =
+                    crate::path::cmd_verbatim_command(&shell[0], &shell[1..], command)
+                {
+                    c.env_clear();
+                    c.envs(env_no_shims.iter());
+                    if let Some(dir) = &dir {
+                        c.current_dir(dir);
+                    }
+                    let out = c.output()?;
+                    if !out.status.success() {
+                        eyre::bail!(
+                            "exec command failed: {}",
+                            String::from_utf8_lossy(&out.stderr)
+                        );
+                    }
+                    let mut s = String::from_utf8(out.stdout)?;
+                    while s.ends_with('\n') || s.ends_with('\r') {
+                        s.pop();
+                    }
+                    return Ok(s);
+                }
+            }
+            let mut expr: duct::Expression = cmd(&shell[0], &shell_args).full_env(&env_no_shims);
+            if let Some(dir) = &dir {
+                expr = expr.dir(dir);
+            }
+            Ok(expr.read()?)
+        };
         Ok(json!(
-            expr.read()
-                .map_err(|e| tera1_err(format!("exec command: {e}")))?
+            run_once().map_err(|e| tera1_err(format!("exec command: {e}")))?
         ))
     }
 }
@@ -2009,6 +2032,12 @@ mod tests {
     fn test_tera_v1_setting_selects_v1_engine() {
         let _guard = SettingsGuard::tera_v1();
         assert!(matches!(get_tera(None), TeraEngine::V1(_)));
+    }
+
+    #[test]
+    fn test_miserc_tera_ignores_tera_v1_setting() {
+        let _guard = SettingsGuard::tera_v1();
+        assert!(matches!(get_miserc_tera(), TeraEngine::V2(_)));
     }
 
     #[test]
