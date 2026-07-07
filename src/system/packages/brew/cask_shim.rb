@@ -16,6 +16,7 @@ MISE_BREW_CASK_FILE = Pathname.new(ENV.fetch("MISE_BREW_CASK_FILE"))
 MISE_BREW_CASK_TOKEN = ENV.fetch("MISE_BREW_CASK_TOKEN")
 MISE_BREW_CASK_VERSION = ENV.fetch("MISE_BREW_CASK_VERSION")
 MISE_BREW_CASK_STAGED_PATH = Pathname.new(ENV.fetch("MISE_BREW_CASK_STAGED_PATH"))
+MISE_BREW_CASK_APPDIR = Pathname.new(ENV.fetch("MISE_BREW_CASK_APPDIR"))
 MISE_BREW_PREFIX = Pathname.new(ENV.fetch("MISE_BREW_PREFIX"))
 MISE_BREW_CASK_HOOK = ENV.fetch("MISE_BREW_CASK_HOOK")
 
@@ -190,7 +191,7 @@ class CaskContext
 
   def run_hook(name)
     hook = @hooks[name.to_sym]
-    return unless hook
+    odie "expected cask hook #{name} was not registered" unless hook
 
     instance_eval(&hook)
   end
@@ -248,7 +249,7 @@ class CaskContext
   end
 
   def appdir
-    Pathname.new("/Applications")
+    MISE_BREW_CASK_APPDIR
   end
 
   def caskroom_path

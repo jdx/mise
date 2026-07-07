@@ -135,7 +135,8 @@ impl BrewCaskManager {
         let tmp_caskroom = caskroom_tmp_dir(&cask);
         file::remove_all(&tmp_caskroom)?;
         file::create_dir_all(&tmp_caskroom)?;
-        execute_lifecycle_hook(&cask, &stage, "preflight", pr).await?;
+        let appdir = cask_appdir(&artifacts.apps)?;
+        execute_lifecycle_hook(&cask, &stage, &appdir, "preflight", pr).await?;
         for app in &artifacts.apps {
             install_app(&stage, &tmp_caskroom, app)?;
         }
@@ -145,7 +146,7 @@ impl BrewCaskManager {
         for font in &artifacts.fonts {
             stage_font(&stage, &tmp_caskroom, font)?;
         }
-        execute_lifecycle_hook(&cask, &tmp_caskroom, "postflight", pr).await?;
+        execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
         for binary in &artifacts.binaries {
             stage_binary(&stage, &tmp_caskroom, &cask, binary)?;
         }
@@ -376,6 +377,7 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
 async fn execute_lifecycle_hook(
     cask: &Cask,
     staged_path: &Path,
+    appdir: &Path,
     hook: &str,
     pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
@@ -400,6 +402,7 @@ async fn execute_lifecycle_hook(
             "MISE_BREW_CASK_STAGED_PATH",
             staged_path.display().to_string(),
         ),
+        ("MISE_BREW_CASK_APPDIR", appdir.display().to_string()),
         ("MISE_BREW_PREFIX", prefix::prefix().display().to_string()),
         ("MISE_BREW_CASK_HOOK", hook.to_string()),
     ]);
@@ -755,7 +758,8 @@ fn find_binary_source(
     {
         return Ok(source);
     }
-    find_artifact(stage, &binary.source)
+    find_artifact(caskroom, &binary.source)
+        .or_else(|| find_artifact(stage, &binary.source))
         .filter(|path| path.is_file())
         .ok_or_else(|| {
             eyre!(
@@ -778,6 +782,16 @@ fn generated_caskroom_artifact(caskroom: &Path, cask: &Cask, source: &str) -> Op
         return None;
     }
     Some(caskroom.join(relative))
+}
+
+fn cask_appdir(apps: &[AppArtifact]) -> Result<PathBuf> {
+    let prefix_app_dir = prefix::prefix().join("Applications");
+    for app in apps {
+        if app_target_path(app.target_name())?.starts_with(&prefix_app_dir) {
+            return Ok(prefix_app_dir);
+        }
+    }
+    Ok(PathBuf::from("/Applications"))
 }
 
 fn link_binary(caskroom: &Path, binary: &BinaryArtifact) -> Result<()> {
@@ -1976,6 +1990,47 @@ mod tests {
 
         assert_eq!(crate::file::read_to_string(bin.target_path()?)?, "bin");
         assert_eq!(crate::file::read_to_string(sbin.target_path()?)?, "sbin");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn binary_source_prefers_hook_generated_caskroom_file() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        crate::file::write(stage.join("op"), "stage")?;
+        let caskroom = caskroom_version_dir("binary-only", "1.0.0");
+        file::create_dir_all(&caskroom)?;
+        crate::file::write(caskroom.join("op"), "hook")?;
+        let cask = test_cask("binary-only", "1.0.0");
+        let binary = BinaryArtifact {
+            source: "op".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/op".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &cask, &binary)?;
+
+        assert_eq!(
+            crate::file::read_to_string(caskroom.join("bin/op"))?,
+            "hook"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn cask_appdir_uses_prefix_for_prefix_targeted_apps() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+
+        assert_eq!(cask_appdir(&[app])?, tmp.path().join("Applications"));
         Ok(())
     }
 
