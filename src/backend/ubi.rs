@@ -474,34 +474,6 @@ impl UbiBackend {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_all_accepts_native_bool_or_string() {
-        let mut bool_opts = ToolVersionOptions::default();
-        bool_opts
-            .opts
-            .insert("extract_all".to_string(), toml::Value::Boolean(true));
-        assert!(UbiOptions::new(&bool_opts).extract_all());
-
-        let mut string_opts = ToolVersionOptions::default();
-        string_opts.opts.insert(
-            "extract_all".to_string(),
-            toml::Value::String("true".to_string()),
-        );
-        assert!(UbiOptions::new(&string_opts).extract_all());
-
-        let mut invalid_opts = ToolVersionOptions::default();
-        invalid_opts.opts.insert(
-            "extract_all".to_string(),
-            toml::Value::String("yes".to_string()),
-        );
-        assert!(!UbiOptions::new(&invalid_opts).extract_all());
-    }
-}
-
 fn name_is_url(n: &str) -> bool {
     n.starts_with("http")
 }
@@ -600,4 +572,32 @@ async fn install(
         RT.block_on(async { ubi.install_binary().await })
             .map_err(|e| eyre::eyre!("{e:#}"))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_all_accepts_native_bool_or_string() {
+        let mut bool_opts = ToolVersionOptions::default();
+        bool_opts
+            .opts
+            .insert("extract_all".to_string(), toml::Value::Boolean(true));
+        assert!(UbiOptions::new(&bool_opts).extract_all());
+
+        let mut string_opts = ToolVersionOptions::default();
+        string_opts.opts.insert(
+            "extract_all".to_string(),
+            toml::Value::String("true".to_string()),
+        );
+        assert!(UbiOptions::new(&string_opts).extract_all());
+
+        let mut invalid_opts = ToolVersionOptions::default();
+        invalid_opts.opts.insert(
+            "extract_all".to_string(),
+            toml::Value::String("yes".to_string()),
+        );
+        assert!(!UbiOptions::new(&invalid_opts).extract_all());
+    }
 }
