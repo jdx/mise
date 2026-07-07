@@ -1,0 +1,5 @@
+why did this fail [https://github.com/jdx/mise/actions/runs/28867562229/job/85621483525?pr=10831](https://github.com/jdx/mise/actions/runs/28867562229/job/85621483525?pr=10831)
+
+---
+
+make a pr

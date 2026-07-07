@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "513d37ab50aa",
+  "session_id": "019f3cad-c3be-7f43-9b88-abd5a7a46dd6",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-07T13:09:07.965015Z",
+  "branch": "codex/vfox-download-flush",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/vfox/src/lua_mod/http.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "9270f24503b4",
+  "token_usage": {
+    "input_tokens": 181461,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1379456,
+    "output_tokens": 8177,
+    "api_call_count": 19
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-07T13:09:07.954595Z",
+    "agent_lines": 9,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 9,
+    "total_lines_changed": 9,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
