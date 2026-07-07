@@ -15,7 +15,7 @@
             alt="mise-en-place"
           />
         </div>
-        <h1>The front-end to your dev env</h1>
+        <h1>Your dev environment, prepped and ready</h1>
         <p>One tool that manages dev tools, env vars, and tasks per project.</p>
         <div class="hero-actions">
           <a class="action-btn action-btn-brand" href="/getting-started"
