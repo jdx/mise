@@ -3,10 +3,10 @@
   "checkpoint_id": "c1a9b6e76aa2",
   "strategy": "manual-commit",
   "branch": "codex/deprecated-settings-warnings",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
-    "build.rs",
-    "src/config/settings.rs"
+    "src/config/settings.rs",
+    "src/logger.rs"
   ],
   "sessions": [
     {
@@ -17,10 +17,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 803245,
+    "input_tokens": 76489,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 15051776,
-    "output_tokens": 58431,
-    "api_call_count": 125
+    "cache_read_tokens": 1566976,
+    "output_tokens": 5825,
+    "api_call_count": 14
   }
 }
