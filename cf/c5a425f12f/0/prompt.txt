@@ -1,0 +1,12 @@
+[@jdx](https://github.com/jdx)
+I saw the patch in [#10808 (changes)](https://github.com/jdx/mise/pull/10808/changes)
+
+But the changes
+
+  if [ "$(id -u)" = "0" ]; then
+    chown 0:0 "$install_path"
+    chmod 755 "$install_path"
+  fi
+give a small attack window between the decompress and chmod, so that non-root user can write to the file.
+
+I recommend to use tar --no-same-owner, to ensure the ownership is always correct.

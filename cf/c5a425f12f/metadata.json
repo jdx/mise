@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "cfc5a425f12f",
+  "strategy": "manual-commit",
+  "branch": "codex/install-no-same-owner",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "packaging/standalone/install.envsubst"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cf/c5a425f12f/0/metadata.json",
+      "transcript": "/cf/c5a425f12f/0/full.jsonl",
+      "content_hash": "/cf/c5a425f12f/0/content_hash.txt",
+      "prompt": "/cf/c5a425f12f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 68979,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 717952,
+    "output_tokens": 10010,
+    "api_call_count": 19
+  }
+}
