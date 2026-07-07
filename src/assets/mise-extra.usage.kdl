@@ -7,7 +7,8 @@ source_code_link_template #"""
 {%- elif path == "bootstrap/packages/prune" -%}
 {%- set path = "system/prune.rs" -%}
 {%- elif cmd.subcommands | length > 0 -%}
-{%- set path = path | split(pat="/") | slice(end=1) | concat(with="mod.rs") | join(sep="/") -%}
+{%- set parts = path | split(pat="/") -%}
+{%- set path = parts[0] ~ "/mod.rs" -%}
 {%- else -%}
 {%- set path = path ~ ".rs" -%}
 {%- endif -%}
