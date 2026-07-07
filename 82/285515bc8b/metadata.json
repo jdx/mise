@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "82285515bc8b",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-get-env-tera-v2",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/templates.md",
+    "settings.toml",
+    "src/config/settings.rs",
+    "src/tera.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/82/285515bc8b/0/metadata.json",
+      "transcript": "/82/285515bc8b/0/full.jsonl",
+      "content_hash": "/82/285515bc8b/0/content_hash.txt",
+      "prompt": "/82/285515bc8b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 546036,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 8884352,
+    "output_tokens": 31035,
+    "api_call_count": 67
+  }
+}

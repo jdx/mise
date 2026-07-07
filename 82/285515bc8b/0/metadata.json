@@ -1,0 +1,64 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "82285515bc8b",
+  "session_id": "019f3c90-cd50-7b91-9b0c-9c4e2c8c24af",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-07T12:48:53.816211Z",
+  "branch": "codex/fix-get-env-tera-v2",
+  "checkpoints_count": 3,
+  "save_step_count": 2,
+  "files_touched": [
+    "docs/templates.md",
+    "settings.toml",
+    "src/config/settings.rs",
+    "src/tera.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "72558f9475b0",
+  "token_usage": {
+    "input_tokens": 546036,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 8884352,
+    "output_tokens": 31035,
+    "api_call_count": 67
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-07T12:48:53.792236Z",
+    "agent_lines": 839,
+    "agent_removed": 54,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 839,
+    "total_lines_changed": 893,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 58,
+      "agent_lines_removed": 5
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 160,
+      "agent_lines_removed": 11
+    }
+  ]
+}
