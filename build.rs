@@ -700,6 +700,10 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
                     raw_string_literal(&description)
                 ));
             }
+            match props.get("env").and_then(|v| v.as_str()) {
+                Some(env) => lines.push(format!("        env: Some({env:?}),")),
+                None => lines.push("        env: None,".to_string()),
+            }
             push_deprecated_fields(&mut lines, props);
             lines.push("    },".to_string());
         }
@@ -725,6 +729,10 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
                     "        description: {},",
                     raw_string_literal(&description)
                 ));
+            }
+            match props.get("env").and_then(|v| v.as_str()) {
+                Some(env) => lines.push(format!("        env: Some({env:?}),")),
+                None => lines.push("        env: None,".to_string()),
             }
             push_deprecated_fields(&mut lines, props);
             lines.push("    },".to_string());

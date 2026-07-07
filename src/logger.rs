@@ -192,6 +192,7 @@ pub fn init() {
         }
     }
     log::set_max_level(term_level);
+    Settings::flush_deprecated_warnings();
 }
 
 fn init_log_file(log_file: &Path) -> Result<File> {

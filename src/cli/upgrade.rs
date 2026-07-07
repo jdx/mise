@@ -15,7 +15,7 @@ use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
 use crate::toolset::{
     ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, ToolsetBuilder,
-    get_versions_needed_by_tracked_configs_excluding_locks,
+    get_versions_needed_by_tracked_configs_excluding_locks, get_versions_needed_by_tracked_stubs,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -403,13 +403,15 @@ impl Upgrade {
                 upgraded_config_paths.insert(path.clone());
             }
         }
-        let versions_needed_by_tracked = get_versions_needed_by_tracked_configs_excluding_locks(
-            config,
-            true,
-            false,
-            &upgraded_config_paths,
-        )
-        .await?;
+        let mut versions_needed_by_tracked =
+            get_versions_needed_by_tracked_configs_excluding_locks(
+                config,
+                true,
+                false,
+                &upgraded_config_paths,
+            )
+            .await?;
+        versions_needed_by_tracked.extend(get_versions_needed_by_tracked_stubs(config).await?);
 
         // Only uninstall old versions of tools that were successfully upgraded
         // and are not needed by any tracked config
@@ -427,7 +429,7 @@ impl Upgrade {
                 let version_key = (old_tv.ba().short.to_string(), old_tv.tv_pathname());
                 if versions_needed_by_tracked.contains(&version_key) {
                     debug!(
-                        "Keeping {}@{} because it's still needed by a tracked config",
+                        "Keeping {}@{} because it's still needed by a tracked config or tool stub",
                         o.name, old_version
                     );
                     continue;

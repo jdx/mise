@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use std::{
     collections::{BTreeSet, HashSet},
-    sync::atomic::Ordering,
+    sync::atomic::{AtomicBool, Ordering},
 };
 use url::Url;
 
@@ -48,6 +48,7 @@ pub struct SettingsMeta {
     // pub key: String,
     pub type_: SettingsType,
     pub description: &'static str,
+    pub env: Option<&'static str>,
     pub deprecated: Option<&'static str>,
     pub deprecated_warn_at: Option<&'static str>,
     pub deprecated_remove_at: Option<&'static str>,
@@ -204,6 +205,9 @@ pub type SettingsPartial = <Settings as Config>::Layer;
 
 static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
+static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
+    Lazy::new(Default::default);
+static DEPRECATED_WARNINGS_READY: AtomicBool = AtomicBool::new(false);
 static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     let mut s = SettingsPartial::empty();
     s.python.default_packages_file = Some(env::HOME.join(".default-python-packages"));
@@ -225,7 +229,115 @@ pub struct SettingsFile {
     pub settings: SettingsPartial,
 }
 
-fn warn_deprecated(key: &str) {
+fn parse_boolish_toml_value(value: &toml::Value) -> Option<bool> {
+    match value {
+        toml::Value::Boolean(value) => Some(*value),
+        toml::Value::Integer(0) => Some(false),
+        toml::Value::Integer(1) => Some(true),
+        toml::Value::String(value) => match value.trim().to_ascii_lowercase().as_str() {
+            "y" | "yes" | "true" | "1" | "on" => Some(true),
+            "n" | "no" | "false" | "0" | "off" => Some(false),
+            _ => None,
+        },
+        toml::Value::Table(table) => table.get("value").and_then(parse_boolish_toml_value),
+        _ => None,
+    }
+}
+
+fn tera_v1_from_env_config(raw: &toml::Value) -> Option<bool> {
+    raw.get("env")
+        .and_then(toml::Value::as_table)
+        .and_then(|env| env.get("MISE_TERA_V1"))
+        .and_then(parse_boolish_toml_value)
+}
+
+fn deprecated_settings_in_toml_table(settings: &toml::Table) -> Vec<&'static str> {
+    SETTINGS_META
+        .iter()
+        .filter_map(|(key, meta)| {
+            meta.deprecated?;
+            let value = nested_toml_value(settings, key)?;
+            should_warn_deprecated_value(value).then_some(*key)
+        })
+        .collect()
+}
+
+fn deprecated_settings_in_env_directives(raw: &toml::Value) -> Vec<&'static str> {
+    tera_v1_from_env_config(raw)
+        .is_some()
+        .then_some("tera_v1")
+        .into_iter()
+        .collect()
+}
+
+fn deprecated_settings_in_toml_config(raw: &toml::Value) -> Vec<&'static str> {
+    let mut deprecated = Vec::new();
+    if let Some(settings) = raw.get("settings").and_then(toml::Value::as_table) {
+        deprecated.extend(deprecated_settings_in_toml_table(settings));
+    }
+    deprecated.extend(deprecated_settings_in_env_directives(raw));
+    deprecated
+}
+
+fn warn_deprecated_env_settings() {
+    for (key, meta) in SETTINGS_META.iter() {
+        let Some(env_key) = meta.env else {
+            continue;
+        };
+        if meta.deprecated.is_some()
+            && env::var_os(env_key).is_some_and(|value| !value.as_os_str().is_empty())
+        {
+            warn_deprecated(key);
+        }
+    }
+}
+
+fn queue_deprecated(key: &'static str) {
+    PENDING_DEPRECATED_SETTINGS.lock().unwrap().insert(key);
+}
+
+fn queue_deprecated_settings(keys: impl IntoIterator<Item = &'static str>) {
+    for key in keys {
+        warn_deprecated(key);
+    }
+}
+
+fn nested_toml_value<'a>(table: &'a toml::Table, key: &str) -> Option<&'a toml::Value> {
+    let mut parts = key.split('.').collect_vec();
+    let last = parts.pop()?;
+    let mut current = table;
+    for part in parts {
+        current = current.get(part)?.as_table()?;
+    }
+    current.get(last)
+}
+
+fn should_warn_deprecated_value(value: &toml::Value) -> bool {
+    match value {
+        toml::Value::String(value) => !value.is_empty(),
+        toml::Value::Array(value) => !value.is_empty(),
+        toml::Value::Table(value) => {
+            if value.get("unset").and_then(toml::Value::as_bool) == Some(true) {
+                return false;
+            }
+            match value.get("value") {
+                Some(value) => should_warn_deprecated_value(value),
+                None => !value.is_empty(),
+            }
+        }
+        _ => true,
+    }
+}
+
+fn warn_deprecated(key: &'static str) {
+    if !DEPRECATED_WARNINGS_READY.load(Ordering::SeqCst) {
+        queue_deprecated(key);
+        return;
+    }
+    warn_deprecated_now(key);
+}
+
+fn warn_deprecated_now(key: &'static str) {
     if let Some(meta) = SETTINGS_META.get(key)
         && let (Some(msg), Some(warn_at), Some(remove_at)) = (
             meta.deprecated,
@@ -307,6 +419,13 @@ impl Settings {
     }
 
     pub fn warn_default_package_file_deprecated(id: &'static str, package_type: &str) {
+        if SETTINGS_META
+            .get(id)
+            .is_some_and(|m| m.deprecated.is_some())
+        {
+            warn_deprecated(id);
+            return;
+        }
         deprecated_at!(
             "2026.11.0",
             "2027.11.0",
@@ -434,6 +553,29 @@ impl Settings {
         time!("try_get done");
         trace!("Settings: {:#?}", settings);
         Ok(settings)
+    }
+
+    pub fn flush_deprecated_warnings() {
+        if CLI_SETTINGS.lock().unwrap().is_none() {
+            return;
+        }
+        Self::flush_deprecated_warnings_now();
+    }
+
+    pub fn flush_deprecated_warnings_for_fast_exit() {
+        Self::flush_deprecated_warnings_now();
+    }
+
+    fn flush_deprecated_warnings_now() {
+        DEPRECATED_WARNINGS_READY.store(true, Ordering::SeqCst);
+        warn_deprecated_env_settings();
+        let pending = {
+            let mut pending = PENDING_DEPRECATED_SETTINGS.lock().unwrap();
+            std::mem::take(&mut *pending)
+        };
+        for key in pending {
+            warn_deprecated_now(key);
+        }
     }
 
     /// Sets deprecated settings to new names
@@ -579,12 +721,18 @@ impl Settings {
     pub fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
         let raw = file::read_to_string(path)?;
         let mut raw: toml::Value = toml::from_str(&raw)?;
+        let tera_v1_from_env = tera_v1_from_env_config(&raw);
         if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
             strip_local_only_settings(settings, path, crate::config::is_global_config(path));
         }
+        let deprecated = deprecated_settings_in_toml_config(&raw);
         let settings_file: SettingsFile = raw.try_into()?;
-
-        Ok(normalize_hidden_config_aliases(settings_file.settings))
+        queue_deprecated_settings(deprecated);
+        let mut settings = normalize_hidden_config_aliases(settings_file.settings);
+        if settings.tera_v1.is_none() {
+            settings.tera_v1 = tera_v1_from_env;
+        }
+        Ok(settings)
     }
 
     fn all_settings_files() -> Vec<SettingsPartial> {
@@ -1183,6 +1331,122 @@ mod tests {
         assert_eq!(partial.paranoid, None);
         assert_eq!(partial.trusted_config_paths, None);
         assert_eq!(partial.yes, None);
+    }
+
+    #[test]
+    fn test_parse_settings_file_reads_tera_v1_from_env_directive() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            env.MISE_TERA_V1 = true
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.tera_v1, Some(true));
+    }
+
+    #[test]
+    fn test_parse_settings_file_reads_tera_v1_from_env_value_directive() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [env]
+            MISE_TERA_V1 = { value = "1" }
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.tera_v1, Some(true));
+    }
+
+    #[test]
+    fn test_parse_settings_file_prefers_explicit_tera_v1_setting() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [settings]
+            tera_v1 = false
+
+            [env]
+            MISE_TERA_V1 = true
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.tera_v1, Some(false));
+    }
+
+    #[test]
+    fn test_deprecated_settings_in_toml_table_detects_nested_settings() {
+        let settings = toml::from_str::<toml::Value>(
+            r#"
+            tera_v1 = true
+
+            [aqua]
+            registry_url = "https://example.com/aqua-registry"
+            "#,
+        )
+        .unwrap()
+        .as_table()
+        .unwrap()
+        .clone();
+
+        let deprecated = deprecated_settings_in_toml_table(&settings);
+
+        assert!(deprecated.contains(&"tera_v1"));
+        assert!(deprecated.contains(&"aqua.registry_url"));
+    }
+
+    #[test]
+    fn test_deprecated_settings_in_env_directives_detects_setting_env() {
+        let raw = toml::from_str::<toml::Value>(
+            r#"
+            [env]
+            MISE_TERA_V1 = true
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(deprecated_settings_in_env_directives(&raw), vec!["tera_v1"]);
+    }
+
+    #[test]
+    fn test_deprecated_settings_in_env_directives_ignores_unset_env() {
+        let raw = toml::from_str::<toml::Value>(
+            r#"
+            [env]
+            MISE_TERA_V1 = { unset = true }
+            "#,
+        )
+        .unwrap();
+
+        assert!(deprecated_settings_in_env_directives(&raw).is_empty());
+    }
+
+    #[test]
+    fn test_deprecated_settings_in_env_directives_ignores_child_only_env() {
+        let raw = toml::from_str::<toml::Value>(
+            r#"
+            [env]
+            MISE_SHORTHANDS_FILE = "~/.mise-shorthands"
+            "#,
+        )
+        .unwrap();
+
+        assert!(deprecated_settings_in_env_directives(&raw).is_empty());
     }
 
     #[test]

@@ -9,7 +9,7 @@ mise can declare macOS user LaunchAgents in
 program = "~/.local/bin/my-sync"
 args = ["--watch"]
 run_at_load = true
-start_interval = 300
+start_calendar_interval = { hour = 2, minute = 0 }
 environment = { PATH = "/opt/homebrew/bin:/usr/bin:/bin" }
 working_directory = "~"
 stdout_path = "~/Library/Logs/my-sync.log"
@@ -24,22 +24,34 @@ numbers, `.`, `_`, and `-`. mise owns only the plist files it creates with the
 
 ## Supported keys
 
-| TOML key            | launchd key               |
-| ------------------- | ------------------------- |
-| `program`           | `ProgramArguments[0]`     |
-| `args`              | `ProgramArguments[1..]`   |
-| `run_at_load`       | `RunAtLoad`               |
-| `keep_alive`        | `KeepAlive`               |
-| `start_interval`    | `StartInterval`           |
-| `environment`       | `EnvironmentVariables`    |
-| `working_directory` | `WorkingDirectory`        |
-| `stdout_path`       | `StandardOutPath`         |
-| `stderr_path`       | `StandardErrorPath`       |
-| `kickstart`         | run `launchctl kickstart` |
+| TOML key                  | launchd key               |
+| ------------------------- | ------------------------- |
+| `program`                 | `ProgramArguments[0]`     |
+| `args`                    | `ProgramArguments[1..]`   |
+| `run_at_load`             | `RunAtLoad`               |
+| `keep_alive`              | `KeepAlive`               |
+| `start_interval`          | `StartInterval`           |
+| `start_calendar_interval` | `StartCalendarInterval`   |
+| `environment`             | `EnvironmentVariables`    |
+| `working_directory`       | `WorkingDirectory`        |
+| `stdout_path`             | `StandardOutPath`         |
+| `stderr_path`             | `StandardErrorPath`       |
+| `kickstart`               | run `launchctl kickstart` |
 
 `program`, `working_directory`, `stdout_path`, and `stderr_path` expand bare
 `~` and `~/` to the current user's home directory before writing the plist.
 `args` are passed through exactly as written.
+`start_calendar_interval` accepts `minute` (0-59), `hour` (0-23), `day`
+(1-31), `weekday` (0-7), and `month` (1-12), and writes the corresponding
+launchd calendar keys. For multiple independent calendar schedules, use an
+array of inline tables:
+
+```toml
+start_calendar_interval = [{ hour = 3 }, { hour = 12, weekday = 1 }]
+```
+
+`start_interval` and `start_calendar_interval` are independent launchd
+triggers. If both are set, launchd can start the agent from either schedule.
 
 ## Semantics
 

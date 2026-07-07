@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use async_trait::async_trait;
@@ -317,7 +318,7 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
     if filename.ends_with(".dmg") {
         file::un_dmg(archive, &extract_dir)?;
     } else {
-        let format = ExtractionFormat::from_file_name(filename);
+        let format = cask_extraction_format(archive, filename)?;
         if format == ExtractionFormat::Raw {
             // Raw executable binary — copy it using the original URL filename so find_artifact
             // can match against the binary stanza source name (e.g. "claude").
@@ -344,6 +345,25 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
         }
     }
     Ok(extract_dir)
+}
+
+fn cask_extraction_format(archive: &Path, filename: &str) -> Result<ExtractionFormat> {
+    let format = ExtractionFormat::from_file_name(filename);
+    if format != ExtractionFormat::Raw {
+        return Ok(format);
+    }
+    Ok(detect_extraction_format(archive)?.unwrap_or(format))
+}
+
+fn detect_extraction_format(archive: &Path) -> Result<Option<ExtractionFormat>> {
+    let mut file = std::fs::File::open(archive)?;
+    let mut magic = [0; 8];
+    let len = file.read(&mut magic)?;
+    let magic = &magic[..len];
+    if magic.starts_with(b"PK\x03\x04") {
+        return Ok(Some(ExtractionFormat::Zip));
+    }
+    Ok(None)
 }
 
 fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
@@ -469,7 +489,28 @@ fn caskroom_font_path(caskroom: &Path, font: &FontArtifact) -> Result<PathBuf> {
 
 fn font_filename(font: &FontArtifact) -> Result<String> {
     match &font.target {
-        Some(target) => Ok(target.clone()),
+        Some(target) => {
+            let home = crate::dirs::HOME.to_string_lossy();
+            let mut expanded = target.replace("$HOME", &home);
+            if let Some(rest) = expanded.strip_prefix("~/") {
+                expanded = home.to_string() + "/" + rest;
+            } else if expanded == "~" {
+                expanded = home.to_string();
+            }
+            let expanded_path = Path::new(&expanded);
+            if expanded_path.is_absolute() {
+                let fonts_dir = crate::dirs::HOME.join("Library").join("Fonts");
+                if let Ok(relative) = expanded_path.strip_prefix(&fonts_dir) {
+                    return Ok(relative.to_string_lossy().to_string());
+                }
+                return expanded_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(str::to_string)
+                    .ok_or_else(|| eyre!("brew-cask: invalid font target '{}'", target));
+            }
+            Ok(expanded)
+        }
         None => Path::new(&font.source)
             .file_name()
             .and_then(|n| n.to_str())
@@ -1160,6 +1201,32 @@ mod tests {
     }
 
     #[test]
+    fn detects_suffixless_zip_archives() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("stable");
+        std::fs::write(&archive, b"PK\x03\x04suffixless zip")?;
+
+        assert_eq!(
+            cask_extraction_format(&archive, "visual-studio-code-1.127.0-stable")?,
+            ExtractionFormat::Zip
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn leaves_suffixless_raw_binaries_raw() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("claude");
+        std::fs::write(&archive, b"#!/bin/sh\necho raw\n")?;
+
+        assert_eq!(
+            cask_extraction_format(&archive, "claude-1.0.0-claude")?,
+            ExtractionFormat::Raw
+        );
+        Ok(())
+    }
+
+    #[test]
     fn parses_app_artifact_targets() {
         let value: Value =
             serde_json::json!({"app": ["Firefox.app", {"target": "Firefox Nightly.app"}]});
@@ -1361,6 +1428,127 @@ mod tests {
 
         let artifacts = cask_artifacts(&cask)?;
         assert_eq!(artifacts.fonts.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn font_filename_from_source() -> Result<()> {
+        let font = FontArtifact {
+            source: "MyFont-Regular.ttf".to_string(),
+            target: None,
+        };
+        assert_eq!(font_filename(&font)?, "MyFont-Regular.ttf");
+        Ok(())
+    }
+
+    #[test]
+    fn font_filename_simple_target() -> Result<()> {
+        let font = FontArtifact {
+            source: "MyFont.ttf".to_string(),
+            target: Some("RenamedFont.ttf".to_string()),
+        };
+        assert_eq!(font_filename(&font)?, "RenamedFont.ttf");
+        Ok(())
+    }
+
+    #[test]
+    fn font_filename_target_with_home_and_absolute_fonts_path() -> Result<()> {
+        // Simulates the JetBrainsMono pattern:
+        // target: "/$HOME/Library/Fonts/JetBrainsMonoNerdFontPropo-ThinItalic.ttf"
+        let target = "/$HOME/Library/Fonts/JetBrainsMonoNerdFontPropo-ThinItalic.ttf".to_string();
+        let font = FontArtifact {
+            source: "JetBrainsMonoNerdFontPropo-ThinItalic.ttf".to_string(),
+            target: Some(target),
+        };
+        assert_eq!(
+            font_filename(&font)?,
+            "JetBrainsMonoNerdFontPropo-ThinItalic.ttf"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn font_filename_target_with_home_expansion() -> Result<()> {
+        // $HOME without leading slash: "$HOME/Library/Fonts/Font.ttf"
+        let target = "$HOME/Library/Fonts/SomeFont.ttf";
+        let font = FontArtifact {
+            source: "SomeFont.ttf".to_string(),
+            target: Some(target.to_string()),
+        };
+        assert_eq!(font_filename(&font)?, "SomeFont.ttf");
+        Ok(())
+    }
+
+    #[test]
+    fn font_filename_target_with_tilde_expansion() -> Result<()> {
+        // ~/Library/Fonts/Font.ttf should expand to <home>/Library/Fonts/Font.ttf
+        let target = "~/Library/Fonts/TildeFont.ttf";
+        let font = FontArtifact {
+            source: "TildeFont.ttf".to_string(),
+            target: Some(target.to_string()),
+        };
+        assert_eq!(font_filename(&font)?, "TildeFont.ttf");
+        Ok(())
+    }
+
+    #[test]
+    fn font_target_path_from_simple_target() -> Result<()> {
+        let font = FontArtifact {
+            source: "MyFont.ttf".to_string(),
+            target: Some("MyFont.ttf".to_string()),
+        };
+        let expected = crate::dirs::HOME
+            .join("Library")
+            .join("Fonts")
+            .join("MyFont.ttf");
+        assert_eq!(font_target_path(&font)?, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn font_target_path_from_source_only() -> Result<()> {
+        let font = FontArtifact {
+            source: "FontAwesome.otf".to_string(),
+            target: None,
+        };
+        let expected = crate::dirs::HOME
+            .join("Library")
+            .join("Fonts")
+            .join("FontAwesome.otf");
+        assert_eq!(font_target_path(&font)?, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn font_target_path_with_home_absolute_target() -> Result<()> {
+        // Regression: absolute target with $HOME under ~/Library/Fonts
+        // should resolve to the correct path
+        let target = "/$HOME/Library/Fonts/JetBrainsMono.ttf".to_string();
+        let font = FontArtifact {
+            source: "JetBrainsMono.ttf".to_string(),
+            target: Some(target),
+        };
+        let expected = crate::dirs::HOME
+            .join("Library")
+            .join("Fonts")
+            .join("JetBrainsMono.ttf");
+        assert_eq!(font_target_path(&font)?, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn font_target_path_with_tilde_target() -> Result<()> {
+        // ~/Library/Fonts/Font.ttf should resolve to correct path
+        let target = "~/Library/Fonts/TildeFont.ttf".to_string();
+        let font = FontArtifact {
+            source: "TildeFont.ttf".to_string(),
+            target: Some(target),
+        };
+        let expected = crate::dirs::HOME
+            .join("Library")
+            .join("Fonts")
+            .join("TildeFont.ttf");
+        assert_eq!(font_target_path(&font)?, expected);
         Ok(())
     }
 

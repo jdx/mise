@@ -80,6 +80,13 @@ impl<'a> NpmOptions<'a> {
         self.values.str("aube_args")
     }
 
+    fn trust_policy_excludes(&self) -> eyre::Result<Vec<String>> {
+        Self::string_list_option(
+            self.values.raw().opts.get("trust_policy_excludes"),
+            "trust_policy_excludes",
+        )
+    }
+
     fn allow_builds(&self) -> eyre::Result<AllowBuilds> {
         let Some(value) = self.values.raw().opts.get("allow_builds") else {
             return Ok(AllowBuilds::None);
@@ -148,13 +155,49 @@ impl<'a> NpmOptions<'a> {
     }
 
     fn canonical_allow_build_packages(mut packages: Vec<String>) -> AllowBuilds {
-        packages.sort();
-        packages.dedup();
+        Self::canonicalize_string_list(&mut packages);
         if packages.is_empty() {
             AllowBuilds::None
         } else {
             AllowBuilds::Packages(packages)
         }
+    }
+
+    fn canonicalize_string_list(values: &mut Vec<String>) {
+        values.retain(|value| !value.is_empty());
+        values.sort();
+        values.dedup();
+    }
+
+    fn string_list_option(value: Option<&toml::Value>, key: &str) -> eyre::Result<Vec<String>> {
+        let Some(value) = value else {
+            return Ok(Vec::new());
+        };
+        let mut values = match value {
+            toml::Value::String(value) => vec![value.clone()],
+            toml::Value::Array(values) => values
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(str::to_string)
+                        .ok_or_else(|| eyre::eyre!("{key} array must contain only strings"))
+                })
+                .collect::<eyre::Result<Vec<_>>>()?,
+            _ => return Err(eyre::eyre!("{key} must be a string or array")),
+        };
+        Self::canonicalize_string_list(&mut values);
+        Ok(values)
+    }
+
+    fn canonical_trust_policy_excludes_lockfile_value(&self) -> eyre::Result<Option<String>> {
+        let excludes = self.trust_policy_excludes()?;
+        Ok((!excludes.is_empty()).then(|| format!("{excludes:?}")))
+    }
+
+    fn aube_trust_policy_excludes_npmrc_value(&self) -> eyre::Result<Option<String>> {
+        let excludes = self.trust_policy_excludes()?;
+        Ok((!excludes.is_empty()).then(|| excludes.join(",")))
     }
 
     fn canonical_allow_builds_lockfile_value(&self) -> eyre::Result<Option<String>> {
@@ -171,6 +214,10 @@ impl<'a> NpmOptions<'a> {
             .filter_map(|key| {
                 let value = if key == "allow_builds" {
                     self.canonical_allow_builds_lockfile_value().ok().flatten()
+                } else if key == "trust_policy_excludes" {
+                    self.canonical_trust_policy_excludes_lockfile_value()
+                        .ok()
+                        .flatten()
                 } else {
                     self.values.raw().opts.get(&key).map(|value| match value {
                         toml::Value::String(value) => value.clone(),
@@ -364,7 +411,7 @@ impl Backend for NPMBackend {
                     .dependency_path_for_install(&ctx.config, Some(&ctx.ts), AUBE_PROGRAM)
                     .await
                     .unwrap_or_else(|| AUBE_PROGRAM.into());
-                self.write_aube_npmrc(&tv.install_path(), ctx.before_date)?;
+                self.write_aube_npmrc(&tv.install_path(), ctx.before_date, &options)?;
                 let mut cmd = CmdLineRunner::new(aube_program)
                     .arg("add")
                     .arg("--global")
@@ -794,7 +841,12 @@ impl NPMBackend {
             .is_some()
     }
 
-    fn write_aube_npmrc(&self, install_path: &Path, before_date: Option<Timestamp>) -> Result<()> {
+    fn write_aube_npmrc(
+        &self,
+        install_path: &Path,
+        before_date: Option<Timestamp>,
+        options: &NpmOptions,
+    ) -> Result<()> {
         let bin_dir = install_path.join("bin");
         crate::file::create_dir_all(install_path)?;
         crate::file::create_dir_all(&bin_dir)?;
@@ -810,6 +862,9 @@ impl NPMBackend {
             ));
             // aube documents minimumReleaseAge in minutes, matching pnpm's setting.
             npmrc.push_str(&format!("minimumReleaseAge={minutes}\n"));
+        }
+        if let Some(excludes) = options.aube_trust_policy_excludes_npmrc_value()? {
+            npmrc.push_str(&format!("trustPolicyExclude={excludes}\n"));
         }
         crate::file::write(install_path.join(".npmrc"), npmrc)?;
         Ok(())
@@ -954,6 +1009,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "bun_args".into(),
         "aube_args".into(),
         "allow_builds".into(),
+        "trust_policy_excludes".into(),
     ]
 }
 
@@ -1259,6 +1315,14 @@ mod tests {
                 toml::Value::String("sharp".into()),
             ]),
         );
+        options.opts.insert(
+            "trust_policy_excludes".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("undici@^5".into()),
+                toml::Value::String("undici".into()),
+                toml::Value::String("undici".into()),
+            ]),
+        );
         options.install_env.insert(
             "NPM_CONFIG_REGISTRY".to_string(),
             "https://registry.example.com".to_string(),
@@ -1286,7 +1350,65 @@ mod tests {
             resolved.get("allow_builds"),
             Some(&"[\"esbuild\", \"sharp\"]".to_string())
         );
+        assert_eq!(
+            resolved.get("trust_policy_excludes"),
+            Some(&"[\"undici\", \"undici@^5\"]".to_string())
+        );
         assert!(!resolved.contains_key("install_env.NPM_CONFIG_REGISTRY"));
+    }
+
+    #[test]
+    fn test_trust_policy_excludes_accepts_string_or_array() {
+        let mut string_options = ToolVersionOptions::default();
+        string_options.opts.insert(
+            "trust_policy_excludes".to_string(),
+            toml::Value::String("undici".into()),
+        );
+        assert_eq!(
+            NpmOptions::new(&string_options)
+                .trust_policy_excludes()
+                .unwrap(),
+            vec!["undici"]
+        );
+
+        let mut array_options = ToolVersionOptions::default();
+        array_options.opts.insert(
+            "trust_policy_excludes".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("undici@^5".into()),
+                toml::Value::String("undici".into()),
+                toml::Value::String("undici".into()),
+            ]),
+        );
+        assert_eq!(
+            NpmOptions::new(&array_options)
+                .trust_policy_excludes()
+                .unwrap(),
+            vec!["undici", "undici@^5"]
+        );
+    }
+
+    #[test]
+    fn test_write_aube_npmrc_includes_trust_policy_excludes() {
+        let backend = create_npm_backend("vercel");
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-vercel").join("54.20.1");
+        let mut raw_options = ToolVersionOptions::default();
+        raw_options.opts.insert(
+            "trust_policy_excludes".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("undici@^5".into()),
+                toml::Value::String("undici".into()),
+            ]),
+        );
+        let options = NpmOptions::new(&raw_options);
+
+        backend
+            .write_aube_npmrc(&install_path, None, &options)
+            .unwrap();
+
+        let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
+        assert!(npmrc.contains("trustPolicyExclude=undici,undici@^5\n"));
     }
 
     #[test]

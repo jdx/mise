@@ -4,11 +4,12 @@ use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::path_env::PathEnv;
-use crate::tera::{contains_template_syntax, get_tera, render_str, tera_exec};
+use crate::tera::{
+    TeraEngine, contains_template_syntax, get_tera, render_str, tera_exec, tera1_exec,
+};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -761,10 +762,10 @@ impl EnvResults {
     }
 
     fn context_vars(ctx: &tera::Context) -> EnvMap {
-        if let Some(Value::Object(existing_vars)) = ctx.get("vars") {
+        if let Some(existing_vars) = ctx.get("vars").and_then(|v| v.as_map()) {
             existing_vars
                 .iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.to_string(), s.to_string())))
                 .collect()
         } else {
             EnvMap::new()
@@ -774,7 +775,7 @@ impl EnvResults {
     fn parse_template(
         &self,
         ctx: &tera::Context,
-        tera: &mut Option<tera::Tera>,
+        tera: &mut Option<TeraEngine>,
         path: &Path,
         exec_env: &EnvMap,
         input: &str,
@@ -786,10 +787,17 @@ impl EnvResults {
             trust_check(path)?;
             let tera = tera.get_or_insert_with(|| {
                 let mut tera = get_tera(path.parent());
-                tera.register_function(
-                    "exec",
-                    tera_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
-                );
+                if let TeraEngine::V2(tera) = &mut tera {
+                    tera.register_function(
+                        "exec",
+                        tera_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
+                    );
+                } else if let TeraEngine::V1(tera) = &mut tera {
+                    tera.register_function(
+                        "exec",
+                        tera1_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
+                    );
+                }
                 tera
             });
             output = render_str(tera, input, ctx)
@@ -800,7 +808,7 @@ impl EnvResults {
         if output.contains('$') && Settings::get().env_shell_expand {
             let env_vars: BTreeMap<String, String> = ctx
                 .get("env")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok())
                 .unwrap_or_default();
             let mut missing_vars = Vec::new();
             output = shell_expand_env(&output, &env_vars, &mut missing_vars);

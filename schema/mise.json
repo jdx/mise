@@ -647,6 +647,10 @@
               "description": "Use cargo-binstall instead of cargo install if available",
               "type": "boolean"
             },
+            "binstall_native": {
+              "description": "[experimental] Use mise's native cargo binary installer when cargo-binstall is unavailable.",
+              "type": "boolean"
+            },
             "binstall_only": {
               "default": false,
               "description": "Only use cargo-binstall for installation, fail if not available.",
@@ -1833,6 +1837,12 @@
         },
         "task_timings": {
           "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
+          "type": "boolean",
+          "deprecated": true
+        },
+        "tera_v1": {
+          "default": false,
+          "description": "Use Tera v1 instead of Tera v2 for template rendering.",
           "type": "boolean",
           "deprecated": true
         },

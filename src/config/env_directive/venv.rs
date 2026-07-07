@@ -173,7 +173,7 @@ impl EnvResults {
     pub async fn venv(
         config: &Arc<Config>,
         ctx: &mut tera::Context,
-        tera: &mut Option<tera::Tera>,
+        tera: &mut Option<crate::tera::TeraEngine>,
         env: &mut IndexMap<String, (String, Option<PathBuf>)>,
         r: &mut EnvResults,
         normalize_path: fn(&Path, PathBuf) -> PathBuf,

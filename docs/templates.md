@@ -94,6 +94,57 @@ Tera also supports powerful [expressions](https://keats.github.io/tera/#expressi
 Tera also supports [control structures such as <span v-pre>`if`</span> and
 <span v-pre>`for`</span>](https://keats.github.io/tera/#control-structures).
 
+### Tera v2 Migration
+
+mise uses Tera v2. Some Tera v1 syntax and built-ins changed in Tera v2. mise
+can still render many older templates for compatibility. Tera v1 compatibility
+helpers will start warning in mise 2026.10.0 and are scheduled for removal in
+mise 2027.4.0.
+
+Prefer these Tera v2 forms in new templates:
+
+| Tera v1 pattern                          | Tera v2 replacement                        |
+| ---------------------------------------- | ------------------------------------------ |
+| `value \| trim_start_matches(pat="v")`   | `value \| trim_start(pat="v")`             |
+| `value \| trim_end_matches(pat="-beta")` | `value \| trim_end(pat="-beta")`           |
+| `items \| slice(start=0, end=2)`         | `items[0:2]`                               |
+| `[base] \| concat(with="file.txt")`      | `[base, "file.txt"]`                       |
+| `[...items] \| concat(with=extra_items)` | `[...items, ...extra_items]`               |
+| `items \| map(attribute="name")`         | `[item.name for item in items]`            |
+| `items \| filter(attribute="active")`    | `[item for item in items if item.active]`  |
+| `value \| as_str`                        | `value \| str`                             |
+| `value \| escape`                        | `value \| escape_html`                     |
+| `value \| linebreaksbr`                  | `value \| newlines_to_br`                  |
+| `value is divisibleby(divisor=3)`        | `value is divisible_by(divisor=3)`         |
+| `value is object`                        | `value is map`                             |
+| `value \| indent(prefix=">")`            | `value \| indent(width=1)` for spaces only |
+| `value \| truncate`                      | `value \| truncate(length=255)`            |
+
+Tera v2 also adds useful syntax that replaces many old helper filters:
+
+- array and string slices, such as `parts[0:2]`, `parts[-1]`, and `name[::-1]`
+- array and map spread, such as `[first, ...rest]` and `{...base, key: value}`
+- list comprehensions, such as `[tool.name for tool in tools if tool.active]`
+- optional chaining, such as `env?.NODE_ENV or "development"`
+- ternaries, such as `"prod" if release else "dev"`
+
+Not every Tera v1 behavior can be made compatible. Undefined variable access is
+stricter in Tera v2, and Tera v1 macros are not supported by mise templates.
+As a temporary escape hatch, set `MISE_TERA_V1=1` before running mise to render
+templates with Tera v1. In shared `mise.toml` files, prefer the backward-compatible
+env form because older mise releases treat it as a normal environment variable
+instead of failing on an unknown setting:
+
+```toml
+[env]
+MISE_TERA_V1 = true
+```
+
+The newer `[settings] tera_v1 = true` form also works in mise releases that
+support it, but is less compatible with older releases. This escape hatch is
+scheduled for removal in mise 2027.4.0. Because miserc files are rendered before
+settings are loaded, it does not apply while loading miserc itself.
+
 ### Tera Filters
 
 You can modify variables using [filters](https://keats.github.io/tera/#filters).
@@ -201,11 +252,6 @@ Some functions:
 - `get_random(end, [start])` - Returns a random integer in a range.
   - `end: usize`: upper end of the range
   - `start: usize`: defaults to 0
-- `get_env(name, [default])`: Returns the environment variable value by name.
-  Prefer `env` variable than this function.
-  - `name: String`: the name of the environment variable
-  - `default: String`: a default value in case the environment variable is not found.
-    Throws when can't find the environment variable and `default` is not set.
 
 Tera offers more functions. Read more on [tera documentation](https://keats.github.io/tera/#functions).
 
@@ -220,6 +266,11 @@ of the task definition they are used in. In other words, their return values are
 across task definition(s).
 
 - `exec(command) -> String` – Runs a shell command and returns its output as a string.
+- `get_env(name, [default]) -> String` – Returns the original process environment
+  variable value by name. This helper is provided by mise for compatibility with
+  older Tera templates. Prefer the `env` variable in new templates when possible.
+  The `default` value is used when the environment variable is not present; empty
+  environment variables are returned as-is.
 - `arch() -> String` – Retrieves the system architecture, such as `x64` or `arm64`.
 - `os() -> String` – Returns the name of the operating system,
   e.g. linux, macos, windows.
@@ -283,6 +334,9 @@ The `exec` function supports the following options:
 
 Tera offers many [built-in filters](https://keats.github.io/tera/#built-in-filters).
 `[]` indicates an optional filter argument.
+Some Tera v1 filters that were removed or renamed in Tera v2 are still supported
+for compatibility until mise 2027.4.0. mise starts emitting deprecation warnings
+for them in mise 2026.10.0.
 Some filters:
 
 - `str | lower -> String` – Converts a string to lowercase.
@@ -305,15 +359,18 @@ Some filters:
 - `str | length -> usize` – Returns the length of a string or array.
 - `str | reverse -> String` – Reverses the order of characters in a string or
   elements in an array.
-- `str | urlencode -> String` – Encodes a string to be safely used in URLs,
+- `str | urlencode -> String` – Deprecated compatibility filter. Encodes a
+  string to be safely used in URLs,
   converting special characters to percent-encoded values.
-- `arr | map(attribute) -> Array` – Extracts an attribute from each object
-  in an array.
-- `arr | concat(with) -> Array` – Appends values to an array.
+- `arr | map(attribute) -> Array` – Deprecated compatibility filter. Extracts
+  an attribute from each object in an array.
+- `arr | concat(with) -> Array` – Deprecated compatibility filter. Appends
+  values to an array. Prefer array literals and spread syntax.
 - `num | abs -> Number` – Returns the absolute value of a number.
-- `num | filesizeformat -> String` – Converts an integer into
+- `num | filesizeformat -> String` – Deprecated compatibility filter. Converts
+  an integer into
   a human-readable file size (e.g., 110 MB).
-- `str | date(format) -> String` – Converts a timestamp to
+- `str | date(format) -> String` – Deprecated compatibility filter. Converts a timestamp to
   a formatted date string using the provided format,
   such as <span v-pre>`{{ ts | date(format="%Y-%m-%d") }}`</span>.
   Find a list of time format on [`chrono` documentation](https://docs.rs/chrono/latest/chrono/format/strftime/index.html).
@@ -358,12 +415,12 @@ Tera offers more filters. Read more on [tera documentation](https://keats.github
 - `path | last_modified -> String` – Returns the last modified time of a file.
 - `path[] | join_path -> String` – Joins an array of paths into a single path.
 
-For example, you can use `split()`, `concat()`, and `join_path` filters to
-construct a file path:
+For example, you can use an array literal and `join_path` to construct a file
+path:
 
 ```toml
 [env]
-PROJECT_CONFIG = "{{ [config_root] | concat(with='bar.txt') | join_path }}"
+PROJECT_CONFIG = "{{ [config_root, 'bar.txt'] | join_path }}"
 ```
 
 #### String Manipulation
