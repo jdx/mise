@@ -2099,6 +2099,7 @@ pub trait Backend: Debug + Send + Sync {
         // so its install dir already existing does NOT mean it's up-to-date.
         let rolling_reinstall = !ctx.force
             && self.is_version_installed(&ctx.config, &tv, true)
+            && self.is_rolling_channel(&tv.request.version())
             && self
                 .is_rolling_version_outdated(&ctx.config, &tv.request.version())
                 .await;
