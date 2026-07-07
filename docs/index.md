@@ -51,16 +51,19 @@ run = "pytest"
     </div>
     <div class="landing-feature-grid">
       <a href="/dev-tools/" class="landing-feature-card">
+        <p class="card-cmd">$ mise install</p>
         <h3>Dev Tools</h3>
         <p>Install project tools, pin versions, and switch automatically as you move between directories.</p>
         <span class="card-link">Learn more</span>
       </a>
       <a href="/environments/" class="landing-feature-card">
+        <p class="card-cmd">$ mise env</p>
         <h3>Environments</h3>
         <p>Load project-specific environment variables from <code>mise.toml</code>, <code>.env</code> files, shell commands, and more.</p>
         <span class="card-link">Learn more</span>
       </a>
       <a href="/tasks/" class="landing-feature-card">
+        <p class="card-cmd">$ mise run</p>
         <h3>Tasks</h3>
         <p>Define build, test, lint, and deploy commands next to the tools and env vars they need.</p>
         <span class="card-link">Learn more</span>
@@ -118,45 +121,37 @@ run = "pytest"
       </div>
       <div class="landing-code">
         <div class="recipe-panel recipe-panel-1">
-
-```shellsession
-$ curl https://mise.run | sh
-
-$ mise --version
-2026.7.0 linux-x64
-```
-
-</div>
+          <div class="terminal-body">
+            <div><span class="prompt">$</span> curl https://mise.run | sh</div>
+            <div>&nbsp;</div>
+            <div><span class="prompt">$</span> mise --version</div>
+            <div>2026.7.0 linux-x64</div>
+          </div>
+        </div>
         <div class="recipe-panel recipe-panel-2">
-
-```shellsession
-$ mise use node@24 python@3.13
-mise node@24.18.0 ✓ installed
-mise python@3.13.14 ✓ installed
-mise ./mise.toml tools: node@24.18.0, python@3.13.14
-```
-
-</div>
+          <div class="terminal-body">
+            <div><span class="prompt">$</span> mise use node@24 python@3.13</div>
+            <div><span class="dim">mise</span> node@24.18.0 <span class="ok">✓ installed</span></div>
+            <div><span class="dim">mise</span> python@3.13.14 <span class="ok">✓ installed</span></div>
+            <div><span class="dim">mise</span> ./mise.toml tools: node@24.18.0, python@3.13.14</div>
+          </div>
+        </div>
         <div class="recipe-panel recipe-panel-3">
-
-```shellsession
-$ cat .env.local
-DATABASE_URL=postgres://localhost/orders
-
-$ mise env -s bash
-export DATABASE_URL='postgres://localhost/orders'
-```
-
-</div>
+          <div class="terminal-body">
+            <div><span class="prompt">$</span> cat .env.local</div>
+            <div>DATABASE_URL=postgres://localhost/orders</div>
+            <div>&nbsp;</div>
+            <div><span class="prompt">$</span> mise env -s bash</div>
+            <div>export DATABASE_URL='postgres://localhost/orders'</div>
+          </div>
+        </div>
         <div class="recipe-panel recipe-panel-4">
-
-```shellsession
-$ mise run test
-[test] $ pytest
-42 passed in 1.02s
-```
-
-</div>
+          <div class="terminal-body">
+            <div><span class="prompt">$</span> mise run test</div>
+            <div><span class="key">[test]</span> $ pytest</div>
+            <div><span class="ok">42 passed</span> in 1.02s</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

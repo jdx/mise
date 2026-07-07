@@ -420,6 +420,20 @@ h1, h2, h3, h4, h5, h6,
   padding-bottom: 64px !important;
   position: relative;
   z-index: 1;
+  /* single static tint for depth — deliberately no animation/orbs/grain */
+  background: radial-gradient(
+    1000px 500px at 68% 12%,
+    rgba(139, 34, 82, 0.08),
+    transparent 70%
+  );
+}
+
+.dark .VPHero {
+  background: radial-gradient(
+    1000px 500px at 68% 12%,
+    rgba(199, 91, 122, 0.07),
+    transparent 70%
+  );
 }
 
 /* Two-column hero layout */
@@ -1101,12 +1115,13 @@ div[class*="language-"] .copy:hover {
 .hero-copy h1 {
   margin: 22px 0 0;
   font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(3.4rem, 7vw, 5.75rem);
+  font-size: clamp(2.9rem, 5vw, 4rem);
   font-style: italic;
   font-weight: 300;
-  line-height: 0.95;
+  line-height: 1.05;
   letter-spacing: 0;
   color: var(--vp-c-brand-1);
+  text-wrap: balance;
 }
 
 .hero-copy p {
@@ -1255,6 +1270,12 @@ div[class*="language-"] .copy:hover {
   line-height: 1;
   letter-spacing: 0;
   color: var(--vp-c-brand-1);
+  text-wrap: balance;
+}
+
+.landing-aube h2,
+.landing-cta h2 {
+  text-wrap: balance;
 }
 
 .landing-section p {
@@ -1343,6 +1364,8 @@ div[class*="language-"] .copy:hover {
 }
 
 .landing-feature-card {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   padding: 28px;
   border: 1px solid var(--vp-c-divider);
@@ -1354,6 +1377,14 @@ div[class*="language-"] .copy:hover {
     border-color 0.2s ease,
     transform 0.2s ease,
     box-shadow 0.2s ease;
+}
+
+.card-cmd {
+  margin: 0 0 14px;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--vp-c-text-3);
 }
 
 .landing-feature-card:hover {
@@ -1378,11 +1409,24 @@ div[class*="language-"] .copy:hover {
 
 .card-link {
   display: inline-block;
-  margin-top: 20px;
+  /* push to the card bottom so links align across the grid */
+  margin-top: auto;
+  padding-top: 20px;
   font-family: var(--vp-font-family-mono);
   font-size: 0.72rem;
   letter-spacing: 0.1em;
   color: var(--vp-c-brand-1);
+}
+
+.card-link::after {
+  content: "→";
+  display: inline-block;
+  margin-left: 6px;
+  transition: transform 0.2s ease;
+}
+
+.landing-feature-card:hover .card-link::after {
+  transform: translateX(3px);
 }
 
 .landing-tools {
@@ -1517,7 +1561,10 @@ div[class*="language-"] .copy:hover {
 }
 
 .recipe-steps {
-  padding: 20px 0;
+  /* distribute the four labels over the full panel height */
+  display: flex;
+  flex-direction: column;
+  padding: 0;
   border-right: 1px solid var(--vp-c-divider);
   background: var(--vp-c-bg-soft);
 }
@@ -1530,6 +1577,7 @@ div[class*="language-"] .copy:hover {
 
 .recipe-step {
   display: flex;
+  flex: 1;
   gap: 12px;
   align-items: center;
   margin: 0;
@@ -1574,33 +1622,17 @@ div[class*="language-"] .copy:hover {
   display: block;
 }
 
-/* Syntax-highlighted quickstart transcripts — flatten the VitePress code
-   block into the recipe panel and keep the equal-height tab panes. */
-.landing-code div[class*="language-"] {
-  height: 100%;
-  margin: 0;
-  border-radius: 0;
-  background: var(--vp-code-block-bg);
-}
-
-.landing-code div[class*="language-"] pre {
+/* Quickstart transcripts reuse the hero terminal's palette
+   (.terminal-body .prompt/.dim/.ok/.key) for one coherent look. */
+.landing-code .terminal-body {
+  box-sizing: border-box;
   height: 100%;
   min-height: 280px;
-  margin: 0;
   padding: 24px;
-  overflow: auto;
-}
-
-.landing-code div[class*="language-"] code {
-  padding: 0;
+  background: var(--vp-code-block-bg);
   font-family: var(--vp-font-family-mono);
   font-size: 0.88rem;
   line-height: 1.8;
-}
-
-/* The lang label just repeats "shellsession"; the copy button is enough */
-.landing-code div[class*="language-"] > .lang {
-  display: none;
 }
 
 .landing-cta {
