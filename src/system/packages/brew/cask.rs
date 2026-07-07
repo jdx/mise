@@ -135,10 +135,10 @@ impl BrewCaskManager {
         let tmp_caskroom = caskroom_tmp_dir(&cask);
         file::remove_all(&tmp_caskroom)?;
         file::create_dir_all(&tmp_caskroom)?;
+        execute_lifecycle_hook(&cask, &tmp_caskroom, "preflight", pr).await?;
         for app in &artifacts.apps {
             install_app(&stage, &tmp_caskroom, app)?;
         }
-        execute_lifecycle_hook(&cask, &tmp_caskroom, "preflight", pr).await?;
         for binary in &artifacts.binaries {
             stage_binary(&stage, &tmp_caskroom, &cask, binary)?;
         }
@@ -148,6 +148,7 @@ impl BrewCaskManager {
         for font in &artifacts.fonts {
             stage_font(&stage, &tmp_caskroom, font)?;
         }
+        execute_lifecycle_hook(&cask, &tmp_caskroom, "postflight", pr).await?;
         write_receipt(&tmp_caskroom, &cask, &artifacts)?;
         file::remove_all(&caskroom)?;
         file::rename(&tmp_caskroom, &caskroom)?;
@@ -159,7 +160,6 @@ impl BrewCaskManager {
             link_font(&caskroom, font)?;
         }
         remove_obsolete_fonts(&cask, &previous_fonts, &font_target_paths(&artifacts)?)?;
-        execute_lifecycle_hook(&cask, &caskroom, "postflight", pr).await?;
         remove_stale_versions(&caskroom_token, &cask.version)?;
         file::remove_all(stage)?;
         Ok(cask.version)
@@ -388,7 +388,7 @@ async fn execute_lifecycle_hook(
         .join("system-brew")
         .join("casks")
         .join("mise-brew-cask-shim.rb");
-    file::write(&shim_path, CASK_SHIM_RB)?;
+    ensure_cask_shim(&shim_path)?;
     if let Some(pr) = pr {
         pr.set_message(format!("run cask {hook}"));
     }
@@ -411,6 +411,13 @@ async fn execute_lifecycle_hook(
         .execute_async()
         .await
         .wrap_err_with(|| format!("brew-cask:{}: failed to run {hook}", cask.token))
+}
+
+fn ensure_cask_shim(path: &Path) -> Result<()> {
+    if file::read_to_string(path).is_ok_and(|contents| contents == CASK_SHIM_RB) {
+        return Ok(());
+    }
+    file::write(path, CASK_SHIM_RB)
 }
 
 async fn fetch_cask_rb(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<PathBuf> {
@@ -444,7 +451,8 @@ async fn fetch_cask_rb(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<Pat
     })?;
     let cache_dir = crate::dirs::CACHE.join("system-brew").join("cask-source");
     file::create_dir_all(&cache_dir)?;
-    let dest = cache_dir.join(format!("{}-{}.rb", cask.token, &sha256[..12]));
+    let short_sha = sha256.get(..12).unwrap_or(sha256);
+    let dest = cache_dir.join(format!("{}-{short_sha}.rb", cask.token));
     if dest.exists() && hash::ensure_checksum(&dest, sha256, None, "sha256").is_ok() {
         return Ok(dest);
     }
@@ -760,6 +768,12 @@ fn generated_caskroom_artifact(caskroom: &Path, cask: &Cask, source: &str) -> Op
     let source = PathBuf::from(source);
     let final_caskroom = caskroom_version_dir(&cask.token, &cask.version);
     let relative = source.strip_prefix(final_caskroom).ok()?;
+    if relative
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return None;
+    }
     Some(caskroom.join(relative))
 }
 
@@ -1452,6 +1466,23 @@ mod tests {
         assert_eq!(
             generated_caskroom_artifact(&tmp_caskroom, &cask, source),
             Some(generated)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_generated_caskroom_binary_parent_dirs() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let cask = test_cask("gimp", "3.2.4");
+        let tmp_caskroom = tmp.path().join("tmp-caskroom");
+        let source = "$HOMEBREW_PREFIX/Caskroom/gimp/3.2.4/../escape";
+
+        assert_eq!(
+            generated_caskroom_artifact(&tmp_caskroom, &cask, source),
+            None
         );
         Ok(())
     }
