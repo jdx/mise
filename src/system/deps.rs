@@ -624,9 +624,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_command() {
-        let (ok, _, _) = check_command("true").await;
+        // `true`/`false` aren't cmd built-ins on Windows; use `exit N`, which
+        // works in both `sh -c` and `cmd /C`.
+        let (succeed, fail) = if cfg!(windows) {
+            ("exit 0", "exit 1")
+        } else {
+            ("true", "false")
+        };
+        let (ok, _, _) = check_command(succeed).await;
         assert!(ok);
-        let (ok, _, _) = check_command("false").await;
+        let (ok, _, _) = check_command(fail).await;
         assert!(!ok);
     }
 
