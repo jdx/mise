@@ -637,10 +637,69 @@ fn rustup_path_env() -> Result<OsString> {
 }
 
 fn rustup_component_installed(installed: &BTreeSet<String>, component: &str) -> bool {
-    installed
-        .iter()
-        .any(|item| item == component || item.starts_with(&format!("{component}-")))
+    installed.iter().any(|item| {
+        item == component
+            || item
+                .strip_prefix(component)
+                .and_then(|suffix| suffix.strip_prefix('-'))
+                .is_some_and(rustup_component_suffix_is_host_triple)
+    })
 }
+
+fn rustup_component_suffix_is_host_triple(suffix: &str) -> bool {
+    let Some((arch, rest)) = suffix.split_once('-') else {
+        return false;
+    };
+    !rest.is_empty() && RUST_TARGET_ARCHES.contains(&arch)
+}
+
+const RUST_TARGET_ARCHES: &[&str] = &[
+    "aarch64",
+    "arm",
+    "armeb",
+    "arm64ec",
+    "armv4t",
+    "armv5te",
+    "armv6",
+    "armv7",
+    "armv7a",
+    "armv7r",
+    "armv7s",
+    "avr",
+    "bpfeb",
+    "bpfel",
+    "csky",
+    "hexagon",
+    "i386",
+    "i586",
+    "i686",
+    "loongarch64",
+    "m68k",
+    "mips",
+    "mips64",
+    "mips64el",
+    "mipsel",
+    "msp430",
+    "nvptx64",
+    "powerpc",
+    "powerpc64",
+    "powerpc64le",
+    "riscv32",
+    "riscv64",
+    "s390x",
+    "sparc",
+    "sparc64",
+    "thumbv4t",
+    "thumbv5te",
+    "thumbv6m",
+    "thumbv7a",
+    "thumbv7em",
+    "thumbv7m",
+    "thumbv7neon",
+    "wasm32",
+    "wasm64",
+    "x86_64",
+];
 
 #[cfg(test)]
 mod tests {
@@ -716,6 +775,8 @@ mod tests {
         assert!(rustup_component_installed(&installed, "rust-src"));
         assert!(rustup_component_installed(&installed, "llvm-tools"));
         assert!(!rustup_component_installed(&installed, "rustfmt"));
+        assert!(!rustup_component_installed(&installed, "rust"));
+        assert!(!rustup_component_installed(&installed, "llvm"));
     }
 
     #[test]

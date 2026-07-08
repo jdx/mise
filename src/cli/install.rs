@@ -307,21 +307,7 @@ impl Install {
         // In dry-run mode, check if any tools would be installed before filtering
         if self.is_dry_run() {
             if self.dry_run_code {
-                let mut has_work = false;
-                for tv in &versions {
-                    let Ok(backend) = tv.backend() else {
-                        has_work = true;
-                        break;
-                    };
-                    if !backend
-                        .is_install_satisfied(&install_config, tv, true)
-                        .await
-                        .unwrap_or(false)
-                    {
-                        has_work = true;
-                        break;
-                    }
-                }
+                let has_work = versions.iter().any(|tv| tv.install_satisfied != Some(true));
                 if has_work {
                     exit::exit(1);
                 }
