@@ -1,3 +1,0 @@
-look at the open prs like [https://github.com/jdx/mise/pull/10854/changes](https://github.com/jdx/mise/pull/10854/changes)
-
-the shortname test thing is not useful and causing merge conflicts so remove it from all of the open prs

@@ -11,14 +11,14 @@
       "metadata": "/ed/6db1158fc2/0/metadata.json",
       "transcript": "/ed/6db1158fc2/0/full.jsonl",
       "content_hash": "/ed/6db1158fc2/0/content_hash.txt",
-      "prompt": "/ed/6db1158fc2/0/prompt.txt"
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 14140,
+    "input_tokens": 21155,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 74240,
-    "output_tokens": 2411,
-    "api_call_count": 4
+    "cache_read_tokens": 64640,
+    "output_tokens": 837,
+    "api_call_count": 3
   }
 }
