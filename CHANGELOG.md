@@ -1,5 +1,46 @@
 # Changelog
 
+## [2026.7.3](https://github.com/jdx/mise/compare/v2026.7.2..v2026.7.3) - 2026-07-08
+
+### 🚀 Features
+
+- **(brew)** run cask lifecycle hooks by @jdx in [#10837](https://github.com/jdx/mise/pull/10837)
+- **(vfox)** plugin-declared system dependencies with capability detection by @jdx in [#10848](https://github.com/jdx/mise/pull/10848)
+
+### 🐛 Bug Fixes
+
+- **(brew)** support pkg-created cask binaries by @jdx in [#10841](https://github.com/jdx/mise/pull/10841)
+- **(vfox)** clean traditional plugin downloads by @risu729 in [#10840](https://github.com/jdx/mise/pull/10840)
+
+### 📚 Documentation
+
+- de-slopify landing page copy and visuals by @jdx in [#10836](https://github.com/jdx/mise/pull/10836)
+
+### 📦 Registry
+
+- use vfox for scala by @jdx in [#10843](https://github.com/jdx/mise/pull/10843)
+- use vfox for groovy by @jdx in [#10844](https://github.com/jdx/mise/pull/10844)
+- use vfox for mongodb by @jdx in [#10845](https://github.com/jdx/mise/pull/10845)
+- use vfox for emsdk by @jdx in [#10846](https://github.com/jdx/mise/pull/10846)
+- use vfox for teleport-community by @jdx in [#10852](https://github.com/jdx/mise/pull/10852)
+- use vfox for tinytex by @jdx in [#10856](https://github.com/jdx/mise/pull/10856)
+- use vfox for mysql by @jdx in [#10859](https://github.com/jdx/mise/pull/10859)
+
+### Ci
+
+- gate autorelease on fix and feat commits by @jdx in [#10838](https://github.com/jdx/mise/pull/10838)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`microsoft/winappCli`](https://github.com/microsoft/winappCli)
+
+#### Updated Packages (2)
+
+- [`bitwarden/clients`](https://github.com/bitwarden/clients)
+- [`tombi-toml/tombi`](https://github.com/tombi-toml/tombi)
+
 ## [2026.7.2](https://github.com/jdx/mise/compare/v2026.7.1..v2026.7.2) - 2026-07-07
 
 ### 🐛 Bug Fixes
