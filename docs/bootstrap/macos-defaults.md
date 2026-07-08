@@ -2,7 +2,8 @@
 
 mise can declare macOS user defaults (preferences) in the
 `[bootstrap.macos.defaults]` section of `mise.toml` and apply them with
-`mise bootstrap macos defaults apply`:
+`mise bootstrap macos defaults apply` or as part of
+[`mise bootstrap`](/bootstrap.html):
 
 ```toml
 [bootstrap.macos.dock]

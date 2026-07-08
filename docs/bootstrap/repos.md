@@ -1,7 +1,7 @@
 # Repos
 
 mise can declare git repositories in `[bootstrap.repos]` and apply them with
-`mise bootstrap repos apply`:
+`mise bootstrap repos apply` or as part of [`mise bootstrap`](/bootstrap.html):
 
 ```toml
 [bootstrap.repos]

@@ -124,13 +124,13 @@ python = "3.12"
 run = "gh auth status || gh auth login"
 ```
 
-Then run:
+Then converge the whole machine (`--yes` skips the confirmation prompts):
 
 ```sh
 mise bootstrap --yes
 ```
 
-For a dry run:
+To preview what would change without touching anything:
 
 ```sh
 mise bootstrap --dry-run
@@ -147,7 +147,7 @@ By default, bootstrap refuses dotfile conflicts rather than replacing local
 files. Use `mise bootstrap --force-dotfiles` when you explicitly want the
 dotfiles phase to replace conflicting whole-file dotfile targets.
 
-## Inspecting State
+## Inspecting state
 
 Use `mise bootstrap status` to inspect the declarative bootstrap state in one
 place. It reports every declarative part — packages, repos, dotfiles, shell
@@ -175,7 +175,7 @@ surface in one command. The narrower `mise bootstrap packages status
 --missing` and `mise bootstrap dotfiles status --missing` commands are useful when you
 only want to check one part without installing anything.
 
-## What Goes Where
+## What goes where
 
 | Config                                                         | Use for                                                       |
 | -------------------------------------------------------------- | ------------------------------------------------------------- |
@@ -231,16 +231,16 @@ post-defaults = "killall Dock || true"
 Hooks merge across the config hierarchy from global to local, so shared config
 can define broad machine setup while a project adds its own phase commands.
 
-## Common Workflows
+## Common workflows
 
-### New Machine
+### New machine
 
 ```sh
 mise trust
 mise bootstrap --yes
 ```
 
-### Add A Package
+### Add a package
 
 ```sh
 mise bootstrap packages use apk:zlib-dev apt:libssl-dev
@@ -248,7 +248,7 @@ mise bootstrap packages use apk:zlib-dev apt:libssl-dev
 
 This writes `[bootstrap.packages]` and installs what is missing.
 
-### Capture An Edited Dotfile
+### Capture an edited dotfile
 
 ```sh
 $EDITOR ~/.zshrc
@@ -258,7 +258,7 @@ mise dotfiles add ~/.zshrc
 `mise dotfiles add` stores the live file under `dotfiles.root` and writes an
 explicit `[dotfiles]` entry with `mode`.
 
-### Edit A Managed Dotfile
+### Edit a managed dotfile
 
 ```sh
 mise dotfiles edit ~/.zshrc
@@ -268,7 +268,7 @@ mise dotfiles apply ~/.zshrc
 For symlinked dotfiles, `edit` opens the managed source, so it works with the
 default `symlink` mode.
 
-## Advanced: Self-Managing Config
+## Advanced: self-managing config
 
 You can manage the dotfiles repository and the mise global config as
 dotfiles:

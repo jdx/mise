@@ -12,16 +12,10 @@ Mac App Store apps via the [`mas`](https://github.com/mas-cli/mas) CLI.
 Homebrew formulae, and casks. The package name is the App Store app ID:
 a numeric ADAM ID accepted by `mas install` and `mas upgrade`.
 
-mise does not install `mas` implicitly. Install it yourself first, for
-example with the built-in brew manager:
-
-```toml
-[bootstrap.packages]
-"brew:mas" = "latest"
-"mas:497799835" = "latest"
-```
-
-or with a normal mise tool if you have one configured globally:
+mise does not install `mas` implicitly. Install it yourself first — the
+`"brew:mas"` entry in the example above does this with the built-in
+[brew manager](/bootstrap/packages/brew.html) — or install it as a normal
+mise tool:
 
 ```sh
 mise use -g mas
