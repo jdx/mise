@@ -2,6 +2,11 @@
 
 assert_fail "mise current tiny"
 
+cat <<EOF >mise.toml
+[tool_alias]
+tiny = "asdf:mise-plugins/mise-tiny"
+EOF
+
 mise i tiny
 
 mise local tiny@sub-1:latest

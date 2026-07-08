@@ -14,14 +14,14 @@ assert "cat mise.lock" "$LOCKFILE_HEADER
 
 [[tools.tiny]]
 version = \"1.0.0\"
-backend = \"asdf:tiny\""
+backend = \"vfox:tiny\""
 
 assert "mise use tiny@1"
 assert "cat mise.lock" "$LOCKFILE_HEADER
 
 [[tools.tiny]]
 version = \"1.0.0\"
-backend = \"asdf:tiny\""
+backend = \"vfox:tiny\""
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.0"
 
@@ -30,7 +30,7 @@ assert "cat mise.lock" "$LOCKFILE_HEADER
 
 [[tools.tiny]]
 version = \"1.1.0\"
-backend = \"asdf:tiny\""
+backend = \"vfox:tiny\""
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.1.0"
 
@@ -39,25 +39,25 @@ assert "cat mise.lock" "$LOCKFILE_HEADER
 
 [[tools.tiny]]
 version = \"3.1.0\"
-backend = \"asdf:tiny\""
+backend = \"vfox:tiny\""
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "3"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "3.1.0"
 
 cat <<EOF >mise.lock
 [[tools.tiny]]
 version = "1.0.0"
-backend = "asdf:tiny"
+backend = "vfox:tiny"
 EOF
 assert "mise use tiny@1 tiny@2"
 assert "cat mise.lock" "$LOCKFILE_HEADER
 
 [[tools.tiny]]
 version = \"1.0.0\"
-backend = \"asdf:tiny\"
+backend = \"vfox:tiny\"
 
 [[tools.tiny]]
 version = \"2.1.0\"
-backend = \"asdf:tiny\""
+backend = \"vfox:tiny\""
 assert "mise uninstall --all tiny"
 assert "mise install tiny"
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
