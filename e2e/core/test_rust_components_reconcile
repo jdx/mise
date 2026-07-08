@@ -83,7 +83,7 @@ EOF
 
 assert_fail_contains "mise install rust --dry-run-code 2>&1" "would install"
 
-mise install
+mise exec -- rustc -V
 assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "2"
 assert_contains "cat '$MISE_CARGO_HOME/components'" "rustfmt"
 assert_contains "cat '$MISE_CARGO_HOME/components'" "rust-src"
