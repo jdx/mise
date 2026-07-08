@@ -1,0 +1,5 @@
+why is [https://github.com/jdx/mise/pull/10849?REDACTED#issuecomment-4911053589](https://github.com/jdx/mise/pull/10849?REDACTED#issuecomment-4911053589) failing
+
+---
+
+fix the pr
