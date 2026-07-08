@@ -454,11 +454,31 @@ pub fn is_mise_binary(bin_name: &str) -> bool {
 /// conventional `COLUMNS`. Lets tables/lists render sanely in CI where terminal
 /// size detection returns 0. Honored exactly (no 80 floor) so a narrow width can
 /// be forced on purpose. See discussion #4109.
+///
+/// Gated to `None` under `#[cfg(test)]` (like `TERM_WIDTH`) so unit tests that
+/// build a table don't pick up a stray `COLUMNS`/`MISE_TERM_WIDTH` from the env.
+#[cfg(test)]
+pub static TERM_WIDTH_OVERRIDE: Lazy<Option<usize>> = Lazy::new(|| None);
+
+#[cfg(not(test))]
 pub static TERM_WIDTH_OVERRIDE: Lazy<Option<usize>> = Lazy::new(|| {
-    ["MISE_TERM_WIDTH", "COLUMNS"]
-        .into_iter()
-        .find_map(|k| var(k).ok().and_then(|v| v.trim().parse::<usize>().ok()))
-        .filter(|w| *w > 0)
+    for key in ["MISE_TERM_WIDTH", "COLUMNS"] {
+        if let Some(w) = var(key)
+            .ok()
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .filter(|w| *w > 0)
+        {
+            // COLUMNS is maintained by the shell and can leak in unintentionally,
+            // so leave a breadcrumb when it (rather than MISE_TERM_WIDTH) is used.
+            if key == "COLUMNS" {
+                debug!(
+                    "overriding terminal width with COLUMNS={w}; set MISE_TERM_WIDTH to control this explicitly"
+                );
+            }
+            return Some(w);
+        }
+    }
+    None
 });
 
 #[cfg(test)]

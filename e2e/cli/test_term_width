@@ -1,19 +1,24 @@
 #!/usr/bin/env bash
 # MISE_TERM_WIDTH (and the conventional COLUMNS fallback) override the terminal
 # width used to render tables/lists such as `mise registry`. See discussion #4109.
+#
+# The assertions are content-independent: they check the width of the rendered
+# lines rather than any specific registry entry, so they don't break when the
+# registry contents change.
 
-# The full backends string for `gh` is ~48 chars; it fits on one line only when
-# the table is rendered wide enough.
-full="aqua:cli/cli asdf:bartlomiejdanek/asdf-github-cli"
+# awk program: emits "narrow" when the widest rendered line is <= 45 chars,
+# otherwise "wide". (A narrow override caps every line; a wide one leaves the
+# naturally long backends rows intact.)
+maxw="awk '{ if (length > m) m = length } END { print (m <= 45 ? \"narrow\" : \"wide\") }'"
 
-# A wide width shows the full backends string for the `gh` row.
-assert_contains "MISE_TERM_WIDTH=400 mise registry" "$full"
+# A narrow override caps the table width.
+assert "MISE_TERM_WIDTH=40 mise registry | $maxw" "narrow"
 
-# A narrow width shrinks the table so the full string no longer fits on the row.
-assert_not_contains "MISE_TERM_WIDTH=40 mise registry" "$full"
+# A wide override leaves long rows un-truncated, proving the override applies.
+assert "MISE_TERM_WIDTH=400 mise registry | $maxw" "wide"
 
 # COLUMNS is honored as a fallback when MISE_TERM_WIDTH is unset.
-assert_not_contains "COLUMNS=40 mise registry" "$full"
+assert "COLUMNS=40 mise registry | $maxw" "narrow"
 
 # MISE_TERM_WIDTH takes precedence over COLUMNS.
-assert_contains "MISE_TERM_WIDTH=400 COLUMNS=40 mise registry" "$full"
+assert "MISE_TERM_WIDTH=400 COLUMNS=40 mise registry | $maxw" "wide"
