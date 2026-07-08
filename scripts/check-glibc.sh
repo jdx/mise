@@ -7,7 +7,7 @@ target_name=${3:-$binary_path}
 
 if [[ ! -f $binary_path ]]; then
 	echo "Warning: binary not found at $binary_path, skipping glibc check"
-	exit 0
+	exit 1
 fi
 
 max_required=$(
