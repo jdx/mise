@@ -1,5 +1,1 @@
-`mise install` doesn't work well with rust components, this is documented i think. how could we improve the dx so it does?
-
----
-
 make a pr, also can we have it accept an array in mise.toml if that doesn't already work?
