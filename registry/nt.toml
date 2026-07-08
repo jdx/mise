@@ -1,0 +1,3 @@
+backends = ["github:navbytes/nt"]
+description = "Terminal task & note manager — durable memory for AI coding sessions"
+test = { cmd = "nt --version", expected = "nt {{version}}" }
