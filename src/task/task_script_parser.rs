@@ -1243,9 +1243,10 @@ mod tests {
     #[tokio::test]
     async fn test_task_source_files_with_usage_args() {
         let config = Config::get().await.unwrap();
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
         let task = Task {
             usage: r#"arg "[files]" var=#true"#.to_string(),
-            sources: vec![concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml").to_string()],
+            sources: vec![source.to_string_lossy().to_string()],
             ..Default::default()
         };
         let parser = TaskScriptParser::new(None);
@@ -1261,10 +1262,7 @@ mod tests {
             .parse_run_scripts_with_args(&config, &task, &scripts, &Default::default(), &[], &spec)
             .await
             .unwrap();
-        assert_eq!(
-            parsed,
-            vec![concat!("echo ", env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")]
-        );
+        assert_eq!(parsed, vec![format!("echo {}", source.display())]);
 
         let parsed = parser
             .parse_run_scripts_with_args(
