@@ -1,9 +1,1 @@
-what's the difference between jdx/vfox-scala and mise-plugins/vfox-scala?
-
----
-
-we shoudl consolidate, does jdx have extra commits we need to backport?
-
----
-
 ok make a pr to consolidate
