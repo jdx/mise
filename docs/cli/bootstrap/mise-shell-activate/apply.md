@@ -2,7 +2,7 @@
 # `mise bootstrap mise-shell-activate apply`
 
 - **Usage**: `mise bootstrap mise-shell-activate apply [-n --dry-run] [-y --yes]`
-- **Source code**: [`src/cli/bootstrap/mise_shell_activate/apply.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/mise_shell_activate/apply.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 ## Flags
 

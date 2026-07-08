@@ -2,7 +2,7 @@
 # `mise bootstrap macos launchd-agents apply`
 
 - **Usage**: `mise bootstrap macos launchd-agents apply [-n --dry-run] [-y --yes]`
-- **Source code**: [`src/cli/bootstrap/macos/launchd_agents/apply.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/macos/launchd_agents/apply.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 ## Flags
 

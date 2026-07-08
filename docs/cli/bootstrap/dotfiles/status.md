@@ -3,7 +3,7 @@
 
 - **Usage**: `mise bootstrap dotfiles status [-J --json] [--missing] [TARGET]…`
 - **Aliases**: `ls`
-- **Source code**: [`src/cli/bootstrap/dotfiles/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/dotfiles/status.rs)
+- **Source code**: [`src/cli/dotfiles/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/status.rs)
 
 Show the status of dotfiles from `[dotfiles]`
 

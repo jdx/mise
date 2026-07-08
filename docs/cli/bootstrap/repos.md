@@ -2,7 +2,7 @@
 # `mise bootstrap repos`
 
 - **Usage**: `mise bootstrap repos <SUBCOMMAND>`
-- **Source code**: [`src/cli/bootstrap/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/mod.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Manage git repo checkouts from `[bootstrap.repos]`
 

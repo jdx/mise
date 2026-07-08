@@ -2,7 +2,7 @@
 # `mise bootstrap mise-shell-activate status`
 
 - **Usage**: `mise bootstrap mise-shell-activate status [-J --json] [--missing]`
-- **Source code**: [`src/cli/bootstrap/mise_shell_activate/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/mise_shell_activate/status.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 ## Flags
 

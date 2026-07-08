@@ -3,7 +3,7 @@
 
 - **Usage**: `mise bootstrap packages status [-J --json] [--missing]`
 - **Aliases**: `ls`
-- **Source code**: [`src/cli/bootstrap/packages/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/packages/status.rs)
+- **Source code**: [`src/cli/system/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/status.rs)
 
 Show the status of system packages from `[bootstrap.packages]`
 

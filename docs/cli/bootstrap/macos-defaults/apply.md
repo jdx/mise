@@ -2,7 +2,7 @@
 # `mise bootstrap macos-defaults apply`
 
 - **Usage**: `mise bootstrap macos-defaults apply [-n --dry-run] [-y --yes]`
-- **Source code**: [`src/cli/bootstrap/macos_defaults/apply.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/macos_defaults/apply.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 ## Flags
 

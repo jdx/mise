@@ -5056,12 +5056,28 @@ e.g.: `mise which npm --tool=node@20`
 }
 source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
-{%- if path == "bootstrap/status" -%}
-{%- set path = "bootstrap.rs" -%}
+{%- if path == "bootstrap/packages/apply" -%}
+{%- set path = "system/install.rs" -%}
 {%- elif path == "bootstrap/packages/import" -%}
 {%- set path = "system/import.rs" -%}
 {%- elif path == "bootstrap/packages/prune" -%}
 {%- set path = "system/prune.rs" -%}
+{%- elif path == "bootstrap/packages/status" -%}
+{%- set path = "system/status.rs" -%}
+{%- elif path == "bootstrap/packages/upgrade" -%}
+{%- set path = "system/upgrade.rs" -%}
+{%- elif path == "bootstrap/packages/use" -%}
+{%- set path = "system/use.rs" -%}
+{%- elif path is starting_with("bootstrap/packages/brew") -%}
+{%- set path = "system/brew/mod.rs" -%}
+{%- elif path == "bootstrap/dotfiles/apply" -%}
+{%- set path = "dotfiles/apply.rs" -%}
+{%- elif path == "bootstrap/dotfiles/status" -%}
+{%- set path = "dotfiles/status.rs" -%}
+{%- elif path is starting_with("bootstrap") -%}
+{%- set path = "bootstrap.rs" -%}
+{%- elif path == "tasks/run" -%}
+{%- set path = "run.rs" -%}
 {%- elif cmd.subcommands | length > 0 -%}
 {%- set parts = path | split(pat="/") -%}
 {%- set path = parts[0] ~ "/mod.rs" -%}
