@@ -337,12 +337,20 @@ async fn check_pkgconfig(
     }
     match run_capture("pkg-config", &["--exists", name]).await {
         Some((true, _)) => {}
-        _ => {
+        Some((false, _)) => {
             return (
                 false,
                 None,
                 Some(format!("pkg-config module `{name}` not found")),
             );
+        }
+        None => {
+            // Timeout or spawn failure — inconclusive, so don't block (matches
+            // the "presence is enough" fallback in check_bin).
+            debug!(
+                "system dep: `pkg-config --exists {name}` timed out or failed to spawn, treating as satisfied"
+            );
+            return (true, None, None);
         }
     }
     let Some(constraint) = constraint else {
