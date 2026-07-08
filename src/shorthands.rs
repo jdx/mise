@@ -82,6 +82,7 @@ mod tests {
         let shorthands = get_shorthands(&settings);
         assert_str_eq!(shorthands["aapt2"][0], "vfox:mise-plugins/vfox-aapt2");
         assert_str_eq!(shorthands["scala"][0], "vfox:jdx/vfox-scala");
+        assert_str_eq!(shorthands["groovy"][0], "vfox:jdx/vfox-groovy");
         assert_str_eq!(shorthands["node"][0], "https://node");
         assert_str_eq!(shorthands["xxxxxx"][0], "https://xxxxxx");
     }
