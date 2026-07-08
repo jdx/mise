@@ -89,6 +89,7 @@ mod tests {
             shorthands["teleport-community"][0],
             "vfox:jdx/vfox-teleport-community"
         );
+        assert_str_eq!(shorthands["tinytex"][0], "vfox:jdx/vfox-tinytex");
         assert_str_eq!(shorthands["node"][0], "https://node");
         assert_str_eq!(shorthands["xxxxxx"][0], "https://xxxxxx");
     }
