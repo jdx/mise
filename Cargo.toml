@@ -33,6 +33,7 @@ include = [
   "/src/**/*.rs",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
+  "/src/system/packages/brew/cask_shim.rb",
   "/src/system/packages/brew/shim.rb",
   "/vendor/aqua-registry/LICENSE",
   "/vendor/aqua-registry/metadata.json",
