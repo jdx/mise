@@ -2,7 +2,8 @@
 
 mise can declare Linux systemd user services in
 `[bootstrap.linux.systemd.units]` and apply them with
-`mise bootstrap linux systemd-units apply`:
+`mise bootstrap linux systemd-units apply` or as part of
+[`mise bootstrap`](/bootstrap.html):
 
 ```toml
 [bootstrap.linux.systemd.units.my-sync]

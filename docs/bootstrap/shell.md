@@ -1,8 +1,10 @@
 # Shell Activation
 
-mise can declaratively add shell activation snippets for bash, zsh, and fish
-with `[bootstrap.mise_shell_activate]`. Configure startup-file targets directly
-when you want separate shims and normal activation setup:
+mise can declaratively add [shell activation](/getting-started.html#activate-mise)
+snippets for bash, zsh, and fish with `[bootstrap.mise_shell_activate]`,
+applied by `mise bootstrap mise-shell-activate apply` or as part of
+[`mise bootstrap`](/bootstrap.html). Each key names a shell startup file and
+each value picks a mode:
 
 ```toml
 [bootstrap.mise_shell_activate]
@@ -52,16 +54,16 @@ eval "$(mise activate zsh)"
 `[bootstrap.mise_shell_activate]` follows the same manual, idempotent model as
 other bootstrap sections:
 
-- **Per-target override** - a project config can override a global setting for
+- **Per-target override** — a project config can override a global setting for
   one startup file with `zshrc = false` without changing `zprofile`.
-- **Manual application only** - mise never edits shell rc files implicitly.
+- **Manual application only** — mise never edits shell rc files implicitly.
   Only `mise bootstrap mise-shell-activate apply` and `mise bootstrap` apply this section.
-- **Marker-owned edits** - mise only owns the block between its markers. Other
+- **Marker-owned edits** — mise only owns the block between its markers. Other
   content in the rc file is left untouched.
-- **Shims stay out of `zshenv` by default** - `zshenv` is supported when
+- **Shims stay out of `zshenv` by default** — `zshenv` is supported when
   configured explicitly, but shell shortcuts do not write it because zsh reads
   it for every invocation, including scripts.
-- **Explicit dotfiles win** - if `[dotfiles]` already manages the same rc file
+- **Explicit dotfiles win** — if `[dotfiles]` already manages the same rc file
   as a whole file, or defines an edit for the same target/id such as
   `"~/.zshrc/activate"`, mise skips the generated shell activation entry for
   that shell.

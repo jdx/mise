@@ -2,7 +2,8 @@
 
 mise can declare macOS user LaunchAgents in
 `[bootstrap.macos.launchd.agents]` and apply them with
-`mise bootstrap macos launchd-agents apply`:
+`mise bootstrap macos launchd-agents apply` or as part of
+[`mise bootstrap`](/bootstrap.html):
 
 ```toml
 [bootstrap.macos.launchd.agents.my-sync]
