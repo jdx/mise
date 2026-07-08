@@ -1,0 +1,5 @@
+thoughts on [https://github.com/jdx/mise/discussions/10872](https://github.com/jdx/mise/discussions/10872)
+
+---
+
+make a pr and reply to discussion

@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "682cf37a7e06",
+  "session_id": "019f43e9-1424-70c1-b2f4-c7bfe80637dd",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-08T22:56:26.146433Z",
+  "branch": "codex/suppress-installed-mra-warning",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_install_before",
+    "src/cli/upgrade.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "cd986a92e857",
+  "token_usage": {
+    "input_tokens": 208369,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2693120,
+    "output_tokens": 12933,
+    "api_call_count": 36
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-08T22:56:26.134596Z",
+    "agent_lines": 41,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 41,
+    "total_lines_changed": 42,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "682cf37a7e06",
+  "strategy": "manual-commit",
+  "branch": "codex/suppress-installed-mra-warning",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_install_before",
+    "src/cli/upgrade.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/68/2cf37a7e06/0/metadata.json",
+      "transcript": "/68/2cf37a7e06/0/full.jsonl",
+      "content_hash": "/68/2cf37a7e06/0/content_hash.txt",
+      "prompt": "/68/2cf37a7e06/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 208369,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2693120,
+    "output_tokens": 12933,
+    "api_call_count": 36
+  }
+}
