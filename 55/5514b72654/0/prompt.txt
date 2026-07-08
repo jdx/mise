@@ -1,0 +1,15 @@
+make a pr
+
+---
+
+monitor for pr feedback and failing checks
+
+---
+
+<heartbeat>
+  <automation_id>monitor-mise-pr-10870</automation_id>
+  <current_time_iso>2026-07-08T19:24:24.898Z</current_time_iso>
+  <instructions>
+Monitor https://github.com/jdx/mise/pull/10870 for actionable PR activity. In /Users/jdx/.codex/worktrees/fbb3/mise, use GitHub CLI commands such as `gh pr view 10870 --json state,mergedAt,reviewDecision,comments,reviews,statusCheckRollup,url,title` and `gh pr checks 10870` as needed. Look for new maintainer/user review comments, requested changes, CI/check failures, or a closed/merged PR. If checks fail, identify the failing check names and summarize the likely cause; if the fix is straightforward and local changes are appropriate, implement it on branch `codex/fix-task-source-files-usage`, run focused verification, commit with a conventional commit message, and push. If there is new feedback, summarize it and either address it or clearly say what input is needed. If the PR is merged or closed, report that and stop further monitoring if automation-update tooling is available. If there is no new actionable feedback and checks are passing or still legitimately pending, do not post a noisy update.
+  </instructions>
+</heartbeat>
