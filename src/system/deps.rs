@@ -612,8 +612,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_bin_present_and_missing() {
-        // `sh` is present on every unix CI runner; on windows use `cmd`.
-        let present = if cfg!(windows) { "cmd" } else { "sh" };
+        // `file::which` does no PATHEXT resolution, so on Windows the name must
+        // carry the `.exe` extension (cmd.exe lives in System32, on PATH on CI).
+        let present = if cfg!(windows) { "cmd.exe" } else { "sh" };
         let (ok, _, _) = check_bin(present, None).await;
         assert!(ok);
 
