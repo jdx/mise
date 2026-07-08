@@ -1,0 +1,9 @@
+make a pr, also can we have it accept an array in mise.toml if that doesn't already work?
+
+---
+
+address pr feedback
+
+---
+
+address pr feedback and failing checks if any
