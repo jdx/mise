@@ -137,9 +137,7 @@ impl Install {
     async fn hint_missing_system_packages(&self) {
         // the status queries spawn package-manager processes; skip them
         // entirely once the hint has been shown (or is disabled)
-        if !Settings::get().experimental
-            || !crate::hint::hint_would_display("system_packages_missing")
-        {
+        if !crate::hint::hint_would_display("system_packages_missing") {
             return;
         }
         let Ok(config) = Config::get().await else {

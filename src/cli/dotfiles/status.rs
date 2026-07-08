@@ -1,7 +1,7 @@
 use eyre::Result;
 use serde_json::json;
 
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::path::PathExt;
 use crate::system;
 use crate::system::files::FileState;
@@ -27,7 +27,6 @@ pub struct DotfilesStatus {
 
 impl DotfilesStatus {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise dotfiles")?;
         let config = Config::get().await?;
         let mut any_missing = false;
 

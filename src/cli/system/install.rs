@@ -49,7 +49,6 @@ pub struct SystemInstall {
 
 impl SystemInstall {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         let mgrs = if self.packages.is_empty() {
             let config = Config::get().await?;
             system::packages_from_config(&config)

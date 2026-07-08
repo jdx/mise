@@ -74,7 +74,7 @@ mise generate task-stubs --mise-bin ./bin/mise
 The generated task stubs behave like small project commands, while `bin/mise`
 downloads and runs the pinned mise binary for the project.
 
-## Machine bootstrapping <Badge type="warning" text="experimental" />
+## Machine bootstrapping
 
 Beyond `[tools]`, mise can declare the rest of the machine setup needed for
 a project or workstation, and [`mise bootstrap`](/cli/bootstrap.html)

@@ -1,4 +1,4 @@
-# User Login Shell <Badge type="warning" text="experimental" />
+# User Login Shell
 
 mise can declare the current user's login shell in `[bootstrap.user]` and
 apply it with `mise bootstrap user apply` or

@@ -1,4 +1,4 @@
-# mas <Badge type="warning" text="experimental" />
+# mas
 
 Mac App Store apps via the [`mas`](https://github.com/mas-cli/mas) CLI.
 

@@ -468,9 +468,6 @@ impl Doctor {
 
     /// same diagnostics as [`Self::analyze_system_packages`] for `doctor -J`
     async fn system_packages_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
-        if !Settings::get().experimental {
-            return None;
-        }
         let mgrs = crate::system::packages_from_config(config);
         if mgrs.is_empty() {
             return None;
@@ -535,9 +532,6 @@ impl Doctor {
         &mut self,
         config: &Arc<Config>,
     ) -> Option<SystemDefaultsDiagnosis> {
-        if !Settings::get().experimental {
-            return None;
-        }
         let defaults = crate::system::defaults_from_config(config);
         if defaults.is_empty() {
             return None;
@@ -627,9 +621,6 @@ impl Doctor {
         &mut self,
         config: &Arc<Config>,
     ) -> Option<SystemLoginShellDiagnosis> {
-        if !Settings::get().experimental {
-            return None;
-        }
         let request = crate::system::login_shell_from_config(config)?;
         if !crate::system::login_shell::is_available() {
             return Some(SystemLoginShellDiagnosis::Unavailable {
@@ -712,9 +703,6 @@ impl Doctor {
     }
 
     async fn analyze_system_packages(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
-        if !Settings::get().experimental {
-            return Ok(());
-        }
         let mgrs = crate::system::packages_from_config(config);
         if mgrs.is_empty() {
             return Ok(());

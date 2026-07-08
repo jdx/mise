@@ -4,7 +4,7 @@
 - **Usage**: `mise bootstrap [FLAGS] [SUBCOMMAND]`
 - **Source code**: [`src/cli/bootstrap/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/mod.rs)
 
-[experimental] Set up a machine for the current config in one command
+Set up a machine for the current config in one command
 
 Runs the bootstrap steps for the current config in order:
 

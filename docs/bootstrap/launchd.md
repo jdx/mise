@@ -1,4 +1,4 @@
-# launchd <Badge type="warning" text="experimental" />
+# launchd
 
 mise can declare macOS user LaunchAgents in
 `[bootstrap.macos.launchd.agents]` and apply them with

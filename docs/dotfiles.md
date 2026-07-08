@@ -1,4 +1,4 @@
-# Dotfiles <Badge type="warning" text="experimental" />
+# Dotfiles
 
 mise can manage dotfiles from the `[dotfiles]` section of `mise.toml`.
 Entries can either own a whole file or directory, or manage one small piece

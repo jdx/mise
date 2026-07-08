@@ -1,4 +1,4 @@
-# brew <Badge type="warning" text="experimental" />
+# brew
 
 Homebrew formulae and casks — **without requiring Homebrew to be installed**.
 
