@@ -52,6 +52,12 @@ impl MiseTable {
         table
             .load_preset(comfy_table::presets::NOTHING)
             .set_content_arrangement(ContentArrangement::Dynamic);
+        // Pin the width when the user overrides it (e.g. MISE_TERM_WIDTH in CI).
+        // comfy_table does its own terminal detection, which fails in non-ttys,
+        // so this is what makes the override actually affect `mise ls` et al.
+        if let Some(w) = *crate::env::TERM_WIDTH_OVERRIDE {
+            table.set_width(w.min(u16::MAX as usize) as u16);
+        }
         if !console::colors_enabled() {
             table.force_no_tty();
         }

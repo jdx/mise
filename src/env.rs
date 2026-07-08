@@ -450,11 +450,25 @@ pub fn is_mise_binary(bin_name: &str) -> bool {
     bin_name == "mise" || bin_name.starts_with("mise.") || bin_name.starts_with("mise-")
 }
 
+/// Explicit terminal-width override: `MISE_TERM_WIDTH` takes precedence, then the
+/// conventional `COLUMNS`. Lets tables/lists render sanely in CI where terminal
+/// size detection returns 0. Honored exactly (no 80 floor) so a narrow width can
+/// be forced on purpose. See discussion #4109.
+pub static TERM_WIDTH_OVERRIDE: Lazy<Option<usize>> = Lazy::new(|| {
+    ["MISE_TERM_WIDTH", "COLUMNS"]
+        .into_iter()
+        .find_map(|k| var(k).ok().and_then(|v| v.trim().parse::<usize>().ok()))
+        .filter(|w| *w > 0)
+});
+
 #[cfg(test)]
 pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| 80);
 
 #[cfg(not(test))]
 pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| {
+    if let Some(w) = *TERM_WIDTH_OVERRIDE {
+        return w;
+    }
     terminal_size::terminal_size()
         .map(|(w, _)| w.0 as usize)
         .unwrap_or(80)

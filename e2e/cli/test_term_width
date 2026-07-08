@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# MISE_TERM_WIDTH (and the conventional COLUMNS fallback) override the terminal
+# width used to render tables/lists such as `mise registry`. See discussion #4109.
+
+# The full backends string for `gh` is ~48 chars; it fits on one line only when
+# the table is rendered wide enough.
+full="aqua:cli/cli asdf:bartlomiejdanek/asdf-github-cli"
+
+# A wide width shows the full backends string for the `gh` row.
+assert_contains "MISE_TERM_WIDTH=400 mise registry" "$full"
+
+# A narrow width shrinks the table so the full string no longer fits on the row.
+assert_not_contains "MISE_TERM_WIDTH=40 mise registry" "$full"
+
+# COLUMNS is honored as a fallback when MISE_TERM_WIDTH is unset.
+assert_not_contains "COLUMNS=40 mise registry" "$full"
+
+# MISE_TERM_WIDTH takes precedence over COLUMNS.
+assert_contains "MISE_TERM_WIDTH=400 COLUMNS=40 mise registry" "$full"
