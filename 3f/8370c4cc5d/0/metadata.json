@@ -3,7 +3,7 @@
   "checkpoint_id": "3f8370c4cc5d",
   "session_id": "019f4025-2fa5-7123-8a8f-132536957a8c",
   "strategy": "manual-commit",
-  "created_at": "2026-07-08T05:15:09.905752Z",
+  "created_at": "2026-07-08T05:16:53.102175Z",
   "checkpoints_count": 1,
   "files_touched": [
     "src/shorthands.rs"
@@ -11,10 +11,10 @@
   "agent": "Codex",
   "model": "gpt-5.5",
   "turn_id": "011c4e045332",
-  "checkpoint_transcript_start": 45,
-  "transcript_lines_at_start": 45,
+  "checkpoint_transcript_start": 73,
+  "transcript_lines_at_start": 73,
   "initial_attribution": {
-    "calculated_at": "2026-07-08T05:15:09.902441Z",
+    "calculated_at": "2026-07-08T05:16:53.097592Z",
     "agent_lines": 0,
     "agent_removed": 0,
     "human_added": 0,
