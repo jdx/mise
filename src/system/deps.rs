@@ -227,7 +227,8 @@ impl TryFrom<vfox::SystemDependency> for SystemDep {
 /// Host-only detection result: `(satisfied, found_version, reason)`.
 type DetectOutcome = (bool, Option<String>, Option<String>);
 
-static CACHE: Lazy<Mutex<HashMap<String, DetectOutcome>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static CACHE: Lazy<Mutex<HashMap<String, DetectOutcome>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Detect all `deps`, memoized. Concurrency-safe; two calls with the same
 /// fingerprint reuse the first result.
@@ -251,15 +252,14 @@ async fn detect_inner(deps: &[SystemDep], use_cache: bool) -> Vec<DepStatus> {
         // reusing the first caller's dep would misclassify a required dep as
         // optional when two tools share the same check.
         let fp = dep.fingerprint();
-        let (satisfied, found, reason) = if use_cache
-            && let Some(cached) = CACHE.lock().unwrap().get(&fp).cloned()
-        {
-            cached
-        } else {
-            let outcome = detect_outcome(dep).await;
-            CACHE.lock().unwrap().insert(fp, outcome.clone());
-            outcome
-        };
+        let (satisfied, found, reason) =
+            if use_cache && let Some(cached) = CACHE.lock().unwrap().get(&fp).cloned() {
+                cached
+            } else {
+                let outcome = detect_outcome(dep).await;
+                CACHE.lock().unwrap().insert(fp, outcome.clone());
+                outcome
+            };
         out.push(DepStatus {
             dep: dep.clone(),
             found,
