@@ -1,0 +1,5 @@
+could we instead just run cargo package on all of the crates and subcrates instead of the tag checking?
+
+---
+
+idk if this is right still, i thought we would need to run cargo packagae on all subcrates before publishing any of them to prevent the original issue?
