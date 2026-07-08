@@ -374,13 +374,18 @@ impl Doctor {
                 if status.satisfied || status.dep.optional.is_some() {
                     continue;
                 }
-                let msg = match &status.found {
-                    Some(found) => format!(
+                let msg = match (&status.found, &status.reason) {
+                    (Some(found), _) => format!(
                         "{} requires system dependency {} (found {found})",
                         ba.tool_name,
                         status.dep.label()
                     ),
-                    None => format!(
+                    (None, Some(reason)) => format!(
+                        "{} requires system dependency {} ({reason})",
+                        ba.tool_name,
+                        status.dep.label()
+                    ),
+                    (None, None) => format!(
                         "{} requires system dependency {}",
                         ba.tool_name,
                         status.dep.label()
