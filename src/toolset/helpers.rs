@@ -94,10 +94,14 @@ async fn preflight_system_deps_inner(
         return Ok(());
     }
 
-    // Effective mode: prompt degrades to warn when we cannot ask.
-    let can_prompt = console::user_attended_stderr() && !opts.yes;
+    // Effective mode: prompt degrades to warn only when we can neither ask
+    // (non-interactive) nor auto-confirm (`--yes`/MISE_YES). With `opts.yes`
+    // set, Prompt stays Prompt and the remediation below runs non-interactively
+    // (the driver uses `yes` to skip its own confirmation).
     let effective = match mode {
-        SystemDepsMode::Prompt if !can_prompt => SystemDepsMode::Warn,
+        SystemDepsMode::Prompt if !console::user_attended_stderr() && !opts.yes => {
+            SystemDepsMode::Warn
+        }
         other => other,
     };
 

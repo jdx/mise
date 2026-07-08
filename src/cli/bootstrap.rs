@@ -1101,6 +1101,9 @@ impl BootstrapStatus {
         let mut seen = HashSet::new();
         let mut json_entries = vec![];
         for tr in trs.tools.values().flatten() {
+            if !tr.is_os_supported() {
+                continue;
+            }
             let ba = tr.ba();
             if !seen.insert(ba.short.clone()) {
                 continue;

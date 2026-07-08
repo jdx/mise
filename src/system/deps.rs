@@ -198,9 +198,22 @@ impl TryFrom<vfox::SystemDependency> for SystemDep {
                 "systemDependencies entry must set exactly one of bin/pkgconfig/sharedlib/command"
             ),
         };
-        let version = match &d.version {
-            Some(v) => Some(VersionConstraint::parse(v)?),
-            None => None,
+        // A version constraint is only meaningful for bin/pkgconfig (we probe
+        // `--version` / `--modversion`). If declared on sharedlib/command,
+        // keep the check but drop the version with a warning rather than
+        // silently honoring a constraint that is never enforced.
+        let version = match (&check, &d.version) {
+            (_, None) => None,
+            (SystemDepCheck::Bin(_) | SystemDepCheck::PkgConfig(_), Some(v)) => {
+                Some(VersionConstraint::parse(v)?)
+            }
+            (check, Some(_)) => {
+                warn!(
+                    "systemDependencies: `version` is only supported for bin/pkgconfig checks, ignoring it for the {} check",
+                    check.kind()
+                );
+                None
+            }
         };
         Ok(SystemDep {
             check,
@@ -355,9 +368,15 @@ async fn check_pkgconfig(
 #[cfg(target_os = "linux")]
 async fn check_sharedlib(soname: &str) -> (bool, Option<String>, Option<String>) {
     // Primary: ldconfig's cache lists every soname the dynamic linker knows.
+    // Each entry looks like `	libaio.so.1 (libc6,x86-64) => /path/libaio.so.1`,
+    // so match the advertised soname as the whole first token — a substring
+    // check would let `libfoo.so.10` satisfy a request for `libfoo.so.1`.
     for ldconfig in ["ldconfig", "/sbin/ldconfig"] {
         if let Some((true, output)) = run_capture(ldconfig, &["-p"]).await {
-            if output.lines().any(|l| l.contains(soname)) {
+            if output
+                .lines()
+                .any(|l| l.split_whitespace().next() == Some(soname))
+            {
                 return (true, None, None);
             }
             // ldconfig ran and did not list it; still check LD_LIBRARY_PATH below
@@ -609,5 +628,29 @@ mod tests {
         assert!(ok);
         let (ok, _, _) = check_command("false").await;
         assert!(!ok);
+    }
+
+    #[test]
+    fn test_version_only_applies_to_bin_and_pkgconfig() {
+        // bin + version is honored
+        let d = vfox::SystemDependency {
+            bin: Some("bison".into()),
+            version: Some(">=3.0".into()),
+            ..Default::default()
+        };
+        let dep = SystemDep::try_from(d).unwrap();
+        assert!(dep.version.is_some());
+
+        // sharedlib + version: the check is kept, the version is dropped
+        let d = vfox::SystemDependency {
+            sharedlib: Some("libaio.so.1".into()),
+            version: Some(">=1.0".into()),
+            ..Default::default()
+        };
+        let dep = SystemDep::try_from(d).unwrap();
+        assert!(matches!(dep.check, SystemDepCheck::SharedLib(_)));
+        assert!(dep.version.is_none());
+        // and label must not render a phantom version
+        assert_eq!(dep.label(), "shared library libaio.so.1");
     }
 }
