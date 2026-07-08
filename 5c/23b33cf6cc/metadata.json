@@ -1,0 +1,17 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "5c23b33cf6cc",
+  "strategy": "manual-commit",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/shorthands.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5c/23b33cf6cc/0/metadata.json",
+      "transcript": "/5c/23b33cf6cc/0/full.jsonl",
+      "content_hash": "/5c/23b33cf6cc/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}
