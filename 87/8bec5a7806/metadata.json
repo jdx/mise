@@ -1,0 +1,61 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "878bec5a7806",
+  "strategy": "manual-commit",
+  "branch": "codex/stabilize-bootstrap",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/bootstrap.md",
+    "docs/bootstrap/launchd.md",
+    "docs/bootstrap/macos-defaults.md",
+    "docs/bootstrap/packages/apk.md",
+    "docs/bootstrap/packages/apt.md",
+    "docs/bootstrap/packages/brew.md",
+    "docs/bootstrap/packages/dnf.md",
+    "docs/bootstrap/packages/index.md",
+    "docs/bootstrap/packages/mas.md",
+    "docs/bootstrap/packages/pacman.md",
+    "docs/bootstrap/repos.md",
+    "docs/bootstrap/shell.md",
+    "docs/bootstrap/systemd.md",
+    "docs/bootstrap/user.md",
+    "docs/dotfiles.md",
+    "docs/tips-and-tricks.md",
+    "e2e/cli/test_bootstrap",
+    "e2e/cli/test_dotfiles_files",
+    "e2e/cli/test_system_status",
+    "e2e/cli/test_system_use",
+    "schema/mise.json",
+    "settings.toml",
+    "src/cli/bootstrap.rs",
+    "src/cli/doctor/mod.rs",
+    "src/cli/dotfiles/add.rs",
+    "src/cli/dotfiles/apply.rs",
+    "src/cli/dotfiles/edit.rs",
+    "src/cli/dotfiles/mod.rs",
+    "src/cli/dotfiles/status.rs",
+    "src/cli/install.rs",
+    "src/cli/system/brew/mod.rs",
+    "src/cli/system/import.rs",
+    "src/cli/system/install.rs",
+    "src/cli/system/prune.rs",
+    "src/cli/system/status.rs",
+    "src/cli/system/upgrade.rs",
+    "src/cli/system/use.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/87/8bec5a7806/0/metadata.json",
+      "transcript": "/87/8bec5a7806/0/full.jsonl",
+      "content_hash": "/87/8bec5a7806/0/content_hash.txt",
+      "prompt": "/87/8bec5a7806/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 157988,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3854464,
+    "output_tokens": 17392,
+    "api_call_count": 39
+  }
+}
