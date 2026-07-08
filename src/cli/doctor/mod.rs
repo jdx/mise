@@ -353,7 +353,13 @@ impl Doctor {
     /// deps and tools whose plugin isn't installed are silently skipped.
     async fn analyze_system_deps(&mut self, ts: &Toolset) {
         let mut seen = std::collections::HashSet::new();
-        for ba in ts.versions.keys() {
+        for (ba, tvl) in &ts.versions {
+            // Skip tools not supported on this OS, matching bootstrap's
+            // collect_plugin_deps — otherwise we'd warn about prerequisites for
+            // a tool that will never install on this platform.
+            if !tvl.requests.iter().any(|tr| tr.is_os_supported()) {
+                continue;
+            }
             if !seen.insert(ba.short.clone()) {
                 continue;
             }
