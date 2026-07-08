@@ -1000,16 +1000,18 @@ impl ConfigFile for MiseToml {
                     // This preserves {{ version }} in the output for install-time rendering
                     let mut opts_context = context.clone();
                     opts_context.insert("version", "{{ version }}");
-                    // The http backend re-renders its url/checksum_url per target
-                    // platform (host at install, any target during `mise lock`), so
-                    // only those two options defer os()/arch() instead of resolving
-                    // them now. Every other option (here and for other backends) is
-                    // consumed verbatim, so it keeps host resolution at config load —
-                    // deferring it would leak raw `{{ os() }}` fragments into
-                    // consumers that never render again (e.g. checksum_expr).
+                    // The http and s3 backends re-render their url/checksum_url per
+                    // target platform (host at install, any target during `mise
+                    // lock`), so only those two options defer os()/arch() instead of
+                    // resolving them now. Every other option (here and for other
+                    // backends) is consumed verbatim, so it keeps host resolution at
+                    // config load — deferring it would leak raw `{{ os() }}`
+                    // fragments into consumers that never render again (e.g.
+                    // checksum_expr).
                     let defer_os_arch = matches!(
                         ba.backend_type(),
                         crate::backend::backend_type::BackendType::Http
+                            | crate::backend::backend_type::BackendType::S3
                     );
                     for (k, v) in options.opts.iter_mut() {
                         self.parse_tool_option_value_template(
