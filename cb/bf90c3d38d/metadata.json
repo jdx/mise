@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "cbbf90c3d38d",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-arm64-glibc-release",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "scripts/check-glibc.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cb/bf90c3d38d/0/metadata.json",
+      "transcript": "/cb/bf90c3d38d/0/full.jsonl",
+      "content_hash": "/cb/bf90c3d38d/0/content_hash.txt",
+      "prompt": "/cb/bf90c3d38d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 655174,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 8458880,
+    "output_tokens": 38752,
+    "api_call_count": 91
+  }
+}

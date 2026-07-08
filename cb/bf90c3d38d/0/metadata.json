@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "cbbf90c3d38d",
+  "session_id": "019f43c8-67be-7f62-8dbd-fb92b584eeb5",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-08T22:49:11.134105Z",
+  "branch": "codex/fix-arm64-glibc-release",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "scripts/check-glibc.sh"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "61c0ef116d1b",
+  "token_usage": {
+    "input_tokens": 655174,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 8458880,
+    "output_tokens": 38752,
+    "api_call_count": 91
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-08T22:49:11.113778Z",
+    "agent_lines": 1,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 2,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
