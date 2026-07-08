@@ -445,8 +445,8 @@ mod tests {
             "https://github.com/mise-plugins/vfox-cmake.git"
         ));
         assert!(is_trusted_plugin(
-            "vfox-echocat-vfox-mongod",
-            "https://github.com/echocat/vfox-mongod.git"
+            "vfox-jdx-vfox-mongod",
+            "https://github.com/jdx/vfox-mongod.git"
         ));
     }
 
