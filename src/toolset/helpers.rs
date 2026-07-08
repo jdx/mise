@@ -53,6 +53,11 @@ async fn preflight_system_deps_inner(
     let mut seen_backends = IndexSet::new();
     let mut per_tool: Vec<(String, Vec<SystemDep>)> = vec![];
     for tr in versions {
+        // Skip requests not applicable to this OS, matching doctor's
+        // analyze_system_deps and bootstrap's collect_plugin_deps.
+        if !tr.is_os_supported() {
+            continue;
+        }
         let Ok(backend) = tr.backend() else { continue };
         if !seen_backends.insert(backend.ba().short.clone()) {
             continue;
