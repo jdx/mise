@@ -813,6 +813,17 @@ fn cask_appdir(apps: &[AppArtifact]) -> Result<PathBuf> {
 fn link_binary(caskroom: &Path, binary: &BinaryArtifact) -> Result<()> {
     let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
     if !caskroom_binary.is_file() {
+        if caskroom_binary
+            .symlink_metadata()
+            .is_ok_and(|metadata| metadata.file_type().is_symlink())
+        {
+            let target = std::fs::read_link(&caskroom_binary)?;
+            bail!(
+                "brew-cask: binary artifact '{}' was staged but symlink target '{}' does not exist",
+                binary.source,
+                target.display()
+            );
+        }
         bail!(
             "brew-cask: binary artifact '{}' was not staged",
             binary.source
@@ -2067,6 +2078,38 @@ mod tests {
         let target = binary.target_path()?;
         assert_eq!(std::fs::read_link(&target)?, staged);
         assert_eq!(crate::file::read_to_string(&target)?, "pkg binary");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reports_missing_target_for_dangling_staged_binary_symlink() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let pkg_binary = tmp
+            .path()
+            .join("Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli");
+        if let Some(parent) = pkg_binary.parent() {
+            file::create_dir_all(parent)?;
+        }
+        crate::file::write(&pkg_binary, "pkg binary")?;
+        let caskroom = caskroom_version_dir("karabiner-elements", "16.1.0");
+        file::create_dir_all(&caskroom)?;
+        let cask = test_cask("karabiner-elements", "16.1.0");
+        let binary = BinaryArtifact {
+            source: pkg_binary.to_string_lossy().to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/karabiner_cli".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &cask, &binary)?;
+        file::remove_file(&pkg_binary)?;
+        let err = link_binary(&caskroom, &binary).unwrap_err().to_string();
+
+        assert!(err.contains("was staged but symlink target"));
+        assert!(err.contains(&pkg_binary.to_string_lossy().to_string()));
         Ok(())
     }
 
