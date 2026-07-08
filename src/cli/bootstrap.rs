@@ -707,7 +707,7 @@ impl Bootstrap {
         } else {
             self.run_hooks(&hooks, BootstrapHookPhase::PreTools).await?;
             info!("bootstrap: tools");
-            Install::new_bare(self.dry_run).run().await?;
+            Install::new_bare(self.dry_run, self.yes).run().await?;
             if !self.dry_run {
                 config = Config::reset().await?;
                 hooks = system::hooks_from_config(&config);
@@ -1088,7 +1088,62 @@ impl BootstrapStatus {
         self.collect_systemd(config, &mut report).await?;
         self.collect_user(config, &mut report)?;
         self.collect_tools(config, &mut report).await?;
+        self.collect_plugin_deps(config, &mut report).await?;
         Ok(report)
+    }
+
+    async fn collect_plugin_deps(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let trs = config.get_tool_request_set().await?;
+        let mut seen = HashSet::new();
+        let mut json_entries = vec![];
+        for tr in trs.tools.values().flatten() {
+            if !tr.is_os_supported() {
+                continue;
+            }
+            let ba = tr.ba();
+            if !seen.insert(ba.short.clone()) {
+                continue;
+            }
+            let Some(backend) = crate::backend::get(ba) else {
+                continue;
+            };
+            let deps = backend.system_dependencies();
+            if deps.is_empty() {
+                continue;
+            }
+            for status in crate::system::deps::detect(&deps).await {
+                let optional = status.dep.optional.is_some();
+                let (state, missing) = if status.satisfied {
+                    ("satisfied".to_string(), false)
+                } else if optional {
+                    ("optional missing".to_string(), false)
+                } else {
+                    ("missing".to_string(), true)
+                };
+                report.row(
+                    "plugin-deps",
+                    format!("{}: {}", ba.tool_name, status.dep.label()),
+                    status.found.clone().unwrap_or_default(),
+                    state.clone(),
+                    missing,
+                );
+                json_entries.push(json!({
+                    "tool": ba.tool_name,
+                    "dependency": status.dep.label(),
+                    "found": status.found,
+                    "optional": optional,
+                    "state": state.replace(' ', "_"),
+                }));
+            }
+        }
+        report
+            .json
+            .insert("plugin_deps".to_string(), json!(json_entries));
+        Ok(())
     }
 
     async fn collect_packages(

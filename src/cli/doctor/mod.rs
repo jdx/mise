@@ -163,6 +163,7 @@ impl Doctor {
         self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
         self.analyze_backend_mismatches();
+        self.analyze_system_deps(ts).await;
         self.check_path_ordering(ts, &config).await;
         data.insert(
             "paths".into(),
@@ -293,6 +294,11 @@ impl Doctor {
 
         self.analyze_plugins();
         self.analyze_backend_mismatches();
+        if let Ok(config) = Config::get().await
+            && let Ok(ts) = config.get_toolset().await
+        {
+            self.analyze_system_deps(ts).await;
+        }
 
         let env_vars = mise_env_vars()
             .into_iter()
@@ -340,6 +346,54 @@ impl Doctor {
         }
 
         Ok(())
+    }
+
+    /// Warn about missing required system prerequisites declared by the
+    /// plugins backing the current toolset (php needs bison, etc.). Optional
+    /// deps and tools whose plugin isn't installed are silently skipped.
+    async fn analyze_system_deps(&mut self, ts: &Toolset) {
+        let mut seen = std::collections::HashSet::new();
+        for (ba, tvl) in &ts.versions {
+            // Skip tools not supported on this OS, matching bootstrap's
+            // collect_plugin_deps — otherwise we'd warn about prerequisites for
+            // a tool that will never install on this platform.
+            if !tvl.requests.iter().any(|tr| tr.is_os_supported()) {
+                continue;
+            }
+            if !seen.insert(ba.short.clone()) {
+                continue;
+            }
+            let Some(backend) = crate::backend::get(ba) else {
+                continue;
+            };
+            let deps = backend.system_dependencies();
+            if deps.is_empty() {
+                continue;
+            }
+            for status in crate::system::deps::detect(&deps).await {
+                if status.satisfied || status.dep.optional.is_some() {
+                    continue;
+                }
+                let msg = match (&status.found, &status.reason) {
+                    (Some(found), _) => format!(
+                        "{} requires system dependency {} (found {found})",
+                        ba.tool_name,
+                        status.dep.label()
+                    ),
+                    (None, Some(reason)) => format!(
+                        "{} requires system dependency {} ({reason})",
+                        ba.tool_name,
+                        status.dep.label()
+                    ),
+                    (None, None) => format!(
+                        "{} requires system dependency {}",
+                        ba.tool_name,
+                        status.dep.label()
+                    ),
+                };
+                self.warnings.push(msg);
+            }
+        }
     }
 
     fn analyze_settings(&mut self) -> eyre::Result<()> {

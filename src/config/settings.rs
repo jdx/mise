@@ -102,6 +102,32 @@ pub enum NpmPackageManager {
     Pnpm,
 }
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    Default,
+    strum::EnumString,
+    strum::Display,
+    PartialEq,
+    Eq,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum SystemDepsMode {
+    /// prompt to install missing plugin system dependencies (falls back to `warn` non-interactively)
+    #[default]
+    Prompt,
+    /// install missing plugin system dependencies without prompting
+    Auto,
+    /// print missing plugin system dependencies and continue
+    Warn,
+    /// skip the plugin system dependency check
+    Ignore,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PythonUvVenvAuto {
     #[default]

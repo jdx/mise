@@ -1193,6 +1193,16 @@ pub trait Backend: Debug + Send + Sync {
         Ok(vec![])
     }
 
+    /// Plugin-declared system prerequisites (build tools, libraries, ...) that
+    /// must be present on the machine before this tool can install. Distinct
+    /// from [`Backend::get_dependencies`], which returns other *mise tools*.
+    /// Detection is the source of truth; the package hints attached to each dep
+    /// only drive optional remediation. Infallible by design — a malformed
+    /// declaration must never block an install, so overrides warn and skip.
+    fn system_dependencies(&self) -> Vec<crate::system::deps::SystemDep> {
+        vec![]
+    }
+
     /// Whether this backend's version source lacks an upstream prerelease flag
     /// and should mark regex-shaped versions as prereleases before caching.
     fn mark_prereleases_from_version_pattern(&self) -> bool {

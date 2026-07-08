@@ -20,6 +20,9 @@ pub struct InstallOptions {
     pub locked: bool,
     /// Override the install directory (e.g. for --system or --shared)
     pub install_dir: Option<PathBuf>,
+    /// skip confirmation prompts (e.g. installing missing plugin system deps).
+    /// Defaults to the global `yes` setting; `mise bootstrap --yes` also sets it.
+    pub yes: bool,
 }
 
 impl Default for InstallOptions {
@@ -36,6 +39,7 @@ impl Default for InstallOptions {
             dry_run: false,
             locked: Settings::get().locked,
             install_dir: None,
+            yes: Settings::get().yes,
         }
     }
 }
