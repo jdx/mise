@@ -155,12 +155,20 @@ async fn preflight_system_deps_inner(
         return Ok(());
     }
 
-    // Re-detect the remediated subset (bypassing the memo cache) to catch
-    // packages that installed but still aren't visible (e.g. keg-only brew).
-    for status in deps::detect_fresh(&missing_deps).await {
+    // Re-detect only the deps we actually tried to install (those with a
+    // package-manager hint), bypassing the memo cache. Deps with no hint, or
+    // that the user declined at the driver prompt, are excluded — warning that
+    // they "were installed but not detected" would be wrong.
+    let remediated: Vec<SystemDep> = missing_deps
+        .iter()
+        .filter(|d| deps::pick_manager(d).is_some())
+        .cloned()
+        .collect();
+    for status in deps::detect_fresh(&remediated).await {
         if !status.satisfied {
             warn!(
-                "{} was installed but is still not detected — it may need to be linked or added to PATH \
+                "{} is still not detected after attempting to install it — the package install \
+                 may have been declined or skipped, or it needs to be linked or added to PATH \
                  (e.g. `brew link --force`)",
                 status.dep.label()
             );

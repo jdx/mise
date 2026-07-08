@@ -211,7 +211,10 @@ impl TryFrom<vfox::SystemDependency> for SystemDep {
     }
 }
 
-static CACHE: Lazy<Mutex<HashMap<String, DepStatus>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+/// Host-only detection result: `(satisfied, found_version, reason)`.
+type DetectOutcome = (bool, Option<String>, Option<String>);
+
+static CACHE: Lazy<Mutex<HashMap<String, DetectOutcome>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Detect all `deps`, memoized. Concurrency-safe; two calls with the same
 /// fingerprint reuse the first result.
@@ -229,30 +232,40 @@ pub async fn detect_fresh(deps: &[SystemDep]) -> Vec<DepStatus> {
 async fn detect_inner(deps: &[SystemDep], use_cache: bool) -> Vec<DepStatus> {
     let mut out = Vec::with_capacity(deps.len());
     for dep in deps {
+        // The cache keys on the check + version only (the fingerprint), so it
+        // must store just the detection *outcome* — not the whole DepStatus.
+        // The `dep` (its `optional`/`packages`) belongs to the current caller;
+        // reusing the first caller's dep would misclassify a required dep as
+        // optional when two tools share the same check.
         let fp = dep.fingerprint();
-        if use_cache && let Some(cached) = CACHE.lock().unwrap().get(&fp).cloned() {
-            out.push(cached);
-            continue;
-        }
-        let status = detect_one(dep).await;
-        CACHE.lock().unwrap().insert(fp, status.clone());
-        out.push(status);
+        let (satisfied, found, reason) = if use_cache
+            && let Some(cached) = CACHE.lock().unwrap().get(&fp).cloned()
+        {
+            cached
+        } else {
+            let outcome = detect_outcome(dep).await;
+            CACHE.lock().unwrap().insert(fp, outcome.clone());
+            outcome
+        };
+        out.push(DepStatus {
+            dep: dep.clone(),
+            found,
+            satisfied,
+            reason,
+        });
     }
     out
 }
 
-async fn detect_one(dep: &SystemDep) -> DepStatus {
-    let (satisfied, found, reason) = match &dep.check {
+/// Probe a single dep, returning `(satisfied, found_version, reason)` — the
+/// part of the result that depends only on the host, not on which tool
+/// declared the dep.
+async fn detect_outcome(dep: &SystemDep) -> DetectOutcome {
+    match &dep.check {
         SystemDepCheck::Bin(name) => check_bin(name, dep.version.as_ref()).await,
         SystemDepCheck::PkgConfig(name) => check_pkgconfig(name, dep.version.as_ref()).await,
         SystemDepCheck::SharedLib(name) => check_sharedlib(name).await,
         SystemDepCheck::Command(cmd) => check_command(cmd).await,
-    };
-    DepStatus {
-        dep: dep.clone(),
-        found,
-        satisfied,
-        reason,
     }
 }
 
@@ -391,15 +404,23 @@ async fn check_command(cmd: &str) -> (bool, Option<String>, Option<String>) {
 }
 
 /// Run a short command, capturing combined stdout+stderr. Returns
-/// `(success, output)` or `None` if it could not be spawned. Silent and
-/// side-effect free — never elevates.
+/// `(success, output)` or `None` if it could not be spawned or timed out.
+/// Silent and side-effect free — never elevates. A 5s wall-clock timeout keeps
+/// a hanging binary (e.g. one that blocks on `--version`) from stalling the
+/// whole install.
 async fn run_capture(program: &str, args: &[&str]) -> Option<(bool, String)> {
-    let output = tokio::process::Command::new(program)
+    let fut = tokio::process::Command::new(program)
         .args(args)
         .stdin(std::process::Stdio::null())
-        .output()
-        .await
-        .ok()?;
+        .output();
+    let output = match tokio::time::timeout(std::time::Duration::from_secs(5), fut).await {
+        Ok(Ok(output)) => output,
+        Ok(Err(_)) => return None,
+        Err(_) => {
+            debug!("system dep: `{program}` timed out, treating check as inconclusive");
+            return None;
+        }
+    };
     let mut combined = String::from_utf8_lossy(&output.stdout).into_owned();
     combined.push_str(&String::from_utf8_lossy(&output.stderr));
     Some((output.status.success(), combined))

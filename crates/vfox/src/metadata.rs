@@ -43,7 +43,11 @@ impl FromLua for SystemDependency {
                 to: "SystemDependency".to_string(),
                 message: Some("each systemDependencies entry must be a table".to_string()),
             })?;
-        let dep = SystemDependency {
+        // Parse fields only. Validation (exactly one of bin/pkgconfig/
+        // sharedlib/command) is left to the consumer so that a single bad
+        // entry never fails the whole metadata parse — mise warns and skips
+        // invalid entries while keeping the rest of the plugin usable.
+        Ok(SystemDependency {
             bin: table.get("bin")?,
             pkgconfig: table.get("pkgconfig")?,
             sharedlib: table.get("sharedlib")?,
@@ -53,22 +57,7 @@ impl FromLua for SystemDependency {
             packages: table
                 .get::<Option<BTreeMap<String, String>>>("packages")?
                 .unwrap_or_default(),
-        };
-        let checks = [&dep.bin, &dep.pkgconfig, &dep.sharedlib, &dep.command]
-            .iter()
-            .filter(|c| c.is_some())
-            .count();
-        if checks != 1 {
-            return Err(mlua::Error::FromLuaConversionError {
-                from: "table",
-                to: "SystemDependency".to_string(),
-                message: Some(format!(
-                    "each systemDependencies entry must set exactly one of \
-                     bin/pkgconfig/sharedlib/command (found {checks})"
-                )),
-            });
-        }
-        Ok(dep)
+        })
     }
 }
 
@@ -79,9 +68,17 @@ impl TryFrom<Table> for Metadata {
             .get::<Option<Vec<String>>>("legacyFilenames")?
             .unwrap_or_default();
         let depends = t.get::<Option<Vec<String>>>("depends")?.unwrap_or_default();
-        let system_dependencies = t
-            .get::<Option<Vec<SystemDependency>>>("systemDependencies")?
-            .unwrap_or_default();
+        // Never let a malformed systemDependencies field break the rest of the
+        // metadata (e.g. `depends`, which install hooks rely on) — warn and
+        // treat it as absent.
+        let system_dependencies = match t.get::<Option<Vec<SystemDependency>>>("systemDependencies")
+        {
+            Ok(deps) => deps.unwrap_or_default(),
+            Err(e) => {
+                warn!("ignoring malformed systemDependencies in plugin metadata: {e}");
+                vec![]
+            }
+        };
         Ok(Metadata {
             name: t.get("name")?,
             legacy_filenames,
@@ -194,30 +191,41 @@ mod tests {
     }
 
     #[test]
-    fn test_system_dependencies_requires_exactly_one_check() {
-        // zero check keys
-        assert!(
-            metadata_result(
-                r#"
-                PLUGIN = {
-                    name = "test", version = "1.0.0",
-                    systemDependencies = { { version = ">=3.0" } },
-                }
-                "#,
-            )
-            .is_err()
+    fn test_system_dependencies_parse_is_lenient() {
+        // Field parsing does not validate "exactly one check key" — that is the
+        // consumer's job (mise warns and skips), so a questionable entry must
+        // not fail the whole metadata parse and drop `depends`.
+        let m = metadata_result(
+            r#"
+            PLUGIN = {
+                name = "test", version = "1.0.0",
+                depends = { "node" },
+                systemDependencies = {
+                    { version = ">=3.0" },                       -- zero check keys
+                    { bin = "bison", pkgconfig = "libxml-2.0" }, -- two check keys
+                },
+            }
+            "#,
+        )
+        .unwrap();
+        assert_eq!(m.depends, vec!["node"]);
+        assert_eq!(m.system_dependencies.len(), 2);
+    }
+
+    #[test]
+    fn test_malformed_system_dependencies_does_not_break_metadata() {
+        // A grossly malformed field (not a list of tables) is ignored, and the
+        // rest of the metadata (e.g. depends) still parses.
+        let m = metadata_from_lua(
+            r#"
+            PLUGIN = {
+                name = "test", version = "1.0.0",
+                depends = { "node" },
+                systemDependencies = "not a table",
+            }
+            "#,
         );
-        // two check keys
-        assert!(
-            metadata_result(
-                r#"
-                PLUGIN = {
-                    name = "test", version = "1.0.0",
-                    systemDependencies = { { bin = "bison", pkgconfig = "libxml-2.0" } },
-                }
-                "#,
-            )
-            .is_err()
-        );
+        assert_eq!(m.depends, vec!["node"]);
+        assert!(m.system_dependencies.is_empty());
     }
 }
