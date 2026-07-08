@@ -158,7 +158,7 @@ impl Toolset {
         // Runs here (after plugins are installed, before parallel install tasks
         // spawn) so declarations are readable and the non-Send driver stays on
         // the main task.
-        preflight_system_deps(&versions, opts).await;
+        preflight_system_deps(config, &versions, opts).await;
 
         // Build dependency graph and install using Kahn's algorithm
         let (installed, failed) = self.install_with_deps(config, versions, opts).await;

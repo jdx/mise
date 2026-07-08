@@ -3,8 +3,8 @@ use std::sync::Arc;
 use indexmap::IndexSet;
 
 use crate::backend::Backend;
-use crate::config::Settings;
 use crate::config::settings::SystemDepsMode;
+use crate::config::{Config, Settings};
 use crate::system::deps::{self, DepStatus, SystemDep};
 use crate::toolset::install_options::InstallOptions;
 use crate::toolset::tool_request::ToolRequest;
@@ -33,17 +33,22 @@ pub(super) fn show_python_install_hint(versions: &[ToolRequest]) {
 /// downgraded to a warning. Runs once for the whole batch, on the main task
 /// (before parallel install tasks spawn), because the system-packages driver
 /// futures are not `Send`.
-pub(super) async fn preflight_system_deps(versions: &[ToolRequest], opts: &InstallOptions) {
+pub(super) async fn preflight_system_deps(
+    config: &Arc<Config>,
+    versions: &[ToolRequest],
+    opts: &InstallOptions,
+) {
     let mode = Settings::get().system_deps;
     if mode == SystemDepsMode::Ignore {
         return;
     }
-    if let Err(err) = preflight_system_deps_inner(versions, opts, mode).await {
+    if let Err(err) = preflight_system_deps_inner(config, versions, opts, mode).await {
         warn!("system dependency check failed: {err:#}");
     }
 }
 
 async fn preflight_system_deps_inner(
+    config: &Arc<Config>,
     versions: &[ToolRequest],
     opts: &InstallOptions,
     mode: SystemDepsMode,
@@ -117,7 +122,10 @@ async fn preflight_system_deps_inner(
         .map(|(_, s)| s.dep.clone())
         .collect();
     let refs: Vec<&SystemDep> = missing_deps.iter().collect();
-    let (by_mgr, unremediable) = deps::build_requests(&refs);
+    let (mut by_mgr, unremediable) = deps::build_requests(&refs);
+    // Attach any `[bootstrap.brew.taps]` git URLs so a tapped formula hint can
+    // be installed the same way `mise bootstrap packages use` handles it.
+    crate::system::attach_brew_tap_urls(config, &mut by_mgr);
 
     // Deps no available package manager can install are surfaced in every mode
     // (warn and prompt/auto) — otherwise they'd only appear in the generic
