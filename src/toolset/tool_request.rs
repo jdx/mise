@@ -227,12 +227,18 @@ impl ToolRequest {
         }
     }
 
-    pub async fn is_installed(&self, config: &Arc<Config>) -> bool {
+    pub async fn is_install_satisfied(&self, config: &Arc<Config>) -> bool {
         if let Some(backend) = backend::get(self.ba()) {
             match self.resolve(config, &Default::default()).await {
-                Ok(tv) => backend.is_version_installed(config, &tv, false),
+                Ok(tv) => match backend.is_install_satisfied(config, &tv, false).await {
+                    Ok(satisfied) => satisfied,
+                    Err(e) => {
+                        debug!("ToolRequest.is_install_satisfied: {e:#}");
+                        false
+                    }
+                },
                 Err(e) => {
-                    debug!("ToolRequest.is_installed: {e:#}");
+                    debug!("ToolRequest.is_install_satisfied: {e:#}");
                     false
                 }
             }
