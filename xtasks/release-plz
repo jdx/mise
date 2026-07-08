@@ -74,6 +74,52 @@ use_published_aqua_registry() {
 	cargo add --build "aqua-registry@$version"
 }
 
+set_path_dependency_version() {
+	local manifest="$1"
+	local dep="$2"
+	local version="$3"
+
+	if ! grep -qE "^$dep = \\{.*path = " "$manifest"; then
+		echo "Error: $manifest does not have a path dependency for $dep"
+		exit 1
+	fi
+	if grep -qE "^$dep = \\{.*path = .*version = " "$manifest"; then
+		sed -i.bak -E "/^$dep = \\{.*path = / s/version = \"[^\"]*\"/version = \"$version\"/" "$manifest"
+	else
+		sed -i.bak -E "/^$dep = \\{.*path = / s/[[:space:]]*}$/, version = \"$version\" }/" "$manifest"
+	fi
+	rm -f "$manifest.bak"
+}
+
+package_workspace_smoke_test() {
+	local cargo_toml_backup
+	local vfox_cargo_toml_backup
+	cargo_toml_backup="$(mktemp)"
+	vfox_cargo_toml_backup="$(mktemp)"
+
+	cp Cargo.toml "$cargo_toml_backup"
+	cp crates/vfox/Cargo.toml "$vfox_cargo_toml_backup"
+
+	set +e
+	(
+		set -e
+		set_path_dependency_version Cargo.toml "mise-sigstore" "$(cargo pkgid -p mise-sigstore | cut -d# -f2)"
+		set_path_dependency_version crates/vfox/Cargo.toml "mise-sigstore" "$(cargo pkgid -p mise-sigstore | cut -d# -f2)"
+		set_path_dependency_version Cargo.toml "vfox" "$(cargo pkgid -p vfox | cut -d# -f2)"
+		set_path_dependency_version Cargo.toml "aqua-registry" "$(cargo pkgid -p aqua-registry | cut -d# -f2)"
+		set_path_dependency_version Cargo.toml "mise-interactive-config" "$(cargo pkgid -p mise-interactive-config | cut -d# -f2)"
+		cp schema/mise.json crates/mise-interactive-config/mise.json
+		cargo package --allow-dirty --workspace
+	)
+	local smoke_status=$?
+	set -e
+
+	cp "$cargo_toml_backup" Cargo.toml
+	cp "$vfox_cargo_toml_backup" crates/vfox/Cargo.toml
+	rm -f "$cargo_toml_backup" "$vfox_cargo_toml_backup" crates/mise-interactive-config/mise.json
+	return "$smoke_status"
+}
+
 # Check if a directory has uncommitted changes (staged or unstaged)
 has_uncommitted_changes() {
 	local dir="$1"
@@ -193,6 +239,8 @@ if [[ $cur_version != "$latest_version" ]]; then
 	AQUA_REGISTRY_VERSION=""
 	INTERACTIVE_CONFIG_VERSION=""
 	MISE_SIGSTORE_VERSION=""
+
+	package_workspace_smoke_test
 
 	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
 	cargo add -p mise "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
