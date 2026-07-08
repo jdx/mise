@@ -244,15 +244,27 @@ impl Vfox {
         version: &str,
         install_dir: ID,
     ) -> Result<InstallResult> {
+        self.install_with_download_dir(sdk, version, install_dir, &self.download_dir)
+            .await
+    }
+
+    pub async fn install_with_download_dir<ID: AsRef<Path>, DD: AsRef<Path>>(
+        &self,
+        sdk: &str,
+        version: &str,
+        install_dir: ID,
+        download_dir: DD,
+    ) -> Result<InstallResult> {
         self.install_plugin(sdk)?;
         let sdk = self.get_sdk_with_env(sdk)?;
         let pre_install = sdk.pre_install(version).await?;
         let install_dir = install_dir.as_ref();
+        let download_dir = download_dir.as_ref();
         trace!("{pre_install:?}");
         let mut verified_attestation = None;
         let mut checksum_verified = false;
         if let Some(url) = pre_install.url.as_ref().map(|s| Url::from_str(s)) {
-            let file = self.download(&url?, &sdk, version).await?;
+            let file = self.download(&url?, &sdk, version, download_dir).await?;
             verified_attestation = self.verify(&pre_install, &file).await?;
             self.extract(&file, install_dir)?;
             // Note: sha1/md5 intentionally excluded — they are unimplemented! and
@@ -490,16 +502,15 @@ impl Vfox {
         sdk.parse_legacy_file(file).await
     }
 
-    async fn download(&self, url: &Url, sdk: &Plugin, version: &str) -> Result<PathBuf> {
+    async fn download(
+        &self,
+        url: &Url,
+        sdk: &Plugin,
+        version: &str,
+        download_dir: &Path,
+    ) -> Result<PathBuf> {
         self.log_emit(format!("Downloading {url}"));
-        let filename = url
-            .path_segments()
-            .and_then(|mut s| s.next_back())
-            .ok_or("No filename in URL")?;
-        let path = self
-            .download_dir
-            .join(format!("{sdk}-{version}"))
-            .join(filename);
+        let path = Self::download_path_for(download_dir, &sdk.name, version, url)?;
         let url_str = url.to_string();
         let bytes = retry_async(&url_str, || async {
             let resp = CLIENT.get(url.clone()).send().await?;
@@ -512,6 +523,19 @@ impl Vfox {
         tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await?;
         file.sync_all().await?;
         Ok(path)
+    }
+
+    fn download_path_for(
+        download_dir: &Path,
+        sdk: &str,
+        version: &str,
+        url: &Url,
+    ) -> Result<PathBuf> {
+        let filename = url
+            .path_segments()
+            .and_then(|mut s| s.next_back())
+            .ok_or("No filename in URL")?;
+        Ok(download_dir.join(format!("{sdk}-{version}")).join(filename))
     }
 
     async fn verify(
@@ -763,6 +787,17 @@ mod tests {
             install_dir.join("bin")
         };
         assert_eq!(keys[0].value, expected.to_string_lossy().into_owned());
+    }
+
+    #[test]
+    fn test_download_path_for_uses_download_dir() {
+        let url = Url::parse("https://example.com/releases/tool.tar.gz").unwrap();
+        let download_dir = PathBuf::from("custom/downloads/vfox-dummy/1.0.0");
+        let path = Vfox::download_path_for(&download_dir, "dummy", "1.0.0", &url).unwrap();
+        assert_eq!(
+            path,
+            PathBuf::from("custom/downloads/vfox-dummy/1.0.0/dummy-1.0.0/tool.tar.gz")
+        );
     }
 
     #[tokio::test]
