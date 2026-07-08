@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "8869e9cfe84a",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-task-source-files-usage",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/tasks/test_task_usage_map_tera",
+    "src/task/task_script_parser.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/88/69e9cfe84a/0/metadata.json",
+      "transcript": "/88/69e9cfe84a/0/full.jsonl",
+      "content_hash": "/88/69e9cfe84a/0/content_hash.txt",
+      "prompt": "/88/69e9cfe84a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 204288,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1935616,
+    "output_tokens": 10574,
+    "api_call_count": 26
+  }
+}
