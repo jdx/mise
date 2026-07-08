@@ -231,7 +231,12 @@ impl Backend for VfoxBackend {
 
         // Use default vfox behavior for traditional plugins
         let result = vfox
-            .install(&self.pathname, &tv.version, tv.install_path())
+            .install_with_download_dir(
+                &self.pathname,
+                &tv.version,
+                tv.install_path(),
+                tv.download_path(),
+            )
             .await?;
 
         // Record provenance if attestation verification succeeded
