@@ -1,9 +1,1 @@
-release-plz was failing in the last few commits which has caused the version to get bumped a ton of times, what happened exactly
-
----
-
-could we prevent this from failing in this way in the future?
-
----
-
-i think you've done more than is necessary, could we just run cargo package? would that have failed?
+make a pr
