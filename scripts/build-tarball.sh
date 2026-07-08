@@ -81,33 +81,23 @@ else
 	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 fi
 
-# Check glibc compatibility for x86_64-unknown-linux-gnu (Amazon Linux 2 requirement: glibc <= 2.26)
-if [[ $RUST_TRIPLE == "x86_64-unknown-linux-gnu" ]]; then
-	echo "Checking glibc compatibility for Amazon Linux 2..."
-	# Use CARGO_TARGET_DIR if set, otherwise default to target
-	target_dir="${CARGO_TARGET_DIR:-target}"
-	binary_path="$target_dir/$RUST_TRIPLE/serious/mise"
-	if [[ -f $binary_path ]]; then
-		max_glibc=$(objdump -p "$binary_path" | grep 'GLIBC_' | sed 's/.*GLIBC_//' | sort -V | tail -1)
-		echo "Maximum glibc version required: $max_glibc"
+# Use CARGO_TARGET_DIR if set, otherwise default to target
+target_dir="${CARGO_TARGET_DIR:-target}"
+binary_path="$target_dir/$RUST_TRIPLE/serious/mise"
 
-		# Amazon Linux 2 has glibc 2.26, so we check if our binary requires <= 2.26
-		if printf '%s\n' "$max_glibc" "2.26" | sort -V -C; then
-			echo "✅ Binary is compatible with Amazon Linux 2 (glibc $max_glibc <= 2.26)"
-		else
-			echo "❌ Binary requires glibc $max_glibc, which is newer than Amazon Linux 2's glibc 2.26"
-			echo "This binary will NOT work on Amazon Linux 2"
-			exit 1
-		fi
-	else
-		echo "Warning: Binary not found at $binary_path, skipping glibc check"
-	fi
-fi
+case "$RUST_TRIPLE" in
+x86_64-unknown-linux-gnu)
+	echo "Checking glibc compatibility for Amazon Linux 2..."
+	scripts/check-glibc.sh "$binary_path" "2.26" "Amazon Linux 2"
+	;;
+aarch64-unknown-linux-gnu)
+	echo "Checking glibc compatibility for Amazon Linux 2023..."
+	scripts/check-glibc.sh "$binary_path" "2.34" "Amazon Linux 2023"
+	;;
+esac
 mkdir -p dist/mise/bin
 mkdir -p dist/mise/man/man1
 mkdir -p dist/mise/share/fish/vendor_conf.d
-# Use CARGO_TARGET_DIR if set, otherwise default to target
-target_dir="${CARGO_TARGET_DIR:-target}"
 cp "$target_dir/$RUST_TRIPLE/serious/mise"* dist/mise/bin
 cp README.md dist/mise/README.md
 cp LICENSE dist/mise/LICENSE
