@@ -1638,6 +1638,37 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
     }
+
+    /// Whether an explicit install request is already satisfied.
+    ///
+    /// Most backends are satisfied when the version's install path exists. Some
+    /// backends have extra mutable install state outside mise's install path,
+    /// such as rustup components and targets.
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
+        Ok(self.is_version_installed(config, tv, check_symlink))
+    }
+
+    async fn is_install_satisfied_or_false(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> bool {
+        self.is_install_satisfied(config, tv, check_symlink)
+            .await
+            .unwrap_or_else(|err| {
+                debug!(
+                    "is_install_satisfied check failed for {}: {err:#}",
+                    tv.style()
+                );
+                false
+            })
+    }
     async fn is_version_outdated(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
         let latest = match tv.latest_version(config).await {
             Ok(latest) => latest,
@@ -2108,7 +2139,11 @@ pub trait Backend: Debug + Send + Sync {
         // Handle dry-run mode early to avoid plugin installation
         if ctx.dry_run {
             use crate::ui::progress_report::ProgressIcon;
-            if self.is_version_installed(&ctx.config, &tv, true) {
+            let satisfied = self
+                .is_install_satisfied_or_false(&ctx.config, &tv, true)
+                .await;
+            tv.install_satisfied = Some(satisfied);
+            if satisfied {
                 ctx.pr
                     .finish_with_icon("already installed".into(), ProgressIcon::Skipped);
             } else {
@@ -2146,7 +2181,10 @@ pub trait Backend: Debug + Send + Sync {
             self.uninstall_version(&ctx.config, &tv, ctx.pr.as_ref(), false)
                 .await?;
             ctx.pr.next_operation();
-        } else if self.is_version_installed(&ctx.config, &tv, true) {
+        } else if self
+            .is_install_satisfied_or_false(&ctx.config, &tv, true)
+            .await
+        {
             return Ok(tv);
         }
 
@@ -2158,7 +2196,11 @@ pub trait Backend: Debug + Send + Sync {
         let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
 
         // Double-checked (locking) that it wasn't installed while we were waiting for the lock
-        if self.is_version_installed(&ctx.config, &tv, true) && !ctx.force {
+        if self
+            .is_install_satisfied_or_false(&ctx.config, &tv, true)
+            .await
+            && !ctx.force
+        {
             return Ok(tv);
         }
 

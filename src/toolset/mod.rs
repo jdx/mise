@@ -165,11 +165,16 @@ impl Toolset {
     pub async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
         trace!("list_missing_versions");
         measure!("toolset::list_missing_versions", {
-            self.list_current_versions()
-                .into_iter()
-                .filter(|(p, tv)| !p.is_version_installed(config, tv, true))
-                .map(|(_, tv)| tv)
-                .collect()
+            let mut missing = vec![];
+            for (backend, tv) in self.list_current_versions() {
+                if !backend
+                    .is_install_satisfied_or_false(config, &tv, true)
+                    .await
+                {
+                    missing.push(tv);
+                }
+            }
+            missing
         })
     }
 

@@ -305,13 +305,7 @@ impl Install {
         // In dry-run mode, check if any tools would be installed before filtering
         if self.is_dry_run() {
             if self.dry_run_code {
-                let has_work = versions.iter().any(|tv| {
-                    if let Ok(backend) = tv.backend() {
-                        !backend.is_version_installed(&install_config, tv, true)
-                    } else {
-                        true
-                    }
-                });
+                let has_work = versions.iter().any(|tv| tv.install_satisfied != Some(true));
                 if has_work {
                     exit::exit(1);
                 }

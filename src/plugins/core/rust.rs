@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, collections::BTreeSet, ffi::OsString, sync::Arc};
 
 use crate::backend::VersionInfo;
 use crate::backend::options::BackendOptions;
 use crate::backend::{Backend, IdiomaticVersion, platform_target::PlatformTarget};
 use crate::build_time::TARGET;
 use crate::cli::args::BackendArg;
-use crate::cmd::CmdLineRunner;
+use crate::cmd::{CmdLineRunner, cmd};
 use crate::config::{Config, Settings};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -40,17 +40,18 @@ impl<'a> RustOptions<'a> {
     }
 
     fn comma_list(&self, name: &str) -> Option<Vec<String>> {
+        let normalize = |value: &str| {
+            let value = value.trim();
+            (!value.is_empty()).then(|| value.to_string())
+        };
         match self.values.raw().opts.get(name) {
-            Some(toml::Value::String(value)) => Some(
-                value
-                    .split(',')
-                    .map(|value| value.trim().to_string())
-                    .collect(),
-            ),
+            Some(toml::Value::String(value)) => {
+                Some(value.split(',').filter_map(normalize).collect())
+            }
             Some(toml::Value::Array(values)) => Some(
                 values
                     .iter()
-                    .filter_map(|value| value.as_str().map(|value| value.trim().to_string()))
+                    .filter_map(|value| value.as_str().and_then(normalize))
                     .collect(),
             ),
             _ => None,
@@ -143,6 +144,74 @@ impl RustPlugin {
     fn target_triple(&self, tv: &ToolVersion) -> String {
         format!("{}-{}", tv.version, TARGET)
     }
+
+    fn rustup_installed_items(
+        &self,
+        tv: &ToolVersion,
+        subcommand: &str,
+    ) -> Result<Option<BTreeSet<String>>> {
+        let args = vec![
+            subcommand.to_string(),
+            "list".to_string(),
+            "--installed".to_string(),
+            "--toolchain".to_string(),
+            tv.version.clone(),
+        ];
+        let mut cmd = cmd(RUSTUP_BIN, args)
+            .env("PATH", rustup_path_env()?)
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked();
+        for (key, value) in rustup_env(&tv.version) {
+            cmd = cmd.env(key, value);
+        }
+        let output = match cmd.run() {
+            Ok(output) => output,
+            Err(err) => {
+                debug!(
+                    "rustup {subcommand} list failed for {}: {err:#}",
+                    tv.style()
+                );
+                return Ok(None);
+            }
+        };
+        if !output.status.success() {
+            debug!(
+                "rustup {subcommand} list failed for {}: {}",
+                tv.style(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+            return Ok(None);
+        }
+        Ok(Some(
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(String::from)
+                .collect(),
+        ))
+    }
+
+    fn missing_components(
+        &self,
+        requested: &[String],
+        installed: &BTreeSet<String>,
+    ) -> Vec<String> {
+        requested
+            .iter()
+            .filter(|component| !rustup_component_installed(installed, component))
+            .cloned()
+            .collect()
+    }
+
+    fn missing_targets(&self, requested: &[String], installed: &BTreeSet<String>) -> Vec<String> {
+        requested
+            .iter()
+            .filter(|target| !installed.contains(*target))
+            .cloned()
+            .collect()
+    }
 }
 
 #[async_trait]
@@ -155,6 +224,59 @@ impl Backend for RustPlugin {
     /// Lockfile URLs are not applicable since we don't download artifacts directly.
     fn supports_lockfile_url(&self) -> bool {
         false
+    }
+
+    /// Rust toolchains can be installed while requested components/targets are
+    /// still absent because rustup owns that mutable state outside mise's
+    /// install directory.
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
+        if !self.is_version_installed(config, tv, check_symlink) {
+            return Ok(false);
+        }
+
+        let raw_opts = tv.request.options();
+        let (_, components, targets) = RustOptions::new(&raw_opts).install_args();
+
+        if let Some(components) = components
+            && !components.is_empty()
+        {
+            let Some(installed) = self.rustup_installed_items(tv, "component")? else {
+                return Ok(false);
+            };
+            let missing = self.missing_components(&components, &installed);
+            if !missing.is_empty() {
+                debug!(
+                    "{} missing rustup component(s): {}",
+                    tv.style(),
+                    missing.join(", ")
+                );
+                return Ok(false);
+            }
+        }
+
+        if let Some(targets) = targets
+            && !targets.is_empty()
+        {
+            let Some(installed) = self.rustup_installed_items(tv, "target")? else {
+                return Ok(false);
+            };
+            let missing = self.missing_targets(&targets, &installed);
+            if !missing.is_empty() {
+                debug!(
+                    "{} missing rustup target(s): {}",
+                    tv.style(),
+                    missing.join(", ")
+                );
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 
     fn resolve_lockfile_options(
@@ -290,19 +412,7 @@ impl Backend for RustPlugin {
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> Result<BTreeMap<String, String>> {
-        let toolchain = tv.version.to_string();
-        Ok([
-            (
-                "CARGO_HOME".to_string(),
-                cargo_home().to_string_lossy().to_string(),
-            ),
-            (
-                "RUSTUP_HOME".to_string(),
-                rustup_home().to_string_lossy().to_string(),
-            ),
-            ("RUSTUP_TOOLCHAIN".to_string(), toolchain),
-        ]
-        .into())
+        Ok(rustup_env(&tv.version))
     }
 
     async fn outdated_info(
@@ -505,6 +615,92 @@ fn cargo_bindir() -> PathBuf {
     cargo_home().join("bin")
 }
 
+fn rustup_env(toolchain: &str) -> BTreeMap<String, String> {
+    [
+        (
+            "CARGO_HOME".to_string(),
+            cargo_home().to_string_lossy().to_string(),
+        ),
+        (
+            "RUSTUP_HOME".to_string(),
+            rustup_home().to_string_lossy().to_string(),
+        ),
+        ("RUSTUP_TOOLCHAIN".to_string(), toolchain.to_string()),
+    ]
+    .into()
+}
+
+fn rustup_path_env() -> Result<OsString> {
+    Ok(env::join_paths(
+        std::iter::once(cargo_bindir()).chain(env::PATH.clone()),
+    )?)
+}
+
+fn rustup_component_installed(installed: &BTreeSet<String>, component: &str) -> bool {
+    installed.iter().any(|item| {
+        item == component
+            || item
+                .strip_prefix(component)
+                .and_then(|suffix| suffix.strip_prefix('-'))
+                .is_some_and(rustup_component_suffix_is_host_triple)
+    })
+}
+
+fn rustup_component_suffix_is_host_triple(suffix: &str) -> bool {
+    let Some((arch, rest)) = suffix.split_once('-') else {
+        return false;
+    };
+    !rest.is_empty() && RUST_TARGET_ARCHES.contains(&arch)
+}
+
+const RUST_TARGET_ARCHES: &[&str] = &[
+    "aarch64",
+    "arm",
+    "armeb",
+    "arm64ec",
+    "armv4t",
+    "armv5te",
+    "armv6",
+    "armv7",
+    "armv7a",
+    "armv7r",
+    "armv7s",
+    "avr",
+    "bpfeb",
+    "bpfel",
+    "csky",
+    "hexagon",
+    "i386",
+    "i586",
+    "i686",
+    "loongarch64",
+    "m68k",
+    "mips",
+    "mips64",
+    "mips64el",
+    "mipsel",
+    "msp430",
+    "nvptx64",
+    "powerpc",
+    "powerpc64",
+    "powerpc64le",
+    "riscv32",
+    "riscv64",
+    "s390x",
+    "sparc",
+    "sparc64",
+    "thumbv4t",
+    "thumbv5te",
+    "thumbv6m",
+    "thumbv7a",
+    "thumbv7em",
+    "thumbv7m",
+    "thumbv7neon",
+    "wasm32",
+    "wasm64",
+    "x86_64",
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -536,6 +732,51 @@ mod tests {
             Some(vec!["clippy".to_string(), "rustfmt".to_string()])
         );
         assert_eq!(targets, Some(vec!["wasm32-wasip1".to_string()]));
+    }
+
+    #[test]
+    fn rust_options_reads_array_install_args() {
+        let mut opts = opts_with("profile", "minimal");
+        opts.opts.insert(
+            "components".to_string(),
+            string_array(&[" clippy ".to_string(), "rustfmt".to_string(), String::new()]),
+        );
+        opts.opts.insert(
+            "targets".to_string(),
+            string_array(&[
+                "wasm32-wasip1".to_string(),
+                " wasm32-unknown-unknown ".to_string(),
+            ]),
+        );
+
+        let (profile, components, targets) = RustOptions::new(&opts).install_args();
+
+        assert_eq!(profile, Some("minimal".to_string()));
+        assert_eq!(
+            components,
+            Some(vec!["clippy".to_string(), "rustfmt".to_string()])
+        );
+        assert_eq!(
+            targets,
+            Some(vec![
+                "wasm32-wasip1".to_string(),
+                "wasm32-unknown-unknown".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn rustup_component_matching_allows_host_suffixes() {
+        let installed = BTreeSet::from([
+            "rust-src".to_string(),
+            "llvm-tools-x86_64-unknown-linux-gnu".to_string(),
+        ]);
+
+        assert!(rustup_component_installed(&installed, "rust-src"));
+        assert!(rustup_component_installed(&installed, "llvm-tools"));
+        assert!(!rustup_component_installed(&installed, "rustfmt"));
+        assert!(!rustup_component_installed(&installed, "rust"));
+        assert!(!rustup_component_installed(&installed, "llvm"));
     }
 
     #[test]
