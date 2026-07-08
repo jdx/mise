@@ -1806,10 +1806,16 @@ fn check_provenance_regression(
 /// current-platform entry was just added by this install.
 pub fn snapshot_pre_install_platforms(
     config: &Config,
+    ts: &Toolset,
     new_versions: &[ToolVersion],
 ) -> HashMap<PathBuf, BTreeSet<String>> {
     let mut result: HashMap<PathBuf, BTreeSet<String>> = HashMap::new();
-    for tv in new_versions {
+    for tv in ts
+        .versions
+        .values()
+        .flat_map(|tvl| tvl.versions.iter())
+        .chain(new_versions.iter())
+    {
         let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, tv.request.source())
         else {
             continue;
@@ -1827,6 +1833,45 @@ pub fn snapshot_pre_install_platforms(
         result.insert(lockfile_path, keys);
     }
     result
+}
+
+fn tool_version_needs_auto_lock(
+    lockfile: &Lockfile,
+    tv: &ToolVersion,
+    target_platforms: &[Platform],
+) -> Result<bool> {
+    let Some(tools) = lockfile.tools.get(tv.short()) else {
+        return Ok(false);
+    };
+    let expected = lockfile_tool_from_tool_version(tv)?;
+    let Some(tool) = tools
+        .iter()
+        .find(|tool| tool.version == expected.version && tool.options == expected.options)
+    else {
+        debug!(
+            "auto-lock candidate {}@{} skipped in lockfile because no matching entry with options {:?} was found",
+            tv.short(),
+            tv.version,
+            expected.options
+        );
+        return Ok(false);
+    };
+    let backend = tv.request.backend()?;
+
+    for platform in target_platforms {
+        for variant in backend.platform_variants(platform) {
+            let platform_key = variant.to_key();
+            if !tool
+                .platforms
+                .get(&platform_key)
+                .is_some_and(|info| info.checksum.is_some() && info.url.is_some())
+            {
+                return Ok(true);
+            }
+        }
+    }
+
+    Ok(false)
 }
 
 /// Determine target platforms for auto-lock from the pre-install lockfile snapshot.
@@ -1903,6 +1948,7 @@ pub fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform
 /// platforms run `mise install`.
 pub async fn auto_lock_new_versions(
     config: &Config,
+    ts: &Toolset,
     new_versions: &[ToolVersion],
     pre_install_platforms: &HashMap<PathBuf, BTreeSet<String>>,
     mode: LockfileUpdateMode,
@@ -1914,24 +1960,48 @@ pub async fn auto_lock_new_versions(
         return Ok(());
     }
 
-    // Group new_versions by lockfile path, matching update_lockfiles.
-    let mut versions_by_lockfile: HashMap<PathBuf, Vec<&ToolVersion>> = HashMap::new();
-    for tv in new_versions {
-        if let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, tv.request.source())
-        {
-            versions_by_lockfile
-                .entry(lockfile_path)
-                .or_default()
-                .push(tv);
-        }
-    }
-
     let settings = Settings::get();
     let jobs = settings.jobs;
     let mut all_provenance_errors: Vec<String> = Vec::new();
 
     let empty_keys: BTreeSet<String> = BTreeSet::new();
-    for (lockfile_path, versions) in versions_by_lockfile {
+    let mut candidate_versions_by_lockfile: HashMap<PathBuf, Vec<ToolVersion>> = HashMap::new();
+    let mut seen_candidates: HashMap<PathBuf, HashSet<(String, String, String, ToolSource)>> =
+        HashMap::new();
+    for tv in ts
+        .versions
+        .values()
+        .flat_map(|tvl| tvl.versions.iter())
+        .chain(new_versions.iter())
+    {
+        let Ok(backend) = tv.request.backend() else {
+            continue;
+        };
+        if !backend.supports_lockfile_url() {
+            continue;
+        }
+        if let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, tv.request.source())
+        {
+            let candidate_key = (
+                tv.ba().short.clone(),
+                tv.version.clone(),
+                tv.request.version().to_string(),
+                tv.request.source().clone(),
+            );
+            if seen_candidates
+                .entry(lockfile_path.clone())
+                .or_default()
+                .insert(candidate_key)
+            {
+                candidate_versions_by_lockfile
+                    .entry(lockfile_path)
+                    .or_default()
+                    .push(tv.clone());
+            }
+        }
+    }
+
+    for (lockfile_path, versions) in candidate_versions_by_lockfile {
         // Only update existing lockfiles (consistent with update_lockfiles)
         if !lockfile_path.exists() {
             continue;
@@ -1947,6 +2017,27 @@ pub async fn auto_lock_new_versions(
             .get(&lockfile_path)
             .unwrap_or(&empty_keys);
         let target_platforms = determine_target_platforms_from_lockfile(pre_install_keys)?;
+
+        let versions: Vec<_> = versions
+            .into_iter()
+            .filter(|tv| {
+                tool_version_needs_auto_lock(&lockfile, tv, &target_platforms).unwrap_or_else(
+                    |err| {
+                        debug!(
+                            "auto-lock candidate check failed for {}@{} in {}: {}",
+                            tv.short(),
+                            tv.version,
+                            display_path(&lockfile_path),
+                            err
+                        );
+                        false
+                    },
+                )
+            })
+            .collect();
+        if versions.is_empty() {
+            continue;
+        }
 
         let semaphore = Arc::new(Semaphore::new(jobs));
         let mut jset: JoinSet<LockResolutionResult> = JoinSet::new();
@@ -2774,6 +2865,7 @@ fn format(mut doc: DocumentMut) -> String {
 mod tests {
     use super::*;
     use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
 
     fn basic_tool(version: &str, backend: &str) -> LockfileTool {
         LockfileTool {
@@ -2782,6 +2874,33 @@ mod tests {
             options: BTreeMap::new(),
             platforms: BTreeMap::new(),
         }
+    }
+
+    fn basic_tv(backend: &str, version: &str) -> ToolVersion {
+        let tool_name = backend
+            .rsplit_once('/')
+            .map(|(_, name)| name)
+            .unwrap_or_else(|| {
+                backend
+                    .rsplit_once(':')
+                    .map(|(_, name)| name)
+                    .unwrap_or(backend)
+            })
+            .to_string();
+        let short = tool_name.clone();
+        let request = crate::toolset::ToolRequest::Version {
+            backend: Arc::new(crate::cli::args::BackendArg::new_raw(
+                short,
+                Some(backend.to_string()),
+                tool_name,
+                None,
+                crate::cli::args::BackendResolution::new(true),
+            )),
+            version: version.to_string(),
+            options: crate::toolset::ToolVersionOptions::default(),
+            source: ToolSource::Unknown,
+        };
+        ToolVersion::new(request, version.to_string())
     }
 
     fn tool_with_conda_dep(
@@ -3334,6 +3453,38 @@ options = { exe = "rg" }
             tool.platforms["macos-arm64"].checksum.as_deref(),
             Some("sha256:NEW")
         );
+    }
+
+    #[test]
+    fn test_tool_version_needs_auto_lock_for_bare_updated_entry() {
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "ruff".to_string(),
+            vec![basic_tool("0.15.20", "aqua:astral-sh/ruff")],
+        );
+
+        let tv = basic_tv("aqua:astral-sh/ruff", "0.15.20");
+
+        assert!(tool_version_needs_auto_lock(&lockfile, &tv, &[Platform::current()]).unwrap());
+    }
+
+    #[test]
+    fn test_tool_version_needs_auto_lock_ignores_complete_entry() {
+        let mut lockfile = Lockfile::default();
+        let mut tool = basic_tool("0.15.20", "aqua:astral-sh/ruff");
+        tool.platforms.insert(
+            Platform::current().to_key(),
+            PlatformInfo {
+                checksum: Some("sha256:abc123".to_string()),
+                url: Some("https://example.com/ruff.tar.gz".to_string()),
+                ..Default::default()
+            },
+        );
+        lockfile.tools.insert("ruff".to_string(), vec![tool]);
+
+        let tv = basic_tv("aqua:astral-sh/ruff", "0.15.20");
+
+        assert!(!tool_version_needs_auto_lock(&lockfile, &tv, &[Platform::current()]).unwrap());
     }
 
     #[test]
