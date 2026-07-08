@@ -741,8 +741,12 @@ fn stage_binary(stage: &Path, caskroom: &Path, cask: &Cask, binary: &BinaryArtif
         file::make_symlink(&app_binary, &caskroom_binary)?;
     } else {
         let source = find_binary_source(stage, caskroom, cask, binary)?;
-        file::copy(&source, &caskroom_binary)?;
-        file::make_executable(&caskroom_binary)?;
+        if source.starts_with(stage) || source.starts_with(caskroom) {
+            file::copy(&source, &caskroom_binary)?;
+            file::make_executable(&caskroom_binary)?;
+        } else {
+            file::make_symlink(&source, &caskroom_binary)?;
+        }
     }
     Ok(())
 }
@@ -758,6 +762,11 @@ fn find_binary_source(
     {
         return Ok(source);
     }
+    if let Some(source) = absolute_binary_source(&binary.source)
+        && source.is_file()
+    {
+        return Ok(source);
+    }
     find_artifact(caskroom, &binary.source)
         .or_else(|| find_artifact(stage, &binary.source))
         .filter(|path| path.is_file())
@@ -767,6 +776,13 @@ fn find_binary_source(
                 binary.source
             )
         })
+}
+
+fn absolute_binary_source(source: &str) -> Option<PathBuf> {
+    let prefix = prefix::prefix();
+    let source = source.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy());
+    let source = PathBuf::from(source);
+    source.is_absolute().then_some(source)
 }
 
 fn generated_caskroom_artifact(caskroom: &Path, cask: &Cask, source: &str) -> Option<PathBuf> {
@@ -2017,6 +2033,40 @@ mod tests {
             crate::file::read_to_string(caskroom.join("bin/op"))?,
             "hook"
         );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stages_absolute_binary_source_from_pkg_install() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let pkg_binary = tmp
+            .path()
+            .join("Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli");
+        if let Some(parent) = pkg_binary.parent() {
+            file::create_dir_all(parent)?;
+        }
+        crate::file::write(&pkg_binary, "pkg binary")?;
+        let caskroom = caskroom_version_dir("karabiner-elements", "16.1.0");
+        file::create_dir_all(&caskroom)?;
+        let cask = test_cask("karabiner-elements", "16.1.0");
+        let binary = BinaryArtifact {
+            source: pkg_binary.to_string_lossy().to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/karabiner_cli".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &cask, &binary)?;
+        link_binary(&caskroom, &binary)?;
+
+        let staged = caskroom.join("bin/karabiner_cli");
+        assert_eq!(std::fs::read_link(&staged)?, pkg_binary);
+        let target = binary.target_path()?;
+        assert_eq!(std::fs::read_link(&target)?, staged);
+        assert_eq!(crate::file::read_to_string(&target)?, "pkg binary");
         Ok(())
     }
 
