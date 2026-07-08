@@ -107,15 +107,6 @@ async fn preflight_system_deps_inner(
 
     report_missing(&missing_required);
 
-    if effective == SystemDepsMode::Warn {
-        let deps: Vec<&SystemDep> = missing_required.iter().map(|(_, s)| &s.dep).collect();
-        for line in deps::hint_commands(&deps) {
-            warn!("install with: {line}");
-        }
-        return Ok(());
-    }
-
-    // Prompt / Auto: remediate via the system-packages driver.
     let missing_deps: Vec<SystemDep> = missing_required
         .iter()
         .map(|(_, s)| s.dep.clone())
@@ -123,15 +114,24 @@ async fn preflight_system_deps_inner(
     let refs: Vec<&SystemDep> = missing_deps.iter().collect();
     let (by_mgr, unremediable) = deps::build_requests(&refs);
 
-    if !unremediable.is_empty() {
-        for dep in &unremediable {
-            warn!(
-                "no available package manager can install {} — install it manually",
-                dep.label()
-            );
-        }
+    // Deps no available package manager can install are surfaced in every mode
+    // (warn and prompt/auto) — otherwise they'd only appear in the generic
+    // missing list with no actionable message.
+    for dep in &unremediable {
+        warn!(
+            "no available package manager can install {} — install it manually",
+            dep.label()
+        );
     }
 
+    if effective == SystemDepsMode::Warn {
+        for line in deps::hint_commands(&refs) {
+            warn!("install with: {line}");
+        }
+        return Ok(());
+    }
+
+    // Prompt / Auto: remediate via the system-packages driver.
     if by_mgr.is_empty() {
         return Ok(());
     }
