@@ -1,11 +1,3 @@
-make a pr
-
----
-
-monitor for pr feedback and failing checks
-
----
-
 <heartbeat>
   <automation_id>monitor-mise-pr-10870</automation_id>
   <current_time_iso>2026-07-08T19:24:24.898Z</current_time_iso>
