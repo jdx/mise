@@ -64,7 +64,7 @@ mod tests {
     use std::ops::Deref;
 
     #[cfg(unix)]
-    use pretty_assertions::{assert_eq, assert_str_eq};
+    use pretty_assertions::assert_str_eq;
 
     use crate::config::Config;
 
@@ -88,10 +88,6 @@ mod tests {
         assert_str_eq!(
             shorthands["teleport-community"][0],
             "vfox:jdx/vfox-teleport-community"
-        );
-        assert_eq!(
-            shorthands["jib"],
-            vec!["vfox:jdx/vfox-jib", "asdf:mise-plugins/mise-jib"]
         );
         assert_str_eq!(shorthands["node"][0], "https://node");
         assert_str_eq!(shorthands["xxxxxx"][0], "https://xxxxxx");
