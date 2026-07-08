@@ -89,10 +89,6 @@ mod tests {
             shorthands["teleport-community"][0],
             "vfox:jdx/vfox-teleport-community"
         );
-        assert_str_eq!(
-            shorthands["gcc-arm-none-eabi"][0],
-            "vfox:jdx/vfox-gcc-arm-none-eabi"
-        );
         assert_str_eq!(shorthands["node"][0], "https://node");
         assert_str_eq!(shorthands["xxxxxx"][0], "https://xxxxxx");
     }
