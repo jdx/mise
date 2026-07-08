@@ -84,6 +84,7 @@ mod tests {
         assert_str_eq!(shorthands["scala"][0], "vfox:jdx/vfox-scala");
         assert_str_eq!(shorthands["groovy"][0], "vfox:jdx/vfox-groovy");
         assert_str_eq!(shorthands["mongodb"][0], "vfox:jdx/vfox-mongod");
+        assert_str_eq!(shorthands["emsdk"][0], "vfox:jdx/vfox-emsdk");
         assert_str_eq!(shorthands["node"][0], "https://node");
         assert_str_eq!(shorthands["xxxxxx"][0], "https://xxxxxx");
     }
