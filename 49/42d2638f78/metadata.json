@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "4942d2638f78",
+  "strategy": "manual-commit",
+  "branch": "codex/rust-components-install",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/core/test_rust_components_reconcile",
+    "src/toolset/mod.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/49/42d2638f78/0/metadata.json",
+      "transcript": "/49/42d2638f78/0/full.jsonl",
+      "content_hash": "/49/42d2638f78/0/content_hash.txt",
+      "prompt": "/49/42d2638f78/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 828154,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 13820672,
+    "output_tokens": 54750,
+    "api_call_count": 140
+  }
+}
