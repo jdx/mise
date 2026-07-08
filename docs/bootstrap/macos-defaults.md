@@ -1,4 +1,4 @@
-# macOS Defaults <Badge type="warning" text="experimental" />
+# macOS Defaults
 
 mise can declare macOS user defaults (preferences) in the
 `[bootstrap.macos.defaults]` section of `mise.toml` and apply them with

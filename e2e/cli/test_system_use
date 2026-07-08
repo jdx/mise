@@ -7,6 +7,7 @@
 
 # dry-run prints what would be written without creating the file
 assert_contains "mise bootstrap packages use --dry-run apt:zlib1g-dev" '"apt:zlib1g-dev" = "latest"'
+assert_contains "MISE_EXPERIMENTAL=0 mise bootstrap packages use --dry-run apt:zlib1g-dev" '"apt:zlib1g-dev" = "latest"'
 assert_contains "mise bootstrap packages use --dry-run apk:zlib-dev" '"apk:zlib-dev" = "latest"'
 assert_fail "cat mise.toml"
 

@@ -35,7 +35,6 @@ pub struct SystemPrune {
 
 impl SystemPrune {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         if Settings::get()
             .system_packages
             .managers

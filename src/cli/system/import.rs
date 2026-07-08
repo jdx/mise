@@ -59,7 +59,6 @@ pub struct SystemImport {
 
 impl SystemImport {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         if Settings::get()
             .system_packages
             .managers

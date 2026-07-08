@@ -1689,7 +1689,7 @@
           "unevaluatedProperties": false,
           "properties": {
             "managers": {
-              "description": "[experimental] Restrict which system package managers mise will use.",
+              "description": "Restrict which system package managers mise will use.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -1697,7 +1697,7 @@
             },
             "sudo": {
               "default": true,
-              "description": "[experimental] Allow `mise bootstrap packages apply` to elevate with sudo when not running as root.",
+              "description": "Allow `mise bootstrap packages apply` to elevate with sudo when not running as root.",
               "type": "boolean"
             }
           }
@@ -3155,7 +3155,7 @@
     },
     "dotfiles": {
       "type": "object",
-      "description": "[experimental] dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path",
+      "description": "dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path",
       "additionalProperties": {
         "oneOf": [
           {
@@ -3213,7 +3213,7 @@
     },
     "bootstrap": {
       "type": "object",
-      "description": "[experimental] machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
+      "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
       "properties": {
         "packages": {
           "type": "object",

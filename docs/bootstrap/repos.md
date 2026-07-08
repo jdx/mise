@@ -1,4 +1,4 @@
-# Repos <Badge type="warning" text="experimental" />
+# Repos
 
 mise can declare git repositories in `[bootstrap.repos]` and apply them with
 `mise bootstrap repos apply`:

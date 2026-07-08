@@ -31,7 +31,6 @@ pub struct DotfilesApply {
 
 impl DotfilesApply {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise dotfiles")?;
         let config = Config::get().await?;
         let all_files = system::files::files_from_config(&config);
         let files = all_files

@@ -1,4 +1,4 @@
-# Shell Activation <Badge type="warning" text="experimental" />
+# Shell Activation
 
 mise can declaratively add shell activation snippets for bash, zsh, and fish
 with `[bootstrap.mise_shell_activate]`. Configure startup-file targets directly

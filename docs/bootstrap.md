@@ -1,4 +1,4 @@
-# Bootstrap <Badge type="warning" text="experimental" />
+# Bootstrap
 
 packages, git repos, dotfiles, mise shell activation, macOS defaults, macOS
 LaunchAgents, Linux systemd user services, the user's login shell, tools, and

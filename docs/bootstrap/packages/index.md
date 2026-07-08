@@ -1,4 +1,4 @@
-# Bootstrap Packages <Badge type="warning" text="experimental" />
+# Bootstrap Packages
 
 mise can ensure machine-global system packages are installed via the
 `[bootstrap.packages]` section of `mise.toml`:

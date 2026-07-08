@@ -1,4 +1,4 @@
-# systemd <Badge type="warning" text="experimental" />
+# systemd
 
 mise can declare Linux systemd user services in
 `[bootstrap.linux.systemd.units]` and apply them with

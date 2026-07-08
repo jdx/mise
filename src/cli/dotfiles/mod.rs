@@ -10,7 +10,7 @@ mod status;
 pub(crate) use apply::DotfilesApply;
 pub(crate) use status::DotfilesStatus;
 
-/// [experimental] Manage dotfiles from `[dotfiles]`
+/// Manage dotfiles from `[dotfiles]`
 ///
 /// Dotfiles are config files symlinked, copied, or rendered to target paths,
 /// plus marker-delimited blocks or single lines in files mise doesn't own.

@@ -280,9 +280,9 @@ Tool(s) to look up
 e.g.: ruby@3
 """# required=#false var=#true
 }
-cmd bootstrap help="[experimental] Set up a machine for the current config in one command" {
+cmd bootstrap help="Set up a machine for the current config in one command" {
     long_help #"""
-[experimental] Set up a machine for the current config in one command
+Set up a machine for the current config in one command
 
 Runs the bootstrap steps for the current config in order:
 
@@ -948,9 +948,9 @@ for direnv to consume.
 for direnv to consume.
 """#
 }
-cmd dotfiles subcommand_required=#true help="[experimental] Manage dotfiles from `[dotfiles]`" {
+cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" {
     long_help #"""
-[experimental] Manage dotfiles from `[dotfiles]`
+Manage dotfiles from `[dotfiles]`
 
 Dotfiles are config files symlinked, copied, or rendered to target paths,
 plus marker-delimited blocks or single lines in files mise doesn't own.

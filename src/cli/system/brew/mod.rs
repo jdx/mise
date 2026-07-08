@@ -23,7 +23,6 @@ enum Commands {
 
 impl SystemBrew {
     pub async fn run(self) -> Result<()> {
-        crate::config::Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             Commands::Tap(cmd) => cmd.run(),
             Commands::Untap(cmd) => cmd.run(),

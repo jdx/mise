@@ -2376,9 +2376,9 @@ rust_type = "SystemDepsMode"
 type = "String"
 
 [system_packages.managers]
-description = "[experimental] Restrict which system package managers mise will use."
+description = "Restrict which system package managers mise will use."
 docs = """
-[experimental] Restrict which system package managers mise will use.
+Restrict which system package managers mise will use.
 
 By default mise acts on every manager in `[bootstrap.packages]` that is available
 on the current machine. When more than one could apply (e.g. several package
@@ -2401,9 +2401,9 @@ type = "ListString"
 
 [system_packages.sudo]
 default = true
-description = "[experimental] Allow `mise bootstrap packages apply` to elevate with sudo when not running as root."
+description = "Allow `mise bootstrap packages apply` to elevate with sudo when not running as root."
 docs = """
-[experimental] Allow `mise bootstrap packages apply` to elevate with sudo when not running as root.
+Allow `mise bootstrap packages apply` to elevate with sudo when not running as root.
 
 When disabled, mise never runs sudo: if elevation would be required, it errors
 with the exact command to run manually. mise only elevates for explicit

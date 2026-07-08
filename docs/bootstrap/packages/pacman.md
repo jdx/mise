@@ -1,4 +1,4 @@
-# pacman <Badge type="warning" text="experimental" />
+# pacman
 
 System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 
