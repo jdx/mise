@@ -1,0 +1,9 @@
+why did this happen [https://github.com/jdx/mise/discussions/10874](https://github.com/jdx/mise/discussions/10874)
+
+---
+
+what should we do?
+
+---
+
+make a pr that fixes it, `ssh bamboo` if you want to test on a linux box
