@@ -2,7 +2,7 @@
 # `mise bootstrap macos defaults`
 
 - **Usage**: `mise bootstrap macos defaults <SUBCOMMAND>`
-- **Source code**: [`src/cli/bootstrap/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/mod.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Manage macOS defaults from `[bootstrap.macos.defaults]`
 

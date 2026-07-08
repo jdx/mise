@@ -2,7 +2,7 @@
 # `mise bootstrap linux systemd-units apply`
 
 - **Usage**: `mise bootstrap linux systemd-units apply [-n --dry-run] [-y --yes]`
-- **Source code**: [`src/cli/bootstrap/linux/systemd_units/apply.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/linux/systemd_units/apply.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 ## Flags
 

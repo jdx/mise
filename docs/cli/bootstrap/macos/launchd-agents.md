@@ -2,7 +2,7 @@
 # `mise bootstrap macos launchd-agents`
 
 - **Usage**: `mise bootstrap macos launchd-agents <SUBCOMMAND>`
-- **Source code**: [`src/cli/bootstrap/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/mod.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
 

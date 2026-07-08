@@ -2,7 +2,7 @@
 # `mise bootstrap packages brew`
 
 - **Usage**: `mise bootstrap packages brew <SUBCOMMAND>`
-- **Source code**: [`src/cli/bootstrap/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/mod.rs)
+- **Source code**: [`src/cli/system/brew/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/brew/mod.rs)
 
 Manage Homebrew taps used by bootstrap packages
 

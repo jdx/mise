@@ -2,7 +2,7 @@
 # `mise bootstrap dotfiles apply`
 
 - **Usage**: `mise bootstrap dotfiles apply [FLAGS] [TARGET]…`
-- **Source code**: [`src/cli/bootstrap/dotfiles/apply.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/dotfiles/apply.rs)
+- **Source code**: [`src/cli/dotfiles/apply.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/apply.rs)
 
 Apply dotfiles from `[dotfiles]`
 
