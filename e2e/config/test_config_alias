@@ -10,12 +10,12 @@ tools.mytool-lts = "lts"
 
 [tool_alias]
 erlang = 'asdf:https://github.com/jdx/mise-tiny'
-node = "asdf:tiny"
+node = "asdf:mise-plugins/mise-tiny"
 corenode = "core:node"
 python = 'asdf:jdx/mise-tiny'
-mytool = "asdf:tiny"
+mytool = "asdf:mise-plugins/mise-tiny"
 [tool_alias.mytool-lts]
-backend = "asdf:tiny"
+backend = "asdf:mise-plugins/mise-tiny"
 versions = {lts = "1.0.1"}
 EOF
 

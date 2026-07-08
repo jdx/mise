@@ -276,7 +276,7 @@ impl Vfox {
             let sdk_info = sdk.sdk_info(version.to_string(), install_dir.to_path_buf())?;
             sdk.post_install(PostInstallContext {
                 root_path: install_dir.to_path_buf(),
-                runtime_version: self.runtime_version.clone(),
+                runtime_version: version.to_string(),
                 sdk_info: BTreeMap::from([(sdk_info.name.clone(), sdk_info)]),
             })
             .await?;
@@ -817,6 +817,11 @@ mod tests {
         vfox.install("dummy", "1.0.0", &install_dir).await.unwrap();
         // dummy plugin doesn't actually install binaries, so we just check the directory
         assert!(vfox.install_dir.join("dummy").join("1.0.0").exists());
+        assert_eq!(
+            file::read_to_string(vfox.install_dir.join("dummy").join("1.0.0").join("VERSION"))
+                .unwrap(),
+            "1.0.0"
+        );
         vfox.uninstall("dummy", "1.0.0").unwrap();
         assert!(!vfox.install_dir.join("dummy").join("1.0.0").exists());
         file::remove_dir_all(vfox.install_dir).unwrap();
