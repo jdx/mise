@@ -1,0 +1,9 @@
+make a pr
+
+---
+
+address pr feedback
+
+---
+
+could we instead just run cargo package on all of the crates and subcrates instead of the tag checking?
