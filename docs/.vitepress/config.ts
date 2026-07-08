@@ -138,7 +138,7 @@ export default withMermaid(
           ],
         },
         {
-          text: "Bootstrap (experimental)",
+          text: "Bootstrap",
           items: [
             { text: "Overview", link: "/bootstrap" },
             {
@@ -151,6 +151,7 @@ export default withMermaid(
                 { text: "dnf", link: "/bootstrap/packages/dnf" },
                 { text: "pacman", link: "/bootstrap/packages/pacman" },
                 { text: "brew", link: "/bootstrap/packages/brew" },
+                { text: "mas", link: "/bootstrap/packages/mas" },
               ],
             },
             {
@@ -172,6 +173,10 @@ export default withMermaid(
             {
               text: "launchd",
               link: "/bootstrap/launchd",
+            },
+            {
+              text: "systemd",
+              link: "/bootstrap/systemd",
             },
             {
               text: "User Login Shell",

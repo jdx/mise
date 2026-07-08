@@ -1,5 +1,6 @@
 # Bootstrap
 
+`mise bootstrap` sets up a machine for the current config in one command: OS
 packages, git repos, dotfiles, mise shell activation, macOS defaults, macOS
 LaunchAgents, Linux systemd user services, the user's login shell, tools, and
 any final project-specific task. You can also add hooks that run at named points
@@ -14,19 +15,22 @@ preferences, user services, and one-time machine setup.
 
 `mise bootstrap` runs these steps in order:
 
-1. `mise bootstrap packages apply` installs missing `[bootstrap.packages]`.
-2. `mise bootstrap repos apply` clones or updates `[bootstrap.repos]`.
-3. `mise bootstrap dotfiles apply` applies `[dotfiles]`.
+1. `mise bootstrap packages apply` installs missing
+   [`[bootstrap.packages]`](/bootstrap/packages/).
+2. `mise bootstrap repos apply` clones or updates
+   [`[bootstrap.repos]`](/bootstrap/repos.html).
+3. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
 4. `mise bootstrap mise-shell-activate apply` configures shell activation from
-   `[bootstrap.mise_shell_activate]`.
-5. `mise bootstrap macos defaults apply` writes `[bootstrap.macos.defaults]`.
+   [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html).
+5. `mise bootstrap macos defaults apply` writes
+   [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html).
 6. `mise bootstrap macos launchd-agents apply` writes and loads
-   `[bootstrap.macos.launchd.agents]`.
+   [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html).
 7. `mise bootstrap linux systemd-units apply` converges
-   `[bootstrap.linux.systemd.units]`
+   [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)
    by writing unit files, enabling/disabling them, and starting/stopping them
    as configured.
-8. `mise bootstrap user apply` applies `[bootstrap.user]`.
+8. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
 9. `mise install` installs missing `[tools]`.
 10. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
 11. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
@@ -42,6 +46,9 @@ Use `mise bootstrap --only <part>` to run only specific parts. It supports the
 same part names and can be repeated or comma-separated, for example
 `mise bootstrap --only dotfiles,tools`. `--only` and `--skip` are mutually
 exclusive.
+
+Use `mise bootstrap --update` to refresh system package manager metadata
+before installing packages (apk: `--update-cache`, apt: `apt-get update`).
 
 Hook phases can also run before and after the built-in steps:
 `pre-packages`, `post-packages`, `pre-repos`, `post-repos`, `pre-dotfiles`,
@@ -143,7 +150,9 @@ dotfiles phase to replace conflicting whole-file dotfile targets.
 ## Inspecting State
 
 Use `mise bootstrap status` to inspect the declarative bootstrap state in one
-place:
+place. It reports every declarative part — packages, repos, dotfiles, shell
+activation, macOS defaults, LaunchAgents, systemd units, and login shell —
+plus `[tools]` and any system dependencies that installed tools require:
 
 ```sh
 mise bootstrap status
@@ -168,20 +177,20 @@ only want to check one part without installing anything.
 
 ## What Goes Where
 
-| Config                             | Use for                                                       |
-| ---------------------------------- | ------------------------------------------------------------- |
-| `[bootstrap.packages]`             | OS packages from apk, apt, dnf, pacman, or brew               |
-| `[bootstrap.repos]`                | Git repos cloned before dotfiles are applied                  |
-| `[dotfiles]`                       | Whole-file dotfiles and small managed edits to existing files |
-| `[bootstrap.mise_shell_activate]`  | mise activation snippets in shell startup files               |
-| `[bootstrap.macos.*]`              | Curated macOS preferences for Dock/Finder/keyboard/trackpad   |
-| `[bootstrap.macos.defaults]`       | macOS user preferences written through `defaults write`       |
-| `[bootstrap.macos.launchd.agents]` | macOS user LaunchAgents written and loaded with `launchctl`   |
-| `[bootstrap.linux.systemd.units]`  | Linux systemd user services managed with `systemctl --user`   |
-| `[bootstrap.user]`                 | Current-user settings such as `login_shell`                   |
-| `[bootstrap.hooks]`                | Commands that run at named bootstrap phases                   |
-| `[tools]`                          | Versioned dev tools managed by mise                           |
-| `[tasks.bootstrap]`                | Anything custom that should run after tools are installed     |
+| Config                                                         | Use for                                                       |
+| -------------------------------------------------------------- | ------------------------------------------------------------- |
+| [`[bootstrap.packages]`](/bootstrap/packages/)                 | OS packages from apk, apt, dnf, pacman, brew, or mas          |
+| [`[bootstrap.repos]`](/bootstrap/repos.html)                   | Git repos cloned before dotfiles are applied                  |
+| [`[dotfiles]`](/dotfiles.html)                                 | Whole-file dotfiles and small managed edits to existing files |
+| [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)     | mise activation snippets in shell startup files               |
+| [`[bootstrap.macos.*]`](/bootstrap/macos-defaults.html)        | Curated macOS preferences for Dock/Finder/keyboard/trackpad   |
+| [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html) | macOS user preferences written through `defaults write`       |
+| [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)  | macOS user LaunchAgents written and loaded with `launchctl`   |
+| [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)   | Linux systemd user services managed with `systemctl --user`   |
+| [`[bootstrap.user]`](/bootstrap/user.html)                     | Current-user settings such as `login_shell`                   |
+| `[bootstrap.hooks]`                                            | Commands that run at named bootstrap phases                   |
+| `[tools]`                                                      | Versioned dev tools managed by mise                           |
+| `[tasks.bootstrap]`                                            | Anything custom that should run after tools are installed     |
 
 Use declarative sections when mise can inspect and converge the state. Use
 `[tasks.bootstrap]` for imperative setup that does not fit those sections,
