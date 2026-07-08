@@ -1,2 +1,2 @@
-backends = ["asdf:mise-plugins/mise-tinytex"]
+backends = ["vfox:jdx/vfox-tinytex", "asdf:mise-plugins/mise-tinytex"]
 description = "A lightweight, cross-platform, portable, and easy-to-maintain LaTeX distribution based on TeX Live"
