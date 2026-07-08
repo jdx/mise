@@ -1,0 +1,13 @@
+make a pr that fixes it, `ssh bamboo` if you want to test on a linux box
+
+---
+
+is there a downside with targeting older glibc?
+
+---
+
+well what I'm wondering is if we should bump the x64 glibc since al2 is now out of date
+
+---
+
+address pr feedback
