@@ -91,14 +91,20 @@ pub struct Install {
     /// May require elevated permissions (e.g. sudo).
     #[clap(long, verbatim_doc_comment, conflicts_with = "shared")]
     system: bool,
+
+    /// Skip confirmation when installing missing plugin system dependencies.
+    /// Set internally by `mise bootstrap --yes`; not a user-facing flag.
+    #[clap(skip)]
+    yes: bool,
 }
 
 impl Install {
     /// a bare `mise install` (install everything missing from config), as run
     /// by `mise bootstrap`
-    pub(crate) fn new_bare(dry_run: bool) -> Self {
+    pub(crate) fn new_bare(dry_run: bool, yes: bool) -> Self {
         Self {
             dry_run,
+            yes,
             ..Default::default()
         }
     }
@@ -388,6 +394,7 @@ impl Install {
             dry_run: self.is_dry_run(),
             locked: Settings::get().locked,
             install_dir,
+            yes: self.yes || Settings::get().yes,
             ..Default::default()
         })
     }

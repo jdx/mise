@@ -1,11 +1,8 @@
-use mlua::Table;
-use std::collections::BTreeSet;
+use mlua::{FromLua, Lua, Table, Value};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::Result;
 use crate::error::VfoxError;
-
-#[cfg(test)]
-use mlua::Lua;
 
 #[derive(Debug, Clone)]
 pub struct Metadata {
@@ -17,7 +14,62 @@ pub struct Metadata {
     pub author: Option<String>,
     pub license: Option<String>,
     pub homepage: Option<String>,
+    pub system_dependencies: Vec<SystemDependency>,
     pub hooks: BTreeSet<&'static str>,
+}
+
+/// A single `PLUGIN.systemDependencies` entry — a system prerequisite the
+/// plugin needs before it can install (build tools, libraries, ...). Exactly
+/// one of `bin`/`pkgconfig`/`sharedlib`/`command` must be set; `packages` maps
+/// a package-manager name (brew, apt, dnf, pacman, apk) to the package that
+/// provides the capability, used only as a remediation hint.
+#[derive(Debug, Clone, Default)]
+pub struct SystemDependency {
+    pub bin: Option<String>,
+    pub pkgconfig: Option<String>,
+    pub sharedlib: Option<String>,
+    pub command: Option<String>,
+    pub version: Option<String>,
+    pub optional: Option<String>,
+    pub packages: BTreeMap<String, String>,
+}
+
+impl FromLua for SystemDependency {
+    fn from_lua(value: Value, _lua: &Lua) -> mlua::Result<Self> {
+        let table = value
+            .as_table()
+            .ok_or_else(|| mlua::Error::FromLuaConversionError {
+                from: value.type_name(),
+                to: "SystemDependency".to_string(),
+                message: Some("each systemDependencies entry must be a table".to_string()),
+            })?;
+        let dep = SystemDependency {
+            bin: table.get("bin")?,
+            pkgconfig: table.get("pkgconfig")?,
+            sharedlib: table.get("sharedlib")?,
+            command: table.get("command")?,
+            version: table.get("version")?,
+            optional: table.get("optional")?,
+            packages: table
+                .get::<Option<BTreeMap<String, String>>>("packages")?
+                .unwrap_or_default(),
+        };
+        let checks = [&dep.bin, &dep.pkgconfig, &dep.sharedlib, &dep.command]
+            .iter()
+            .filter(|c| c.is_some())
+            .count();
+        if checks != 1 {
+            return Err(mlua::Error::FromLuaConversionError {
+                from: "table",
+                to: "SystemDependency".to_string(),
+                message: Some(format!(
+                    "each systemDependencies entry must set exactly one of \
+                     bin/pkgconfig/sharedlib/command (found {checks})"
+                )),
+            });
+        }
+        Ok(dep)
+    }
 }
 
 impl TryFrom<Table> for Metadata {
@@ -27,6 +79,9 @@ impl TryFrom<Table> for Metadata {
             .get::<Option<Vec<String>>>("legacyFilenames")?
             .unwrap_or_default();
         let depends = t.get::<Option<Vec<String>>>("depends")?.unwrap_or_default();
+        let system_dependencies = t
+            .get::<Option<Vec<SystemDependency>>>("systemDependencies")?
+            .unwrap_or_default();
         Ok(Metadata {
             name: t.get("name")?,
             legacy_filenames,
@@ -36,6 +91,7 @@ impl TryFrom<Table> for Metadata {
             author: t.get("author")?,
             license: t.get("license")?,
             homepage: t.get("homepage")?,
+            system_dependencies,
             hooks: Default::default(),
         })
     }
@@ -50,6 +106,13 @@ mod tests {
         lua.load(code).exec().unwrap();
         let table: Table = lua.globals().get("PLUGIN").unwrap();
         Metadata::try_from(table).unwrap()
+    }
+
+    fn metadata_result(code: &str) -> Result<Metadata> {
+        let lua = Lua::new();
+        lua.load(code).exec().unwrap();
+        let table: Table = lua.globals().get("PLUGIN").unwrap();
+        Metadata::try_from(table)
     }
 
     #[test]
@@ -77,5 +140,84 @@ mod tests {
             "#,
         );
         assert!(m.depends.is_empty());
+    }
+
+    #[test]
+    fn test_system_dependencies_parsed() {
+        let m = metadata_from_lua(
+            r#"
+            PLUGIN = {
+                name = "test",
+                version = "1.0.0",
+                systemDependencies = {
+                    { bin = "bison", version = ">=3.0",
+                      packages = { brew = "bison", apt = "bison" } },
+                    { pkgconfig = "libxml-2.0",
+                      packages = { brew = "libxml2", apt = "libxml2-dev" } },
+                    { sharedlib = "libaio.so.1" },
+                    { command = "test -d /opt/thing", optional = "extra feature" },
+                },
+            }
+            "#,
+        );
+        assert_eq!(m.system_dependencies.len(), 4);
+        let bison = &m.system_dependencies[0];
+        assert_eq!(bison.bin.as_deref(), Some("bison"));
+        assert_eq!(bison.version.as_deref(), Some(">=3.0"));
+        assert_eq!(
+            bison.packages.get("brew").map(|s| s.as_str()),
+            Some("bison")
+        );
+        assert_eq!(bison.packages.get("apt").map(|s| s.as_str()), Some("bison"));
+        assert_eq!(
+            m.system_dependencies[1].pkgconfig.as_deref(),
+            Some("libxml-2.0")
+        );
+        assert_eq!(
+            m.system_dependencies[2].sharedlib.as_deref(),
+            Some("libaio.so.1")
+        );
+        assert_eq!(
+            m.system_dependencies[3].optional.as_deref(),
+            Some("extra feature")
+        );
+    }
+
+    #[test]
+    fn test_system_dependencies_defaults_to_empty() {
+        let m = metadata_from_lua(
+            r#"
+            PLUGIN = { name = "test", version = "1.0.0" }
+            "#,
+        );
+        assert!(m.system_dependencies.is_empty());
+    }
+
+    #[test]
+    fn test_system_dependencies_requires_exactly_one_check() {
+        // zero check keys
+        assert!(
+            metadata_result(
+                r#"
+                PLUGIN = {
+                    name = "test", version = "1.0.0",
+                    systemDependencies = { { version = ">=3.0" } },
+                }
+                "#,
+            )
+            .is_err()
+        );
+        // two check keys
+        assert!(
+            metadata_result(
+                r#"
+                PLUGIN = {
+                    name = "test", version = "1.0.0",
+                    systemDependencies = { { bin = "bison", pkgconfig = "libxml-2.0" } },
+                }
+                "#,
+            )
+            .is_err()
+        );
     }
 }

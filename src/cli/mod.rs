@@ -67,7 +67,7 @@ mod shell;
 mod shell_alias;
 mod sponsors;
 mod sync;
-mod system;
+pub(crate) mod system;
 mod tasks;
 mod test_tool;
 mod token;

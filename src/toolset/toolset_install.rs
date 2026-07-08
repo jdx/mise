@@ -14,7 +14,7 @@ use crate::hooks::{Hooks, InstalledToolInfo};
 use crate::install_context::InstallContext;
 use crate::plugins::PluginType;
 use crate::toolset::Toolset;
-use crate::toolset::helpers::show_python_install_hint;
+use crate::toolset::helpers::{preflight_system_deps, show_python_install_hint};
 use crate::toolset::install_options::InstallOptions;
 use crate::toolset::tool_deps::{ToolDeps, tool_key};
 use crate::toolset::tool_request::ToolRequest;
@@ -153,6 +153,12 @@ impl Toolset {
         let tools_with_plugin_errors: HashSet<_> =
             plugin_errors.iter().map(|(tr, _)| tr.clone()).collect();
         versions.retain(|tr| !tools_with_plugin_errors.contains(tr));
+
+        // Check plugin-declared system prerequisites before compiling anything.
+        // Runs here (after plugins are installed, before parallel install tasks
+        // spawn) so declarations are readable and the non-Send driver stays on
+        // the main task.
+        preflight_system_deps(&versions, opts).await;
 
         // Build dependency graph and install using Kahn's algorithm
         let (installed, failed) = self.install_with_deps(config, versions, opts).await;
