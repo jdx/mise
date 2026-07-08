@@ -6,7 +6,7 @@ max_allowed=${2:?"usage: check-glibc.sh <binary> <max-glibc> <target-name>"}
 target_name=${3:-$binary_path}
 
 if [[ ! -f $binary_path ]]; then
-	echo "Warning: binary not found at $binary_path, skipping glibc check"
+	echo "Error: binary not found at $binary_path; aborting glibc check" >&2
 	exit 1
 fi
 
