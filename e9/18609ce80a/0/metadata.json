@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "e918609ce80a",
+  "session_id": "019f420e-76f5-78b0-aeb2-bb767cc15d8a",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-08T14:12:16.507518Z",
+  "branch": "codex/fix-cask-shim-package",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Cargo.toml"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "c581f654bd2b",
+  "token_usage": {
+    "input_tokens": 83241,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 812416,
+    "output_tokens": 6216,
+    "api_call_count": 21
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-08T14:12:16.500485Z",
+    "agent_lines": 2,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2,
+    "total_lines_changed": 3,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
