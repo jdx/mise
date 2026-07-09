@@ -1,9 +1,1 @@
-make a pr
-
----
-
-reply to discussion if you made a pr
-
----
-
 address pr feedback and failing pr checks if any
