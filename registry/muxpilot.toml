@@ -1,0 +1,3 @@
+backends = ["github:muxpilot/muxpilot", "cargo:muxpilot"]
+description = "Fast tmux workspace picker and agent-aware session menu"
+test = { cmd = "muxpilot --version", expected = "muxpilot {{version}}" }
