@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "94f359c066e4",
+  "strategy": "manual-commit",
+  "branch": "codex/npm-12-view-json",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/backend/npm.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/94/f359c066e4/0/metadata.json",
+      "transcript": "/94/f359c066e4/0/full.jsonl",
+      "content_hash": "/94/f359c066e4/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12580,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 366592,
+    "output_tokens": 2149,
+    "api_call_count": 4
+  }
+}
