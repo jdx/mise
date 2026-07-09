@@ -1214,6 +1214,51 @@ mod tests {
     }
 
     #[test]
+    fn test_npm_view_versions_time_accepts_non_object_time() {
+        let data = serde_json::json!({
+            "versions": ["1.0.0"],
+            "time": "2026-01-02T03:04:05.000Z"
+        });
+
+        let versions = npm_view_versions_time(&data).unwrap();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].version, "1.0.0");
+        assert_eq!(versions[0].created_at, None);
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_rejects_missing_versions() {
+        let data = serde_json::json!({
+            "time": {}
+        });
+
+        let error = npm_view_versions_time(&data).unwrap_err().to_string();
+        assert_eq!(error, "invalid versions");
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_rejects_non_array_versions() {
+        let data = serde_json::json!({
+            "versions": "1.0.0",
+            "time": {}
+        });
+
+        let error = npm_view_versions_time(&data).unwrap_err().to_string();
+        assert_eq!(error, "invalid versions");
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_rejects_empty_npm12_array() {
+        let data = serde_json::json!([]);
+
+        let error = npm_view_versions_time(&data).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "expected npm view --json to return one result, got 0"
+        );
+    }
+
+    #[test]
     fn test_npm_view_versions_time_rejects_multiple_results() {
         let data = serde_json::json!([
             {
@@ -1254,6 +1299,26 @@ mod tests {
         assert_eq!(
             npm_view_latest_dist_tag(&data).unwrap(),
             Some("1.0.0".into())
+        );
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_returns_none_for_missing_tag() {
+        let data = serde_json::json!({
+            "beta": "2.0.0"
+        });
+
+        assert_eq!(npm_view_latest_dist_tag(&data).unwrap(), None);
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_rejects_empty_npm12_array() {
+        let data = serde_json::json!([]);
+
+        let error = npm_view_latest_dist_tag(&data).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "expected npm view --json to return one result, got 0"
         );
     }
 
