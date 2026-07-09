@@ -416,14 +416,20 @@ pub fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
             return None; // main checkout
         }
         if dotgit.is_file() {
+            // `.git` files are used by both linked worktrees and submodules.
+            // Only a linked worktree resolves to a main checkout here; for
+            // anything else (submodule, bare-repo worktree) keep walking up —
+            // a submodule may itself live inside a linked worktree.
             let main_root = CACHE
                 .lock()
                 .unwrap()
                 .entry(wt_root.to_path_buf())
                 .or_insert_with(|| main_checkout_root(&dotgit))
-                .clone()?;
-            let equiv = main_root.join(path.strip_prefix(wt_root).ok()?);
-            return (equiv != path).then_some(equiv);
+                .clone();
+            if let Some(main_root) = main_root {
+                let equiv = main_root.join(path.strip_prefix(wt_root).ok()?);
+                return (equiv != path).then_some(equiv);
+            }
         }
     }
     None
@@ -438,14 +444,23 @@ fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     } else {
         gitdir
     };
-    // `commondir` inside the worktree's private git dir points to the shared
-    // git dir (usually `../..`, i.e. `<main>/.git`)
-    let common = match std::fs::read_to_string(gitdir.join("commondir")) {
-        Ok(c) => {
-            let c = PathBuf::from(c.trim());
-            if c.is_relative() { gitdir.join(c) } else { c }
-        }
-        Err(_) => gitdir.parent()?.parent()?.to_path_buf(),
+    // Linked worktrees keep their private git dir at
+    // `<common>/worktrees/<name>`, containing a `commondir` file pointing to
+    // the shared git dir (usually `../..`, i.e. `<main>/.git`). Submodule git
+    // dirs live under `modules/` and have neither, which is what
+    // distinguishes them here.
+    if gitdir.parent()?.file_name() != Some(OsStr::new("worktrees")) {
+        return None;
+    }
+    let common = PathBuf::from(
+        std::fs::read_to_string(gitdir.join("commondir"))
+            .ok()?
+            .trim(),
+    );
+    let common = if common.is_relative() {
+        gitdir.join(common)
+    } else {
+        common
     };
     let common = common.canonicalize().ok()?;
     if common.file_name() == Some(OsStr::new(".git")) {
@@ -536,6 +551,36 @@ mod tests {
         )
         .unwrap();
         assert_eq!(super::main_checkout_equivalent(&bare_wt), None);
+
+        // a submodule also uses a `.git` file but is not a linked worktree:
+        // its configs must not inherit the parent checkout's trust
+        let subm = main.join("subm");
+        std::fs::create_dir_all(main.join(".git/modules/subm")).unwrap();
+        std::fs::create_dir_all(&subm).unwrap();
+        std::fs::write(
+            subm.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/modules/subm").display()),
+        )
+        .unwrap();
+        assert_eq!(super::main_checkout_equivalent(&subm), None);
+        assert_eq!(
+            super::main_checkout_equivalent(&subm.join("mise.toml")),
+            None
+        );
+
+        // a submodule checked out inside a linked worktree maps through the
+        // outer worktree to the same submodule path in the main checkout
+        let wt_subm = wt.join("subm");
+        std::fs::create_dir_all(&wt_subm).unwrap();
+        std::fs::write(
+            wt_subm.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/modules/subm").display()),
+        )
+        .unwrap();
+        assert_eq!(
+            super::main_checkout_equivalent(&wt_subm.join("mise.toml")),
+            Some(subm.join("mise.toml"))
+        );
     }
 
     #[test]
