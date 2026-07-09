@@ -4016,7 +4016,10 @@ worktrees can check out branches with different config contents.
 .PP
 .TP
 \fB\-a, \-\-all\fR
-Trust all config files in the current directory and its parents
+Trust all config files in the current directory, its parents, and its subdirectories
+
+Subdirectories are walked respecting .gitignore, skipping hidden directories
+and common build/dependency directories (node_modules, vendor, target, dist, build).
 .TP
 \fB\-\-ignore\fR
 Do not trust this config and ignore it in the future

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::config::config_file::config_trust_root;
@@ -37,7 +38,10 @@ pub struct Trust {
     #[clap(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
     config_file: Option<PathBuf>,
 
-    /// Trust all config files in the current directory and its parents
+    /// Trust all config files in the current directory, its parents, and its subdirectories
+    ///
+    /// Subdirectories are walked respecting .gitignore, skipping hidden directories
+    /// and common build/dependency directories (node_modules, vendor, target, dist, build).
     #[clap(long, short, verbatim_doc_comment, conflicts_with_all = &["ignore", "untrust"])]
     all: bool,
 
@@ -66,6 +70,10 @@ impl Trust {
             self.ignore()
         } else if self.all {
             while let Some(p) = self.get_next_untrusted() {
+                self.config_file = Some(p);
+                self.trust()?;
+            }
+            for p in self.get_untrusted_descendants() {
                 self.config_file = Some(p);
                 self.trust()?;
             }
@@ -199,6 +207,78 @@ impl Trust {
             .map(|p| config_trust_root(&p))
             .unique()
             .find(|ctr| !config_file::is_trusted(ctr))
+    }
+
+    /// Untrusted config files in subdirectories of the current directory.
+    ///
+    /// Walks respecting .gitignore, skipping hidden directories and common
+    /// build/dependency directories so e.g. vendored configs in node_modules
+    /// or vendor are not trusted. Returns one config file per untrusted trust
+    /// root; `trust()` computes the trust root from each.
+    fn get_untrusted_descendants(&self) -> Vec<PathBuf> {
+        const EXCLUDED_DIRS: &[&str] = &["node_modules", "vendor", "target", "dist", "build"];
+        // Respect config discovery being disabled, matching load_config_paths
+        // used by the ancestor-walk pass.
+        if Settings::no_config() {
+            return vec![];
+        }
+        // Use the live cwd (not the cached dirs::CWD) so this anchors to the
+        // same directory as the ancestor-walk pass, which uses env::current_dir
+        // via load_config_paths -> all_dirs. A `cd` setting applied during
+        // settings load can move the process directory, and both passes must
+        // agree on where "here" is.
+        let Ok(cwd) = env::current_dir() else {
+            return vec![];
+        };
+        let walker = ignore::WalkBuilder::new(&cwd)
+            .hidden(true) // Skip hidden files/dirs
+            .git_ignore(true) // Respect .gitignore
+            .git_global(true) // Respect global .gitignore
+            .git_exclude(true) // Respect .git/info/exclude
+            .require_git(false) // Don't require a git repo
+            .filter_entry(|e| {
+                // Never exclude the walk root itself (depth 0), even if cwd is
+                // named e.g. `build` or `vendor` — otherwise nothing is walked.
+                if e.depth() == 0 {
+                    return true;
+                }
+                let name = e.file_name().to_string_lossy();
+                !EXCLUDED_DIRS.contains(&name.as_ref())
+            })
+            .build();
+        let mut config_files = vec![];
+        for entry in walker {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(err) => {
+                    // Skip unreadable paths (permission denied, broken symlinks,
+                    // etc.) so one bad directory doesn't abort the whole scan.
+                    warn!("trust --all: skipping unreadable path: {err}");
+                    continue;
+                }
+            };
+            if !entry.file_type().is_some_and(|ft| ft.is_dir()) {
+                continue;
+            }
+            let dir = entry.path();
+            if dir == cwd {
+                continue; // already covered by the parent walk
+            }
+            for p in config::config_paths_in_dir(dir) {
+                if !is_global_config(&p) {
+                    config_files.push(p);
+                }
+            }
+        }
+        // Keep one config file per untrusted trust root.
+        let mut seen = HashSet::new();
+        config_files
+            .into_iter()
+            .filter(|p| {
+                let ctr = config_trust_root(p);
+                !config_file::is_trusted(&ctr) && seen.insert(ctr)
+            })
+            .collect()
     }
 
     fn show(&self) -> Result<()> {
