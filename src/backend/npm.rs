@@ -353,7 +353,7 @@ impl Backend for NPMBackend {
                                 .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                                 .read()?;
                         let dist_tags: Value = serde_json::from_str(&raw)?;
-                        Ok(npm_view_latest_dist_tag(&dist_tags))
+                        npm_view_latest_dist_tag(&dist_tags)
                     })
                     .await
             },
@@ -969,30 +969,32 @@ fn is_semver_prerelease(version: &str) -> bool {
     core_and_pre.contains('-')
 }
 
-fn npm_view_json(data: &Value) -> &Value {
+fn npm_view_json(data: &Value) -> eyre::Result<&Value> {
     match data {
         // npm 12 changed `npm view --json` to always return an array. mise only
         // queries one package at a time here, so unwrap that compatibility shell.
-        Value::Array(values) if values.len() == 1 => &values[0],
-        _ => data,
+        Value::Array(values) if values.len() == 1 => Ok(&values[0]),
+        Value::Array(values) => Err(eyre::eyre!(
+            "expected npm view --json to return one result, got {}",
+            values.len()
+        )),
+        _ => Ok(data),
     }
 }
 
 fn npm_view_versions_time(data: &Value) -> eyre::Result<Vec<VersionInfo>> {
-    let data = npm_view_json(data);
+    let data = npm_view_json(data)?;
     let versions = data["versions"]
         .as_array()
         .ok_or_else(|| eyre::eyre!("invalid versions"))?;
-    let time = data["time"]
-        .as_object()
-        .ok_or_else(|| eyre::eyre!("invalid time"))?;
+    let time = data.get("time").and_then(|time| time.as_object());
 
     Ok(versions
         .iter()
         .filter_map(|v| v.as_str())
         .map(|version| {
             let created_at = time
-                .get(version)
+                .and_then(|time| time.get(version))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
             VersionInfo {
@@ -1005,11 +1007,11 @@ fn npm_view_versions_time(data: &Value) -> eyre::Result<Vec<VersionInfo>> {
         .collect())
 }
 
-fn npm_view_latest_dist_tag(data: &Value) -> Option<String> {
-    match npm_view_json(data)["latest"] {
+fn npm_view_latest_dist_tag(data: &Value) -> eyre::Result<Option<String>> {
+    Ok(match npm_view_json(data)?["latest"] {
         Value::String(ref s) => Some(s.clone()),
         _ => None,
-    }
+    })
 }
 
 fn parse_bool_arg(value: &str) -> Option<bool> {
@@ -1198,12 +1200,49 @@ mod tests {
     }
 
     #[test]
+    fn test_npm_view_versions_time_accepts_missing_time() {
+        let data = serde_json::json!({
+            "versions": ["1.0.0", "1.1.0"]
+        });
+
+        let versions = npm_view_versions_time(&data).unwrap();
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0].version, "1.0.0");
+        assert_eq!(versions[0].created_at, None);
+        assert_eq!(versions[1].version, "1.1.0");
+        assert_eq!(versions[1].created_at, None);
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_rejects_multiple_results() {
+        let data = serde_json::json!([
+            {
+                "versions": ["1.0.0"],
+                "time": {}
+            },
+            {
+                "versions": ["2.0.0"],
+                "time": {}
+            }
+        ]);
+
+        let error = npm_view_versions_time(&data).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "expected npm view --json to return one result, got 2"
+        );
+    }
+
+    #[test]
     fn test_npm_view_latest_dist_tag_accepts_legacy_object() {
         let data = serde_json::json!({
             "latest": "1.0.0"
         });
 
-        assert_eq!(npm_view_latest_dist_tag(&data), Some("1.0.0".into()));
+        assert_eq!(
+            npm_view_latest_dist_tag(&data).unwrap(),
+            Some("1.0.0".into())
+        );
     }
 
     #[test]
@@ -1212,7 +1251,28 @@ mod tests {
             "latest": "1.0.0"
         }]);
 
-        assert_eq!(npm_view_latest_dist_tag(&data), Some("1.0.0".into()));
+        assert_eq!(
+            npm_view_latest_dist_tag(&data).unwrap(),
+            Some("1.0.0".into())
+        );
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_rejects_multiple_results() {
+        let data = serde_json::json!([
+            {
+                "latest": "1.0.0"
+            },
+            {
+                "latest": "2.0.0"
+            }
+        ]);
+
+        let error = npm_view_latest_dist_tag(&data).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "expected npm view --json to return one result, got 2"
+        );
     }
 
     #[test]
