@@ -79,6 +79,7 @@ Options:
 - `MISE_QUIET=1` – disable non-error output
 - `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/bin/mise`)
 - `MISE_VERSION=v2025.12.0` – install a specific version
+- `MISE_INSTALL_SKIP_IF_EXISTS=1` – skip the download/install if the mise binary at the install path already matches the requested version
 
 If you want to verify the install script hasn't been tampered with:
 
