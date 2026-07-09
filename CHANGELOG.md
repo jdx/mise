@@ -1,5 +1,20 @@
 # Changelog
 
+## [2026.7.5](https://github.com/jdx/mise/compare/v2026.7.4..v2026.7.5) - 2026-07-09
+
+### 🚀 Features
+
+- **(trust)** share config trust across git worktrees by @jdx in [#10890](https://github.com/jdx/mise/pull/10890)
+- **(trust)** trust configs in subdirectories with --all by @jdx in [#10889](https://github.com/jdx/mise/pull/10889)
+
+### 🐛 Bug Fixes
+
+- **(npm)** support npm 12 view json output by @jdx in [#10888](https://github.com/jdx/mise/pull/10888)
+
+### 📦 Registry
+
+- prefer npm for codex by @jdx in [#10893](https://github.com/jdx/mise/pull/10893)
+
 ## [2026.7.4](https://github.com/jdx/mise/compare/v2026.7.3..v2026.7.4) - 2026-07-09
 
 ### 🚀 Features
