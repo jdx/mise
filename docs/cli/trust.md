@@ -32,7 +32,7 @@ The config file to trust
 Trust all config files in the current directory, its parents, and its subdirectories
 
 Subdirectories are walked respecting .gitignore, skipping hidden directories
-and common build/dependency directories (node_modules, target, dist, build).
+and common build/dependency directories (node_modules, vendor, target, dist, build).
 
 ### `--ignore`
 
