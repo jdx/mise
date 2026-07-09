@@ -199,6 +199,11 @@ impl Trust {
     /// are not trusted.
     fn get_untrusted_descendants(&self) -> Vec<PathBuf> {
         const EXCLUDED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
+        // Respect config discovery being disabled, matching load_config_paths
+        // used by the ancestor-walk pass.
+        if Settings::no_config() {
+            return vec![];
+        }
         let Some(cwd) = &*dirs::CWD else {
             return vec![];
         };
