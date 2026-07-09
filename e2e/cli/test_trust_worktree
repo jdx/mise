@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+mkdir -p repo
+cd repo || exit 1
+git init -q .
+cat <<EOF >mise.toml
+[env]
+TRUSTED_ENV = "1"
+EOF
+git add mise.toml
+git -c user.email=e2e@example.com -c user.name=e2e commit -qm init
+
+# before trusting, neither the main checkout nor a worktree is trusted
+git worktree add -q ../wt
+assert_contains "mise trust --show" ": untrusted"
+cd ../wt || exit 1
+assert_contains "mise trust --show" ": untrusted"
+
+# trusting the main checkout also trusts linked worktrees
+cd ../repo || exit 1
+mise trust
+assert_contains "mise trust --show" ": trusted"
+cd ../wt || exit 1
+assert_contains "mise trust --show" ": trusted"
+assert_contains "mise env" "TRUSTED_ENV=1"
+
+# untrusting inside the worktree warns that the main checkout still trusts it
+assert_contains "mise untrust 2>&1" "git worktree"
+assert_contains "mise trust --show" ": trusted"
+
+# untrusting the main checkout untrusts the worktree too
+cd ../repo || exit 1
+mise untrust
+assert_contains "mise trust --show" ": untrusted"
+cd ../wt || exit 1
+assert_contains "mise trust --show" ": untrusted"

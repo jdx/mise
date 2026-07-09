@@ -1,5 +1,56 @@
 # Changelog
 
+## [2026.7.5](https://github.com/jdx/mise/compare/v2026.7.4..v2026.7.5) - 2026-07-09
+
+### 🚀 Features
+
+- **(trust)** share config trust across git worktrees by @jdx in [#10890](https://github.com/jdx/mise/pull/10890)
+- **(trust)** trust configs in subdirectories with --all by @jdx in [#10889](https://github.com/jdx/mise/pull/10889)
+
+### 🐛 Bug Fixes
+
+- **(npm)** support npm 12 view json output by @jdx in [#10888](https://github.com/jdx/mise/pull/10888)
+
+### 📦 Registry
+
+- prefer npm for codex by @jdx in [#10893](https://github.com/jdx/mise/pull/10893)
+
+## [2026.7.4](https://github.com/jdx/mise/compare/v2026.7.3..v2026.7.4) - 2026-07-09
+
+### 🚀 Features
+
+- **(bootstrap)** stabilize bootstrap commands by @jdx in [#10869](https://github.com/jdx/mise/pull/10869)
+- skip re-install in mise.run script when matching version present by @JamBalaya56562 in [#10882](https://github.com/jdx/mise/pull/10882)
+
+### 🐛 Bug Fixes
+
+- **(build)** restore linux arm64 glibc compatibility by @jdx in [#10875](https://github.com/jdx/mise/pull/10875)
+- **(install)** reconcile rust components and targets by @jdx in [#10876](https://github.com/jdx/mise/pull/10876)
+- **(release)** clone node release keys by @jdx in [#10883](https://github.com/jdx/mise/pull/10883)
+- **(task)** keep task_source_files available with usage args by @jdx in [#10870](https://github.com/jdx/mise/pull/10870)
+- **(upgrade)** suppress release-age warning for installed versions by @jdx in [#10877](https://github.com/jdx/mise/pull/10877)
+
+### 📚 Documentation
+
+- **(bootstrap)** fix broken intro and link bootstrap sub-pages by @jdx in [#10878](https://github.com/jdx/mise/pull/10878)
+- **(bootstrap)** style and consistency pass across bootstrap pages by @jdx in [#10880](https://github.com/jdx/mise/pull/10880)
+- fix broken source-code links in generated CLI reference by @jdx in [#10879](https://github.com/jdx/mise/pull/10879)
+
+### ⚡ Performance
+
+- **(install)** parallelize missing version checks by @jdx in [#10881](https://github.com/jdx/mise/pull/10881)
+
+### 📦 Registry
+
+- consolidate scala vfox plugin by @jdx in [#10864](https://github.com/jdx/mise/pull/10864)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`sderosiaux/launchdeck`](https://github.com/sderosiaux/launchdeck)
+- [`syntax-sh/lexicon-releases`](https://github.com/syntax-sh/lexicon-releases)
+
 ## [2026.7.3](https://github.com/jdx/mise/compare/v2026.7.2..v2026.7.3) - 2026-07-08
 
 ### 🚀 Features
