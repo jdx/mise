@@ -67,7 +67,7 @@ impl Trust {
                 self.config_file = Some(p);
                 self.trust()?;
             }
-            for p in self.get_untrusted_descendants()? {
+            for p in self.get_untrusted_descendants() {
                 self.config_file = Some(p);
                 self.trust()?;
             }
@@ -197,10 +197,10 @@ impl Trust {
     /// Walks respecting .gitignore, skipping hidden directories and common
     /// build/dependency directories so e.g. vendored configs in node_modules
     /// are not trusted.
-    fn get_untrusted_descendants(&self) -> Result<Vec<PathBuf>> {
+    fn get_untrusted_descendants(&self) -> Vec<PathBuf> {
         const EXCLUDED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
         let Some(cwd) = &*dirs::CWD else {
-            return Ok(vec![]);
+            return vec![];
         };
         let walker = ignore::WalkBuilder::new(cwd)
             .hidden(true) // Skip hidden files/dirs
@@ -215,7 +215,15 @@ impl Trust {
             .build();
         let mut roots = vec![];
         for entry in walker {
-            let entry = entry?;
+            let entry = match entry {
+                Ok(e) => e,
+                Err(err) => {
+                    // Skip unreadable paths (permission denied, broken symlinks,
+                    // etc.) so one bad directory doesn't abort the whole scan.
+                    warn!("trust --all: skipping unreadable path: {err}");
+                    continue;
+                }
+            };
             if !entry.file_type().is_some_and(|ft| ft.is_dir()) {
                 continue;
             }
@@ -229,11 +237,11 @@ impl Trust {
                 }
             }
         }
-        Ok(roots
+        roots
             .into_iter()
             .unique()
             .filter(|ctr| !config_file::is_trusted(ctr))
-            .collect())
+            .collect()
     }
 
     fn show(&self) -> Result<()> {
