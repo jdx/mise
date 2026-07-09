@@ -50,3 +50,12 @@ assert_contains "cd packages/bar && mise trust --show" "packages/bar: trusted"
 
 # second run is a no-op
 assert_not_contains "mise trust --all 2>&1" "trusted"
+
+# -C/--cd is honored: the descendant walk anchors to the same directory as the
+# ancestor pass, so running from a different cwd still reaches nested configs
+ROOT="$PWD"
+mise untrust packages/foo/mise.toml
+mise untrust packages/bar/.mise.toml
+assert "cd / && mise -C '$ROOT' trust --all"
+assert_contains "cd packages/foo && mise trust --show" "packages/foo: trusted"
+assert_contains "cd packages/bar && mise trust --show" "packages/bar: trusted"

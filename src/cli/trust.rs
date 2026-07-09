@@ -206,10 +206,15 @@ impl Trust {
         if Settings::no_config() {
             return vec![];
         }
-        let Some(cwd) = &*dirs::CWD else {
+        // Use the live cwd (not the cached dirs::CWD) so this anchors to the
+        // same directory as the ancestor-walk pass, which uses env::current_dir
+        // via load_config_paths -> all_dirs. A `cd` setting applied during
+        // settings load can move the process directory, and both passes must
+        // agree on where "here" is.
+        let Ok(cwd) = env::current_dir() else {
             return vec![];
         };
-        let walker = ignore::WalkBuilder::new(cwd)
+        let walker = ignore::WalkBuilder::new(&cwd)
             .hidden(true) // Skip hidden files/dirs
             .git_ignore(true) // Respect .gitignore
             .git_global(true) // Respect global .gitignore
