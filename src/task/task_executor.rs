@@ -235,14 +235,19 @@ impl TaskExecutor {
         Ok(sandbox)
     }
 
-    pub fn task_timings(&self) -> bool {
-        let output_mode = self.output_handler.output(None);
-        self.timings
-            || Settings::get().task.timings.unwrap_or(
-                output_mode == TaskOutput::Prefix
-                    || output_mode == TaskOutput::Timed
-                    || output_mode == TaskOutput::KeepOrder,
-            )
+    pub fn task_timings(&self, task: Option<&Task>) -> bool {
+        // Resolve the style/verbosity for *this* task so a per-task `output`
+        // override is honored (e.g. a task with `output = "interleave"` must not
+        // get a timing line just because the global default is `prefix`).
+        let output_mode = self.output_handler.output(task);
+        // Quiet/silent suppresses mise's own output, so the per-task "Finished in …"
+        // timing line must not leak. This matters now that quiet keeps its style
+        // (e.g. `--quiet` with parallel tasks still resolves to `Prefix`).
+        let default = !self.output_handler.quiet(task)
+            && (output_mode == TaskOutput::Prefix
+                || output_mode == TaskOutput::Timed
+                || output_mode == TaskOutput::KeepOrder);
+        self.timings || Settings::get().task.timings.unwrap_or(default)
     }
 
     /// Run a task, returning true if the task actually executed (not skipped).
@@ -504,7 +509,7 @@ impl TaskExecutor {
             );
         }
 
-        if self.task_timings()
+        if self.task_timings(Some(task))
             && (task.file.as_ref().is_some() || !task.run_script_strings().is_empty())
         {
             self.eprint(
@@ -1231,6 +1236,9 @@ impl TaskExecutor {
             TaskOutput::Silent => {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
+            // `Quiet` is no longer returned by `output()` (verbosity is decoupled
+            // from style; it maps to `Interleave`), but the variant still exists as
+            // a config value so it's kept here for match exhaustiveness.
             TaskOutput::Quiet | TaskOutput::Interleave => {
                 if raw || redactions.is_empty() {
                     cmd = cmd.stdin(Stdio::inherit());

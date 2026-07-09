@@ -15,7 +15,13 @@ By default, tasks will execute with a maximum of 4 parallel jobs. Customize this
 label. By printing line-by-line we avoid interleaving output from parallel executions. However, if
 --jobs == 1, the output will be set to `interleave`.
 
-To just print stdout/stderr directly, use `--interleave`, the `task.output` setting, or `MISE_TASK_OUTPUT=interleave`.
+To just print stdout/stderr directly, use `--output interleave`, the `task.output` setting, or `MISE_TASK_OUTPUT=interleave`.
+
+The output _style_ (`prefix`, `interleave`, `keep-order`, …) is independent of _verbosity_
+(`--quiet`/`--silent`, the `quiet`/`silent` settings, or the per-task `quiet`/`silent` fields).
+They combine: e.g. `MISE_TASK_OUTPUT=prefix` with `--quiet` keeps the task-name prefixes while
+suppressing mise's own messages. `--quiet` no longer forces un-prefixed output — use
+`--output quiet` (or `-o interleave`) if you want the old un-prefixed behavior.
 
 Stdin is not read by default. To enable this, set `raw = true` on the task that needs it. This will prevent
 it running in parallel with any other task—a RWMutex will get a write lock in this case. This also prevents redactions applied to the output.

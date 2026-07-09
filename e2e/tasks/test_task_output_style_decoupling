@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+
+# Task output "style" (prefix/interleave/…) is decoupled from "verbosity"
+# (quiet/silent). This verifies the axes combine and that the legacy `quiet`
+# output *value* keeps its old un-prefixed behavior.
+
+# (a) per-task output="prefix" + quiet=true -> prefixed task line, no mise header.
+cat <<EOF >mise.toml
+[tasks.hello]
+run = 'echo "hello world"'
+output = "prefix"
+quiet = true
+EOF
+assert_contains "mise run hello 2>&1" "[hello] hello world"
+# the command-echo header (`[hello] \$ echo ...`) must be suppressed by quiet
+assert_not_contains "mise run hello 2>&1" '$ echo'
+
+# (b) legacy task.output="quiet" value stays un-prefixed (maps to interleave).
+cat <<EOF >mise.toml
+[settings]
+task.output = "quiet"
+[tasks.a]
+run = 'echo running a'
+[tasks.d]
+run = 'echo running d'
+EOF
+assert_not_contains "mise run a ::: d 2>&1" "[a] running a"
+assert_contains "mise run a ::: d 2>&1" "running a"
+
+# (c) silent (per-task output value) -> nothing at all.
+cat <<EOF >mise.toml
+[tasks.quiet_one]
+run = 'echo "should not appear"'
+output = "silent"
+EOF
+assert_empty "mise run quiet_one 2>&1"
+
+# (d) per-task output overrides the global style; raw still wins over a style.
+cat <<EOF >mise.toml
+[settings]
+task.output = "interleave"
+[tasks.styled]
+run = 'echo styled-out'
+output = "prefix"
+[tasks.rawed]
+run = 'echo rawed-out'
+output = "prefix"
+raw = true
+EOF
+# global interleave is overridden by the per-task prefix
+assert_contains "mise run styled 2>&1" "[styled] styled-out"
+# raw forces interleave regardless of output="prefix" -> no prefix
+assert_not_contains "mise run rawed 2>&1" "[rawed] rawed-out"
+assert_contains "mise run rawed 2>&1" "rawed-out"
+
+# (e) --quiet with a parallel (non-linear) run now keeps the prefix style.
+cat <<EOF >mise.toml
+[tasks.a]
+run = 'echo running a'
+[tasks.d]
+run = 'echo running d'
+EOF
+assert_contains "mise --quiet run a ::: d 2>&1" "[a] running a"
+assert_contains "mise --quiet run a ::: d 2>&1" "[d] running d"
+assert_not_contains "mise --quiet run a ::: d 2>&1" '$ echo'
+# quiet must also suppress mise's own "Finished in …" timing lines
+assert_not_contains "mise --quiet run a ::: d 2>&1" "Finished in"
+
+# (f) per-task output overrides a global "silent" style (not just interleave).
+cat <<EOF >mise.toml
+[settings]
+task.output = "silent"
+[tasks.loud]
+run = 'echo loud-out'
+output = "prefix"
+[tasks.hushed]
+run = 'echo hushed-out'
+EOF
+# the task that opts into a style still produces (prefixed) output
+assert_contains "mise run loud 2>&1" "[loud] loud-out"
+# a task with no override still honors the global silent
+assert_empty "mise run hushed 2>&1"
+
+# (g) the per-task "Finished in …" timing line follows the per-task output style,
+# not the global default. Use single-task runs so the separate run-level timing
+# summary (only shown when >1 task) doesn't interfere. A single-job run defaults
+# to interleave (no timing), so output="prefix" opts in and output="interleave"
+# stays opted out:
+cat <<EOF >mise.toml
+[tasks.timed_one]
+run = 'echo timed-out'
+output = "prefix"
+[tasks.untimed_one]
+run = 'echo untimed-out'
+output = "interleave"
+EOF
+assert_contains "mise run timed_one 2>&1" "Finished in"
+assert_not_contains "mise run untimed_one 2>&1" "Finished in"
