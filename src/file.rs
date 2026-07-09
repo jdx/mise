@@ -1252,22 +1252,141 @@ fn path_has_gnu_sparse_artifact(path: &Path) -> bool {
     })
 }
 
+/// Ordered, de-duplicated list of `tar` binaries to try for the sparse-archive
+/// fallback, preferring bsdtar/libarchive. GNU tar mishandles some PAX GNU-sparse
+/// archives — e.g. Go/GoReleaser-produced ones like `github:smol-machines/smolvm`,
+/// where it fails with "Unexpected EOF in archive" — while bsdtar extracts them
+/// (#10674). Windows' System32 `tar` and macOS's `/usr/bin/tar` are bsdtar, so
+/// the bare-`tar` fallback already resolves to bsdtar there.
+///
+/// Only resolved (absolute) paths go in the returned Vec: `cmd!` (duct) dotifies
+/// a *relative* `PathBuf` to `./tar` and never PATH-searches it, so a bare-name
+/// candidate can't be a `PathBuf`. When this list is empty,
+/// `extract_with_system_tar` falls back to the bare `"tar"` string (OS PATH
+/// search), preserving the original behavior.
+fn system_tar_candidates() -> Vec<PathBuf> {
+    let bsdtar = which("bsdtar");
+    let tar = which("tar");
+    order_tar_candidates(bsdtar, platform_system_tar(), tar)
+}
+
+/// The platform's built-in bsdtar/libarchive `tar`, if present. macOS
+/// `/usr/bin/tar` and Windows `System32\tar.exe` are both bsdtar, so preferring
+/// them avoids picking a Homebrew/Git GNU tar earlier on `PATH` (GNU tar
+/// mishandles the sparse PAX archives and, on Windows, also misreads a `C:\…`
+/// archive path as a remote host). Returns `None` on other platforms (Linux's
+/// system tar is GNU, already covered by `which("tar")`).
+#[cfg(macos)]
+fn platform_system_tar() -> Option<PathBuf> {
+    let p = PathBuf::from("/usr/bin/tar");
+    is_executable(&p).then_some(p)
+}
+#[cfg(windows)]
+fn platform_system_tar() -> Option<PathBuf> {
+    let root = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+    let p = root.join("System32").join("tar.exe");
+    is_executable(&p).then_some(p)
+}
+#[cfg(not(any(macos, windows)))]
+fn platform_system_tar() -> Option<PathBuf> {
+    None
+}
+
+/// Pure ordering + de-dup (by canonical path, first occurrence wins) for
+/// [`system_tar_candidates`]. Split out so it is unit-testable without touching
+/// PATH or platform cfg.
+fn order_tar_candidates(
+    bsdtar: Option<PathBuf>,
+    platform_system_tar: Option<PathBuf>,
+    tar: Option<PathBuf>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+    for candidate in [bsdtar, platform_system_tar, tar].into_iter().flatten() {
+        if seen.insert(canonicalize_or_self(&candidate)) {
+            candidates.push(candidate);
+        }
+    }
+    candidates
+}
+
+/// Interpret a captured `tar` run: `Ok(())` on success, else a diagnostic string
+/// (the captured combined output on non-zero exit, or the spawn error).
+fn interpret_tar_output(
+    res: std::io::Result<std::process::Output>,
+) -> std::result::Result<(), String> {
+    match res {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => Err(format!(
+            "exited with {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stdout).trim()
+        )),
+        Err(e) => Err(format!("failed to spawn: {e}")),
+    }
+}
+
 fn extract_with_system_tar(archive: &Path, dest: &Path, opts: &ExtractOptions) -> Result<()> {
     // When preserve_mtime is false, use -m flag to not restore modification times.
     // This causes extracted files to have current time, which is important for
     // cache invalidation and autopruning. Works on both BSD and GNU tar.
-    let result = if opts.preserve_mtime {
-        cmd!("tar", "-xf", archive, "-C", dest).run()
-    } else {
-        cmd!("tar", "-mxf", archive, "-C", dest).run()
-    };
+    let flag = if opts.preserve_mtime { "-xf" } else { "-mxf" };
 
-    result.map(|_| ()).wrap_err_with(|| {
-        format!(
-            "failed to extract {} using system tar for sparse archive fallback",
-            archive.display()
-        )
-    })
+    let candidates = system_tar_candidates();
+    let mut tried: Vec<String> = Vec::new();
+    let mut last_err: Option<String> = None;
+
+    for (idx, tar) in candidates.iter().enumerate() {
+        if idx > 0 {
+            // Clean dest before retrying with the next candidate. Attempt 0's dest
+            // was already cleaned by the caller (`untar`), so skip the extra walk on
+            // the common single-candidate path.
+            remove_all(dest)?;
+            create_dir_all(dest)?;
+        }
+        tried.push(tar.display().to_string());
+        let res = cmd!(tar, flag, archive, "-C", dest)
+            .stderr_to_stdout()
+            .stdout_capture()
+            .unchecked()
+            .run();
+        match interpret_tar_output(res) {
+            Ok(()) => {
+                debug!("extracted {} with {}", archive.display(), tar.display());
+                return Ok(());
+            }
+            Err(e) => last_err = Some(format!("{}: {e}", tar.display())),
+        }
+    }
+
+    // No resolved candidates (e.g. `which` found nothing): fall back to the bare
+    // `tar` name so std performs its own PATH search (exact original behavior).
+    if candidates.is_empty() {
+        tried.push("tar".to_string());
+        let res = cmd!("tar", flag, archive, "-C", dest)
+            .stderr_to_stdout()
+            .stdout_capture()
+            .unchecked()
+            .run();
+        match interpret_tar_output(res) {
+            Ok(()) => {
+                debug!("extracted {} with tar", archive.display());
+                return Ok(());
+            }
+            Err(e) => last_err = Some(format!("tar: {e}")),
+        }
+    }
+
+    bail!(
+        "failed to extract {} using system tar for sparse archive fallback \
+         (tried: {}). Installing bsdtar/libarchive enables extraction of \
+         GNU-sparse (PAX) archives. Last error: {}",
+        archive.display(),
+        tried.join(", "),
+        last_err.unwrap_or_else(|| "no system tar found".to_string())
+    )
 }
 
 fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
@@ -2577,6 +2696,37 @@ mod tests {
             "pkg/GNUSparseFile.0/disk.img"
         )));
         assert!(!path_has_gnu_sparse_artifact(Path::new("pkg/disk.img")));
+    }
+
+    #[test]
+    fn test_order_tar_candidates() {
+        // Non-existent paths so canonicalize_or_self degrades to literal equality,
+        // making the ordering/dedup deterministic on any host.
+        let bsd = PathBuf::from("/does/not/exist/bsdtar");
+        let sys = PathBuf::from("/does/not/exist/usr/bin/tar");
+        let gnu = PathBuf::from("/does/not/exist/gnubin/tar");
+
+        // Order: bsdtar, then macOS system tar, then tar.
+        assert_eq!(
+            order_tar_candidates(Some(bsd.clone()), Some(sys.clone()), Some(gnu.clone())),
+            vec![bsd.clone(), sys.clone(), gnu.clone()]
+        );
+
+        // Dedup: the same path as both the macOS system tar and `tar` collapses to
+        // one entry, keeping the first occurrence.
+        assert_eq!(
+            order_tar_candidates(None, Some(sys.clone()), Some(sys.clone())),
+            vec![sys.clone()]
+        );
+
+        // None entries are skipped.
+        assert_eq!(
+            order_tar_candidates(None, None, Some(gnu.clone())),
+            vec![gnu.clone()]
+        );
+
+        // All None yields an empty list (drives the bare `"tar"` fallback).
+        assert!(order_tar_candidates(None, None, None).is_empty());
     }
 
     #[test]
