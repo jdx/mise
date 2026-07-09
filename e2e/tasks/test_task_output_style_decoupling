@@ -96,3 +96,28 @@ output = "interleave"
 EOF
 assert_contains "mise run timed_one 2>&1" "Finished in"
 assert_not_contains "mise run untimed_one 2>&1" "Finished in"
+
+# (h) a per-task output="keep-order" override is honored even when the global
+# default isn't keep-order. Previously the run-wide completion/flush gates keyed
+# off the global mode, so a per-task keep-order task (here `b`) stayed buffered
+# and never printed.
+cat <<EOF >mise.toml
+[tasks.a]
+run = 'sleep 0.2; echo A'
+output = "keep-order"
+[tasks.b]
+run = 'echo B'
+output = "keep-order"
+EOF
+assert_contains "mise run a ::: b 2>&1" "A"
+assert_contains "mise run a ::: b 2>&1" "B"
+
+# (i) a per-task output="timed" override is honored even when the global default
+# isn't timed. Previously the background timed-printer only spawned for a
+# run-wide Timed mode, so the task's queued stdout was suppressed entirely.
+cat <<EOF >mise.toml
+[tasks.slow]
+run = 'echo first; sleep 1.2; echo second; sleep 1.2'
+output = "timed"
+EOF
+assert_contains "mise run slow 2>&1" "first"
