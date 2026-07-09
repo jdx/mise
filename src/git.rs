@@ -413,7 +413,12 @@ pub fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
     for wt_root in path.ancestors() {
         let dotgit = wt_root.join(".git");
         if dotgit.is_dir() {
-            return None; // main checkout
+            // A `.git` directory is either the main checkout or a nested
+            // independent repository. Either way stop: a nested repo's
+            // contents are not derived from the outer repo's history, so its
+            // configs must keep their own trust records rather than
+            // inheriting the outer main checkout's via path mapping.
+            return None;
         }
         if dotgit.is_file() {
             // `.git` files are used by both linked worktrees and submodules.
