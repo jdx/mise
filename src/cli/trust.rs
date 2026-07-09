@@ -25,6 +25,11 @@ use itertools::Itertools;
 /// without prompting, since nothing in them executes code at load time —
 /// tools install and tasks run only on explicit commands like `mise install`
 /// or `mise run`.
+///
+/// Trust is shared across git worktrees: a config file inside a linked
+/// worktree is trusted when the equivalent path in the repository's main
+/// checkout has been trusted. Paranoid mode disables this sharing since
+/// worktrees can check out branches with different config contents.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Trust {
@@ -109,6 +114,17 @@ pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
         .any(|p| cfr.starts_with(p));
     if trusted_via_settings {
         warn!("{cfr:?} is trusted via settings so it will still be trusted.");
+    }
+
+    if !Settings::get().paranoid
+        && let Some(main_path) = crate::git::main_checkout_equivalent(&cfr)
+        && config_file::is_trusted(&main_path)
+    {
+        warn!(
+            "{} is a git worktree of {} which is trusted, so it will still be trusted. Untrust that path or use `mise trust --ignore`.",
+            display_path(&cfr),
+            display_path(&main_path)
+        );
     }
 
     Ok(())

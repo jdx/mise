@@ -387,6 +387,17 @@ pub fn is_trusted(path: &Path) -> bool {
             current = dir;
         }
     }
+    // A config inside a linked git worktree shares trust with the equivalent
+    // path in the repo's main checkout. Skipped in paranoid mode, where trust
+    // is tied to file contents that can differ between worktree branches.
+    if !settings.paranoid
+        && let Some(main_path) = crate::git::main_checkout_equivalent(&canonicalized_path)
+        && is_trusted(&main_path)
+    {
+        add_trusted(canonicalized_path.to_path_buf());
+        return true;
+    }
+
     if settings.paranoid {
         let trusted = trust_file_hash(path).unwrap_or_else(|e| {
             warn!("trust_file_hash: {e}");

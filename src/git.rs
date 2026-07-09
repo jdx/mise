@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 
 use duct::Expression;
 use eyre::{Result, WrapErr, eyre};
@@ -397,6 +400,61 @@ fn looks_like_sha(s: &str) -> bool {
     matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// If `path` is inside a linked git worktree, returns the equivalent path in
+/// the repository's main checkout, e.g. `/repo-wt/sub/mise.toml` →
+/// `/repo/sub/mise.toml`. Returns None for paths in a main checkout, outside
+/// any git repository, or in worktrees of a bare repository.
+///
+/// Detection is filesystem-only (no git subprocess): a linked worktree root
+/// contains a `.git` *file* pointing at `<main>/.git/worktrees/<name>`.
+pub fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
+    static CACHE: LazyLock<Mutex<HashMap<PathBuf, Option<PathBuf>>>> =
+        LazyLock::new(Default::default);
+    for wt_root in path.ancestors() {
+        let dotgit = wt_root.join(".git");
+        if dotgit.is_dir() {
+            return None; // main checkout
+        }
+        if dotgit.is_file() {
+            let main_root = CACHE
+                .lock()
+                .unwrap()
+                .entry(wt_root.to_path_buf())
+                .or_insert_with(|| main_checkout_root(&dotgit))
+                .clone()?;
+            let equiv = main_root.join(path.strip_prefix(wt_root).ok()?);
+            return (equiv != path).then_some(equiv);
+        }
+    }
+    None
+}
+
+/// Resolves a linked worktree's `.git` file to the root of the main checkout
+fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
+    let contents = std::fs::read_to_string(dotgit_file).ok()?;
+    let gitdir = PathBuf::from(contents.strip_prefix("gitdir:")?.trim());
+    let gitdir = if gitdir.is_relative() {
+        dotgit_file.parent()?.join(gitdir)
+    } else {
+        gitdir
+    };
+    // `commondir` inside the worktree's private git dir points to the shared
+    // git dir (usually `../..`, i.e. `<main>/.git`)
+    let common = match std::fs::read_to_string(gitdir.join("commondir")) {
+        Ok(c) => {
+            let c = PathBuf::from(c.trim());
+            if c.is_relative() { gitdir.join(c) } else { c }
+        }
+        Err(_) => gitdir.parent()?.parent()?.to_path_buf(),
+    };
+    let common = common.canonicalize().ok()?;
+    if common.file_name() == Some(OsStr::new(".git")) {
+        common.parent().map(|p| p.to_path_buf())
+    } else {
+        None // bare repository — no main checkout to share trust with
+    }
+}
+
 impl Debug for Git {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Git").field("dir", &self.dir).finish()
@@ -439,6 +497,45 @@ mod tests {
         assert!(!looks_like_sha("abcdef1")); // short SHA not supported
         assert!(!looks_like_sha(""));
         assert!(!looks_like_sha("g123456789abcdef0123456789abcdef01234567")); // non-hex
+    }
+
+    #[test]
+    fn worktree_main_checkout_equivalent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().canonicalize().unwrap();
+        let main = base.join("main");
+        let wt = base.join("wt");
+        std::fs::create_dir_all(main.join(".git/worktrees/wt")).unwrap();
+        std::fs::create_dir_all(wt.join("sub")).unwrap();
+        std::fs::write(main.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
+        std::fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/worktrees/wt").display()),
+        )
+        .unwrap();
+
+        // worktree root and nested paths map to the main checkout
+        assert_eq!(super::main_checkout_equivalent(&wt), Some(main.clone()));
+        assert_eq!(
+            super::main_checkout_equivalent(&wt.join("sub/mise.toml")),
+            Some(main.join("sub/mise.toml"))
+        );
+        // main checkout and non-repo paths do not map
+        assert_eq!(super::main_checkout_equivalent(&main), None);
+        assert_eq!(super::main_checkout_equivalent(&base), None);
+
+        // worktree of a bare repo does not map
+        let bare = base.join("bare.git");
+        let bare_wt = base.join("bare-wt");
+        std::fs::create_dir_all(bare.join("worktrees/bare-wt")).unwrap();
+        std::fs::create_dir_all(&bare_wt).unwrap();
+        std::fs::write(bare.join("worktrees/bare-wt/commondir"), "../..\n").unwrap();
+        std::fs::write(
+            bare_wt.join(".git"),
+            format!("gitdir: {}\n", bare.join("worktrees/bare-wt").display()),
+        )
+        .unwrap();
+        assert_eq!(super::main_checkout_equivalent(&bare_wt), None);
     }
 
     #[test]
