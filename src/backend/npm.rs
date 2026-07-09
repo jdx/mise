@@ -325,28 +325,7 @@ impl Backend for NPMBackend {
                 .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                 .read()?;
                 let data: Value = serde_json::from_str(&raw)?;
-                let versions = data["versions"]
-                    .as_array()
-                    .ok_or_else(|| eyre::eyre!("invalid versions"))?;
-                let time = data["time"]
-                    .as_object()
-                    .ok_or_else(|| eyre::eyre!("invalid time"))?;
-                let version_info = versions
-                    .iter()
-                    .filter_map(|v| v.as_str())
-                    .map(|version| {
-                        let created_at = time
-                            .get(version)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        VersionInfo {
-                            version: version.to_string(),
-                            created_at,
-                            prerelease: is_semver_prerelease(version),
-                            ..Default::default()
-                        }
-                    })
-                    .collect();
+                let version_info = npm_view_versions_time(&data)?;
 
                 Ok(version_info)
             },
@@ -374,10 +353,7 @@ impl Backend for NPMBackend {
                                 .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                                 .read()?;
                         let dist_tags: Value = serde_json::from_str(&raw)?;
-                        match dist_tags["latest"] {
-                            Value::String(ref s) => Ok(Some(s.clone())),
-                            _ => Ok(None),
-                        }
+                        npm_view_latest_dist_tag(&dist_tags)
                     })
                     .await
             },
@@ -993,6 +969,51 @@ fn is_semver_prerelease(version: &str) -> bool {
     core_and_pre.contains('-')
 }
 
+fn npm_view_json(data: &Value) -> eyre::Result<&Value> {
+    match data {
+        // npm 12 changed `npm view --json` to always return an array. mise only
+        // queries one package at a time here, so unwrap that compatibility shell.
+        Value::Array(values) if values.len() == 1 => Ok(&values[0]),
+        Value::Array(values) => Err(eyre::eyre!(
+            "expected npm view --json to return one result, got {}",
+            values.len()
+        )),
+        _ => Ok(data),
+    }
+}
+
+fn npm_view_versions_time(data: &Value) -> eyre::Result<Vec<VersionInfo>> {
+    let data = npm_view_json(data)?;
+    let versions = data["versions"]
+        .as_array()
+        .ok_or_else(|| eyre::eyre!("invalid versions"))?;
+    let time = data.get("time").and_then(|time| time.as_object());
+
+    Ok(versions
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(|version| {
+            let created_at = time
+                .and_then(|time| time.get(version))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            VersionInfo {
+                version: version.to_string(),
+                created_at,
+                prerelease: is_semver_prerelease(version),
+                ..Default::default()
+            }
+        })
+        .collect())
+}
+
+fn npm_view_latest_dist_tag(data: &Value) -> eyre::Result<Option<String>> {
+    Ok(match npm_view_json(data)?["latest"] {
+        Value::String(ref s) => Some(s.clone()),
+        _ => None,
+    })
+}
+
 fn parse_bool_arg(value: &str) -> Option<bool> {
     match value {
         "true" | "1" => Some(true),
@@ -1131,6 +1152,192 @@ mod tests {
         assert_eq!(NPMBackend::build_aube_minimum_release_age(1), 1);
         assert_eq!(NPMBackend::build_aube_minimum_release_age(60), 1);
         assert_eq!(NPMBackend::build_aube_minimum_release_age(61), 2);
+    }
+
+    fn assert_npm_view_versions_time(data: &serde_json::Value) {
+        let versions = npm_view_versions_time(data).unwrap();
+        assert_eq!(versions.len(), 2);
+
+        assert_eq!(versions[0].version, "1.0.0");
+        assert_eq!(
+            versions[0].created_at,
+            Some("2026-01-02T03:04:05.000Z".into())
+        );
+        assert!(!versions[0].prerelease);
+
+        assert_eq!(versions[1].version, "1.1.0-beta.1");
+        assert_eq!(
+            versions[1].created_at,
+            Some("2026-01-03T03:04:05.000Z".into())
+        );
+        assert!(versions[1].prerelease);
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_accepts_legacy_object() {
+        let data = serde_json::json!({
+            "versions": ["1.0.0", "1.1.0-beta.1"],
+            "time": {
+                "1.0.0": "2026-01-02T03:04:05.000Z",
+                "1.1.0-beta.1": "2026-01-03T03:04:05.000Z"
+            }
+        });
+
+        assert_npm_view_versions_time(&data);
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_accepts_npm12_array() {
+        let data = serde_json::json!([{
+            "versions": ["1.0.0", "1.1.0-beta.1"],
+            "time": {
+                "1.0.0": "2026-01-02T03:04:05.000Z",
+                "1.1.0-beta.1": "2026-01-03T03:04:05.000Z"
+            }
+        }]);
+
+        assert_npm_view_versions_time(&data);
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_accepts_missing_time() {
+        let data = serde_json::json!({
+            "versions": ["1.0.0", "1.1.0"]
+        });
+
+        let versions = npm_view_versions_time(&data).unwrap();
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0].version, "1.0.0");
+        assert_eq!(versions[0].created_at, None);
+        assert_eq!(versions[1].version, "1.1.0");
+        assert_eq!(versions[1].created_at, None);
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_accepts_non_object_time() {
+        let data = serde_json::json!({
+            "versions": ["1.0.0"],
+            "time": "2026-01-02T03:04:05.000Z"
+        });
+
+        let versions = npm_view_versions_time(&data).unwrap();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].version, "1.0.0");
+        assert_eq!(versions[0].created_at, None);
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_rejects_missing_versions() {
+        let data = serde_json::json!({
+            "time": {}
+        });
+
+        let error = npm_view_versions_time(&data).unwrap_err().to_string();
+        assert_eq!(error, "invalid versions");
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_rejects_non_array_versions() {
+        let data = serde_json::json!({
+            "versions": "1.0.0",
+            "time": {}
+        });
+
+        let error = npm_view_versions_time(&data).unwrap_err().to_string();
+        assert_eq!(error, "invalid versions");
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_rejects_empty_npm12_array() {
+        let data = serde_json::json!([]);
+
+        let error = npm_view_versions_time(&data).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "expected npm view --json to return one result, got 0"
+        );
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_rejects_multiple_results() {
+        let data = serde_json::json!([
+            {
+                "versions": ["1.0.0"],
+                "time": {}
+            },
+            {
+                "versions": ["2.0.0"],
+                "time": {}
+            }
+        ]);
+
+        let error = npm_view_versions_time(&data).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "expected npm view --json to return one result, got 2"
+        );
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_accepts_legacy_object() {
+        let data = serde_json::json!({
+            "latest": "1.0.0"
+        });
+
+        assert_eq!(
+            npm_view_latest_dist_tag(&data).unwrap(),
+            Some("1.0.0".into())
+        );
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_accepts_npm12_array() {
+        let data = serde_json::json!([{
+            "latest": "1.0.0"
+        }]);
+
+        assert_eq!(
+            npm_view_latest_dist_tag(&data).unwrap(),
+            Some("1.0.0".into())
+        );
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_returns_none_for_missing_tag() {
+        let data = serde_json::json!({
+            "beta": "2.0.0"
+        });
+
+        assert_eq!(npm_view_latest_dist_tag(&data).unwrap(), None);
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_rejects_empty_npm12_array() {
+        let data = serde_json::json!([]);
+
+        let error = npm_view_latest_dist_tag(&data).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "expected npm view --json to return one result, got 0"
+        );
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_rejects_multiple_results() {
+        let data = serde_json::json!([
+            {
+                "latest": "1.0.0"
+            },
+            {
+                "latest": "2.0.0"
+            }
+        ]);
+
+        let error = npm_view_latest_dist_tag(&data).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "expected npm view --json to return one result, got 2"
+        );
     }
 
     #[test]
