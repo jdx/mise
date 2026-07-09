@@ -1,0 +1,5 @@
+what's the deal with [https://github.com/jdx/mise/discussions/10887](https://github.com/jdx/mise/discussions/10887)
+
+---
+
+make a pr
