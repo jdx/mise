@@ -32,7 +32,10 @@ pub struct Trust {
     #[clap(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
     config_file: Option<PathBuf>,
 
-    /// Trust all config files in the current directory and its parents
+    /// Trust all config files in the current directory, its parents, and its subdirectories
+    ///
+    /// Subdirectories are walked respecting .gitignore, skipping hidden directories
+    /// and common build/dependency directories (node_modules, target, dist, build).
     #[clap(long, short, verbatim_doc_comment, conflicts_with_all = &["ignore", "untrust"])]
     all: bool,
 
@@ -61,6 +64,10 @@ impl Trust {
             self.ignore()
         } else if self.all {
             while let Some(p) = self.get_next_untrusted() {
+                self.config_file = Some(p);
+                self.trust()?;
+            }
+            for p in self.get_untrusted_descendants()? {
                 self.config_file = Some(p);
                 self.trust()?;
             }
@@ -183,6 +190,50 @@ impl Trust {
             .map(|p| config_trust_root(&p))
             .unique()
             .find(|ctr| !config_file::is_trusted(ctr))
+    }
+
+    /// Untrusted config roots in subdirectories of the current directory.
+    ///
+    /// Walks respecting .gitignore, skipping hidden directories and common
+    /// build/dependency directories so e.g. vendored configs in node_modules
+    /// are not trusted.
+    fn get_untrusted_descendants(&self) -> Result<Vec<PathBuf>> {
+        const EXCLUDED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
+        let Some(cwd) = &*dirs::CWD else {
+            return Ok(vec![]);
+        };
+        let walker = ignore::WalkBuilder::new(cwd)
+            .hidden(true) // Skip hidden files/dirs
+            .git_ignore(true) // Respect .gitignore
+            .git_global(true) // Respect global .gitignore
+            .git_exclude(true) // Respect .git/info/exclude
+            .require_git(false) // Don't require a git repo
+            .filter_entry(|e| {
+                let name = e.file_name().to_string_lossy();
+                !EXCLUDED_DIRS.contains(&name.as_ref())
+            })
+            .build();
+        let mut roots = vec![];
+        for entry in walker {
+            let entry = entry?;
+            if !entry.file_type().is_some_and(|ft| ft.is_dir()) {
+                continue;
+            }
+            let dir = entry.path();
+            if dir == cwd {
+                continue; // already covered by the parent walk
+            }
+            for p in config::config_paths_in_dir(dir) {
+                if !is_global_config(&p) {
+                    roots.push(config_trust_root(&p));
+                }
+            }
+        }
+        Ok(roots
+            .into_iter()
+            .unique()
+            .filter(|ctr| !config_file::is_trusted(ctr))
+            .collect())
     }
 
     fn show(&self) -> Result<()> {
