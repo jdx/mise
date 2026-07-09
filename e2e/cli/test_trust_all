@@ -59,3 +59,13 @@ mise untrust packages/bar/.mise.toml
 assert "cd / && mise -C '$ROOT' trust --all"
 assert_contains "cd packages/foo && mise trust --show" "packages/foo: trusted"
 assert_contains "cd packages/bar && mise trust --show" "packages/bar: trusted"
+
+# an excluded name (build/vendor/...) is only skipped as a subdirectory — when
+# it is itself the walk root, its descendants are still trusted
+mkdir -p build/sub
+cat <<EOF >build/sub/mise.toml
+[env]
+INBUILD = "1"
+EOF
+assert "mise -C build trust --all"
+assert_contains "cd build/sub && mise trust --show" "build/sub: trusted"

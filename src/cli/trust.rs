@@ -221,6 +221,11 @@ impl Trust {
             .git_exclude(true) // Respect .git/info/exclude
             .require_git(false) // Don't require a git repo
             .filter_entry(|e| {
+                // Never exclude the walk root itself (depth 0), even if cwd is
+                // named e.g. `build` or `vendor` — otherwise nothing is walked.
+                if e.depth() == 0 {
+                    return true;
+                }
                 let name = e.file_name().to_string_lossy();
                 !EXCLUDED_DIRS.contains(&name.as_ref())
             })
