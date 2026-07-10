@@ -69,6 +69,15 @@ impl ToolRequest {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => format!("{ref_type}:{r}"),
             _ => s.to_string(),
         };
+        if crate::semver::is_npm_semver_range_query(&s)
+            && !matches!(
+                &source,
+                ToolSource::IdiomaticVersionFile(path)
+                    if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
+            )
+        {
+            warn_once!("semver ranges are not supported: {s}");
+        }
         Ok(match s.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
                 validate_ref_string(r)?;
