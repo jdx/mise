@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -13,6 +12,7 @@ use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use std::sync::LazyLock as Lazy;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::OnceCell;
 use url::Url;
 
@@ -410,25 +410,37 @@ impl Client {
                 let mut resp = self
                     .send_once_with_https_fallback(Method::GET, request_url, headers, "GET")
                     .await?;
-                if let Some(length) = resp.content_length()
-                    && let Some(pr) = pr
-                {
-                    // Reset progress on each attempt
-                    pr.set_length(length);
+                if let Some(pr) = pr {
+                    if let Some(length) = resp.content_length() {
+                        pr.set_length(length);
+                    }
                     pr.set_position(0);
                 }
-                let mut file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
+                let (temp_file, file) = {
+                    let path = path.to_path_buf();
+                    let parent = parent.to_path_buf();
+                    tokio::task::spawn_blocking(move || {
+                        let temp_file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
+                        let file = temp_file.reopen()?;
+                        Ok::<_, std::io::Error>((temp_file, file))
+                    })
+                    .await??
+                };
+                let mut file = tokio::fs::File::from_std(file);
                 while let Some(chunk) = resp.chunk().await? {
                     if crate::ui::ctrlc::is_cancelled() {
                         bail!("download cancelled by user");
                     }
-                    file.write_all(&chunk)?;
+                    file.write_all(&chunk).await?;
                     bytes_received.fetch_add(chunk.len() as u64, Ordering::Relaxed);
                     if let Some(pr) = pr {
                         pr.inc(chunk.len() as u64);
                     }
                 }
-                file.persist(path)?;
+                file.shutdown().await?;
+                drop(file);
+                let path = path.to_path_buf();
+                tokio::task::spawn_blocking(move || temp_file.persist(path)).await??;
                 Ok(())
             }
         });
@@ -1655,16 +1667,19 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         // never fires. The separate total budget must still end the download.
         let client = Client::new(Duration::from_millis(100), ClientKind::Http).unwrap();
         let started_at = Instant::now();
-        let err = client
-            .download_file_with_headers_timeout(
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            client.download_file_with_headers_timeout(
                 &url,
                 &path,
                 &HeaderMap::new(),
                 None,
                 Duration::from_millis(75),
-            )
-            .await
-            .unwrap_err();
+            ),
+        )
+        .await
+        .expect("download timeout regression test exceeded its independent deadline");
+        let err = result.unwrap_err();
         let message = err.to_string();
 
         assert!(started_at.elapsed() < Duration::from_secs(1));
@@ -1672,6 +1687,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert!(message.contains(&url));
         assert!(message.contains("attempt 1"));
         assert!(message.contains("bytes received"));
+        assert!(!message.contains("attempt 1, 0 bytes received"));
         assert!(message.contains("http_download_timeout"));
         assert!(message.contains("MISE_HTTP_DOWNLOAD_TIMEOUT"));
         assert!(!path.exists());

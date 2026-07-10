@@ -1154,6 +1154,20 @@ This setting is useful when:
 env = "MISE_HOOK_ENV_CHPWD_ONLY"
 type = "Bool"
 
+[http_download_timeout]
+default = "30m"
+description = "Total time allowed for an HTTP download, including retries."
+docs = """
+Limits the complete wall-clock time for downloading one artifact, including
+all retry attempts and backoff delays. This is separate from `http_timeout`,
+which detects stalled connections by timing out individual reads.
+
+When this budget is exhausted, mise reports the URL, active attempt, bytes
+received during that attempt, and this setting name.
+"""
+env = "MISE_HTTP_DOWNLOAD_TIMEOUT"
+type = "Duration"
+
 [http_retries]
 default = 3
 description = "Number of retries for transient HTTP failures in mise."
@@ -1171,20 +1185,6 @@ flaky infrastructure doesn't silently mask itself.
 """
 env = "MISE_HTTP_RETRIES"
 type = "Integer"
-
-[http_download_timeout]
-default = "30m"
-description = "Total time allowed for an HTTP download, including retries."
-docs = """
-Limits the complete wall-clock time for downloading one artifact, including
-all retry attempts and backoff delays. This is separate from `http_timeout`,
-which detects stalled connections by timing out individual reads.
-
-When this budget is exhausted, mise reports the URL, active attempt, bytes
-received during that attempt, and this setting name.
-"""
-env = "MISE_HTTP_DOWNLOAD_TIMEOUT"
-type = "Duration"
 
 [http_timeout]
 default = "30s"
