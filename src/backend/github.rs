@@ -648,15 +648,8 @@ impl Backend for UnifiedGitBackend {
             Ok(asset) => {
                 // Detect provenance availability from release assets and attestation API
                 let mut provenance = if !self.is_gitlab() && !self.is_forgejo() {
-                    self.detect_provenance_type(
-                        tv,
-                        &opts,
-                        &repo,
-                        &api_url,
-                        asset.digest.as_deref(),
-                        target,
-                    )
-                    .await?
+                    self.detect_provenance_type(tv, &opts, &repo, &api_url, &asset, target)
+                        .await?
                 } else {
                     None
                 };
@@ -751,7 +744,7 @@ impl UnifiedGitBackend {
         opts: &GitBackendOptions<'_>,
         repo: &str,
         api_url: &str,
-        asset_digest: Option<&str>,
+        asset: &ReleaseAsset,
         target: &PlatformTarget,
     ) -> Result<Option<ProvenanceType>> {
         let settings = Settings::get();
@@ -785,7 +778,7 @@ impl UnifiedGitBackend {
             && settings.github.github_attestations
             && opts.github_attestations()
             && attestations_supported(api_url)
-            && let Some(digest) = asset_digest
+            && let Some(digest) = asset.digest.as_deref()
         {
             let parts: Vec<&str> = repo.split('/').collect();
             if parts.len() == 2 {
@@ -848,7 +841,8 @@ impl UnifiedGitBackend {
             )
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
-            if let Some(provenance_name) = picker.pick_best_provenance(&asset_names) {
+            if let Some(provenance_name) = pick_slsa_provenance(&picker, &asset_names, &asset.name)
+            {
                 let url = release
                     .assets
                     .iter()
@@ -973,7 +967,8 @@ impl UnifiedGitBackend {
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
 
-            if let Some(provenance_name) = picker.pick_best_provenance(&asset_names) {
+            if let Some(provenance_name) = pick_slsa_provenance(&picker, &asset_names, &asset.name)
+            {
                 let provenance_asset = release
                     .assets
                     .iter()
@@ -1164,7 +1159,7 @@ impl UnifiedGitBackend {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
         } else {
             let provenance_result = self
-                .verify_attestations_or_slsa(ctx, tv, &file_path)
+                .verify_attestations_or_slsa(ctx, tv, &file_path, &asset.name)
                 .await?;
 
             // Record provenance verification result in lock_platforms
@@ -1800,6 +1795,7 @@ impl UnifiedGitBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
+        asset_name: &str,
     ) -> Result<Option<ProvenanceType>> {
         let settings = Settings::get();
 
@@ -1904,7 +1900,10 @@ impl UnifiedGitBackend {
 
         // Fall back to SLSA provenance (if enabled globally and for github backend)
         if !skip_slsa && settings.slsa && settings.github.slsa {
-            match self.try_verify_slsa(ctx, tv, file_path, &api_url).await {
+            match self
+                .try_verify_slsa(ctx, tv, file_path, asset_name, &api_url)
+                .await
+            {
                 Ok((true, provenance_url)) => {
                     // Defense-in-depth: verify the result matches the lockfile expectation
                     if let Some(expected) = expected_provenance
@@ -2061,6 +2060,7 @@ impl UnifiedGitBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
+        asset_name: &str,
         api_url: &str,
     ) -> std::result::Result<(bool, Option<String>), VerificationStatus> {
         if self.is_gitlab() || self.is_forgejo() {
@@ -2117,7 +2117,7 @@ impl UnifiedGitBackend {
         .with_matching(matching.unwrap_or_default())
         .with_matching_regex(matching_regex.unwrap_or_default());
 
-        let provenance_name = match picker.pick_best_provenance(&asset_names) {
+        let provenance_name = match pick_slsa_provenance(&picker, &asset_names, asset_name) {
             Some(name) => name,
             None => return Err(VerificationStatus::NoAttestations),
         };
@@ -2193,6 +2193,23 @@ impl UnifiedGitBackend {
             }
         }
     }
+}
+
+/// Prefer provenance explicitly attached to the selected release asset. This is
+/// important when `asset_pattern` intentionally selects an asset for a platform
+/// other than the host. Fall back to the existing platform-aware picker for
+/// shared provenance files and releases without an exact sidecar.
+fn pick_slsa_provenance(
+    picker: &AssetPicker,
+    assets: &[String],
+    selected_asset: &str,
+) -> Option<String> {
+    let sidecar = format!("{selected_asset}.intoto.jsonl");
+    assets
+        .iter()
+        .find(|asset| asset.eq_ignore_ascii_case(&sidecar))
+        .cloned()
+        .or_else(|| picker.pick_best_provenance(assets))
 }
 
 /// Templates a string pattern with version and target platform values
@@ -2422,6 +2439,36 @@ mod tests {
         ];
         let picked = backend.pick_by_pattern(assets, "cloudflared-linux-amd64", |s| s.as_str());
         assert_eq!(picked.as_deref(), Some("cloudflared-linux-amd64"));
+    }
+
+    #[test]
+    fn test_pick_slsa_provenance_follows_selected_foreign_platform_asset() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec![
+            "wsl-secret-service-linux-amd64".to_string(),
+            "wsl-secret-service-linux-amd64.intoto.jsonl".to_string(),
+            "wincred-helper-windows-amd64.exe".to_string(),
+            "wincred-helper-windows-amd64.exe.intoto.jsonl".to_string(),
+        ];
+
+        assert_eq!(
+            pick_slsa_provenance(&picker, &assets, "wincred-helper-windows-amd64.exe").as_deref(),
+            Some("wincred-helper-windows-amd64.exe.intoto.jsonl")
+        );
+    }
+
+    #[test]
+    fn test_pick_slsa_provenance_falls_back_to_platform_picker() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec![
+            "tool-windows-amd64.provenance.json".to_string(),
+            "tool-linux-amd64.provenance.json".to_string(),
+        ];
+
+        assert_eq!(
+            pick_slsa_provenance(&picker, &assets, "tool-linux-amd64").as_deref(),
+            Some("tool-linux-amd64.provenance.json")
+        );
     }
 
     #[test]
