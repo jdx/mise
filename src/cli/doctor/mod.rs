@@ -981,13 +981,14 @@ impl Doctor {
         };
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let mut shadowed = BTreeMap::new();
+        let mut checked_commands = HashSet::new();
 
         for shim in desired_shims {
             if !dirs::SHIMS.join(shim).exists() {
                 continue;
             }
             let command = shim_command_name(shim);
-            if shadowed.contains_key(&command) {
+            if !checked_commands.insert(command.clone()) {
                 continue;
             }
             let Ok(resolved) = which::which_in(&command, Some(&path), &cwd) else {
