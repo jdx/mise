@@ -213,6 +213,9 @@ impl Backend for CargoBackend {
             match self.binstall_status(&config, Some(&ctx.ts), &tv).await {
                 BinstallStatus::Enabled(cargo_binstall) => {
                     let mut cmd = CmdLineRunner::new(cargo_binstall).arg("-y");
+                    if !Settings::get().cargo.binstall_quickinstall {
+                        cmd = cmd.args(["--disable-strategies", "quick-install"]);
+                    }
                     if let Some(token) = &*GITHUB_TOKEN {
                         cmd = cmd.env("GITHUB_TOKEN", token)
                     }
