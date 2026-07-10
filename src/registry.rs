@@ -47,9 +47,6 @@ impl Registry {
 pub struct RegistryTool {
     pub short: &'static str,
     pub description: Option<&'static str>,
-    pub search_words: &'static [&'static str],
-    #[allow(unused)]
-    pub link: Option<&'static str>,
     pub backends: &'static [RegistryBackend],
     #[allow(unused)]
     pub aliases: &'static [&'static str],
@@ -354,8 +351,6 @@ mod tests {
         let tool = RegistryTool {
             short: "test",
             description: None,
-            search_words: &[],
-            link: None,
             backends: BACKENDS,
             aliases: &[],
             overrides: &[],

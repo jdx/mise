@@ -23,6 +23,11 @@ static AQUA_STANDARD_REGISTRY_ALIASES: phf::Map<&'static str, &'static str> = in
     "/aqua_standard_registry_aliases.rs"
 ));
 
+/// Baked package search words from the canonical aqua registry.
+static AQUA_STANDARD_REGISTRY_SEARCH_WORDS: phf::Map<&'static str, &'static [&'static str]> = include!(
+    concat!(env!("OUT_DIR"), "/aqua_standard_registry_search_words.rs")
+);
+
 /// Returns all package IDs from the baked-in aqua registry.
 pub fn package_ids() -> Vec<&'static str> {
     AQUA_STANDARD_REGISTRY_FILES.keys().copied().collect()
@@ -30,6 +35,17 @@ pub fn package_ids() -> Vec<&'static str> {
 
 pub fn package(package_id: &str) -> Option<Result<AquaPackage>> {
     baked_registry_file(package_id).map(|content| decode_package_rkyv(package_id, content))
+}
+
+pub fn search_words(package_id: &str) -> &'static [&'static str] {
+    let canonical = AQUA_STANDARD_REGISTRY_ALIASES
+        .get(package_id)
+        .copied()
+        .unwrap_or(package_id);
+    AQUA_STANDARD_REGISTRY_SEARCH_WORDS
+        .get(canonical)
+        .copied()
+        .unwrap_or_default()
 }
 
 fn baked_registry_file(package_id: &str) -> Option<&'static [u8]> {
@@ -112,5 +128,18 @@ mod tests {
         let package = package("sharkdp/hyperfine").unwrap().unwrap();
 
         assert_eq!(package.replacements.get("386"), Some(&"i686".to_string()));
+    }
+
+    #[test]
+    fn test_baked_registry_search_metadata() {
+        let package = package("DelineaXPM/dsv-cli").unwrap().unwrap();
+
+        assert_eq!(
+            package.link.as_deref(),
+            Some("https://docs.delinea.com/dsv/current/cli-ref")
+        );
+        assert_eq!(package.search_words, ["secrets", "vault"]);
+        assert_eq!(search_words("DelineaXPM/dsv-cli"), ["secrets", "vault"]);
+        assert_eq!(search_words("thycotic/dsv-cli"), ["secrets", "vault"]);
     }
 }

@@ -30,6 +30,7 @@ struct AquaPackageRegistry {
     id: String,
     content: Vec<u8>,
     aliases: Vec<String>,
+    search_words: Vec<String>,
 }
 
 /// Generate a raw string literal that safely contains the given content.
@@ -229,20 +230,6 @@ fn codegen_registry() {
         let description = info
             .get("description")
             .map(|d| d.as_str().unwrap().to_string());
-        let search_words = info
-            .get("search_words")
-            .map(|search_words| {
-                search_words
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|word| word.as_str().unwrap().to_string())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let link = info
-            .get("link")
-            .map(|link| link.as_str().unwrap().to_string());
         let idiomatic_files = info
             .get("idiomatic_files")
             .map(|idiomatic_files| {
@@ -277,17 +264,9 @@ fn codegen_registry() {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, search_words: &[{search_words}], link: {link}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
             description = description
                 .map(|d| format!("Some({})", raw_string_literal(&d)))
-                .unwrap_or("None".to_string()),
-            search_words = search_words
-                .iter()
-                .map(|word| raw_string_literal(word))
-                .collect::<Vec<_>>()
-                .join(", "),
-            link = link
-                .map(|link| format!("Some({})", raw_string_literal(&link)))
                 .unwrap_or("None".to_string()),
             backends = backends.into_iter().collect::<Vec<_>>().join(", "),
             aliases = aliases
@@ -367,6 +346,7 @@ fn codegen_aqua_standard_registry() -> Result<()> {
     let out_dir = env::var("OUT_DIR")?;
     let files_dest_path = Path::new(&out_dir).join("aqua_standard_registry_files.rs");
     let aliases_dest_path = Path::new(&out_dir).join("aqua_standard_registry_aliases.rs");
+    let search_words_dest_path = Path::new(&out_dir).join("aqua_standard_registry_search_words.rs");
     let metadata_dest_path = Path::new(&out_dir).join("aqua_standard_registry_metadata.rs");
     let packages_dir = Path::new(&out_dir).join("aqua_standard_registry_packages");
 
@@ -392,6 +372,10 @@ fn codegen_aqua_standard_registry() -> Result<()> {
         aqua_registry_files_code(&registries, &packages_dir)?,
     )?;
     fs::write(aliases_dest_path, aqua_registry_aliases_code(&registries)?)?;
+    fs::write(
+        search_words_dest_path,
+        aqua_registry_search_words_code(&registries),
+    )?;
 
     let metadata = serde_yaml::from_str::<Value>(&fs::read_to_string(metadata_file)?)?;
     let repository = yaml_string_field(&metadata, "repository").ok_or_else(|| {
@@ -436,6 +420,7 @@ fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackag
             id,
             content,
             aliases: row.aliases.clone(),
+            search_words: package.search_words.clone(),
         });
     }
     Ok(registries)
@@ -521,6 +506,28 @@ fn aqua_registry_aliases_code(registries: &[AquaPackageRegistry]) -> Result<Stri
     let entries = aliases.into_iter().collect::<Vec<_>>();
 
     Ok(aqua_registry_string_map_code(&entries))
+}
+
+fn aqua_registry_search_words_code(registries: &[AquaPackageRegistry]) -> String {
+    let entries = registries
+        .iter()
+        .filter(|registry| !registry.search_words.is_empty())
+        .map(|registry| {
+            let words = registry
+                .search_words
+                .iter()
+                .map(|word| raw_string_literal(word))
+                .collect::<Vec<_>>()
+                .join(", ");
+            (registry.id.clone(), format!("&[{words}]"))
+        })
+        .collect::<Vec<_>>();
+
+    let mut map = phf_codegen::Map::new();
+    for (key, value) in &entries {
+        map.entry(key, value);
+    }
+    map.build().to_string()
 }
 
 fn aqua_registry_string_map_code(entries: &[(String, String)]) -> String {

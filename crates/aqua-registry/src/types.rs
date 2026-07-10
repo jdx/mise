@@ -59,6 +59,8 @@ pub struct AquaPackage {
     pub asset: String,
     pub url: String,
     pub description: Option<String>,
+    pub link: Option<String>,
+    pub search_words: Vec<String>,
     pub format: String,
     pub rosetta2: bool,
     pub windows_arm_emulation: bool,
@@ -380,6 +382,8 @@ impl Default for AquaPackage {
             asset: String::new(),
             url: String::new(),
             description: None,
+            link: None,
+            search_words: Vec::new(),
             format: String::new(),
             rosetta2: false,
             windows_arm_emulation: false,
@@ -1485,6 +1489,24 @@ packages:
 
         assert_eq!(pkg.replacements.get("386"), Some(&"i686".to_string()));
         assert_eq!(pkg.vars[0].default.as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn test_registry_package_row_preserves_search_metadata() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - repo_owner: example
+    repo_name: tool
+    link: https://example.com/tool
+    search_words:
+      - alternate name
+      - category
+"#,
+        );
+
+        assert_eq!(pkg.link.as_deref(), Some("https://example.com/tool"));
+        assert_eq!(pkg.search_words, ["alternate name", "category"]);
     }
 
     #[test]

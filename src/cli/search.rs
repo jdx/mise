@@ -115,33 +115,23 @@ impl Search {
                 if name.is_empty() {
                     Some((0, short, rt))
                 } else {
-                    let candidates =
-                        std::iter::once(short.as_str()).chain(rt.search_words.iter().copied());
                     match self.match_type {
                         MatchType::Equal => {
-                            if candidates.into_iter().any(|candidate| candidate == name) {
+                            if *short == name {
                                 Some((0, short, rt))
                             } else {
                                 None
                             }
                         }
                         MatchType::Contains => {
-                            if candidates
-                                .into_iter()
-                                .any(|candidate| candidate.contains(name))
-                            {
+                            if short.contains(name) {
                                 Some((0, short, rt))
                             } else {
                                 None
                             }
                         }
-                        MatchType::Fuzzy => candidates
-                            .into_iter()
-                            .filter_map(|candidate| {
-                                fuzzy_matcher
-                                    .score_pattern(&candidate.to_lowercase(), &fuzzy_pattern)
-                            })
-                            .max()
+                        MatchType::Fuzzy => fuzzy_matcher
+                            .score_pattern(&short.to_lowercase(), &fuzzy_pattern)
                             .map(|score| (score, short, rt)),
                     }
                 }
@@ -175,24 +165,39 @@ impl Search {
             .map(|s| s.to_string())
             .filter_map(|id| {
                 let tool_name = id.rsplit_once('/').map_or(id.as_str(), |(_, name)| name);
+                let candidates = std::iter::once(tool_name).chain(
+                    crate::aqua::standard_registry::search_words(&id)
+                        .iter()
+                        .copied(),
+                );
                 let score = match self.match_type {
                     MatchType::Equal => {
-                        if tool_name == name || id == name || format!("aqua:{id}") == name {
+                        if id == name
+                            || format!("aqua:{id}") == name
+                            || candidates.into_iter().any(|candidate| candidate == name)
+                        {
                             Some(0)
                         } else {
                             None
                         }
                     }
                     MatchType::Contains => {
-                        if tool_name.contains(name) || id.contains(name) {
+                        if id.contains(name)
+                            || candidates
+                                .into_iter()
+                                .any(|candidate| candidate.contains(name))
+                        {
                             Some(0)
                         } else {
                             None
                         }
                     }
-                    MatchType::Fuzzy => {
-                        fuzzy_matcher.score_pattern(&tool_name.to_lowercase(), fuzzy_pattern)
-                    }
+                    MatchType::Fuzzy => candidates
+                        .into_iter()
+                        .filter_map(|candidate| {
+                            fuzzy_matcher.score_pattern(&candidate.to_lowercase(), fuzzy_pattern)
+                        })
+                        .max(),
                 }?;
 
                 Some((

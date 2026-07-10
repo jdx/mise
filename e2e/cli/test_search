@@ -12,9 +12,9 @@ jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jq
 
 assert "mise search --match-type equal jq" "jq  Command-line JSON processor. https://github.com/jqlang/jq"
 
-assert "mise search --match-type equal find" "fd  A simple, fast and user-friendly alternative to 'find'. https://github.com/sharkdp/fd"
-assert_contains "mise search --match-type contains find" "fd  A simple, fast and user-friendly alternative to 'find'. https://github.com/sharkdp/fd"
-assert_contains "mise search find" "fd  A simple, fast and user-friendly alternative to 'find'. https://github.com/sharkdp/fd"
+assert "mise search --match-type equal bluemix" "aqua:IBM-Cloud/ibm-cloud-cli-release  Command line interface for IBM Cloud. https://github.com/IBM-Cloud/ibm-cloud-cli-release"
+assert_contains "mise search --match-type contains bluem" "aqua:IBM-Cloud/ibm-cloud-cli-release"
+assert_contains "mise search bluemix" "aqua:IBM-Cloud/ibm-cloud-cli-release"
 
 assert_contains "mise search 7zip" "aqua:ip7z/7zip"
 assert_contains "mise search --match-type contains 7zip" "aqua:ip7z/7zip"
