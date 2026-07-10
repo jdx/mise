@@ -1505,6 +1505,24 @@ packages:
     }
 
     #[test]
+    fn test_registry_package_private_survives_version_override() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: github_release
+    private: true
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: tool.tar.gz
+"#,
+        )
+        .with_version(&["1.0.0"], "linux", "amd64");
+
+        assert!(pkg.private);
+    }
+
+    #[test]
     fn test_github_artifact_attestations_predicate_type() {
         let pkg = first_registry_package(
             r#"
