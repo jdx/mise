@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
@@ -370,40 +371,78 @@ impl Client {
         headers: &HeaderMap,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
+        self.download_file_with_headers_timeout(
+            url,
+            path,
+            headers,
+            pr,
+            Settings::get().http_download_timeout(),
+        )
+        .await
+    }
+
+    async fn download_file_with_headers_timeout<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        headers: &HeaderMap,
+        pr: Option<&dyn SingleReport>,
+        total_timeout: Duration,
+    ) -> Result<()> {
         ensure!(!Settings::get().offline(), "offline mode is enabled");
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
         let parent = path.parent().unwrap();
         file::create_dir_all(parent)?;
+        let attempt = Arc::new(AtomicUsize::new(0));
+        let bytes_received = Arc::new(AtomicU64::new(0));
 
         // Retry the whole download so a mid-stream chunk failure restarts from
         // byte 0 instead of failing the install. send_once_with_https_fallback
         // (not send_with_https_fallback) is used inside to avoid retry-on-retry.
-        retry_async("GET", &url, || async {
-            let mut resp = self
-                .send_once_with_https_fallback(Method::GET, url.clone(), headers, "GET")
-                .await?;
-            if let Some(length) = resp.content_length()
-                && let Some(pr) = pr
-            {
-                // Reset progress on each attempt
-                pr.set_length(length);
-                pr.set_position(0);
-            }
-            let mut file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
-            while let Some(chunk) = resp.chunk().await? {
-                if crate::ui::ctrlc::is_cancelled() {
-                    bail!("download cancelled by user");
+        let download = retry_async("GET", &url, || {
+            let attempt = attempt.clone();
+            let bytes_received = bytes_received.clone();
+            let request_url = url.clone();
+            async move {
+                attempt.fetch_add(1, Ordering::Relaxed);
+                bytes_received.store(0, Ordering::Relaxed);
+                let mut resp = self
+                    .send_once_with_https_fallback(Method::GET, request_url, headers, "GET")
+                    .await?;
+                if let Some(length) = resp.content_length()
+                    && let Some(pr) = pr
+                {
+                    // Reset progress on each attempt
+                    pr.set_length(length);
+                    pr.set_position(0);
                 }
-                file.write_all(&chunk)?;
-                if let Some(pr) = pr {
-                    pr.inc(chunk.len() as u64);
+                let mut file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
+                while let Some(chunk) = resp.chunk().await? {
+                    if crate::ui::ctrlc::is_cancelled() {
+                        bail!("download cancelled by user");
+                    }
+                    file.write_all(&chunk)?;
+                    bytes_received.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+                    if let Some(pr) = pr {
+                        pr.inc(chunk.len() as u64);
+                    }
                 }
+                file.persist(path)?;
+                Ok(())
             }
-            file.persist(path)?;
-            Ok(())
-        })
-        .await
+        });
+
+        match tokio::time::timeout(total_timeout, download).await {
+            Ok(result) => result,
+            Err(_) => bail!(
+                "HTTP download timed out after {} for {} (attempt {}, {} bytes received; change with `http_download_timeout` or env `MISE_HTTP_DOWNLOAD_TIMEOUT`)",
+                format_duration(total_timeout),
+                url,
+                attempt.load(Ordering::Relaxed),
+                bytes_received.load(Ordering::Relaxed),
+            ),
+        }
     }
 
     async fn send_with_https_fallback(
@@ -1085,6 +1124,7 @@ where
     let mut backoff = default_backoff_strategy(retries);
     let mut attempt: usize = 1;
     loop {
+        let started_at = Instant::now();
         match f().await {
             Ok(value) => return Ok(value),
             Err(err) => {
@@ -1095,8 +1135,13 @@ where
                     return Err(err);
                 };
                 warn!(
-                    "HTTP {} {} attempt {} failed (transient): {}; retrying in {:?}",
-                    verb_label, url, attempt, err, delay
+                    "HTTP {} {} attempt {} failed after {} (transient): {}; retrying in {:?}",
+                    verb_label,
+                    url,
+                    attempt,
+                    format_duration(started_at.elapsed()),
+                    err,
+                    delay
                 );
                 tokio::time::sleep(delay).await;
                 attempt += 1;
@@ -1334,6 +1379,36 @@ mod tests {
         (port, count, requests)
     }
 
+    async fn spawn_trickling_server() -> u16 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut request = [0u8; 4096];
+            let _ = socket.read(&mut request).await;
+            if socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 1000000\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .is_err()
+            {
+                return;
+            }
+            loop {
+                if socket.write_all(b"x").await.is_err() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        });
+        port
+    }
+
     fn ok_response() -> &'static str {
         "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
     }
@@ -1568,6 +1643,38 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert!(resp.status().is_success());
         // Should have served 3 connections: two 502s + one 200.
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_total_timeout_bounds_trickling_response() {
+        let port = spawn_trickling_server().await;
+        let url = format!("http://127.0.0.1:{port}/artifact.tar.gz");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("artifact.tar.gz");
+        // The server sends a byte every 10ms, so the 100ms idle read timeout
+        // never fires. The separate total budget must still end the download.
+        let client = Client::new(Duration::from_millis(100), ClientKind::Http).unwrap();
+        let started_at = Instant::now();
+        let err = client
+            .download_file_with_headers_timeout(
+                &url,
+                &path,
+                &HeaderMap::new(),
+                None,
+                Duration::from_millis(75),
+            )
+            .await
+            .unwrap_err();
+        let message = err.to_string();
+
+        assert!(started_at.elapsed() < Duration::from_secs(1));
+        assert!(message.contains("HTTP download timed out after 75.0ms"));
+        assert!(message.contains(&url));
+        assert!(message.contains("attempt 1"));
+        assert!(message.contains("bytes received"));
+        assert!(message.contains("http_download_timeout"));
+        assert!(message.contains("MISE_HTTP_DOWNLOAD_TIMEOUT"));
+        assert!(!path.exists());
     }
 
     #[tokio::test(flavor = "current_thread")]
