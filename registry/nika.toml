@@ -1,0 +1,3 @@
+backends = ["github:supernovae-st/nika"]
+description = "Workflow language for AI - one YAML file, 4 verbs, one Rust binary; statically checked before any token is spent"
+test = { cmd = "nika --version", expected = "nika {{version}}" }
