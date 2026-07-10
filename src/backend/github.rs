@@ -245,6 +245,9 @@ pub fn install_time_option_keys() -> Vec<String> {
         "no_app".into(),
         "matching".into(),
         "matching_regex".into(),
+        "bin".into(),
+        "rename_exe".into(),
+        "bin_path".into(),
     ]
 }
 
@@ -2492,6 +2495,22 @@ mod tests {
         let keys = install_time_option_keys();
         assert!(keys.contains(&"matching".to_string()));
         assert!(keys.contains(&"matching_regex".to_string()));
+    }
+
+    #[test]
+    fn test_layout_options_are_install_time_keys() {
+        for backend_type in [
+            BackendType::Github,
+            BackendType::Gitlab,
+            BackendType::Forgejo,
+        ] {
+            for key in ["bin", "rename_exe", "bin_path"] {
+                assert!(
+                    crate::backend::is_install_time_option_key_for_type(&backend_type, key),
+                    "{key} must be an install-time key for {backend_type:?}"
+                );
+            }
+        }
     }
 
     #[test]
