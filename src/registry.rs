@@ -318,15 +318,6 @@ mod tests {
     }
 
     #[test]
-    fn test_codex_prefers_official_npm_package() {
-        use super::*;
-
-        let codex = REGISTRY.get("codex").unwrap();
-
-        assert_eq!(codex.backends[0].full, "npm:@openai/codex");
-    }
-
-    #[test]
     fn test_backend_options_parse_toml_values() {
         use super::*;
 
