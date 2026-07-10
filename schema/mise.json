@@ -647,11 +647,6 @@
               "description": "Use cargo-binstall instead of cargo install if available",
               "type": "boolean"
             },
-            "binstall_quickinstall": {
-              "default": true,
-              "description": "Allow cargo-binstall to use third-party cargo-quickinstall artifacts.",
-              "type": "boolean"
-            },
             "binstall_native": {
               "description": "[experimental] Use mise's native cargo binary installer when cargo-binstall is unavailable.",
               "type": "boolean"
@@ -659,6 +654,11 @@
             "binstall_only": {
               "default": false,
               "description": "Only use cargo-binstall for installation, fail if not available.",
+              "type": "boolean"
+            },
+            "binstall_quickinstall": {
+              "default": true,
+              "description": "Allow cargo-binstall to use third-party cargo-quickinstall artifacts.",
               "type": "boolean"
             },
             "registry_name": {

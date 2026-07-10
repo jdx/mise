@@ -328,8 +328,9 @@ default = true
 description = "Allow cargo-binstall to use third-party cargo-quickinstall artifacts."
 docs = """
 If true (the default), mise allows the external `cargo-binstall` binary to use artifacts from
-the third-party cargo-quickinstall host. These artifacts are separate from crate-author GitHub
-releases and artifacts declared in `package.metadata.binstall`.
+the third-party [cargo-quickinstall](https://github.com/cargo-bins/cargo-quickinstall) host. These
+artifacts are separate from crate-author GitHub releases and artifacts declared in
+`package.metadata.binstall`.
 
 If false, mise passes `--disable-strategies quick-install` when invoking the external
 `cargo-binstall` binary. This setting does not affect mise's `cargo.binstall_native` path, which
