@@ -1,3 +1,3 @@
 backends = ["aqua:git-town/git-town"]
-description = " Git branches made easy"
+description = "Git branches made easy"
 test = { cmd = "git-town --version", expected = "Git Town {{version}}" }
