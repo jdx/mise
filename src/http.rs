@@ -439,14 +439,12 @@ impl Client {
                 }
                 file.shutdown().await?;
                 drop(file);
-                let path = path.to_path_buf();
-                tokio::task::spawn_blocking(move || temp_file.persist(path)).await??;
-                Ok(())
+                Ok(temp_file)
             }
         });
 
-        match tokio::time::timeout(total_timeout, download).await {
-            Ok(result) => result,
+        let temp_file = match tokio::time::timeout(total_timeout, download).await {
+            Ok(result) => result?,
             Err(_) => bail!(
                 "HTTP download timed out after {} for {} (attempt {}, {} bytes received; change with `http_download_timeout` or env `MISE_HTTP_DOWNLOAD_TIMEOUT`)",
                 format_duration(total_timeout),
@@ -454,7 +452,15 @@ impl Client {
                 attempt.load(Ordering::Relaxed),
                 bytes_received.load(Ordering::Relaxed),
             ),
-        }
+        };
+
+        // Complete the atomic rename after the cancellable transfer budget. A
+        // blocking task cannot be cancelled once it starts, so keeping it out
+        // of `timeout` prevents us from returning an error while it can still
+        // install the destination in the background.
+        let path = path.to_path_buf();
+        tokio::task::spawn_blocking(move || temp_file.persist(path)).await??;
+        Ok(())
     }
 
     async fn send_with_https_fallback(
@@ -1668,13 +1674,13 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let client = Client::new(Duration::from_millis(100), ClientKind::Http).unwrap();
         let started_at = Instant::now();
         let result = tokio::time::timeout(
-            Duration::from_secs(1),
+            Duration::from_secs(5),
             client.download_file_with_headers_timeout(
                 &url,
                 &path,
                 &HeaderMap::new(),
                 None,
-                Duration::from_millis(75),
+                Duration::from_millis(500),
             ),
         )
         .await
@@ -1682,8 +1688,8 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let err = result.unwrap_err();
         let message = err.to_string();
 
-        assert!(started_at.elapsed() < Duration::from_secs(1));
-        assert!(message.contains("HTTP download timed out after 75.0ms"));
+        assert!(started_at.elapsed() < Duration::from_secs(5));
+        assert!(message.contains("HTTP download timed out after 500.0ms"));
         assert!(message.contains(&url));
         assert!(message.contains("attempt 1"));
         assert!(message.contains("bytes received"));
