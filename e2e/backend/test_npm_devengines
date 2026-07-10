@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Regression for https://github.com/jdx/mise/discussions/10492
+# Project package.json with non-npm devEngines must not block npm: resolution.
+
+export NPM_CONFIG_FUND=false
+export MISE_GPG_VERIFY=false
+
+mise use node
+
+cat >package.json <<'EOF'
+{
+  "name": "repro",
+  "private": true,
+  "devEngines": {
+    "packageManager": { "name": "bun", "version": "1", "onFail": "error" }
+  }
+}
+EOF
+
+# Sanity: bare npm view in this cwd fails under the project's devEngines.
+assert_fail "npm view cowsay version --json"
+
+assert_contains "mise latest npm:cowsay" "1."
+assert_contains "mise x npm:cowsay@1.6.0 -- cowsay hi" "hi"
