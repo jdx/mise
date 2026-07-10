@@ -71,9 +71,10 @@ mise install
 INSTALL_PATH=$(mise where "vfox:file://$PLUGIN_DIR")
 assert "cat '$INSTALL_PATH/version.txt'" "content-v1"
 
-# --- step 2: same checksum → skip reinstall ---
-# Dry-run must report "already installed" when nothing changed upstream.
-assert_contains "mise install --dry-run" "already installed"
+# --- step 2: same checksum → no upgrade needed ---
+# mise upgrade --dry-run must produce no "Would install" output when the
+# installed checksum already matches the upstream value.
+assert_not_contains "mise upgrade --dry-run" "Would install"
 
 # --- step 3: upstream checksum changes → reinstall ---
 # Update the plugin so nightly now has a different checksum and different content.
@@ -97,9 +98,25 @@ LUA
 git -C "$PLUGIN_DIR" add .
 git -C "$PLUGIN_DIR" -c user.name="mise" -c user.email="mise@example.com" commit -q -m "bump nightly to v2"
 
-# mise install must detect the checksum change and reinstall in place.
-mise install
+# Refresh the plugin clone from the updated source repo. mise clones file://
+# plugins into $MISE_DATA_DIR/plugins/ at first install and does not re-read
+# the source dir automatically. Refreshing also busts the version-list cache
+# (it uses with_fresh_file on the plugin path) so available.lua is re-executed.
+mise plugins update
+
+# Dry-run must report "Would install" after the checksum change. mise upgrade
+# detects rolling-version staleness via OutdatedInfo / is_rolling_version_outdated,
+# which compares the upstream checksum (available.lua) against the stored one
+# (.mise.checksum written by post_install). mise install --dry-run is not used
+# here because missing_tools only checks is_version_installed and never reaches
+# the rolling_reinstall path for an already-present install dir.
+# Note: tv.version == tv.request.version() == "nightly" for this fixture, so the
+# test does not distinguish a key mismatch between those two fields.
+assert_contains "mise upgrade --dry-run" "Would install"
+
+# mise upgrade detects the checksum change and reinstalls in place.
+mise upgrade
 assert "cat '$INSTALL_PATH/version.txt'" "content-v2"
 
-# --- step 4: checksum now matches → skip again ---
-assert_contains "mise install --dry-run" "already installed"
+# --- step 4: checksum now matches → no further upgrade ---
+assert_not_contains "mise upgrade --dry-run" "Would install"
