@@ -40,6 +40,7 @@ use std::{
     fs,
     sync::Arc,
 };
+use url::Url;
 
 #[derive(Debug)]
 pub struct AquaBackend {
@@ -543,7 +544,12 @@ impl Backend for AquaBackend {
                             (url_prefixed, url_api_prefixed, v_prefixed, digest_prefixed)
                         } else {
                             // If they are different, check existence
-                            match HTTP.head(&url_prefixed).await {
+                            let probe_url = select_github_probe_url(
+                                pkg.private,
+                                &url_prefixed,
+                                url_api_prefixed.as_deref(),
+                            );
+                            match HTTP.head(probe_url).await {
                                 Ok(_) => {
                                     (url_prefixed, url_api_prefixed, v_prefixed, digest_prefixed)
                                 }
@@ -570,8 +576,7 @@ impl Backend for AquaBackend {
 
         // Public repos download from the browser URL; private repos return 404/HTML there
         // and must be fetched from the API asset endpoint instead.
-        let download_url =
-            select_github_release_download_url(pkg.private, &url, url_api.as_deref()).await;
+        let download_url = select_github_download_url(pkg.private, &url, url_api.as_deref()).await;
         self.download(ctx, &tv, &download_url, &filename).await?;
 
         if validated_url.is_none() {
@@ -810,10 +815,18 @@ impl Backend for AquaBackend {
                 }
                 result
             }
-            AquaPackageType::GithubArchive => (Some(self.github_archive_url(&pkg, &v)), None, None),
+            AquaPackageType::GithubArchive => (
+                Some(self.github_archive_url(&pkg, &v)),
+                Some(self.github_archive_api_url(&pkg, &v)),
+                None,
+            ),
             AquaPackageType::GithubContent => {
                 if pkg.path.is_some() {
-                    (Some(self.github_content_url(&pkg, &v)), None, None)
+                    (
+                        Some(self.github_content_url(&pkg, &v)),
+                        Some(self.github_content_api_url(&pkg, &v)),
+                        None,
+                    )
                 } else {
                     bail!("github_content package requires `path`")
                 }
@@ -1426,8 +1439,7 @@ impl AquaBackend {
     ) -> Result<String> {
         let (provenance_url, url_api) = self.resolve_slsa_url(pkg, v, os(), arch()).await?;
         let download_url =
-            select_github_release_download_url(pkg.private, &provenance_url, url_api.as_deref())
-                .await;
+            select_github_download_url(pkg.private, &provenance_url, url_api.as_deref()).await;
         let provenance_path = download_dir.join(get_filename_from_url(&provenance_url));
         HTTP.download_file(&download_url, &provenance_path, pr)
             .await?;
@@ -1896,8 +1908,7 @@ impl AquaBackend {
     }
 
     /// Returns `(url, url_api, checked, digest)` where `url_api` is the GitHub API asset
-    /// endpoint used as a download fallback for private repositories (only set for
-    /// `GithubRelease` packages; other package types have no separate API endpoint).
+    /// endpoint used as a download fallback for private repositories.
     async fn get_url(
         &self,
         pkg: &AquaPackage,
@@ -1910,14 +1921,22 @@ impl AquaBackend {
                 .map(|(url, url_api, digest)| (url, url_api, true, digest)),
             AquaPackageType::GithubContent => {
                 if pkg.path.is_some() {
-                    Ok((self.github_content_url(pkg, v), None, false, None))
+                    Ok((
+                        self.github_content_url(pkg, v),
+                        Some(self.github_content_api_url(pkg, v)),
+                        false,
+                        None,
+                    ))
                 } else {
                     bail!("github_content package requires `path`")
                 }
             }
-            AquaPackageType::GithubArchive => {
-                Ok((self.github_archive_url(pkg, v), None, false, None))
-            }
+            AquaPackageType::GithubArchive => Ok((
+                self.github_archive_url(pkg, v),
+                Some(self.github_archive_api_url(pkg, v)),
+                false,
+                None,
+            )),
             AquaPackageType::Http => pkg.url(v, os(), arch()).map(|url| (url, None, false, None)),
             ref t => bail!("unsupported aqua package type: {t}"),
         }
@@ -1962,8 +1981,7 @@ impl AquaBackend {
         asset_strs: IndexSet<String>,
     ) -> Result<(String, String)> {
         let (url, url_api, _) = self.github_release_asset(pkg, v, asset_strs).await?;
-        let transport =
-            select_github_release_download_url(pkg.private, &url, url_api.as_deref()).await;
+        let transport = select_github_download_url(pkg.private, &url, url_api.as_deref()).await;
         Ok((url, transport))
     }
 
@@ -2026,10 +2044,42 @@ impl AquaBackend {
         format!("https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz")
     }
 
+    fn github_archive_api_url(&self, pkg: &AquaPackage, v: &str) -> String {
+        let mut url = Url::parse(github::API_URL).expect("GitHub API URL should be valid");
+        url.path_segments_mut()
+            .expect("GitHub API URL should support path segments")
+            .extend([
+                "repos",
+                pkg.repo_owner.as_str(),
+                pkg.repo_name.as_str(),
+                "tarball",
+                v,
+            ]);
+        url.to_string()
+    }
+
     fn github_content_url(&self, pkg: &AquaPackage, v: &str) -> String {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let path = pkg.path.as_deref().unwrap();
         format!("https://raw.githubusercontent.com/{gh_id}/{v}/{path}")
+    }
+
+    fn github_content_api_url(&self, pkg: &AquaPackage, v: &str) -> String {
+        let mut url = Url::parse(github::API_URL).expect("GitHub API URL should be valid");
+        {
+            let mut segments = url
+                .path_segments_mut()
+                .expect("GitHub API URL should support path segments");
+            segments.extend([
+                "repos",
+                pkg.repo_owner.as_str(),
+                pkg.repo_name.as_str(),
+                "contents",
+            ]);
+            segments.extend(pkg.path.as_deref().unwrap().split('/'));
+        }
+        url.query_pairs_mut().append_pair("ref", v);
+        url.to_string()
     }
 
     /// Fetch checksum from a checksum file without downloading the actual tarball.
@@ -3084,7 +3134,7 @@ fn cosign_opt_value<'a>(opts: &'a [String], flag: &str) -> Option<&'a str> {
         .map(|pair| pair[1].as_str())
 }
 
-async fn select_github_release_download_url(
+async fn select_github_download_url(
     private: bool,
     browser_url: &str,
     api_url: Option<&str>,
@@ -3093,6 +3143,18 @@ async fn select_github_release_download_url(
         Some(api_url) if private => api_url.to_string(),
         Some(api_url) => github::pick_reachable_asset_url(browser_url, api_url).await,
         None => browser_url.to_string(),
+    }
+}
+
+fn select_github_probe_url<'a>(
+    private: bool,
+    browser_url: &'a str,
+    api_url: Option<&'a str>,
+) -> &'a str {
+    if private {
+        api_url.unwrap_or(browser_url)
+    } else {
+        browser_url
     }
 }
 
@@ -3260,22 +3322,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_private_github_release_uses_api_url_without_probe() {
+    async fn test_private_github_download_uses_api_url_without_probe() {
         let browser_url = "not a valid URL";
         let api_url = "https://api.github.com/repos/owner/repo/releases/assets/1";
 
         assert_eq!(
-            select_github_release_download_url(true, browser_url, Some(api_url)).await,
+            select_github_download_url(true, browser_url, Some(api_url)).await,
             api_url
         );
     }
 
     #[tokio::test]
-    async fn test_github_release_without_api_url_uses_browser_url() {
+    async fn test_private_github_download_without_api_url_uses_browser_url() {
         let browser_url = "https://example.com/tool.tar.gz";
 
         assert_eq!(
-            select_github_release_download_url(true, browser_url, None).await,
+            select_github_download_url(true, browser_url, None).await,
+            browser_url
+        );
+    }
+
+    #[test]
+    fn test_private_github_probe_uses_api_url() {
+        let browser_url = "https://github.com/owner/repo/archive/refs/tags/v1.0.0.tar.gz";
+        let api_url = "https://api.github.com/repos/owner/repo/tarball/v1.0.0";
+
+        assert_eq!(
+            select_github_probe_url(true, browser_url, Some(api_url)),
+            api_url
+        );
+        assert_eq!(
+            select_github_probe_url(false, browser_url, Some(api_url)),
             browser_url
         );
     }
@@ -3323,6 +3400,39 @@ mod tests {
         assert_eq!(
             AquaBackend::effective_extraction_format(&pkg, "").unwrap(),
             ExtractionFormat::TarGz
+        );
+    }
+
+    #[test]
+    fn test_github_archive_api_url() {
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let mut pkg = AquaPackage::default();
+        pkg.repo_owner = "owner".to_string();
+        pkg.repo_name = "repo".to_string();
+
+        assert_eq!(
+            backend.github_archive_api_url(&pkg, "feature/private"),
+            "https://api.github.com/repos/owner/repo/tarball/feature%2Fprivate"
+        );
+    }
+
+    #[test]
+    fn test_github_content_api_url() {
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let mut pkg = AquaPackage::default();
+        pkg.repo_owner = "owner".to_string();
+        pkg.repo_name = "repo".to_string();
+        pkg.path = Some("bin/tool name".to_string());
+
+        assert_eq!(
+            backend.github_content_api_url(&pkg, "feature/private"),
+            "https://api.github.com/repos/owner/repo/contents/bin/tool%20name?ref=feature%2Fprivate"
         );
     }
 
