@@ -1530,20 +1530,6 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
-    /// Resolve an npm-style semver range (e.g. `^1.2.3`, `~1.0.0`, `>=2 <3`) to
-    /// the max satisfying concrete version via the backend's package manager.
-    ///
-    /// Return `Ok(None)` when `range` is not a semver range this backend can
-    /// resolve, or when resolution fails. Callers fall back to listing remote
-    /// versions and filtering with [`crate::semver::npm_semver_range_filter`].
-    async fn resolve_semver_range(
-        &self,
-        _config: &Arc<Config>,
-        _range: &str,
-    ) -> eyre::Result<Option<String>> {
-        Ok(None)
-    }
-
     /// Whether `version` names a rolling release channel (e.g. zig's "master")
     /// rather than a concrete version. Cheap (no network). Channels are re-resolved
     /// to a concrete version like "latest" so `mise upgrade`/`outdated` can track
