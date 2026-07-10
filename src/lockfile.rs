@@ -1669,14 +1669,15 @@ pub fn update_lockfiles(
             if regressing_tools.contains(&short) {
                 continue;
             }
-            let mut merged_tools = merge_tool_entries(entries, existing_lockfile.tools.get(&short));
+            let mut merged = merge_tool_entries(entries, existing_lockfile.tools.get(&short));
             if is_monorepo_root_lockfile {
                 preserve_absent_tool_entries(
-                    &mut merged_tools,
+                    &mut merged.tools,
                     existing_lockfile.tools.get(&short),
+                    &merged.adopted_existing_keys,
                 );
             }
-            existing_lockfile.tools.insert(short, merged_tools);
+            existing_lockfile.tools.insert(short, merged.tools);
         }
 
         // Merge conda packages from new_versions into the lockfile
@@ -2281,6 +2282,11 @@ fn lockfile_options_are_strict_subset(
             .all(|(key, value)| resolved.get(key) == Some(value))
 }
 
+struct MergedToolEntries {
+    tools: Vec<LockfileTool>,
+    adopted_existing_keys: HashSet<(String, BTreeMap<String, String>)>,
+}
+
 /// Merge tool entries with deduplication by (version, options).
 /// Merges platform info for entries with the same key.
 /// Preserves existing platform info for matching entries.
@@ -2290,9 +2296,10 @@ fn lockfile_options_are_strict_subset(
 fn merge_tool_entries(
     entries: Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
-) -> Vec<LockfileTool> {
+) -> MergedToolEntries {
     // Group by (version, options) - the key for deduplication
     let mut by_key: HashMap<(String, BTreeMap<String, String>), LockfileTool> = HashMap::new();
+    let mut adopted_existing_keys = HashSet::new();
 
     for tool in entries {
         let key = (tool.version.clone(), tool.options.clone());
@@ -2346,20 +2353,25 @@ fn merge_tool_entries(
                         .and_modify(|existing| *existing = existing.merge_with(info))
                         .or_insert(info.clone());
                 }
+                adopted_existing_keys.insert(key);
             }
         }
     }
 
     // Convert to final list
-    by_key
-        .into_values()
-        .sorted_by(|a, b| a.version.cmp(&b.version))
-        .collect()
+    MergedToolEntries {
+        tools: by_key
+            .into_values()
+            .sorted_by(|a, b| a.version.cmp(&b.version))
+            .collect(),
+        adopted_existing_keys,
+    }
 }
 
 fn preserve_absent_tool_entries(
     merged_tools: &mut Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
+    adopted_existing_keys: &HashSet<(String, BTreeMap<String, String>)>,
 ) {
     let Some(existing_tools) = existing_tools else {
         return;
@@ -2368,29 +2380,14 @@ fn preserve_absent_tool_entries(
         .iter()
         .map(|tool| (tool.version.clone(), tool.options.clone()))
         .collect();
-    // Snapshot the freshly merged entries before this function appends any
-    // existing-only entries. Only fresh entries can be adoption targets.
-    let adoption_targets = merged_tools
-        .iter()
-        .map(|tool| (tool.version.clone(), tool.options.clone()))
-        .collect_vec();
-
     for existing_tool in existing_tools {
         // merge_tool_entries adopted this entry into its unique compatible
         // superset, so its platforms are already present there. Do not resurrect
         // the old option subset as a duplicate sibling.
-        if adoption_targets
-            .iter()
-            .filter(|(version, options)| {
-                version == &existing_tool.version
-                    && lockfile_options_are_strict_subset(&existing_tool.options, options)
-            })
-            .exactly_one()
-            .is_ok()
-        {
+        let key = (existing_tool.version.clone(), existing_tool.options.clone());
+        if adopted_existing_keys.contains(&key) {
             continue;
         }
-        let key = (existing_tool.version.clone(), existing_tool.options.clone());
         if keys.insert(key) {
             merged_tools.push(existing_tool.clone());
         }
@@ -3327,9 +3324,14 @@ options = { exe = "rg" }
         let mut merged =
             merge_tool_entries(vec![basic_tool("22.0.0", "core:node")], Some(&existing));
 
-        preserve_absent_tool_entries(&mut merged, Some(&existing));
+        preserve_absent_tool_entries(
+            &mut merged.tools,
+            Some(&existing),
+            &merged.adopted_existing_keys,
+        );
 
         let versions = merged
+            .tools
             .iter()
             .map(|tool| tool.version.as_str())
             .collect_vec();
@@ -3369,12 +3371,21 @@ options = { exe = "rg" }
             Some(&existing),
         );
 
-        preserve_absent_tool_entries(&mut merged, Some(&existing));
+        preserve_absent_tool_entries(
+            &mut merged.tools,
+            Some(&existing),
+            &merged.adopted_existing_keys,
+        );
 
         // Single entry: adopted, not duplicated — and it kept the platforms.
-        assert_eq!(merged.len(), 1, "adopted entry duplicated: {merged:?}");
         assert_eq!(
-            merged[0].platforms["linux-x64"].checksum.as_deref(),
+            merged.tools.len(),
+            1,
+            "adopted entry duplicated: {:?}",
+            merged.tools
+        );
+        assert_eq!(
+            merged.tools[0].platforms["linux-x64"].checksum.as_deref(),
             Some("sha256:OLD")
         );
 
@@ -3389,7 +3400,7 @@ options = { exe = "rg" }
             platforms: BTreeMap::new(),
         });
         let mut merged = vec![basic_tool("22.0.0", "core:node")];
-        preserve_absent_tool_entries(&mut merged, Some(&fragmented));
+        preserve_absent_tool_entries(&mut merged, Some(&fragmented), &HashSet::new());
         assert_eq!(
             merged.len(),
             3,
@@ -3440,11 +3451,12 @@ options = { exe = "rg" }
         let merged = merge_tool_entries(fresh, Some(&existing));
 
         assert_eq!(
-            merged.len(),
+            merged.tools.len(),
             1,
-            "expected a single merged entry, got {merged:?}"
+            "expected a single merged entry, got {:?}",
+            merged.tools
         );
-        let tool = &merged[0];
+        let tool = &merged.tools[0];
         assert_eq!(tool.options, new_options);
         assert_eq!(tool.platforms.len(), 2);
         assert_eq!(
@@ -3489,13 +3501,17 @@ options = { exe = "rg" }
         }];
 
         let mut merged = merge_tool_entries(fresh, Some(&existing));
-        preserve_absent_tool_entries(&mut merged, Some(&existing));
+        preserve_absent_tool_entries(
+            &mut merged.tools,
+            Some(&existing),
+            &merged.adopted_existing_keys,
+        );
 
-        assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].options, resolved_options);
-        assert_eq!(merged[0].platforms.len(), 2);
+        assert_eq!(merged.tools.len(), 1);
+        assert_eq!(merged.tools[0].options, resolved_options);
+        assert_eq!(merged.tools[0].platforms.len(), 2);
         assert_eq!(
-            merged[0].platforms["macos-arm64"].checksum.as_deref(),
+            merged.tools[0].platforms["macos-arm64"].checksum.as_deref(),
             Some("sha256:OLD")
         );
     }
@@ -3526,8 +3542,8 @@ options = { exe = "rg" }
 
         let merged = merge_tool_entries(fresh, Some(&existing));
 
-        assert_eq!(merged.len(), 1);
-        assert!(merged[0].platforms.is_empty());
+        assert_eq!(merged.tools.len(), 1);
+        assert!(merged.tools[0].platforms.is_empty());
     }
 
     #[test]
@@ -3555,11 +3571,16 @@ options = { exe = "rg" }
             .collect_vec();
 
         let mut merged = merge_tool_entries(fresh, Some(&existing));
-        preserve_absent_tool_entries(&mut merged, Some(&existing));
+        preserve_absent_tool_entries(
+            &mut merged.tools,
+            Some(&existing),
+            &merged.adopted_existing_keys,
+        );
 
-        assert_eq!(merged.len(), 3);
+        assert_eq!(merged.tools.len(), 3);
         assert_eq!(
             merged
+                .tools
                 .iter()
                 .find(|tool| tool.options.is_empty())
                 .unwrap()
