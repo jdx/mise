@@ -5412,7 +5412,6 @@ dependencies = [
  "taplo",
  "tar",
  "tempfile",
- "tera 1.20.1",
  "tera 2.0.0",
  "terminal_size",
  "test-log",
