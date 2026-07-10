@@ -1069,29 +1069,29 @@ impl Lockfile {
         platform_info: PlatformInfo,
     ) {
         let tools = self.tools.entry(short.to_string()).or_default();
-        // Find existing tool version with matching options, or (if the resolved
-        // options are non-empty and there's no exact match) adopt an entry for the
-        // same version that still has empty options — this is a tool whose backend
-        // just started reporting deterministic lockfile options (e.g. java's
-        // shorthand_vendor) where it previously reported none. Updating that
-        // entry's options in place keeps its already-collected platform checksums
-        // instead of orphaning them as a stale, never-matched sibling entry.
-        // (#10564)
+        // Find an exact match first. If the backend started reporting additional
+        // deterministic options, adopt a unique same-version entry whose existing
+        // options are a strict subset of the resolved options. Updating it in place
+        // keeps already-collected platform checksums instead of orphaning them as a
+        // never-matched sibling entry (#10564).
         let idx = tools
             .iter()
             .position(|t| t.version == version && &t.options == options)
             .or_else(|| {
-                if options.is_empty() {
-                    None
-                } else {
-                    tools
-                        .iter()
-                        .position(|t| t.version == version && t.options.is_empty())
-                }
+                tools
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, tool)| {
+                        tool.version == version
+                            && lockfile_options_are_strict_subset(&tool.options, options)
+                    })
+                    .map(|(idx, _)| idx)
+                    .exactly_one()
+                    .ok()
             });
         if let Some(idx) = idx {
             let tool = &mut tools[idx];
-            if tool.options.is_empty() && !options.is_empty() {
+            if &tool.options != options {
                 tool.options = options.clone();
             }
             // Merge with existing platform info, preferring new values when present.
@@ -2271,12 +2271,22 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
     Ok(())
 }
 
+fn lockfile_options_are_strict_subset(
+    existing: &BTreeMap<String, String>,
+    resolved: &BTreeMap<String, String>,
+) -> bool {
+    existing.len() < resolved.len()
+        && existing
+            .iter()
+            .all(|(key, value)| resolved.get(key) == Some(value))
+}
+
 /// Merge tool entries with deduplication by (version, options).
 /// Merges platform info for entries with the same key.
 /// Preserves existing platform info for matching entries.
-/// An existing entry with empty options is adopted into a freshly-resolved
-/// entry for the same version that now has non-empty options, instead of
-/// being silently dropped (#10564).
+/// An existing entry whose options are a strict subset is adopted into a
+/// freshly-resolved entry for the same version that now has additional options,
+/// instead of being silently dropped (#10564).
 fn merge_tool_entries(
     entries: Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
@@ -2313,21 +2323,20 @@ fn merge_tool_entries(
                 }
                 continue;
             }
-            // No exact (version, options) match. If this existing entry has no
-            // options and a freshly-resolved entry exists for the same version
-            // that now reports options, adopt its platform data into that entry
-            // instead of silently dropping it — a backend that starts reporting
-            // deterministic lockfile options (e.g. java's shorthand_vendor) must
-            // not orphan previously-collected checksums/URLs. (#10564)
-            // Pick the smallest matching key so the adoption target is
-            // deterministic even if several optioned entries share the version
-            // (HashMap iteration order is not).
-            if existing_tool.options.is_empty()
-                && let Some(adopt_key) = by_key
-                    .keys()
-                    .filter(|(v, opts)| v == &existing_tool.version && !opts.is_empty())
-                    .min()
-                    .cloned()
+            // No exact match. A backend may have started reporting an additional
+            // deterministic option while retaining existing ones, such as java
+            // adding shorthand_vendor to an entry that already had release_type.
+            // Adopt only when there is one compatible target; multiple supersets
+            // are ambiguous and may represent different artifacts.
+            if let Some(adopt_key) = by_key
+                .keys()
+                .filter(|(version, options)| {
+                    version == &existing_tool.version
+                        && lockfile_options_are_strict_subset(&existing_tool.options, options)
+                })
+                .exactly_one()
+                .ok()
+                .cloned()
             {
                 let entry = by_key.get_mut(&adopt_key).unwrap();
                 for (platform, info) in &existing_tool.platforms {
@@ -2359,33 +2368,26 @@ fn preserve_absent_tool_entries(
         .iter()
         .map(|tool| (tool.version.clone(), tool.options.clone()))
         .collect();
-
-    // Versions that the freshly-merged output already carries with non-empty
-    // options. Snapshot BEFORE the loop below appends preserved entries, so the
-    // check only matches merge_tool_entries' output (where the #10564 adoption
-    // happened), not entries this loop itself resurrects.
-    //
-    // This over-approximates "was actually adopted" as "has non-empty options
-    // in the output" — the two coincide here because every entry in
-    // `merged_tools` originates from the freshly-resolved `entries` passed to
-    // merge_tool_entries (an existing-only tool is never inserted there, only
-    // merged into a matching fresh entry), and merge_tool_entries' adoption
-    // loop unconditionally processes every existing_tool for a given version.
-    // So whenever a version's fresh entry has non-empty options, any
-    // same-version empty-options entry in `existing_tools` below (the same
-    // list merge_tool_entries was called with) was already merged into it.
-    let adopted_versions: HashSet<String> = merged_tools
+    // Snapshot the freshly merged entries before this function appends any
+    // existing-only entries. Only fresh entries can be adoption targets.
+    let adoption_targets = merged_tools
         .iter()
-        .filter(|t| !t.options.is_empty())
-        .map(|t| t.version.clone())
-        .collect();
+        .map(|tool| (tool.version.clone(), tool.options.clone()))
+        .collect_vec();
 
     for existing_tool in existing_tools {
-        // An empty-options entry whose version was freshly resolved with
-        // non-empty options was adopted by merge_tool_entries (#10564) — its
-        // platforms already live in the adopted entry, so don't resurrect it as
-        // a duplicate sibling.
-        if existing_tool.options.is_empty() && adopted_versions.contains(&existing_tool.version) {
+        // merge_tool_entries adopted this entry into its unique compatible
+        // superset, so its platforms are already present there. Do not resurrect
+        // the old option subset as a duplicate sibling.
+        if adoption_targets
+            .iter()
+            .filter(|(version, options)| {
+                version == &existing_tool.version
+                    && lockfile_options_are_strict_subset(&existing_tool.options, options)
+            })
+            .exactly_one()
+            .is_ok()
+        {
             continue;
         }
         let key = (existing_tool.version.clone(), existing_tool.options.clone());
@@ -3456,6 +3458,119 @@ options = { exe = "rg" }
     }
 
     #[test]
+    fn test_merge_tool_entries_adopts_existing_option_subset() {
+        let existing = vec![LockfileTool {
+            version: "26.0.0-ea".to_string(),
+            backend: Some("core:java".to_string()),
+            options: BTreeMap::from([("release_type".to_string(), "ea".to_string())]),
+            platforms: BTreeMap::from([(
+                "macos-arm64".to_string(),
+                PlatformInfo {
+                    checksum: Some("sha256:OLD".to_string()),
+                    ..Default::default()
+                },
+            )]),
+        }];
+        let resolved_options = BTreeMap::from([
+            ("release_type".to_string(), "ea".to_string()),
+            ("shorthand_vendor".to_string(), "openjdk".to_string()),
+        ]);
+        let fresh = vec![LockfileTool {
+            version: "26.0.0-ea".to_string(),
+            backend: Some("core:java".to_string()),
+            options: resolved_options.clone(),
+            platforms: BTreeMap::from([(
+                "linux-x64".to_string(),
+                PlatformInfo {
+                    checksum: Some("sha256:NEW".to_string()),
+                    ..Default::default()
+                },
+            )]),
+        }];
+
+        let mut merged = merge_tool_entries(fresh, Some(&existing));
+        preserve_absent_tool_entries(&mut merged, Some(&existing));
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].options, resolved_options);
+        assert_eq!(merged[0].platforms.len(), 2);
+        assert_eq!(
+            merged[0].platforms["macos-arm64"].checksum.as_deref(),
+            Some("sha256:OLD")
+        );
+    }
+
+    #[test]
+    fn test_merge_tool_entries_does_not_adopt_conflicting_options() {
+        let existing = vec![LockfileTool {
+            version: "26.0.0-ea".to_string(),
+            backend: Some("core:java".to_string()),
+            options: BTreeMap::from([("release_type".to_string(), "ea".to_string())]),
+            platforms: BTreeMap::from([(
+                "macos-arm64".to_string(),
+                PlatformInfo {
+                    checksum: Some("sha256:OLD".to_string()),
+                    ..Default::default()
+                },
+            )]),
+        }];
+        let fresh = vec![LockfileTool {
+            version: "26.0.0-ea".to_string(),
+            backend: Some("core:java".to_string()),
+            options: BTreeMap::from([
+                ("release_type".to_string(), "ga".to_string()),
+                ("shorthand_vendor".to_string(), "openjdk".to_string()),
+            ]),
+            platforms: BTreeMap::new(),
+        }];
+
+        let merged = merge_tool_entries(fresh, Some(&existing));
+
+        assert_eq!(merged.len(), 1);
+        assert!(merged[0].platforms.is_empty());
+    }
+
+    #[test]
+    fn test_preserve_absent_keeps_ambiguous_option_subset() {
+        let existing = vec![LockfileTool {
+            version: "26.0.1".to_string(),
+            backend: Some("core:java".to_string()),
+            options: BTreeMap::new(),
+            platforms: BTreeMap::from([(
+                "macos-arm64".to_string(),
+                PlatformInfo {
+                    checksum: Some("sha256:OLD".to_string()),
+                    ..Default::default()
+                },
+            )]),
+        }];
+        let fresh = ["openjdk", "temurin"]
+            .into_iter()
+            .map(|vendor| LockfileTool {
+                version: "26.0.1".to_string(),
+                backend: Some("core:java".to_string()),
+                options: BTreeMap::from([("shorthand_vendor".to_string(), vendor.to_string())]),
+                platforms: BTreeMap::new(),
+            })
+            .collect_vec();
+
+        let mut merged = merge_tool_entries(fresh, Some(&existing));
+        preserve_absent_tool_entries(&mut merged, Some(&existing));
+
+        assert_eq!(merged.len(), 3);
+        assert_eq!(
+            merged
+                .iter()
+                .find(|tool| tool.options.is_empty())
+                .unwrap()
+                .platforms["macos-arm64"]
+                .checksum
+                .as_deref(),
+            Some("sha256:OLD")
+        );
+    }
+
+    #[test]
     fn test_tool_version_needs_auto_lock_for_bare_updated_entry() {
         let mut lockfile = Lockfile::default();
         lockfile.tools.insert(
@@ -4433,6 +4548,48 @@ backend = "conda:jq"
         assert_eq!(
             tool.platforms["windows-x64"].checksum.as_deref(),
             Some("sha256:NEW")
+        );
+    }
+
+    #[test]
+    fn test_set_platform_info_adopts_existing_option_subset() {
+        let mut lockfile = Lockfile::default();
+        let existing_options = BTreeMap::from([("release_type".to_string(), "ea".to_string())]);
+        lockfile.set_platform_info(
+            "java",
+            "26.0.0-ea",
+            Some("core:java"),
+            &existing_options,
+            "macos-arm64",
+            PlatformInfo {
+                checksum: Some("sha256:OLD".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let resolved_options = BTreeMap::from([
+            ("release_type".to_string(), "ea".to_string()),
+            ("shorthand_vendor".to_string(), "openjdk".to_string()),
+        ]);
+        lockfile.set_platform_info(
+            "java",
+            "26.0.0-ea",
+            Some("core:java"),
+            &resolved_options,
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:NEW".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let tools = &lockfile.tools["java"];
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].options, resolved_options);
+        assert_eq!(tools[0].platforms.len(), 2);
+        assert_eq!(
+            tools[0].platforms["macos-arm64"].checksum.as_deref(),
+            Some("sha256:OLD")
         );
     }
 
