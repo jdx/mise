@@ -4,4 +4,6 @@ backends = [
   "cargo:fd-find",
 ]
 description = "A simple, fast and user-friendly alternative to 'find'"
+link = "https://github.com/sharkdp/fd"
+search_words = ["find"]
 test = { cmd = "fd --version", expected = "fd {{version}}" }

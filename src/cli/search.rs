@@ -115,23 +115,33 @@ impl Search {
                 if name.is_empty() {
                     Some((0, short, rt))
                 } else {
+                    let candidates =
+                        std::iter::once(short.as_str()).chain(rt.search_words.iter().copied());
                     match self.match_type {
                         MatchType::Equal => {
-                            if *short == name {
+                            if candidates.into_iter().any(|candidate| candidate == name) {
                                 Some((0, short, rt))
                             } else {
                                 None
                             }
                         }
                         MatchType::Contains => {
-                            if short.contains(name) {
+                            if candidates
+                                .into_iter()
+                                .any(|candidate| candidate.contains(name))
+                            {
                                 Some((0, short, rt))
                             } else {
                                 None
                             }
                         }
-                        MatchType::Fuzzy => fuzzy_matcher
-                            .score_pattern(&short.to_lowercase(), &fuzzy_pattern)
+                        MatchType::Fuzzy => candidates
+                            .into_iter()
+                            .filter_map(|candidate| {
+                                fuzzy_matcher
+                                    .score_pattern(&candidate.to_lowercase(), &fuzzy_pattern)
+                            })
+                            .max()
                             .map(|score| (score, short, rt)),
                     }
                 }

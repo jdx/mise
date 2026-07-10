@@ -692,6 +692,8 @@ The `registry/` file uses this format:
 # Tool name "your-tool" (becomes the short name for `mise use`)
 [tools.your-tool]
 description = "Tool description"
+search_words = ["related-name"] # Optional terms used by `mise search`
+link = "https://example.com" # Optional project link
 backends = [
     "aqua:owner/repo",           # Preferred backend first
     "github:owner/repo",         # Fallback backend

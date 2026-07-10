@@ -53,6 +53,10 @@ struct RegistryToolOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    search_words: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    link: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     aliases: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     security: Vec<SecurityFeature>,
@@ -62,6 +66,8 @@ struct RegistryToolOutputArgs {
     short: String,
     backends: Vec<String>,
     description: Option<String>,
+    search_words: Vec<String>,
+    link: Option<String>,
     aliases: Vec<String>,
 }
 
@@ -109,6 +115,8 @@ impl Registry {
             short: short.to_string(),
             backends,
             description: rt.description.map(|s| s.to_string()),
+            search_words: rt.search_words.iter().map(|s| s.to_string()).collect(),
+            link: rt.link.map(|s| s.to_string()),
             aliases: rt.aliases.iter().map(|s| s.to_string()).collect(),
         }
     }
@@ -218,6 +226,8 @@ async fn to_output(tool: RegistryToolOutputArgs, security: bool) -> RegistryTool
         short: tool.short,
         backends: tool.backends,
         description: tool.description,
+        search_words: tool.search_words,
+        link: tool.link,
         aliases: tool.aliases,
         security,
     }
