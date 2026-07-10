@@ -486,12 +486,11 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
-        if matches!(
-            request.source(),
-            ToolSource::IdiomaticVersionFile(path)
-                if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
-        ) && crate::semver::is_npm_semver_range_query(&v)
-        {
+        // npm-style semver ranges (`^1.2.3`, `~1.0.0`, `>=2 <3`, …) must resolve to a
+        // concrete version so install paths and mise.lock pin what was selected.
+        // Previously this only ran for package.json idiomatic files, so
+        // `npm:pkg = "^1.2.3"` in mise.toml kept the range as `tv.version`.
+        if crate::semver::is_npm_semver_range_query(&v) {
             if prefer_offline && !opts.latest_versions {
                 let installed_versions = backend.list_installed_versions();
                 if let Some(matches) =
@@ -511,6 +510,14 @@ impl ToolVersion {
                 }
             }
             if !is_offline {
+                // Prefer backend-native range resolution (e.g. `npm view pkg@range
+                // version`) when there is no release-age cutoff. `before_date`
+                // needs the full version list so we can filter by publish time.
+                if opts.before_date.is_none()
+                    && let Some(resolved) = backend.resolve_semver_range(config, &v).await?
+                {
+                    return build(resolved);
+                }
                 let versions = match opts.before_date {
                     Some(before) => {
                         let versions_with_info = backend
@@ -545,7 +552,13 @@ impl ToolVersion {
         // fetching for fully-qualified versions (e.g. "2.3.2") that aren't installed.
         // Prefix versions like "2" still need remote resolution to find e.g. "2.1.0".
         // "latest" also needs remote resolution but is handled in the block above.
-        if prefer_offline && !opts.latest_versions && v.matches('.').count() >= 2 {
+        // Semver ranges must not take this shortcut — `^1.2.3` has two dots but is
+        // not a concrete version.
+        if prefer_offline
+            && !opts.latest_versions
+            && !crate::semver::is_npm_semver_range_query(&v)
+            && v.matches('.').count() >= 2
+        {
             return build(v);
         }
         // Exact pinned GitHub versions do not need the full releases list when

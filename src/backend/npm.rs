@@ -363,6 +363,38 @@ impl Backend for NPMBackend {
         .cloned()
     }
 
+    async fn resolve_semver_range(
+        &self,
+        config: &Arc<Config>,
+        range: &str,
+    ) -> eyre::Result<Option<String>> {
+        if !crate::semver::is_npm_semver_range_query(range) {
+            return Ok(None);
+        }
+        // Use npm CLI so custom registries and npm's own range rules apply.
+        self.ensure_npm_for_version_check(config).await;
+        let spec = format!("{}@{}", self.tool_name(), range);
+        timeout::run_with_timeout_async(
+            async || {
+                let raw = match cmd!(NPM_PROGRAM, "view", &spec, "version", "--json")
+                    .full_env(self.dependency_env(config).await?)
+                    .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+                    .read()
+                {
+                    Ok(raw) => raw,
+                    Err(e) => {
+                        debug!("npm view {spec} version failed: {e:#}");
+                        return Ok(None);
+                    }
+                };
+                let data: Value = serde_json::from_str(&raw)?;
+                Ok(npm_view_resolved_version(&data)?)
+            },
+            Settings::get().fetch_remote_versions_timeout(),
+        )
+        .await
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let package_manager = self
             .package_manager_for_install(&ctx.config, Some(&ctx.ts))
@@ -1014,6 +1046,29 @@ fn npm_view_latest_dist_tag(data: &Value) -> eyre::Result<Option<String>> {
     })
 }
 
+/// Parse `npm view pkg[@range] version --json` output.
+///
+/// Exact versions return a JSON string. Ranges return an ascending array of
+/// every matching version — take the last entry as the max satisfying pin.
+fn npm_view_resolved_version(data: &Value) -> eyre::Result<Option<String>> {
+    match data {
+        Value::String(s) if !s.is_empty() => Ok(Some(s.clone())),
+        Value::Array(values) => {
+            let versions: Vec<&str> = values.iter().filter_map(|v| v.as_str()).collect();
+            if let Some(last) = versions.last() {
+                return Ok(Some((*last).to_string()));
+            }
+            // npm 12 may wrap a single object result in a one-element array.
+            if values.len() == 1 {
+                return npm_view_resolved_version(&values[0]);
+            }
+            Ok(None)
+        }
+        Value::Null => Ok(None),
+        _ => Ok(None),
+    }
+}
+
 fn parse_bool_arg(value: &str) -> Option<bool> {
     match value {
         "true" | "1" => Some(true),
@@ -1338,6 +1393,36 @@ mod tests {
             error,
             "expected npm view --json to return one result, got 2"
         );
+    }
+
+    #[test]
+    fn test_npm_view_resolved_version_accepts_exact_string() {
+        let data = serde_json::json!("3.9.5");
+        assert_eq!(
+            npm_view_resolved_version(&data).unwrap(),
+            Some("3.9.5".into())
+        );
+    }
+
+    #[test]
+    fn test_npm_view_resolved_version_takes_last_matching_range() {
+        let data = serde_json::json!(["3.0.0", "3.1.0", "3.9.5"]);
+        assert_eq!(
+            npm_view_resolved_version(&data).unwrap(),
+            Some("3.9.5".into())
+        );
+    }
+
+    #[test]
+    fn test_npm_view_resolved_version_empty_array_is_none() {
+        let data = serde_json::json!([]);
+        assert_eq!(npm_view_resolved_version(&data).unwrap(), None);
+    }
+
+    #[test]
+    fn test_npm_view_resolved_version_null_is_none() {
+        let data = serde_json::json!(null);
+        assert_eq!(npm_view_resolved_version(&data).unwrap(), None);
     }
 
     #[test]

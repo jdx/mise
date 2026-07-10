@@ -2606,7 +2606,16 @@ pub fn get_locked_version(
 }
 
 fn lockfile_version_matches(prefix: &str, version: &str) -> bool {
-    prefix == "latest" || strip_leading_v(version).starts_with(strip_leading_v(prefix))
+    if prefix == "latest" {
+        return true;
+    }
+    // Range requests (e.g. `^1.2.3`) lock a concrete pin; match by semver
+    // satisfaction so the next resolve can reuse the lockfile entry.
+    if crate::semver::is_npm_semver_range_query(prefix) {
+        return crate::semver::npm_semver_range_filter(&[version.to_string()], prefix)
+            .is_some_and(|m| !m.is_empty());
+    }
+    strip_leading_v(version).starts_with(strip_leading_v(prefix))
 }
 
 fn strip_leading_v(version: &str) -> &str {
@@ -3236,6 +3245,17 @@ options = { exe = "rg" }
         assert!(!lockfile_version_matches("v", "1.2.3"));
         assert!(!lockfile_version_matches("v", "v1.2.3"));
         assert!(lockfile_version_matches("v", "versioned"));
+    }
+
+    #[test]
+    fn test_lockfile_version_matches_semver_ranges() {
+        assert!(lockfile_version_matches("^1.2.3", "1.5.0"));
+        assert!(lockfile_version_matches("~1.2.3", "1.2.9"));
+        assert!(lockfile_version_matches(">=2.0.0 <3", "2.1.0"));
+        assert!(lockfile_version_matches("=1.2.3", "1.2.3"));
+        assert!(!lockfile_version_matches("^1.2.3", "2.0.0"));
+        assert!(!lockfile_version_matches("~1.2.3", "1.3.0"));
+        assert!(!lockfile_version_matches(">=2.0.0 <3", "3.0.0"));
     }
 
     #[test]
