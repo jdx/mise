@@ -1078,15 +1078,15 @@
             }
           }
         },
-        "http_retries": {
-          "default": 3,
-          "description": "Number of retries for transient HTTP failures in mise.",
-          "type": "number"
-        },
         "http_download_timeout": {
           "default": "30m",
           "description": "Total time allowed for an HTTP download, including retries.",
           "type": "string"
+        },
+        "http_retries": {
+          "default": 3,
+          "description": "Number of retries for transient HTTP failures in mise.",
+          "type": "number"
         },
         "http_timeout": {
           "default": "30s",
