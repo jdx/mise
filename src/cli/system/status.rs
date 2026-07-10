@@ -1,7 +1,7 @@
 use eyre::Result;
 use serde_json::json;
 
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::system;
 use crate::system::packages::PackageState;
 use crate::ui::table::MiseTable;
@@ -21,7 +21,6 @@ pub struct SystemStatus {
 
 impl SystemStatus {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         let config = Config::get().await?;
         let mgrs = system::packages_from_config(&config);
         let mut any_missing = false;

@@ -1,4 +1,4 @@
-# dnf <Badge type="warning" text="experimental" />
+# dnf
 
 System packages for RedHat-family Linux (Fedora, RHEL, CentOS Stream, Rocky,
 Alma, ...).

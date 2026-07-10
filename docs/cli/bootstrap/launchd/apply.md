@@ -2,7 +2,7 @@
 # `mise bootstrap launchd apply`
 
 - **Usage**: `mise bootstrap launchd apply [-n --dry-run] [-y --yes]`
-- **Source code**: [`src/cli/bootstrap/launchd/apply.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/launchd/apply.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 ## Flags
 

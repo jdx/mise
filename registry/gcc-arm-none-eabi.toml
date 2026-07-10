@@ -1,2 +1,5 @@
-backends = ["asdf:mise-plugins/mise-gcc-arm-none-eabi"]
+backends = [
+  "vfox:jdx/vfox-gcc-arm-none-eabi",
+  "asdf:mise-plugins/mise-gcc-arm-none-eabi",
+]
 description = "Arm GNU Toolchain"

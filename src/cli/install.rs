@@ -91,14 +91,20 @@ pub struct Install {
     /// May require elevated permissions (e.g. sudo).
     #[clap(long, verbatim_doc_comment, conflicts_with = "shared")]
     system: bool,
+
+    /// Skip confirmation when installing missing plugin system dependencies.
+    /// Set internally by `mise bootstrap --yes`; not a user-facing flag.
+    #[clap(skip)]
+    yes: bool,
 }
 
 impl Install {
     /// a bare `mise install` (install everything missing from config), as run
     /// by `mise bootstrap`
-    pub(crate) fn new_bare(dry_run: bool) -> Self {
+    pub(crate) fn new_bare(dry_run: bool, yes: bool) -> Self {
         Self {
             dry_run,
+            yes,
             ..Default::default()
         }
     }
@@ -131,9 +137,7 @@ impl Install {
     async fn hint_missing_system_packages(&self) {
         // the status queries spawn package-manager processes; skip them
         // entirely once the hint has been shown (or is disabled)
-        if !Settings::get().experimental
-            || !crate::hint::hint_would_display("system_packages_missing")
-        {
+        if !crate::hint::hint_would_display("system_packages_missing") {
             return;
         }
         let Ok(config) = Config::get().await else {
@@ -301,13 +305,7 @@ impl Install {
         // In dry-run mode, check if any tools would be installed before filtering
         if self.is_dry_run() {
             if self.dry_run_code {
-                let has_work = versions.iter().any(|tv| {
-                    if let Ok(backend) = tv.backend() {
-                        !backend.is_version_installed(&install_config, tv, true)
-                    } else {
-                        true
-                    }
-                });
+                let has_work = versions.iter().any(|tv| tv.install_satisfied != Some(true));
                 if has_work {
                     exit::exit(1);
                 }
@@ -388,6 +386,7 @@ impl Install {
             dry_run: self.is_dry_run(),
             locked: Settings::get().locked,
             install_dir,
+            yes: self.yes || Settings::get().yes,
             ..Default::default()
         })
     }

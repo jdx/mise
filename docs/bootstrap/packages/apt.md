@@ -1,4 +1,4 @@
-# apt <Badge type="warning" text="experimental" />
+# apt
 
 System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
 

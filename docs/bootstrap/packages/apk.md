@@ -1,4 +1,4 @@
-# apk <Badge type="warning" text="experimental" />
+# apk
 
 System packages for Alpine Linux.
 

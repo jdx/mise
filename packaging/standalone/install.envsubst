@@ -260,6 +260,17 @@ download_file() {
   echo "$file"
 }
 
+# Prints the version of an installed mise binary (the first field of
+# `mise version`, e.g. "2025.6.0"), with any leading "v" stripped. Prints
+# nothing if the binary is missing or fails to report a version.
+installed_mise_version() {
+  bin="$1"
+  if [ -x "$bin" ]; then
+    installed_version="$("$bin" version 2>/dev/null | head -n1 | cut -d' ' -f1)"
+    echo "${installed_version#v}"
+  fi
+}
+
 install_mise() {
   version="${MISE_VERSION:-$MISE_CURRENT_VERSION}"
   version="${version#v}"
@@ -271,6 +282,20 @@ install_mise() {
   install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
   install_dir="$(dirname "$install_path")"
   install_from_github="${MISE_INSTALL_FROM_GITHUB:-}"
+
+  # Opt-in: skip the download/install if the binary already at the install
+  # path matches the requested version. Only the install path is checked (not
+  # the wider PATH) so that skipping never leaves install_path missing.
+  skip_if_exists="${MISE_INSTALL_SKIP_IF_EXISTS-}"
+  if [ "$skip_if_exists" = "1" ] || [ "$skip_if_exists" = "true" ]; then
+    if [ -x "$install_path" ]; then
+      existing_version="$(installed_mise_version "$install_path")"
+      if [ -n "$existing_version" ] && [ "$existing_version" = "$version" ]; then
+        info "mise: $install_path is already at version $version, skipping install"
+        return 0
+      fi
+    fi
+  fi
   if [ "$version" != "$current_version" ] || [ "$install_from_github" = "1" ] || [ "$install_from_github" = "true" ]; then
     tarball_url="https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-${os}-${arch}.${ext}"
   elif [ -n "${MISE_TARBALL_URL-}" ]; then

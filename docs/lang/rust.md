@@ -1,14 +1,14 @@
 # Rust
 
 Rust/cargo can be installed which uses rustup under the hood. mise will install rustup if it is not already
-installed and add the requested targets. By default, mise respects the `RUSTUP_HOME` and `CARGO_HOME` environment
+installed and install the requested toolchain, components, and targets. By default, mise respects the `RUSTUP_HOME` and `CARGO_HOME` environment
 variables for the home directories and falls back to their standard location (`~/.rustup` and `~/.cargo`) if they are
 not set. You can change this by setting the `MISE_RUSTUP_HOME` and `MISE_CARGO_HOME` environment variables if you'd like
 to isolate mise's rustup/cargo from your other rustup/cargo installations.
 
 Unlike most tools, these won't exist inside of `~/.local/share/mise/installs` because they are managed by rustup.
-All mise does is set the `RUSTUP_TOOLCHAIN` environment variable to the requested version and rustup will
-automatically install it if it doesn't exist.
+mise keeps a symlink there for install tracking, sets the `RUSTUP_TOOLCHAIN` environment variable to the requested
+version, and asks rustup to install any configured components or targets when you run `mise install`.
 
 ## Usage
 
@@ -50,13 +50,15 @@ rust = { version = "latest", install_env = { RUSTUP_DIST_SERVER = "https://stati
 ### `components`
 
 The `components` option allows you to specify which components to install. Multiple components can be
-specified by separating them with a comma. The set of available components may vary with different releases and
+specified as an array or by separating them with a comma. The set of available components may vary with different releases and
 toolchains. Please consult the Rust documentation for the most up-to-date list of components.
 
 ```toml
 [tools]
-"rust" = { version = "1.83.0", components = "rust-src,llvm-tools" }
+"rust" = { version = "1.83.0", components = ["rust-src", "llvm-tools"] }
 ```
+
+If the Rust toolchain is already installed, `mise install` will still add any missing configured components.
 
 ### `profile`
 
@@ -77,15 +79,17 @@ If not set, it defaults to the profile configured in `rustup`. You can check you
 ### `targets`
 
 The `targets` option allows you to specify a list of platforms to install for cross-compilation. Multiple targets can
-be specified by separating them with a comma.
+be specified as an array or by separating them with a comma.
 
 ```toml
 [tools]
 "rust" = {
   version = "1.83.0",
-  targets = "wasm32-unknown-unknown,thumbv2-none-eabi",
+  targets = ["wasm32-unknown-unknown", "thumbv2-none-eabi"],
 }
 ```
+
+If the Rust toolchain is already installed, `mise install` will still add any missing configured targets.
 
 ## Settings
 

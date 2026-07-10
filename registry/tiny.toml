@@ -1,2 +1,2 @@
-backends = ["asdf:mise-plugins/mise-tiny"]
+backends = ["vfox:jdx/vfox-tiny", "asdf:mise-plugins/mise-tiny"]
 description = "rtx-tiny is mostly a fake plugin to check mise in CI"

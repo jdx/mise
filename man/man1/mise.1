@@ -143,7 +143,7 @@ List built\-in backends
 List all the active runtime bin paths
 .TP
 \fBbootstrap\fR
-[experimental] Set up a machine for the current config in one command
+Set up a machine for the current config in one command
 .TP
 \fBbootstrap dotfiles\fR
 Manage dotfiles from `[dotfiles]`
@@ -302,7 +302,7 @@ Set the value of a setting in a mise.toml file
 Disable mise for current shell session
 .TP
 \fBdotfiles\fR
-[experimental] Manage dotfiles from `[dotfiles]`
+Manage dotfiles from `[dotfiles]`
 .TP
 \fBdotfiles add\fR
 Add or update dotfiles in `[dotfiles]`
@@ -840,7 +840,7 @@ Output executable entries in JSON format (implies \-\-bin\-names)
 Tool(s) to look up
 e.g.: ruby@3
 .SH "MISE BOOTSTRAP"
-[experimental] Set up a machine for the current config in one command
+Set up a machine for the current config in one command
 
 Runs the bootstrap steps for the current config in order:
 
@@ -4004,6 +4004,11 @@ of them), and `[tasks]` (no templates and no tool options) are loaded
 without prompting, since nothing in them executes code at load time —
 tools install and tasks run only on explicit commands like `mise install`
 or `mise run`.
+
+Trust is shared across git worktrees: a config file inside a linked
+worktree is trusted when the equivalent path in the repository's main
+checkout has been trusted. Paranoid mode disables this sharing since
+worktrees can check out branches with different config contents.
 .PP
 \fBUsage:\fR mise trust [OPTIONS] [<CONFIG_FILE>]
 .PP
@@ -4011,7 +4016,10 @@ or `mise run`.
 .PP
 .TP
 \fB\-a, \-\-all\fR
-Trust all config files in the current directory and its parents
+Trust all config files in the current directory, its parents, and its subdirectories
+
+Subdirectories are walked respecting .gitignore, skipping hidden directories
+and common build/dependency directories (node_modules, vendor, target, dist, build).
 .TP
 \fB\-\-ignore\fR
 Do not trust this config and ignore it in the future

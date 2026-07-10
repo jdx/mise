@@ -8,26 +8,31 @@ set -euxo pipefail
 rm -rf src/assets/gpg
 mkdir -p src/assets/gpg
 
-# Download each key file from nodejs/release-keys repository
-NODE_KEYS_URL="https://raw.githubusercontent.com/nodejs/release-keys/main/keys"
-NODE_KEYS_LIST_URL="https://raw.githubusercontent.com/nodejs/release-keys/main/keys.list"
+# Clone nodejs/release-keys once instead of making many raw.githubusercontent.com
+# requests. The raw host is prone to 429 throttling on shared CI egress.
+NODE_KEYS_REPO="https://github.com/nodejs/release-keys.git"
+NODE_KEYS_CHECKOUT="$(mktemp -d)"
+trap 'rm -rf "$NODE_KEYS_CHECKOUT"' EXIT
 
-echo "Fetching Node.js release keys list..."
-if ! keys_list=$(curl -fsSL "$NODE_KEYS_LIST_URL"); then
-	echo "ERROR: Failed to download keys.list from nodejs/release-keys" >&2
+echo "Cloning Node.js release keys..."
+if ! git clone --depth 1 --single-branch --branch main "$NODE_KEYS_REPO" "$NODE_KEYS_CHECKOUT"; then
+	echo "ERROR: Failed to clone nodejs/release-keys" >&2
 	exit 1
 fi
 
 key_count=0
-for fingerprint in $keys_list; do
-	echo "Fetching key: $fingerprint"
-	if ! curl -fLSs "${NODE_KEYS_URL}/${fingerprint}.asc" >>"src/assets/gpg/node.asc"; then
-		echo "ERROR: Failed to download key $fingerprint" >&2
+while IFS= read -r fingerprint || [[ -n $fingerprint ]]; do
+	[[ -z $fingerprint ]] && continue
+	key_file="$NODE_KEYS_CHECKOUT/keys/$fingerprint.asc"
+	echo "Adding key: $fingerprint"
+	if [[ ! -f $key_file ]]; then
+		echo "ERROR: Missing key $key_file" >&2
 		exit 1
 	fi
+	cat "$key_file" >>"src/assets/gpg/node.asc"
 	echo "" >>"src/assets/gpg/node.asc"
 	key_count=$((key_count + 1))
-done
+done <"$NODE_KEYS_CHECKOUT/keys.list"
 echo "Successfully fetched $key_count Node.js release keys"
 
 # Swift release keys

@@ -30,6 +30,7 @@ use crate::system::shell_activation::{
 use crate::system::systemd::{SystemdRequest, SystemdTomlConfig};
 
 pub mod defaults;
+pub mod deps;
 pub mod edits;
 pub mod files;
 pub mod hooks;

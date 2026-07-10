@@ -725,7 +725,7 @@ mod tests {
         #[cfg(unix)]
         {
             asdf("asdf:clojure", "asdf:clojure", "clojure");
-            asdf("clojure", "asdf:mise-plugins/mise-clojure", "clojure");
+            vfox("clojure", "vfox:jdx/vfox-clojure", "clojure");
         }
         cargo("cargo:eza", "cargo:eza", "eza");
         t("dotnet-core", "core:dotnet", "dotnet", BackendType::Core);

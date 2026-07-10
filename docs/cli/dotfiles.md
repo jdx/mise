@@ -4,7 +4,7 @@
 - **Usage**: `mise dotfiles <SUBCOMMAND>`
 - **Source code**: [`src/cli/dotfiles/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/mod.rs)
 
-[experimental] Manage dotfiles from `[dotfiles]`
+Manage dotfiles from `[dotfiles]`
 
 Dotfiles are config files symlinked, copied, or rendered to target paths,
 plus marker-delimited blocks or single lines in files mise doesn't own.

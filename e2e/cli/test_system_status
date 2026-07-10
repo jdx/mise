@@ -12,6 +12,7 @@ EOF
 
 # status renders on any platform; unavailable managers are skipped, not errors
 assert_succeed "mise bootstrap packages status"
+assert_succeed "MISE_EXPERIMENTAL=0 mise bootstrap packages status"
 assert_contains "mise bootstrap packages status" "bc"
 assert_contains "mise bootstrap packages status" "497799835"
 assert_contains "mise bootstrap packages status --json" '"apt"'

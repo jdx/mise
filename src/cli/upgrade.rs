@@ -625,6 +625,9 @@ impl Upgrade {
             };
             match (eligible_latest, baseline_latest) {
                 (Some(eligible), Some(baseline)) if is_outdated_version(&eligible, &baseline) => {
+                    if current_satisfies_hidden_release(config, &tv, &baseline) {
+                        continue;
+                    }
                     let suffix = format!("latest eligible release is {eligible}");
                     warn_hidden_release_ignored_by_minimum_release_age(
                         config,
@@ -636,6 +639,9 @@ impl Upgrade {
                     .await;
                 }
                 (None, Some(baseline)) => {
+                    if current_satisfies_hidden_release(config, &tv, &baseline) {
+                        continue;
+                    }
                     warn_hidden_release_ignored_by_minimum_release_age(
                         config,
                         &tv,
@@ -686,6 +692,22 @@ impl Upgrade {
         };
         backend.latest_version_unfiltered(config, query).await
     }
+}
+
+fn current_satisfies_hidden_release(
+    config: &Arc<Config>,
+    tv: &ToolVersion,
+    hidden_version: &str,
+) -> bool {
+    OutdatedInfo::new(config, tv.clone(), hidden_version.to_string())
+        .ok()
+        .and_then(|info| info.current)
+        .as_deref()
+        .is_some_and(|current| current_version_satisfies_hidden_release(current, hidden_version))
+}
+
+fn current_version_satisfies_hidden_release(current: &str, hidden_version: &str) -> bool {
+    !is_outdated_version(current, hidden_version)
 }
 
 fn backend_matches(backends: &HashSet<String>, ba: &BackendArg) -> bool {
@@ -835,8 +857,18 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_hidden_release_details, release_is_eligible_at};
+    use super::{
+        current_version_satisfies_hidden_release, format_hidden_release_details,
+        release_is_eligible_at,
+    };
     use jiff::tz::TimeZone;
+
+    #[test]
+    fn test_current_version_satisfies_hidden_release() {
+        assert!(!current_version_satisfies_hidden_release("1.0.0", "1.1.0"));
+        assert!(current_version_satisfies_hidden_release("1.1.0", "1.1.0"));
+        assert!(current_version_satisfies_hidden_release("1.2.0", "1.1.0"));
+    }
 
     #[test]
     fn test_format_hidden_release_details_with_duration_age() {

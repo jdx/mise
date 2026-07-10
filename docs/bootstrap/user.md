@@ -1,8 +1,8 @@
-# User Login Shell <Badge type="warning" text="experimental" />
+# User Login Shell
 
 mise can declare the current user's login shell in `[bootstrap.user]` and
-apply it with `mise bootstrap user apply` or
-[`mise bootstrap`](/cli/bootstrap.html):
+apply it with `mise bootstrap user apply` or as part of
+[`mise bootstrap`](/bootstrap.html):
 
 ```toml
 [bootstrap.user]
@@ -25,17 +25,18 @@ new login session when it changes or would change the login shell.
 `[bootstrap.user].login_shell` follows the same manual, idempotent model as
 [bootstrap packages](/bootstrap/packages/):
 
-- **Most local wins** - a project config can override a global
+- **Most local wins** — a project config can override a global
   `login_shell`; unlike package/file lists, there is only one desired value.
-- **Manual application only** - mise never changes your login shell
-  implicitly. Only [`mise bootstrap`](/cli/bootstrap.html) applies it.
-- **Listed shell** - the shell must appear in `/etc/shells` before `chsh`
+- **Manual application only** — mise never changes your login shell
+  implicitly. Only `mise bootstrap user apply` and
+  [`mise bootstrap`](/bootstrap.html) apply it.
+- **Listed shell** — the shell must appear in `/etc/shells` before `chsh`
   accepts it on many platforms. mise adds the configured path to that file
   when it is missing.
-- **Unix-only** - on non-Unix platforms, or when `chsh` is not available,
+- **Unix-only** — on non-Unix platforms, or when `chsh` is not available,
   `mise bootstrap user status` reports the entry as skipped and bootstrap
   ignores it.
-- **Absolute path required** - relative shell names are skipped with a
+- **Absolute path required** — relative shell names are skipped with a
   warning. Use the full path, such as `/bin/zsh` or `/opt/homebrew/bin/fish`.
 
 `/etc/shells` is usually root-owned. If the file is not writable, mise uses

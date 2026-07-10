@@ -46,6 +46,8 @@ pub struct ToolVersion {
     pub conda_packages: BTreeMap<(String, String), CondaPackageInfo>,
     /// pkgx packages resolved during installation: (platform, package@version) -> PkgxPackageInfo
     pub pkgx_packages: BTreeMap<(String, String), PkgxPackageInfo>,
+    /// Install satisfaction computed during dry-run installs.
+    pub install_satisfied: Option<bool>,
 }
 
 impl ToolVersion {
@@ -71,6 +73,7 @@ impl ToolVersion {
             install_path: None,
             conda_packages: Default::default(),
             pkgx_packages: Default::default(),
+            install_satisfied: None,
         }
     }
 

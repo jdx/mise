@@ -2,7 +2,7 @@
 # `mise bootstrap launchd status`
 
 - **Usage**: `mise bootstrap launchd status [-J --json] [--missing]`
-- **Source code**: [`src/cli/bootstrap/launchd/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/launchd/status.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 ## Flags
 

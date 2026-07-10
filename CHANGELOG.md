@@ -1,5 +1,116 @@
 # Changelog
 
+## [2026.7.5](https://github.com/jdx/mise/compare/v2026.7.4..v2026.7.5) - 2026-07-09
+
+### 🚀 Features
+
+- **(trust)** share config trust across git worktrees by @jdx in [#10890](https://github.com/jdx/mise/pull/10890)
+- **(trust)** trust configs in subdirectories with --all by @jdx in [#10889](https://github.com/jdx/mise/pull/10889)
+
+### 🐛 Bug Fixes
+
+- **(npm)** support npm 12 view json output by @jdx in [#10888](https://github.com/jdx/mise/pull/10888)
+
+### 📦 Registry
+
+- prefer npm for codex by @jdx in [#10893](https://github.com/jdx/mise/pull/10893)
+
+## [2026.7.4](https://github.com/jdx/mise/compare/v2026.7.3..v2026.7.4) - 2026-07-09
+
+### 🚀 Features
+
+- **(bootstrap)** stabilize bootstrap commands by @jdx in [#10869](https://github.com/jdx/mise/pull/10869)
+- skip re-install in mise.run script when matching version present by @JamBalaya56562 in [#10882](https://github.com/jdx/mise/pull/10882)
+
+### 🐛 Bug Fixes
+
+- **(build)** restore linux arm64 glibc compatibility by @jdx in [#10875](https://github.com/jdx/mise/pull/10875)
+- **(install)** reconcile rust components and targets by @jdx in [#10876](https://github.com/jdx/mise/pull/10876)
+- **(release)** clone node release keys by @jdx in [#10883](https://github.com/jdx/mise/pull/10883)
+- **(task)** keep task_source_files available with usage args by @jdx in [#10870](https://github.com/jdx/mise/pull/10870)
+- **(upgrade)** suppress release-age warning for installed versions by @jdx in [#10877](https://github.com/jdx/mise/pull/10877)
+
+### 📚 Documentation
+
+- **(bootstrap)** fix broken intro and link bootstrap sub-pages by @jdx in [#10878](https://github.com/jdx/mise/pull/10878)
+- **(bootstrap)** style and consistency pass across bootstrap pages by @jdx in [#10880](https://github.com/jdx/mise/pull/10880)
+- fix broken source-code links in generated CLI reference by @jdx in [#10879](https://github.com/jdx/mise/pull/10879)
+
+### ⚡ Performance
+
+- **(install)** parallelize missing version checks by @jdx in [#10881](https://github.com/jdx/mise/pull/10881)
+
+### 📦 Registry
+
+- consolidate scala vfox plugin by @jdx in [#10864](https://github.com/jdx/mise/pull/10864)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`sderosiaux/launchdeck`](https://github.com/sderosiaux/launchdeck)
+- [`syntax-sh/lexicon-releases`](https://github.com/syntax-sh/lexicon-releases)
+
+## [2026.7.3](https://github.com/jdx/mise/compare/v2026.7.2..v2026.7.3) - 2026-07-08
+
+### 🚀 Features
+
+- **(brew)** run cask lifecycle hooks by @jdx in [#10837](https://github.com/jdx/mise/pull/10837)
+- **(vfox)** plugin-declared system dependencies with capability detection by @jdx in [#10848](https://github.com/jdx/mise/pull/10848)
+
+### 🐛 Bug Fixes
+
+- **(brew)** support pkg-created cask binaries by @jdx in [#10841](https://github.com/jdx/mise/pull/10841)
+- **(vfox)** clean traditional plugin downloads by @risu729 in [#10840](https://github.com/jdx/mise/pull/10840)
+
+### 📚 Documentation
+
+- de-slopify landing page copy and visuals by @jdx in [#10836](https://github.com/jdx/mise/pull/10836)
+
+### 📦 Registry
+
+- use vfox for scala by @jdx in [#10843](https://github.com/jdx/mise/pull/10843)
+- use vfox for groovy by @jdx in [#10844](https://github.com/jdx/mise/pull/10844)
+- use vfox for mongodb by @jdx in [#10845](https://github.com/jdx/mise/pull/10845)
+- use vfox for emsdk by @jdx in [#10846](https://github.com/jdx/mise/pull/10846)
+- use vfox for teleport-community by @jdx in [#10852](https://github.com/jdx/mise/pull/10852)
+- use vfox for tinytex by @jdx in [#10856](https://github.com/jdx/mise/pull/10856)
+- use vfox for mysql by @jdx in [#10859](https://github.com/jdx/mise/pull/10859)
+
+### Ci
+
+- gate autorelease on fix and feat commits by @jdx in [#10838](https://github.com/jdx/mise/pull/10838)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`microsoft/winappCli`](https://github.com/microsoft/winappCli)
+
+#### Updated Packages (2)
+
+- [`bitwarden/clients`](https://github.com/bitwarden/clients)
+- [`tombi-toml/tombi`](https://github.com/tombi-toml/tombi)
+
+## [2026.7.2](https://github.com/jdx/mise/compare/v2026.7.1..v2026.7.2) - 2026-07-07
+
+### 🐛 Bug Fixes
+
+- **(config)** restore get_env template helper by @jdx in [#10830](https://github.com/jdx/mise/pull/10830)
+- **(config)** warn for deprecated settings from sources by @jdx in [#10832](https://github.com/jdx/mise/pull/10832)
+- **(file)** support pax sparse tar extraction by @JamBalaya56562 in [#10821](https://github.com/jdx/mise/pull/10821)
+- **(registry)** add rename_exe for podman to fix installed binary name by @konono in [#10822](https://github.com/jdx/mise/pull/10822)
+- **(vfox)** flush downloaded files before returning by @jdx in [#10833](https://github.com/jdx/mise/pull/10833)
+- accept scoped release tags in cached GitHub asset URLs by @zeitlinger in [#10750](https://github.com/jdx/mise/pull/10750)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`koki-develop/ghasec`](https://github.com/koki-develop/ghasec)
+- [`mpyw/suve`](https://github.com/mpyw/suve)
+- [`sivchari/gopls-lazy`](https://github.com/sivchari/gopls-lazy)
+
 ## [2026.7.1](https://github.com/jdx/mise/compare/v2026.7.0..v2026.7.1) - 2026-07-07
 
 ### 🚀 Features

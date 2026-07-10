@@ -5,7 +5,7 @@ use toml_edit::{DocumentMut, InlineTable, Item, Table, Value};
 
 use crate::config::config_file::ConfigFile;
 use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::{Config, ConfigPathOptions, Settings, resolve_target_config_path};
+use crate::config::{Config, ConfigPathOptions, resolve_target_config_path};
 use crate::file;
 use crate::path::PathExt;
 use crate::system;
@@ -59,7 +59,6 @@ pub struct DotfilesAdd {
 
 impl DotfilesAdd {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise dotfiles")?;
         if self.source.is_some() && self.targets.len() != 1 {
             bail!("--source can only be used with one target");
         }

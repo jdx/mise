@@ -333,6 +333,57 @@ Add `depends` to the `PLUGIN` table when install hooks need other mise-managed t
 
 This is separate from `depends` in `[tools]`, which only makes one configured tool wait for another configured tool in the install graph. vfox `metadata.lua` `depends` is plugin metadata; when matching tools are configured, mise uses it to order current install jobs and to build the hook environment.
 
+#### System Dependencies
+
+Plugins that compile from source (or otherwise rely on system libraries and build tools) can declare those prerequisites with `systemDependencies`. Before installing the tool, mise checks each one and — depending on the [`system_deps`](/configuration/settings.html#system_deps) setting — reports, offers to install, or auto-installs anything missing.
+
+```lua
+PLUGIN = {
+    name = "php",
+    version = "1.0.0",
+
+    systemDependencies = {
+        -- an executable on PATH, with an optional version constraint
+        { bin = "bison", version = ">=3.0",
+          packages = { brew = "bison", apt = "bison", dnf = "bison" } },
+        { bin = "re2c",
+          packages = { brew = "re2c", apt = "re2c", dnf = "re2c" } },
+
+        -- a library discoverable via pkg-config
+        { pkgconfig = "libxml-2.0",
+          packages = { brew = "libxml2", apt = "libxml2-dev", dnf = "libxml2-devel" } },
+        { pkgconfig = "openssl",
+          packages = { brew = "openssl@3", apt = "libssl-dev", dnf = "openssl-devel" } },
+
+        -- a runtime shared library, by soname (Linux)
+        { sharedlib = "libaio.so.1",
+          packages = { apt = "libaio1", dnf = "libaio" } },
+
+        -- an escape hatch: any shell command whose exit status 0 means "satisfied"
+        { command = "xcode-select -p", optional = "macOS command line tools" },
+    },
+}
+```
+
+Each entry must set **exactly one** check:
+
+| Check       | Detection                                          | Use for                                    |
+| ----------- | -------------------------------------------------- | ------------------------------------------ |
+| `bin`       | executable resolvable on `PATH`                    | compilers, build tools, `*-config` scripts |
+| `pkgconfig` | `pkg-config --exists <name>`                       | C libraries that ship a `.pc` file         |
+| `sharedlib` | dynamic linker can resolve the soname (Linux only) | runtime libraries for prebuilt binaries    |
+| `command`   | the shell command exits `0`                        | anything the above can't express           |
+
+Optional fields:
+
+- **`version`** — a constraint (`>=3.0`, `>3`, `<=1.2`, `=3.0`, or a bare `3.0` meaning `>=3.0`) for `bin` and `pkgconfig`. mise runs `<bin> --version` / `pkg-config --modversion` and compares. If a version can't be extracted, the dependency is treated as satisfied (presence is enough) rather than blocking the install.
+- **`optional`** — a short reason string. Missing optional dependencies never prompt or fail; they surface as a single informational line, letting users build without features they don't need (e.g. Erlang's `wxWidgets` GUI).
+- **`packages`** — a map of package-manager name (`brew`, `brew-cask`, `apt`, `dnf`, `pacman`, `apk`, `mas`) to the package that provides the capability.
+
+**Detection is the source of truth.** A check that passes is satisfied no matter how the capability was installed — Homebrew, apt, nix, MacPorts, or from source all pass without ceremony, and mise never asks _how_ it got there. The `packages` map is only consulted to _offer_ installing the missing subset; it is a remediation hint, not a declaration that the tool must come from that package manager.
+
+These declarations are inert on older mise versions and on upstream vfox (both ignore unknown `PLUGIN` fields), so adding them is backward-compatible.
+
 ### 3. Helper Libraries
 
 Create shared functions in the `lib/` directory:

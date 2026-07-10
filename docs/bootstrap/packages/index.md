@@ -1,7 +1,9 @@
-# Bootstrap Packages <Badge type="warning" text="experimental" />
+# Bootstrap Packages
 
 mise can ensure machine-global system packages are installed via the
-`[bootstrap.packages]` section of `mise.toml`:
+`[bootstrap.packages]` section of `mise.toml`, applied by
+`mise bootstrap packages apply` or as part of
+[`mise bootstrap`](/bootstrap.html):
 
 ```toml
 [bootstrap.packages]
@@ -19,9 +21,6 @@ and the value is a version: `"latest"` for whatever the manager installs, or
 a pin in the manager's native format where supported (see the per-manager
 pages).
 
-mise can also place config files (dotfiles) — see
-[Dotfiles](/dotfiles.html), which uses `mise dotfiles` commands.
-
 System packages are intentionally separate from [`[tools]`](/configuration.html):
 they are not version-pinned per-project, do not get shims, and are installed
 machine-globally by the platform's package manager — or, for `brew` and
@@ -30,19 +29,16 @@ Homebrew itself. Use them for shared libraries, build dependencies, and
 machine-global GUI apps (`libssl-dev`, `postgresql`, `ffmpeg`, `firefox`),
 not for project dev tools — those belong in `[tools]`.
 
-The `[bootstrap]` section can also declare
-[repos](/bootstrap/repos.html) (`[bootstrap.repos]`), applied by
-`mise bootstrap repos apply`, [macOS defaults](/bootstrap/macos-defaults.html)
-(`[bootstrap.macos.defaults]`), applied by
-`mise bootstrap macos defaults apply`, and macOS
-[LaunchAgents](/bootstrap/launchd.html) (`[bootstrap.macos.launchd.agents]`),
-applied by `mise bootstrap macos launchd-agents apply`. Linux user services live in
-[systemd](/bootstrap/systemd.html) (`[bootstrap.linux.systemd.units]`),
-applied by `mise bootstrap linux systemd-units apply`. Shell activation snippets live in
-[Shell Activation](/bootstrap/shell.html) (`[bootstrap.mise_shell_activate]`).
-Current-user
-[login shells](/bootstrap/user.html) (`[bootstrap.user].login_shell`) are
-applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html).
+Packages are one part of [mise bootstrap](/bootstrap.html). The other
+declarative sections work the same way:
+
+- [Repos](/bootstrap/repos.html) — `[bootstrap.repos]`
+- [Dotfiles](/dotfiles.html) — `[dotfiles]`
+- [Shell Activation](/bootstrap/shell.html) — `[bootstrap.mise_shell_activate]`
+- [macOS Defaults](/bootstrap/macos-defaults.html) — `[bootstrap.macos.defaults]`
+- [launchd](/bootstrap/launchd.html) — `[bootstrap.macos.launchd.agents]`
+- [systemd](/bootstrap/systemd.html) — `[bootstrap.linux.systemd.units]`
+- [User Login Shell](/bootstrap/user.html) — `[bootstrap.user].login_shell`
 
 ## Supported package managers
 
@@ -101,9 +97,9 @@ mise bootstrap packages apply --manager apt
 mise bootstrap packages apply --update  # refresh package manager metadata first
 
 mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835
-mise bootstrap packages use -g brew:ffmpeg                      # write globally
-mise bootstrap packages use apt:curl@8.5.0-2   # pin a version (brew pins via the
-                                   # formula name: brew:postgresql@17)
+mise bootstrap packages use -g brew:ffmpeg     # write globally
+mise bootstrap packages use apt:curl@8.5.0-2   # pin a version
+    # (brew pins via the formula name instead: brew:postgresql@17)
 
 mise bootstrap packages import --manager brew   # add installed requested brew formulae
 mise bootstrap packages import --manager brew --all
@@ -202,7 +198,7 @@ mise bootstrap packages apply --yes
 mise install
 ```
 
-[`mise bootstrap --yes`](/cli/bootstrap.html) combines both (and runs a task
+[`mise bootstrap --yes`](/bootstrap.html) combines both (and runs a task
 named `bootstrap` afterwards, if one is defined) — one command to set up a
 fresh machine or container.
 

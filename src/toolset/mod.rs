@@ -165,11 +165,35 @@ impl Toolset {
     pub async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
         trace!("list_missing_versions");
         measure!("toolset::list_missing_versions", {
-            self.list_current_versions()
+            let versions = self.list_current_versions().into_iter().collect::<Vec<_>>();
+            let parallel_versions = versions
+                .clone()
                 .into_iter()
-                .filter(|(p, tv)| !p.is_version_installed(config, tv, true))
-                .map(|(_, tv)| tv)
-                .collect()
+                .map(|(backend, tv)| (config.clone(), backend, tv))
+                .collect::<Vec<_>>();
+            match parallel::parallel(parallel_versions, |(config, backend, tv)| async move {
+                Ok((!backend
+                    .is_install_satisfied_or_false(&config, &tv, true)
+                    .await)
+                    .then_some(tv))
+            })
+            .await
+            {
+                Ok(missing) => missing.into_iter().flatten().collect(),
+                Err(err) => {
+                    warn!("Error checking missing tool versions: {err:#}");
+                    let mut missing = vec![];
+                    for (backend, tv) in versions {
+                        if !backend
+                            .is_install_satisfied_or_false(config, &tv, true)
+                            .await
+                        {
+                            missing.push(tv);
+                        }
+                    }
+                    missing
+                }
+            }
         })
     }
 

@@ -176,6 +176,104 @@
   transition: transform 0.25s ease, filter 0.25s ease;
 }
 
+/* On the home page the navbar brand stays hidden while the big hero
+   lockup is on screen (class toggled from Layout.vue), then fades in
+   as you scroll past — one logo that settles into the header. */
+.VPNavBarTitle {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.hide-nav-brand .VPNavBarTitle {
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+}
+
+/* SSR renders the navbar without the `home top` state classes, so its
+   divider and solid background flash on first paint until hydration
+   catches up. While the hero lockup is on screen (same pre-paint class),
+   keep the navbar chrome transparent like VitePress's own top-of-home
+   state does. !important because VitePress's scoped selectors
+   (.VPNavBar:not(.home) .divider-line[data-v-*]) out-specify us. */
+.hide-nav-brand .VPNavBar .divider-line {
+  background-color: transparent !important;
+}
+
+.hide-nav-brand .VPNavBar:not(.has-sidebar) {
+  background-color: transparent !important;
+}
+
+/* During "preboot" (pre-paint class from the inline head script, removed
+   by Layout.vue right after hydration) navbar transitions are disabled so
+   state corrections snap invisibly instead of fading in front of the user
+   — e.g. reloading the home page while scrolled down, or the divider's
+   0.5s background fade. */
+.preboot .VPNavBar,
+.preboot .VPNavBarTitle,
+.preboot .VPNavBar .divider-line {
+  transition: none !important;
+}
+
+/* Non-home pages: mirror VitePress's `.VPNavBar.has-sidebar` layout before
+   hydration adds the class, so the search box and menu don't jump right.
+   Values copied from vitepress/dist/client/theme-default (VPNavBar.vue). */
+@media (min-width: 960px) {
+  .preboot-sidebar .VPNavBar .wrapper {
+    padding: 0;
+  }
+
+  .preboot-sidebar .VPNavBar .container {
+    max-width: 100%;
+  }
+
+  .preboot-sidebar .VPNavBar .title {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    padding: 0 32px;
+    width: var(--vp-sidebar-width);
+    height: var(--vp-nav-height);
+    background-color: transparent;
+  }
+
+  .preboot-sidebar .VPNavBar .content {
+    position: relative;
+    z-index: 1;
+    padding-right: 32px;
+    padding-left: var(--vp-sidebar-width);
+  }
+
+  .preboot-sidebar .VPNavBar .divider {
+    padding-left: var(--vp-sidebar-width);
+  }
+}
+
+@media (min-width: 1440px) {
+  .preboot-sidebar .VPNavBar .title {
+    padding-left: max(32px, calc((100% - (var(--vp-layout-max-width) - 64px)) / 2));
+    width: calc(
+      (100% - (var(--vp-layout-max-width) - 64px)) / 2 + var(--vp-sidebar-width) -
+        32px
+    );
+  }
+
+  .preboot-sidebar .VPNavBar .content {
+    padding-right: calc((100vw - var(--vp-layout-max-width)) / 2 + 32px);
+    padding-left: calc(
+      (100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)
+    );
+  }
+
+  .preboot-sidebar .VPNavBar .divider {
+    padding-left: calc(
+      (100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)
+    );
+  }
+}
+
 .VPNavBarTitle:hover .VPImage.logo {
   transform: scale(1.1);
   filter: drop-shadow(0 0 10px rgba(139, 34, 82, 0.4));
@@ -410,11 +508,30 @@ h1, h2, h3, h4, h5, h6,
 }
 
 /* ═══ Hero section — "The Chef's Counter" ═══ */
+/* VitePress pulls the hero up under the nav with a negative margin
+   (nav height + layout-top banner), so padding-top must include that
+   offset or the hero content hides behind the navbar. */
 .VPHero {
-  padding-top: 76px !important;
+  padding-top: calc(
+    var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 76px
+  ) !important;
   padding-bottom: 64px !important;
   position: relative;
   z-index: 1;
+  /* single static tint for depth — deliberately no animation/orbs/grain */
+  background: radial-gradient(
+    1000px 500px at 68% 12%,
+    rgba(139, 34, 82, 0.08),
+    transparent 70%
+  );
+}
+
+.dark .VPHero {
+  background: radial-gradient(
+    1000px 500px at 68% 12%,
+    rgba(199, 91, 122, 0.07),
+    transparent 70%
+  );
 }
 
 /* Two-column hero layout */
@@ -959,7 +1076,9 @@ div[class*="language-"] .copy:hover {
   }
 
   .VPHero {
-    padding-top: 48px !important;
+    padding-top: calc(
+      var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 48px
+    ) !important;
     padding-bottom: 40px !important;
   }
 }
@@ -1009,16 +1128,13 @@ div[class*="language-"] .copy:hover {
   border: 1px solid var(--vp-c-danger-2);
 }
 
-/* ═══ Claude Design handoff landing page ═══ */
+/* ═══ Landing page ═══ */
+/* .heading wraps .name; hide it too or it occupies an empty grid row */
+.VPHero .heading,
 .VPHero .name,
 .VPHero .tagline,
 .VPHero .actions {
   display: none !important;
-}
-
-.VPHero {
-  padding-top: 76px !important;
-  padding-bottom: 64px !important;
 }
 
 .VPHero .container {
@@ -1047,7 +1163,6 @@ div[class*="language-"] .copy:hover {
   min-width: 0;
 }
 
-.hero-eyebrow,
 .landing-kicker {
   font-family: var(--vp-font-family-mono);
   font-size: 0.72rem !important;
@@ -1057,7 +1172,6 @@ div[class*="language-"] .copy:hover {
   color: var(--vp-c-text-3);
 }
 
-.hero-eyebrow::before,
 .landing-kicker::before {
   content: "";
   display: inline-block;
@@ -1068,14 +1182,32 @@ div[class*="language-"] .copy:hover {
   background: currentColor;
 }
 
+/* centered CTA — no leading dash */
+.landing-cta .landing-kicker::before {
+  display: none;
+}
+
+/* Big brand lockup — same composition as the navbar brand, scaled up.
+   The navbar copy stays hidden until this scrolls past (see .hide-nav-brand). */
 .hero-lockup {
-  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
 }
 
 .hero-lockup .chef-logo {
-  width: min(340px, 72vw);
-  height: auto;
+  width: auto;
+  height: clamp(64px, 9vw, 96px);
   filter: drop-shadow(0 12px 34px rgba(139, 34, 82, 0.16));
+}
+
+.lockup-word {
+  font-family: "Roc Grotesk", sans-serif;
+  font-size: clamp(1.8rem, 3.2vw, 2.5rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--vp-c-text-1);
+  white-space: nowrap;
 }
 
 .hero-lockup .chef-logo-dark {
@@ -1093,20 +1225,13 @@ div[class*="language-"] .copy:hover {
 .hero-copy h1 {
   margin: 22px 0 0;
   font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(3.4rem, 7vw, 5.75rem);
+  font-size: clamp(2.9rem, 5vw, 4rem);
   font-style: italic;
   font-weight: 300;
-  line-height: 0.95;
+  line-height: 1.05;
   letter-spacing: 0;
   color: var(--vp-c-brand-1);
-}
-
-.hero-copy h1 em,
-.landing-section h2 em {
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-style: italic;
-  font-weight: 300;
-  color: inherit;
+  text-wrap: balance;
 }
 
 .hero-copy p {
@@ -1245,6 +1370,9 @@ div[class*="language-"] .copy:hover {
 
 .landing-section h2 {
   margin: 12px 0 0;
+  /* reset vp-doc h2 defaults (top border + padding) on landing headings */
+  border-top: 0;
+  padding-top: 0;
   font-family: "Cormorant Garamond", Georgia, serif;
   font-size: clamp(2.5rem, 5vw, 4rem);
   font-style: italic;
@@ -1252,6 +1380,12 @@ div[class*="language-"] .copy:hover {
   line-height: 1;
   letter-spacing: 0;
   color: var(--vp-c-brand-1);
+  text-wrap: balance;
+}
+
+.landing-aube h2,
+.landing-cta h2 {
+  text-wrap: balance;
 }
 
 .landing-section p {
@@ -1259,6 +1393,7 @@ div[class*="language-"] .copy:hover {
 }
 
 .landing-definition {
+  margin-top: 24px;
   padding: 22px;
   border-left: 2px solid var(--vp-c-brand-1);
   border-radius: 0 8px 8px 0;
@@ -1279,25 +1414,41 @@ div[class*="language-"] .copy:hover {
   color: var(--vp-c-text-3);
 }
 
+/* Syntax-highlighted mise.toml example — wrap the VitePress code block
+   in the brand-accent panel and let Shiki color the tokens. */
+.landing-config .language-toml {
+  margin: 0;
+  border: 1px solid var(--vp-c-divider);
+  border-left: 2px solid var(--vp-c-brand-1);
+  border-radius: 0 8px 8px 0;
+  background: var(--vp-c-bg-soft);
+}
+
+.landing-config .language-toml pre {
+  margin: 0;
+  padding: 22px;
+  overflow: auto;
+  background: transparent;
+}
+
+.landing-config .language-toml code {
+  padding: 0;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.88rem;
+  line-height: 1.8;
+}
+
+/* The lang label just repeats "toml"; the copy button is enough */
+.landing-config .language-toml > .lang {
+  display: none;
+}
+
 .landing-section-heading {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
   margin-bottom: 34px;
-}
-
-.landing-section-heading.centered {
-  display: block;
-  max-width: 720px;
-  margin-right: auto;
-  margin-left: auto;
-  text-align: center;
-}
-
-.landing-section-heading.centered .landing-kicker::before,
-.landing-cta .landing-kicker::before {
-  display: none;
 }
 
 .landing-small-button,
@@ -1323,9 +1474,9 @@ div[class*="language-"] .copy:hover {
 }
 
 .landing-feature-card {
-  position: relative;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  min-height: 260px;
   padding: 28px;
   border: 1px solid var(--vp-c-divider);
   border-radius: 8px;
@@ -1338,36 +1489,22 @@ div[class*="language-"] .copy:hover {
     box-shadow 0.2s ease;
 }
 
+.card-cmd {
+  margin: 0 0 14px;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--vp-c-text-3);
+}
+
 .landing-feature-card:hover {
   border-color: var(--vp-c-brand-1);
   transform: translateY(-2px);
   box-shadow: 0 18px 44px -32px rgba(139, 34, 82, 0.45);
 }
 
-.card-number,
-.card-link {
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.1em;
-  color: var(--vp-c-text-3);
-}
-
-.card-icon {
-  position: absolute;
-  top: 22px;
-  right: 22px;
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 50%;
-  background: var(--vp-c-bg);
-  font-size: 1.55rem;
-}
-
 .landing-feature-card h3 {
-  margin: 70px 0 10px;
+  margin: 0 0 10px;
   font-family: "Roc Grotesk", sans-serif;
   font-size: 2rem;
   font-weight: 500;
@@ -1382,16 +1519,30 @@ div[class*="language-"] .copy:hover {
 
 .card-link {
   display: inline-block;
-  margin-top: 20px;
+  /* push to the card bottom so links align across the grid */
+  margin-top: auto;
+  padding-top: 20px;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
   color: var(--vp-c-brand-1);
 }
 
+.card-link::after {
+  content: "→";
+  display: inline-block;
+  margin-left: 6px;
+  transition: transform 0.2s ease;
+}
+
+.landing-feature-card:hover .card-link::after {
+  transform: translateX(3px);
+}
+
 .landing-tools {
-  position: relative;
   width: 100vw;
   margin: 76px calc(50% - 50vw) 0;
-  padding: 28px 0;
-  overflow: hidden;
+  padding: 28px 24px;
   border-top: 1px solid var(--vp-c-divider);
   border-bottom: 1px solid var(--vp-c-divider);
   background: var(--vp-c-bg-soft);
@@ -1407,14 +1558,16 @@ div[class*="language-"] .copy:hover {
   color: var(--vp-c-text-3);
 }
 
-.landing-tools-track {
+.landing-tools-list {
   display: flex;
-  gap: 42px;
-  width: max-content;
-  animation: landing-scroll 60s linear infinite;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  justify-content: center;
+  max-width: 1120px;
+  margin: 0 auto;
 }
 
-.landing-tools-track a {
+.landing-tools-list a {
   white-space: nowrap;
   font-family: "Cormorant Garamond", Georgia, serif;
   font-style: italic;
@@ -1424,17 +1577,12 @@ div[class*="language-"] .copy:hover {
   text-decoration: none;
 }
 
-@keyframes landing-scroll {
-  to {
-    transform: translateX(-50%);
-  }
+.landing-tools-list a:hover {
+  color: var(--vp-c-brand-1);
 }
 
 .landing-aube {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.42fr);
-  gap: 28px;
-  align-items: center;
+  display: block;
   margin: 48px auto 0;
   padding: 28px;
   border: 1px solid rgba(107, 127, 78, 0.35);
@@ -1465,6 +1613,9 @@ div[class*="language-"] .copy:hover {
 
 .landing-aube h2 {
   margin: 12px 0 0;
+  /* reset vp-doc h2 defaults (top border + padding) inside the card */
+  border-top: 0;
+  padding-top: 0;
   font-family: "Cormorant Garamond", Georgia, serif;
   font-size: clamp(2.2rem, 4vw, 3.4rem);
   font-style: italic;
@@ -1474,37 +1625,10 @@ div[class*="language-"] .copy:hover {
   color: var(--vp-c-brand-1);
 }
 
-.landing-aube h2 em {
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-style: italic;
-  font-weight: 300;
-  color: inherit;
-}
-
 .landing-aube p:not(.landing-kicker) {
   max-width: 58ch;
   margin: 16px 0 0;
   color: var(--vp-c-text-2);
-}
-
-.aube-ticket {
-  display: flex;
-  align-items: center;
-  width: 220px;
-  max-width: 100%;
-  min-height: 86px;
-  padding: 0 22px;
-  border: 1px dashed rgba(107, 127, 78, 0.5);
-  border-radius: 8px;
-  background: var(--vp-c-bg);
-}
-
-.aube-ticket code {
-  font-family: var(--vp-font-family-mono);
-  font-size: 1.35rem;
-  line-height: 1;
-  background: transparent;
-  color: var(--vp-c-success-1);
 }
 
 .landing-recipe-grid {
@@ -1530,6 +1654,16 @@ div[class*="language-"] .copy:hover {
   font-size: 0.88rem;
 }
 
+/* strip VitePress's inline-code pill so it doesn't box-in-a-box
+   (needs .landing-page to outweigh `.vp-doc :not(pre) > code`) */
+.landing-page .landing-mini-install code {
+  padding: 0 !important;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit !important;
+}
+
 .landing-quickstart {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
@@ -1537,7 +1671,10 @@ div[class*="language-"] .copy:hover {
 }
 
 .recipe-steps {
-  padding: 20px 0;
+  /* distribute the four labels over the full panel height */
+  display: flex;
+  flex-direction: column;
+  padding: 0;
   border-right: 1px solid var(--vp-c-divider);
   background: var(--vp-c-bg-soft);
 }
@@ -1550,6 +1687,7 @@ div[class*="language-"] .copy:hover {
 
 .recipe-step {
   display: flex;
+  flex: 1;
   gap: 12px;
   align-items: center;
   margin: 0;
@@ -1594,19 +1732,14 @@ div[class*="language-"] .copy:hover {
   display: block;
 }
 
-.landing-code pre {
+/* Quickstart transcripts reuse the hero terminal's palette
+   (.terminal-body .prompt/.dim/.ok/.key) for one coherent look. */
+.landing-code .terminal-body {
+  box-sizing: border-box;
   height: 100%;
   min-height: 280px;
-  margin: 0;
   padding: 24px;
-  overflow: auto;
-  border: 0;
-  border-radius: 0;
   background: var(--vp-code-block-bg);
-  color: var(--vp-c-text-1);
-}
-
-.landing-code code {
   font-family: var(--vp-font-family-mono);
   font-size: 0.88rem;
   line-height: 1.8;
@@ -1626,7 +1759,10 @@ div[class*="language-"] .copy:hover {
   color: var(--vp-c-text-1);
   font-family: "Roc Grotesk", sans-serif;
   font-style: normal;
-  margin-bottom: 24px;
+  /* reset vp-doc h2 defaults (top border + margin) inside the card */
+  margin: 12px 0 24px;
+  border-top: 0;
+  padding-top: 0;
 }
 
 .landing-cta h2 em {
@@ -1649,7 +1785,6 @@ div[class*="language-"] .copy:hover {
 
 @media (max-width: 960px) {
   .VPHero .main,
-  .landing-aube,
   .landing-metaphor,
   .landing-quickstart,
   .landing-recipe-grid {
@@ -1672,7 +1807,9 @@ div[class*="language-"] .copy:hover {
 
 @media (max-width: 640px) {
   .VPHero {
-    padding-top: 42px !important;
+    padding-top: calc(
+      var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 42px
+    ) !important;
     padding-bottom: 48px !important;
   }
 
@@ -1682,11 +1819,24 @@ div[class*="language-"] .copy:hover {
   }
 
   .hero-copy h1 {
-    font-size: 2.75rem;
+    font-size: 2.4rem;
+  }
+
+  .landing-section h2 {
+    font-size: 2.2rem;
   }
 
   .hero-lockup .chef-logo {
-    width: min(260px, 100%);
+    height: 52px;
+  }
+
+  .lockup-word {
+    font-size: 1.5rem;
+  }
+
+  /* panels hold 3-5 lines; don't reserve desktop height on phones */
+  .landing-code .terminal-body {
+    min-height: 180px;
   }
 
   .hero-copy p {

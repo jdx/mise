@@ -124,6 +124,101 @@ impl TaskScriptParser {
         tera::Error::message(format!("failed to lock: {}", e))
     }
 
+    fn register_task_source_files_function(tera: &mut tera::Tera, task: &Task) {
+        tera.register_function("task_source_files", {
+            let glob_patterns = Arc::new(
+                crate::task::task_source_checker::source_glob_patterns(&task.sources),
+            );
+            // Anchor the matcher at the process cwd. `is_source` handles
+            // absolute paths outside this root by trusting the glob result,
+            // so absolute outside-cwd patterns (e.g. workspace-root paths)
+            // still flow through.
+            let cwd = crate::dirs::CWD
+                .clone()
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let matcher = Arc::new(crate::task::task_source_checker::build_source_matcher(
+                &cwd,
+                &task.sources,
+            ));
+
+            move |_: tera::Kwargs, _: &tera::State| -> tera::TeraResult<tera::Value> {
+                if glob_patterns.is_empty() {
+                    trace!("tera::render::resolve_task_sources `task_source_files` called in task with empty sources array");
+                    return Ok(tera::Value::from(Vec::<tera::Value>::new()));
+                };
+
+                let mut resolved = Vec::with_capacity(glob_patterns.len());
+
+                for pattern in glob_patterns.iter() {
+                    if contains_template_syntax(pattern) {
+                        trace!(
+                            "tera::render::resolve_task_sources including tera template string in resolved task sources: {pattern}"
+                        );
+                        resolved.push(tera::Value::from(pattern.clone()));
+                        continue;
+                    }
+
+                    match glob::glob_with(
+                        pattern,
+                        glob::MatchOptions {
+                            case_sensitive: false,
+                            require_literal_separator: false,
+                            require_literal_leading_dot: false,
+                        },
+                    ) {
+                        Err(error) => {
+                            warn!(
+                                "tera::render::resolve_task_sources including '{pattern}' in resolved task sources, ignoring glob parsing error: {error:#?}"
+                            );
+                            resolved.push(tera::Value::from(pattern.clone()));
+                        }
+                        Ok(expanded) => {
+                            let mut source_found = false;
+
+                            for path in expanded {
+                                source_found = true;
+
+                                match path {
+                                    Ok(path) => {
+                                        if !crate::task::task_source_checker::is_source(
+                                            &matcher, &path,
+                                        ) {
+                                            trace!(
+                                                "tera::render::resolve_task_sources excluded '{}' due to !-pattern",
+                                                path.display()
+                                            );
+                                            continue;
+                                        }
+                                        let source = path.display();
+                                        trace!(
+                                            "tera::render::resolve_task_sources resolved source from pattern '{pattern}': {source}"
+                                        );
+                                        resolved.push(tera::Value::from(source.to_string()));
+                                    }
+                                    Err(error) => {
+                                        let source = error.path().display();
+                                        warn!(
+                                            "tera::render::resolve_task_sources omitting '{source}' from resolved task sources due to: {:#?}",
+                                            error.error()
+                                        );
+                                    }
+                                }
+                            }
+
+                            if !source_found {
+                                warn!(
+                                    "tera::render::resolve_task_sources no source file(s) resolved for pattern: '{pattern}'"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                Ok(tera::Value::from(resolved))
+            }
+        });
+    }
+
     fn setup_tera_for_spec_parsing(&self, task: &Task) -> TeraSpecParsingResult {
         let mut tera = self.get_tera();
         let arg_order = Arc::new(Mutex::new(HashMap::new()));
@@ -401,98 +496,7 @@ impl TaskScriptParser {
             }
         });
 
-        tera.register_function("task_source_files", {
-            let glob_patterns = Arc::new(
-                crate::task::task_source_checker::source_glob_patterns(&task.sources),
-            );
-            // Anchor the matcher at the process cwd. `is_source` handles
-            // absolute paths outside this root by trusting the glob result,
-            // so absolute outside-cwd patterns (e.g. workspace-root paths)
-            // still flow through.
-            let cwd = crate::dirs::CWD
-                .clone()
-                .unwrap_or_else(|| std::path::PathBuf::from("."));
-            let matcher = Arc::new(crate::task::task_source_checker::build_source_matcher(
-                &cwd,
-                &task.sources,
-            ));
-
-            move |_: tera::Kwargs, _: &tera::State| -> tera::TeraResult<tera::Value> {
-               if glob_patterns.is_empty() {
-                   trace!("tera::render::resolve_task_sources `task_source_files` called in task with empty sources array");
-                   return Ok(tera::Value::from(Vec::<tera::Value>::new()));
-               };
-
-                let mut resolved = Vec::with_capacity(glob_patterns.len());
-
-                for pattern in glob_patterns.iter() {
-                    if contains_template_syntax(pattern) {
-                        trace!(
-                            "tera::render::resolve_task_sources including tera template string in resolved task sources: {pattern}"
-                        );
-                        resolved.push(tera::Value::from(pattern.clone()));
-                        continue;
-                    }
-
-                    match glob::glob_with(
-                        pattern,
-                        glob::MatchOptions {
-                            case_sensitive: false,
-                            require_literal_separator: false,
-                            require_literal_leading_dot: false,
-                        },
-                    ) {
-                        Err(error) => {
-                            warn!(
-                                "tera::render::resolve_task_sources including '{pattern}' in resolved task sources, ignoring glob parsing error: {error:#?}"
-                            );
-                            resolved.push(tera::Value::from(pattern.clone()));
-                        }
-                        Ok(expanded) => {
-                            let mut source_found = false;
-
-                            for path in expanded {
-                                source_found = true;
-
-                                match path {
-                                    Ok(path) => {
-                                        if !crate::task::task_source_checker::is_source(
-                                            &matcher, &path,
-                                        ) {
-                                            trace!(
-                                                "tera::render::resolve_task_sources excluded '{}' due to !-pattern",
-                                                path.display()
-                                            );
-                                            continue;
-                                        }
-                                        let source = path.display();
-                                        trace!(
-                                            "tera::render::resolve_task_sources resolved source from pattern '{pattern}': {source}"
-                                        );
-                                        resolved.push(tera::Value::from(source.to_string()));
-                                    }
-                                    Err(error) => {
-                                        let source = error.path().display();
-                                        warn!(
-                                            "tera::render::resolve_task_sources omitting '{source}' from resolved task sources due to: {:#?}",
-                                            error.error()
-                                        );
-                                    }
-                                }
-                            }
-
-                            if !source_found {
-                                warn!(
-                                    "tera::render::resolve_task_sources no source file(s) resolved for pattern: '{pattern}'"
-                                );
-                            }
-                        }
-                    }
-                }
-
-                Ok(tera::Value::from(resolved))
-            }
-        });
+        Self::register_task_source_files_function(&mut tera, task);
 
         (tera, arg_order, input_args, input_flags)
     }
@@ -693,6 +697,7 @@ impl TaskScriptParser {
                 }
             };
             let mut tera = self.get_tera();
+            Self::register_task_source_files_function(&mut tera, task);
             tera.register_function("arg", {
                 {
                     let usage_args = m.args.clone();
@@ -1233,6 +1238,44 @@ mod tests {
 
             assert_eq!(parsed, vec![expected]);
         }
+    }
+
+    #[tokio::test]
+    async fn test_task_source_files_with_usage_args() {
+        let config = Config::get().await.unwrap();
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let task = Task {
+            usage: r#"arg "[files]" var=#true"#.to_string(),
+            sources: vec![source.to_string_lossy().to_string()],
+            ..Default::default()
+        };
+        let parser = TaskScriptParser::new(None);
+        let scripts = vec![
+            "{% if usage.files %}echo {{ usage.files | join(sep=' ') }}{% else %}echo {{ task_source_files() | join(sep=' ') }}{% endif %}".to_string(),
+        ];
+        let (_, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+
+        let parsed = parser
+            .parse_run_scripts_with_args(&config, &task, &scripts, &Default::default(), &[], &spec)
+            .await
+            .unwrap();
+        assert_eq!(parsed, vec![format!("echo {}", source.display())]);
+
+        let parsed = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts,
+                &Default::default(),
+                &["mise.toml".to_string()],
+                &spec,
+            )
+            .await
+            .unwrap();
+        assert_eq!(parsed, vec!["echo mise.toml"]);
     }
 
     #[tokio::test]

@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use walkdir::WalkDir;
 
+use super::api::RubySourceChecksum;
 use super::prefix;
+use super::source;
+use crate::cmd::CmdLineRunner;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
 use crate::http::HTTP_FETCH;
@@ -20,6 +23,8 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::{ProgressIcon, SingleReport};
 
 const API_BASE: &str = "https://formulae.brew.sh/api";
+const HOMEBREW_CASK_RAW: &str = "https://raw.githubusercontent.com/Homebrew/homebrew-cask";
+const CASK_SHIM_RB: &str = include_str!("cask_shim.rb");
 
 pub struct BrewCaskManager {}
 
@@ -32,6 +37,14 @@ struct Cask {
     sha256: Option<String>,
     #[serde(default)]
     artifacts: Vec<Value>,
+    #[serde(default)]
+    ruby_source_path: Option<String>,
+    #[serde(default)]
+    ruby_source_checksum: Option<RubySourceChecksum>,
+    #[serde(default)]
+    tap_git_head: Option<String>,
+    #[serde(skip)]
+    raw_base: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,17 +135,20 @@ impl BrewCaskManager {
         let tmp_caskroom = caskroom_tmp_dir(&cask);
         file::remove_all(&tmp_caskroom)?;
         file::create_dir_all(&tmp_caskroom)?;
+        let appdir = cask_appdir(&artifacts.apps)?;
+        execute_lifecycle_hook(&cask, &stage, &appdir, "preflight", pr).await?;
         for app in &artifacts.apps {
             install_app(&stage, &tmp_caskroom, app)?;
-        }
-        for binary in &artifacts.binaries {
-            stage_binary(&stage, &tmp_caskroom, binary)?;
         }
         for pkg in &artifacts.pkgs {
             install_pkg(&stage, pkg)?;
         }
         for font in &artifacts.fonts {
             stage_font(&stage, &tmp_caskroom, font)?;
+        }
+        execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
+        for binary in &artifacts.binaries {
+            stage_binary(&stage, &tmp_caskroom, &cask, binary)?;
         }
         write_receipt(&tmp_caskroom, &cask, &artifacts)?;
         file::remove_all(&caskroom)?;
@@ -253,19 +269,28 @@ impl SystemPackageManager for BrewCaskManager {
 
 async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
     let name = &req.name;
-    let url = match split_tap_name(name) {
-        Some(("homebrew", "cask", token)) => format!("{API_BASE}/cask/{token}.json"),
+    let (url, raw_base) = match split_tap_name(name) {
+        Some(("homebrew", "cask", token)) => (
+            format!("{API_BASE}/cask/{token}.json"),
+            Some(HOMEBREW_CASK_RAW.to_string()),
+        ),
         Some((owner, tap, token)) => {
             let Some(base) = super::api::tap_raw_base(owner, tap, req.tap_url.as_deref()) else {
                 bail!(
                     "brew-cask: unsupported tap URL for '{name}'; only GitHub tap URLs can be fetched directly"
                 );
             };
-            format!("{base}/api/cask/{token}.json")
+            (
+                format!("{base}/api/cask/{token}.json"),
+                Some(base.trim_end_matches("/HEAD").to_string()),
+            )
         }
-        None => format!("{API_BASE}/cask/{name}.json"),
+        None => (
+            format!("{API_BASE}/cask/{name}.json"),
+            Some(HOMEBREW_CASK_RAW.to_string()),
+        ),
     };
-    HTTP_FETCH
+    let mut cask = HTTP_FETCH
         .json_cached::<Cask, _>(url)
         .await
         .wrap_err_with(|| {
@@ -273,7 +298,9 @@ async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
                 "failed to fetch Homebrew cask '{name}' directly. \
                  Tapped casks must publish API metadata at api/cask/<token>.json"
             )
-        })
+        })?;
+    cask.raw_base = raw_base;
+    Ok(cask)
 }
 
 async fn fetch_archive(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<PathBuf> {
@@ -345,6 +372,103 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
         }
     }
     Ok(extract_dir)
+}
+
+async fn execute_lifecycle_hook(
+    cask: &Cask,
+    staged_path: &Path,
+    appdir: &Path,
+    hook: &str,
+    pr: Option<&dyn SingleReport>,
+) -> Result<()> {
+    if !has_lifecycle_hook(cask, hook) {
+        return Ok(());
+    }
+    let ruby = source::ruby_bin().await?;
+    let cask_rb = fetch_cask_rb(cask, pr).await?;
+    let shim_path = crate::dirs::CACHE
+        .join("system-brew")
+        .join("casks")
+        .join("mise-brew-cask-shim.rb");
+    ensure_cask_shim(&shim_path)?;
+    if let Some(pr) = pr {
+        pr.set_message(format!("run cask {hook}"));
+    }
+    let runner = CmdLineRunner::new(&ruby).arg(&shim_path).envs([
+        ("MISE_BREW_CASK_FILE", cask_rb.display().to_string()),
+        ("MISE_BREW_CASK_TOKEN", cask.token.clone()),
+        ("MISE_BREW_CASK_VERSION", cask.version.clone()),
+        (
+            "MISE_BREW_CASK_STAGED_PATH",
+            staged_path.display().to_string(),
+        ),
+        ("MISE_BREW_CASK_APPDIR", appdir.display().to_string()),
+        ("MISE_BREW_PREFIX", prefix::prefix().display().to_string()),
+        ("MISE_BREW_CASK_HOOK", hook.to_string()),
+    ]);
+    let runner = match pr {
+        Some(pr) => runner.with_pr(pr),
+        None => runner,
+    };
+    runner
+        .execute_async()
+        .await
+        .wrap_err_with(|| format!("brew-cask:{}: failed to run {hook}", cask.token))
+}
+
+fn ensure_cask_shim(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        file::create_dir_all(parent)?;
+    }
+    if file::read_to_string(path).is_ok_and(|contents| contents == CASK_SHIM_RB) {
+        return Ok(());
+    }
+    file::write(path, CASK_SHIM_RB)
+}
+
+async fn fetch_cask_rb(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<PathBuf> {
+    let rb_path = cask.ruby_source_path.as_ref().ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: lifecycle hooks require ruby_source_path in API metadata",
+            cask.token
+        )
+    })?;
+    let sha256 = cask
+        .ruby_source_checksum
+        .as_ref()
+        .and_then(|c| c.sha256.as_deref())
+        .ok_or_else(|| {
+            eyre!(
+                "brew-cask:{}: lifecycle hooks require ruby_source_checksum in API metadata",
+                cask.token
+            )
+        })?;
+    let commit = cask.tap_git_head.as_deref().ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: lifecycle hooks require tap_git_head in API metadata",
+            cask.token
+        )
+    })?;
+    let raw_base = cask.raw_base.as_deref().ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: lifecycle hooks require a GitHub raw source URL",
+            cask.token
+        )
+    })?;
+    let cache_dir = crate::dirs::CACHE.join("system-brew").join("cask-source");
+    file::create_dir_all(&cache_dir)?;
+    let short_sha = sha256.get(..12).unwrap_or(sha256);
+    let dest = cache_dir.join(format!("{}-{short_sha}.rb", cask.token));
+    if dest.exists() && hash::ensure_checksum(&dest, sha256, None, "sha256").is_ok() {
+        return Ok(dest);
+    }
+    let url = format!("{raw_base}/{commit}/{rb_path}");
+    if let Some(pr) = pr {
+        pr.set_message(format!("download {rb_path}"));
+    }
+    HTTP_FETCH.download_file(&url, &dest, pr).await?;
+    hash::ensure_checksum(&dest, sha256, pr, "sha256")?;
+    Ok(dest)
 }
 
 fn cask_extraction_format(archive: &Path, filename: &str) -> Result<ExtractionFormat> {
@@ -591,7 +715,7 @@ fn font_target_path(font: &FontArtifact) -> Result<PathBuf> {
         .join(name_path))
 }
 
-fn stage_binary(stage: &Path, caskroom: &Path, binary: &BinaryArtifact) -> Result<()> {
+fn stage_binary(stage: &Path, caskroom: &Path, cask: &Cask, binary: &BinaryArtifact) -> Result<()> {
     let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
     file::remove_all(&caskroom_binary)?;
     if let Some(parent) = caskroom_binary.parent() {
@@ -616,23 +740,90 @@ fn stage_binary(stage: &Path, caskroom: &Path, binary: &BinaryArtifact) -> Resul
         })?;
         file::make_symlink(&app_binary, &caskroom_binary)?;
     } else {
-        let source = find_artifact(stage, &binary.source)
-            .filter(|path| path.is_file())
-            .ok_or_else(|| {
-                eyre!(
-                    "brew-cask: binary artifact '{}' was not found",
-                    binary.source
-                )
-            })?;
-        file::copy(&source, &caskroom_binary)?;
-        file::make_executable(&caskroom_binary)?;
+        let source = find_binary_source(stage, caskroom, cask, binary)?;
+        if source.starts_with(stage) || source.starts_with(caskroom) {
+            file::copy(&source, &caskroom_binary)?;
+            file::make_executable(&caskroom_binary)?;
+        } else {
+            file::make_symlink(&source, &caskroom_binary)?;
+        }
     }
     Ok(())
+}
+
+fn find_binary_source(
+    stage: &Path,
+    caskroom: &Path,
+    cask: &Cask,
+    binary: &BinaryArtifact,
+) -> Result<PathBuf> {
+    if let Some(source) = generated_caskroom_artifact(caskroom, cask, &binary.source)
+        && source.is_file()
+    {
+        return Ok(source);
+    }
+    if let Some(source) = absolute_binary_source(&binary.source)
+        && source.is_file()
+    {
+        return Ok(source);
+    }
+    find_artifact(caskroom, &binary.source)
+        .or_else(|| find_artifact(stage, &binary.source))
+        .filter(|path| path.is_file())
+        .ok_or_else(|| {
+            eyre!(
+                "brew-cask: binary artifact '{}' was not found",
+                binary.source
+            )
+        })
+}
+
+fn absolute_binary_source(source: &str) -> Option<PathBuf> {
+    let prefix = prefix::prefix();
+    let source = source.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy());
+    let source = PathBuf::from(source);
+    source.is_absolute().then_some(source)
+}
+
+fn generated_caskroom_artifact(caskroom: &Path, cask: &Cask, source: &str) -> Option<PathBuf> {
+    let prefix = prefix::prefix();
+    let source = source.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy());
+    let source = PathBuf::from(source);
+    let final_caskroom = caskroom_version_dir(&cask.token, &cask.version);
+    let relative = source.strip_prefix(final_caskroom).ok()?;
+    if relative
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return None;
+    }
+    Some(caskroom.join(relative))
+}
+
+fn cask_appdir(apps: &[AppArtifact]) -> Result<PathBuf> {
+    let prefix_app_dir = prefix::prefix().join("Applications");
+    for app in apps {
+        if app_target_path(app.target_name())?.starts_with(&prefix_app_dir) {
+            return Ok(prefix_app_dir);
+        }
+    }
+    Ok(PathBuf::from("/Applications"))
 }
 
 fn link_binary(caskroom: &Path, binary: &BinaryArtifact) -> Result<()> {
     let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
     if !caskroom_binary.is_file() {
+        if caskroom_binary
+            .symlink_metadata()
+            .is_ok_and(|metadata| metadata.file_type().is_symlink())
+        {
+            let target = std::fs::read_link(&caskroom_binary)?;
+            bail!(
+                "brew-cask: binary artifact '{}' was staged but symlink target '{}' does not exist",
+                binary.source,
+                target.display()
+            );
+        }
         bail!(
             "brew-cask: binary artifact '{}' was not staged",
             binary.source
@@ -1162,6 +1353,12 @@ fn is_non_install_artifact(kind: &str) -> bool {
     )
 }
 
+fn has_lifecycle_hook(cask: &Cask, hook: &str) -> bool {
+    cask.artifacts
+        .iter()
+        .any(|artifact| artifact_type(artifact) == hook)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1197,7 +1394,22 @@ mod tests {
             url: "https://example.com/example.zip".to_string(),
             sha256: Some("no_check".to_string()),
             artifacts: Vec::new(),
+            ruby_source_path: None,
+            ruby_source_checksum: None,
+            tap_git_head: None,
+            raw_base: None,
         }
+    }
+
+    #[test]
+    fn ensure_cask_shim_creates_parent_dir() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let shim_path = tmp.path().join("missing").join("cask_shim.rb");
+
+        ensure_cask_shim(&shim_path)?;
+
+        assert_eq!(file::read_to_string(&shim_path)?, CASK_SHIM_RB);
+        Ok(())
     }
 
     #[test]
@@ -1276,6 +1488,56 @@ mod tests {
                 }],
                 ..Default::default()
             }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn detects_lifecycle_hooks() {
+        let mut cask = test_cask("gimp", "3.2.4");
+        cask.artifacts = vec![
+            serde_json::json!({"preflight": null}),
+            serde_json::json!({"app": ["GIMP.app"]}),
+        ];
+
+        assert!(has_lifecycle_hook(&cask, "preflight"));
+        assert!(!has_lifecycle_hook(&cask, "postflight"));
+    }
+
+    #[test]
+    fn maps_generated_caskroom_binary_to_temp_caskroom() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let cask = test_cask("gimp", "3.2.4");
+        let tmp_caskroom = tmp.path().join("tmp-caskroom");
+        let generated = tmp_caskroom.join("gimp.wrapper.sh");
+        file::create_dir_all(&tmp_caskroom)?;
+        std::fs::write(&generated, "#!/bin/sh\n")?;
+
+        let source = "$HOMEBREW_PREFIX/Caskroom/gimp/3.2.4/gimp.wrapper.sh";
+
+        assert_eq!(
+            generated_caskroom_artifact(&tmp_caskroom, &cask, source),
+            Some(generated)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_generated_caskroom_binary_parent_dirs() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let cask = test_cask("gimp", "3.2.4");
+        let tmp_caskroom = tmp.path().join("tmp-caskroom");
+        let source = "$HOMEBREW_PREFIX/Caskroom/gimp/3.2.4/../escape";
+
+        assert_eq!(
+            generated_caskroom_artifact(&tmp_caskroom, &cask, source),
+            None
         );
         Ok(())
     }
@@ -1710,12 +1972,13 @@ mod tests {
         crate::file::write(stage.join("op"), "binary")?;
         let caskroom = caskroom_version_dir("binary-only", "1.0.0");
         file::create_dir_all(&caskroom)?;
+        let cask = test_cask("binary-only", "1.0.0");
         let binary = BinaryArtifact {
             source: "op".to_string(),
             target: Some("$HOMEBREW_PREFIX/bin/op".to_string()),
         };
 
-        stage_binary(&stage, &caskroom, &binary)?;
+        stage_binary(&stage, &caskroom, &cask, &binary)?;
         link_binary(&caskroom, &binary)?;
 
         let target = binary.target_path()?;
@@ -1737,6 +2000,7 @@ mod tests {
         crate::file::write(stage.join("sbin/op"), "sbin")?;
         let caskroom = caskroom_version_dir("binary-only", "1.0.0");
         file::create_dir_all(&caskroom)?;
+        let cask = test_cask("binary-only", "1.0.0");
         let bin = BinaryArtifact {
             source: "bin/op".to_string(),
             target: Some("$HOMEBREW_PREFIX/bin/op".to_string()),
@@ -1746,13 +2010,120 @@ mod tests {
             target: Some("$HOMEBREW_PREFIX/sbin/op".to_string()),
         };
 
-        stage_binary(&stage, &caskroom, &bin)?;
-        stage_binary(&stage, &caskroom, &sbin)?;
+        stage_binary(&stage, &caskroom, &cask, &bin)?;
+        stage_binary(&stage, &caskroom, &cask, &sbin)?;
         link_binary(&caskroom, &bin)?;
         link_binary(&caskroom, &sbin)?;
 
         assert_eq!(crate::file::read_to_string(bin.target_path()?)?, "bin");
         assert_eq!(crate::file::read_to_string(sbin.target_path()?)?, "sbin");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn binary_source_prefers_hook_generated_caskroom_file() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        crate::file::write(stage.join("op"), "stage")?;
+        let caskroom = caskroom_version_dir("binary-only", "1.0.0");
+        file::create_dir_all(&caskroom)?;
+        crate::file::write(caskroom.join("op"), "hook")?;
+        let cask = test_cask("binary-only", "1.0.0");
+        let binary = BinaryArtifact {
+            source: "op".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/op".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &cask, &binary)?;
+
+        assert_eq!(
+            crate::file::read_to_string(caskroom.join("bin/op"))?,
+            "hook"
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stages_absolute_binary_source_from_pkg_install() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let pkg_binary = tmp
+            .path()
+            .join("Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli");
+        if let Some(parent) = pkg_binary.parent() {
+            file::create_dir_all(parent)?;
+        }
+        crate::file::write(&pkg_binary, "pkg binary")?;
+        let caskroom = caskroom_version_dir("karabiner-elements", "16.1.0");
+        file::create_dir_all(&caskroom)?;
+        let cask = test_cask("karabiner-elements", "16.1.0");
+        let binary = BinaryArtifact {
+            source: pkg_binary.to_string_lossy().to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/karabiner_cli".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &cask, &binary)?;
+        link_binary(&caskroom, &binary)?;
+
+        let staged = caskroom.join("bin/karabiner_cli");
+        assert_eq!(std::fs::read_link(&staged)?, pkg_binary);
+        let target = binary.target_path()?;
+        assert_eq!(std::fs::read_link(&target)?, staged);
+        assert_eq!(crate::file::read_to_string(&target)?, "pkg binary");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reports_missing_target_for_dangling_staged_binary_symlink() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let pkg_binary = tmp
+            .path()
+            .join("Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli");
+        if let Some(parent) = pkg_binary.parent() {
+            file::create_dir_all(parent)?;
+        }
+        crate::file::write(&pkg_binary, "pkg binary")?;
+        let caskroom = caskroom_version_dir("karabiner-elements", "16.1.0");
+        file::create_dir_all(&caskroom)?;
+        let cask = test_cask("karabiner-elements", "16.1.0");
+        let binary = BinaryArtifact {
+            source: pkg_binary.to_string_lossy().to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/karabiner_cli".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &cask, &binary)?;
+        file::remove_file(&pkg_binary)?;
+        let err = link_binary(&caskroom, &binary).unwrap_err().to_string();
+
+        assert!(err.contains("was staged but symlink target"));
+        assert!(err.contains(&pkg_binary.to_string_lossy().to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn cask_appdir_uses_prefix_for_prefix_targeted_apps() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+
+        assert_eq!(cask_appdir(&[app])?, tmp.path().join("Applications"));
         Ok(())
     }
 
