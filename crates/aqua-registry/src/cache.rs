@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-const COMPILED_REGISTRY_CACHE_VERSION: &str = "v5";
+const COMPILED_REGISTRY_CACHE_VERSION: &str = "v6";
 
 #[derive(Debug, Clone)]
 pub struct RegistryCache {

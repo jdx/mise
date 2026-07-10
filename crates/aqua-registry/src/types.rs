@@ -88,6 +88,7 @@ pub struct AquaPackage {
     #[rkyv(omit_bounds)]
     pub version_overrides: Vec<AquaPackage>,
     pub no_asset: bool,
+    pub private: bool,
     pub error_message: Option<String>,
     pub path: Option<String>,
     #[serde(skip)]
@@ -404,6 +405,7 @@ impl Default for AquaPackage {
             version_constraint: String::new(),
             version_overrides: Vec::new(),
             no_asset: false,
+            private: false,
             error_message: None,
             path: None,
             var_values: HashMap::new(),
@@ -1485,6 +1487,21 @@ packages:
 
         assert_eq!(pkg.replacements.get("386"), Some(&"i686".to_string()));
         assert_eq!(pkg.vars[0].default.as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn test_registry_package_private_defaults_to_false() {
+        let pkg = first_registry_package("packages:\n  - type: github_release\n");
+
+        assert!(!pkg.private);
+    }
+
+    #[test]
+    fn test_registry_package_preserves_private() {
+        let pkg =
+            first_registry_package("packages:\n  - type: github_release\n    private: true\n");
+
+        assert!(pkg.private);
     }
 
     #[test]
