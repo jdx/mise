@@ -21,6 +21,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::GITHUB_TOKEN;
+use crate::errors::Error;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
@@ -29,6 +30,9 @@ use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 pub struct CargoBackend {
     ba: Arc<BackendArg>,
 }
+
+const CARGO_BINSTALL_NO_FALLBACK_EXIT_CODE: i32 = 94;
+const CARGO_BINSTALL_DEFAULT_DISABLED_STRATEGIES: &[&str] = &["compile"];
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct CargoOptions<'a> {
@@ -114,7 +118,6 @@ enum BinstallStatus {
     Enabled(PathBuf),
     Disabled,
     Unavailable,
-    UnsupportedOptions(Vec<&'static str>),
 }
 
 #[async_trait]
@@ -190,11 +193,86 @@ impl Backend for CargoBackend {
 
         let config = ctx.config.clone();
         let install_arg = format!("{}@{}", self.tool_name(), tv.version);
-        let registry_name = &Settings::get().cargo.registry_name;
 
-        let cmd = CmdLineRunner::new("cargo").arg("install");
-        let mut cmd = if let Some(url) = self.git_url() {
-            let mut cmd = cmd.arg(format!("--git={url}"));
+        let cargo_install_required_options =
+            Self::cargo_install_required_options(&tv.request.options());
+        if self.git_url().is_none() && cargo_install_required_options.is_empty() {
+            match self.binstall_status(&config, Some(&ctx.ts)).await {
+                BinstallStatus::Enabled(cargo_binstall) => {
+                    let mut cmd = CmdLineRunner::new(cargo_binstall).arg("-y");
+                    let disabled_strategies = CARGO_BINSTALL_DEFAULT_DISABLED_STRATEGIES
+                        .iter()
+                        .copied()
+                        .chain(
+                            (!Settings::get().cargo.binstall_quickinstall)
+                                .then_some("quick-install"),
+                        )
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    cmd = cmd.args(["--disable-strategies", &disabled_strategies]);
+                    if let Some(token) = &*GITHUB_TOKEN {
+                        cmd = cmd.env("GITHUB_TOKEN", token)
+                    }
+                    let result = self
+                        .execute_install_command(ctx, &tv, cmd.arg(&install_arg))
+                        .await;
+                    if result.as_ref().is_ok() {
+                        return Ok(tv.clone());
+                    }
+                    if Settings::get().cargo.binstall_only
+                        || !result.as_ref().is_err_and(|err| {
+                            Error::get_exit_status(err)
+                                == Some(CARGO_BINSTALL_NO_FALLBACK_EXIT_CODE)
+                        })
+                    {
+                        result?;
+                    }
+                    info!("cargo-binstall found no prebuilt binary; falling back to cargo install");
+                }
+                BinstallStatus::Disabled if Settings::get().cargo.binstall_only => {
+                    bail!("cargo-binstall is disabled, but cargo.binstall_only is set");
+                }
+                _ if Settings::get().cargo.binstall_only => {
+                    bail!("cargo-binstall is not available, but cargo.binstall_only is set");
+                }
+                BinstallStatus::Unavailable => match Settings::get().cargo.binstall_native {
+                    Some(true) => {
+                        Settings::get().ensure_experimental("cargo.binstall_native")?;
+                        if self
+                            .native_binstall(ctx, &tv, NativeBinstallAction::Install)
+                            .await?
+                        {
+                            return Ok(tv.clone());
+                        }
+                    }
+                    Some(false) => {}
+                    None if native_binstall::rollout_warning_active() => {
+                        self.native_binstall(ctx, &tv, NativeBinstallAction::WarnOnly)
+                            .await?;
+                    }
+                    None => {}
+                },
+                _ => {}
+            }
+        } else if Settings::get().cargo.binstall_only
+            && self.git_url().is_none()
+            && !cargo_install_required_options.is_empty()
+        {
+            let options = format_tool_options(&cargo_install_required_options);
+            bail!(
+                "cargo-binstall cannot honor cargo install-only tool option(s): {options}\n\
+                hint: Remove the option(s), or disable cargo.binstall_only to allow cargo install"
+            );
+        } else if !cargo_install_required_options.is_empty() {
+            let options = format_tool_options(&cargo_install_required_options);
+            info!(
+                "not using cargo-binstall because cargo install-only tool option(s) are specified: {options}"
+            );
+        }
+
+        let mut cmd = CmdLineRunner::new("cargo").arg("install");
+        if let Some(url) = self.git_url() {
+            cmd = cmd.arg(format!("--git={url}"));
             if let Some(rev) = tv.version.strip_prefix("rev:") {
                 cmd = cmd.arg(format!("--rev={rev}"));
             } else if let Some(branch) = tv.version.strip_prefix("branch:") {
@@ -208,99 +286,10 @@ impl Backend for CargoBackend {
       * mise use cargo:eza-community/eza@branch:main"#,
                 ))?;
             }
-            cmd
         } else {
-            match self.binstall_status(&config, Some(&ctx.ts), &tv).await {
-                BinstallStatus::Enabled(cargo_binstall) => {
-                    let mut cmd = CmdLineRunner::new(cargo_binstall).arg("-y");
-                    if !Settings::get().cargo.binstall_quickinstall {
-                        cmd = cmd.args(["--disable-strategies", "quick-install"]);
-                    }
-                    if let Some(token) = &*GITHUB_TOKEN {
-                        cmd = cmd.env("GITHUB_TOKEN", token)
-                    }
-                    cmd.arg(install_arg)
-                }
-                BinstallStatus::UnsupportedOptions(options)
-                    if Settings::get().cargo.binstall_only =>
-                {
-                    let options = format_tool_options(&options);
-                    bail!(
-                        "cargo-binstall cannot honor cargo install-only tool option(s): {options}\n\
-                        hint: Remove the option(s), or disable cargo.binstall_only to allow cargo install"
-                    );
-                }
-                BinstallStatus::Disabled if Settings::get().cargo.binstall_only => {
-                    bail!("cargo-binstall is disabled, but cargo.binstall_only is set");
-                }
-                _ if Settings::get().cargo.binstall_only => {
-                    bail!("cargo-binstall is not available, but cargo.binstall_only is set");
-                }
-                BinstallStatus::Unavailable => {
-                    match Settings::get().cargo.binstall_native {
-                        Some(true) => {
-                            Settings::get().ensure_experimental("cargo.binstall_native")?;
-                            if self
-                                .native_binstall(ctx, &tv, NativeBinstallAction::Install)
-                                .await?
-                            {
-                                return Ok(tv.clone());
-                            }
-                        }
-                        Some(false) => {}
-                        None if native_binstall::rollout_warning_active() => {
-                            self.native_binstall(ctx, &tv, NativeBinstallAction::WarnOnly)
-                                .await?;
-                        }
-                        None => {}
-                    }
-                    cmd.arg(install_arg)
-                }
-                BinstallStatus::UnsupportedOptions(options) => {
-                    let options = format_tool_options(&options);
-                    info!(
-                        "not using cargo-binstall because cargo install-only tool option(s) are specified: {options}"
-                    );
-                    cmd.arg(install_arg)
-                }
-                _ => cmd.arg(install_arg),
-            }
-        };
-
-        let request_options = tv.request.options();
-        let opts = CargoOptions::new(&request_options);
-        if let Some(bin) = opts.bin() {
-            cmd = cmd.arg(format!("--bin={bin}"));
+            cmd = cmd.arg(&install_arg);
         }
-        if opts.locked() {
-            cmd = cmd.arg("--locked");
-        }
-        if let Some(features) = opts.features() {
-            cmd = cmd.arg(format!("--features={features}"));
-        }
-        if opts.default_features_disabled() {
-            cmd = cmd.arg("--no-default-features");
-        }
-        if let Some(c) = opts.crate_arg() {
-            cmd = cmd.arg(c);
-        }
-        if let Some(registry_name) = registry_name {
-            cmd = cmd.arg(format!("--registry={registry_name}"));
-        }
-
-        cmd.arg("--root")
-            .arg(tv.install_path())
-            .with_pr(ctx.pr.as_ref())
-            .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-            .envs(tv.install_env())
-            .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
-            .prepend_path(
-                self.dependency_toolset(&ctx.config)
-                    .await?
-                    .list_paths(&ctx.config)
-                    .await,
-            )?
-            .execute()?;
+        self.execute_install_command(ctx, &tv, cmd).await?;
 
         Ok(tv.clone())
     }
@@ -331,6 +320,48 @@ impl CargoBackend {
         Self { ba: Arc::new(ba) }
     }
 
+    async fn execute_install_command<'a>(
+        &'a self,
+        ctx: &'a InstallContext,
+        tv: &'a ToolVersion,
+        mut cmd: CmdLineRunner<'a>,
+    ) -> Result<()> {
+        let request_options = tv.request.options();
+        let opts = CargoOptions::new(&request_options);
+        if let Some(bin) = opts.bin() {
+            cmd = cmd.arg(format!("--bin={bin}"));
+        }
+        if opts.locked() {
+            cmd = cmd.arg("--locked");
+        }
+        if let Some(features) = opts.features() {
+            cmd = cmd.arg(format!("--features={features}"));
+        }
+        if opts.default_features_disabled() {
+            cmd = cmd.arg("--no-default-features");
+        }
+        if let Some(c) = opts.crate_arg() {
+            cmd = cmd.arg(c);
+        }
+        if let Some(registry_name) = &Settings::get().cargo.registry_name {
+            cmd = cmd.arg(format!("--registry={registry_name}"));
+        }
+
+        cmd.arg("--root")
+            .arg(tv.install_path())
+            .with_pr(ctx.pr.as_ref())
+            .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+            .envs(tv.install_env())
+            .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
+            .prepend_path(
+                self.dependency_toolset(&ctx.config)
+                    .await?
+                    .list_paths(&ctx.config)
+                    .await,
+            )?
+            .execute()
+    }
+
     fn cargo_install_required_options(opts: &ToolVersionOptions) -> Vec<&'static str> {
         let mut options = vec![];
         if CargoOptions::new(opts)
@@ -348,19 +379,9 @@ impl CargoBackend {
         options
     }
 
-    async fn binstall_status(
-        &self,
-        config: &Arc<Config>,
-        ts: Option<&Toolset>,
-        tv: &ToolVersion,
-    ) -> BinstallStatus {
+    async fn binstall_status(&self, config: &Arc<Config>, ts: Option<&Toolset>) -> BinstallStatus {
         if !Settings::get().cargo.binstall {
             return BinstallStatus::Disabled;
-        }
-        let opts = tv.request.options();
-        let cargo_install_required_options = Self::cargo_install_required_options(&opts);
-        if !cargo_install_required_options.is_empty() {
-            return BinstallStatus::UnsupportedOptions(cargo_install_required_options);
         }
         if let Some(cargo_binstall) = self
             .dependency_path_for_install(config, ts, "cargo-binstall")

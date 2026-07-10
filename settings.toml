@@ -279,9 +279,12 @@ When `cargo-binstall` installs a prebuilt binary, Cargo build settings and `carg
 behavior do not affect the downloaded artifact. Set `cargo.binstall = false` to force
 `cargo install` when you need Cargo settings to control the install.
 
-When mise invokes `cargo-binstall`, `cargo-binstall` handles its own fallback order, including
-its final fallback to compiling with `cargo install`. mise does not retry with a separate
-`cargo install` command if `cargo-binstall` exits with an error.
+When mise invokes external `cargo-binstall`, it disables cargo-binstall's `compile` strategy.
+If cargo-binstall reports that no prebuilt artifact is available (exit code 94), mise runs
+`cargo install` itself. Other cargo-binstall errors do not trigger this fallback. When
+`cargo.binstall_only = true`, Cargo tools without an explicit Git source must be installed by cargo-binstall:
+mise does not fall back to `cargo install`, and options that require `cargo install` produce an
+error. Explicit Git sources are unaffected because they always use `cargo install --git`.
 
 You can install it with mise:
 
@@ -319,7 +322,7 @@ type = "Bool"
 
 [cargo.binstall_only]
 default = false
-description = "Only use cargo-binstall for installation, fail if not available."
+description = "Require cargo-binstall for Cargo tools without an explicit Git source. Fail if no prebuilt binary is available or if tool options require cargo install."
 env = "MISE_CARGO_BINSTALL_ONLY"
 type = "Bool"
 
@@ -332,9 +335,10 @@ the third-party [cargo-quickinstall](https://github.com/cargo-bins/cargo-quickin
 artifacts are separate from crate-author GitHub releases and artifacts declared in
 `package.metadata.binstall`.
 
-By default, mise passes `--disable-strategies quick-install` when invoking the external
-`cargo-binstall` binary. This setting does not affect mise's `cargo.binstall_native` path, which
-does not use quickinstall.
+By default, mise passes `--disable-strategies compile,quick-install` when invoking the external
+`cargo-binstall` binary. The `compile` strategy is always disabled; setting this to `true` changes
+the flag to `--disable-strategies compile`. This setting does not affect mise's
+`cargo.binstall_native` path, which does not use quickinstall.
 
 This only controls external `cargo-binstall`'s quick-install strategy. To disable binstall, set
 `cargo.binstall = false`.

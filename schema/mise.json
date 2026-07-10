@@ -653,7 +653,7 @@
             },
             "binstall_only": {
               "default": false,
-              "description": "Only use cargo-binstall for installation, fail if not available.",
+              "description": "Require cargo-binstall for Cargo tools without an explicit Git source. Fail if no prebuilt binary is available or if tool options require cargo install.",
               "type": "boolean"
             },
             "binstall_quickinstall": {

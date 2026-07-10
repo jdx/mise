@@ -66,9 +66,13 @@ Some Cargo settings are only meaningful when mise runs `cargo install`. If `carg
 installs a prebuilt binary, Cargo build settings and `cargo install` behavior do not affect that
 artifact. Set `cargo.binstall = false` when you need Cargo settings to control the install.
 
-When mise uses `cargo-binstall`, mise runs `cargo-binstall` once and lets `cargo-binstall` handle
-its own fallback order, including its final fallback to compiling with `cargo install`. mise does
-not retry with a separate `cargo install` command if `cargo-binstall` exits with an error.
+When mise uses external `cargo-binstall`, it disables cargo-binstall's `compile` strategy. If
+cargo-binstall reports that no prebuilt artifact is available (exit code 94), mise runs
+`cargo install` itself. Other cargo-binstall errors do not trigger this fallback. When
+`cargo.binstall_only = true`, Cargo tools without an explicit Git source must be installed by cargo-binstall:
+mise does not fall back to `cargo install`, and options that require `cargo install` produce an
+error. Explicit Git sources are unaffected because they always use `cargo install --git` and are
+never eligible for cargo-binstall.
 
 By default, mise disables external `cargo-binstall`'s use of the third-party
 [cargo-quickinstall](https://github.com/cargo-bins/cargo-quickinstall) artifact host. This is
@@ -90,9 +94,9 @@ go in `[tools]` in `mise.toml`.
 When `cargo-binstall` is available, mise uses it for registry installs unless a tool option needs
 `cargo install` to build from source.
 
-For options that do not skip `cargo-binstall`, any source-build fallback is handled by
-`cargo-binstall` itself. mise does not perform an additional compile fallback after
-`cargo-binstall` fails.
+For options that do not skip `cargo-binstall`, mise disables cargo-binstall's compile strategy and
+runs `cargo install` itself only when cargo-binstall exits with code 94 to report that no prebuilt
+artifact is available.
 
 | Option                     | `cargo-binstall` behavior                                                                |
 | -------------------------- | ---------------------------------------------------------------------------------------- |
@@ -168,5 +172,5 @@ pass `false` to disable:
 "cargo:https://github.com/username/demo" = { version = "latest", locked = false }
 ```
 
-This option does not cause mise to skip `cargo-binstall`; it only affects the install if
-`cargo-binstall` itself falls back to compiling with `cargo install`.
+This option does not cause mise to skip `cargo-binstall`; it affects mise's `cargo install`
+fallback when cargo-binstall reports that no prebuilt artifact is available.
