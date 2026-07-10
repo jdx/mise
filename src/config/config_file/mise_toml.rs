@@ -1052,7 +1052,9 @@ impl ConfigFile for MiseToml {
                             ba_opts.opts.entry(k).or_insert(v);
                         }
                     }
-                    // Copy os, depends, and install_env from config (not cached)
+                    // Replace config-owned fields rather than merging them with cached values.
+                    // This intentionally supersedes apply_overrides above so omitted values clear
+                    // stale cache and install_env does not retain cached entries.
                     ba_opts.os = options.os.clone();
                     ba_opts.depends = options.depends.clone();
                     ba_opts.install_env = options.install_env.clone();
