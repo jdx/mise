@@ -2,7 +2,7 @@
 # `mise bootstrap user status`
 
 - **Usage**: `mise bootstrap user status [-J --json] [--missing]`
-- **Source code**: [`src/cli/bootstrap/user/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/user/status.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 ## Flags
 

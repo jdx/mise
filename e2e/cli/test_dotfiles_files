@@ -19,6 +19,7 @@ EOF
 
 # everything is missing before applying
 assert_contains "mise dotfiles status" "missing"
+assert_contains "MISE_EXPERIMENTAL=0 mise dotfiles status" "missing"
 assert_fail "mise dotfiles status --missing"
 
 # system commands do not manage dotfiles

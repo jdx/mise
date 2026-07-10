@@ -60,6 +60,39 @@
         }
       ]
     },
+    "tool_alias_versions": {
+      "description": "tool version aliases",
+      "type": "object",
+      "additionalProperties": {
+        "description": "version alias points to",
+        "type": "string"
+      }
+    },
+    "tool_alias_entry": {
+      "oneOf": [
+        {
+          "description": "where the alias goes",
+          "type": "string"
+        },
+        {
+          "description": "tool to set aliases for",
+          "type": "object",
+          "properties": {
+            "backend": {
+              "description": "where the alias goes",
+              "type": "string"
+            },
+            "versions": {
+              "$ref": "#/$defs/tool_alias_versions"
+            }
+          },
+          "additionalProperties": {
+            "description": "version alias points to",
+            "type": "string"
+          }
+        }
+      ]
+    },
     "env_value": {
       "oneOf": [
         {
@@ -614,6 +647,10 @@
               "description": "Use cargo-binstall instead of cargo install if available",
               "type": "boolean"
             },
+            "binstall_native": {
+              "description": "[experimental] Use mise's native cargo binary installer when cargo-binstall is unavailable.",
+              "type": "boolean"
+            },
             "binstall_only": {
               "default": false,
               "description": "Only use cargo-binstall for installation, fail if not available.",
@@ -792,7 +829,8 @@
           "type": "string"
         },
         "env_shell_expand": {
-          "description": "Enable shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})",
+          "default": true,
+          "description": "Controls shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})",
           "type": "boolean"
         },
         "erlang": {
@@ -1640,12 +1678,18 @@
           "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
           "type": "string"
         },
+        "system_deps": {
+          "default": "prompt",
+          "description": "How to handle a plugin's declared system dependencies before installing a tool.",
+          "type": "string",
+          "enum": ["prompt", "auto", "warn", "ignore"]
+        },
         "system_packages": {
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
             "managers": {
-              "description": "[experimental] Restrict which system package managers mise will use.",
+              "description": "Restrict which system package managers mise will use.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -1653,7 +1697,7 @@
             },
             "sudo": {
               "default": true,
-              "description": "[experimental] Allow `mise bootstrap packages apply` to elevate with sudo when not running as root.",
+              "description": "Allow `mise bootstrap packages apply` to elevate with sudo when not running as root.",
               "type": "boolean"
             }
           }
@@ -1799,6 +1843,12 @@
         },
         "task_timings": {
           "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
+          "type": "boolean",
+          "deprecated": true
+        },
+        "tera_v1": {
+          "default": false,
+          "description": "Use Tera v1 instead of Tera v2 for template rendering.",
           "type": "boolean",
           "deprecated": true
         },
@@ -2027,6 +2077,37 @@
             "type": "string"
           },
           {
+            "description": "value of variable",
+            "type": "integer"
+          },
+          {
+            "description": "value of variable",
+            "const": true
+          },
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "const": true
+                  }
+                ]
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["value"],
+            "unevaluatedProperties": false
+          },
+          {
             "type": "object",
             "properties": {
               "default": {
@@ -2037,6 +2118,64 @@
               }
             },
             "required": ["default"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "oneOf": [
+                  {
+                    "const": true
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "required": ["required"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "$ref": "#/$defs/env_age"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["age"],
+            "unevaluatedProperties": false,
+            "description": "[experimental] age-encrypted variable"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "$ref": "#/$defs/env_age_value"
+                  },
+                  "format": {
+                    "$ref": "#/$defs/env_age_format"
+                  },
+                  "redact": {
+                    "$ref": "#/$defs/env_redact"
+                  }
+                },
+                "required": ["value"],
+                "unevaluatedProperties": false,
+                "description": "[experimental] age-encrypted value (complex format)"
+              }
+            },
+            "required": ["age"],
             "unevaluatedProperties": false
           }
         ]
@@ -2076,6 +2215,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "lockfile": {
+          "description": "Use a single lockfile at the monorepo root for descendant config roots. true opts in now, false keeps lockfiles next to subproject configs, and unset keeps the current behavior until the scheduled default flip.",
+          "type": "boolean"
         }
       }
     },
@@ -2755,40 +2898,14 @@
       "description": "custom shorthands",
       "type": "object",
       "additionalProperties": {
-        "oneOf": [
-          {
-            "description": "where the alias goes",
-            "type": "string"
-          },
-          {
-            "description": "tool to set aliases for",
-            "type": "object",
-            "additionalProperties": {
-              "description": "version alias points to",
-              "type": "string"
-            }
-          }
-        ]
+        "$ref": "#/$defs/tool_alias_entry"
       }
     },
     "tool_alias": {
       "description": "Tool version aliases",
       "type": "object",
       "additionalProperties": {
-        "oneOf": [
-          {
-            "description": "where the alias goes",
-            "type": "string"
-          },
-          {
-            "description": "tool to set aliases for",
-            "type": "object",
-            "additionalProperties": {
-              "description": "version alias points to",
-              "type": "string"
-            }
-          }
-        ]
+        "$ref": "#/$defs/tool_alias_entry"
       }
     },
     "shell_alias": {
@@ -3038,7 +3155,7 @@
     },
     "dotfiles": {
       "type": "object",
-      "description": "[experimental] dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path",
+      "description": "dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path",
       "additionalProperties": {
         "oneOf": [
           {
@@ -3096,7 +3213,7 @@
     },
     "bootstrap": {
       "type": "object",
-      "description": "[experimental] machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
+      "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
       "properties": {
         "packages": {
           "type": "object",

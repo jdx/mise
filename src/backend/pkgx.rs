@@ -192,10 +192,7 @@ impl PkgxBackend {
     }
 
     fn read_lockfile_for_tool(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<Lockfile> {
-        let (lockfile_path, _) =
-            lockfile::lockfile_path_for_tool_source(&ctx.config, tv.request.source())
-                .ok_or_else(|| eyre::eyre!("could not determine pkgx lockfile path"))?;
-        Lockfile::read(&lockfile_path)
+        lockfile::read_lockfile_for_tool_source(&ctx.config, tv.request.source())
     }
 
     async fn install_from_locked(

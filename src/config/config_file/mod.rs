@@ -399,8 +399,16 @@ pub fn is_trusted(path: &Path) -> bool {
         // in tests/CI we trust everything
         return true;
     } else if !trust_path(path).exists() {
-        // the file isn't trusted, and we're not on a CI system where we generally assume we can
-        // trust config files
+        // No direct trust record. A config inside a linked git worktree
+        // shares trust with the equivalent path in the repo's main checkout.
+        // Not applicable in paranoid mode (excluded above), where trust is
+        // tied to file contents that can differ between worktree branches.
+        if let Some(main_path) = crate::git::main_checkout_equivalent(&canonicalized_path)
+            && is_trusted(&main_path)
+        {
+            add_trusted(canonicalized_path.to_path_buf());
+            return true;
+        }
         return false;
     }
     add_trusted(canonicalized_path.to_path_buf());

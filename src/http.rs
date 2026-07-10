@@ -555,10 +555,22 @@ impl Client {
         apply_url_replacements(&mut url);
         debug!("{} {}", verb_label, &url);
 
-        // Apply netrc credentials after URL replacement
+        // Apply netrc credentials after URL replacement.
+        //
+        // netrc is treated as a *fallback*, mirroring curl's behavior: an
+        // explicit Authorization header (e.g. the forge token resolved by
+        // `host_auth_headers` from GITHUB_TOKEN/gh/github_tokens.toml) wins
+        // over netrc. The one exception is when a URL replacement actually
+        // redirected the request to a different URL — in that case the
+        // pre-existing auth header was built for the *original* host and is
+        // likely wrong for the replacement target, so netrc (scoped to the
+        // new host) should override it. This preserves the #7164 use case
+        // (replace a public URL with a private mirror authenticated via
+        // netrc) without clobbering forge tokens on un-redirected requests.
         let mut final_headers = headers.clone();
         if options.use_netrc {
-            final_headers.extend(netrc_headers(&url));
+            final_headers =
+                apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
         }
 
         let mut req = self.reqwest.request(method.clone(), url.clone());
@@ -842,6 +854,48 @@ fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
     }
 
     Ok(HeaderMap::new())
+}
+
+/// Decide whether netrc credentials should be applied to a request.
+///
+/// netrc is a *fallback*: an explicit Authorization header (e.g. a forge
+/// token resolved from GITHUB_TOKEN/gh/github_tokens.toml) takes precedence
+/// over netrc, matching curl's behavior. The exception is a URL replacement
+/// that redirected the request to a *different host*: the existing auth
+/// header was built for the original host and is likely wrong for the
+/// replacement target, so netrc (which is itself scoped to the new host) is
+/// allowed to override it. A same-host rewrite (e.g. a path-only replacement)
+/// keeps the existing auth, since the forge token is still valid for that host.
+fn netrc_should_apply(host_changed: bool, has_existing_auth: bool) -> bool {
+    host_changed || !has_existing_auth
+}
+
+/// Merge `netrc` credentials into `final_headers`, honoring the fallback
+/// policy in [`netrc_should_apply`]. `original_url` is the URL before any
+/// `apply_url_replacements` rewrite and `url` is the (possibly rewritten)
+/// URL actually being requested; a change of *host* means the request was
+/// redirected to a different server, which lets netrc override an existing
+/// auth header. Netrc values are `insert`ed (not `extend`ed) so they replace
+/// a pre-existing Authorization rather than appending a duplicate one.
+fn apply_netrc_credentials(
+    mut final_headers: HeaderMap,
+    original_url: &Url,
+    url: &Url,
+    netrc: HeaderMap,
+) -> HeaderMap {
+    // Compare host only: netrc lookup and forge-token selection are both
+    // host-scoped, so a path/query-only rewrite on the same host must not
+    // let netrc clobber a still-valid forge token.
+    let host_changed = url.host() != original_url.host();
+    let has_auth = final_headers.contains_key(AUTHORIZATION);
+    if netrc_should_apply(host_changed, has_auth) {
+        for (name, value) in netrc {
+            if let Some(name) = name {
+                final_headers.insert(name, value);
+            }
+        }
+    }
+    final_headers
 }
 
 /// Get HTTP Basic authentication headers from netrc file for the given URL
@@ -1394,6 +1448,97 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert!(msg.contains("github auth: yes"));
         assert!(msg.contains("github rate limit: 42/5000 (core), resets at 1781337353"));
         assert!(msg.contains(r#"{"message":"secondary rate limit","docs":"url"}"#));
+    }
+
+    #[test]
+    fn test_netrc_should_apply_treats_netrc_as_fallback() {
+        // No existing auth → netrc fills in (normal fallback).
+        assert!(netrc_should_apply(false, false));
+        // Explicit auth (e.g. forge token) on a same-host request →
+        // netrc must NOT clobber it. This is the regression guard for
+        // private GitHub release-asset downloads where a netrc github
+        // entry was overriding the resolved Bearer token.
+        assert!(!netrc_should_apply(false, true));
+        // Host changed via URL replacement → existing auth was built for the
+        // original host, so netrc (scoped to the new host) wins.
+        assert!(netrc_should_apply(true, true));
+        assert!(netrc_should_apply(true, false));
+    }
+
+    fn basic_netrc_headers() -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(AUTHORIZATION, HeaderValue::from_static("Basic bmV0cmM="));
+        h
+    }
+
+    fn auth_value(headers: &HeaderMap) -> Vec<String> {
+        headers
+            .get_all(AUTHORIZATION)
+            .iter()
+            .map(|v| v.to_str().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn test_apply_netrc_keeps_forge_token_on_un_redirected_url() {
+        // Regression: a netrc entry for api.github.com must NOT override the
+        // Bearer forge token when the URL was not rewritten. Previously this
+        // clobbered the token and broke private release-asset downloads.
+        let url: Url = "https://api.github.com/repos/o/r/releases/assets/1"
+            .parse()
+            .unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer forge-token"),
+        );
+
+        let out = apply_netrc_credentials(headers, &url, &url, basic_netrc_headers());
+        // Exactly one Authorization header, still the forge token.
+        assert_eq!(auth_value(&out), vec!["Bearer forge-token".to_string()]);
+    }
+
+    #[test]
+    fn test_apply_netrc_fills_in_when_no_existing_auth() {
+        let url: Url = "https://example.com/file".parse().unwrap();
+        let out = apply_netrc_credentials(HeaderMap::new(), &url, &url, basic_netrc_headers());
+        assert_eq!(auth_value(&out), vec!["Basic bmV0cmM=".to_string()]);
+    }
+
+    #[test]
+    fn test_apply_netrc_overrides_existing_auth_when_url_redirected() {
+        // #7164 use case: a URL replacement redirected the request to a
+        // private mirror. The pre-existing auth header was built for the
+        // original host, so netrc (scoped to the new host) must win — and
+        // replace, not duplicate, the Authorization header.
+        let original: Url = "https://public.example.com/file".parse().unwrap();
+        let redirected: Url = "https://mirror.internal/file".parse().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer stale"));
+
+        let out = apply_netrc_credentials(headers, &original, &redirected, basic_netrc_headers());
+        assert_eq!(auth_value(&out), vec!["Basic bmV0cmM=".to_string()]);
+    }
+
+    #[test]
+    fn test_apply_netrc_keeps_forge_token_on_same_host_path_rewrite() {
+        // A URL replacement that only rewrites the path/query on the SAME host
+        // must not let netrc override the forge token: the token is still valid
+        // for that host, and netrc is host-scoped anyway.
+        let original: Url = "https://github.com/o/r/releases/download/v1/f.tar.gz"
+            .parse()
+            .unwrap();
+        let rewritten: Url = "https://github.com/o/r/releases/download/v1/f-linux.tar.gz"
+            .parse()
+            .unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer forge-token"),
+        );
+
+        let out = apply_netrc_credentials(headers, &original, &rewritten, basic_netrc_headers());
+        assert_eq!(auth_value(&out), vec!["Bearer forge-token".to_string()]);
     }
 
     #[test]

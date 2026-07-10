@@ -2,7 +2,7 @@
 # `mise bootstrap linux systemd-units`
 
 - **Usage**: `mise bootstrap linux systemd-units <SUBCOMMAND>`
-- **Source code**: [`src/cli/bootstrap/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/mod.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Manage systemd user services from `[bootstrap.linux.systemd.units]`
 

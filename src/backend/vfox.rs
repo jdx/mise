@@ -34,6 +34,7 @@ pub struct VfoxBackend {
     pathname: String,
     tool_name: Option<String>,
     metadata_deps: OnceLock<Vec<String>>,
+    system_deps: OnceLock<Vec<crate::system::deps::SystemDep>>,
 }
 
 #[async_trait]
@@ -61,6 +62,20 @@ impl Backend for VfoxBackend {
             })
         });
         Ok(deps.iter().map(|s| s.as_str()).collect())
+    }
+
+    fn system_dependencies(&self) -> Vec<crate::system::deps::SystemDep> {
+        self.system_deps
+            .get_or_init(|| {
+                self.load_system_deps().unwrap_or_else(|e| {
+                    warn!(
+                        "failed to load vfox plugin system dependencies for {}: {e}",
+                        self.pathname
+                    );
+                    vec![]
+                })
+            })
+            .clone()
     }
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {
@@ -231,7 +246,12 @@ impl Backend for VfoxBackend {
 
         // Use default vfox behavior for traditional plugins
         let result = vfox
-            .install(&self.pathname, &tv.version, tv.install_path())
+            .install_with_download_dir(
+                &self.pathname,
+                &tv.version,
+                tv.install_path(),
+                tv.download_path(),
+            )
             .await?;
 
         // Record provenance if attestation verification succeeded
@@ -466,6 +486,7 @@ impl VfoxBackend {
             pathname,
             tool_name,
             metadata_deps: OnceLock::new(),
+            system_deps: OnceLock::new(),
         }
     }
 
@@ -477,6 +498,26 @@ impl VfoxBackend {
         let plugin = vfox::Plugin::from_dir(&plugin_path)?;
         let metadata = plugin.get_metadata()?;
         Ok(metadata.depends)
+    }
+
+    fn load_system_deps(&self) -> eyre::Result<Vec<crate::system::deps::SystemDep>> {
+        let plugin_path = dirs::PLUGINS.join(&self.pathname);
+        if !plugin_path.exists() {
+            return Ok(vec![]);
+        }
+        let plugin = vfox::Plugin::from_dir(&plugin_path)?;
+        let metadata = plugin.get_metadata()?;
+        let mut deps = vec![];
+        for raw in metadata.system_dependencies {
+            match crate::system::deps::SystemDep::try_from(raw) {
+                Ok(dep) => deps.push(dep),
+                Err(e) => warn!(
+                    "ignoring invalid systemDependencies entry in vfox plugin {}: {e}",
+                    self.pathname
+                ),
+            }
+        }
+        Ok(deps)
     }
 
     async fn _exec_env(

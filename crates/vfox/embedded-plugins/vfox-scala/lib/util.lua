@@ -1,67 +1,65 @@
 local util = {}
+local http = require("http")
 
 util.SEARCH_URL = "https://www.scala-lang.org/download/all.html"
 util.SCALA3_DOWNLOAD_URL = "https://github.com/scala/scala3/releases/download/%s/scala3-%s.%s"
-util.SCALA2_DOWNLOAD_URL_2104_UP = "https://scala-lang.org/files/archive/scala-%s.%s"
-util.SCALA2_DOWNLOAD_URL_250_UP = "https://scala-lang.org/files/archive/scala-%s.%s"
+util.SCALA2_DOWNLOAD_PAGE_URL = "https://scala-lang.org/download/%s.html"
 
-function util:compare_versions(v1o, v2o)
-    local v1 = v1o.version
-    local v2 = v2o.version
-    local v1_parts = {}
-    for part in string.gmatch(v1, "[^.]+") do
-        table.insert(v1_parts, tonumber(part))
-    end
-
-    local v2_parts = {}
-    for part in string.gmatch(v2, "[^.]+") do
-        table.insert(v2_parts, tonumber(part))
-    end
-
-    for i = 1, math.max(#v1_parts, #v2_parts) do
-        local v1_part = v1_parts[i] or 0
-        local v2_part = v2_parts[i] or 0
-        if v1_part > v2_part then
-            return true
-        elseif v1_part < v2_part then
-            return false
-        end
-    end
-
-    return false
+function util:isVersion(version)
+    return version:match("^%d+%.%d+%.%d+[%w%.%-]*$") ~= nil
 end
 
-function util:getDownloadUrl(version)
+function util:findDownloadUrl(body, linkId)
+    return body:match('id="#?' .. linkId .. '"[^>]-href="([^"]+)"')
+        or body:match('href="([^"]+)"[^>]-id="#?' .. linkId .. '"')
+end
+
+function util:getArchiveSuffix()
     local suffixType = ""
-    local downloadUrl = ""
     if RUNTIME.osType == "windows" then
         suffixType = "zip"
     else
-        if
-            util:compare_versions({ version = "2.7.1" }, { version = version })
-            or util:compare_versions({ version = version }, { version = "3.0.0" })
-        then
-            suffixType = "tar.gz"
-        else
-            suffixType = "tgz"
-        end
+        suffixType = "tar.gz"
     end
 
-    if
-        util:compare_versions({ version = version }, { version = "2.5.0" })
-        and util:compare_versions({ version = "2.10.4" }, { version = version })
-    then
-        if util:compare_versions({ version = "2.7.0" }, { version = version }) then
-            version = version:gsub("%.final", "-final")
-        end
-        downloadUrl = util.SCALA2_DOWNLOAD_URL_250_UP:format(version, suffixType)
-    elseif util:compare_versions({ version = "3.0.0" }, { version = version }) then
-        downloadUrl = util.SCALA2_DOWNLOAD_URL_2104_UP:format(version, suffixType)
-    else
-        downloadUrl = util.SCALA3_DOWNLOAD_URL:format(version, version, suffixType)
+    return suffixType
+end
+
+function util:getScala2DownloadUrl(version)
+    local resp, err = http.get({
+        url = util.SCALA2_DOWNLOAD_PAGE_URL:format(version),
+    })
+    if err ~= nil or resp.status_code ~= 200 then
+        error("failed to resolve Scala download page for " .. version)
+    end
+
+    local linkId = "link%-main%-unixsys"
+    if RUNTIME.osType == "windows" then
+        linkId = "link%-main%-windows"
+    end
+
+    local downloadUrl = util:findDownloadUrl(resp.body, linkId)
+    if downloadUrl == nil and RUNTIME.osType == "windows" then
+        downloadUrl = util:findDownloadUrl(resp.body, "link%-non%-main%-sys")
+    end
+    if downloadUrl == nil then
+        error("failed to find Scala archive URL for " .. version)
+    end
+
+    if RUNTIME.osType == "windows" then
+        downloadUrl = downloadUrl:gsub("%.msi$", ".zip")
     end
 
     return downloadUrl
+end
+
+function util:getDownloadUrl(version)
+    if version:match("^3%.") then
+        local suffixType = util:getArchiveSuffix()
+        return util.SCALA3_DOWNLOAD_URL:format(version, version, suffixType)
+    end
+
+    return util:getScala2DownloadUrl(version)
 end
 
 return util

@@ -4,11 +4,12 @@ use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::path_env::PathEnv;
-use crate::tera::{contains_template_syntax, get_tera, render_str, tera_exec};
+use crate::tera::{
+    TeraEngine, contains_template_syntax, get_tera, render_str, tera_exec, tera1_exec,
+};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -327,6 +328,11 @@ impl EnvResults {
 
         // Save filtered_input for validation after processing
         let filtered_input_for_validation = filtered_input.clone();
+        let required_env = if resolve_opts.vars {
+            &*env::PRISTINE_ENV
+        } else {
+            initial
+        };
 
         for (directive, source) in filtered_input {
             let mut tera = None;
@@ -344,14 +350,7 @@ impl EnvResults {
                 .collect::<EnvMap>();
             ctx.insert("env", &env_vars);
 
-            let context_vars: EnvMap = if let Some(Value::Object(existing_vars)) = ctx.get("vars") {
-                existing_vars
-                    .iter()
-                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                    .collect()
-            } else {
-                EnvMap::new()
-            };
+            let context_vars = Self::context_vars(&ctx);
 
             let mut vars = context_vars.clone();
             vars.extend(r.vars.iter().map(|(k, (v, _))| (k.clone(), v.clone())));
@@ -364,6 +363,9 @@ impl EnvResults {
                     let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &v)?;
 
                     if resolve_opts.vars {
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
                         r.vars.insert(k, (v, source.clone()));
                     } else {
                         r.env_remove.remove(&k);
@@ -400,6 +402,9 @@ impl EnvResults {
                     let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &v)?;
 
                     if resolve_opts.vars {
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
                         r.vars.insert(k, (v, source.clone()));
                     } else {
                         r.env_remove.remove(&k);
@@ -413,9 +418,19 @@ impl EnvResults {
                     env.shift_remove(&k);
                     r.env_remove.insert(k);
                 }
-                EnvDirective::Required(_k, _opts) => {
-                    // Required directives don't set any value - they only validate during validation phase
-                    // The actual value must come from the initial environment or a later config file
+                EnvDirective::Required(k, _opts) => {
+                    // Env required directives only validate. Var required directives also surface
+                    // process environment values so `{{vars.KEY}}` can render.
+                    if resolve_opts.vars {
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
+                        if !vars.contains_key(&k)
+                            && let Some(v) = required_env.get(&k)
+                        {
+                            r.vars.insert(k, (v.clone(), source.clone()));
+                        }
+                    }
                 }
                 EnvDirective::Age {
                     key: ref k,
@@ -444,6 +459,10 @@ impl EnvResults {
                     };
 
                     if resolve_opts.vars {
+                        match options.redact {
+                            Some(false) => {}
+                            Some(true) | None => r.redactions.push(k.clone()),
+                        }
                         r.vars.insert(k.clone(), (decrypted_v, source.clone()));
                     } else {
                         r.env_remove.remove(k);
@@ -501,6 +520,9 @@ impl EnvResults {
                         r.env_files.push(f.clone());
                         for (k, v) in new_env {
                             if resolve_opts.vars {
+                                if redact.unwrap_or(false) {
+                                    r.redactions.push(k.clone());
+                                }
                                 r.vars.insert(k, (v, f.clone()));
                             } else {
                                 if redact.unwrap_or(false) {
@@ -528,6 +550,9 @@ impl EnvResults {
                         r.env_scripts.push(f.clone());
                         for (k, v) in new_env {
                             if resolve_opts.vars {
+                                if redact.unwrap_or(false) {
+                                    r.redactions.push(k.clone());
+                                }
                                 r.vars.insert(k, (v, f.clone()));
                             } else {
                                 if redact.unwrap_or(false) {
@@ -644,26 +669,32 @@ impl EnvResults {
             r.env_paths = paths;
         }
 
-        // Validate required environment variables
-        Self::validate_required_env_vars(
+        let context_vars_for_validation = Self::context_vars(&ctx);
+
+        // Validate required variables
+        Self::validate_required_vars(
             &filtered_input_for_validation,
-            initial,
+            required_env,
             &r,
+            &context_vars_for_validation,
             resolve_opts.warn_on_missing_required,
+            resolve_opts.vars,
         )?;
 
         Ok(r)
     }
 
-    fn validate_required_env_vars(
+    fn validate_required_vars(
         input: &[(EnvDirective, PathBuf)],
         initial: &EnvMap,
         env_results: &EnvResults,
+        context_vars: &EnvMap,
         warn_mode: bool,
+        vars_mode: bool,
     ) -> eyre::Result<()> {
         let mut required_vars = Vec::new();
 
-        // Collect all required environment variables with their options
+        // Collect all required variables with their options
         for (directive, source) in input {
             match directive {
                 EnvDirective::Val(key, _, options) if options.required.is_required() => {
@@ -686,16 +717,29 @@ impl EnvResults {
             // 2. In a config file processed later than the one declaring it as required
             let is_predefined = initial.contains_key(&var_name);
 
-            let is_defined_later = if let Some((_, var_source)) = env_results.env.get(&var_name) {
+            let resolved_values = if vars_mode {
+                &env_results.vars
+            } else {
+                &env_results.env
+            };
+            let is_defined_later = if let Some((_, var_source)) = resolved_values.get(&var_name) {
                 // Check if the variable comes from a different config file
                 var_source != &declaring_source
             } else {
                 false
             };
+            let is_defined_in_context =
+                vars_mode && context_vars.get(&var_name).is_some_and(|v| !v.is_empty());
 
-            if !is_predefined && !is_defined_later {
+            if !is_predefined && !is_defined_later && !is_defined_in_context {
+                let variable_kind = if vars_mode {
+                    "variable"
+                } else {
+                    "environment variable"
+                };
                 let base_message = format!(
-                    "Required environment variable '{}' is not defined. It must be set before mise runs or in a later config file. (Required in: {})",
+                    "Required {} '{}' is not defined. It must be set before mise runs or in a later config file. (Required in: {})",
+                    variable_kind,
                     var_name,
                     display_path(declaring_source)
                 );
@@ -717,10 +761,21 @@ impl EnvResults {
         Ok(())
     }
 
+    fn context_vars(ctx: &tera::Context) -> EnvMap {
+        if let Some(existing_vars) = ctx.get("vars").and_then(|v| v.as_map()) {
+            existing_vars
+                .iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.to_string(), s.to_string())))
+                .collect()
+        } else {
+            EnvMap::new()
+        }
+    }
+
     fn parse_template(
         &self,
         ctx: &tera::Context,
-        tera: &mut Option<tera::Tera>,
+        tera: &mut Option<TeraEngine>,
         path: &Path,
         exec_env: &EnvMap,
         input: &str,
@@ -732,10 +787,17 @@ impl EnvResults {
             trust_check(path)?;
             let tera = tera.get_or_insert_with(|| {
                 let mut tera = get_tera(path.parent());
-                tera.register_function(
-                    "exec",
-                    tera_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
-                );
+                if let TeraEngine::V2(tera) = &mut tera {
+                    tera.register_function(
+                        "exec",
+                        tera_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
+                    );
+                } else if let TeraEngine::V1(tera) = &mut tera {
+                    tera.register_function(
+                        "exec",
+                        tera1_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
+                    );
+                }
                 tera
             });
             output = render_str(tera, input, ctx)
@@ -743,35 +805,19 @@ impl EnvResults {
         }
 
         // Step 2: Shell-style $VAR expansion
-        if output.contains('$') {
-            debug_assert!(
-                !env!("CARGO_PKG_VERSION").starts_with("2026.7"),
-                "change env_shell_expand default to true and remove this warning"
-            );
-            match Settings::get().env_shell_expand {
-                Some(true) => {
-                    let env_vars: BTreeMap<String, String> = ctx
-                        .get("env")
-                        .and_then(|v| serde_json::from_value(v.clone()).ok())
-                        .unwrap_or_default();
-                    let mut missing_vars = Vec::new();
-                    output = shell_expand_env(&output, &env_vars, &mut missing_vars);
-                    for var in missing_vars {
-                        warn_once!(
-                            "env var '{var}' is not defined and will be left unexpanded. \
-                             Use ${{{var}:-}} to default to an empty string and suppress \
-                             this warning."
-                        );
-                    }
-                }
-                Some(false) => {}
-                None => {
-                    warn_once!(
-                        "env value contains '$' which will be expanded in a future release. \
-                         Set `env_shell_expand = true` to opt in or `env_shell_expand = false` to \
-                         keep current behavior and suppress this warning."
-                    );
-                }
+        if output.contains('$') && Settings::get().env_shell_expand {
+            let env_vars: BTreeMap<String, String> = ctx
+                .get("env")
+                .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok())
+                .unwrap_or_default();
+            let mut missing_vars = Vec::new();
+            output = shell_expand_env(&output, &env_vars, &mut missing_vars);
+            for var in missing_vars {
+                warn_once!(
+                    "env var '{var}' is not defined and will be left unexpanded. \
+                     Use ${{{var}:-}} to default to an empty string and suppress \
+                     this warning."
+                );
             }
         }
 

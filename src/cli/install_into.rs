@@ -1,11 +1,17 @@
 use crate::cli::args::ToolArg;
-use crate::config::Config;
+use crate::config::{Config, Settings};
+use crate::file::display_path;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::prompt;
 use clap::ValueHint;
-use eyre::{Result, eyre};
-use std::{path::PathBuf, sync::Arc};
+use console::style;
+use eyre::{Result, bail, eyre};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 /// Install a tool version to a specific path
 ///
@@ -53,8 +59,45 @@ impl InstallInto {
             before_date,
         };
         tv.install_path = Some(self.path.clone());
+        // install-into force-reinstalls, which uninstalls (rm -rf) whatever
+        // already exists at the install path. Check immediately before the
+        // install performs that deletion (rather than at the start of `run`) so
+        // a directory that became non-empty during tool resolution can't be
+        // clobbered without an explicit opt-in. Refuse to overwrite a non-empty
+        // directory (e.g. `.`) unless the user passes -y/--yes or confirms
+        // interactively; the prompt defaults to "no" since it is destructive.
+        // (#8115)
+        if path_has_contents(&self.path) {
+            let proceed = Settings::get().yes
+                || prompt::confirm_with_default(
+                    format!(
+                        "{} is not empty; install-into will delete its contents. Continue?",
+                        display_path(&self.path)
+                    ),
+                    false,
+                )?;
+            if !proceed {
+                bail!(
+                    "refusing to overwrite non-empty directory {}; pass {} or choose an empty/new path",
+                    display_path(&self.path),
+                    style("--yes").yellow().for_stderr()
+                );
+            }
+        }
         backend.install_version(install_ctx, tv).await?;
         Ok(())
+    }
+}
+
+/// True if `path` exists and is anything other than an empty directory
+/// (a non-empty directory, or a regular file). Empty/new paths return false.
+fn path_has_contents(path: &Path) -> bool {
+    match std::fs::read_dir(path) {
+        Ok(mut entries) => entries.next().is_some(), // non-empty dir
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false, // missing -> false
+        // A file (NotADirectory) or an unreadable dir (e.g. PermissionDenied):
+        // err toward "occupied" so we never silently clobber it.
+        Err(_) => path.exists(),
     }
 }
 

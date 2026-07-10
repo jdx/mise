@@ -5,7 +5,10 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::tracking::Tracker;
 use crate::config::{Config, Settings};
 use crate::runtime_symlinks;
-use crate::toolset::{ToolVersion, ToolsetBuilder, get_versions_needed_by_tracked_configs};
+use crate::toolset::{
+    ToolVersion, ToolsetBuilder, get_versions_needed_by_tracked_configs,
+    get_versions_needed_by_tracked_stubs,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
 use crate::{backend::Backend, config, exit};
@@ -20,6 +23,9 @@ use super::trust::Trust;
 /// Versions which are no longer the latest specified in any of those configs are deleted.
 /// Versions installed only with environment variables `MISE_<TOOL>_VERSION` will be deleted,
 /// as will versions only referenced on the command line `mise exec <TOOL>@<VERSION>`.
+///
+/// Tool stubs that have been executed are tracked in ~/.local/state/mise/tracked-stubs.
+/// Versions still referenced by a tracked stub are not deleted.
 ///
 /// You can list prunable tools with `mise ls --prunable`
 #[derive(Debug, clap::Args)]
@@ -43,6 +49,10 @@ pub struct Prune {
     #[clap(long, verbatim_doc_comment)]
     pub dry_run_code: bool,
 
+    /// Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
+    #[clap(long, verbatim_doc_comment)]
+    pub monorepo: bool,
+
     /// Prune only unused versions of tools
     #[clap(long)]
     pub tools: bool,
@@ -54,6 +64,9 @@ impl Prune {
     }
 
     pub async fn run(self) -> Result<()> {
+        if self.monorepo {
+            unimplemented!("mise prune --monorepo is not implemented yet");
+        }
         let mut config = Config::get().await?;
         if self.configs || !self.tools {
             self.prune_configs()?;
@@ -117,6 +130,12 @@ pub async fn prunable_tools(
     // Remove versions that are still needed by tracked configs
     let needed_versions = get_versions_needed_by_tracked_configs(config, true, true).await?;
     for key in needed_versions {
+        to_delete.remove(&key);
+    }
+
+    // Remove versions that are still needed by tracked tool stubs
+    let needed_by_stubs = get_versions_needed_by_tracked_stubs(config).await?;
+    for key in needed_by_stubs {
         to_delete.remove(&key);
     }
 

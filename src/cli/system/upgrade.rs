@@ -1,7 +1,7 @@
 use eyre::Result;
 
 use super::driver::{self, Action, DriverOpts};
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::system;
 
 /// Upgrade installed bootstrap packages from `[bootstrap.packages]`
@@ -38,7 +38,6 @@ pub struct SystemUpgrade {
 
 impl SystemUpgrade {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         let mgrs = if self.packages.is_empty() {
             let config = Config::get().await?;
             system::packages_from_config(&config)

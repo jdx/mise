@@ -2,7 +2,6 @@ name: auto-merge-release
 
 on:
   schedule:
-    # 10:00 UTC = 4am CST (winter) / 5am CDT (summer)
     - cron: "0 10 * * *"
   workflow_dispatch:
 
@@ -10,9 +9,45 @@ jobs:
   merge:
     if: github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
       - name: Merge release into main
         run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME:-}" != "workflow_dispatch" ]; then
+            latest_tag=$(git describe --tags --match 'v[0-9]*' --abbrev=0 || true)
+            if [ -n "$latest_tag" ]; then
+              range="${latest_tag}..HEAD"
+              tag_time=$(git for-each-ref --format='%(creatordate:unix)' "refs/tags/$latest_tag")
+              now=$(date +%s)
+              min_age=$((7 * 24 * 60 * 60))
+              age=$((now - tag_time))
+              if [ "$age" -lt "$min_age" ]; then
+                echo "Latest release ${latest_tag} is less than 7 days old; not auto-merging release PRs"
+                exit 0
+              fi
+            else
+              echo "No v[0-9]* release tag found; allowing bootstrap release"
+              range=""
+            fi
+            if [ -n "$range" ]; then
+              commit_subjects=$(git log --format=%s "$range")
+              if ! grep -Eq '^(fix|feat)(\([^)]+\))?!?: ' <<<"$commit_subjects"; then
+                echo "No pending fix/feat commits since the latest release; not auto-merging release PRs"
+                exit 0
+              fi
+            fi
+          else
+            echo "Manual dispatch; skipping release cadence guards"
+          fi
+
           PR_NUMBER=$(gh pr list -R jdx/mise --base main --head release --state open --json number --jq '.[0].number // empty')
           if [ -z "$PR_NUMBER" ]; then
             echo "No open PR from release to main"
@@ -26,37 +61,10 @@ jobs:
             exit 0
           fi
 
-          # Parse description for section headers (release-plz groups commits by type)
-          # Substantive sections (daily): Features, Bug Fixes, Performance, Security
-          # Non-substantive sections (weekly): Refactor, Revert, Documentation, Chore, Registry, Dependency Updates
-          SUBSTANTIVE=$(echo "$BODY" | grep -E '^[[:space:]]*###.*(Features|Bug Fixes|Performance|Security)' || true)
-
-          if [ -n "$SUBSTANTIVE" ]; then
-            echo "PR #$PR_NUMBER has substantive changes (Features/Bug Fixes/Performance/Security), merging daily"
-          else
-            CREATED=$(gh pr view "$PR_NUMBER" -R jdx/mise --json createdAt --jq '.createdAt')
-            if [ -z "$CREATED" ]; then
-              echo "ERROR: Failed to get PR creation date"
-              exit 1
-            fi
-
-            CREATED_EPOCH=$(date -d "$CREATED" +%s 2>/dev/null)
-            if [ -z "$CREATED_EPOCH" ]; then
-              echo "ERROR: Failed to parse PR creation date: $CREATED"
-              exit 1
-            fi
-
-            NOW_EPOCH=$(date +%s)
-            DAYS_OLD=$(( (NOW_EPOCH - CREATED_EPOCH) / 86400 ))
-            if [ "$DAYS_OLD" -lt 7 ]; then
-              echo "PR #$PR_NUMBER only non-substantive changes (docs/chore/registry/deps), $DAYS_OLD days old; waiting until 7 days"
-              exit 0
-            fi
-            echo "PR #$PR_NUMBER only non-substantive changes, 7+ days old, enabling auto-merge"
-          fi
+          echo "PR #$PR_NUMBER is ready for the daily release window"
 
           gh pr merge "$PR_NUMBER" -R jdx/mise --squash --auto || {
-            echo "Merge failed or PR not ready, will retry tomorrow"
+            echo "Merge failed or PR not ready, will retry on the next run"
             exit 0
           }
         env:

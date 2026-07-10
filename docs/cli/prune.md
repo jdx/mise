@@ -11,6 +11,9 @@ Versions which are no longer the latest specified in any of those configs are de
 Versions installed only with environment variables `MISE_<TOOL>_VERSION` will be deleted,
 as will versions only referenced on the command line `mise exec <TOOL>@<VERSION>`.
 
+Tool stubs that have been executed are tracked in ~/.local/state/mise/tracked-stubs.
+Versions still referenced by a tracked stub are not deleted.
+
 You can list prunable tools with `mise ls --prunable`
 
 ## Arguments
@@ -34,6 +37,10 @@ Prune only tracked and trusted configuration links that point to nonexistent con
 Like --dry-run but exits with code 1 if there are tools to prune
 
 This is useful for scripts to check if tools need to be pruned.
+
+### `--monorepo`
+
+Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
 
 ### `--tools`
 

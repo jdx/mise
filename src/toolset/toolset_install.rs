@@ -14,7 +14,7 @@ use crate::hooks::{Hooks, InstalledToolInfo};
 use crate::install_context::InstallContext;
 use crate::plugins::PluginType;
 use crate::toolset::Toolset;
-use crate::toolset::helpers::show_python_install_hint;
+use crate::toolset::helpers::{preflight_system_deps, show_python_install_hint};
 use crate::toolset::install_options::InstallOptions;
 use crate::toolset::tool_deps::{ToolDeps, tool_key};
 use crate::toolset::tool_request::ToolRequest;
@@ -153,6 +153,12 @@ impl Toolset {
         let tools_with_plugin_errors: HashSet<_> =
             plugin_errors.iter().map(|(tr, _)| tr.clone()).collect();
         versions.retain(|tr| !tools_with_plugin_errors.contains(tr));
+
+        // Check plugin-declared system prerequisites before compiling anything.
+        // Runs here (after plugins are installed, before parallel install tasks
+        // spawn) so declarations are readable and the non-Send driver stays on
+        // the main task.
+        preflight_system_deps(config, &versions, opts).await;
 
         // Build dependency graph and install using Kahn's algorithm
         let (installed, failed) = self.install_with_deps(config, versions, opts).await;
@@ -573,13 +579,22 @@ impl Toolset {
         config: &Arc<Config>,
         dry_run: bool,
     ) -> Result<()> {
-        if config.repo_urls.is_empty() {
+        Self::ensure_config_plugins_installed_from_urls(config, &config.repo_urls, dry_run).await
+    }
+
+    /// Install all plugins from an explicit plugin URL map.
+    pub async fn ensure_config_plugins_installed_from_urls(
+        config: &Arc<Config>,
+        repo_urls: &HashMap<String, String>,
+        dry_run: bool,
+    ) -> Result<()> {
+        if repo_urls.is_empty() {
             return Ok(());
         }
 
         let mpr = MultiProgressReport::get();
 
-        for plugin_key in config.repo_urls.keys() {
+        for (plugin_key, url) in repo_urls {
             let (plugin_type, name) = Self::parse_plugin_key(plugin_key);
 
             // Skip empty plugin names (e.g., from malformed keys like "" or "vfox:")
@@ -589,6 +604,7 @@ impl Toolset {
             }
 
             let plugin = plugin_type.plugin(name.to_string());
+            plugin.set_remote_url(url.clone());
 
             if !plugin.is_installed() {
                 plugin

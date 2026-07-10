@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tools]
+node = "^20.0.0"
+"npm:prettier" = "^3.1.0"
+EOF
+
+assert_contains "mise ls 2>&1" "semver ranges are not supported: ^20.0.0"
+assert_contains "mise ls 2>&1" "semver ranges are not supported: ^3.1.0"

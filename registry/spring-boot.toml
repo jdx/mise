@@ -1,2 +1,2 @@
-backends = ["asdf:mise-plugins/mise-spring-boot"]
+backends = ["vfox:jdx/vfox-spring-boot", "asdf:mise-plugins/mise-spring-boot"]
 description = "Spring Boot CLI"

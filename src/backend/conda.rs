@@ -11,7 +11,6 @@ use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{self, Lockfile, PlatformInfo};
-use crate::toolset::ToolSource;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::{backend::Backend, dirs, parallel};
 use crate::{file, hash};
@@ -365,14 +364,8 @@ impl CondaBackend {
         })
     }
 
-    fn read_lockfile_for_tool(&self, tv: &ToolVersion) -> Result<Lockfile> {
-        match tv.request.source() {
-            ToolSource::MiseToml(path) => {
-                let (lockfile_path, _) = lockfile::lockfile_path_for_config(path);
-                Lockfile::read(&lockfile_path)
-            }
-            _ => Ok(Lockfile::default()),
-        }
+    fn read_lockfile_for_tool(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<Lockfile> {
+        lockfile::read_lockfile_for_tool_source(&ctx.config, tv.request.source())
     }
 
     /// Install from a fresh solve (no lockfile deps).
@@ -492,7 +485,7 @@ impl CondaBackend {
         let main_checksum = platform_info.checksum.clone();
 
         let dep_basenames = platform_info.conda_deps.clone().unwrap_or_default();
-        let lockfile = self.read_lockfile_for_tool(tv)?;
+        let lockfile = self.read_lockfile_for_tool(ctx, tv)?;
 
         // Extract python info from basenames for noarch python packages
         let python_info =

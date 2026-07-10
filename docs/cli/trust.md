@@ -19,6 +19,11 @@ without prompting, since nothing in them executes code at load time —
 tools install and tasks run only on explicit commands like `mise install`
 or `mise run`.
 
+Trust is shared across git worktrees: a config file inside a linked
+worktree is trusted when the equivalent path in the repository's main
+checkout has been trusted. Paranoid mode disables this sharing since
+worktrees can check out branches with different config contents.
+
 ## Arguments
 
 ### `[CONFIG_FILE]`
@@ -29,7 +34,10 @@ The config file to trust
 
 ### `-a --all`
 
-Trust all config files in the current directory and its parents
+Trust all config files in the current directory, its parents, and its subdirectories
+
+Subdirectories are walked respecting .gitignore, skipping hidden directories
+and common build/dependency directories (node_modules, vendor, target, dist, build).
 
 ### `--ignore`
 

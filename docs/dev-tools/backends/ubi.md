@@ -117,7 +117,7 @@ Set to `true` to extract all files in the tarball instead of just the "bin". Not
 
 ```toml
 [tools]
-"ubi:helix-editor/helix" = { version = "latest", extract_all = "true" }
+"ubi:helix-editor/helix" = { version = "latest", extract_all = true }
 ```
 
 ### `bin_path`
@@ -129,7 +129,7 @@ This only makes sense when `extract_all` is set to `true`.
 [tools]
 "ubi:BurntSushi/ripgrep" = {
   version = "latest",
-  extract_all = "true",
+  extract_all = true,
   bin_path = "target/release",
 }
 ```

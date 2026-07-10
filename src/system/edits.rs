@@ -395,7 +395,7 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
     };
     let content = if *template {
         let mut tera = crate::tera::get_tera(Some(&req.base));
-        tera.render_str(&raw, &config.tera_ctx).map_err(|err| {
+        crate::tera::render_str(&mut tera, &raw, &config.tera_ctx).map_err(|err| {
             eyre::eyre!(
                 "[dotfiles].\"{}/{}\": failed to render template: {err}",
                 req.path_raw,

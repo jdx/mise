@@ -606,9 +606,9 @@ mise run deploy secret123
 
 ## Vars
 
-Vars are variables that can be shared between tasks like environment variables but they are not
-passed as environment variables to the scripts. They are defined in the `vars` section of the
-`mise.toml` file.
+Vars are values that can be shared between TOML tasks and other Tera-rendered config like tool
+versions/options. They are similar to environment variables, but they are not exported to task
+processes. Reference them with <span v-pre>`{{vars.NAME}}`</span>.
 
 ```mise-toml
 [vars]
@@ -617,6 +617,22 @@ e2e_args = '--headless'
 [tasks.test]
 run = './scripts/test-e2e.sh {{vars.e2e_args}}'
 ```
+
+Vars can also use value-producing directive forms from `[env]`:
+
+```mise-toml
+[vars]
+e2e_args = { default = "--headless" }
+api_token = { required = "Set api_token in mise.local.toml" }
+secret_arg = { value = "--token=abc123", redact = true }
+_.file = ".env"
+```
+
+The `default` form reads from a process environment variable with the same name when it is set and
+non-empty; values from `[env]` are not used for this lookup. The `required` form must be satisfied by
+the process environment or by a later config file like `mise.local.toml`. Values marked with
+`redact = true` are hidden from task output. [Secrets](/environments/secrets/) are also supported as
+vars.
 
 Tasks can also define task-local vars that override config vars for that task:
 
@@ -662,6 +678,8 @@ includes = [
 ```
 
 When `task_config.includes` is set, it replaces the default file-task directories for that config scope instead of adding to them.
+Include entries are rendered as Tera templates, so they can reference values such as `config_root`,
+`env`, and resolved `vars`.
 
 The default file-task directories are:
 
@@ -793,35 +811,7 @@ You can also specify these as a glob pattern, e.g.: `redactions.env = ["SECRETS_
 
 ## `[vars]` options
 
-Vars are variables that can be shared between tasks like environment variables but they are not
-passed as environment variables to the scripts. They are defined in the `vars` section of the
-`mise.toml` file.
-
-```mise-toml
-[vars]
-e2e_args = '--headless'
-[tasks.test]
-run = './scripts/test-e2e.sh {{vars.e2e_args}}'
-vars = { e2e_args = '--headed' }
-```
-
-The task-level `vars` override any config-level vars with the same name. In the example above, `e2e_args` resolves to `'--headed'` instead of the config-level `'--headless'`.
-
-Config vars can read from process environment variables when using the `default` form. If a process environment variable with the same name exists and is non-empty, its value is used; otherwise, the default is applied. Values from the `[env]` section are not used for this lookup.
-
-```toml
-[vars]
-e2e_args = { default = "--headless" }
-```
-
-Like `[env]`, vars can also be read in as a file:
-
-```toml
-[vars]
-_.file = ".env"
-```
-
-[Secrets](/environments/secrets/) are also supported as vars.
+See [Vars](#vars).
 
 ## Task Configuration Settings
 

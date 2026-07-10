@@ -13,7 +13,6 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 use tera::Context as TeraContext;
-use tera::Value as TeraValue;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
 
@@ -219,6 +218,9 @@ pub struct MonorepoConfig {
     /// Supports single-level glob patterns (*).
     #[serde(default)]
     pub config_roots: Vec<String>,
+    /// Use a single lockfile at the monorepo root for descendant config roots.
+    /// None follows the rollout default; true opts in, false keeps colocated locks.
+    pub lockfile: Option<bool>,
 }
 
 impl EnvList {
@@ -675,10 +677,10 @@ impl MiseToml {
                 EnvDirective::Val(key, value, _) => {
                     base_env.insert(key.clone(), value.clone());
                 }
-                EnvDirective::Default(key, value, _) => {
-                    if base_env.get(key).is_none_or(|v| v.is_empty()) {
-                        base_env.insert(key.clone(), value.clone());
-                    }
+                EnvDirective::Default(key, value, _)
+                    if base_env.get(key).is_none_or(|v| v.is_empty()) =>
+                {
+                    base_env.insert(key.clone(), value.clone());
                 }
                 _ => {}
             }
@@ -687,7 +689,7 @@ impl MiseToml {
     }
 
     fn parse_template(&self, input: &str) -> eyre::Result<String> {
-        self.parse_template_with_context(&self.context, input)
+        self.parse_template_with_context(&self.template_context(), input)
     }
 
     fn parse_template_with_context(
@@ -705,6 +707,31 @@ impl MiseToml {
             eyre!("failed to parse template {input} in {p}")
         })?;
         Ok(output)
+    }
+
+    fn template_context(&self) -> TeraContext {
+        let mut context = self.context.clone();
+        Self::insert_resolved_vars(&mut context);
+        context
+    }
+
+    fn insert_resolved_vars(context: &mut TeraContext) {
+        if context.get("vars").is_some() {
+            return;
+        }
+        let Some(config) = Config::maybe_get() else {
+            return;
+        };
+        if let Some(vars_results) = config.vars_results_cached() {
+            let vars = vars_results
+                .vars
+                .iter()
+                .map(|(k, (v, _))| (k.clone(), v.clone()))
+                .collect::<IndexMap<_, _>>();
+            context.insert("vars", &vars);
+        } else if !config.vars.is_empty() {
+            context.insert("vars", &config.vars);
+        }
     }
 
     /// Render a tool-option template at config-load time, resolving env/vars but
@@ -726,6 +753,42 @@ impl MiseToml {
             eyre!("failed to parse template {input} in {p}")
         })?;
         Ok(output)
+    }
+
+    fn parse_tool_option_value_template(
+        &self,
+        context: &TeraContext,
+        key: Option<&str>,
+        value: &mut toml::Value,
+        defer_os_arch: bool,
+    ) -> eyre::Result<()> {
+        match value {
+            toml::Value::String(s) => {
+                let preserve_os_arch = defer_os_arch && matches!(key, Some("url" | "checksum_url"));
+                *s = if preserve_os_arch {
+                    self.parse_tool_option_template(context, s)?
+                } else {
+                    self.parse_template_with_context(context, s)?
+                };
+            }
+            toml::Value::Array(values) => {
+                for value in values {
+                    self.parse_tool_option_value_template(context, key, value, defer_os_arch)?;
+                }
+            }
+            toml::Value::Table(table) => {
+                for (key, value) in table.iter_mut() {
+                    self.parse_tool_option_value_template(
+                        context,
+                        Some(key),
+                        value,
+                        defer_os_arch,
+                    )?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 }
 
@@ -909,10 +972,10 @@ impl ConfigFile for MiseToml {
             && let Some(env_results) = config.env_results_cached()
         {
             let mut env_vars: EnvMap =
-                if let Some(TeraValue::Object(existing_env)) = context.get("env") {
+                if let Some(existing_env) = context.get("env").and_then(|v| v.as_map()) {
                     existing_env
                         .iter()
-                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.to_string(), s.to_string())))
                         .collect()
                 } else {
                     env::PRISTINE_ENV.clone()
@@ -928,20 +991,7 @@ impl ConfigFile for MiseToml {
             );
             context.insert("env", &env_vars);
         }
-        if context.get("vars").is_none()
-            && let Some(config) = Config::maybe_get()
-        {
-            if let Some(vars_results) = config.vars_results_cached() {
-                let vars = vars_results
-                    .vars
-                    .iter()
-                    .map(|(k, (v, _))| (k.clone(), v.clone()))
-                    .collect::<IndexMap<_, _>>();
-                context.insert("vars", &vars);
-            } else if !config.vars.is_empty() {
-                context.insert("vars", &config.vars);
-            }
-        }
+        Self::insert_resolved_vars(&mut context);
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
                 let version = self.parse_template_with_context(&context, &tool.tt.to_string())?;
@@ -962,15 +1012,12 @@ impl ConfigFile for MiseToml {
                         crate::backend::backend_type::BackendType::Http
                     );
                     for (k, v) in options.opts.iter_mut() {
-                        if let toml::Value::String(s) = v {
-                            let defer =
-                                defer_os_arch && matches!(k.as_str(), "url" | "checksum_url");
-                            *s = if defer {
-                                self.parse_tool_option_template(&opts_context, s)?
-                            } else {
-                                self.parse_template_with_context(&opts_context, s)?
-                            };
-                        }
+                        self.parse_tool_option_value_template(
+                            &opts_context,
+                            Some(k),
+                            v,
+                            defer_os_arch,
+                        )?;
                     }
                     let mut ba = ba.clone();
                     // Start with cached options but filter out install-time-only options
@@ -2478,10 +2525,15 @@ mod tests {
         args = ["--watch"]
         run_at_load = true
         start_interval = 300
+        start_calendar_interval = { hour = 2, minute = 0 }
         environment = { PATH = "/usr/bin:/bin" }
         working_directory = "~"
         stdout_path = "~/Library/Logs/my-sync.log"
         kickstart = true
+
+        [bootstrap.macos.launchd.agents.my-backup]
+        program = "~/.local/bin/my-backup"
+        start_calendar_interval = [{ hour = 3 }, { hour = 12, weekday = 1 }]
         "#,
         )
         .unwrap();
@@ -2492,6 +2544,13 @@ mod tests {
         assert_eq!(agent.args, vec!["--watch"]);
         assert!(agent.run_at_load);
         assert_eq!(agent.start_interval, Some(300));
+        let crate::system::launchd::LaunchdCalendarIntervals::Single(interval) =
+            agent.start_calendar_interval.as_ref().unwrap()
+        else {
+            panic!("expected single calendar interval");
+        };
+        assert_eq!(interval.hour, Some(2));
+        assert_eq!(interval.minute, Some(0));
         assert_eq!(
             agent.environment.get("PATH").map(String::as_str),
             Some("/usr/bin:/bin")
@@ -2502,6 +2561,16 @@ mod tests {
             Some("~/Library/Logs/my-sync.log")
         );
         assert!(agent.kickstart);
+        let backup = system.macos.launchd.agents.get("my-backup").unwrap();
+        let crate::system::launchd::LaunchdCalendarIntervals::Multiple(intervals) =
+            backup.start_calendar_interval.as_ref().unwrap()
+        else {
+            panic!("expected multiple calendar intervals");
+        };
+        assert_eq!(intervals.len(), 2);
+        assert_eq!(intervals[0].hour, Some(3));
+        assert_eq!(intervals[1].hour, Some(12));
+        assert_eq!(intervals[1].weekday, Some(1));
         file::remove_file(&p).unwrap();
     }
 

@@ -2,10 +2,17 @@
 
 export MISE_DOTNET_ROOT="$MISE_DATA_DIR/dotnet-root"
 
-assert_contains "mise x dotnet@8.0.408 -- dotnet --version" "8.0.408"
+# SDK install validation should not use global.json-sensitive SDK selection.
+cat <<EOF >global.json
+{
+  "sdk": {
+    "version": "10.0.301",
+    "rollForward": "disable"
+  }
+}
+EOF
 
-# Test global.json idiomatic file support
-mise settings set idiomatic_version_file_enable_tools dotnet
+assert_contains "MISE_RAW=1 mise x dotnet@8.0.408 -- dotnet --list-sdks" "8.0.408"
 
 cat <<EOF >global.json
 {
@@ -14,6 +21,11 @@ cat <<EOF >global.json
   }
 }
 EOF
+
+assert_contains "mise x dotnet@8.0.408 -- dotnet --version" "8.0.408"
+
+# Test global.json idiomatic file support
+mise settings set idiomatic_version_file_enable_tools dotnet
 
 assert_contains "mise x -- dotnet --version" "8.0.408"
 

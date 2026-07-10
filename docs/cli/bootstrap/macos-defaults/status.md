@@ -2,7 +2,7 @@
 # `mise bootstrap macos-defaults status`
 
 - **Usage**: `mise bootstrap macos-defaults status [-J --json] [--missing]`
-- **Source code**: [`src/cli/bootstrap/macos_defaults/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/macos_defaults/status.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 ## Flags
 

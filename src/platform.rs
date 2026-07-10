@@ -75,9 +75,9 @@ impl Platform {
     pub fn validate(&self) -> Result<()> {
         // Validate OS
         match self.os.as_str() {
-            "linux" | "macos" | "windows" => {}
+            "linux" | "macos" | "windows" | "android" => {}
             _ => bail!(
-                "Unsupported OS '{}'. Supported: linux, macos, windows",
+                "Unsupported OS '{}'. Supported: linux, macos, windows, android",
                 self.os
             ),
         }

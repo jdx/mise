@@ -79,12 +79,13 @@ Options:
 - `MISE_QUIET=1` – disable non-error output
 - `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/bin/mise`)
 - `MISE_VERSION=v2025.12.0` – install a specific version
+- `MISE_INSTALL_SKIP_IF_EXISTS=1` – skip the download/install if the mise binary at the install path already matches the requested version
 
 If you want to verify the install script hasn't been tampered with:
 
 ```sh
 gpg --keyserver hkps://keys.openpgp.org --recv-keys 24853EC9F655CE80B48E6C3A8B81C9D17413A06D
-curl https://mise.en.dev/install.sh.sig | gpg --decrypt > install.sh
+curl https://mise.jdx.dev/install.sh.sig | gpg --decrypt > install.sh
 # ensure the above is signed with the mise release key
 sh ./install.sh
 ```
@@ -290,14 +291,14 @@ For precompiled binaries, enable [nix-ld](https://github.com/Mic92/nix-ld) and d
 
 ```sh
 yum install -y yum-utils
-yum-config-manager --add-repo https://mise.en.dev/rpm/mise.repo
+yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 yum install -y mise
 ```
 
 ### zypper
 
 ```sh
-sudo wget https://mise.en.dev/rpm/mise.repo -O /etc/zypp/repos.d/mise.repo
+sudo wget https://mise.jdx.dev/rpm/mise.repo -O /etc/zypp/repos.d/mise.repo
 sudo zypper refresh
 sudo zypper install mise
 ```

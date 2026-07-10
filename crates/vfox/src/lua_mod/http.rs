@@ -204,8 +204,16 @@ async fn download_file(lua: &Lua, input: MultiValue) -> Result<()> {
     })
     .await
     .into_lua_err()?;
+    // Create the parent directory so plugins don't have to shell out to `mkdir`
+    // before downloading into a fresh install path.
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        tokio::fs::create_dir_all(parent).await.into_lua_err()?;
+    }
     let mut file = tokio::fs::File::create(&path).await.into_lua_err()?;
     tokio::io::AsyncWriteExt::write_all(&mut file, &bytes)
+        .await
+        .into_lua_err()?;
+    tokio::io::AsyncWriteExt::flush(&mut file)
         .await
         .into_lua_err()?;
     Ok(())
@@ -320,6 +328,16 @@ async fn try_download_file(lua: &Lua, input: MultiValue) -> Result<MultiValue> {
             ]));
         }
     };
+    // Create the parent directory so plugins don't have to shell out to `mkdir`
+    // before downloading into a fresh install path.
+    if let Some(parent) = std::path::Path::new(&path).parent()
+        && let Err(e) = tokio::fs::create_dir_all(parent).await
+    {
+        return Ok(MultiValue::from_vec(vec![
+            Value::Nil,
+            Value::String(lua.create_string(e.to_string())?),
+        ]));
+    }
     let mut file = match tokio::fs::File::create(&path).await {
         Ok(f) => f,
         Err(e) => {
@@ -330,6 +348,12 @@ async fn try_download_file(lua: &Lua, input: MultiValue) -> Result<MultiValue> {
         }
     };
     if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await {
+        return Ok(MultiValue::from_vec(vec![
+            Value::Nil,
+            Value::String(lua.create_string(e.to_string())?),
+        ]));
+    }
+    if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut file).await {
         return Ok(MultiValue::from_vec(vec![
             Value::Nil,
             Value::String(lua.create_string(e.to_string())?),
@@ -892,5 +916,71 @@ mod tests {
         .exec_async()
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_try_download_file_creates_parent_dirs() {
+        let server = MockServer::start().await;
+        let test_content = "nested content";
+
+        Mock::given(method("GET"))
+            .and(path("/file.txt"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(test_content))
+            .mount(&server)
+            .await;
+
+        let lua = Lua::new();
+        mod_http(&lua).unwrap();
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        // Target a nested directory that does not exist yet.
+        let file_path = temp_dir.path().join("a").join("b").join("downloaded.txt");
+        let path_str = file_path.to_string_lossy().to_string();
+        let url = server.uri() + "/file.txt";
+
+        lua.load(mlua::chunk! {
+            local http = require("http")
+            local ok, err = http.try_download_file({ url = $url, headers = {} }, $path_str)
+            assert(ok == true, "expected true, got: " .. tostring(ok))
+            assert(err == nil, "expected no error, got: " .. tostring(err))
+        })
+        .exec_async()
+        .await
+        .unwrap();
+
+        let content = tokio::fs::read_to_string(&file_path).await.unwrap();
+        assert_eq!(content, test_content);
+    }
+
+    #[tokio::test]
+    async fn test_download_file_creates_parent_dirs() {
+        let server = MockServer::start().await;
+        let test_content = "nested content";
+
+        Mock::given(method("GET"))
+            .and(path("/file.txt"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(test_content))
+            .mount(&server)
+            .await;
+
+        let lua = Lua::new();
+        mod_http(&lua).unwrap();
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("x").join("y").join("downloaded.txt");
+        let path_str = file_path.to_string_lossy().to_string();
+        let url = server.uri() + "/file.txt";
+
+        lua.load(mlua::chunk! {
+            local http = require("http")
+            local err = http.download_file({ url = $url, headers = {} }, $path_str)
+            assert(err == nil, "expected no error, got: " .. tostring(err))
+        })
+        .exec_async()
+        .await
+        .unwrap();
+
+        let content = tokio::fs::read_to_string(&file_path).await.unwrap();
+        assert_eq!(content, test_content);
     }
 }

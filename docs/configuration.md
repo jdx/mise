@@ -48,7 +48,7 @@ When mise needs configuration, it follows this process:
 
 ```
 /
-├── etc/mise/                         # System-wide config (highest precedence)
+├── etc/mise/                         # System-wide config (lowest precedence)
 │   ├── conf.d/*.toml                 # System fragments, loaded alphabetically
 │   ├── config.toml                   # System defaults
 │   └── config.<env>.toml             # Env-specific system config (MISE_ENV or -E)
@@ -67,7 +67,7 @@ When mise needs configuration, it follows this process:
             ├── mise.<env>.toml       # Env-specific project config
             ├── mise.<env>.local.toml # Env-specific project local overrides
             └── backend/
-                └── mise.toml         # Service-specific config (lowest precedence)
+                └── mise.toml         # Service-specific config (highest precedence)
 ```
 
 ### Merge Behavior by Section
@@ -575,6 +575,21 @@ because when installing a bunch of plugins in parallel you won't see the prompt.
 plugin accepts input or otherwise does not seem to be installing correctly.
 
 Sets `MISE_JOBS=1` because only 1 plugin script can be executed at a time.
+
+### `MISE_TERM_WIDTH`
+
+Override the terminal width mise uses to render tables and lists (e.g. `mise ls`).
+By default mise detects the width from the terminal. This is useful in CI or other
+non-interactive environments where detection returns a bogus value (for example
+CircleCI, where the width is reported as `0`), producing oddly wrapped output.
+
+If `MISE_TERM_WIDTH` is unset, mise falls back to the conventional `COLUMNS`
+environment variable, and finally to auto-detection. The override is honored
+exactly, so you can also force a narrower width:
+
+```sh
+MISE_TERM_WIDTH=120 mise ls
+```
 
 ### `MISE_FISH_AUTO_ACTIVATE=1`
 

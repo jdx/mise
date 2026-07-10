@@ -856,7 +856,9 @@ impl Backend for PythonPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        if cfg!(windows) || Settings::get().python.compile != Some(true) {
+        let settings = Settings::get();
+        if cfg!(windows) || settings.python.compile != Some(true) {
+            validate_python_precompiled_settings(&settings)?;
             self.install_precompiled(ctx, &mut tv).await?;
         } else {
             self.install_compiled(ctx, &tv).await?;
@@ -1042,6 +1044,43 @@ fn python_precompiled_url_path(settings: &Settings) -> String {
     }
 }
 
+fn validate_python_precompiled_settings(settings: &Settings) -> Result<()> {
+    if let Some(arch) = &settings.python.precompiled_arch
+        && let Some((precompiled_arch, precompiled_os)) = split_python_precompiled_triple(arch)
+    {
+        bail!(
+            "invalid python.precompiled_arch={arch:?}: this looks like a target triple. \
+             Set python.precompiled_arch={precompiled_arch:?} and \
+             python.precompiled_os={precompiled_os:?} instead."
+        );
+    }
+    if let Some(arch) = &settings.python.precompiled_arch
+        && looks_like_python_precompiled_os_value(arch)
+    {
+        bail!(
+            "invalid python.precompiled_arch={arch:?}: this looks like an OS value. \
+             Use python.precompiled_os={arch:?} instead, and set python.precompiled_arch \
+             to an architecture such as \"x86_64\" or \"aarch64\"."
+        );
+    }
+    Ok(())
+}
+
+fn split_python_precompiled_triple(value: &str) -> Option<(&str, &str)> {
+    ["-unknown-linux", "-apple-darwin", "-pc-windows"]
+        .iter()
+        .find_map(|os_marker| {
+            let index = value.find(os_marker)?;
+            (index > 0).then(|| (&value[..index], &value[index + 1..]))
+        })
+}
+
+fn looks_like_python_precompiled_os_value(value: &str) -> bool {
+    value.contains("unknown-linux")
+        || value.contains("apple-darwin")
+        || value.contains("pc-windows")
+}
+
 fn python_os(settings: &Settings) -> String {
     if let Some(os) = &settings.python.precompiled_os {
         return os.clone();
@@ -1225,6 +1264,34 @@ plugins/python-build/share/python-build/patches/3.14.5/foo.patch
         );
         assert_eq!(python_precompiled_created_at("2026-06-11"), None);
         assert_eq!(python_precompiled_created_at("notadate"), None);
+    }
+
+    #[test]
+    fn test_validate_python_precompiled_settings_rejects_os_as_arch() {
+        let mut settings = Settings::default();
+        settings.python.precompiled_arch = Some("unknown-linux-musl".to_string());
+
+        let err = validate_python_precompiled_settings(&settings).unwrap_err();
+        assert!(err.to_string().contains("python.precompiled_os"));
+    }
+
+    #[test]
+    fn test_validate_python_precompiled_settings_rejects_triple_as_arch() {
+        let mut settings = Settings::default();
+        settings.python.precompiled_arch = Some("x86_64-unknown-linux-musl".to_string());
+
+        let err = validate_python_precompiled_settings(&settings).unwrap_err();
+        let err = err.to_string();
+        assert!(err.contains("python.precompiled_arch=\"x86_64\""));
+        assert!(err.contains("python.precompiled_os=\"unknown-linux-musl\""));
+    }
+
+    #[test]
+    fn test_validate_python_precompiled_settings_accepts_arch() {
+        let mut settings = Settings::default();
+        settings.python.precompiled_arch = Some("x86_64".to_string());
+
+        validate_python_precompiled_settings(&settings).unwrap();
     }
 
     #[test]

@@ -68,6 +68,18 @@ pub struct Ls {
     #[clap(long, conflicts_with_all = &["current", "global", "local", "prunable"])]
     all_sources: bool,
 
+    /// List tools from every [monorepo].config_roots config root
+    ///
+    /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+    /// [monorepo].config_roots in the monorepo root config.
+    #[clap(
+        long,
+        env = "MISE_MONOREPO",
+        verbatim_doc_comment,
+        conflicts_with_all = &["all_sources", "prunable"]
+    )]
+    monorepo: bool,
+
     /// Don't display headers
     #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = &["json"])]
     no_header: bool,
@@ -266,7 +278,11 @@ impl Ls {
         )
     }
     async fn get_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
-        let mut trs = config.get_tool_request_set().await?.clone();
+        let mut trs = if self.monorepo {
+            config.monorepo_union_tool_request_set().await?
+        } else {
+            config.get_tool_request_set().await?.clone()
+        };
         if self.global {
             trs = trs
                 .iter()

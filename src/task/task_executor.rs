@@ -1330,7 +1330,7 @@ impl TaskExecutor {
                 let mut usage_ctx = std::collections::HashMap::new();
                 for (key, value) in env {
                     if let Some(usage_key) = key.strip_prefix("usage_") {
-                        usage_ctx.insert(usage_key.to_string(), tera::Value::String(value.clone()));
+                        usage_ctx.insert(usage_key.to_string(), tera::Value::from(value.clone()));
                     }
                 }
                 tera_ctx.insert("usage", &usage_ctx);

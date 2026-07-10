@@ -486,21 +486,22 @@ fn valid_github_browser_download_url(url: &str, owner: &str, repo: &str, tag: &s
     if url.scheme() != "https" || url.host_str() != Some("github.com") {
         return false;
     }
-    let mut segments = url.path_segments().into_iter().flatten();
+    let segments: Vec<_> = url.path_segments().into_iter().flatten().collect();
+    if segments.len() < 6 {
+        return false;
+    }
     matches!(
         (
-            segments.next(),
-            segments.next(),
-            segments.next(),
-            segments.next(),
-            segments.next(),
-            segments.next(),
-            segments.next()
+            segments.first(),
+            segments.get(1),
+            segments.get(2),
+            segments.get(3),
+            segments.last()
         ),
-        (Some(o), Some(r), Some("releases"), Some("download"), Some(t), Some(_asset), None)
+        (Some(o), Some(r), Some(&"releases"), Some(&"download"), Some(_asset))
             if github_repo_segment_matches(o, owner)
                 && github_repo_segment_matches(r, repo)
-                && path_segment_matches(t, tag)
+                && path_segments_match(&segments[4..segments.len() - 1], tag)
     )
 }
 
@@ -510,6 +511,10 @@ fn github_repo_segment_matches(segment: &str, expected: &str) -> bool {
 
 fn path_segment_matches(segment: &str, expected: &str) -> bool {
     segment == expected || urlencoding::decode(segment).is_ok_and(|decoded| decoded == expected)
+}
+
+fn path_segments_match(segments: &[&str], expected: &str) -> bool {
+    !segments.is_empty() && path_segment_matches(&segments.join("/"), expected)
 }
 
 fn valid_github_asset_api_url(url: &str, owner: &str, repo: &str) -> bool {
@@ -707,6 +712,12 @@ mod tests {
             "Dicklesworthstone",
             "Destructive_command_guard",
             "v0.5.6"
+        ));
+        assert!(valid_github_browser_download_url(
+            "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.5.2/biome-linux-x64",
+            "biomejs",
+            "biome",
+            "@biomejs/biome@2.5.2"
         ));
         assert!(!valid_github_browser_download_url(
             "https://github.com/jdx/mise-test-fixtures/releases/download/v0.9.0/hello-world.tar.gz",

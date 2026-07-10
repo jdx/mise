@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 
 use duct::Expression;
 use eyre::{Result, WrapErr, eyre};
@@ -21,7 +24,7 @@ macro_rules! git_cmd {
     ( $dir:expr $(, $arg:expr )* $(,)? ) => {
         {
             let safe = format!("safe.directory={}", $dir.display());
-            cmd!("git", "-C", $dir, "-c", safe, "-c", "core.autocrlf=false" $(, $arg)*)
+            sanitize_git_env(cmd!("git", "-C", $dir, "-c", safe, "-c", "core.autocrlf=false" $(, $arg)*))
         }
     }
 }
@@ -190,13 +193,15 @@ impl Git {
             pr.abandon();
         }
 
-        let mut cmd = CmdLineRunner::new("git")
-            .arg("clone")
-            .arg("-q")
-            .arg("-o")
-            .arg("origin")
-            .arg("-c")
-            .arg("core.autocrlf=false");
+        let mut cmd = sanitize_git_cmd_runner(
+            CmdLineRunner::new("git")
+                .arg("clone")
+                .arg("-q")
+                .arg("-o")
+                .arg("origin")
+                .arg("-c")
+                .arg("core.autocrlf=false"),
+        );
         // `--depth 1` is incompatible with checking out an arbitrary SHA later,
         // so do a full clone when the caller passed a SHA.
         if sha_branch.is_none() {
@@ -362,6 +367,28 @@ fn get_git_version() -> Result<String> {
     Ok(version.trim().into())
 }
 
+fn sanitize_git_env(cmd: Expression) -> Expression {
+    GIT_CONTEXT_ENV
+        .iter()
+        .fold(cmd, |cmd, env| cmd.env_remove(env))
+}
+
+fn sanitize_git_cmd_runner<'a>(cmd: CmdLineRunner<'a>) -> CmdLineRunner<'a> {
+    GIT_CONTEXT_ENV
+        .iter()
+        .fold(cmd, |cmd, env| cmd.env_remove(env))
+}
+
+const GIT_CONTEXT_ENV: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+];
+
 /// Heuristic for whether a ref string is a commit SHA (full SHA-1 or SHA-256).
 ///
 /// Branch and tag names that happen to be all-hex would also match, but git
@@ -371,6 +398,81 @@ fn get_git_version() -> Result<String> {
 /// resolution before they can be checked out.
 fn looks_like_sha(s: &str) -> bool {
     matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// If `path` is inside a linked git worktree, returns the equivalent path in
+/// the repository's main checkout, e.g. `/repo-wt/sub/mise.toml` →
+/// `/repo/sub/mise.toml`. Returns None for paths in a main checkout, outside
+/// any git repository, or in worktrees of a bare repository.
+///
+/// Detection is filesystem-only (no git subprocess): a linked worktree root
+/// contains a `.git` *file* pointing at `<main>/.git/worktrees/<name>`.
+pub fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
+    static CACHE: LazyLock<Mutex<HashMap<PathBuf, Option<PathBuf>>>> =
+        LazyLock::new(Default::default);
+    for wt_root in path.ancestors() {
+        let dotgit = wt_root.join(".git");
+        if dotgit.is_dir() {
+            // A `.git` directory is either the main checkout or a nested
+            // independent repository. Either way stop: a nested repo's
+            // contents are not derived from the outer repo's history, so its
+            // configs must keep their own trust records rather than
+            // inheriting the outer main checkout's via path mapping.
+            return None;
+        }
+        if dotgit.is_file() {
+            // `.git` files are used by both linked worktrees and submodules.
+            // Only a linked worktree resolves to a main checkout here; for
+            // anything else (submodule, bare-repo worktree) keep walking up —
+            // a submodule may itself live inside a linked worktree.
+            let main_root = CACHE
+                .lock()
+                .unwrap()
+                .entry(wt_root.to_path_buf())
+                .or_insert_with(|| main_checkout_root(&dotgit))
+                .clone();
+            if let Some(main_root) = main_root {
+                let equiv = main_root.join(path.strip_prefix(wt_root).ok()?);
+                return (equiv != path).then_some(equiv);
+            }
+        }
+    }
+    None
+}
+
+/// Resolves a linked worktree's `.git` file to the root of the main checkout
+fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
+    let contents = std::fs::read_to_string(dotgit_file).ok()?;
+    let gitdir = PathBuf::from(contents.strip_prefix("gitdir:")?.trim());
+    let gitdir = if gitdir.is_relative() {
+        dotgit_file.parent()?.join(gitdir)
+    } else {
+        gitdir
+    };
+    // Linked worktrees keep their private git dir at
+    // `<common>/worktrees/<name>`, containing a `commondir` file pointing to
+    // the shared git dir (usually `../..`, i.e. `<main>/.git`). Submodule git
+    // dirs live under `modules/` and have neither, which is what
+    // distinguishes them here.
+    if gitdir.parent()?.file_name() != Some(OsStr::new("worktrees")) {
+        return None;
+    }
+    let common = PathBuf::from(
+        std::fs::read_to_string(gitdir.join("commondir"))
+            .ok()?
+            .trim(),
+    );
+    let common = if common.is_relative() {
+        gitdir.join(common)
+    } else {
+        common
+    };
+    let common = common.canonicalize().ok()?;
+    if common.file_name() == Some(OsStr::new(".git")) {
+        common.parent().map(|p| p.to_path_buf())
+    } else {
+        None // bare repository — no main checkout to share trust with
+    }
 }
 
 impl Debug for Git {
@@ -399,7 +501,8 @@ impl<'a> CloneOptions<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CloneOptions, Git, looks_like_sha};
+    use super::{CloneOptions, Git, looks_like_sha, sanitize_git_cmd_runner, sanitize_git_env};
+    use crate::cmd::CmdLineRunner;
     use crate::config::Settings;
     use std::process::Command;
 
@@ -414,6 +517,162 @@ mod tests {
         assert!(!looks_like_sha("abcdef1")); // short SHA not supported
         assert!(!looks_like_sha(""));
         assert!(!looks_like_sha("g123456789abcdef0123456789abcdef01234567")); // non-hex
+    }
+
+    #[test]
+    fn worktree_main_checkout_equivalent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().canonicalize().unwrap();
+        let main = base.join("main");
+        let wt = base.join("wt");
+        std::fs::create_dir_all(main.join(".git/worktrees/wt")).unwrap();
+        std::fs::create_dir_all(wt.join("sub")).unwrap();
+        std::fs::write(main.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
+        std::fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/worktrees/wt").display()),
+        )
+        .unwrap();
+
+        // worktree root and nested paths map to the main checkout
+        assert_eq!(super::main_checkout_equivalent(&wt), Some(main.clone()));
+        assert_eq!(
+            super::main_checkout_equivalent(&wt.join("sub/mise.toml")),
+            Some(main.join("sub/mise.toml"))
+        );
+        // main checkout and non-repo paths do not map
+        assert_eq!(super::main_checkout_equivalent(&main), None);
+        assert_eq!(super::main_checkout_equivalent(&base), None);
+
+        // worktree of a bare repo does not map
+        let bare = base.join("bare.git");
+        let bare_wt = base.join("bare-wt");
+        std::fs::create_dir_all(bare.join("worktrees/bare-wt")).unwrap();
+        std::fs::create_dir_all(&bare_wt).unwrap();
+        std::fs::write(bare.join("worktrees/bare-wt/commondir"), "../..\n").unwrap();
+        std::fs::write(
+            bare_wt.join(".git"),
+            format!("gitdir: {}\n", bare.join("worktrees/bare-wt").display()),
+        )
+        .unwrap();
+        assert_eq!(super::main_checkout_equivalent(&bare_wt), None);
+
+        // a submodule also uses a `.git` file but is not a linked worktree:
+        // its configs must not inherit the parent checkout's trust
+        let subm = main.join("subm");
+        std::fs::create_dir_all(main.join(".git/modules/subm")).unwrap();
+        std::fs::create_dir_all(&subm).unwrap();
+        std::fs::write(
+            subm.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/modules/subm").display()),
+        )
+        .unwrap();
+        assert_eq!(super::main_checkout_equivalent(&subm), None);
+        assert_eq!(
+            super::main_checkout_equivalent(&subm.join("mise.toml")),
+            None
+        );
+
+        // a submodule checked out inside a linked worktree maps through the
+        // outer worktree to the same submodule path in the main checkout
+        let wt_subm = wt.join("subm");
+        std::fs::create_dir_all(&wt_subm).unwrap();
+        std::fs::write(
+            wt_subm.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/modules/subm").display()),
+        )
+        .unwrap();
+        assert_eq!(
+            super::main_checkout_equivalent(&wt_subm.join("mise.toml")),
+            Some(subm.join("mise.toml"))
+        );
+    }
+
+    #[test]
+    fn git_commands_ignore_inherited_work_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let cache = tmp.path().join("cache");
+        let work_tree = tmp.path().join("work-tree");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&work_tree).unwrap();
+
+        let git_in = |dir: &std::path::Path, args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .output()
+                .expect("spawn git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            out
+        };
+        git_in(&src, &["-c", "init.defaultBranch=main", "init", "-q"]);
+        std::fs::write(src.join("file.txt"), "hello\n").unwrap();
+        git_in(&src, &["add", "file.txt"]);
+        git_in(
+            &src,
+            &[
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "-m",
+                "main",
+            ],
+        );
+        let url = format!("file://{}", src.display());
+        let clone = Command::new("git")
+            .args(["clone", "-q", &url])
+            .arg(&cache)
+            .output()
+            .expect("spawn git clone");
+        assert!(
+            clone.status.success(),
+            "git clone failed: {}",
+            String::from_utf8_lossy(&clone.stderr)
+        );
+        std::fs::remove_file(cache.join("file.txt")).unwrap();
+
+        let output = sanitize_git_env(
+            git_cmd!(&cache, "checkout", "--force", "HEAD")
+                .env("GIT_WORK_TREE", &work_tree)
+                .env("GIT_INDEX_FILE", work_tree.join("index")),
+        )
+        .stderr_to_stdout()
+        .stdout_capture()
+        .unchecked()
+        .run()
+        .expect("run git checkout");
+        assert!(
+            output.status.success(),
+            "git checkout failed: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+
+        assert!(cache.join("file.txt").exists());
+        assert!(!work_tree.join("file.txt").exists());
+        assert!(!work_tree.join("index").exists());
+
+        let clone_cache = tmp.path().join("clone-cache");
+        sanitize_git_cmd_runner(
+            CmdLineRunner::new("git")
+                .arg("clone")
+                .arg("-q")
+                .arg(&url)
+                .arg(&clone_cache)
+                .env("GIT_WORK_TREE", &work_tree),
+        )
+        .execute()
+        .expect("git clone should ignore inherited GIT_WORK_TREE");
+
+        assert!(clone_cache.join("file.txt").exists());
+        assert!(!work_tree.join("file.txt").exists());
     }
 
     /// Regression test for https://github.com/jdx/mise/discussions/9472:

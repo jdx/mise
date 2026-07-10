@@ -320,11 +320,12 @@ bin_path = "cli-{{ version }}/bin" # expands to cli-1.0.0/bin
 
 ### `filter_bins`
 
-Comma-separated list of binaries to symlink into a filtered `.mise-bins` directory. This is useful when the tool comes with extra binaries that you do not want to expose on PATH.
+List of binaries to symlink into a filtered `.mise-bins` directory. This is useful when the tool comes with extra binaries that you do not want to expose on PATH.
 
 ```toml
 [tools]
 "github:jgm/pandoc" = { version = "latest", filter_bins = "pandoc" }
+"github:owner/repo" = { version = "latest", filter_bins = ["tool", "helper"] }
 ```
 
 When enabled:
@@ -340,6 +341,24 @@ For GitHub Enterprise or self-hosted GitHub instances, specify the API URL. mise
 [tools]
 "github:myorg/mytool" = { version = "latest", api_url = "https://github.mycompany.com/api/v3" }
 ```
+
+### `github_attestations`
+
+By default, mise checks GitHub Artifact Attestations when they are available for a
+GitHub release asset. Set `github_attestations = false` on a single tool to skip
+that check while keeping GitHub attestation verification enabled globally:
+
+```toml
+[tools]
+"github:myorg/mytool" = { version = "latest", github_attestations = false }
+```
+
+Use this as a temporary escape hatch for a specific tool if GitHub's attestation
+service or trusted-root data is causing installs to fail. Other verification
+paths, such as checksums and SLSA provenance, still run when they are configured
+and available. If `mise.lock` already records `github-attestations` provenance
+for the tool, re-run `mise lock` after disabling this option so the lockfile no
+longer requires a verifier that the tool config has turned off.
 
 ### `prerelease`
 

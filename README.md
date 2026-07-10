@@ -29,8 +29,8 @@
 </p>
 
 <p align="center">
-  Sponsored by <a href="https://37signals.com">37signals</a>.<br>
-  <a href="https://en.dev/sponsors.html">View all sponsors</a>.
+  Sponsored by <a href="https://entire.io">entire.io</a> and <a href="https://37signals.com">37signals</a>.<br>
+  <a href="https://jdx.dev/sponsors.html">View all sponsors</a>.
 </p>
 
 <hr />
@@ -38,7 +38,7 @@
 </div>
 
 > [!TIP]
-> My latest project, [aube](https://aube.en.dev) just hit stable! It's the fastest Node.js package manager with strong security defaults and is compatible with npm/pnpm/yarn lockfiles!
+> My latest project, [aube](https://aube.jdx.dev) just hit stable! It's the fastest Node.js package manager with strong security defaults and is compatible with npm/pnpm/yarn lockfiles!
 
 ## What is it?
 
@@ -76,7 +76,7 @@ $ ~/.local/bin/mise --version
  / / / / / / (__  )  __/_____/  __/ / / /_____/ /_/ / / /_/ / /__/  __/
 /_/ /_/ /_/_/____/\___/      \___/_/ /_/     / .___/_/\__,_/\___/\___/
                                             /_/                 by @jdx
-2026.6.15 macos-arm64 (2026-06-26)
+2026.7.5 macos-arm64 (2026-07-09)
 ```
 
 Hook mise into your shell (pick the right one for your shell):

@@ -47,23 +47,23 @@ function mise {
         }
         default {
             & "/some/dir/mise" $command @remainingArgs
-            $status = $LASTEXITCODE
             if ($(Test-Path -Path Function:\_mise_hook)){
                 _mise_hook
             }
             _reset_output_encoding
-            # restore exit code from mise after _mise_hook
-            $global:LASTEXITCODE = $status
         }
     }
 }
 
 function Global:_mise_hook {
     if ($env:MISE_SHELL -eq "pwsh"){
+        $status = $global:LASTEXITCODE
         $output = & "/some/dir/mise" hook-env --status $args -s pwsh | Out-String
         if ($output -and $output.Trim()) {
             $output | Invoke-Expression
         }
+        # mise hook-env will have set $LASTEXITCODE, restore previous value
+        $global:LASTEXITCODE = $status
     }
 }
 

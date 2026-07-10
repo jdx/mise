@@ -292,6 +292,31 @@ mise use -g cargo-binstall
 env = "MISE_CARGO_BINSTALL"
 type = "Bool"
 
+[cargo.binstall_native]
+description = "[experimental] Use mise's native cargo binary installer when cargo-binstall is unavailable."
+docs = """
+Controls mise's native cargo binary installer, which downloads precompiled binaries using
+`package.metadata.binstall` from the crate's `Cargo.toml` when `cargo-binstall` is not installed.
+This setting is experimental and requires `experimental = true` when explicitly enabled.
+
+- If `true`: Try mise's native cargo binary installer first, fall back to `cargo install` if unavailable.
+- If `false`: Do not use mise's native cargo binary installer.
+- If unset: Native installs are disabled for now. Starting in mise `2027.1.0`, mise will warn when
+  a cargo package could have been installed from a native binary artifact. In mise `2027.7.0`, unset
+  will default to native binary installs and this setting will become a two-way switch.
+
+Set `cargo.binstall = false` to force `cargo install` instead of either `cargo-binstall` or mise's
+native cargo binary installer.
+
+This is a best-effort fast path. If the crate does not declare compatible
+metadata, the artifact is unavailable, or the install uses Cargo build options
+that cannot affect a downloaded binary (including `locked = true`), mise falls
+back to `cargo install`.
+"""
+env = "MISE_CARGO_BINSTALL_NATIVE"
+optional = true
+type = "Bool"
+
 [cargo.binstall_only]
 default = false
 description = "Only use cargo-binstall for installation, fail if not available."
@@ -623,7 +648,8 @@ optional = true
 type = "Path"
 
 [env_shell_expand]
-description = "Enable shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})"
+default = true
+description = "Controls shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})"
 docs = """
 Controls shell-style variable expansion in `mise.toml` `[env]` values:
 
@@ -635,16 +661,13 @@ BAZ = "${FOO}_suffix"     # "hello_suffix"
 QUX = "${UNDEF:-fallback}" # "fallback"
 ```
 
-- `true` — enable shell expansion
-- `false` — disable shell expansion (no warning)
-- unset — disable shell expansion but warn if `$` is detected in env values
-  (shell expansion will become the default in a future release)
+- `true` or unset — enable shell expansion
+- `false` — disable shell expansion
 
 Expansion happens after Tera template rendering, so both syntaxes can be mixed.
-Undefined variables are left unexpanded (e.g., `$MISSING` stays as `$MISSING`).
+Undefined variables are left unexpanded (e.g., `$MISSING` stays as `$MISSING`) and produce a warning. Use `${MISSING:-}` to suppress the warning.
 """
 env = "MISE_ENV_SHELL_EXPAND"
-optional = true
 type = "Bool"
 
 [erlang.compile]
@@ -2323,10 +2346,39 @@ env = "MISE_SYSTEM_CONFIG_FILE"
 optional = true
 type = "Path"
 
-[system_packages.managers]
-description = "[experimental] Restrict which system package managers mise will use."
+[system_deps]
+default = "prompt"
+description = "How to handle a plugin's declared system dependencies before installing a tool."
 docs = """
-[experimental] Restrict which system package managers mise will use.
+Controls what mise does when a plugin declares system prerequisites (build tools,
+libraries, ...) via `PLUGIN.systemDependencies` and one or more are missing before
+the tool is compiled/installed.
+
+Detection is always the source of truth: a prerequisite that mise can already find
+on the machine (via any means — Homebrew, apt, nix, MacPorts, from source) is never
+questioned. This setting only governs what happens for the *missing* subset:
+
+- `prompt` (default) — report the missing capabilities and offer to install them
+  via the first available system package manager. Falls back to `warn` when not
+  running interactively.
+- `auto` — install the missing packages without asking (implies the package
+  manager's own non-interactive install; may use sudo per `system_packages.sudo`).
+- `warn` — print the missing capabilities and copy-pasteable install commands, then
+  continue with the install anyway.
+- `ignore` — do nothing; skip the check entirely.
+
+Missing *optional* dependencies never prompt or fail — they surface as a single
+informational line regardless of this setting.
+"""
+enum = ["prompt", "auto", "warn", "ignore"]
+env = "MISE_SYSTEM_DEPS"
+rust_type = "SystemDepsMode"
+type = "String"
+
+[system_packages.managers]
+description = "Restrict which system package managers mise will use."
+docs = """
+Restrict which system package managers mise will use.
 
 By default mise acts on every manager in `[bootstrap.packages]` that is available
 on the current machine. When more than one could apply (e.g. several package
@@ -2349,9 +2401,9 @@ type = "ListString"
 
 [system_packages.sudo]
 default = true
-description = "[experimental] Allow `mise bootstrap packages apply` to elevate with sudo when not running as root."
+description = "Allow `mise bootstrap packages apply` to elevate with sudo when not running as root."
 docs = """
-[experimental] Allow `mise bootstrap packages apply` to elevate with sudo when not running as root.
+Allow `mise bootstrap packages apply` to elevate with sudo when not running as root.
 
 When disabled, mise never runs sudo: if elevation would be required, it errors
 with the exact command to run manually. mise only elevates for explicit
@@ -2475,7 +2527,7 @@ type = "Bool"
 
 [task.show_full_cmd]
 description = "Disable truncation of command lines in task execution output. When true, the full command line will be shown."
-env = "MISE_TASK_SHOW_CMD_NO_TRUNC"
+env = "MISE_TASK_SHOW_FULL_CMD"
 type = "Bool"
 
 [task.skip]
@@ -2604,6 +2656,28 @@ deprecated_warn_at = "2026.8.0"
 description = "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`."
 hide = true
 optional = true
+type = "Bool"
+
+[tera_v1]
+default = false
+deprecated = "tera_v1 is a temporary compatibility escape hatch for templates that still need Tera v1 behavior. Update templates to Tera v2 syntax instead."
+deprecated_remove_at = "2027.4.0"
+deprecated_warn_at = "2026.10.0"
+description = "Use Tera v1 instead of Tera v2 for template rendering."
+docs = """
+Use Tera v1 instead of Tera v2 for template rendering.
+
+This is a temporary escape hatch for users whose templates still rely on Tera v1 behavior that
+cannot be fully emulated by mise's Tera v2 compatibility helpers, such as Tera v1 macros or looser
+undefined variable handling.
+
+For shared `mise.toml` files, prefer setting `MISE_TERA_V1 = true` under `[env]` while migrating.
+Older mise releases treat that as a regular environment variable instead of failing on an unknown
+setting.
+
+New templates should use Tera v2 syntax. This setting is scheduled for removal in mise 2027.4.0.
+"""
+env = "MISE_TERA_V1"
 type = "Bool"
 
 [terminal_progress]

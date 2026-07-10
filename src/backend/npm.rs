@@ -31,6 +31,7 @@ use tokio::sync::Mutex as TokioMutex;
 /// of elapsed time between when mise resolved the cutoff and when it invoked
 /// the package manager.
 const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
+const NPM_ALLOW_SCRIPTS_VERSION: &str = "11.16.0";
 const NPM_MIN_RELEASE_AGE_VERSION: &str = "11.10.0";
 const AUBE_PROGRAM: &str = if cfg!(windows) { "aube.exe" } else { "aube" };
 const BUN_MIN_RELEASE_AGE_VERSION: &str = "1.3.0";
@@ -79,6 +80,13 @@ impl<'a> NpmOptions<'a> {
         self.values.str("aube_args")
     }
 
+    fn trust_policy_excludes(&self) -> eyre::Result<Vec<String>> {
+        Self::string_list_option(
+            self.values.raw().opts.get("trust_policy_excludes"),
+            "trust_policy_excludes",
+        )
+    }
+
     fn allow_builds(&self) -> eyre::Result<AllowBuilds> {
         let Some(value) = self.values.raw().opts.get("allow_builds") else {
             return Ok(AllowBuilds::None);
@@ -86,6 +94,12 @@ impl<'a> NpmOptions<'a> {
         match value {
             toml::Value::Boolean(true) => Ok(AllowBuilds::All),
             toml::Value::Boolean(false) => Ok(AllowBuilds::None),
+            toml::Value::String(value) if value.eq_ignore_ascii_case("true") => {
+                Ok(AllowBuilds::All)
+            }
+            toml::Value::String(value) if value.eq_ignore_ascii_case("false") => {
+                Ok(AllowBuilds::None)
+            }
             toml::Value::String(value) => {
                 Ok(Self::canonical_allow_build_packages(vec![value.clone()]))
             }
@@ -117,14 +131,73 @@ impl<'a> NpmOptions<'a> {
         })
     }
 
+    fn npm_lifecycle_script_args(
+        allow_builds: AllowBuilds,
+        supports_allow_scripts: bool,
+    ) -> (Vec<OsString>, bool) {
+        if !supports_allow_scripts {
+            return (vec![OsString::from(NPM_IGNORE_SCRIPTS_ARG)], true);
+        }
+        match allow_builds {
+            AllowBuilds::None => (vec![OsString::from(NPM_IGNORE_SCRIPTS_ARG)], true),
+            AllowBuilds::All => (
+                vec![OsString::from("--dangerously-allow-all-scripts")],
+                false,
+            ),
+            AllowBuilds::Packages(packages) => (
+                vec![OsString::from(format!(
+                    "--allow-scripts={}",
+                    packages.join(",")
+                ))],
+                false,
+            ),
+        }
+    }
+
     fn canonical_allow_build_packages(mut packages: Vec<String>) -> AllowBuilds {
-        packages.sort();
-        packages.dedup();
+        Self::canonicalize_string_list(&mut packages);
         if packages.is_empty() {
             AllowBuilds::None
         } else {
             AllowBuilds::Packages(packages)
         }
+    }
+
+    fn canonicalize_string_list(values: &mut Vec<String>) {
+        values.retain(|value| !value.is_empty());
+        values.sort();
+        values.dedup();
+    }
+
+    fn string_list_option(value: Option<&toml::Value>, key: &str) -> eyre::Result<Vec<String>> {
+        let Some(value) = value else {
+            return Ok(Vec::new());
+        };
+        let mut values = match value {
+            toml::Value::String(value) => vec![value.clone()],
+            toml::Value::Array(values) => values
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(str::to_string)
+                        .ok_or_else(|| eyre::eyre!("{key} array must contain only strings"))
+                })
+                .collect::<eyre::Result<Vec<_>>>()?,
+            _ => return Err(eyre::eyre!("{key} must be a string or array")),
+        };
+        Self::canonicalize_string_list(&mut values);
+        Ok(values)
+    }
+
+    fn canonical_trust_policy_excludes_lockfile_value(&self) -> eyre::Result<Option<String>> {
+        let excludes = self.trust_policy_excludes()?;
+        Ok((!excludes.is_empty()).then(|| format!("{excludes:?}")))
+    }
+
+    fn aube_trust_policy_excludes_npmrc_value(&self) -> eyre::Result<Option<String>> {
+        let excludes = self.trust_policy_excludes()?;
+        Ok((!excludes.is_empty()).then(|| excludes.join(",")))
     }
 
     fn canonical_allow_builds_lockfile_value(&self) -> eyre::Result<Option<String>> {
@@ -141,6 +214,10 @@ impl<'a> NpmOptions<'a> {
             .filter_map(|key| {
                 let value = if key == "allow_builds" {
                     self.canonical_allow_builds_lockfile_value().ok().flatten()
+                } else if key == "trust_policy_excludes" {
+                    self.canonical_trust_policy_excludes_lockfile_value()
+                        .ok()
+                        .flatten()
                 } else {
                     self.values.raw().opts.get(&key).map(|value| match value {
                         toml::Value::String(value) => value.clone(),
@@ -248,28 +325,7 @@ impl Backend for NPMBackend {
                 .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                 .read()?;
                 let data: Value = serde_json::from_str(&raw)?;
-                let versions = data["versions"]
-                    .as_array()
-                    .ok_or_else(|| eyre::eyre!("invalid versions"))?;
-                let time = data["time"]
-                    .as_object()
-                    .ok_or_else(|| eyre::eyre!("invalid time"))?;
-                let version_info = versions
-                    .iter()
-                    .filter_map(|v| v.as_str())
-                    .map(|version| {
-                        let created_at = time
-                            .get(version)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        VersionInfo {
-                            version: version.to_string(),
-                            created_at,
-                            prerelease: is_semver_prerelease(version),
-                            ..Default::default()
-                        }
-                    })
-                    .collect();
+                let version_info = npm_view_versions_time(&data)?;
 
                 Ok(version_info)
             },
@@ -297,10 +353,7 @@ impl Backend for NPMBackend {
                                 .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                                 .read()?;
                         let dist_tags: Value = serde_json::from_str(&raw)?;
-                        match dist_tags["latest"] {
-                            Value::String(ref s) => Ok(Some(s.clone())),
-                            _ => Ok(None),
-                        }
+                        npm_view_latest_dist_tag(&dist_tags)
                     })
                     .await
             },
@@ -334,7 +387,7 @@ impl Backend for NPMBackend {
                     .dependency_path_for_install(&ctx.config, Some(&ctx.ts), AUBE_PROGRAM)
                     .await
                     .unwrap_or_else(|| AUBE_PROGRAM.into());
-                self.write_aube_npmrc(&tv.install_path(), ctx.before_date)?;
+                self.write_aube_npmrc(&tv.install_path(), ctx.before_date, &options)?;
                 let mut cmd = CmdLineRunner::new(aube_program)
                     .arg("add")
                     .arg("--global")
@@ -417,7 +470,23 @@ impl Backend for NPMBackend {
             }
             _ => {
                 let npm_args = options.npm_args().map(shell_words::split).transpose()?;
-                let skipped_lifecycle_scripts = Self::effective_npm_ignore_scripts(&npm_args);
+                let allow_builds = options.allow_builds()?;
+                let allow_builds_requested = !matches!(allow_builds, AllowBuilds::None);
+                let supports_allow_scripts = allow_builds_requested
+                    && self.npm_supports_allow_scripts_flag(&ctx.config).await;
+                if allow_builds_requested && !supports_allow_scripts {
+                    warn!(
+                        "allow_builds for npm:{} requires npm >= {} for per-package script approvals. mise will keep {} for this install. {}",
+                        self.tool_name(),
+                        NPM_ALLOW_SCRIPTS_VERSION,
+                        NPM_IGNORE_SCRIPTS_ARG,
+                        Self::npm_lifecycle_script_remediation()
+                    );
+                }
+                let (lifecycle_script_args, default_ignore_scripts) =
+                    NpmOptions::npm_lifecycle_script_args(allow_builds, supports_allow_scripts);
+                let skipped_lifecycle_scripts =
+                    Self::effective_npm_ignore_scripts(default_ignore_scripts, &npm_args);
                 let mut cmd = CmdLineRunner::new(NPM_PROGRAM)
                     .arg("install")
                     .arg("-g")
@@ -436,7 +505,7 @@ impl Backend for NPMBackend {
                             .list_paths(&ctx.config)
                             .await,
                     )?;
-                cmd = cmd.arg(NPM_IGNORE_SCRIPTS_ARG);
+                cmd = cmd.args(lifecycle_script_args);
                 if let Some(args) = &npm_args {
                     cmd = cmd.args(args);
                 }
@@ -581,12 +650,27 @@ impl NPMBackend {
         }
     }
 
-    /// Detect whether the locally installed npm supports --min-release-age.
+    async fn npm_supports_allow_scripts_flag(&self, config: &Arc<Config>) -> bool {
+        self.npm_version_is_at_least(config, NPM_ALLOW_SCRIPTS_VERSION, "--allow-scripts")
+            .await
+    }
+
+    async fn npm_supports_min_release_age_flag(&self, config: &Arc<Config>) -> bool {
+        self.npm_version_is_at_least(config, NPM_MIN_RELEASE_AGE_VERSION, "--min-release-age")
+            .await
+    }
+
+    /// Detect whether the locally installed npm supports a version-gated flag.
     /// When npm is explicitly managed by mise, the version is read from the
     /// dependency ToolSet without spawning a subprocess. Otherwise falls back
     /// to `npm --version`. Returns false on any failure so callers
-    /// transparently fall back to the older --before flag.
-    async fn npm_supports_min_release_age_flag(&self, config: &Arc<Config>) -> bool {
+    /// transparently fall back to older behavior.
+    async fn npm_version_is_at_least(
+        &self,
+        config: &Arc<Config>,
+        min_version: &str,
+        flag: &str,
+    ) -> bool {
         // When npm is explicitly managed by mise (e.g. `mise use npm@11.10.0`),
         // pull the resolved version from the dependency ToolSet and skip the
         // subprocess entirely.
@@ -596,11 +680,10 @@ impl NPMBackend {
                     && let Some(tv) = tvl.versions.first()
                 {
                     debug!(
-                        "npm version detection: found npm {} in ToolSet, skipping subprocess",
-                        tv.version
+                        "npm version detection for {flag}: found npm {} in ToolSet, skipping subprocess",
+                        tv.version,
                     );
-                    return semver_is_at_least(&tv.version, NPM_MIN_RELEASE_AGE_VERSION)
-                        .unwrap_or(false);
+                    return semver_is_at_least(&tv.version, min_version).unwrap_or(false);
                 }
             }
         }
@@ -610,7 +693,7 @@ impl NPMBackend {
             Ok(env) => env,
             Err(e) => {
                 debug!(
-                    "npm version detection: dependency_env failed, using --before fallback: {e:#}"
+                    "npm version detection for {flag}: dependency_env failed, using fallback: {e:#}"
                 );
                 return false;
             }
@@ -623,12 +706,12 @@ impl NPMBackend {
             Ok(s) => s,
             Err(e) => {
                 debug!(
-                    "npm version detection: `npm --version` failed, using --before fallback: {e:#}"
+                    "npm version detection for {flag}: `npm --version` failed, using fallback: {e:#}"
                 );
                 return false;
             }
         };
-        semver_is_at_least(&output, NPM_MIN_RELEASE_AGE_VERSION).unwrap_or(false)
+        semver_is_at_least(&output, min_version).unwrap_or(false)
     }
 
     /// Check dependencies for version checking (always needs npm)
@@ -734,7 +817,12 @@ impl NPMBackend {
             .is_some()
     }
 
-    fn write_aube_npmrc(&self, install_path: &Path, before_date: Option<Timestamp>) -> Result<()> {
+    fn write_aube_npmrc(
+        &self,
+        install_path: &Path,
+        before_date: Option<Timestamp>,
+        options: &NpmOptions,
+    ) -> Result<()> {
         let bin_dir = install_path.join("bin");
         crate::file::create_dir_all(install_path)?;
         crate::file::create_dir_all(&bin_dir)?;
@@ -751,6 +839,9 @@ impl NPMBackend {
             // aube documents minimumReleaseAge in minutes, matching pnpm's setting.
             npmrc.push_str(&format!("minimumReleaseAge={minutes}\n"));
         }
+        if let Some(excludes) = options.aube_trust_policy_excludes_npmrc_value()? {
+            npmrc.push_str(&format!("trustPolicyExclude={excludes}\n"));
+        }
         crate::file::write(install_path.join(".npmrc"), npmrc)?;
         Ok(())
     }
@@ -763,11 +854,11 @@ impl NPMBackend {
         seconds.div_ceil(60)
     }
 
-    fn effective_npm_ignore_scripts(args: &Option<Vec<String>>) -> bool {
+    fn effective_npm_ignore_scripts(default: bool, args: &Option<Vec<String>>) -> bool {
         let Some(args) = args else {
-            return true;
+            return default;
         };
-        let mut ignore_scripts = true;
+        let mut ignore_scripts = default;
         let mut iter = args.iter().peekable();
         while let Some(arg) = iter.next() {
             if arg == "--ignore-scripts" {
@@ -796,13 +887,20 @@ impl NPMBackend {
             return;
         };
         warn!(
-            "{}@{} declares npm lifecycle script(s) ({}) in {}, but mise skipped them with {}. Review the package before opting in with `npm_args = \"--ignore-scripts=false\"`.",
+            "{}@{} declares npm lifecycle script(s) ({}) in {}, but mise skipped them with {}. Review the package before opting in. {}",
             self.ba().full(),
             tv.version,
             hooks.join(", "),
             package_json_path.display(),
-            NPM_IGNORE_SCRIPTS_ARG
+            NPM_IGNORE_SCRIPTS_ARG,
+            Self::npm_lifecycle_script_remediation()
         );
+    }
+
+    fn npm_lifecycle_script_remediation() -> String {
+        format!(
+            "Use `allow_builds` with npm {NPM_ALLOW_SCRIPTS_VERSION}+, use aube/pnpm, or explicitly set `npm_args = \"--ignore-scripts=false\"` if you accept all install scripts."
+        )
     }
 
     fn installed_package_lifecycle_scripts(
@@ -871,6 +969,51 @@ fn is_semver_prerelease(version: &str) -> bool {
     core_and_pre.contains('-')
 }
 
+fn npm_view_json(data: &Value) -> eyre::Result<&Value> {
+    match data {
+        // npm 12 changed `npm view --json` to always return an array. mise only
+        // queries one package at a time here, so unwrap that compatibility shell.
+        Value::Array(values) if values.len() == 1 => Ok(&values[0]),
+        Value::Array(values) => Err(eyre::eyre!(
+            "expected npm view --json to return one result, got {}",
+            values.len()
+        )),
+        _ => Ok(data),
+    }
+}
+
+fn npm_view_versions_time(data: &Value) -> eyre::Result<Vec<VersionInfo>> {
+    let data = npm_view_json(data)?;
+    let versions = data["versions"]
+        .as_array()
+        .ok_or_else(|| eyre::eyre!("invalid versions"))?;
+    let time = data.get("time").and_then(|time| time.as_object());
+
+    Ok(versions
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(|version| {
+            let created_at = time
+                .and_then(|time| time.get(version))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            VersionInfo {
+                version: version.to_string(),
+                created_at,
+                prerelease: is_semver_prerelease(version),
+                ..Default::default()
+            }
+        })
+        .collect())
+}
+
+fn npm_view_latest_dist_tag(data: &Value) -> eyre::Result<Option<String>> {
+    Ok(match npm_view_json(data)?["latest"] {
+        Value::String(ref s) => Some(s.clone()),
+        _ => None,
+    })
+}
+
 fn parse_bool_arg(value: &str) -> Option<bool> {
     match value {
         "true" | "1" => Some(true),
@@ -887,6 +1030,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "bun_args".into(),
         "aube_args".into(),
         "allow_builds".into(),
+        "trust_policy_excludes".into(),
     ]
 }
 
@@ -1010,6 +1154,192 @@ mod tests {
         assert_eq!(NPMBackend::build_aube_minimum_release_age(61), 2);
     }
 
+    fn assert_npm_view_versions_time(data: &serde_json::Value) {
+        let versions = npm_view_versions_time(data).unwrap();
+        assert_eq!(versions.len(), 2);
+
+        assert_eq!(versions[0].version, "1.0.0");
+        assert_eq!(
+            versions[0].created_at,
+            Some("2026-01-02T03:04:05.000Z".into())
+        );
+        assert!(!versions[0].prerelease);
+
+        assert_eq!(versions[1].version, "1.1.0-beta.1");
+        assert_eq!(
+            versions[1].created_at,
+            Some("2026-01-03T03:04:05.000Z".into())
+        );
+        assert!(versions[1].prerelease);
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_accepts_legacy_object() {
+        let data = serde_json::json!({
+            "versions": ["1.0.0", "1.1.0-beta.1"],
+            "time": {
+                "1.0.0": "2026-01-02T03:04:05.000Z",
+                "1.1.0-beta.1": "2026-01-03T03:04:05.000Z"
+            }
+        });
+
+        assert_npm_view_versions_time(&data);
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_accepts_npm12_array() {
+        let data = serde_json::json!([{
+            "versions": ["1.0.0", "1.1.0-beta.1"],
+            "time": {
+                "1.0.0": "2026-01-02T03:04:05.000Z",
+                "1.1.0-beta.1": "2026-01-03T03:04:05.000Z"
+            }
+        }]);
+
+        assert_npm_view_versions_time(&data);
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_accepts_missing_time() {
+        let data = serde_json::json!({
+            "versions": ["1.0.0", "1.1.0"]
+        });
+
+        let versions = npm_view_versions_time(&data).unwrap();
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0].version, "1.0.0");
+        assert_eq!(versions[0].created_at, None);
+        assert_eq!(versions[1].version, "1.1.0");
+        assert_eq!(versions[1].created_at, None);
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_accepts_non_object_time() {
+        let data = serde_json::json!({
+            "versions": ["1.0.0"],
+            "time": "2026-01-02T03:04:05.000Z"
+        });
+
+        let versions = npm_view_versions_time(&data).unwrap();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].version, "1.0.0");
+        assert_eq!(versions[0].created_at, None);
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_rejects_missing_versions() {
+        let data = serde_json::json!({
+            "time": {}
+        });
+
+        let error = npm_view_versions_time(&data).unwrap_err().to_string();
+        assert_eq!(error, "invalid versions");
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_rejects_non_array_versions() {
+        let data = serde_json::json!({
+            "versions": "1.0.0",
+            "time": {}
+        });
+
+        let error = npm_view_versions_time(&data).unwrap_err().to_string();
+        assert_eq!(error, "invalid versions");
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_rejects_empty_npm12_array() {
+        let data = serde_json::json!([]);
+
+        let error = npm_view_versions_time(&data).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "expected npm view --json to return one result, got 0"
+        );
+    }
+
+    #[test]
+    fn test_npm_view_versions_time_rejects_multiple_results() {
+        let data = serde_json::json!([
+            {
+                "versions": ["1.0.0"],
+                "time": {}
+            },
+            {
+                "versions": ["2.0.0"],
+                "time": {}
+            }
+        ]);
+
+        let error = npm_view_versions_time(&data).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "expected npm view --json to return one result, got 2"
+        );
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_accepts_legacy_object() {
+        let data = serde_json::json!({
+            "latest": "1.0.0"
+        });
+
+        assert_eq!(
+            npm_view_latest_dist_tag(&data).unwrap(),
+            Some("1.0.0".into())
+        );
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_accepts_npm12_array() {
+        let data = serde_json::json!([{
+            "latest": "1.0.0"
+        }]);
+
+        assert_eq!(
+            npm_view_latest_dist_tag(&data).unwrap(),
+            Some("1.0.0".into())
+        );
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_returns_none_for_missing_tag() {
+        let data = serde_json::json!({
+            "beta": "2.0.0"
+        });
+
+        assert_eq!(npm_view_latest_dist_tag(&data).unwrap(), None);
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_rejects_empty_npm12_array() {
+        let data = serde_json::json!([]);
+
+        let error = npm_view_latest_dist_tag(&data).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "expected npm view --json to return one result, got 0"
+        );
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_rejects_multiple_results() {
+        let data = serde_json::json!([
+            {
+                "latest": "1.0.0"
+            },
+            {
+                "latest": "2.0.0"
+            }
+        ]);
+
+        let error = npm_view_latest_dist_tag(&data).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "expected npm view --json to return one result, got 2"
+        );
+    }
+
     #[test]
     fn test_npmrc_path_value_uses_forward_slashes() {
         assert_eq!(
@@ -1043,42 +1373,52 @@ mod tests {
 
     #[test]
     fn test_effective_npm_ignore_scripts_defaults_to_true() {
-        assert!(NPMBackend::effective_npm_ignore_scripts(&None));
+        assert!(NPMBackend::effective_npm_ignore_scripts(true, &None));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(false, &None));
     }
 
     #[test]
     fn test_effective_npm_ignore_scripts_honors_later_false_arg() {
-        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--ignore-scripts=false".into()
-        ])));
-        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--ignore-scripts=0".into()
-        ])));
-        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--ignore-scripts".into(),
-            "false".into()
-        ])));
-        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--ignore-scripts".into(),
-            "0".into()
-        ])));
-        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--no-ignore-scripts".into()
-        ])));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(
+            true,
+            &Some(vec!["--ignore-scripts=false".into()])
+        ));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(
+            true,
+            &Some(vec!["--ignore-scripts=0".into()])
+        ));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(
+            true,
+            &Some(vec!["--ignore-scripts".into(), "false".into()])
+        ));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(
+            true,
+            &Some(vec!["--ignore-scripts".into(), "0".into()])
+        ));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(
+            true,
+            &Some(vec!["--no-ignore-scripts".into()])
+        ));
     }
 
     #[test]
     fn test_effective_npm_ignore_scripts_later_arg_wins() {
-        assert!(NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--ignore-scripts=false".into(),
-            "--ignore-scripts=true".into()
-        ])));
-        assert!(NPMBackend::effective_npm_ignore_scripts(&Some(vec![
-            "--ignore-scripts".into(),
-            "false".into(),
-            "--ignore-scripts".into(),
-            "1".into()
-        ])));
+        assert!(NPMBackend::effective_npm_ignore_scripts(
+            false,
+            &Some(vec![
+                "--ignore-scripts=false".into(),
+                "--ignore-scripts=true".into()
+            ])
+        ));
+        assert!(NPMBackend::effective_npm_ignore_scripts(
+            false,
+            &Some(vec![
+                "--ignore-scripts".into(),
+                "false".into(),
+                "--ignore-scripts".into(),
+                "1".into()
+            ])
+        ));
     }
 
     #[test]
@@ -1146,6 +1486,19 @@ mod tests {
     }
 
     #[test]
+    fn test_npm_allow_scripts_version_requirement() {
+        assert_eq!(NPM_ALLOW_SCRIPTS_VERSION, "11.16.0");
+        assert_eq!(
+            crate::semver::semver_is_at_least("11.16.0", NPM_ALLOW_SCRIPTS_VERSION),
+            Some(true)
+        );
+        assert_eq!(
+            crate::semver::semver_is_at_least("11.15.9", NPM_ALLOW_SCRIPTS_VERSION),
+            Some(false)
+        );
+    }
+
+    #[test]
     fn test_resolve_lockfile_options_includes_install_args_only() {
         let backend = create_npm_backend("react-devtools");
         let mut options = ToolVersionOptions::default();
@@ -1167,6 +1520,14 @@ mod tests {
                 toml::Value::String("sharp".into()),
                 toml::Value::String("esbuild".into()),
                 toml::Value::String("sharp".into()),
+            ]),
+        );
+        options.opts.insert(
+            "trust_policy_excludes".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("undici@^5".into()),
+                toml::Value::String("undici".into()),
+                toml::Value::String("undici".into()),
             ]),
         );
         options.install_env.insert(
@@ -1196,7 +1557,65 @@ mod tests {
             resolved.get("allow_builds"),
             Some(&"[\"esbuild\", \"sharp\"]".to_string())
         );
+        assert_eq!(
+            resolved.get("trust_policy_excludes"),
+            Some(&"[\"undici\", \"undici@^5\"]".to_string())
+        );
         assert!(!resolved.contains_key("install_env.NPM_CONFIG_REGISTRY"));
+    }
+
+    #[test]
+    fn test_trust_policy_excludes_accepts_string_or_array() {
+        let mut string_options = ToolVersionOptions::default();
+        string_options.opts.insert(
+            "trust_policy_excludes".to_string(),
+            toml::Value::String("undici".into()),
+        );
+        assert_eq!(
+            NpmOptions::new(&string_options)
+                .trust_policy_excludes()
+                .unwrap(),
+            vec!["undici"]
+        );
+
+        let mut array_options = ToolVersionOptions::default();
+        array_options.opts.insert(
+            "trust_policy_excludes".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("undici@^5".into()),
+                toml::Value::String("undici".into()),
+                toml::Value::String("undici".into()),
+            ]),
+        );
+        assert_eq!(
+            NpmOptions::new(&array_options)
+                .trust_policy_excludes()
+                .unwrap(),
+            vec!["undici", "undici@^5"]
+        );
+    }
+
+    #[test]
+    fn test_write_aube_npmrc_includes_trust_policy_excludes() {
+        let backend = create_npm_backend("vercel");
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-vercel").join("54.20.1");
+        let mut raw_options = ToolVersionOptions::default();
+        raw_options.opts.insert(
+            "trust_policy_excludes".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("undici@^5".into()),
+                toml::Value::String("undici".into()),
+            ]),
+        );
+        let options = NpmOptions::new(&raw_options);
+
+        backend
+            .write_aube_npmrc(&install_path, None, &options)
+            .unwrap();
+
+        let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
+        assert!(npmrc.contains("trustPolicyExclude=undici,undici@^5\n"));
     }
 
     #[test]
@@ -1234,6 +1653,51 @@ mod tests {
         assert_eq!(
             NpmOptions::new(&true_options).allow_build_args().unwrap(),
             vec![OsString::from("--dangerously-allow-all-builds")]
+        );
+
+        let mut true_string_options = ToolVersionOptions::default();
+        true_string_options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::String("true".into()),
+        );
+        assert_eq!(
+            NpmOptions::new(&true_string_options)
+                .allow_build_args()
+                .unwrap(),
+            vec![OsString::from("--dangerously-allow-all-builds")]
+        );
+    }
+
+    #[test]
+    fn test_npm_lifecycle_script_args_uses_allow_scripts_when_supported() {
+        assert_eq!(
+            NpmOptions::npm_lifecycle_script_args(
+                AllowBuilds::Packages(vec!["esbuild".into(), "sharp".into()]),
+                true
+            ),
+            (vec![OsString::from("--allow-scripts=esbuild,sharp")], false)
+        );
+        assert_eq!(
+            NpmOptions::npm_lifecycle_script_args(AllowBuilds::All, true),
+            (
+                vec![OsString::from("--dangerously-allow-all-scripts")],
+                false
+            )
+        );
+    }
+
+    #[test]
+    fn test_npm_lifecycle_script_args_keeps_ignore_scripts_without_support() {
+        assert_eq!(
+            NpmOptions::npm_lifecycle_script_args(
+                AllowBuilds::Packages(vec!["esbuild".into()]),
+                false
+            ),
+            (vec![OsString::from(NPM_IGNORE_SCRIPTS_ARG)], true)
+        );
+        assert_eq!(
+            NpmOptions::npm_lifecycle_script_args(AllowBuilds::None, false),
+            (vec![OsString::from(NPM_IGNORE_SCRIPTS_ARG)], true)
         );
     }
 

@@ -584,13 +584,9 @@ Of course the ordering matters when doing this.
 
 ## Shell-style variable expansion
 
-As a simpler alternative to Tera templates for referencing env vars, you can use shell-style `$VAR` syntax
-by enabling the [`env_shell_expand`](/configuration/settings.html#env_shell_expand) setting:
+As a simpler alternative to Tera templates for referencing env vars, you can use shell-style `$VAR` syntax:
 
 ```toml
-[settings]
-env_shell_expand = true
-
 [env]
 MY_PROJ_LIB = "{{config_root}}/lib"
 LD_LIBRARY_PATH = "$MY_PROJ_LIB:$LD_LIBRARY_PATH"
@@ -608,14 +604,7 @@ Supported syntax:
 Expansion runs after Tera template rendering, so both syntaxes can be mixed.
 Undefined variables without a default are left unexpanded and produce a warning.
 
-The setting is a 3-way toggle:
+The `env_shell_expand` setting controls shell expansion:
 
-- **`true`** — enable shell expansion
-- **`false`** — disable shell expansion, no warning
-- **unset** (default) — disable shell expansion but warn if `$` is detected
-
-<!-- TODO(2026.7.0): update this to say shell expansion is enabled by default -->
-
-::: tip
-Shell expansion will become the default behavior in the 2026.7.0 release. Set `env_shell_expand = true` now to opt in early, or `env_shell_expand = false` to preserve the current behavior.
-:::
+- **`true`** or **unset** (default) — enable shell expansion
+- **`false`** — disable shell expansion

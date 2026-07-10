@@ -1190,34 +1190,20 @@ pub fn untar(
     for entry in Archive::new(tar).entries().wrap_err_with(err)? {
         let mut entry = entry.wrap_err_with(err)?;
 
-        // Check if this is a GNU sparse file
-        if entry.header().entry_type().is_gnu_sparse() {
-            debug!("Detected GNU sparse file, falling back to system tar");
+        let entry_path = entry.path().wrap_err_with(err)?.into_owned();
+        if tar_entry_is_sparse(&mut entry).wrap_err_with(err)?
+            || path_has_gnu_sparse_artifact(&entry_path)
+        {
+            debug!("Detected sparse tar entry, falling back to system tar");
             needs_system_tar = true;
-            // Clean up any partial extraction
-            remove_all(dest)?;
-            create_dir_all(dest)?;
             break;
         }
 
         // Configure mtime preservation based on options
         entry.set_preserve_mtime(opts.preserve_mtime);
 
-        trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
+        trace!("extracting {}", entry_path.display());
         entry.unpack_in(dest).wrap_err_with(err)?;
-    }
-
-    // Check for the GNUSparseFile.0 directory which indicates the tar crate
-    // incorrectly handled a sparse file
-    if !needs_system_tar {
-        let sparse_dir = dest.join("GNUSparseFile.0");
-        if sparse_dir.exists() && sparse_dir.is_dir() {
-            debug!("Found GNUSparseFile.0 directory, using system tar");
-            needs_system_tar = true;
-            // Clean up the bad extraction
-            remove_all(dest)?;
-            create_dir_all(dest)?;
-        }
     }
 
     if needs_system_tar {
@@ -1225,27 +1211,63 @@ pub fn untar(
         // The tar crate doesn't properly handle certain GNU sparse formats
         debug!("Using system tar for: {}", archive.display());
 
-        // When preserve_mtime is false, use -m flag to not restore modification times
-        // This causes extracted files to have current time, which is important for
-        // cache invalidation and autopruning. Works on both BSD and GNU tar.
-        if !opts.preserve_mtime {
-            cmd!("tar", "-mxf", archive, "-C", dest)
-                .run()
-                .wrap_err_with(|| {
-                    format!("Failed to extract {} using system tar", archive.display())
-                })?;
-        } else {
-            cmd!("tar", "-xf", archive, "-C", dest)
-                .run()
-                .wrap_err_with(|| {
-                    format!("Failed to extract {} using system tar", archive.display())
-                })?;
-        }
+        remove_all(dest)?;
+        create_dir_all(dest)?;
+        extract_with_system_tar(archive, dest, opts)?;
     }
 
     // Always use our manual strip to ensure consistent behavior across backends
     strip_archive_path_components(dest, opts.strip_components).wrap_err_with(err)?;
     Ok(())
+}
+
+fn tar_entry_is_sparse<R: Read>(entry: &mut tar::Entry<'_, R>) -> std::io::Result<bool> {
+    if entry.header().entry_type().is_gnu_sparse() {
+        return Ok(true);
+    }
+
+    let Some(pax_extensions) = entry.pax_extensions()? else {
+        return Ok(false);
+    };
+
+    for extension in pax_extensions {
+        let extension = extension?;
+        if extension
+            .key()
+            .is_ok_and(|key| key.starts_with("GNU.sparse."))
+        {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn path_has_gnu_sparse_artifact(path: &Path) -> bool {
+    path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .is_some_and(|name| name.starts_with("GNUSparseFile."))
+    })
+}
+
+fn extract_with_system_tar(archive: &Path, dest: &Path, opts: &ExtractOptions) -> Result<()> {
+    // When preserve_mtime is false, use -m flag to not restore modification times.
+    // This causes extracted files to have current time, which is important for
+    // cache invalidation and autopruning. Works on both BSD and GNU tar.
+    let result = if opts.preserve_mtime {
+        cmd!("tar", "-xf", archive, "-C", dest).run()
+    } else {
+        cmd!("tar", "-mxf", archive, "-C", dest).run()
+    };
+
+    result.map(|_| ()).wrap_err_with(|| {
+        format!(
+            "failed to extract {} using system tar for sparse archive fallback",
+            archive.display()
+        )
+    })
 }
 
 fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
@@ -2518,6 +2540,126 @@ mod tests {
             "{err:#}"
         );
         assert!(!absolute_target_path.exists());
+    }
+
+    #[test]
+    fn test_tar_entry_is_sparse_detects_pax_sparse_metadata() {
+        use std::io::Cursor;
+
+        let mut builder = tar::Builder::new(Vec::new());
+        builder
+            .append_pax_extensions([("GNU.sparse.name", b"pkg/disk.img".as_slice())])
+            .unwrap();
+
+        let mut header = tar::Header::new_ustar();
+        header.set_size(0);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(
+                &mut header,
+                "pkg/GNUSparseFile.0/disk.img",
+                std::io::empty(),
+            )
+            .unwrap();
+
+        let data = builder.into_inner().unwrap();
+        let mut archive = Archive::new(Cursor::new(data));
+        let mut entries = archive.entries().unwrap();
+        let mut entry = entries.next().unwrap().unwrap();
+
+        assert!(tar_entry_is_sparse(&mut entry).unwrap());
+    }
+
+    #[test]
+    fn test_path_has_gnu_sparse_artifact_detects_nested_paths() {
+        assert!(path_has_gnu_sparse_artifact(Path::new(
+            "pkg/GNUSparseFile.0/disk.img"
+        )));
+        assert!(!path_has_gnu_sparse_artifact(Path::new("pkg/disk.img")));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_extract_archive_falls_back_for_pax_sparse_tar() {
+        use std::io::{Seek, SeekFrom, Write};
+        use std::process::Command;
+        use tempfile::tempdir;
+
+        if Command::new("tar").arg("--version").output().is_err() {
+            return;
+        }
+
+        let dir = tempdir().unwrap();
+        let src_dir = dir.path().join("src").join("pkg");
+        let archive_path = dir.path().join("sparse.tar");
+        let dest_dir = dir.path().join("out");
+        let disk_path = src_dir.join("disk.img");
+
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let mut disk = File::create(&disk_path).unwrap();
+        disk.write_all(b"begin").unwrap();
+        disk.seek(SeekFrom::Start(10 * 1024 * 1024 - 3)).unwrap();
+        disk.write_all(b"end").unwrap();
+        disk.flush().unwrap();
+
+        let status = Command::new("tar")
+            .arg("--sparse")
+            .arg("--format=posix")
+            .arg("-cf")
+            .arg(&archive_path)
+            .arg("-C")
+            .arg(dir.path().join("src"))
+            .arg("pkg")
+            .status()
+            .unwrap();
+
+        if !status.success() {
+            return;
+        }
+
+        let archive_contents = std::fs::read(&archive_path).unwrap();
+        if !archive_contents
+            .windows(b"GNU.sparse.".len())
+            .any(|window| window == b"GNU.sparse.")
+        {
+            return;
+        }
+
+        extract_archive(
+            &archive_path,
+            &dest_dir,
+            ExtractionFormat::Tar,
+            &ExtractOptions::default(),
+        )
+        .unwrap();
+
+        let extracted_disk = dest_dir.join("pkg").join("disk.img");
+        assert_eq!(
+            std::fs::metadata(&extracted_disk).unwrap().len(),
+            10 * 1024 * 1024
+        );
+        let mut extracted = File::open(&extracted_disk).unwrap();
+        let mut buf = [0; 5];
+        extracted.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, b"begin");
+        extracted
+            .seek(SeekFrom::Start(10 * 1024 * 1024 - 3))
+            .unwrap();
+        let mut buf = [0; 3];
+        extracted.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, b"end");
+        assert!(!WalkDir::new(&dest_dir).into_iter().any(|entry| {
+            entry
+                .ok()
+                .and_then(|entry| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .map(|name| name.starts_with("GNUSparseFile."))
+                })
+                .is_some_and(|matches| matches)
+        }));
     }
 
     #[test]

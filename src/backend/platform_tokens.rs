@@ -44,14 +44,14 @@ pub fn is_platform_or_version_token(token: &str) -> bool {
     token.chars().next().is_some_and(|c| c.is_ascii_digit())
 }
 
-fn is_os_token(token: &str) -> bool {
+pub(super) fn is_os_token(token: &str) -> bool {
     token.starts_with("manylinux")
         || token.starts_with("musllinux")
         || BINARY_OS_TOKENS.contains(&token)
         || PREFERRED_NAME_OS_TOKENS.contains(&token)
 }
 
-fn is_arch_token(token: &str) -> bool {
+pub(super) fn is_arch_token(token: &str) -> bool {
     BINARY_ARCH_TOKENS.contains(&token) || PREFERRED_NAME_ARCH_TOKENS.contains(&token)
 }
 

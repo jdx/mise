@@ -78,6 +78,10 @@ This can be useful for reproducibility or security purposes.
 This only affects fuzzy version matches like "20" or "latest".
 Explicitly pinned versions like "22.5.0" are not filtered.
 
+### `--monorepo`
+
+Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.
+
 ### `--raw`
 
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1

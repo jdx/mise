@@ -3,7 +3,7 @@ use crate::backend::asset_matcher::detect_platform_from_url;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::tool_stub::ToolStubFile;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::file::{self, ExtractionFormat};
 use crate::http::HTTP;
 use crate::lockfile::PlatformInfo;
@@ -17,7 +17,7 @@ use bytesize::ByteSize;
 use clap::ValueHint;
 use color_eyre::eyre::bail;
 use indexmap::IndexMap;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use toml_edit::DocumentMut;
 use xx::file::display_path;
@@ -348,9 +348,9 @@ impl ToolStub {
         // Fetch and verify install.sh (same approach as bootstrap.rs)
         // Use versioned URL if a specific version is requested
         let url = if let Some(v) = &self.bootstrap_version {
-            format!("https://mise.en.dev/v{v}/install.sh")
+            format!("https://mise.jdx.dev/v{v}/install.sh")
         } else {
-            "https://mise.en.dev/install.sh".to_string()
+            "https://mise.jdx.dev/install.sh".to_string()
         };
         let install = HTTP.get_text(&url).await?;
         let install_sig = HTTP.get_text(format!("{url}.minisig")).await?;
@@ -676,9 +676,9 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         };
         let tv = ToolVersion::resolve(&config, request, &resolve_opts).await?;
 
-        // Resolve lock info for each common platform (including variants)
+        // Resolve lock info for each target platform (including variants)
         let mut lock_platforms: BTreeMap<String, PlatformInfo> = BTreeMap::new();
-        for p in Platform::common_platforms() {
+        for p in lock_stub_target_platforms()? {
             for platform in backend.platform_variants(&p) {
                 let target = PlatformTarget::new(platform);
                 match backend.resolve_lock_info(&tv, &target).await {
@@ -800,6 +800,16 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
 
             Ok(output.join("\n"))
         }
+    }
+}
+
+fn lock_stub_target_platforms() -> Result<Vec<Platform>> {
+    if let Some(configured) = Settings::get().lockfile_platforms()? {
+        let mut platforms: BTreeSet<Platform> = configured.into_iter().collect();
+        platforms.insert(Platform::current());
+        Ok(platforms.into_iter().collect())
+    } else {
+        Ok(Platform::common_platforms())
     }
 }
 

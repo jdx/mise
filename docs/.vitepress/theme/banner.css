@@ -14,6 +14,23 @@
   font-size: 0.9rem;
   line-height: 1.4;
   text-align: center;
+  /* arrives async (remote fetch) — fade in instead of popping */
+  animation: jdx-banner-in 0.25s ease;
+}
+
+@keyframes jdx-banner-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jdx-banner {
+    animation: none;
+  }
 }
 .jdx-banner a {
   color: #fff;

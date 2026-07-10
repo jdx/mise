@@ -1,4 +1,4 @@
-# Dotfiles <Badge type="warning" text="experimental" />
+# Dotfiles
 
 mise can manage dotfiles from the `[dotfiles]` section of `mise.toml`.
 Entries can either own a whole file or directory, or manage one small piece
@@ -21,8 +21,8 @@ dotfiles.default_mode = "symlink"
 ```
 
 Dotfiles are only applied when explicitly requested with
-`mise dotfiles apply` or [`mise bootstrap`](/cli/bootstrap.html). They are
-never applied implicitly by `mise install` or `mise bootstrap packages`.
+`mise dotfiles apply` or as part of [`mise bootstrap`](/bootstrap.html). They
+are never applied implicitly by `mise install` or `mise bootstrap packages`.
 
 ## Whole-file entries
 
@@ -131,7 +131,7 @@ multi-line content.
   [config hierarchy](/configuration.html) (global → project). Whole-file
   entries merge by target path; edit entries merge by `(path, id)`.
 - **Manual application only** — nothing is written implicitly. Only
-  `mise dotfiles apply` or [`mise bootstrap`](/cli/bootstrap.html) applies
+  `mise dotfiles apply` or [`mise bootstrap`](/bootstrap.html) applies
   dotfiles.
 - **Idempotent** — entries already in their desired state are skipped;
   re-running is always safe.

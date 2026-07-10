@@ -2,7 +2,7 @@
 # `mise bootstrap user apply`
 
 - **Usage**: `mise bootstrap user apply [-n --dry-run] [-y --yes]`
-- **Source code**: [`src/cli/bootstrap/user/apply.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/user/apply.rs)
+- **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 ## Flags
 

@@ -9,7 +9,7 @@ use super::install::Install;
 use super::run;
 use super::system::driver::{self, Action, DriverOpts};
 use super::system::{import, install, prune, status, upgrade, r#use};
-use crate::config::{self, Config, Settings};
+use crate::config::{self, Config};
 use crate::dirs;
 use crate::path::PathExt;
 use crate::system;
@@ -25,7 +25,7 @@ use crate::toolset::ResolveOptions;
 use crate::ui::table::MiseTable;
 use clap::{Subcommand, ValueEnum};
 
-/// [experimental] Set up a machine for the current config in one command
+/// Set up a machine for the current config in one command
 ///
 /// Runs the bootstrap steps for the current config in order:
 ///
@@ -496,7 +496,6 @@ struct BootstrapUserStatus {
 
 impl Bootstrap {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         if let Some(command) = self.command {
             return command.run().await;
         }
@@ -707,7 +706,7 @@ impl Bootstrap {
         } else {
             self.run_hooks(&hooks, BootstrapHookPhase::PreTools).await?;
             info!("bootstrap: tools");
-            Install::new_bare(self.dry_run).run().await?;
+            Install::new_bare(self.dry_run, self.yes).run().await?;
             if !self.dry_run {
                 config = Config::reset().await?;
                 hooks = system::hooks_from_config(&config);
@@ -1057,7 +1056,6 @@ impl BootstrapStatusReport {
 
 impl BootstrapStatus {
     async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         let config = Config::get().await?;
         let report = self.collect(&config).await?;
         if self.json {
@@ -1088,7 +1086,62 @@ impl BootstrapStatus {
         self.collect_systemd(config, &mut report).await?;
         self.collect_user(config, &mut report)?;
         self.collect_tools(config, &mut report).await?;
+        self.collect_plugin_deps(config, &mut report).await?;
         Ok(report)
+    }
+
+    async fn collect_plugin_deps(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let trs = config.get_tool_request_set().await?;
+        let mut seen = HashSet::new();
+        let mut json_entries = vec![];
+        for tr in trs.tools.values().flatten() {
+            if !tr.is_os_supported() {
+                continue;
+            }
+            let ba = tr.ba();
+            if !seen.insert(ba.short.clone()) {
+                continue;
+            }
+            let Some(backend) = crate::backend::get(ba) else {
+                continue;
+            };
+            let deps = backend.system_dependencies();
+            if deps.is_empty() {
+                continue;
+            }
+            for status in crate::system::deps::detect(&deps).await {
+                let optional = status.dep.optional.is_some();
+                let (state, missing) = if status.satisfied {
+                    ("satisfied".to_string(), false)
+                } else if optional {
+                    ("optional missing".to_string(), false)
+                } else {
+                    ("missing".to_string(), true)
+                };
+                report.row(
+                    "plugin-deps",
+                    format!("{}: {}", ba.tool_name, status.dep.label()),
+                    status.found.clone().unwrap_or_default(),
+                    state.clone(),
+                    missing,
+                );
+                json_entries.push(json!({
+                    "tool": ba.tool_name,
+                    "dependency": status.dep.label(),
+                    "found": status.found,
+                    "optional": optional,
+                    "state": state.replace(' ', "_"),
+                }));
+            }
+        }
+        report
+            .json
+            .insert("plugin_deps".to_string(), json!(json_entries));
+        Ok(())
     }
 
     async fn collect_packages(
@@ -1664,7 +1717,6 @@ impl BootstrapStatus {
 
 impl BootstrapDotfiles {
     async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
@@ -1686,7 +1738,6 @@ impl BootstrapDotfilesStatus {
 
 impl BootstrapPackages {
     async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             BootstrapPackagesCommands::Apply(cmd) => cmd.run().await,
             #[cfg(unix)]
@@ -1702,7 +1753,6 @@ impl BootstrapPackages {
 
 impl BootstrapRepos {
     async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             BootstrapReposCommands::Apply(cmd) => cmd.run().await,
             BootstrapReposCommands::Status(cmd) => cmd.run().await,
@@ -1778,7 +1828,6 @@ impl BootstrapReposStatus {
 
 impl BootstrapMacos {
     async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             BootstrapMacosCommands::Defaults(cmd) => cmd.run().await,
             BootstrapMacosCommands::LaunchdAgents(cmd) => cmd.run().await,
@@ -1788,7 +1837,6 @@ impl BootstrapMacos {
 
 impl BootstrapLinux {
     async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             BootstrapLinuxCommands::SystemdUnits(cmd) => cmd.run().await,
         }
@@ -1797,7 +1845,6 @@ impl BootstrapLinux {
 
 impl BootstrapMacosDefaults {
     async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             BootstrapMacosDefaultsCommands::Apply(cmd) => cmd.run().await,
             BootstrapMacosDefaultsCommands::Status(cmd) => cmd.run().await,
@@ -1807,7 +1854,6 @@ impl BootstrapMacosDefaults {
 
 impl BootstrapLaunchd {
     async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             BootstrapLaunchdCommands::Apply(cmd) => cmd.run().await,
             BootstrapLaunchdCommands::Status(cmd) => cmd.run().await,
@@ -1911,7 +1957,6 @@ impl BootstrapLaunchdStatus {
 
 impl BootstrapSystemd {
     async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             BootstrapSystemdCommands::Apply(cmd) => cmd.run().await,
             BootstrapSystemdCommands::Status(cmd) => cmd.run().await,
@@ -2115,7 +2160,6 @@ impl BootstrapMacosDefaultsStatus {
 
 impl BootstrapShell {
     async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             BootstrapShellCommands::Apply(cmd) => cmd.run().await,
             BootstrapShellCommands::Status(cmd) => cmd.run().await,
@@ -2195,7 +2239,6 @@ impl BootstrapShellStatus {
 
 impl BootstrapUser {
     async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             BootstrapUserCommands::Apply(cmd) => cmd.run().await,
             BootstrapUserCommands::Status(cmd) => cmd.run().await,

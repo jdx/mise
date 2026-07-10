@@ -6,7 +6,7 @@ use std::{
 
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::{Config, Settings};
+use crate::config::{Config, ConfigMap, Settings};
 use crate::env;
 use crate::registry::{REGISTRY, tool_enabled};
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
@@ -48,7 +48,7 @@ impl ToolRequestSet {
     pub async fn missing_tools(&self, config: &Arc<Config>) -> Vec<&ToolRequest> {
         let mut tools = vec![];
         for tr in self.tools.values().flatten() {
-            if tr.is_os_supported() && !tr.is_installed(config).await {
+            if tr.is_os_supported() && !tr.is_install_satisfied(config).await {
                 tools.push(tr);
             }
         }
@@ -138,6 +138,8 @@ pub struct ToolRequestSetBuilder {
     disable_tools: BTreeSet<BackendArg>,
     /// tools which will be enabled
     enable_tools: Option<BTreeSet<BackendArg>>,
+    config_files: Option<ConfigMap>,
+    skip_runtime_args: bool,
 }
 
 impl ToolRequestSetBuilder {
@@ -163,11 +165,24 @@ impl ToolRequestSetBuilder {
     // }
     //
 
+    /// Use custom config files instead of config.config_files.
+    pub fn with_config_files(mut self, config_files: ConfigMap) -> Self {
+        self.config_files = Some(config_files);
+        self
+    }
+
+    pub fn without_runtime_args(mut self) -> Self {
+        self.skip_runtime_args = true;
+        self
+    }
+
     pub async fn build(&self, config: &Arc<Config>) -> eyre::Result<ToolRequestSet> {
         let mut trs = ToolRequestSet::default();
         trs = self.load_config_files(config, trs).await?;
         trs = self.load_runtime_env(trs)?;
-        trs = self.load_runtime_args(trs)?;
+        if !self.skip_runtime_args {
+            trs = self.load_runtime_args(trs)?;
+        }
 
         for ba in trs.tools.keys().cloned().collect_vec() {
             if self.is_disabled(&ba) {
@@ -206,7 +221,8 @@ impl ToolRequestSetBuilder {
         config: &Arc<Config>,
         mut trs: ToolRequestSet,
     ) -> eyre::Result<ToolRequestSet> {
-        for cf in config.config_files.values().rev() {
+        let config_files = self.config_files.as_ref().unwrap_or(&config.config_files);
+        for cf in config_files.values().rev() {
             trs = merge(trs, cf.to_tool_request_set()?);
         }
         Ok(trs)

@@ -5,6 +5,8 @@ cat <<EOF >mise.toml
 [tools]
 EOF
 assert_succeed "mise bootstrap --yes"
+assert_succeed "MISE_EXPERIMENTAL=0 mise bootstrap --yes"
+assert_succeed "MISE_EXPERIMENTAL=0 mise bootstrap status"
 assert_not_contains "mise bootstrap --yes" "bootstrap: follow-up"
 
 # bootstrap applies dotfiles, installs tools, and runs the
@@ -34,6 +36,7 @@ assert_contains "mise bootstrap status --json" '"dotfiles"'
 assert_contains "mise bootstrap status --json" '"tools"'
 assert_succeed "mise bootstrap status --missing"
 assert_contains "mise bootstrap dotfiles status" "~/.gitconfig"
+assert_contains "MISE_EXPERIMENTAL=0 mise bootstrap dotfiles status" "~/.gitconfig"
 assert_succeed "mise bootstrap packages apply --dry-run --yes"
 assert_succeed "mise bootstrap packages install --dry-run --yes"
 

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use eyre::{Result, bail};
 
 use super::add::DotfilesAdd;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::file;
 use crate::system;
 use crate::system::edits::{BlockSource, EditOp};
@@ -36,7 +36,6 @@ pub struct DotfilesEdit {
 
 impl DotfilesEdit {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise dotfiles")?;
         let mut config = Config::get().await?;
         let target = system::files::resolve_target_arg(&self.target);
 

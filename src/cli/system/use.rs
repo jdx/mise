@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use super::driver::{self, Action, DriverOpts};
 use crate::config::config_file::ConfigFile;
 use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::{ConfigPathOptions, Settings, resolve_target_config_path};
+use crate::config::{ConfigPathOptions, resolve_target_config_path};
 use crate::file::display_path;
 use crate::system;
 use crate::system::packages::PackageRequest;
@@ -53,7 +53,6 @@ pub struct SystemUse {
 
 impl SystemUse {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise bootstrap")?;
         let config = crate::config::Config::get().await?;
         let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
         let mut entries: Vec<(String, String)> = vec![];

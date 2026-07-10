@@ -278,6 +278,25 @@ EOF
 assert "mise run usage-tera-opt-arg" "hello world"
 assert "mise run usage-tera-opt-arg -- Alice" "hello Alice"
 
+# task_source_files() stays available when scripts are re-rendered with usage args
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-source-files]
+usage = '''
+arg "[files]" var=#true
+'''
+sources = ["*.toml"]
+run = '''
+{% if usage.files %}
+echo {{ usage.files | join(sep=' ') }}
+{% else %}
+echo {{ task_source_files() | join(sep=' ') }}
+{% endif %}
+'''
+EOF
+
+assert "mise run --dry-run --force usage-tera-source-files 2>&1" "[usage-tera-source-files] $ echo mise.toml"
+assert "mise run --dry-run --force usage-tera-source-files -- mise.toml 2>&1" "[usage-tera-source-files] $ echo mise.toml"
+
 # Arg choices restrict allowed values
 cat <<'EOF' >mise.toml
 [tasks.usage-tera-arg-choices]

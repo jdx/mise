@@ -3,7 +3,7 @@
 
 - **Usage**: `mise bootstrap packages apply [FLAGS] [PACKAGE]…`
 - **Aliases**: `i`
-- **Source code**: [`src/cli/bootstrap/packages/apply.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/packages/apply.rs)
+- **Source code**: [`src/cli/system/install.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/install.rs)
 
 Apply system packages from `[bootstrap.packages]`
 

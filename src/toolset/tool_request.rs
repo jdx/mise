@@ -69,6 +69,15 @@ impl ToolRequest {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => format!("{ref_type}:{r}"),
             _ => s.to_string(),
         };
+        if crate::semver::is_npm_semver_range_query(&s)
+            && !matches!(
+                &source,
+                ToolSource::IdiomaticVersionFile(path)
+                    if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
+            )
+        {
+            warn_once!("semver ranges are not supported: {s}");
+        }
         Ok(match s.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
                 validate_ref_string(r)?;
@@ -227,12 +236,18 @@ impl ToolRequest {
         }
     }
 
-    pub async fn is_installed(&self, config: &Arc<Config>) -> bool {
+    pub async fn is_install_satisfied(&self, config: &Arc<Config>) -> bool {
         if let Some(backend) = backend::get(self.ba()) {
             match self.resolve(config, &Default::default()).await {
-                Ok(tv) => backend.is_version_installed(config, &tv, false),
+                Ok(tv) => match backend.is_install_satisfied(config, &tv, false).await {
+                    Ok(satisfied) => satisfied,
+                    Err(e) => {
+                        debug!("ToolRequest.is_install_satisfied: {e:#}");
+                        false
+                    }
+                },
                 Err(e) => {
-                    debug!("ToolRequest.is_installed: {e:#}");
+                    debug!("ToolRequest.is_install_satisfied: {e:#}");
                     false
                 }
             }

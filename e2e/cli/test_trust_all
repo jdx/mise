@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+# `mise trust --all` trusts config files in subdirectories in addition to the
+# current directory and its parents. The walk respects .gitignore and skips
+# common dependency/build directories like node_modules and vendor.
+
+# The test harness pre-trusts the test dir via MISE_TRUSTED_CONFIG_PATHS;
+# clear it so configs actually start out untrusted
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+mkdir -p packages/foo packages/bar node_modules/dep vendor/dep ignored-dir
+cat <<EOF >mise.toml
+[env]
+ROOT = "1"
+EOF
+cat <<EOF >packages/foo/mise.toml
+[env]
+FOO = "1"
+EOF
+cat <<EOF >packages/bar/.mise.toml
+[env]
+BAR = "1"
+EOF
+cat <<EOF >node_modules/dep/mise.toml
+[env]
+DEP = "1"
+EOF
+cat <<EOF >vendor/dep/mise.toml
+[env]
+VENDORED = "1"
+EOF
+cat <<EOF >ignored-dir/mise.toml
+[env]
+IGNORED = "1"
+EOF
+echo "ignored-dir/" >.gitignore
+
+output="$(mise trust --all 2>&1)"
+assert_contains_text "$output" "trusted"
+assert_contains_text "$output" "packages/foo"
+assert_contains_text "$output" "packages/bar"
+assert_not_contains_text "$output" "node_modules"
+assert_not_contains_text "$output" "vendor"
+assert_not_contains_text "$output" "ignored-dir"
+
+# nested configs are trusted and load without prompting
+assert_contains "cd packages/bar && mise env 2>&1" "BAR=1"
+assert_contains "cd packages/foo && mise trust --show" "packages/foo: trusted"
+assert_contains "cd packages/bar && mise trust --show" "packages/bar: trusted"
+
+# second run is a no-op
+assert_not_contains "mise trust --all 2>&1" "trusted"
+
+# -C/--cd is honored: the descendant walk anchors to the same directory as the
+# ancestor pass, so running from a different cwd still reaches nested configs
+ROOT="$PWD"
+mise untrust packages/foo/mise.toml
+mise untrust packages/bar/.mise.toml
+assert "cd / && mise -C '$ROOT' trust --all"
+assert_contains "cd packages/foo && mise trust --show" "packages/foo: trusted"
+assert_contains "cd packages/bar && mise trust --show" "packages/bar: trusted"
+
+# an excluded name (build/vendor/...) is only skipped as a subdirectory — when
+# it is itself the walk root, its descendants are still trusted
+mkdir -p build/sub
+cat <<EOF >build/sub/mise.toml
+[env]
+INBUILD = "1"
+EOF
+assert "mise -C build trust --all"
+assert_contains "cd build/sub && mise trust --show" "build/sub: trusted"
