@@ -116,7 +116,7 @@ impl RegistryTool {
         let experimental = settings.experimental;
         self.backends
             .iter()
-            .filter(|rb| backend_matches_platform(rb, &settings))
+            .filter(|rb| backend_matches_platform(rb.platforms, &settings))
             .map(|rb| rb.full)
             .filter(|full| {
                 full.split(':')
@@ -174,11 +174,7 @@ impl RegistryTool {
 /// Unlike `backends.options.platforms.*` lookup, this is deliberately not
 /// alias-tolerant: registry selectors use canonical names such as `macos-x64`,
 /// while option lookup accepts release asset aliases such as `darwin-amd64`.
-fn backend_matches_platform(backend: &RegistryBackend, settings: &Settings) -> bool {
-    backend_platforms_match(backend.platforms, settings)
-}
-
-fn backend_platforms_match(platforms: &[&str], settings: &Settings) -> bool {
+fn backend_matches_platform(platforms: &[&str], settings: &Settings) -> bool {
     let os = settings.os();
     let arch = settings.arch();
     let platform = format!("{os}-{arch}");
@@ -353,7 +349,7 @@ mod tests {
             settings.arch = Some(raw_arch.to_string());
 
             assert!(
-                backend_platforms_match(&[selector], &settings),
+                backend_matches_platform(&[selector], &settings),
                 "{raw_os}-{raw_arch} should match normalized selector {selector}"
             );
         }
@@ -391,7 +387,7 @@ mod tests {
 
         let matching = backends
             .iter()
-            .filter(|backend| backend_matches_platform(backend, &settings))
+            .filter(|backend| backend_matches_platform(backend.platforms, &settings))
             .map(|backend| backend.full)
             .collect::<Vec<_>>();
 
@@ -405,7 +401,10 @@ mod tests {
             platforms: &["darwin-amd64"],
             options: &[],
         };
-        assert!(!backend_matches_platform(&alias_selector, &settings));
+        assert!(!backend_matches_platform(
+            alias_selector.platforms,
+            &settings
+        ));
     }
 
     #[test]
