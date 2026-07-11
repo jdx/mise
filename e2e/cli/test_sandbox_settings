@@ -2,6 +2,12 @@
 
 export SANDBOX_SETTING_SECRET=hidden
 
+assert "MISE_SANDBOX_DENY_ALL=1 mise settings get sandbox.deny_all" "true"
+assert "MISE_SANDBOX_DENY_ENV=1 mise settings get sandbox.deny_env" "true"
+assert "MISE_SANDBOX_DENY_NET=1 mise settings get sandbox.deny_net" "true"
+assert "MISE_SANDBOX_DENY_READ=1 mise settings get sandbox.deny_read" "true"
+assert "MISE_SANDBOX_DENY_WRITE=1 mise settings get sandbox.deny_write" "true"
+
 cat <<'EOF' >mise.toml
 [settings.sandbox]
 deny_env = true
@@ -17,3 +23,17 @@ EOF
 assert "mise exec -- sh -c 'printf \"%s\" \"\${SANDBOX_SETTING_SECRET-unset}\"'" "unset"
 assert "mise run hidden" "unset"
 assert "mise run allowed" "hidden"
+
+cat <<'EOF' >mise.toml
+[settings.sandbox]
+deny_all = true
+
+[tasks.allowed]
+run = 'printf "%s" "$SANDBOX_SETTING_SECRET"'
+allow_read = ["."]
+allow_env = ["SANDBOX_SETTING_SECRET"]
+EOF
+
+assert "mise exec --allow-read=. --allow-env=SANDBOX_SETTING_SECRET -- sh -c 'printf \"%s\" \"\$SANDBOX_SETTING_SECRET\"'" "hidden"
+assert "mise run allowed" "hidden"
+assert_fail "mise exec -- touch /var/tmp/mise-sandbox-settings-blocked"

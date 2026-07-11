@@ -713,8 +713,6 @@ impl Run {
 
     /// Create TaskExecutor after tool installation to ensure caches are populated
     fn setup_executor(&mut self) -> Result<()> {
-        let settings = Settings::get();
-        let sandbox_settings = &settings.sandbox;
         let executor_config = crate::task::task_executor::TaskExecutorConfig {
             force: self.force,
             cd: self.cd.clone(),
@@ -724,28 +722,20 @@ impl Run {
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,
-            sandbox: crate::sandbox::SandboxConfig {
-                deny_read: sandbox_settings.deny_all
-                    || sandbox_settings.deny_read
-                    || self.deny_all
-                    || self.deny_read,
-                deny_write: sandbox_settings.deny_all
-                    || sandbox_settings.deny_write
-                    || self.deny_all
-                    || self.deny_write,
-                deny_net: sandbox_settings.deny_all
-                    || sandbox_settings.deny_net
-                    || self.deny_all
-                    || self.deny_net,
-                deny_env: sandbox_settings.deny_all
-                    || sandbox_settings.deny_env
-                    || self.deny_all
-                    || self.deny_env,
-                allow_read: self.allow_read.clone(),
-                allow_write: self.allow_write.clone(),
-                allow_net: self.allow_net.clone(),
-                allow_env: self.allow_env.clone(),
-            },
+            sandbox: crate::sandbox::SandboxConfig::from_settings_and_cli(
+                &Settings::get().sandbox,
+                self.deny_all,
+                crate::sandbox::SandboxConfig {
+                    deny_read: self.deny_read,
+                    deny_write: self.deny_write,
+                    deny_net: self.deny_net,
+                    deny_env: self.deny_env,
+                    allow_read: self.allow_read.clone(),
+                    allow_write: self.allow_write.clone(),
+                    allow_net: self.allow_net.clone(),
+                    allow_env: self.allow_env.clone(),
+                },
+            ),
         };
         self.executor = Some(crate::task::task_executor::TaskExecutor::new(
             self.context_builder.clone(),

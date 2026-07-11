@@ -235,29 +235,20 @@ impl Exec {
         }
 
         // Build sandbox config from settings and CLI flags.
-        let sandbox_settings = &Settings::get().sandbox;
-        let mut sandbox = SandboxConfig {
-            deny_read: sandbox_settings.deny_all
-                || sandbox_settings.deny_read
-                || self.deny_all
-                || self.deny_read,
-            deny_write: sandbox_settings.deny_all
-                || sandbox_settings.deny_write
-                || self.deny_all
-                || self.deny_write,
-            deny_net: sandbox_settings.deny_all
-                || sandbox_settings.deny_net
-                || self.deny_all
-                || self.deny_net,
-            deny_env: sandbox_settings.deny_all
-                || sandbox_settings.deny_env
-                || self.deny_all
-                || self.deny_env,
-            allow_read: self.allow_read,
-            allow_write: self.allow_write,
-            allow_net: self.allow_net,
-            allow_env: self.allow_env,
-        };
+        let mut sandbox = SandboxConfig::from_settings_and_cli(
+            &Settings::get().sandbox,
+            self.deny_all,
+            SandboxConfig {
+                deny_read: self.deny_read,
+                deny_write: self.deny_write,
+                deny_net: self.deny_net,
+                deny_env: self.deny_env,
+                allow_read: self.allow_read,
+                allow_write: self.allow_write,
+                allow_net: self.allow_net,
+                allow_env: self.allow_env,
+            },
+        );
         sandbox.resolve_paths();
 
         if sandbox.is_active() {
