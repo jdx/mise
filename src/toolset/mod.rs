@@ -203,7 +203,7 @@ impl Toolset {
             .into_iter()
             .map(|(p, tv)| {
                 (
-                    (p.ba().installs_path.clone(), tv.version.clone()),
+                    (p.ba().installs_path.clone(), tv.tv_pathname()),
                     (p.clone(), tv),
                 )
             })

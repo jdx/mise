@@ -7,3 +7,4 @@ https://github.com/eza-community/eza"
 assert "mise where cargo:eza-community/eza@tag:v0.18.24" \
   "$MISE_DATA_DIR/installs/cargo-eza-community-eza/tag-v0.18.24"
 assert_fail "test -d $MISE_DATA_DIR/installs/cargo-eza-community-eza/ref-v0.18.24"
+assert "mise outdated cargo:eza-community/eza@tag:v0.18.24" ""

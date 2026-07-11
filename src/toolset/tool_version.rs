@@ -277,14 +277,7 @@ impl ToolVersion {
             inactive: base_opts.inactive,
         };
         let tv = self.request.resolve(config, &opts).await?;
-        // map cargo backend specific prefixes to ref
-        let version = match tv.request.version().split_once(':') {
-            Some((_ref_type @ ("tag" | "branch" | "rev"), r)) => {
-                format!("ref:{r}")
-            }
-            _ => tv.version,
-        };
-        Ok(version)
+        Ok(tv.version)
     }
     pub fn style(&self) -> String {
         format!(
