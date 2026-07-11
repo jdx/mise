@@ -23,6 +23,43 @@ fn request_matches(a: &ToolRequest, b: &ToolRequest) -> bool {
     a.version() == b.version() && a.options() == b.options()
 }
 
+fn lock_target_version(
+    ba: &crate::cli::args::BackendArg,
+    tv: &crate::toolset::ToolVersion,
+) -> String {
+    if ba.short.starts_with("cargo:") && tv.version.starts_with("ref:") {
+        let request_version = tv.request.version();
+        if matches!(
+            request_version.split_once(':'),
+            Some(("rev" | "tag" | "branch", _))
+        ) {
+            return request_version;
+        }
+    }
+    tv.version.clone()
+}
+
+fn insert_lock_tool(
+    tools: &mut Vec<LockTool>,
+    ba: crate::cli::args::BackendArg,
+    tv: crate::toolset::ToolVersion,
+) {
+    let version = lock_target_version(&ba, &tv);
+    if let Some((_, existing)) = tools.iter_mut().find(|(existing_ba, existing)| {
+        existing_ba.short == ba.short
+            && lock_target_version(existing_ba, existing) == version
+            && existing.request.options() == tv.request.options()
+    }) {
+        // list_current_versions uses ref:<value> for Cargo's install-path identity.
+        // Prefer the configured selector because ref: is not a Cargo install selector.
+        if existing.version.starts_with("ref:") && !tv.version.starts_with("ref:") {
+            *existing = tv;
+        }
+    } else {
+        tools.push((ba, tv));
+    }
+}
+
 /// Update lockfile checksums and URLs for all specified platforms
 ///
 /// Updates checksums and download URLs for all platforms already specified in the lockfile.
@@ -555,8 +592,6 @@ impl Lock {
         let config_paths_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
 
         let mut all_tools: Vec<LockTool> = Vec::new();
-        let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
-
         // First pass: tools from the resolved toolset whose source maps to this lockfile
         for (backend, tv) in ts.list_current_versions() {
             if let Some((source_lockfile, _)) =
@@ -585,10 +620,7 @@ impl Lock {
             if tv.version == "latest" {
                 continue;
             }
-            let key = (backend.ba().short.clone(), tv.version.clone());
-            if seen.insert(key) {
-                all_tools.push((backend.ba().as_ref().clone(), tv));
-            }
+            insert_lock_tool(&mut all_tools, backend.ba().as_ref().clone(), tv);
         }
 
         // Second pass: iterate config files matching this lockfile to catch
@@ -614,10 +646,11 @@ impl Lock {
                                         && tv.version != "latest"
                                     {
                                         matched_resolved = true;
-                                        let key = (ba.short.clone(), tv.version.clone());
-                                        if seen.insert(key) {
-                                            all_tools.push((ba.as_ref().clone(), tv.clone()));
-                                        }
+                                        insert_lock_tool(
+                                            &mut all_tools,
+                                            ba.as_ref().clone(),
+                                            tv.clone(),
+                                        );
                                     }
                                 }
                             }
@@ -661,10 +694,7 @@ impl Lock {
                                 }
                                 match request.resolve(config, &resolve_options).await {
                                     Ok(tv) => {
-                                        let key = (ba.short.clone(), tv.version.clone());
-                                        if seen.insert(key) {
-                                            all_tools.push((ba.as_ref().clone(), tv));
-                                        }
+                                        insert_lock_tool(&mut all_tools, ba.as_ref().clone(), tv);
                                     }
                                     Err(err) => {
                                         if active_unresolved {
@@ -739,9 +769,11 @@ impl Lock {
                 tools.push((ba, tv));
             }
             // Deduplicate after potential "latest" -> concrete-version resolution.
-            let mut seen_after: BTreeSet<(String, String)> = BTreeSet::new();
-            tools.retain(|(ba, tv)| seen_after.insert((ba.short.clone(), tv.version.clone())));
-            Ok(tools)
+            let mut deduplicated = Vec::new();
+            for (ba, tv) in tools {
+                insert_lock_tool(&mut deduplicated, ba, tv);
+            }
+            Ok(deduplicated)
         }
     }
 
@@ -872,7 +904,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::Lock;
+    use super::{Lock, LockTool, insert_lock_tool};
     use crate::cli::args::ToolArg;
     use crate::lockfile::{Lockfile, PlatformInfo};
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
@@ -936,6 +968,44 @@ mod tests {
             ToolRequest::new(Arc::new(ba.clone()), version, ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, version.to_string());
         (ba, tv)
+    }
+
+    fn cargo_git_tool(selector: &str, stored_version: &str, features: &str) -> LockTool {
+        let backend = "cargo:https://github.com/eza-community/eza";
+        let ba = crate::cli::args::BackendArg::new(backend.to_string(), Some(backend.to_string()));
+        let mut options = crate::toolset::ToolVersionOptions::default();
+        options.opts.insert(
+            "features".to_string(),
+            toml::Value::String(features.to_string()),
+        );
+        let request = ToolRequest::new_opts(
+            Arc::new(ba.clone()),
+            selector,
+            options,
+            ToolSource::Argument,
+        )
+        .unwrap();
+        (ba, ToolVersion::new(request, stored_version.to_string()))
+    }
+
+    #[test]
+    fn test_collect_cargo_git_selectors_deduplicates_internal_refs_with_options() {
+        for selector in ["rev:abc123", "tag:v1.0.0", "branch:main"] {
+            let ref_version = format!("ref:{}", selector.split_once(':').unwrap().1);
+            let mut tools = Vec::new();
+
+            let (ba, tv) = cargo_git_tool(selector, &ref_version, "git");
+            insert_lock_tool(&mut tools, ba, tv);
+            let (ba, tv) = cargo_git_tool(selector, selector, "git");
+            insert_lock_tool(&mut tools, ba, tv);
+            let (ba, tv) = cargo_git_tool(selector, selector, "vendored-openssl");
+            insert_lock_tool(&mut tools, ba, tv);
+
+            assert_eq!(tools.len(), 2, "selector: {selector}");
+            assert_eq!(tools[0].1.version, selector);
+            assert_eq!(tools[1].1.version, selector);
+            assert_ne!(tools[0].1.request.options(), tools[1].1.request.options());
+        }
     }
 
     #[test]
