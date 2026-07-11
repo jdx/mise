@@ -625,10 +625,6 @@ impl Backend for ErlangPlugin {
         self.install_via_kerl(ctx, tv).await
     }
 
-    fn supports_lockfile_url(&self) -> bool {
-        true
-    }
-
     fn resolve_lockfile_options(
         &self,
         _request: &ToolRequest,
@@ -780,11 +776,15 @@ mod tests {
                 "--without-javac".to_string(),
             ),
         ]);
-        let env = source_build_kerl_env(install_env, Path::new("/mise/kerl"));
+        let kerl_base_dir = Path::new("/mise/kerl");
+        let env = source_build_kerl_env(install_env, kerl_base_dir);
 
         assert_eq!(env["KERL_BUILD_BACKEND"], "git");
-        assert_eq!(env["KERL_BASE_DIR"], "/mise/kerl");
-        assert_eq!(env["KERL_DOWNLOAD_DIR"], "/mise/kerl/archives");
+        assert_eq!(env["KERL_BASE_DIR"], kerl_base_dir.as_os_str());
+        assert_eq!(
+            env["KERL_DOWNLOAD_DIR"],
+            kerl_base_dir.join("archives").as_os_str()
+        );
         assert_eq!(env["KERL_CONFIGURE_OPTIONS"], "--without-javac");
     }
 
