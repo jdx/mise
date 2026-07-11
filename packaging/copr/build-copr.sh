@@ -196,9 +196,10 @@ BuildRequires:  gcc
 BuildRequires:  git
 BuildRequires:  openssl-devel
 BuildRequires:  cmake
-# nasm provides optimized x86_64 ASM routines for aws-lc-sys.
-# Available in standard Fedora repos; on RHEL/EPEL it lives in CRB
-# (not enabled in COPR chroots by default), so we use NO_ASM there.
+# nasm is required by aws-lc-sys on x86_64 to compile ASM crypto routines.
+# Available in standard Fedora repos; on RHEL/EPEL it lives in CRB (not
+# enabled in COPR by default) so we use prebuilt NASM objects there instead
+# (see AWS_LC_SYS_PREBUILT_NASM in the %%build section).
 %if 0%{?fedora}
 %ifarch x86_64
 BuildRequires:  nasm
@@ -226,11 +227,15 @@ replace-with = "vendored-sources"
 directory = "vendor"
 CARGO_EOF
 
-# On RHEL/EPEL, nasm is in CRB which is not enabled in COPR chroots.
-# Disable aws-lc-sys ASM to avoid the NASM build-time requirement.
-# Fallback is portable C; performance impact is negligible for mise.
+# On RHEL/EPEL x86_64, nasm lives in CRB which is not enabled in COPR
+# chroots. Use prebuilt NASM objects bundled inside the aws-lc-sys crate
+# instead. This works at all Cargo profile/optimization levels including
+# release (unlike AWS_LC_SYS_NO_ASM which is debug-only and panics at
+# release profile).
 %if 0%{?rhel}
-export AWS_LC_SYS_NO_ASM=1
+%ifarch x86_64
+export AWS_LC_SYS_PREBUILT_NASM=1
+%endif
 %endif
 
 # Build with specified profile
