@@ -18,6 +18,7 @@ use tokio::task::JoinSet;
 
 /// A tool to lock for a specific lockfile target.
 type LockTool = (crate::cli::args::BackendArg, crate::toolset::ToolVersion);
+type LockToolIndex = BTreeMap<(String, String), Vec<usize>>;
 
 fn request_matches(a: &ToolRequest, b: &ToolRequest) -> bool {
     a.version() == b.version() && a.options() == b.options()
@@ -41,21 +42,27 @@ fn lock_target_version(
 
 fn insert_lock_tool(
     tools: &mut Vec<LockTool>,
+    index: &mut LockToolIndex,
     ba: crate::cli::args::BackendArg,
     tv: crate::toolset::ToolVersion,
 ) {
     let version = lock_target_version(&ba, &tv);
-    if let Some((_, existing)) = tools.iter_mut().find(|(existing_ba, existing)| {
-        existing_ba.short == ba.short
-            && lock_target_version(existing_ba, existing) == version
-            && existing.request.options() == tv.request.options()
-    }) {
+    let key = (ba.short.clone(), version);
+    let matching_index = index.get(&key).and_then(|indices| {
+        indices
+            .iter()
+            .copied()
+            .find(|&i| tools[i].1.request.options() == tv.request.options())
+    });
+    if let Some(i) = matching_index {
+        let existing = &mut tools[i].1;
         // list_current_versions uses ref:<value> for Cargo's install-path identity.
         // Prefer the configured selector because ref: is not a Cargo install selector.
         if existing.version.starts_with("ref:") && !tv.version.starts_with("ref:") {
             *existing = tv;
         }
     } else {
+        index.entry(key).or_default().push(tools.len());
         tools.push((ba, tv));
     }
 }
@@ -592,6 +599,7 @@ impl Lock {
         let config_paths_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
 
         let mut all_tools: Vec<LockTool> = Vec::new();
+        let mut tool_index = LockToolIndex::new();
         // First pass: tools from the resolved toolset whose source maps to this lockfile
         for (backend, tv) in ts.list_current_versions() {
             if let Some((source_lockfile, _)) =
@@ -620,7 +628,12 @@ impl Lock {
             if tv.version == "latest" {
                 continue;
             }
-            insert_lock_tool(&mut all_tools, backend.ba().as_ref().clone(), tv);
+            insert_lock_tool(
+                &mut all_tools,
+                &mut tool_index,
+                backend.ba().as_ref().clone(),
+                tv,
+            );
         }
 
         // Second pass: iterate config files matching this lockfile to catch
@@ -648,6 +661,7 @@ impl Lock {
                                         matched_resolved = true;
                                         insert_lock_tool(
                                             &mut all_tools,
+                                            &mut tool_index,
                                             ba.as_ref().clone(),
                                             tv.clone(),
                                         );
@@ -694,7 +708,12 @@ impl Lock {
                                 }
                                 match request.resolve(config, &resolve_options).await {
                                     Ok(tv) => {
-                                        insert_lock_tool(&mut all_tools, ba.as_ref().clone(), tv);
+                                        insert_lock_tool(
+                                            &mut all_tools,
+                                            &mut tool_index,
+                                            ba.as_ref().clone(),
+                                            tv,
+                                        );
                                     }
                                     Err(err) => {
                                         if active_unresolved {
@@ -770,8 +789,9 @@ impl Lock {
             }
             // Deduplicate after potential "latest" -> concrete-version resolution.
             let mut deduplicated = Vec::new();
+            let mut deduplicated_index = LockToolIndex::new();
             for (ba, tv) in tools {
-                insert_lock_tool(&mut deduplicated, ba, tv);
+                insert_lock_tool(&mut deduplicated, &mut deduplicated_index, ba, tv);
             }
             Ok(deduplicated)
         }
@@ -904,7 +924,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::{Lock, LockTool, insert_lock_tool};
+    use super::{Lock, LockTool, LockToolIndex, insert_lock_tool};
     use crate::cli::args::ToolArg;
     use crate::lockfile::{Lockfile, PlatformInfo};
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
@@ -993,13 +1013,14 @@ mod tests {
         for selector in ["rev:abc123", "tag:v1.0.0", "branch:main"] {
             let ref_version = format!("ref:{}", selector.split_once(':').unwrap().1);
             let mut tools = Vec::new();
+            let mut index = LockToolIndex::new();
 
             let (ba, tv) = cargo_git_tool(selector, &ref_version, "git");
-            insert_lock_tool(&mut tools, ba, tv);
+            insert_lock_tool(&mut tools, &mut index, ba, tv);
             let (ba, tv) = cargo_git_tool(selector, selector, "git");
-            insert_lock_tool(&mut tools, ba, tv);
+            insert_lock_tool(&mut tools, &mut index, ba, tv);
             let (ba, tv) = cargo_git_tool(selector, selector, "vendored-openssl");
-            insert_lock_tool(&mut tools, ba, tv);
+            insert_lock_tool(&mut tools, &mut index, ba, tv);
 
             assert_eq!(tools.len(), 2, "selector: {selector}");
             assert_eq!(tools[0].1.version, selector);
