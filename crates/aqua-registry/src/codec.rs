@@ -30,8 +30,6 @@ mod tests {
         let mut package = AquaPackage::default();
         package.repo_owner = "owner".into();
         package.repo_name = "repo".into();
-        package.link = Some("https://example.com/repo".into());
-        package.search_words = vec!["example".into(), "demo".into()];
         package.vars = vec![AquaVar {
             name: "channel".into(),
             default: Some("beta".into()),
@@ -43,8 +41,6 @@ mod tests {
 
         assert_eq!(decoded.repo_owner, "owner");
         assert_eq!(decoded.repo_name, "repo");
-        assert_eq!(decoded.link.as_deref(), Some("https://example.com/repo"));
-        assert_eq!(decoded.search_words, ["example", "demo"]);
         assert_eq!(decoded.vars[0].default.as_deref(), Some("beta"));
     }
 }

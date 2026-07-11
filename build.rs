@@ -420,7 +420,7 @@ fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackag
             id,
             content,
             aliases: row.aliases.clone(),
-            search_words: package.search_words.clone(),
+            search_words: row.search_words.clone(),
         });
     }
     Ok(registries)

@@ -132,13 +132,6 @@ mod tests {
 
     #[test]
     fn test_baked_registry_search_metadata() {
-        let package = package("DelineaXPM/dsv-cli").unwrap().unwrap();
-
-        assert_eq!(
-            package.link.as_deref(),
-            Some("https://docs.delinea.com/dsv/current/cli-ref")
-        );
-        assert_eq!(package.search_words, ["secrets", "vault"]);
         assert_eq!(search_words("DelineaXPM/dsv-cli"), ["secrets", "vault"]);
         assert_eq!(search_words("thycotic/dsv-cli"), ["secrets", "vault"]);
     }

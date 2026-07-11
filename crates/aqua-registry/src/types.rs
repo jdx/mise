@@ -59,8 +59,6 @@ pub struct AquaPackage {
     pub asset: String,
     pub url: String,
     pub description: Option<String>,
-    pub link: Option<String>,
-    pub search_words: Vec<String>,
     pub format: String,
     pub rosetta2: bool,
     pub windows_arm_emulation: bool,
@@ -279,6 +277,9 @@ pub struct RegistryPackageRow {
     pub package: AquaPackage,
     #[serde(default, deserialize_with = "deserialize_registry_aliases")]
     pub aliases: Vec<String>,
+    pub link: Option<String>,
+    #[serde(default)]
+    pub search_words: Vec<String>,
 }
 
 fn deserialize_registry_aliases<'de, D>(
@@ -382,8 +383,6 @@ impl Default for AquaPackage {
             asset: String::new(),
             url: String::new(),
             description: None,
-            link: None,
-            search_words: Vec::new(),
             format: String::new(),
             rosetta2: false,
             windows_arm_emulation: false,
@@ -1493,7 +1492,7 @@ packages:
 
     #[test]
     fn test_registry_package_row_preserves_search_metadata() {
-        let pkg = first_registry_package(
+        let registry = serde_yaml::from_str::<RegistryYaml>(
             r#"
 packages:
   - repo_owner: example
@@ -1503,10 +1502,12 @@ packages:
       - alternate name
       - category
 "#,
-        );
+        )
+        .unwrap();
+        let row = registry.packages.into_iter().next().unwrap();
 
-        assert_eq!(pkg.link.as_deref(), Some("https://example.com/tool"));
-        assert_eq!(pkg.search_words, ["alternate name", "category"]);
+        assert_eq!(row.link.as_deref(), Some("https://example.com/tool"));
+        assert_eq!(row.search_words, ["alternate name", "category"]);
     }
 
     #[test]
