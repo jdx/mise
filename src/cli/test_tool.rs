@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::file::display_path;
 use crate::registry::{REGISTRY, RegistryTool};
 use crate::tera::{contains_template_syntax, get_tera, render_str};
-use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ToolRequest, ToolRequestSet, ToolsetBuilder};
 use crate::ui::time;
 use crate::{dirs, env, file};
 use eyre::{Result, bail, eyre};
@@ -375,6 +375,21 @@ impl TestTool {
             .with_default_to_latest(true)
             .build(&config)
             .await?;
+        // Backend dependency environments are resolved from Config. Make the
+        // synthetic toolset used by test-tool visible there so runtime-backed
+        // tools can use dependencies that were added only for the test.
+        let mut test_tools = ToolRequestSet::new();
+        for (_, version) in ts.list_current_versions() {
+            let source = version.request.source().clone();
+            let mut request = ToolRequest::new(
+                version.request.ba().clone(),
+                &version.version,
+                source.clone(),
+            )?;
+            request.set_options(version.request.options());
+            test_tools.add_version(request, &source);
+        }
+        config = config.with_tool_request_set(test_tools);
         let opts = InstallOptions {
             missing_args_only: false,
             jobs: self.jobs,
