@@ -37,7 +37,7 @@ assert_not_contains "cat mise.lock" '[tools.python.options]'
 assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
 assert_contains "$PLATFORM_SECTION" 'install = "source"'
 assert_contains "$PLATFORM_SECTION" 'checksum = "sha256:'
-assert_contains "$PLATFORM_SECTION" 'url = "https://www.python.org/ftp/python/3.5.10/Python-3.5.10.tar.xz"'
+assert_contains "$PLATFORM_SECTION" 'url = "https://www.python.org/ftp/python/3.5.10/Python-3.5.10.tgz"'
 assert "mise install --locked --dry-run"
 
 echo "=== compile=true records a source outcome ==="
@@ -55,7 +55,7 @@ assert_contains "cat mise.lock" '[tools.python.options]'
 assert_contains "cat mise.lock" 'compile = "true"'
 assert_contains "$PLATFORM_SECTION" 'install = "source"'
 assert_contains "$PLATFORM_SECTION" 'checksum = "sha256:'
-assert_contains "$PLATFORM_SECTION" 'url = "https://www.python.org/ftp/python/3.13.0/Python-3.13.0.tar.xz"'
+assert_contains "$PLATFORM_SECTION" 'url = "https://www.python.org/ftp/python/3.13.0/Python-3.13.0.tgz"'
 assert "mise install --locked --dry-run"
 
 echo "=== compile=false does not record unavailable source fallback ==="

@@ -32,6 +32,7 @@ use xx::regex;
 
 const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_PYTHON_GITHUB_ATTESTATIONS=false\n\
     or add `python.github_attestations = false` under [settings] in mise.toml";
+const DEFAULT_PYENV_REPO: &str = "https://github.com/pyenv/pyenv.git";
 
 #[derive(Debug)]
 pub struct PythonPlugin {
@@ -153,7 +154,6 @@ impl PythonPlugin {
             .lock()
     }
     fn install_or_update_python_build(&self, ctx: Option<&InstallContext>) -> eyre::Result<()> {
-        ensure_not_windows()?;
         let _lock = self.lock_pyenv();
         if self.python_build_bin().exists() {
             self.update_python_build()
@@ -511,6 +511,7 @@ impl PythonPlugin {
         ctx: &InstallContext,
         tv: &mut ToolVersion,
     ) -> eyre::Result<()> {
+        ensure_not_windows()?;
         self.install_or_update_python_build(Some(ctx))?;
         if matches!(&tv.request, ToolRequest::Ref { .. }) {
             return Err(eyre!("Ref versions not supported for python"));
@@ -1103,6 +1104,24 @@ impl Backend for PythonPlugin {
             }
         }
 
+        // Source fallback can use these settings even when compile is unset.
+        // Keep them in the shared lock identity so every target platform uses
+        // the same python-build recipe and patches.
+        if compile != Some(false) {
+            if settings.python.pyenv_repo != DEFAULT_PYENV_REPO {
+                opts.insert("pyenv_repo".to_string(), settings.python.pyenv_repo.clone());
+            }
+            if let Some(patch_url) = settings.python.patch_url.clone() {
+                opts.insert("patch_url".to_string(), patch_url);
+            }
+            if let Some(patches_directory) = &settings.python.patches_directory {
+                opts.insert(
+                    "patches_directory".to_string(),
+                    patches_directory.to_string_lossy().to_string(),
+                );
+            }
+        }
+
         let raw_opts = request.options();
         opts.extend(PythonOptions::new(&raw_opts).lockfile_options());
         Ok(opts)
@@ -1166,9 +1185,12 @@ fn parse_python_build_source(definition: &str) -> Result<PythonBuildSource> {
         .ok_or_else(|| eyre!("python-build definition has no source package"))?;
     let source_spec = packages
         .iter()
-        .find(|(name, _)| name == &package_name)
+        .filter(|(name, _)| name == &package_name)
         .map(|(_, source)| source)
-        .expect("package_name was derived from packages.last(); it must be present");
+        .find(|source| python_build_source_is_gzip(source))
+        .ok_or_else(|| {
+            eyre!("python-build definition has no portable gzip source for {package_name:?}")
+        })?;
     let (url, checksum) =
         source_spec
             .split_once('#')
@@ -1217,15 +1239,13 @@ fn rewrite_python_build_source(definition: &str, source: &PythonBuildSource) -> 
 }
 
 fn python_build_archive_name(source: &PythonBuildSource) -> String {
-    let url_path = source.url.split(['?', '#']).next().unwrap_or(&source.url);
-    let extension = if url_path.ends_with("bz2") {
-        "tar.bz2"
-    } else if url_path.ends_with("xz") {
-        "tar.xz"
-    } else {
-        "tar.gz"
-    };
-    format!("{}.{extension}", source.package_name)
+    format!("{}.tar.gz", source.package_name)
+}
+
+fn python_build_source_is_gzip(source: &str) -> bool {
+    let url = source.split_once('#').map_or(source, |(url, _)| url);
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    path.ends_with(".tgz") || path.ends_with(".tar.gz")
 }
 
 fn should_compile_from_source(
@@ -1421,6 +1441,40 @@ fn filter_freethreaded(v: &str, flavor: &Option<String>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::settings::SettingsPartial;
+    use crate::toolset::ToolSource;
+    use confique::Layer;
+
+    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct SettingsResetGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for SettingsResetGuard {
+        fn drop(&mut self) {
+            Settings::reset(None);
+        }
+    }
+
+    fn resolve_python_lockfile_options(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+    ) -> BTreeMap<String, String> {
+        let lock = TEST_SETTINGS_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut settings = SettingsPartial::empty();
+        configure_settings(&mut settings);
+        Settings::reset(Some(settings));
+        let _guard = SettingsResetGuard { _lock: lock };
+
+        let backend = PythonPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "3.13.0", ToolSource::Unknown)
+            .expect("valid Python request");
+        backend
+            .resolve_lockfile_options(&request, &PlatformTarget::from_current())
+            .expect("Python lockfile options")
+    }
 
     const PYTHON_BUILD_DEFINITION: &str = r#"
 install_package "openssl-3.3.2" "https://example.com/openssl.tar.gz#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" mac_openssl
@@ -1437,26 +1491,26 @@ fi
         assert_eq!(source.package_name, "Python-3.13.0");
         assert_eq!(
             source.url,
-            "https://www.python.org/ftp/python/3.13.0/Python-3.13.0.tar.xz"
+            "https://www.python.org/ftp/python/3.13.0/Python-3.13.0.tgz"
         );
         assert_eq!(
             source.checksum.as_deref(),
-            Some("sha256:086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d")
+            Some("sha256:12445c7b3db3126c41190bfdc1c8239c39c719404e844babbd015a1bc3fafcd4")
         );
-        assert_eq!(python_build_archive_name(&source), "Python-3.13.0.tar.xz");
+        assert_eq!(python_build_archive_name(&source), "Python-3.13.0.tar.gz");
         let source_with_query = PythonBuildSource {
             url: format!("{}?download=1#fragment", source.url),
             ..source.clone()
         };
         assert_eq!(
             python_build_archive_name(&source_with_query),
-            "Python-3.13.0.tar.xz"
+            "Python-3.13.0.tar.gz"
         );
 
         let rewritten = rewrite_python_build_source(PYTHON_BUILD_DEFINITION, &source).unwrap();
         assert_eq!(rewritten.matches(&source.url).count(), 2);
         assert!(rewritten.contains("https://example.com/openssl.tar.gz"));
-        assert!(!rewritten.contains("Python-3.13.0.tgz"));
+        assert!(!rewritten.contains("Python-3.13.0.tar.xz"));
     }
 
     #[test]
@@ -1552,6 +1606,48 @@ fi
 
         let opts = opts_with("patch_sysconfig", "true");
         assert!(PythonOptions::new(&opts).lockfile_options().is_empty());
+    }
+
+    #[test]
+    fn python_lockfile_options_include_source_build_settings() {
+        let opts = resolve_python_lockfile_options(|settings| {
+            settings.python.patch_url = Some("https://example.com/python.patch".to_string());
+            settings.python.patches_directory = Some(PathBuf::from("/tmp/python-patches"));
+            settings.python.pyenv_repo = Some("https://example.com/pyenv.git".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                (
+                    "patch_url".to_string(),
+                    "https://example.com/python.patch".to_string()
+                ),
+                (
+                    "patches_directory".to_string(),
+                    "/tmp/python-patches".to_string()
+                ),
+                (
+                    "pyenv_repo".to_string(),
+                    "https://example.com/pyenv.git".to_string()
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn python_lockfile_options_omit_source_settings_when_compile_is_false() {
+        let opts = resolve_python_lockfile_options(|settings| {
+            settings.python.compile = Some(false);
+            settings.python.patch_url = Some("https://example.com/python.patch".to_string());
+            settings.python.patches_directory = Some(PathBuf::from("/tmp/python-patches"));
+            settings.python.pyenv_repo = Some("https://example.com/pyenv.git".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([("compile".to_string(), "false".to_string())])
+        );
     }
 
     #[test]
