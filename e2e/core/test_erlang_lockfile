@@ -33,8 +33,8 @@ mise lock --platform "$CURRENT_PLATFORM"
 assert_contains "cat mise.lock" '[[tools.erlang]]'
 assert_contains "cat mise.lock" 'version = "28.3"'
 assert_contains "cat mise.lock" '[tools.erlang.options]'
-assert_contains "cat mise.lock" 'precompiled = "if_available"'
 assert_contains "cat mise.lock" 'precompiled_os = "ubuntu-24.04"'
+assert_not_contains "cat mise.lock" 'precompiled = '
 assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
 assert_matches "cat mise.lock" 'url = "https://builds\.hex\.pm/builds/otp/(amd64|arm64)/ubuntu-24\.04/OTP-28\.3\.tar\.gz"'
 assert_not_contains "cat mise.lock" 'install = "source"'
@@ -48,8 +48,8 @@ mise lock --platform "$CURRENT_PLATFORM"
 
 assert_contains "cat mise.lock" '[[tools.erlang]]'
 assert_contains "cat mise.lock" 'version = "28.3"'
-assert_contains "cat mise.lock" '[tools.erlang.options]'
-assert_contains "cat mise.lock" 'precompiled = "if_available"'
+assert_not_contains "cat mise.lock" '[tools.erlang.options]'
+assert_not_contains "cat mise.lock" 'precompiled = '
 assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
 assert_contains "awk '/\[tools.erlang.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'install = "source"'
 assert_contains "awk '/\[tools.erlang.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'checksum = "sha256:'
@@ -74,6 +74,7 @@ assert_contains "cat mise.lock" '[tools.erlang.options]'
 assert_contains "cat mise.lock" 'compile = "true"'
 assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
 assert_contains "awk '/\[tools.erlang.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'install = "source"'
+assert_contains "awk '/\[tools.erlang.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'checksum = "sha256:'
 assert_contains "awk '/\[tools.erlang.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'url = "https://github.com/erlang/otp/releases/download/OTP-28.3/otp_src_28.3.tar.gz"'
 
 assert "mise install --locked --dry-run"
