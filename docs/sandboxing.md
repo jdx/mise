@@ -36,6 +36,19 @@ mise x --deny-all --allow-read=. --allow-write=./dist --allow-net=registry.npmjs
 
 These flags work with both `mise exec` (`mise x`) and `mise run`.
 
+## Default Restrictions
+
+Sandbox deny rules can be enabled for every `mise exec` and `mise run` invocation with settings:
+
+```toml
+[settings.sandbox]
+deny_all = true
+```
+
+The available settings mirror the deny flags: `deny_all`, `deny_read`, `deny_write`, `deny_net`,
+and `deny_env`. Tasks and CLI flags can still add `allow_read`, `allow_write`, `allow_net`, or
+`allow_env` exceptions as needed.
+
 ## Task Sandboxing
 
 Tasks defined in `mise.toml` can declare sandbox permissions:

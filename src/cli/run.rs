@@ -713,6 +713,8 @@ impl Run {
 
     /// Create TaskExecutor after tool installation to ensure caches are populated
     fn setup_executor(&mut self) -> Result<()> {
+        let settings = Settings::get();
+        let sandbox_settings = &settings.sandbox;
         let executor_config = crate::task::task_executor::TaskExecutorConfig {
             force: self.force,
             cd: self.cd.clone(),
@@ -723,10 +725,22 @@ impl Run {
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,
             sandbox: crate::sandbox::SandboxConfig {
-                deny_read: self.deny_all || self.deny_read,
-                deny_write: self.deny_all || self.deny_write,
-                deny_net: self.deny_all || self.deny_net,
-                deny_env: self.deny_all || self.deny_env,
+                deny_read: sandbox_settings.deny_all
+                    || sandbox_settings.deny_read
+                    || self.deny_all
+                    || self.deny_read,
+                deny_write: sandbox_settings.deny_all
+                    || sandbox_settings.deny_write
+                    || self.deny_all
+                    || self.deny_write,
+                deny_net: sandbox_settings.deny_all
+                    || sandbox_settings.deny_net
+                    || self.deny_all
+                    || self.deny_net,
+                deny_env: sandbox_settings.deny_all
+                    || sandbox_settings.deny_env
+                    || self.deny_all
+                    || self.deny_env,
                 allow_read: self.allow_read.clone(),
                 allow_write: self.allow_write.clone(),
                 allow_net: self.allow_net.clone(),

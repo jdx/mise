@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+export SANDBOX_SETTING_SECRET=hidden
+
+cat <<'EOF' >mise.toml
+[settings.sandbox]
+deny_env = true
+
+[tasks.hidden]
+run = 'printf "%s" "${SANDBOX_SETTING_SECRET-unset}"'
+
+[tasks.allowed]
+run = 'printf "%s" "$SANDBOX_SETTING_SECRET"'
+allow_env = ["SANDBOX_SETTING_SECRET"]
+EOF
+
+assert "mise exec -- sh -c 'printf \"%s\" \"\${SANDBOX_SETTING_SECRET-unset}\"'" "unset"
+assert "mise run hidden" "unset"
+assert "mise run allowed" "hidden"
