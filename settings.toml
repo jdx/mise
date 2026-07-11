@@ -2180,6 +2180,36 @@ env = "MISE_RUSTUP_HOME"
 optional = true
 type = "Path"
 
+[sandbox.deny_all]
+default = false
+description = "Deny filesystem reads and writes, network access, and environment variable inheritance by default for `mise run` and `mise exec`."
+env = "MISE_SANDBOX_DENY_ALL"
+type = "Bool"
+
+[sandbox.deny_env]
+default = false
+description = "Deny environment variable inheritance by default for `mise run` and `mise exec`."
+env = "MISE_SANDBOX_DENY_ENV"
+type = "Bool"
+
+[sandbox.deny_net]
+default = false
+description = "Deny network access by default for `mise run` and `mise exec`."
+env = "MISE_SANDBOX_DENY_NET"
+type = "Bool"
+
+[sandbox.deny_read]
+default = false
+description = "Deny filesystem reads by default for `mise run` and `mise exec`."
+env = "MISE_SANDBOX_DENY_READ"
+type = "Bool"
+
+[sandbox.deny_write]
+default = false
+description = "Deny filesystem writes by default for `mise run` and `mise exec`."
+env = "MISE_SANDBOX_DENY_WRITE"
+type = "Bool"
+
 [shared_install_dirs]
 description = "Additional read-only directories to search for installed tool versions."
 docs = """

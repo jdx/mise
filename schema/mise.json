@@ -1571,6 +1571,37 @@
             }
           }
         },
+        "sandbox": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "deny_all": {
+              "default": false,
+              "description": "Deny filesystem reads and writes, network access, and environment variable inheritance by default for `mise run` and `mise exec`.",
+              "type": "boolean"
+            },
+            "deny_env": {
+              "default": false,
+              "description": "Deny environment variable inheritance by default for `mise run` and `mise exec`.",
+              "type": "boolean"
+            },
+            "deny_net": {
+              "default": false,
+              "description": "Deny network access by default for `mise run` and `mise exec`.",
+              "type": "boolean"
+            },
+            "deny_read": {
+              "default": false,
+              "description": "Deny filesystem reads by default for `mise run` and `mise exec`.",
+              "type": "boolean"
+            },
+            "deny_write": {
+              "default": false,
+              "description": "Deny filesystem writes by default for `mise run` and `mise exec`.",
+              "type": "boolean"
+            }
+          }
+        },
         "shared_install_dirs": {
           "description": "Additional read-only directories to search for installed tool versions.",
           "type": "array",
