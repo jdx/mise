@@ -195,6 +195,13 @@ BuildRequires:  cargo
 BuildRequires:  gcc
 BuildRequires:  git
 BuildRequires:  openssl-devel
+BuildRequires:  cmake
+# nasm provides optimized x86_64 ASM routines for aws-lc-sys.
+# Available in standard Fedora repos; on RHEL/EPEL it lives in CRB
+# (not enabled in COPR chroots by default), so we use NO_ASM there.
+%if 0%{?fedora}
+BuildRequires:  nasm
+%endif
 
 %description
 mise prepares your development environment before each command runs. It installs
@@ -216,6 +223,13 @@ replace-with = "vendored-sources"
 [source.vendored-sources]
 directory = "vendor"
 CARGO_EOF
+
+# On RHEL/EPEL, nasm is in CRB which is not enabled in COPR chroots.
+# Disable aws-lc-sys ASM to avoid the NASM build-time requirement.
+# Fallback is portable C; performance impact is negligible for mise.
+%if 0%{?rhel}
+export AWS_LC_SYS_NO_ASM=1
+%endif
 
 # Build with specified profile
 cargo build --profile __BUILD_PROFILE__ --frozen --bin mise
