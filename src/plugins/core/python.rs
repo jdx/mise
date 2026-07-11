@@ -201,7 +201,7 @@ impl PythonPlugin {
             }
         }
     }
-    fn read_python_build_source(&self, version: &str) -> Result<PythonBuildSource> {
+    fn read_python_build_source(&self, version: &str) -> Result<(String, PythonBuildSource)> {
         let definition_path = self.python_build_definition_path(version);
         let definition = file::read_to_string(&definition_path).map_err(|err| {
             eyre!(
@@ -209,11 +209,12 @@ impl PythonPlugin {
                 definition_path.display()
             )
         })?;
-        parse_python_build_source(&definition)
+        let source = parse_python_build_source(&definition)?;
+        Ok((definition, source))
     }
     fn resolve_source_lock_info(&self, version: &str) -> Result<PlatformInfo> {
         self.install_or_update_python_build(None)?;
-        let source = self.read_python_build_source(version)?;
+        let (_, source) = self.read_python_build_source(version)?;
         Ok(PlatformInfo {
             install: Some("source".to_string()),
             checksum: source.checksum,
@@ -250,11 +251,11 @@ impl PythonPlugin {
     fn prepare_locked_python_build_definition(
         &self,
         tv: &ToolVersion,
+        definition: &str,
         source: &PythonBuildSource,
     ) -> Result<PathBuf> {
         let definition_path = self.python_build_definition_path(&tv.version);
-        let definition = file::read_to_string(&definition_path)?;
-        let definition = rewrite_python_build_source(&definition, source)?;
+        let definition = rewrite_python_build_source(definition, source)?;
         let locked_dir = tv.download_path().join(format!(
             "python-build-definition-{}",
             crate::hash::hash_sha256_to_str(&source.url)
@@ -516,17 +517,17 @@ impl PythonPlugin {
         }
 
         let platform_key = self.get_platform_key();
+        let (definition, mut source) = self.read_python_build_source(&tv.version)?;
         let source_info = if ctx.locked {
             tv.lock_platforms
                 .get(&platform_key)
                 .cloned()
                 .ok_or_else(|| eyre!("missing locked Python source info for {platform_key}"))?
         } else {
-            let source = self.read_python_build_source(&tv.version)?;
             PlatformInfo {
                 install: Some("source".to_string()),
-                checksum: source.checksum,
-                url: Some(source.url),
+                checksum: source.checksum.clone(),
+                url: Some(source.url.clone()),
                 ..Default::default()
             }
         };
@@ -536,7 +537,6 @@ impl PythonPlugin {
             .ok_or_else(|| eyre!("missing Python source URL for {platform_key}"))?;
         self.set_lockfile_info(tv, Some("source"), source_url, source_info.checksum.clone());
 
-        let mut source = self.read_python_build_source(&tv.version)?;
         source.url = source_url.to_string();
         source.checksum = source_info.checksum;
         let source_path = tv.download_path().join(format!(
@@ -555,7 +555,8 @@ impl PythonPlugin {
         }
         self.verify_checksum(ctx, tv, &source_path)?;
 
-        let locked_definition = self.prepare_locked_python_build_definition(tv, &source)?;
+        let locked_definition =
+            self.prepare_locked_python_build_definition(tv, &definition, &source)?;
         let python_build_cache = tv.download_path().join("python-build-cache");
         file::create_dir_all(&python_build_cache)?;
         file::copy(
@@ -1167,7 +1168,7 @@ fn parse_python_build_source(definition: &str) -> Result<PythonBuildSource> {
         .iter()
         .find(|(name, _)| name == &package_name)
         .map(|(_, source)| source)
-        .unwrap();
+        .expect("package_name was derived from packages.last(); it must be present");
     let (url, checksum) =
         source_spec
             .split_once('#')
@@ -1216,9 +1217,10 @@ fn rewrite_python_build_source(definition: &str, source: &PythonBuildSource) -> 
 }
 
 fn python_build_archive_name(source: &PythonBuildSource) -> String {
-    let extension = if source.url.ends_with("bz2") {
+    let url_path = source.url.split(['?', '#']).next().unwrap_or(&source.url);
+    let extension = if url_path.ends_with("bz2") {
         "tar.bz2"
-    } else if source.url.ends_with("xz") {
+    } else if url_path.ends_with("xz") {
         "tar.xz"
     } else {
         "tar.gz"
@@ -1442,6 +1444,14 @@ fi
             Some("sha256:086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d")
         );
         assert_eq!(python_build_archive_name(&source), "Python-3.13.0.tar.xz");
+        let source_with_query = PythonBuildSource {
+            url: format!("{}?download=1#fragment", source.url),
+            ..source.clone()
+        };
+        assert_eq!(
+            python_build_archive_name(&source_with_query),
+            "Python-3.13.0.tar.xz"
+        );
 
         let rewritten = rewrite_python_build_source(PYTHON_BUILD_DEFINITION, &source).unwrap();
         assert_eq!(rewritten.matches(&source.url).count(), 2);

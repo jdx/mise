@@ -11,6 +11,7 @@ fi
 
 detect_platform
 CURRENT_PLATFORM="$MISE_PLATFORM"
+PLATFORM_SECTION="awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock"
 
 cat <<'EOF' >mise.toml
 [tools]
@@ -34,9 +35,9 @@ rm -f mise.lock
 mise lock --platform "$CURRENT_PLATFORM"
 assert_not_contains "cat mise.lock" '[tools.python.options]'
 assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
-assert_contains "awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'install = "source"'
-assert_contains "awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'checksum = "sha256:'
-assert_contains "awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'url = "https://www.python.org/ftp/python/3.5.10/Python-3.5.10.tar.xz"'
+assert_contains "$PLATFORM_SECTION" 'install = "source"'
+assert_contains "$PLATFORM_SECTION" 'checksum = "sha256:'
+assert_contains "$PLATFORM_SECTION" 'url = "https://www.python.org/ftp/python/3.5.10/Python-3.5.10.tar.xz"'
 assert "mise install --locked --dry-run"
 
 echo "=== compile=true records a source outcome ==="
@@ -52,9 +53,9 @@ rm -f mise.lock
 mise lock --platform "$CURRENT_PLATFORM"
 assert_contains "cat mise.lock" '[tools.python.options]'
 assert_contains "cat mise.lock" 'compile = "true"'
-assert_contains "awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'install = "source"'
-assert_contains "awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'checksum = "sha256:'
-assert_contains "awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'url = "https://www.python.org/ftp/python/3.13.0/Python-3.13.0.tar.xz"'
+assert_contains "$PLATFORM_SECTION" 'install = "source"'
+assert_contains "$PLATFORM_SECTION" 'checksum = "sha256:'
+assert_contains "$PLATFORM_SECTION" 'url = "https://www.python.org/ftp/python/3.13.0/Python-3.13.0.tar.xz"'
 assert "mise install --locked --dry-run"
 
 echo "=== compile=false does not record unavailable source fallback ==="
