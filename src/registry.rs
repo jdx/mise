@@ -344,9 +344,11 @@ mod tests {
             ("linux", "aarch64", "linux-arm64"),
             ("darwin", "x86_64", "macos-x64"),
         ] {
-            let mut settings = Settings::default();
-            settings.os = Some(raw_os.to_string());
-            settings.arch = Some(raw_arch.to_string());
+            let settings = Settings {
+                os: Some(raw_os.to_string()),
+                arch: Some(raw_arch.to_string()),
+                ..Default::default()
+            };
 
             assert!(
                 backend_matches_platform(&[selector], &settings),
@@ -359,9 +361,11 @@ mod tests {
     fn test_backend_platform_matching_preserves_os_only_and_order() {
         use super::*;
 
-        let mut settings = Settings::default();
-        settings.os = Some("darwin".to_string());
-        settings.arch = Some("amd64".to_string());
+        let settings = Settings {
+            os: Some("darwin".to_string()),
+            arch: Some("amd64".to_string()),
+            ..Default::default()
+        };
         let backends = [
             RegistryBackend {
                 full: "aqua:first/tool",
