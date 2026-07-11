@@ -200,7 +200,9 @@ BuildRequires:  cmake
 # Available in standard Fedora repos; on RHEL/EPEL it lives in CRB
 # (not enabled in COPR chroots by default), so we use NO_ASM there.
 %if 0%{?fedora}
+%ifarch x86_64
 BuildRequires:  nasm
+%endif
 %endif
 
 %description
