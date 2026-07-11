@@ -18,28 +18,9 @@ use tokio::task::JoinSet;
 
 /// A tool to lock for a specific lockfile target.
 type LockTool = (crate::cli::args::BackendArg, crate::toolset::ToolVersion);
-type LockToolIndex = BTreeMap<(String, String), Vec<usize>>;
 
 fn request_matches(a: &ToolRequest, b: &ToolRequest) -> bool {
     a.version() == b.version() && a.options() == b.options()
-}
-
-fn insert_lock_tool(
-    tools: &mut Vec<LockTool>,
-    index: &mut LockToolIndex,
-    ba: crate::cli::args::BackendArg,
-    tv: crate::toolset::ToolVersion,
-) {
-    let key = (ba.short.clone(), tv.version.clone());
-    let already_present = index.get(&key).is_some_and(|indices| {
-        indices
-            .iter()
-            .any(|&i| tools[i].1.request.options() == tv.request.options())
-    });
-    if !already_present {
-        index.entry(key).or_default().push(tools.len());
-        tools.push((ba, tv));
-    }
 }
 
 /// Update lockfile checksums and URLs for all specified platforms
@@ -574,7 +555,7 @@ impl Lock {
         let config_paths_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
 
         let mut all_tools: Vec<LockTool> = Vec::new();
-        let mut tool_index = LockToolIndex::new();
+        let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
 
         // First pass: tools from the resolved toolset whose source maps to this lockfile
         for (backend, tv) in ts.list_current_versions() {
@@ -604,12 +585,10 @@ impl Lock {
             if tv.version == "latest" {
                 continue;
             }
-            insert_lock_tool(
-                &mut all_tools,
-                &mut tool_index,
-                backend.ba().as_ref().clone(),
-                tv,
-            );
+            let key = (backend.ba().short.clone(), tv.version.clone());
+            if seen.insert(key) {
+                all_tools.push((backend.ba().as_ref().clone(), tv));
+            }
         }
 
         // Second pass: iterate config files matching this lockfile to catch
@@ -635,12 +614,10 @@ impl Lock {
                                         && tv.version != "latest"
                                     {
                                         matched_resolved = true;
-                                        insert_lock_tool(
-                                            &mut all_tools,
-                                            &mut tool_index,
-                                            ba.as_ref().clone(),
-                                            tv.clone(),
-                                        );
+                                        let key = (ba.short.clone(), tv.version.clone());
+                                        if seen.insert(key) {
+                                            all_tools.push((ba.as_ref().clone(), tv.clone()));
+                                        }
                                     }
                                 }
                             }
@@ -684,12 +661,10 @@ impl Lock {
                                 }
                                 match request.resolve(config, &resolve_options).await {
                                     Ok(tv) => {
-                                        insert_lock_tool(
-                                            &mut all_tools,
-                                            &mut tool_index,
-                                            ba.as_ref().clone(),
-                                            tv,
-                                        );
+                                        let key = (ba.short.clone(), tv.version.clone());
+                                        if seen.insert(key) {
+                                            all_tools.push((ba.as_ref().clone(), tv));
+                                        }
                                     }
                                     Err(err) => {
                                         if active_unresolved {
@@ -764,12 +739,9 @@ impl Lock {
                 tools.push((ba, tv));
             }
             // Deduplicate after potential "latest" -> concrete-version resolution.
-            let mut deduplicated = Vec::new();
-            let mut deduplicated_index = LockToolIndex::new();
-            for (ba, tv) in tools {
-                insert_lock_tool(&mut deduplicated, &mut deduplicated_index, ba, tv);
-            }
-            Ok(deduplicated)
+            let mut seen_after: BTreeSet<(String, String)> = BTreeSet::new();
+            tools.retain(|(ba, tv)| seen_after.insert((ba.short.clone(), tv.version.clone())));
+            Ok(tools)
         }
     }
 
@@ -900,10 +872,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::{Lock, LockToolIndex, insert_lock_tool};
+    use super::Lock;
     use crate::cli::args::ToolArg;
     use crate::lockfile::{Lockfile, PlatformInfo};
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
     use std::collections::BTreeMap;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -964,26 +936,6 @@ mod tests {
             ToolRequest::new(Arc::new(ba.clone()), version, ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, version.to_string());
         (ba, tv)
-    }
-
-    #[test]
-    fn test_lock_tool_identity_includes_options() {
-        let mut tools = Vec::new();
-        let mut index = LockToolIndex::new();
-
-        for features in ["git", "git", "vendored-openssl"] {
-            let (ba, mut tv) = configured_tool("dummy", "1.0.0");
-            let mut options = ToolVersionOptions::default();
-            options.opts.insert(
-                "features".to_string(),
-                toml::Value::String(features.to_string()),
-            );
-            tv.request.set_options(options);
-            insert_lock_tool(&mut tools, &mut index, ba, tv);
-        }
-
-        assert_eq!(tools.len(), 2);
-        assert_ne!(tools[0].1.request.options(), tools[1].1.request.options());
     }
 
     #[test]
