@@ -362,8 +362,8 @@ go          prefix:1.19  # uses the latest 1.19.x version—needed in case "1.19
 shfmt       path:./shfmt # use a custom runtime
 node        lts          # use lts version of node (not supported by all plugins)
 
-node        sub-2:lts      # install 2 versions behind the latest lts (e.g.: 18 if lts is 20)
-python      sub-0.1:latest # install python-3.10 if the latest is 3.11
+node        sub-2:lts      # subtract 2 from the resolved major version (e.g.: 20 becomes 18)
+python      sub-0.1:latest # subtract 1 from the resolved minor version (e.g.: 3.11 becomes 3.10)
 ```
 
 See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions) for more info on
@@ -378,9 +378,12 @@ Both `mise.toml` and `.tool-versions` support "scopes" which modify the behavior
   would only match `1.20` exactly but `prefix:1.20` will match `1.20.1` and `1.20.2` etc.
 - `path:<PATH>` - use a custom compiled version at the given path. One use-case is to re-use
   Homebrew tools (e.g.: `path:/opt/homebrew/opt/node@20`).
-- `sub-<PARTIAL_VERSION>:<ORIG_VERSION>` - subtracts PARTIAL_VERSION from ORIG_VERSION. This can
-  be used to express something like "2 versions behind lts" such as `sub-2:lts`. Or 1 minor
-  version behind the latest version: `sub-0.1:latest`.
+- `sub-<PARTIAL_VERSION>:<ORIG_VERSION>` - resolves `ORIG_VERSION`, subtracts the numeric components
+  in `PARTIAL_VERSION` from the corresponding resolved version components, then resolves the result
+  as a version prefix. For example, `sub-2:lts` resolves `lts` and subtracts 2 from its major
+  component (`20` becomes `18`), while `sub-0.1:latest` subtracts 1 from the resolved minor
+  component (`3.11` becomes `3.10`). This is numeric version arithmetic, not a request for the Nth
+  previous release.
 
 ## Idiomatic version files
 
