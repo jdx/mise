@@ -107,15 +107,58 @@ impl ErlangPlugin {
             .and_then(|p| p.url.clone())
     }
 
-    fn set_lockfile_info(&self, tv: &mut ToolVersion, url: &str, checksum: Option<String>) {
+    fn set_lockfile_info(
+        &self,
+        tv: &mut ToolVersion,
+        install: Option<&str>,
+        url: &str,
+        checksum: Option<String>,
+        url_api: Option<String>,
+    ) {
         let platform_info = tv
             .lock_platforms
             .entry(self.get_platform_key())
             .or_default();
+        let artifact_changed = platform_info.install.as_deref() != install
+            || platform_info.url.as_deref() != Some(url);
+        if artifact_changed {
+            platform_info.checksum = None;
+            platform_info.size = None;
+            platform_info.url_api = None;
+            platform_info.provenance = None;
+            platform_info.github_attestations = None;
+        }
+        platform_info.install = install.map(str::to_string);
         platform_info.url = Some(url.to_string());
         if let Some(checksum) = checksum {
-            platform_info.checksum.get_or_insert(checksum);
+            platform_info.checksum = Some(checksum);
         }
+        if let Some(url_api) = url_api {
+            platform_info.url_api = Some(url_api);
+        }
+    }
+
+    fn source_asset_name(version: &str) -> String {
+        format!("otp_src_{version}.tar.gz")
+    }
+
+    fn source_asset_url(version: &str) -> String {
+        format!(
+            "https://github.com/erlang/otp/releases/download/{}/{}",
+            Self::release_tag(version),
+            Self::source_asset_name(version)
+        )
+    }
+
+    fn source_archive_url(version: &str) -> String {
+        format!(
+            "https://github.com/erlang/otp/archive/{}.tar.gz",
+            Self::release_tag(version)
+        )
+    }
+
+    fn source_cache_name(url: &str) -> String {
+        format!("otp-source-{}.tar.gz", crate::hash::hash_sha256_to_str(url))
     }
 
     fn linux_precompiled_url(version: &str, target: &PlatformTarget) -> Result<String> {
@@ -211,13 +254,49 @@ impl ErlangPlugin {
         })
     }
 
+    async fn resolve_source_lock_info(&self, version: &str) -> Result<PlatformInfo> {
+        let release_tag = Self::release_tag(version);
+        let asset_name = Self::source_asset_name(version);
+        let info = match Self::github_asset_lock_info("erlang/otp", &release_tag, &asset_name).await
+        {
+            Ok(info) => info,
+            Err(err) => {
+                let asset_url = Self::source_asset_url(version);
+                match HTTP.head(&asset_url).await {
+                    Ok(_) => {
+                        debug!(
+                            "failed to resolve metadata for Erlang/OTP source release asset {asset_name}: {err}; using the reachable release asset without a checksum"
+                        );
+                        PlatformInfo {
+                            url: Some(asset_url),
+                            ..Default::default()
+                        }
+                    }
+                    Err(_) => {
+                        debug!(
+                            "failed to resolve Erlang/OTP source release asset {asset_name}: {err}; using tag archive"
+                        );
+                        PlatformInfo {
+                            url: Some(Self::source_archive_url(version)),
+                            ..Default::default()
+                        }
+                    }
+                }
+            }
+        };
+        Ok(PlatformInfo {
+            install: Some("source".to_string()),
+            ..info
+        })
+    }
+
     #[cfg(linux)]
     async fn install_precompiled(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if Settings::get().erlang.compile == Some(true) {
+        if !ctx.locked && Settings::get().erlang.compile == Some(true) {
             return Ok(None);
         }
         let url = if let Some(url) = self.lockfile_url(&tv) {
@@ -241,7 +320,7 @@ impl ErlangPlugin {
             HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
                 .await?;
         }
-        self.set_lockfile_info(&mut tv, &url, None);
+        self.set_lockfile_info(&mut tv, None, &url, None, None);
         ctx.pr.set_message(format!("Extracting {filename}"));
         file::untar(
             &tarball_path,
@@ -291,7 +370,7 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if Settings::get().erlang.compile == Some(true) {
+        if !ctx.locked && Settings::get().erlang.compile == Some(true) {
             return Ok(None);
         }
         let release_tag = Self::release_tag(&tv.version);
@@ -327,7 +406,7 @@ impl ErlangPlugin {
             HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
                 .await?;
         }
-        self.set_lockfile_info(&mut tv, &url, checksum);
+        self.set_lockfile_info(&mut tv, None, &url, checksum, None);
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.set_message(format!("Extracting {tarball_name}"));
         file::untar(
@@ -348,7 +427,7 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if Settings::get().erlang.compile == Some(true) {
+        if !ctx.locked && Settings::get().erlang.compile == Some(true) {
             return Ok(None);
         }
         let release_tag = Self::release_tag(&tv.version);
@@ -385,7 +464,7 @@ impl ErlangPlugin {
             HTTP.download_file(&url, &zip_path, Some(ctx.pr.as_ref()))
                 .await?;
         }
-        self.set_lockfile_info(&mut tv, &url, checksum);
+        self.set_lockfile_info(&mut tv, None, &url, checksum, None);
         self.verify_checksum(ctx, &mut tv, &zip_path)?;
         ctx.pr.set_message(format!("Extracting {}", zip_name));
         file::unzip(&zip_path, &tv.install_path(), &Default::default())?;
@@ -395,10 +474,10 @@ impl ErlangPlugin {
     #[cfg(not(any(linux, macos, windows)))]
     async fn install_precompiled(
         &self,
-        _ctx: &InstallContext,
+        ctx: &InstallContext,
         _tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if Settings::get().erlang.compile == Some(true) {
+        if !ctx.locked && Settings::get().erlang.compile == Some(true) {
             Ok(None)
         } else {
             self.precompiled_unavailable("precompiled erlang is not supported on this platform")
@@ -407,10 +486,51 @@ impl ErlangPlugin {
 
     async fn install_via_kerl(
         &self,
-        _ctx: &InstallContext,
-        tv: ToolVersion,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         self.update_kerl().await?;
+
+        let platform_key = self.get_platform_key();
+        let source_info = if ctx.locked {
+            tv.lock_platforms
+                .get(&platform_key)
+                .cloned()
+                .ok_or_else(|| {
+                    eyre::eyre!("missing locked Erlang source info for {platform_key}")
+                })?
+        } else {
+            self.resolve_source_lock_info(&tv.version).await?
+        };
+        let source_url = source_info
+            .url
+            .as_deref()
+            .ok_or_else(|| eyre::eyre!("missing Erlang source URL for {platform_key}"))?;
+        self.set_lockfile_info(
+            &mut tv,
+            Some("source"),
+            source_url,
+            source_info.checksum.clone(),
+            source_info.url_api.clone(),
+        );
+
+        let source_path = tv.download_path().join(Self::source_cache_name(source_url));
+        ctx.pr.set_message(format!(
+            "Downloading {}",
+            Self::source_asset_name(&tv.version)
+        ));
+        if !source_path.exists() {
+            HTTP.download_file(source_url, &source_path, Some(ctx.pr.as_ref()))
+                .await?;
+        }
+        self.verify_checksum(ctx, &mut tv, &source_path)?;
+
+        let kerl_source_path = self
+            .kerl_base_dir()
+            .join("archives")
+            .join(format!("{}.tar.gz", Self::release_tag(&tv.version)));
+        file::create_dir_all(kerl_source_path.parent().unwrap())?;
+        file::copy(&source_path, &kerl_source_path)?;
 
         file::remove_all(tv.install_path())?;
         match &tv.request {
@@ -487,6 +607,15 @@ impl Backend for ErlangPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let platform_key = self.get_platform_key();
+        if should_install_from_source(
+            ctx.locked,
+            &tv.lock_platforms,
+            &platform_key,
+            Settings::get().erlang.compile,
+        ) {
+            return self.install_via_kerl(ctx, tv).await;
+        }
         if let Some(tv) = self.install_precompiled(ctx, tv.clone()).await? {
             return Ok(tv);
         }
@@ -494,9 +623,7 @@ impl Backend for ErlangPlugin {
     }
 
     fn supports_lockfile_url(&self) -> bool {
-        // In default mode, precompiled Erlang is opportunistic and may fall
-        // back to kerl, so locked installs cannot always require a URL.
-        Settings::get().erlang.compile == Some(false)
+        true
     }
 
     fn resolve_lockfile_options(
@@ -538,7 +665,7 @@ impl Backend for ErlangPlugin {
     ) -> Result<PlatformInfo> {
         let compile = Settings::get().erlang.compile;
         if compile == Some(true) {
-            return Ok(PlatformInfo::default());
+            return self.resolve_source_lock_info(&tv.version).await;
         }
 
         let release_tag = Self::release_tag(&tv.version);
@@ -549,7 +676,7 @@ impl Backend for ErlangPlugin {
                     ..Default::default()
                 }),
                 Err(err) if compile == Some(false) => Err(err),
-                Err(_) => Ok(PlatformInfo::default()),
+                Err(_) => self.resolve_source_lock_info(&tv.version).await,
             },
             "macos" => {
                 let info = match Self::macos_asset_name(target) {
@@ -562,7 +689,7 @@ impl Backend for ErlangPlugin {
                 match info {
                     Ok(info) => Ok(info),
                     Err(err) if compile == Some(false) => Err(err),
-                    Err(_) => Ok(PlatformInfo::default()),
+                    Err(_) => self.resolve_source_lock_info(&tv.version).await,
                 }
             }
             "windows" => {
@@ -575,10 +702,88 @@ impl Backend for ErlangPlugin {
                 match info {
                     Ok(info) => Ok(info),
                     Err(err) if compile == Some(false) => Err(err),
-                    Err(_) => Ok(PlatformInfo::default()),
+                    Err(_) => self.resolve_source_lock_info(&tv.version).await,
                 }
             }
-            _ => Ok(PlatformInfo::default()),
+            os if compile == Some(false) => {
+                bail!("precompiled erlang is not supported on {os}")
+            }
+            _ => self.resolve_source_lock_info(&tv.version).await,
         }
+    }
+}
+
+fn should_install_from_source(
+    locked: bool,
+    lock_platforms: &BTreeMap<String, PlatformInfo>,
+    platform_key: &str,
+    erlang_compile: Option<bool>,
+) -> bool {
+    if locked {
+        lock_platforms
+            .get(platform_key)
+            .is_some_and(|pi| pi.install.as_deref() == Some("source"))
+    } else {
+        erlang_compile == Some(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_locked_erlang_install_uses_source_marker() {
+        let platform_key = Platform::current().to_key();
+        let lock_platforms = BTreeMap::from([(
+            platform_key.clone(),
+            PlatformInfo {
+                install: Some("source".to_string()),
+                url: Some("https://github.com/erlang/otp/source.tar.gz".to_string()),
+                ..Default::default()
+            },
+        )]);
+
+        assert!(should_install_from_source(
+            true,
+            &lock_platforms,
+            &platform_key,
+            Some(false)
+        ));
+    }
+
+    #[test]
+    fn test_locked_erlang_install_ignores_compile_setting_for_precompiled_lock() {
+        let platform_key = Platform::current().to_key();
+        let lock_platforms = BTreeMap::from([(
+            platform_key.clone(),
+            PlatformInfo {
+                url: Some("https://builds.hex.pm/builds/otp/precompiled.tar.gz".to_string()),
+                ..Default::default()
+            },
+        )]);
+
+        assert!(!should_install_from_source(
+            true,
+            &lock_platforms,
+            &platform_key,
+            Some(true)
+        ));
+    }
+
+    #[test]
+    fn test_unlocked_erlang_install_uses_compile_setting() {
+        assert!(should_install_from_source(
+            false,
+            &BTreeMap::new(),
+            "linux-x64",
+            Some(true)
+        ));
+        assert!(!should_install_from_source(
+            false,
+            &BTreeMap::new(),
+            "linux-x64",
+            None
+        ));
     }
 }
