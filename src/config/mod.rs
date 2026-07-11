@@ -113,8 +113,8 @@ impl Config {
         (*_CONFIG.read().unwrap()).clone().unwrap()
     }
     pub async fn reset() -> Result<Arc<Self>> {
-        backend::reset().await?;
         Settings::reload();
+        backend::reset().await?;
         timeout::run_with_timeout_async(
             async || {
                 _CONFIG.write().unwrap().take();

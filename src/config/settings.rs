@@ -1,5 +1,4 @@
 use crate::cli::Cli;
-use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::duration;
 use crate::file::FindUp;
 use crate::platform::Platform;
@@ -24,6 +23,8 @@ use std::{
     collections::{BTreeSet, HashSet},
     sync::atomic::{AtomicBool, Ordering},
 };
+
+use super::{TOML_CONFIG_FILENAMES, load_config_paths};
 use url::Url;
 
 // settings are generated from settings.toml in the project root
@@ -762,9 +763,9 @@ impl Settings {
     }
 
     fn all_settings_files() -> Vec<SettingsPartial> {
-        ALL_TOML_CONFIG_FILES
-            .iter()
-            .map(|p| Self::parse_settings_file(p))
+        load_config_paths(&TOML_CONFIG_FILENAMES, false)
+            .into_iter()
+            .map(|p| Self::parse_settings_file(&p))
             .filter_map(|cfg| match cfg {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {

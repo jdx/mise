@@ -51,6 +51,12 @@ cat <<'EOF' >dotfiles/mise/config.toml
 experimental = true
 EOF
 cat <<'EOF' >mise.toml
+[settings]
+system_packages.managers = ["apt"]
+
+[bootstrap.packages]
+"apt:bc" = "latest"
+
 [deps.bootstrap-test]
 auto = true
 outputs = ["deps_ran"]
@@ -65,6 +71,7 @@ EOF
 assert_succeed "mise bootstrap --yes"
 assert "test -f deps_ran"
 assert "test -f bootstrap_ran"
+rm -f ~/.config/mise/config.toml
 
 # dry-run doesn't install or run anything
 rm -f bootstrap_ran
