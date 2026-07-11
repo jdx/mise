@@ -24,44 +24,19 @@ fn request_matches(a: &ToolRequest, b: &ToolRequest) -> bool {
     a.version() == b.version() && a.options() == b.options()
 }
 
-fn lock_target_version(
-    ba: &crate::cli::args::BackendArg,
-    tv: &crate::toolset::ToolVersion,
-) -> String {
-    if ba.short.starts_with("cargo:") && tv.version.starts_with("ref:") {
-        let request_version = tv.request.version();
-        if matches!(
-            request_version.split_once(':'),
-            Some(("rev" | "tag" | "branch", _))
-        ) {
-            return request_version;
-        }
-    }
-    tv.version.clone()
-}
-
 fn insert_lock_tool(
     tools: &mut Vec<LockTool>,
     index: &mut LockToolIndex,
     ba: crate::cli::args::BackendArg,
     tv: crate::toolset::ToolVersion,
 ) {
-    let version = lock_target_version(&ba, &tv);
-    let key = (ba.short.clone(), version);
-    let matching_index = index.get(&key).and_then(|indices| {
+    let key = (ba.short.clone(), tv.version.clone());
+    let already_present = index.get(&key).is_some_and(|indices| {
         indices
             .iter()
-            .copied()
-            .find(|&i| tools[i].1.request.options() == tv.request.options())
+            .any(|&i| tools[i].1.request.options() == tv.request.options())
     });
-    if let Some(i) = matching_index {
-        let existing = &mut tools[i].1;
-        // list_current_versions uses ref:<value> for Cargo's install-path identity.
-        // Prefer the configured selector because ref: is not a Cargo install selector.
-        if existing.version.starts_with("ref:") && !tv.version.starts_with("ref:") {
-            *existing = tv;
-        }
-    } else {
+    if !already_present {
         index.entry(key).or_default().push(tools.len());
         tools.push((ba, tv));
     }
@@ -600,6 +575,7 @@ impl Lock {
 
         let mut all_tools: Vec<LockTool> = Vec::new();
         let mut tool_index = LockToolIndex::new();
+
         // First pass: tools from the resolved toolset whose source maps to this lockfile
         for (backend, tv) in ts.list_current_versions() {
             if let Some((source_lockfile, _)) =
@@ -924,10 +900,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::{Lock, LockTool, LockToolIndex, insert_lock_tool};
+    use super::{Lock, LockToolIndex, insert_lock_tool};
     use crate::cli::args::ToolArg;
     use crate::lockfile::{Lockfile, PlatformInfo};
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions};
     use std::collections::BTreeMap;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -990,43 +966,24 @@ mod tests {
         (ba, tv)
     }
 
-    fn cargo_git_tool(selector: &str, stored_version: &str, features: &str) -> LockTool {
-        let backend = "cargo:https://github.com/eza-community/eza";
-        let ba = crate::cli::args::BackendArg::new(backend.to_string(), Some(backend.to_string()));
-        let mut options = crate::toolset::ToolVersionOptions::default();
-        options.opts.insert(
-            "features".to_string(),
-            toml::Value::String(features.to_string()),
-        );
-        let request = ToolRequest::new_opts(
-            Arc::new(ba.clone()),
-            selector,
-            options,
-            ToolSource::Argument,
-        )
-        .unwrap();
-        (ba, ToolVersion::new(request, stored_version.to_string()))
-    }
-
     #[test]
-    fn test_collect_cargo_git_selectors_deduplicates_internal_refs_with_options() {
-        for selector in ["rev:abc123", "tag:v1.0.0", "branch:main"] {
-            let ref_version = format!("ref:{}", selector.split_once(':').unwrap().1);
-            let mut tools = Vec::new();
-            let mut index = LockToolIndex::new();
+    fn test_lock_tool_identity_includes_options() {
+        let mut tools = Vec::new();
+        let mut index = LockToolIndex::new();
 
-            let (ba, tv) = cargo_git_tool(selector, &ref_version, "git");
+        for features in ["git", "git", "vendored-openssl"] {
+            let (ba, mut tv) = configured_tool("dummy", "1.0.0");
+            let mut options = ToolVersionOptions::default();
+            options.opts.insert(
+                "features".to_string(),
+                toml::Value::String(features.to_string()),
+            );
+            tv.request.set_options(options);
             insert_lock_tool(&mut tools, &mut index, ba, tv);
-            let (ba, tv) = cargo_git_tool(selector, selector, "git");
-            insert_lock_tool(&mut tools, &mut index, ba, tv);
-            let (ba, tv) = cargo_git_tool(selector, selector, "vendored-openssl");
-            insert_lock_tool(&mut tools, &mut index, ba, tv);
-
-            assert_eq!(tools.len(), 2, "selector: {selector}");
-            assert_eq!(tools[0].1.version, selector);
-            assert_eq!(tools[1].1.version, selector);
-            assert_ne!(tools[0].1.request.options(), tools[1].1.request.options());
         }
+
+        assert_eq!(tools.len(), 2);
+        assert_ne!(tools[0].1.request.options(), tools[1].1.request.options());
     }
 
     #[test]

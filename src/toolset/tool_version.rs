@@ -298,7 +298,9 @@ impl ToolVersion {
             ToolRequest::Version { .. } => self.version.to_string(),
             ToolRequest::Prefix { .. } => self.version.to_string(),
             ToolRequest::Sub { .. } => self.version.to_string(),
-            ToolRequest::Ref { ref_: r, .. } => format!("ref-{r}"),
+            ToolRequest::Ref {
+                ref_: r, ref_type, ..
+            } => format!("{ref_type}-{r}"),
             ToolRequest::Path { path: p, .. } => format!("path-{}", hash_to_str(p)),
             ToolRequest::System { .. } => {
                 // Only show deprecation warning if not from .tool-versions file
@@ -914,6 +916,30 @@ mod tests {
         );
         backend.installs_path = installs_path;
         backend
+    }
+
+    #[test]
+    fn ref_pathname_preserves_selector_type() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let backend = Arc::new(test_backend(temp_dir.path().join("installs")));
+
+        for (version, pathname) in [
+            ("ref:main", "ref-main"),
+            ("rev:abc123", "rev-abc123"),
+            ("tag:v1.0.0", "tag-v1.0.0"),
+            ("branch:main", "branch-main"),
+        ] {
+            let (ref_type, ref_) = version.split_once(':').unwrap();
+            let request = ToolRequest::Ref {
+                backend: backend.clone(),
+                ref_: ref_.to_string(),
+                ref_type: ref_type.to_string(),
+                options: ToolVersionOptions::default(),
+                source: ToolSource::Argument,
+            };
+            let tv = ToolVersion::new(request, version.to_string());
+            assert_eq!(tv.tv_pathname(), pathname);
+        }
     }
 
     #[test]
