@@ -25,7 +25,7 @@ assert_contains "cat mise.lock" 'github.com/astral-sh/python-build-standalone/re
 assert_not_contains "cat mise.lock" 'install = "source"'
 assert "mise install --locked --dry-run"
 
-echo "=== default fallback records the python-build source artifact ==="
+echo "=== default fallback records the python-build outcome ==="
 cat <<'EOF' >mise.toml
 [tools]
 python = "3.5.10"
@@ -36,8 +36,8 @@ mise lock --platform "$CURRENT_PLATFORM"
 assert_not_contains "cat mise.lock" '[tools.python.options]'
 assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
 assert_contains "$PLATFORM_SECTION" 'install = "source"'
-assert_contains "$PLATFORM_SECTION" 'checksum = "sha256:'
-assert_contains "$PLATFORM_SECTION" 'url = "https://www.python.org/ftp/python/3.5.10/Python-3.5.10.tgz"'
+assert_not_contains "$PLATFORM_SECTION" 'checksum = '
+assert_not_contains "$PLATFORM_SECTION" 'url = '
 assert "mise install --locked --dry-run"
 
 echo "=== compile=true records a source outcome ==="
@@ -54,8 +54,8 @@ mise lock --platform "$CURRENT_PLATFORM"
 assert_contains "cat mise.lock" '[tools.python.options]'
 assert_contains "cat mise.lock" 'compile = "true"'
 assert_contains "$PLATFORM_SECTION" 'install = "source"'
-assert_contains "$PLATFORM_SECTION" 'checksum = "sha256:'
-assert_contains "$PLATFORM_SECTION" 'url = "https://www.python.org/ftp/python/3.13.0/Python-3.13.0.tgz"'
+assert_not_contains "$PLATFORM_SECTION" 'checksum = '
+assert_not_contains "$PLATFORM_SECTION" 'url = '
 assert "mise install --locked --dry-run"
 
 echo "=== compile=false does not record unavailable source fallback ==="
@@ -72,7 +72,7 @@ mise lock --platform "$CURRENT_PLATFORM"
 assert_contains "cat mise.lock" 'compile = "false"'
 assert_not_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
 
-echo "=== locked source outcome without a URL fails ==="
+echo "=== locked source outcome does not require a URL ==="
 cat <<'EOF' >mise.toml
 [tools]
 python = "3.13.0"
@@ -93,6 +93,22 @@ compile = "true"
 
 [tools.python."platforms.$CURRENT_PLATFORM"]
 install = "source"
+EOF
+
+assert "mise install --locked --dry-run"
+
+echo "=== locked precompiled outcome still requires a URL ==="
+cat <<EOF >mise.lock
+$LOCKFILE_HEADER
+
+[[tools.python]]
+version = "3.13.0"
+backend = "core:python"
+
+[tools.python.options]
+compile = "true"
+
+[tools.python."platforms.$CURRENT_PLATFORM"]
 EOF
 
 assert_fail "mise install --locked --dry-run" "No lockfile URL found"
