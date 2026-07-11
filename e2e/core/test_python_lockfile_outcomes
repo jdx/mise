@@ -112,3 +112,28 @@ compile = "true"
 EOF
 
 assert_fail "mise install --locked --dry-run" "No lockfile URL found"
+
+echo "=== compile=false rejects a manually authored source outcome ==="
+cat <<'EOF' >mise.toml
+[tools]
+python = "3.13.0"
+
+[settings.python]
+compile = false
+EOF
+
+cat <<EOF >mise.lock
+$LOCKFILE_HEADER
+
+[[tools.python]]
+version = "3.13.0"
+backend = "core:python"
+
+[tools.python.options]
+compile = "false"
+
+[tools.python."platforms.$CURRENT_PLATFORM"]
+install = "source"
+EOF
+
+assert_fail "mise install --locked --dry-run" 'install = "source" conflicts with python.compile=false'

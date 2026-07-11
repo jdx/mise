@@ -821,10 +821,21 @@ impl Backend for PythonPlugin {
         &self.ba
     }
 
-    fn requires_lockfile_url(&self, tv: &ToolVersion) -> bool {
-        // core:python cannot build from source on Windows, so a manually
-        // authored source marker must not bypass the precompiled URL check.
-        cfg!(windows) || !is_source_lock(&tv.lock_platforms, &self.get_platform_key())
+    fn lockfile_target_policy(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<crate::backend::LockfileTargetPolicy> {
+        let platform_key = target.to_key();
+        if target.os_name() == "windows" || !is_source_lock(&tv.lock_platforms, &platform_key) {
+            return Ok(crate::backend::LockfileTargetPolicy::Artifact);
+        }
+        if Settings::get().python.compile == Some(false) {
+            bail!(
+                "invalid Python lockfile: install = \"source\" conflicts with python.compile=false"
+            );
+        }
+        Ok(crate::backend::LockfileTargetPolicy::Source)
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {

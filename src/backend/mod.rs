@@ -89,6 +89,8 @@ pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 pub enum LockfileTargetPolicy {
     /// The target is represented by a URL-backed lock entry.
     Artifact,
+    /// The target is represented by an installer-owned source outcome.
+    Source,
     /// This backend does not currently produce lock information for the target.
     Unsupported,
 }

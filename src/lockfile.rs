@@ -1873,6 +1873,9 @@ fn tool_version_needs_auto_lock(
                     crate::backend::LockfileTargetPolicy::Artifact => {
                         info.checksum.is_some() && info.url.is_some()
                     }
+                    crate::backend::LockfileTargetPolicy::Source => {
+                        info.install.as_deref() == Some("source")
+                    }
                     crate::backend::LockfileTargetPolicy::Unsupported => true,
                 });
             if !complete {
@@ -2079,6 +2082,9 @@ pub async fn auto_lock_new_versions(
                         && match policy {
                             crate::backend::LockfileTargetPolicy::Artifact => {
                                 info.checksum.is_some() && info.url.is_some()
+                            }
+                            crate::backend::LockfileTargetPolicy::Source => {
+                                info.install.as_deref() == Some("source")
                             }
                             crate::backend::LockfileTargetPolicy::Unsupported => true,
                         }
@@ -3516,6 +3522,38 @@ options = { exe = "rg" }
         let tv = basic_tv("aqua:astral-sh/ruff", "0.15.20");
 
         assert!(!tool_version_needs_auto_lock(&lockfile, &tv, &[Platform::current()]).unwrap());
+    }
+
+    #[test]
+    fn test_tool_version_needs_auto_lock_treats_source_as_complete_per_target() {
+        let mut lockfile = Lockfile::default();
+        let mut tool = basic_tool("3.13.0", "core:python");
+        tool.platforms.insert(
+            Platform::current().to_key(),
+            PlatformInfo {
+                install: Some("source".to_string()),
+                ..Default::default()
+            },
+        );
+        lockfile.tools.insert("python".to_string(), vec![tool]);
+        let mut tv = basic_tv("core:python", "3.13.0");
+        tv.lock_platforms.insert(
+            Platform::current().to_key(),
+            PlatformInfo {
+                install: Some("source".to_string()),
+                ..Default::default()
+            },
+        );
+
+        assert!(!tool_version_needs_auto_lock(&lockfile, &tv, &[Platform::current()]).unwrap());
+        assert!(
+            tool_version_needs_auto_lock(
+                &lockfile,
+                &tv,
+                &[Platform::current(), Platform::parse("windows-x64").unwrap()],
+            )
+            .unwrap()
+        );
     }
 
     #[test]
