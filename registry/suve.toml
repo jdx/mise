@@ -1,0 +1,3 @@
+backends = ["aqua:mpyw/suve"]
+description = "Git-like CLI/GUI for AWS Parameter Store / Secrets Manager, Google Cloud Secret Manager, and Azure Key Vault / App Configuration"
+test = { cmd = "suve --version", expected = "suve version {{version}}" }
