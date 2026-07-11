@@ -48,7 +48,7 @@ awk '
 assert_contains "cat mise.lock" "fake-tag/fake-python.tar.gz"
 
 rm -rf "$MISE_DATA_DIR/installs/python"
-assert_fail_contains "mise install python -f" "fake-tag/fake-python.tar.gz"
+assert_fail_contains "mise install --locked python -f" "fake-tag/fake-python.tar.gz"
 
 # Regenerate a fresh lockfile for subsequent tests
 rm -f mise.lock
@@ -66,7 +66,7 @@ assert_contains "cat mise.lock" "sha256:0000000000000000000000000000000000000000
 
 # Install with corrupted checksum should fail with a checksum mismatch error
 rm -rf "$MISE_DATA_DIR/installs/python"
-assert_fail "mise install python -f" "Checksum mismatch"
+assert_fail "mise install --locked python -f" "Checksum mismatch"
 
 rm -f mise.lock mise.toml
 

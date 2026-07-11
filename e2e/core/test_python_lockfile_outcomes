@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+
+# Test that core:python locks precompiled and python-build source outcomes.
+export MISE_LOCKFILE=1
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
+
+if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* || "$(uname -s)" == CYGWIN* ]]; then
+  echo "Skipping python-build source lockfile test on Windows"
+  exit 0
+fi
+
+detect_platform
+CURRENT_PLATFORM="$MISE_PLATFORM"
+
+cat <<'EOF' >mise.toml
+[tools]
+python = "3.13.5"
+EOF
+
+mise lock --platform "$CURRENT_PLATFORM"
+assert_not_contains "cat mise.lock" 'compile = '
+assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
+assert_contains "cat mise.lock" 'github.com/astral-sh/python-build-standalone/releases/download'
+assert_not_contains "cat mise.lock" 'install = "source"'
+assert "mise install --locked --dry-run"
+
+echo "=== default fallback records the python-build source artifact ==="
+cat <<'EOF' >mise.toml
+[tools]
+python = "3.5.10"
+EOF
+
+rm -f mise.lock
+mise lock --platform "$CURRENT_PLATFORM"
+assert_not_contains "cat mise.lock" '[tools.python.options]'
+assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
+assert_contains "awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'install = "source"'
+assert_contains "awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'checksum = "sha256:'
+assert_contains "awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'url = "https://www.python.org/ftp/python/3.5.10/Python-3.5.10.tar.xz"'
+assert "mise install --locked --dry-run"
+
+echo "=== compile=true records a source outcome ==="
+cat <<'EOF' >mise.toml
+[tools]
+python = "3.13.0"
+
+[settings.python]
+compile = true
+EOF
+
+rm -f mise.lock
+mise lock --platform "$CURRENT_PLATFORM"
+assert_contains "cat mise.lock" '[tools.python.options]'
+assert_contains "cat mise.lock" 'compile = "true"'
+assert_contains "awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'install = "source"'
+assert_contains "awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'checksum = "sha256:'
+assert_contains "awk '/\[tools.python.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'url = "https://www.python.org/ftp/python/3.13.0/Python-3.13.0.tar.xz"'
+assert "mise install --locked --dry-run"
+
+echo "=== compile=false does not record unavailable source fallback ==="
+cat <<'EOF' >mise.toml
+[tools]
+python = "3.5.10"
+
+[settings.python]
+compile = false
+EOF
+
+rm -f mise.lock
+mise lock --platform "$CURRENT_PLATFORM"
+assert_contains "cat mise.lock" 'compile = "false"'
+assert_not_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
+
+echo "=== locked source outcome without a URL fails ==="
+cat <<'EOF' >mise.toml
+[tools]
+python = "3.13.0"
+
+[settings.python]
+compile = true
+EOF
+
+cat <<EOF >mise.lock
+$LOCKFILE_HEADER
+
+[[tools.python]]
+version = "3.13.0"
+backend = "core:python"
+
+[tools.python.options]
+compile = "true"
+
+[tools.python."platforms.$CURRENT_PLATFORM"]
+install = "source"
+EOF
+
+assert_fail "mise install --locked --dry-run" "No lockfile URL found"
