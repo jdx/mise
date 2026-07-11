@@ -798,6 +798,12 @@ impl Settings {
         crate::config::config_file::config_root::reset();
     }
 
+    /// Invalidate settings loaded from config files without discarding CLI overrides.
+    pub fn reload() {
+        *BASE_SETTINGS.write().unwrap() = None;
+        crate::config::config_file::config_root::reset();
+    }
+
     /// Merge an override into the CLI-level settings partial.
     ///
     /// `reset` replaces CLI_SETTINGS wholesale, which would clobber overrides
@@ -1607,6 +1613,18 @@ mod tests {
         Settings::reset(Some(partial));
         let settings = Settings::get();
         assert!(settings.offline());
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_reload_preserves_cli_settings() {
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        assert!(Settings::get().offline());
+
+        Settings::reload();
+        assert!(Settings::get().offline());
         Settings::reset(None);
     }
 

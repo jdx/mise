@@ -114,6 +114,7 @@ impl Config {
     }
     pub async fn reset() -> Result<Arc<Self>> {
         backend::reset().await?;
+        Settings::reload();
         timeout::run_with_timeout_async(
             async || {
                 _CONFIG.write().unwrap().take();
@@ -3240,6 +3241,18 @@ mod tests {
     async fn test_load() {
         let config = Config::reset().await.unwrap();
         assert_debug_snapshot!(config);
+    }
+
+    #[tokio::test]
+    async fn test_reset_reloads_settings() {
+        Settings::reset(None);
+        let before = Settings::get();
+
+        Config::reset().await.unwrap();
+        let after = Settings::get();
+
+        assert!(!Arc::ptr_eq(&before, &after));
+        Settings::reset(None);
     }
 
     #[test]

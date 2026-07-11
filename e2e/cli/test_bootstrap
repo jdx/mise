@@ -43,6 +43,29 @@ assert_succeed "mise bootstrap packages install --dry-run --yes"
 # idempotent: re-running is fine
 assert_succeed "mise bootstrap --yes"
 
+# settings from configs installed by dotfiles are visible to the bootstrap task
+rm -f bootstrap_ran deps_ran
+mkdir -p dotfiles/mise
+cat <<'EOF' >dotfiles/mise/config.toml
+[settings]
+experimental = true
+EOF
+cat <<'EOF' >mise.toml
+[deps.bootstrap-test]
+auto = true
+outputs = ["deps_ran"]
+run = "touch deps_ran"
+
+[tasks.bootstrap]
+run = "touch bootstrap_ran"
+
+[dotfiles]
+"~/.config/mise/config.toml" = "dotfiles/mise/config.toml"
+EOF
+assert_succeed "mise bootstrap --yes"
+assert "test -f deps_ran"
+assert "test -f bootstrap_ran"
+
 # dry-run doesn't install or run anything
 rm -f bootstrap_ran
 cat <<EOF >mise.toml
