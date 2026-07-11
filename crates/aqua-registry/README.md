@@ -18,6 +18,10 @@ It owns parsing, package lookup, package serialization codecs, and the on-disk s
 
 This crate is primarily used internally by mise. For more information about mise, visit [mise.en.dev](https://mise.en.dev).
 
+## Compiled cache compatibility
+
+The compiled registry cache uses rkyv and is not self-describing. Any change to an archived cache type—including adding, removing, reordering, or changing fields on `AquaPackage` or the compiled registry index—must bump `COMPILED_REGISTRY_CACHE_VERSION` in `src/cache.rs`. This moves new builds to a fresh cache directory instead of attempting to read incompatible bytes.
+
 ## License
 
 MIT
