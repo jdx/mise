@@ -78,10 +78,6 @@ impl Backend for PkgxBackend {
         &self.ba
     }
 
-    fn supports_lockfile_url(&self) -> bool {
-        true
-    }
-
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         true
     }

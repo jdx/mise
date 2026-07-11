@@ -493,10 +493,18 @@ impl Backend for ErlangPlugin {
         self.install_via_kerl(ctx, tv).await
     }
 
-    fn supports_lockfile_url(&self) -> bool {
+    fn lockfile_target_policy(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<crate::backend::LockfileTargetPolicy> {
         // In default mode, precompiled Erlang is opportunistic and may fall
         // back to kerl, so locked installs cannot always require a URL.
-        Settings::get().erlang.compile == Some(false)
+        Ok(if Settings::get().erlang.compile == Some(false) {
+            crate::backend::LockfileTargetPolicy::Artifact
+        } else {
+            crate::backend::LockfileTargetPolicy::Unsupported
+        })
     }
 
     fn resolve_lockfile_options(

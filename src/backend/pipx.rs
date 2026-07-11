@@ -127,8 +127,12 @@ impl Backend for PIPXBackend {
 
     /// Pipx installs packages from PyPI or Git using version specs (e.g., black==24.3.0).
     /// It doesn't support installing from direct URLs, so lockfile URLs are not applicable.
-    fn supports_lockfile_url(&self) -> bool {
-        false
+    fn lockfile_target_policy(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<crate::backend::LockfileTargetPolicy> {
+        Ok(crate::backend::LockfileTargetPolicy::Unsupported)
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {

@@ -222,8 +222,12 @@ impl Backend for RustPlugin {
 
     /// Rust uses rustup for installation, which handles its own downloads.
     /// Lockfile URLs are not applicable since we don't download artifacts directly.
-    fn supports_lockfile_url(&self) -> bool {
-        false
+    fn lockfile_target_policy(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<crate::backend::LockfileTargetPolicy> {
+        Ok(crate::backend::LockfileTargetPolicy::Unsupported)
     }
 
     /// Rust toolchains can be installed while requested components/targets are

@@ -69,8 +69,12 @@ impl Backend for GoBackend {
         Ok(vec!["go"])
     }
 
-    fn supports_lockfile_url(&self) -> bool {
-        false
+    fn lockfile_target_policy(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<crate::backend::LockfileTargetPolicy> {
+        Ok(crate::backend::LockfileTargetPolicy::Unsupported)
     }
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {

@@ -289,8 +289,12 @@ impl Backend for NPMBackend {
 
     /// NPM installs packages from npm registry using version specs (e.g., eslint@8.0.0).
     /// It doesn't support installing from direct URLs, so lockfile URLs are not applicable.
-    fn supports_lockfile_url(&self) -> bool {
-        false
+    fn lockfile_target_policy(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<crate::backend::LockfileTargetPolicy> {
+        Ok(crate::backend::LockfileTargetPolicy::Unsupported)
     }
 
     fn get_optional_dependencies(&self) -> eyre::Result<Vec<&str>> {

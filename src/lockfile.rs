@@ -1860,12 +1860,22 @@ fn tool_version_needs_auto_lock(
 
     for platform in target_platforms {
         for variant in backend.platform_variants(platform) {
+            let policy =
+                backend.lockfile_target_policy(tv, &PlatformTarget::new(variant.clone()))?;
+            if policy == crate::backend::LockfileTargetPolicy::Unsupported {
+                continue;
+            }
             let platform_key = variant.to_key();
-            if !tool
+            let complete = tool
                 .platforms
                 .get(&platform_key)
-                .is_some_and(|info| info.checksum.is_some() && info.url.is_some())
-            {
+                .is_some_and(|info| match policy {
+                    crate::backend::LockfileTargetPolicy::Artifact => {
+                        info.checksum.is_some() && info.url.is_some()
+                    }
+                    crate::backend::LockfileTargetPolicy::Unsupported => true,
+                });
+            if !complete {
                 return Ok(true);
             }
         }
@@ -1974,12 +1984,9 @@ pub async fn auto_lock_new_versions(
         .flat_map(|tvl| tvl.versions.iter())
         .chain(new_versions.iter())
     {
-        let Ok(backend) = tv.request.backend() else {
+        let Ok(_backend) = tv.request.backend() else {
             continue;
         };
-        if !backend.supports_lockfile_url() {
-            continue;
-        }
         if let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, tv.request.source())
         {
             let candidate_key = (
@@ -2056,13 +2063,25 @@ pub async fn auto_lock_new_versions(
 
                 for variant in variants {
                     let platform_key = variant.to_key();
+                    let policy = if let Some(backend) = &backend {
+                        backend.lockfile_target_policy(tv, &PlatformTarget::new(variant.clone()))?
+                    } else {
+                        crate::backend::LockfileTargetPolicy::Unsupported
+                    };
+                    if policy == crate::backend::LockfileTargetPolicy::Unsupported {
+                        continue;
+                    }
 
-                    // Skip if this tool/version/platform already has both checksum and URL
+                    // Skip outcomes already complete for this target.
                     if let Some(tools) = lockfile.tools.get(&ba.short)
                         && let Some(tool) = tools.iter().find(|t| t.version == tv.version)
                         && let Some(info) = tool.platforms.get(&platform_key)
-                        && info.checksum.is_some()
-                        && info.url.is_some()
+                        && match policy {
+                            crate::backend::LockfileTargetPolicy::Artifact => {
+                                info.checksum.is_some() && info.url.is_some()
+                            }
+                            crate::backend::LockfileTargetPolicy::Unsupported => true,
+                        }
                     {
                         continue;
                     }
@@ -3466,6 +3485,18 @@ options = { exe = "rg" }
         let tv = basic_tv("aqua:astral-sh/ruff", "0.15.20");
 
         assert!(tool_version_needs_auto_lock(&lockfile, &tv, &[Platform::current()]).unwrap());
+    }
+
+    #[test]
+    fn test_tool_version_needs_auto_lock_skips_unsupported_target() {
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "ripgrep".to_string(),
+            vec![basic_tool("14.1.1", "cargo:ripgrep")],
+        );
+        let tv = basic_tv("cargo:ripgrep", "14.1.1");
+
+        assert!(!tool_version_needs_auto_lock(&lockfile, &tv, &[Platform::current()]).unwrap());
     }
 
     #[test]

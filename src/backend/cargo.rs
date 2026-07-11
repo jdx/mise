@@ -137,8 +137,12 @@ impl Backend for CargoBackend {
 
     /// Cargo installs packages from crates.io using version specs (e.g., ripgrep@14.0.0).
     /// It doesn't support installing from direct URLs, so lockfile URLs are not applicable.
-    fn supports_lockfile_url(&self) -> bool {
-        false
+    fn lockfile_target_policy(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<crate::backend::LockfileTargetPolicy> {
+        Ok(crate::backend::LockfileTargetPolicy::Unsupported)
     }
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {

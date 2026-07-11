@@ -254,8 +254,12 @@ impl Backend for AsdfBackend {
 
     /// ASDF plugins handle their own downloads through plugin scripts.
     /// Lockfile URLs are not applicable since installation is delegated to plugin scripts.
-    fn supports_lockfile_url(&self) -> bool {
-        false
+    fn lockfile_target_policy(
+        &self,
+        _tv: &ToolVersion,
+        _target: &crate::backend::platform_target::PlatformTarget,
+    ) -> Result<crate::backend::LockfileTargetPolicy> {
+        Ok(crate::backend::LockfileTargetPolicy::Unsupported)
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {

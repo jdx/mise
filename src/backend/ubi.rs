@@ -444,8 +444,12 @@ impl Backend for UbiBackend {
 
     /// UBI is deprecated in favor of the github backend and doesn't resolve download URLs
     /// at lock time. Return false so --locked mode doesn't error for ubi tools.
-    fn supports_lockfile_url(&self) -> bool {
-        false
+    fn lockfile_target_policy(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<crate::backend::LockfileTargetPolicy> {
+        Ok(crate::backend::LockfileTargetPolicy::Unsupported)
     }
 
     fn resolve_lockfile_options(

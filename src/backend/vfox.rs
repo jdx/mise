@@ -82,10 +82,18 @@ impl Backend for VfoxBackend {
         true
     }
 
-    fn supports_lockfile_url(&self) -> bool {
+    fn lockfile_target_policy(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> eyre::Result<crate::backend::LockfileTargetPolicy> {
         // TODO: expose a plugin hook (e.g. BackendLockInfo) so custom Lua backends
         // can surface a download URL + checksum, and flip this back on for them.
-        !self.is_backend_plugin()
+        Ok(if self.is_backend_plugin() {
+            crate::backend::LockfileTargetPolicy::Unsupported
+        } else {
+            crate::backend::LockfileTargetPolicy::Artifact
+        })
     }
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {

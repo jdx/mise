@@ -216,8 +216,12 @@ impl Backend for SwiftPlugin {
     /// persisted to the lockfile from another host. Opt out of the `--locked`
     /// URL requirement so installs don't hard-fail on platforms missing from
     /// the lockfile; checksums are still verified at install time.
-    fn supports_lockfile_url(&self) -> bool {
-        false
+    fn lockfile_target_policy(
+        &self,
+        _tv: &ToolVersion,
+        _target: &crate::backend::platform_target::PlatformTarget,
+    ) -> Result<crate::backend::LockfileTargetPolicy> {
+        Ok(crate::backend::LockfileTargetPolicy::Unsupported)
     }
 
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {

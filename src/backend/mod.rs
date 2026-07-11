@@ -85,6 +85,14 @@ pub type BackendList = Vec<ABackend>;
 pub type IdiomaticVersion = (String, Option<ToolVersionOptions>);
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockfileTargetPolicy {
+    /// The target is represented by a URL-backed lock entry.
+    Artifact,
+    /// This backend does not currently produce lock information for the target.
+    Unsupported,
+}
+
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
 pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
@@ -1171,11 +1179,13 @@ pub trait Backend: Debug + Send + Sync {
         vec![platform.clone()] // Default: just the base platform
     }
 
-    /// Whether this backend supports URL-based locking in locked mode.
-    /// Backends that use external installers (like rustup for Rust) should override
-    /// this to return false, since they don't have downloadable artifacts with lockable URLs.
-    fn supports_lockfile_url(&self) -> bool {
-        true
+    /// Describe the lockfile outcome supported for a specific target.
+    fn lockfile_target_policy(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<LockfileTargetPolicy> {
+        Ok(LockfileTargetPolicy::Artifact)
     }
 
     async fn description(&self) -> Option<String> {
@@ -2110,7 +2120,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> eyre::Result<ToolVersion> {
         // Check for --locked mode: if enabled and no lockfile URL exists, fail early
         // Exempt tool stubs from lockfile requirements since they are ephemeral
-        // Also exempt backends that don't support URL locking (e.g., Rust uses rustup)
+        // Also exempt outcomes that don't use URL locking (e.g., Rust uses rustup)
         // This must run before the dry-run check so that --locked --dry-run still validates
         let settings = Settings::get();
         if (ctx.locked || settings.locked) && settings.lockfile == Some(false) {
@@ -2119,7 +2129,11 @@ pub trait Backend: Debug + Send + Sync {
                 hint: Remove `lockfile = false` or set `lockfile = true`, or disable locked mode"
             );
         }
-        if ctx.locked && !tv.request.source().is_tool_stub() && self.supports_lockfile_url() {
+        let lock_target = PlatformTarget::from_current();
+        if ctx.locked
+            && !tv.request.source().is_tool_stub()
+            && self.lockfile_target_policy(&tv, &lock_target)? == LockfileTargetPolicy::Artifact
+        {
             let platform_key = self.get_platform_key();
             let has_lockfile_url = tv
                 .lock_platforms
