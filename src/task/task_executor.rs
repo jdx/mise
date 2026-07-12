@@ -282,9 +282,7 @@ impl TaskExecutor {
         }
 
         let mut tools = self.tool.clone();
-        for (k, v) in &task.tools {
-            tools.push(v.to_tool_arg(k)?);
-        }
+        tools.extend(task.tool_args()?);
         let ts_build_start = std::time::Instant::now();
 
         // Check if we need special handling for monorepo tasks with config file context

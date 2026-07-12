@@ -33,9 +33,7 @@ impl<'a> TaskToolInstaller<'a> {
         // Collect tools from tasks
         for t in &all_tasks {
             // Collect tools from task.tools (task-level tool overrides)
-            for (k, v) in &t.tools {
-                all_tools.push(v.to_tool_arg(k)?);
-            }
+            all_tools.extend(t.tool_args()?);
 
             // Collect tools from monorepo task config files
             if let Some(task_cf) = t.cf(config) {

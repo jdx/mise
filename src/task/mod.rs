@@ -101,7 +101,8 @@ impl TaskToolValue {
             Self::String(version) => format!("{tool}@{version}").parse(),
             Self::Map(map) => {
                 // Preserve the existing behavior until task tools support structured
-                // options: bracket serialization omitted arrays and tables.
+                // options: bracket serialization omitted all arrays and tables,
+                // including the core `os` and `depends` fields.
                 let scalar_options = map
                     .opts
                     .iter()
@@ -711,6 +712,13 @@ fn normalize_root_mount_node(line: &str) -> String {
 }
 
 impl Task {
+    pub(crate) fn tool_args(&self) -> Result<Vec<ToolArg>> {
+        self.tools
+            .iter()
+            .map(|(tool, value)| value.to_tool_arg(tool))
+            .collect()
+    }
+
     pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
         Ok(Self {
             name: name_from_path(prefix, path)?,
@@ -3924,6 +3932,14 @@ echo "test"
             toml::Value::Array(vec![toml::Value::String("x86_64".to_string())]),
         );
         opts.insert(
+            "os".to_string(),
+            toml::Value::Array(vec![toml::Value::String("linux".to_string())]),
+        );
+        opts.insert(
+            "depends".to_string(),
+            toml::Value::Array(vec![toml::Value::String("node".to_string())]),
+        );
+        opts.insert(
             "platforms".to_string(),
             toml::Value::Table(toml::map::Map::new()),
         );
@@ -3945,6 +3961,8 @@ echo "test"
         );
         assert!(!options.contains_key("targets"));
         assert!(!options.contains_key("platforms"));
+        assert_eq!(options.os, None);
+        assert_eq!(options.depends, None);
     }
 
     #[test]
