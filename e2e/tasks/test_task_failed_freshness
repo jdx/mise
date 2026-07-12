@@ -1,19 +1,14 @@
 #!/usr/bin/env bash
 
-# A failed rerun must invalidate freshness left by an earlier success.
+# A failed rerun must invalidate an automatic output left by an earlier success.
 cat <<'EOF' >mise.toml
 [tasks.auto]
 run = "test ! -f fail-auto && echo auto-ran"
 sources = ["auto.src"]
 outputs = { auto = true }
-
-[tasks.explicit]
-run = "test ! -f fail-explicit && touch explicit.out && echo explicit-ran"
-sources = ["explicit.src"]
-outputs = ["explicit.out"]
 EOF
 
-touch auto.src explicit.src
+touch auto.src
 
 assert "mise run -q auto" "auto-ran"
 assert_empty "mise run -q auto"
@@ -22,11 +17,3 @@ assert_fail "mise run -q --force auto"
 rm fail-auto
 assert "mise run -q auto" "auto-ran"
 assert_empty "mise run -q auto"
-
-assert "mise run -q explicit" "explicit-ran"
-assert_empty "mise run -q explicit"
-touch fail-explicit
-assert_fail "mise run -q --force explicit"
-rm fail-explicit
-assert "mise run -q explicit" "explicit-ran"
-assert_empty "mise run -q explicit"

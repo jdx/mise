@@ -14,7 +14,7 @@ use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
-    save_checksum, sources_are_fresh, start_task_attempt, task_cwd,
+    remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
 };
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
 use crate::tera::{contains_template_syntax, render_str};
@@ -446,11 +446,10 @@ impl TaskExecutor {
         }
 
         let timer = std::time::Instant::now();
-        let attempt;
 
         if let Some(file) = task.file_path(config).await? {
             let exec_start = std::time::Instant::now();
-            attempt = start_task_attempt(task, config).await?;
+            remove_auto_output(task, config).await?;
             self.exec_file(config, &file, task, &env, &prefix, extra_vars)
                 .await?;
             trace!(
@@ -492,7 +491,7 @@ impl TaskExecutor {
             self.check_confirmation(config, task, &env).await?;
 
             let exec_start = std::time::Instant::now();
-            attempt = start_task_attempt(task, config).await?;
+            remove_auto_output(task, config).await?;
             self.exec_task_run_entries(
                 config,
                 task,
@@ -525,11 +524,6 @@ impl TaskExecutor {
         }
 
         save_checksum(task, config).await?;
-        if let Some(attempt) = attempt {
-            if let Err(err) = attempt.succeeded() {
-                warn!("failed to clear dirty marker for task {}: {err}", task.name);
-            }
-        }
 
         Ok(true)
     }

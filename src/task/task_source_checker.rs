@@ -20,37 +20,21 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// A marker that prevents stale outputs from making a failed task look fresh.
-pub struct TaskAttempt {
-    marker: PathBuf,
-}
-
-impl TaskAttempt {
-    pub fn succeeded(self) -> Result<()> {
-        match fs::remove_file(&self.marker) {
-            Ok(()) => Ok(()),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(err) => Err(err.into()),
-        }
-    }
-}
-
-fn task_dirty_marker(task: &Task, root: &Path) -> PathBuf {
-    dirs::STATE
-        .join("task-dirty")
-        .join(task_state_key(task, root))
-}
-
-/// Record that a task with source freshness has started executing.
-pub async fn start_task_attempt(task: &Task, config: &Arc<Config>) -> Result<Option<TaskAttempt>> {
-    if task.sources.is_empty() {
-        return Ok(None);
+/// Remove mise's automatic output before rerunning a task so an earlier
+/// success cannot make a failed attempt look fresh.
+pub async fn remove_auto_output(task: &Task, config: &Arc<Config>) -> Result<()> {
+    if !task.outputs.is_auto() {
+        return Ok(());
     }
     let root = task_cwd(task, config).await?;
-    let marker = task_dirty_marker(task, &root);
-    file::create_dir_all(marker.parent().expect("dirty marker must have a parent"))?;
-    file::write(&marker, b"")?;
-    Ok(Some(TaskAttempt { marker }))
+    for output in task.outputs.paths(task, &root) {
+        match fs::remove_file(&output) {
+            Ok(()) => debug!("removed auto output file: {output}"),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
+    }
+    Ok(())
 }
 
 /// Check if a path is a glob pattern
@@ -234,10 +218,6 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
 
     let run = async || -> Result<bool> {
         let root = task_cwd(task, config).await?;
-        if task_dirty_marker(task, &root).exists() {
-            debug!("task {} did not complete its previous attempt", task.name);
-            return Ok(false);
-        }
         let matcher = build_source_matcher(&root, &task.sources);
         let glob_patterns = source_glob_patterns(&task.sources);
         let mut source_metadatas = get_file_metadatas(&root, &glob_patterns, &matcher)?;
