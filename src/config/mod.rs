@@ -3051,21 +3051,20 @@ async fn load_file_tasks(
     Ok(tasks)
 }
 
-fn task_includes_for_dir_with_missing_literals(
+fn task_include_patterns_for_dir(
     dir: &Path,
     config_files: &ConfigMap,
-    include_missing_literals: bool,
-) -> Result<Vec<PathBuf>> {
+) -> Result<(Vec<String>, PathBuf, bool)> {
     let configs = configs_at_root(dir, config_files);
 
     // Find the highest-precedence config that has explicit task_config.includes
     // and resolve paths relative to that config file's directory
-    let (includes, resolve_dir) = configs
+    Ok(configs
         .iter()
         .find_map(|cf| match cf.task_config_includes() {
             Ok(Some(includes)) => Some(Ok({
                 // Resolve relative paths from the config root, not the config file's directory
-                (includes, cf.config_root())
+                (includes, cf.config_root(), false)
             })),
             Ok(None) => None,
             Err(err) => Some(Err(err)),
@@ -3073,8 +3072,12 @@ fn task_includes_for_dir_with_missing_literals(
         .transpose()?
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
-            (default_task_includes(), dir.to_path_buf())
-        });
+            (default_task_includes(), dir.to_path_buf(), true)
+        }))
+}
+
+pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
+    let (includes, resolve_dir, _) = task_include_patterns_for_dir(dir, config_files)?;
 
     Ok(includes
         .into_iter()
@@ -3083,26 +3086,29 @@ fn task_includes_for_dir_with_missing_literals(
             if p.starts_with("git::") {
                 return vec![];
             }
-            let paths = expand_task_include(&resolve_dir, &p);
-            if include_missing_literals && paths.is_empty() && !is_glob_pattern(&p) {
-                vec![resolve_dir.join(file::replace_path(&p))]
-            } else {
-                paths
-            }
+            expand_task_include(&resolve_dir, &p)
         })
         .unique()
         .collect::<Vec<_>>())
 }
 
-pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
-    task_includes_for_dir_with_missing_literals(dir, config_files, false)
-}
-
-pub fn task_include_candidates_for_dir(
-    dir: &Path,
-    config_files: &ConfigMap,
-) -> Result<Vec<PathBuf>> {
-    task_includes_for_dir_with_missing_literals(dir, config_files, true)
+pub fn task_create_dir_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<PathBuf> {
+    let (includes, resolve_dir, uses_defaults) = task_include_patterns_for_dir(dir, config_files)?;
+    for include in includes {
+        if include.starts_with("git::") {
+            continue;
+        }
+        if let Some(path) = expand_task_include(&resolve_dir, &include)
+            .into_iter()
+            .find(|path| path.is_dir())
+        {
+            return Ok(path);
+        }
+    }
+    if uses_defaults {
+        return Ok(resolve_dir.join("mise-tasks"));
+    }
+    bail!("task includes do not contain an existing directory where a file task can be created")
 }
 
 pub async fn load_tasks_in_dir(

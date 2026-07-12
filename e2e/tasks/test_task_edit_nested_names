@@ -82,17 +82,23 @@ assert_contains "mise run deploy:prod:backend:api" "deeply nested task executed"
 # Verify it shows up in the task list
 assert_contains "mise tasks ls" "deploy:prod:backend:api"
 
-# A single configured directory is the destination even when it does not exist yet.
+# Default includes select the first directory that already exists.
+mkdir -p default-project/.mise-tasks
+cd default-project
+DEFAULT_PATH=$(mise tasks edit default-choice --path 2>&1)
+assert "printf '%s' \"$DEFAULT_PATH\"" "$PWD/.mise-tasks/default-choice"
+cd ..
+
+# Explicit includes never fall back to a default directory.
 cat <<'EOF' >mise.toml
 [task_config]
 includes = ["tasks"]
 EOF
 
-TASK_PATH4=$(mise tasks edit configured --path 2>&1)
-assert "printf '%s' \"$TASK_PATH4\"" "$PWD/tasks/configured"
-assert "test -f \"$TASK_PATH4\""
+assert_fail_contains "mise tasks edit configured --path" "do not contain an existing directory"
+assert_fail "test -e mise-tasks/configured"
 
-# Preserve include order and allow dots in a configured directory name.
+# Select the first existing directory in include order.
 mkdir existing-tasks
 cat <<'EOF' >mise.toml
 [task_config]
@@ -100,7 +106,7 @@ includes = ["tasks.d", "existing-tasks"]
 EOF
 
 TASK_PATH5=$(mise tasks edit dotted --path 2>&1)
-assert "printf '%s' \"$TASK_PATH5\"" "$PWD/tasks.d/dotted"
+assert "printf '%s' \"$TASK_PATH5\"" "$PWD/existing-tasks/dotted"
 assert "test -f \"$TASK_PATH5\""
 
 # Explicit includes replace the default directories; do not fall back to mise-tasks.
@@ -114,7 +120,7 @@ includes = ["tasks.toml"]
 EOF
 
 assert "mise tasks edit existing --path" "$PWD/tasks.toml"
-assert_fail_contains "mise tasks edit no-directory --path" "do not contain a directory"
+assert_fail_contains "mise tasks edit no-directory --path" "do not contain an existing directory"
 assert_fail "test -e mise-tasks/no-directory"
 
 # Existing inline tasks also remain editable without a file-task directory.

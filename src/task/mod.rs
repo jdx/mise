@@ -937,17 +937,7 @@ impl Task {
         let config = Config::get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        let task_includes =
-            config::task_include_candidates_for_dir(&project_root, &config.config_files)?;
-        for dir in &task_includes {
-            if dir.is_dir() {
-                return Ok(dir.clone());
-            }
-            if !dir.exists() && dir.extension().is_none_or(|ext| ext != "toml") {
-                return Ok(dir.clone());
-            }
-        }
-        bail!("task includes do not contain a directory where a file task can be created")
+        config::task_create_dir_for_dir(&project_root, &config.config_files)
     }
 
     pub fn with_args(mut self, args: Vec<String>) -> Self {
