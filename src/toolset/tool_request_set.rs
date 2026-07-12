@@ -311,15 +311,14 @@ pub fn tool_env_var_name(tool: &str) -> String {
 /// Shell environment variable names cannot preserve the distinction between `-` and `_`.
 /// Since mise tool names conventionally use kebab-case, both spellings decode to `-`.
 pub fn tool_from_env_var_name(name: &str) -> Option<String> {
+    if env::NON_TOOL_VERSION_ENV_VARS.contains(&name) {
+        return None;
+    }
     let raw = name.strip_prefix("MISE_")?.strip_suffix("_VERSION")?;
     if raw.is_empty() {
         return None;
     }
-    let short = crate::backend::unalias_backend(&raw.to_kebab_case()).to_string();
-    if short == "install" || short == "tool" {
-        return None;
-    }
-    Some(short)
+    Some(crate::backend::unalias_backend(&raw.to_kebab_case()).to_string())
 }
 
 /// Yields `(short, key, value)` for each `MISE_<TOOL>_VERSION` env var that
@@ -410,19 +409,19 @@ mod tests {
     fn test_tool_env_vars_skips_non_tool_vars() {
         unsafe {
             std::env::set_var("MISE_VERSION", "2026.4.28");
-            std::env::set_var("MISE_INSTALL_VERSION", "1.0.0");
-            std::env::set_var("MISE_TOOL_VERSION", "1.0.0");
+            std::env::set_var(env::MISE_INSTALL_VERSION_ENV_VAR, "1.0.0");
+            std::env::set_var(env::MISE_TOOL_VERSION_ENV_VAR, "1.0.0");
         }
 
         let keys: HashSet<String> = tool_env_vars().map(|(_, k, _)| k).collect();
         assert!(!keys.contains("MISE_VERSION"));
-        assert!(!keys.contains("MISE_INSTALL_VERSION"));
-        assert!(!keys.contains("MISE_TOOL_VERSION"));
+        assert!(!keys.contains(env::MISE_INSTALL_VERSION_ENV_VAR));
+        assert!(!keys.contains(env::MISE_TOOL_VERSION_ENV_VAR));
 
         unsafe {
             std::env::remove_var("MISE_VERSION");
-            std::env::remove_var("MISE_INSTALL_VERSION");
-            std::env::remove_var("MISE_TOOL_VERSION");
+            std::env::remove_var(env::MISE_INSTALL_VERSION_ENV_VAR);
+            std::env::remove_var(env::MISE_TOOL_VERSION_ENV_VAR);
         }
     }
 
