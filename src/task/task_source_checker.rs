@@ -20,6 +20,23 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Remove mise's automatic output before rerunning a task so an earlier
+/// success cannot make a failed attempt look fresh.
+pub async fn remove_auto_output(task: &Task, config: &Arc<Config>) -> Result<()> {
+    if !task.outputs.is_auto() {
+        return Ok(());
+    }
+    let root = task_cwd(task, config).await?;
+    for output in task.outputs.paths(task, &root) {
+        match fs::remove_file(&output) {
+            Ok(()) => debug!("removed auto output file: {output}"),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
+    }
+    Ok(())
+}
+
 /// Check if a path is a glob pattern
 pub fn is_glob_pattern(path: &str) -> bool {
     // This is the character set used for glob detection by glob
