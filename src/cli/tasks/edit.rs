@@ -26,7 +26,7 @@ impl TasksEdit {
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
         let path = Task::task_dir()
-            .await
+            .await?
             .join(self.task.replace(':', MAIN_SEPARATOR_STR));
 
         let task = if let Some(task) = config.tasks_with_aliases().await?.get(&self.task).cloned() {

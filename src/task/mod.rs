@@ -933,30 +933,28 @@ impl Task {
         matches || self.aliases.contains(&pat.to_string())
     }
 
-    pub async fn task_dir() -> PathBuf {
-        let config = Config::get().await.unwrap();
+    pub async fn task_dir() -> Result<PathBuf> {
+        let config = Config::get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        let task_includes = match config::task_includes_for_dir(&project_root, &config.config_files)
-        {
-            Ok(includes) => includes,
-            Err(err) => {
-                warn!("failed to resolve task include paths: {err:#}");
-                Vec::new()
-            }
-        };
+        let task_includes = config::task_includes_for_dir(&project_root, &config.config_files)?;
         for dir in &task_includes {
             if dir.is_dir() {
-                return dir.clone();
+                return Ok(dir.clone());
             }
         }
-        if let [dir] = task_includes.as_slice()
-            && !dir.exists()
-            && dir.extension().is_none()
+        if let Some(dir) = task_includes
+            .iter()
+            .find(|dir| !dir.exists() && dir.extension().is_none())
         {
-            return dir.clone();
+            return Ok(dir.clone());
         }
-        project_root.join("mise-tasks")
+        if config::has_explicit_task_includes_for_dir(&project_root, &config.config_files)? {
+            bail!(
+                "task_config.includes does not contain a directory where a file task can be created"
+            );
+        }
+        Ok(project_root.join("mise-tasks"))
     }
 
     pub fn with_args(mut self, args: Vec<String>) -> Self {

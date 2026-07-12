@@ -91,3 +91,12 @@ EOF
 TASK_PATH4=$(mise tasks edit configured --path 2>&1)
 assert "printf '%s' \"$TASK_PATH4\"" "$PWD/tasks/configured"
 assert "test -f \"$TASK_PATH4\""
+
+# Explicit includes replace the default directories; do not fall back to mise-tasks.
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["tasks.toml"]
+EOF
+
+assert_fail_contains "mise tasks edit no-directory --path" "does not contain a directory"
+assert_fail "test -e mise-tasks/no-directory"
