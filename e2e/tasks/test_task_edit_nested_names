@@ -90,17 +90,16 @@ mkdir -p default-project/.mise-tasks
   assert "printf '%s' \"$DEFAULT_PATH\"" "$PWD/.mise-tasks/default-choice"
 )
 
-# A sole explicit literal directory is created instead of falling back to a default directory.
+# A missing explicit path is not assumed to be a directory and never falls back to a default.
 cat <<'EOF' >mise.toml
 [task_config]
 includes = ["tasks"]
 EOF
 
-TASK_PATH4=$(mise tasks edit configured --path 2>&1)
-assert "printf '%s' \"$TASK_PATH4\"" "$PWD/tasks/configured"
-assert "test -f \"$TASK_PATH4\""
-mise tasks add added --file
-assert "test -f tasks/added"
+assert_fail_contains "mise tasks edit configured --path" "do not contain an existing directory"
+assert_fail_contains "mise tasks add added --file" "do not contain an existing directory"
+assert_fail "test -e tasks/configured"
+assert_fail "test -e tasks/added"
 assert_fail "test -e mise-tasks/configured"
 assert_fail "test -e mise-tasks/added"
 
