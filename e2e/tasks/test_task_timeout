@@ -92,6 +92,24 @@ echo "Testing duration format parsing..."
 mise run duration_test 2>&1
 echo "✓ Duration format works"
 
+# Test task timeout Tera rendering with the ordinary task-load context
+cat <<'EOF' >mise.toml
+[tasks.template_timeout]
+run = "sleep 5 && echo 'Should not appear'"
+timeout = "{{ vars.timeout }}"
+
+[tasks.template_timeout.vars]
+timeout = "1s"
+EOF
+
+echo "Testing task timeout Tera rendering..."
+output="$(mise run template_timeout 2>&1 || true)"
+if [[ $output != *"timed out"* ]]; then
+  echo "ERROR: Expected rendered task timeout to fire, got: $output"
+  exit 1
+fi
+echo "✓ Task timeout Tera rendering works"
+
 # Test global timeout + per-task timeout serve distinct purposes
 cat <<EOF >mise.toml
 [settings]
