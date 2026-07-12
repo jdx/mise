@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "dfcbcbab4dc9",
+  "strategy": "manual-commit",
+  "branch": "codex/flatpak-bootstrap-packages",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/bootstrap.md",
+    "docs/bootstrap/packages/flatpak.md",
+    "docs/bootstrap/packages/index.md",
+    "docs/tool-plugin-development.md",
+    "src/cli/system/install.rs",
+    "src/cli/system/upgrade.rs",
+    "src/cli/system/use.rs",
+    "src/system/packages/flatpak.rs",
+    "src/system/packages/mod.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/df/cbcbab4dc9/0/metadata.json",
+      "transcript": "/df/cbcbab4dc9/0/full.jsonl",
+      "content_hash": "/df/cbcbab4dc9/0/content_hash.txt",
+      "prompt": "/df/cbcbab4dc9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 119102,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3078400,
+    "output_tokens": 10311,
+    "api_call_count": 51
+  }
+}

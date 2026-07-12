@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "dfcbcbab4dc9",
+  "session_id": "019f53c2-036f-7262-9d10-7080543b831c",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-12T00:45:09.56798Z",
+  "branch": "codex/flatpak-bootstrap-packages",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/bootstrap.md",
+    "docs/bootstrap/packages/flatpak.md",
+    "docs/bootstrap/packages/index.md",
+    "docs/tool-plugin-development.md",
+    "src/cli/system/install.rs",
+    "src/cli/system/upgrade.rs",
+    "src/cli/system/use.rs",
+    "src/system/packages/flatpak.rs",
+    "src/system/packages/mod.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "cc6b9b459e37",
+  "token_usage": {
+    "input_tokens": 119102,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3078400,
+    "output_tokens": 10311,
+    "api_call_count": 51
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-12T00:45:09.557244Z",
+    "agent_lines": 237,
+    "agent_removed": 24,
+    "human_added": 14,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 251,
+    "total_lines_changed": 287,
+    "agent_percentage": 90.94076655052264,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
