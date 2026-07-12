@@ -789,21 +789,63 @@ pub async fn get_versions_needed_by_tracked_stubs(
 fn collect_needed_versions(ts: &Toolset, offline: bool, needed: &mut HashSet<(String, String)>) {
     for (_, tv) in ts.list_current_versions() {
         needed.insert((tv.ba().short.to_string(), tv.tv_pathname()));
-        // Offline can't resolve `sub-N:latest` to a concrete version
-        // (no remote latest available). Conservatively protect every
-        // installed version of this backend so we don't delete the
-        // active one.
-        if offline
-            && let crate::toolset::ToolRequest::Sub { orig_version, .. } = &tv.request
-            && orig_version == "latest"
-            && let Ok(backend) = tv.backend()
-        {
-            let short = tv.ba().short.to_string();
-            for v in backend.list_installed_versions() {
-                needed.insert((short.clone(), v));
-            }
+        if offline {
+            protect_ambiguous_offline_versions(&tv, needed);
         }
     }
+}
+
+/// Offline resolution cannot always pin a floating request to the same concrete
+/// version that a normal (network + release-timestamp) pass would select, so
+/// `mise prune` would otherwise delete the version the active policy actually
+/// requires. When that ambiguity exists, conservatively protect every installed
+/// version of the backend — over-protecting a few stale versions is the safe
+/// failure mode, deleting an active one is not (see #9406).
+fn protect_ambiguous_offline_versions(tv: &ToolVersion, needed: &mut HashSet<(String, String)>) {
+    // Whether to warn that precise cleanup was skipped. `sub-N:latest` has never
+    // had an offline concrete form so its over-protection stays silent as before;
+    // the `latest` + release-age case is worth surfacing to the user.
+    let warn_skipped_cleanup = match &tv.request {
+        // `sub-N:latest`: there is no offline "latest" to subtract from, and
+        // installed versions are not ordered, so the target can't be identified.
+        ToolRequest::Sub { orig_version, .. } if orig_version == "latest" => false,
+        // Plain `latest` under an explicit `minimum_release_age`: offline
+        // resolution falls back to the newest *installed* version, but a
+        // date-aware online pass may select an older, age-eligible one. The two
+        // passes disagree, so prune must not treat either as prunable (#10944).
+        ToolRequest::Version { version, .. }
+            if version == "latest" && has_explicit_release_age_cutoff(tv) =>
+        {
+            true
+        }
+        _ => return,
+    };
+    let Ok(backend) = tv.backend() else {
+        return;
+    };
+    let short = tv.ba().short.to_string();
+    for v in backend.list_installed_versions() {
+        needed.insert((short.clone(), v));
+    }
+    if warn_skipped_cleanup {
+        warn_once!(
+            "{short}: keeping all installed versions; `latest` under an explicit minimum_release_age can't be resolved offline during prune"
+        );
+    }
+}
+
+/// True when a user-configured (not the built-in default) `minimum_release_age`
+/// cutoff applies to this tool, meaning normal resolution is date-aware and can
+/// pick a different installed version than offline resolution would.
+fn has_explicit_release_age_cutoff(tv: &ToolVersion) -> bool {
+    matches!(
+        crate::install_before::resolve_before_date_for_tool_with_source(
+            tv.ba(),
+            None,
+            tv.request.options().minimum_release_age(),
+        ),
+        Ok(Some((_, crate::install_before::BeforeDateSource::Explicit)))
+    )
 }
 
 #[cfg(test)]

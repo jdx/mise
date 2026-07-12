@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Regression for #10944: `mise prune` must not delete the version that normal
+# date-aware resolution selects under an explicit `minimum_release_age`.
+#
+# Offline prune resolution falls back to the newest *installed* version, which
+# can differ from the age-eligible version a normal (network + release
+# timestamp) pass selects. When the two passes disagree, prune would delete the
+# version the active policy actually requires. Under an explicit cutoff, prune
+# instead conservatively keeps every installed version of a floating `latest`
+# request and warns that precise cleanup was skipped.
+
+# jq 1.6 (2018) predates the cutoff and is the age-eligible "latest"; jq 1.7.1
+# (2023) is too new, so offline resolution would otherwise pick it and prune 1.6.
+export MISE_MINIMUM_RELEASE_AGE="2020-01-01"
+
+cat >mise.toml <<EOF
+[tools]
+jq = "latest"
+EOF
+
+mise install
+mise install jq@1.7.1
+assert_contains "mise ls --installed jq" "1.6"
+assert_contains "mise ls --installed jq" "1.7.1"
+
+# Prune from an unrelated directory; the tracked config above must still be honored.
+cd "$(mktemp -d)" || exit 1
+
+assert_contains "mise prune --tools 2>&1" "keeping all installed versions"
+# The age-eligible version that normal resolution selects must survive.
+assert_contains "mise ls --installed jq" "1.6"
+assert_contains "mise ls --installed jq" "1.7.1"
