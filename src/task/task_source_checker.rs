@@ -36,13 +36,9 @@ impl TaskAttempt {
 }
 
 fn task_dirty_marker(task: &Task, root: &Path) -> PathBuf {
-    let mut hasher = DefaultHasher::new();
-    task.hash(&mut hasher);
-    task.config_source.hash(&mut hasher);
-    root.hash(&mut hasher);
     dirs::STATE
         .join("task-dirty")
-        .join(format!("{:x}", hasher.finish()))
+        .join(task_state_key(task, root))
 }
 
 /// Record that a task with source freshness has started executing.

@@ -526,7 +526,9 @@ impl TaskExecutor {
 
         save_checksum(task, config).await?;
         if let Some(attempt) = attempt {
-            attempt.succeeded()?;
+            if let Err(err) = attempt.succeeded() {
+                warn!("failed to clear dirty marker for task {}: {err}", task.name);
+            }
         }
 
         Ok(true)
