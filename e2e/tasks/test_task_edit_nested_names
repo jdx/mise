@@ -84,10 +84,11 @@ assert_contains "mise tasks ls" "deploy:prod:backend:api"
 
 # Default includes select the first directory that already exists.
 mkdir -p default-project/.mise-tasks
-cd default-project
-DEFAULT_PATH=$(mise tasks edit default-choice --path 2>&1)
-assert "printf '%s' \"$DEFAULT_PATH\"" "$PWD/.mise-tasks/default-choice"
-cd ..
+(
+  cd default-project
+  DEFAULT_PATH=$(mise tasks edit default-choice --path 2>&1)
+  assert "printf '%s' \"$DEFAULT_PATH\"" "$PWD/.mise-tasks/default-choice"
+)
 
 # Explicit includes never fall back to a default directory.
 cat <<'EOF' >mise.toml
