@@ -6,7 +6,7 @@ use eyre::Result;
 use crate::cli::oci::common::{perform_build, short_digest};
 use crate::config::Settings;
 use crate::file::display_path;
-use crate::oci::{BuildOptions, LayerOwner};
+use crate::oci::{BuildOptions, LayerOwner, OciCopy};
 
 /// [experimental] Build an OCI image from the current mise.toml
 ///
@@ -20,6 +20,10 @@ use crate::oci::{BuildOptions, LayerOwner};
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Build {
+    /// Copy a host file or directory into the image (repeatable, HOST:IMAGE)
+    #[clap(long, value_name = "HOST_PATH:IMAGE_PATH")]
+    copy: Vec<OciCopy>,
+
     /// Output directory for the OCI image layout
     #[clap(long, short, default_value = "./mise-oci", value_hint = ValueHint::DirPath)]
     output: PathBuf,
@@ -71,6 +75,7 @@ impl Build {
             mount_point: self.mount_point.clone(),
             owner: self.owner,
             include_mise: !self.no_mise,
+            copy: self.copy.clone(),
         };
         let out = perform_build(opts, self.include_global).await?;
 

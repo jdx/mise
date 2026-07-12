@@ -16,6 +16,10 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
 ## Flags
 
+### `--copy… <HOST_PATH:IMAGE_PATH>`
+
+Copy a host file or directory into the image (repeatable, HOST:IMAGE)
+
 ### `-o --output <OUTPUT>`
 
 Output directory for the OCI image layout

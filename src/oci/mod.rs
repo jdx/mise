@@ -15,9 +15,60 @@ pub mod registry;
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::str::FromStr;
 
 pub use builder::{BuildOptions, BuildOutput, Builder};
 pub use layer::LayerOwner;
+
+/// A host path copied into an OCI image as an independent layer.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OciCopy {
+    pub host: PathBuf,
+    pub image: String,
+}
+
+impl OciCopy {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.host.as_os_str().is_empty() {
+            return Err("copy host path must not be empty".to_string());
+        }
+        validate_image_path(&self.image)
+    }
+}
+
+impl FromStr for OciCopy {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        // Split from the right so Windows drive letters in HOST remain intact.
+        let (host, image) = value
+            .rsplit_once(':')
+            .ok_or_else(|| "copy must be HOST_PATH:IMAGE_PATH".to_string())?;
+        if host.is_empty() {
+            return Err("copy host path must not be empty".to_string());
+        }
+        let copy = Self {
+            host: PathBuf::from(host),
+            image: image.to_string(),
+        };
+        copy.validate()?;
+        Ok(copy)
+    }
+}
+
+fn validate_image_path(path: &str) -> Result<(), String> {
+    if !path.starts_with('/') {
+        return Err(format!("copy image path must be absolute (got {path:?})"));
+    }
+    if path.split('/').any(|part| part == "." || part == "..") {
+        return Err(format!(
+            "copy image path must not contain `.` or `..` components (got {path:?})"
+        ));
+    }
+    Ok(())
+}
 
 /// Normalize a Rust-style arch name (`x86_64`, `aarch64`) to the OCI-spec
 /// value (`amd64`, `arm64`).
@@ -74,6 +125,9 @@ pub struct OciConfig {
     /// the `oci.default_mount_point` setting (`/mise`).
     #[serde(default)]
     pub mount_point: Option<String>,
+    /// Host files or directories copied into the image as independent layers.
+    #[serde(default)]
+    pub copy: Vec<OciCopy>,
     /// Extra env vars baked into the image config in addition to those derived
     /// from the mise.toml `[env]` section and per-tool `exec_env()`.
     #[serde(default)]
@@ -122,6 +176,7 @@ impl OciConfig {
         if self.mount_point.is_none() {
             self.mount_point = other.mount_point;
         }
+        self.copy.extend(other.copy);
         for (k, v) in other.env {
             self.env.entry(k).or_insert(v);
         }

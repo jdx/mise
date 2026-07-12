@@ -105,6 +105,7 @@ impl Push {
                     mount_point: self.mount_point.clone(),
                     owner: self.owner,
                     include_mise: !self.no_mise,
+                    copy: vec![],
                 };
                 let built = perform_build(opts, self.include_global).await?;
                 info!("built image: {}", built.manifest_digest);

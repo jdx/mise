@@ -84,6 +84,7 @@ the previous build (or from the registry, on pull).
 
 ```sh
 mise oci build [-o PATH] [--from REF] [--tag REF] [--mount-point PATH]
+               [--copy HOST_PATH:IMAGE_PATH]...
                [--no-mise] [--owner UID[:GID]]
 ```
 
@@ -94,6 +95,10 @@ mise oci build [-o PATH] [--from REF] [--tag REF] [--mount-point PATH]
   `org.opencontainers.image.ref.name` annotation
 - `--mount-point PATH` — where mise installs live inside the image
   (default `/mise`). Must be absolute.
+- `--copy HOST_PATH:IMAGE_PATH` — copy a host file or directory to an
+  absolute path in the image. Repeat the flag for multiple payloads. Each
+  payload is emitted as an independent, content-addressed layer after the
+  tool layers.
 - `--no-mise` — don't embed the running mise binary at
   `/usr/local/bin/mise`
 - `--owner UID[:GID]` — numeric owner for every generated layer entry.
@@ -188,6 +193,14 @@ user_id     = 1000                      # tar layer entry UID (file ownership)
 group_id    = 1000                      # tar layer entry GID (defaults to user_id)
 mount_point = "/mise"                  # where tools install in the image
 
+[[oci.copy]]
+host  = "dist/my-app"
+image = "/usr/local/bin/my-app"
+
+[[oci.copy]]
+host  = "assets"
+image = "/srv/app/assets"
+
 # Extra env baked into the image config (image-only — won't shadow MISE_*).
 [oci.env]
 NODE_ENV = "production"
@@ -206,6 +219,13 @@ CLI flags override the `[oci]` section. The `[oci]` section overrides the
 
 When `mise.toml` files are layered (global + project), sections are merged
 field-by-field with the more specific file winning per field.
+
+Copy sources may be files, directories, or symlinks. Directory contents land
+at `image`; the source directory name is not added. Image paths must be
+absolute and may not contain `.` or `..` components. Parent directories are
+created automatically, executable bits are preserved, and ownership follows
+`--owner` or `[oci].user_id` / `[oci].group_id`. Copy layers are annotated
+with `dev.mise.copy=<image path>` so they can be identified during inspection.
 
 ### `[bootstrap]` and `[dotfiles]` in OCI images
 
