@@ -1078,6 +1078,11 @@
             }
           }
         },
+        "http_download_timeout": {
+          "default": "30m",
+          "description": "Total time allowed for an HTTP download, including retries.",
+          "type": "string"
+        },
         "http_retries": {
           "default": 3,
           "description": "Number of retries for transient HTTP failures in mise.",
@@ -1085,7 +1090,7 @@
         },
         "http_timeout": {
           "default": "30s",
-          "description": "Timeout in seconds for all HTTP requests in mise.",
+          "description": "Timeout for connecting or waiting between reads during HTTP requests.",
           "type": "string"
         },
         "idiomatic_version_file": {
