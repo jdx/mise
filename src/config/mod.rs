@@ -154,6 +154,12 @@ impl Config {
         })
     }
 
+    pub(crate) fn with_tool_request_set(&self, tool_request_set: ToolRequestSet) -> Arc<Self> {
+        let config = self.with_config_files(self.config_files.clone());
+        config.tool_request_set.set(tool_request_set).unwrap();
+        config
+    }
+
     #[async_backtrace::framed]
     pub async fn load() -> Result<Arc<Self>> {
         backend::load_tools().await?;

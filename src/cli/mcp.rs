@@ -5,10 +5,10 @@ use rmcp::{
     RoleServer, ServiceExt,
     handler::server::{ServerHandler, tool::ToolRouter, wrapper::Parameters},
     model::{
-        AnnotateAble, CallToolRequestParams, CallToolResult, Content, ErrorCode, ErrorData,
-        ListResourcesResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion, RawResource,
-        ReadResourceRequestParams, ReadResourceResult, ResourceContents, ServerCapabilities,
-        ServerInfo,
+        CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData,
+        ListResourcesResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
+        ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
+        ServerCapabilities, ServerInfo,
     },
     schemars::JsonSchema,
     service::RequestContext,
@@ -88,7 +88,7 @@ impl MiseServer {
         &self,
         Parameters(_params): Parameters<InstallToolParams>,
     ) -> std::result::Result<CallToolResult, ErrorData> {
-        Ok(CallToolResult::error(vec![Content::text(
+        Ok(CallToolResult::error(vec![ContentBlock::text(
             "Tool installation not yet implemented",
         )]))
     }
@@ -152,7 +152,7 @@ impl MiseServer {
                 (false, true) => stderr.into_owned(),
                 (false, false) => format!("{stderr}\n{stdout}"),
             };
-            Ok(CallToolResult::success(vec![Content::text(text)]))
+            Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
         } else {
             let text = match (stderr.is_empty(), stdout.is_empty()) {
                 (true, true) => format!("Task '{task}' failed with no output"),
@@ -160,7 +160,7 @@ impl MiseServer {
                 (true, false) => stdout.into_owned(),
                 (false, false) => format!("{stderr}\n{stdout}"),
             };
-            Ok(CallToolResult::error(vec![Content::text(format!(
+            Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                 "Task '{task}' failed with exit code {}:\n{text}",
                 output.status.code().unwrap_or(1),
             ))]))
@@ -185,10 +185,10 @@ impl ServerHandler for MiseServer {
         _context: RequestContext<RoleServer>,
     ) -> std::result::Result<ListResourcesResult, ErrorData> {
         let resources = vec![
-            RawResource::new("mise://tools", "Installed Tools".to_string()).no_annotation(),
-            RawResource::new("mise://tasks", "Available Tasks".to_string()).no_annotation(),
-            RawResource::new("mise://env", "Environment Variables".to_string()).no_annotation(),
-            RawResource::new("mise://config", "Configuration".to_string()).no_annotation(),
+            Resource::new("mise://tools", "Installed Tools"),
+            Resource::new("mise://tasks", "Available Tasks"),
+            Resource::new("mise://env", "Environment Variables"),
+            Resource::new("mise://config", "Configuration"),
         ];
 
         Ok(ListResourcesResult::with_all_items(resources))

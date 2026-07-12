@@ -1154,6 +1154,20 @@ This setting is useful when:
 env = "MISE_HOOK_ENV_CHPWD_ONLY"
 type = "Bool"
 
+[http_download_timeout]
+default = "30m"
+description = "Total time allowed for an HTTP download, including retries."
+docs = """
+Limits the complete wall-clock time for downloading one artifact, including
+all retry attempts and backoff delays. This is separate from `http_timeout`,
+which detects stalled connections by timing out individual reads.
+
+When this budget is exhausted, mise reports the URL, active attempt, bytes
+received during that attempt, and this setting name.
+"""
+env = "MISE_HTTP_DOWNLOAD_TIMEOUT"
+type = "Duration"
+
 [http_retries]
 default = 3
 description = "Number of retries for transient HTTP failures in mise."
@@ -1174,7 +1188,12 @@ type = "Integer"
 
 [http_timeout]
 default = "30s"
-description = "Timeout in seconds for all HTTP requests in mise."
+description = "Timeout for connecting or waiting between reads during HTTP requests."
+docs = """
+This timeout applies to the connection phase and to each individual response
+read. The read timer resets whenever data is received, so long-running artifact
+downloads are bounded separately by `http_download_timeout`.
+"""
 env = "MISE_HTTP_TIMEOUT"
 type = "Duration"
 
@@ -2180,6 +2199,36 @@ env = "MISE_RUSTUP_HOME"
 optional = true
 type = "Path"
 
+[sandbox.deny_all]
+default = false
+description = "Deny filesystem reads and writes, network access, and environment variable inheritance by default for `mise run` and `mise exec`."
+env = "MISE_SANDBOX_DENY_ALL"
+type = "Bool"
+
+[sandbox.deny_env]
+default = false
+description = "Deny environment variable inheritance by default for `mise run` and `mise exec`."
+env = "MISE_SANDBOX_DENY_ENV"
+type = "Bool"
+
+[sandbox.deny_net]
+default = false
+description = "Deny network access by default for `mise run` and `mise exec`."
+env = "MISE_SANDBOX_DENY_NET"
+type = "Bool"
+
+[sandbox.deny_read]
+default = false
+description = "Deny filesystem reads by default for `mise run` and `mise exec`."
+env = "MISE_SANDBOX_DENY_READ"
+type = "Bool"
+
+[sandbox.deny_write]
+default = false
+description = "Deny filesystem writes by default for `mise run` and `mise exec`."
+env = "MISE_SANDBOX_DENY_WRITE"
+type = "Bool"
+
 [shared_install_dirs]
 description = "Additional read-only directories to search for installed tool versions."
 docs = """
@@ -2498,6 +2547,13 @@ type = "Bool"
 description = "Change output style when executing tasks."
 docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
+
+This is the output *style* axis. Verbosity is a separate axis controlled by
+`quiet`/`silent` (as settings, `--quiet`/`--silent` flags, or per-task fields),
+so a style can be combined with quietness — e.g. `output = "prefix"` together
+with `quiet = true` keeps the task-name prefixes while suppressing mise's own
+messages. The `quiet` and `silent` *values* below are kept for backwards
+compatibility and bundle a style with that verbosity.
 """
 enum = [
   { value = "prefix", description = "(default if jobs > 1) print by line with the prefix of the task name" },
@@ -2505,8 +2561,8 @@ enum = [
   { value = "keep-order", description = "stream one task's output live while buffering others, printing in definition order as tasks complete" },
   { value = "replacing", description = "replace stdout each time a line is printed-this uses similar logic as `mise install`" },
   { value = "timed", description = "only show stdout lines that take longer than 1s to complete" },
-  { value = "quiet", description = "print only stdout/stderr from tasks and nothing from mise" },
-  { value = "silent", description = "print nothing from tasks or mise" },
+  { value = "quiet", description = "legacy: interleave task output and suppress mise's own messages (equivalent to `interleave` + `quiet = true`). Prefer `--quiet`/`quiet = true` to keep your chosen style." },
+  { value = "silent", description = "print nothing from tasks or mise (nulls stdout and stderr)" },
 ]
 env = "MISE_TASK_OUTPUT"
 optional = true
