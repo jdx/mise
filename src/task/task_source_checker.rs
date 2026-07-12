@@ -20,53 +20,29 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// A marker for an in-progress task execution.
-///
-/// Markers from older failed or interrupted executions are captured when a new
-/// attempt starts. A successful attempt removes those markers along with its
-/// own, while leaving markers created by overlapping newer attempts intact.
+/// A marker that prevents stale outputs from making a failed task look fresh.
 pub struct TaskAttempt {
     marker: PathBuf,
-    previous_markers: Vec<PathBuf>,
 }
 
 impl TaskAttempt {
     pub fn succeeded(self) -> Result<()> {
-        for marker in self
-            .previous_markers
-            .into_iter()
-            .chain(std::iter::once(self.marker))
-        {
-            match fs::remove_file(&marker) {
-                Ok(()) => {}
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                Err(err) => return Err(err.into()),
-            }
+        match fs::remove_file(&self.marker) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(err.into()),
         }
-        Ok(())
     }
 }
 
-fn task_attempt_dir(task: &Task, root: &Path) -> PathBuf {
+fn task_dirty_marker(task: &Task, root: &Path) -> PathBuf {
     let mut hasher = DefaultHasher::new();
     task.hash(&mut hasher);
     task.config_source.hash(&mut hasher);
     root.hash(&mut hasher);
     dirs::STATE
-        .join("task-attempts")
+        .join("task-dirty")
         .join(format!("{:x}", hasher.finish()))
-}
-
-fn task_attempt_markers(task: &Task, root: &Path) -> Result<Vec<PathBuf>> {
-    let dir = task_attempt_dir(task, root);
-    if !dir.exists() {
-        return Ok(vec![]);
-    }
-    Ok(fs::read_dir(dir)?
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| path.is_file())
-        .collect())
 }
 
 /// Record that a task with source freshness has started executing.
@@ -75,15 +51,10 @@ pub async fn start_task_attempt(task: &Task, config: &Arc<Config>) -> Result<Opt
         return Ok(None);
     }
     let root = task_cwd(task, config).await?;
-    let dir = task_attempt_dir(task, &root);
-    file::create_dir_all(&dir)?;
-    let previous_markers = task_attempt_markers(task, &root)?;
-    let marker = dir.join(random_string(16));
+    let marker = task_dirty_marker(task, &root);
+    file::create_dir_all(marker.parent().expect("dirty marker must have a parent"))?;
     file::write(&marker, b"")?;
-    Ok(Some(TaskAttempt {
-        marker,
-        previous_markers,
-    }))
+    Ok(Some(TaskAttempt { marker }))
 }
 
 /// Check if a path is a glob pattern
@@ -267,8 +238,8 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
 
     let run = async || -> Result<bool> {
         let root = task_cwd(task, config).await?;
-        if !task_attempt_markers(task, &root)?.is_empty() {
-            debug!("task {} has an unfinished previous attempt", task.name);
+        if task_dirty_marker(task, &root).exists() {
+            debug!("task {} did not complete its previous attempt", task.name);
             return Ok(false);
         }
         let matcher = build_source_matcher(&root, &task.sources);
