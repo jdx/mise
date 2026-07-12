@@ -3092,7 +3092,12 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
         .collect::<Vec<_>>())
 }
 
-pub fn task_create_dir_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<PathBuf> {
+/// Returns the directory where a new file task should be created.
+///
+/// Existing directories are selected in effective `task_config.includes` order. When the
+/// built-in defaults are in use and none exist yet, the first default path is returned so the
+/// caller can create it. Explicit includes must contain an existing directory.
+pub fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<PathBuf> {
     let (includes, resolve_dir, uses_defaults) = task_include_patterns_for_dir(dir, config_files)?;
     let default_create_dir = if uses_defaults {
         includes

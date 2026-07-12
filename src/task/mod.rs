@@ -937,7 +937,7 @@ impl Task {
         let config = Config::get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        config::task_create_dir_for_dir(&project_root, &config.config_files)
+        config::task_creation_dir_for_dir(&project_root, &config.config_files)
     }
 
     pub fn with_args(mut self, args: Vec<String>) -> Self {
