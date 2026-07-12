@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ac5ac64cabc5",
+  "strategy": "manual-commit",
+  "branch": "agent/fix-bootstrap-dmg-symlink-loop",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/file.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ac/5ac64cabc5/0/metadata.json",
+      "transcript": "/ac/5ac64cabc5/0/full.jsonl",
+      "content_hash": "/ac/5ac64cabc5/0/content_hash.txt",
+      "prompt": "/ac/5ac64cabc5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 175949,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6241024,
+    "output_tokens": 10746,
+    "api_call_count": 89
+  }
+}
