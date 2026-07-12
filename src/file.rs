@@ -255,6 +255,25 @@ pub fn copy_dir_all<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()
     })
 }
 
+fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
+    trace!("cp -a {} {}", from.display(), to.display());
+    for entry in WalkDir::new(from).follow_links(false).min_depth(1) {
+        let entry = entry?;
+        let relative = entry.path().strip_prefix(from)?;
+        let dest = to.join(relative);
+        if entry.file_type().is_dir() {
+            create_dir_all(&dest)?;
+        } else if entry.file_type().is_symlink() {
+            create_dir_all(dest.parent().unwrap())?;
+            make_symlink(&fs::read_link(entry.path())?, &dest)?;
+        } else if entry.file_type().is_file() {
+            create_dir_all(dest.parent().unwrap())?;
+            copy(entry.path(), &dest)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
     let path = path.as_ref();
     trace!("write {}", display_path(path));
@@ -1387,9 +1406,15 @@ pub fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
         archive.to_path_buf()
     )
     .run()?;
-    copy_dir_all(tmp.path(), dest)?;
-    cmd!("hdiutil", "detach", tmp.path()).run()?;
-    Ok(())
+    let copy_result = copy_dir_all_preserve_symlinks(tmp.path(), dest);
+    let detach_result = cmd!("hdiutil", "detach", tmp.path()).run();
+    match (copy_result, detach_result) {
+        (Err(copy_err), Err(detach_err)) => Err(copy_err)
+            .wrap_err_with(|| format!("additionally failed to detach DMG: {detach_err}")),
+        (Err(copy_err), _) => Err(copy_err),
+        (Ok(()), Err(detach_err)) => Err(detach_err.into()),
+        (Ok(()), Ok(_)) => Ok(()),
+    }
 }
 
 pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
@@ -1776,6 +1801,28 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn test_copy_dir_all_preserve_symlinks_does_not_follow_loops() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let dest = dir.path().join("dest");
+        fs::create_dir_all(source.join("Example.app/Contents")).unwrap();
+        fs::write(source.join("Example.app/Contents/example"), "example").unwrap();
+        std::os::unix::fs::symlink(".", source.join("Applications")).unwrap();
+
+        copy_dir_all_preserve_symlinks(&source, &dest).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dest.join("Example.app/Contents/example")).unwrap(),
+            "example"
+        );
+        assert_eq!(
+            fs::read_link(dest.join("Applications")).unwrap(),
+            Path::new(".")
+        );
+    }
 
     #[test]
     #[cfg(unix)]
