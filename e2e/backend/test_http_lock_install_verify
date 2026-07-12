@@ -55,9 +55,20 @@ assert_contains "cat mise.lock" "sha256:${REAL_SHA}"
 mise install --locked
 assert_contains "mise x -- mytool" "mytool ok"
 
+# A changed config URL must not replace the artifact selected by the lockfile.
+printf '#!/bin/sh\necho wrong artifact\n' >"$SRV/mytool-new"
+sed 's#/mytool"#/mytool-new"#' mise.toml >mise.toml.tmp && mv mise.toml.tmp mise.toml
+mise uninstall --all
+mise install --locked
+assert_contains "mise x -- mytool" "mytool ok"
+
 # Tamper with the locked checksum: install must now fail on mismatch.
 sed "s/${REAL_SHA}/${BAD_SHA}/" mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
-assert_fail "mise install --locked -f"
+cp mise.lock mise.lock.before-failed-install
+mise uninstall --all
+assert_fail "mise install --locked"
+assert "cmp -s mise.lock.before-failed-install mise.lock"
+assert "test ! -e '$HOME/.local/share/mise/installs/http-mytool-lock-verify/1.0.0'"
 
 # === Same loop, but the checksum comes from a JSON manifest via checksum_expr ===
 # sha256 of the exprtool artifact bytes, published under the host's platform key
@@ -94,4 +105,48 @@ assert_contains "mise x -- exprtool" "exprtool ok"
 
 # A tampered manifest-resolved checksum must also fail the install.
 sed "s/${EXPR_SHA}/${BAD_SHA}/" mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
-assert_fail "mise install --locked -f"
+cp mise.lock mise.lock.before-failed-expr-install
+mise uninstall --all
+assert_fail "mise install --locked"
+assert "cmp -s mise.lock.before-failed-expr-install mise.lock"
+assert "test ! -e '$HOME/.local/share/mise/installs/http-exprtool-lock-verify/1.0.0'"
+
+# Validation must happen before persistent cache/install side effects, including
+# the content-derived install path used by `latest`.
+cp "$SRV/mytool" "$SRV/latesttool"
+printf '%s  latesttool\n' "$REAL_SHA" >"$SRV/latesttool_SHASUMS"
+printf '1.0.0\n' >"$SRV/latesttool_versions.txt"
+
+rm -f mise.lock
+cat >mise.toml <<EOF
+[tools."http:latest-lock-failure"]
+version = "latest"
+bin = "latesttool"
+url = "http://127.0.0.1:${PORT}/latesttool"
+checksum_url = "http://127.0.0.1:${PORT}/latesttool_SHASUMS"
+version_list_url = "http://127.0.0.1:${PORT}/latesttool_versions.txt"
+EOF
+
+mise lock --platform "$PLATFORM"
+printf '#!/bin/sh\necho tampered latest artifact\n' >"$SRV/latesttool"
+
+HTTP_CACHE_DIR="$HOME/.local/share/mise/http-tarballs"
+find "$HTTP_CACHE_DIR" -maxdepth 2 -print | sort >http-cache.before-failed-latest
+cp mise.lock mise.lock.before-failed-latest
+assert_fail "mise install --locked"
+find "$HTTP_CACHE_DIR" -maxdepth 2 -print | sort >http-cache.after-failed-latest
+assert "cmp -s http-cache.before-failed-latest http-cache.after-failed-latest"
+assert "cmp -s mise.lock.before-failed-latest mise.lock"
+assert "test ! -e '$HOME/.local/share/mise/installs/http-latest-lock-failure'"
+
+# A locked size mismatch has the same fail-before-cache guarantee.
+cp "$SRV/mytool" "$SRV/latesttool"
+awk '{ print; if ($1 == "checksum" && $2 == "=") print "size = 999999" }' mise.lock >mise.lock.tmp
+mv mise.lock.tmp mise.lock
+cp mise.lock mise.lock.before-failed-size
+find "$HTTP_CACHE_DIR" -maxdepth 2 -print | sort >http-cache.before-failed-size
+assert_fail "mise install --locked"
+find "$HTTP_CACHE_DIR" -maxdepth 2 -print | sort >http-cache.after-failed-size
+assert "cmp -s http-cache.before-failed-size http-cache.after-failed-size"
+assert "cmp -s mise.lock.before-failed-size mise.lock"
+assert "test ! -e '$HOME/.local/share/mise/installs/http-latest-lock-failure'"
