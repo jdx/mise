@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "38d01854a6c7",
+  "session_id": "019f53a8-9c1b-7a32-96f0-a0a9b27e6050",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-12T00:22:23.168164Z",
+  "branch": "agent/fix-bootstrap-dmg-symlink-loop",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/file.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "81f859067114",
+  "token_usage": {
+    "input_tokens": 124851,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3768832,
+    "output_tokens": 7510,
+    "api_call_count": 66
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-12T00:22:23.158421Z",
+    "agent_lines": 45,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 45,
+    "total_lines_changed": 47,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

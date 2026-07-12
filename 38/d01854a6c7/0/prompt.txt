@@ -1,0 +1,7 @@
+pull latest, try using these with mise bootstrap: docker-desktop
+libreoffice
+kitty
+
+---
+
+ok make a pr to fix
