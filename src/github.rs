@@ -559,16 +559,14 @@ pub fn is_github_api_url(url: &url::Url) -> bool {
             && is_ghes_api_path(url.path()))
 }
 
-/// Pick which URL to download a release asset from.
+/// Pick which URL to use for a GitHub download.
 ///
-/// Public repositories serve the asset at the browser download URL
-/// (`github.com/.../releases/download/...`), so it is used when reachable. Private
-/// repositories return 404 — or a 200 HTML login page — there even with a valid token; in
-/// that case the asset can only be fetched from the API asset endpoint
-/// (`api.github.com/.../releases/assets/{id}`), which serves the bytes when authenticated
-/// (`get_headers`/`host_auth_headers` add the bearer token and
-/// `Accept: application/octet-stream`). Shared by the github and aqua backends so both
-/// resolve private assets the same way.
+/// Public repositories serve release assets, archives, and raw content at their browser-facing
+/// URLs, so those URLs are used when reachable. Private repositories return 404 — or a 200 HTML
+/// login page — there even with a valid token; in that case the file is fetched from its GitHub
+/// API endpoint instead. `get_headers`/`host_auth_headers` add the bearer token and the media type
+/// required by release assets or repository content. Shared by GitHub-backed installers so they
+/// resolve private downloads consistently.
 pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> String {
     if browser_url == api_url {
         return browser_url.to_string();
@@ -727,6 +725,12 @@ pub fn get_headers<U: IntoUrl>(url: U) -> Result<HeaderMap> {
             "accept",
             HeaderValue::from_static("application/octet-stream"),
         );
+    } else if is_github_api_url(&url) && url.path().contains("/contents/") {
+        // https://docs.github.com/en/rest/repos/contents#custom-media-types-for-repository-contents
+        headers.insert(
+            "accept",
+            HeaderValue::from_static("application/vnd.github.raw"),
+        );
     }
 
     Ok(headers)
@@ -852,6 +856,13 @@ mod tests {
     use super::*;
 
     const ASSET_API_URL: &str = "https://api.github.com/repos/o/r/releases/assets/1";
+
+    #[test]
+    fn test_github_content_headers_request_raw_content() {
+        let headers = get_headers("https://api.github.com/repos/o/r/contents/bin/tool").unwrap();
+
+        assert_eq!(headers.get("accept").unwrap(), "application/vnd.github.raw");
+    }
 
     #[tokio::test]
     async fn test_pick_reachable_asset_url_keeps_browser_url_when_reachable() {
