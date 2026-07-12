@@ -1253,9 +1253,11 @@ impl Task {
         // `--`, which breaks proxy tasks that wrap tools with their own
         // argument parsers.
         if !self.should_bypass_usage_parser() && has_any_args_defined(&spec) {
+            let mut env = env.clone();
+            clear_usage_env(&mut env);
             let scripts_only = self.run_script_strings();
             let scripts = Self::make_script_parser(cwd, extra_vars)
-                .parse_run_scripts_with_args(config, self, &scripts_only, env, args, &spec)
+                .parse_run_scripts_with_args(config, self, &scripts_only, &env, args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
@@ -2012,6 +2014,10 @@ impl Task {
 
         Ok((env, task_env.collect()))
     }
+}
+
+pub(crate) fn clear_usage_env(env: &mut EnvMap) {
+    env.retain(|key, _| !key.starts_with("usage_"));
 }
 
 fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String> {

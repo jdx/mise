@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# usage_* values are outputs of one task invocation and must not leak into the
+# next task's optional arguments. Explicit env= inputs remain supported.
+
+mkdir -p .mise/tasks
+
+cat <<'EOF' >.mise/tasks/file-child
+#!/usr/bin/env bash
+#USAGE arg "[model]"
+printf 'file model=%s\n' "${usage_model-UNSET}"
+EOF
+chmod +x .mise/tasks/file-child
+
+cat <<'EOF' >mise.toml
+[tasks.toml-child]
+usage = 'arg "[model]"'
+run = 'printf "toml model=%s\n" "${usage_model-UNSET}"'
+
+[tasks.env-child]
+usage = 'arg "[model]" env="MODEL"'
+run = 'printf "env model=%s\n" "${usage_model-UNSET}"'
+
+[tasks.tera-child]
+usage = 'arg "[model]"'
+run = 'printf "tera model=%s\n" "{{ env.usage_model | default(value="UNSET") }}"'
+EOF
+
+# Ambient values from a shell or parent task do not satisfy omitted arguments.
+assert "usage_model=ambient mise run file-child" "file model=UNSET"
+assert "usage_model=ambient mise run toml-child" "toml model=UNSET"
+assert "usage_model=ambient mise run tera-child" "tera model=UNSET"
+
+# Values parsed for this invocation still win.
+assert "usage_model=ambient mise run file-child explicit" "file model=explicit"
+assert "usage_model=ambient mise run toml-child explicit" "toml model=explicit"
+
+# Intentional inheritance uses a separate, explicitly declared input variable.
+assert "usage_model=ambient MODEL=inherited mise run env-child" "env model=inherited"
+
+cat <<'EOF' >.mise/tasks/parent
+#!/usr/bin/env bash
+#USAGE arg "<model>"
+mise run file-child
+mise run toml-child
+EOF
+chmod +x .mise/tasks/parent
+
+# A nested mise process does not leak the parent task's parsed argument.
+assert "mise run parent parent-value" "file model=UNSET
+toml model=UNSET"

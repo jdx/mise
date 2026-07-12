@@ -1124,6 +1124,16 @@ impl TaskExecutor {
         };
         #[cfg(not(windows))]
         let runner = runner.args(args);
+        // Command inherits the current process environment in addition to the
+        // explicit task env, so remove usage_* keys that argument parsing
+        // intentionally cleared from the task env.
+        let inherited_usage_keys = std::env::vars_os()
+            .filter(|(key, _)| {
+                let key = key.to_string_lossy();
+                key.starts_with("usage_") && !env.contains_key(key.as_ref())
+            })
+            .map(|(key, _)| key);
+        let runner = inherited_usage_keys.fold(runner, |runner, key| runner.env_remove(key));
         let mut cmd = runner
             .envs(env.as_ref())
             .redact(redactions.deref().clone())
@@ -1379,6 +1389,9 @@ impl TaskExecutor {
                 || !spec.cmd.flags.is_empty()
                 || !spec.cmd.subcommands.is_empty())
         {
+            // usage_* variables are outputs of the current task's argument parser,
+            // not inputs inherited from a parent task or process.
+            crate::task::clear_usage_env(env);
             let args: Vec<String> = get_args();
             trace!("Parsing usage spec for {:?}", args);
             // Pass env vars to Parser so it can resolve env= defaults in usage specs
