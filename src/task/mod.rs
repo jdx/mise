@@ -942,12 +942,9 @@ impl Task {
             if dir.is_dir() {
                 return Ok(dir.clone());
             }
-        }
-        if let Some(dir) = task_includes
-            .iter()
-            .find(|dir| !dir.exists() && dir.extension().is_none())
-        {
-            return Ok(dir.clone());
+            if !dir.exists() && dir.extension().is_none_or(|ext| ext != "toml") {
+                return Ok(dir.clone());
+            }
         }
         bail!("task includes do not contain a directory where a file task can be created")
     }
