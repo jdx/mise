@@ -949,12 +949,7 @@ impl Task {
         {
             return Ok(dir.clone());
         }
-        if config::has_explicit_task_includes_for_dir(&project_root, &config.config_files)? {
-            bail!(
-                "task_config.includes does not contain a directory where a file task can be created"
-            );
-        }
-        Ok(project_root.join("mise-tasks"))
+        bail!("task includes do not contain a directory where a file task can be created")
     }
 
     pub fn with_args(mut self, args: Vec<String>) -> Self {

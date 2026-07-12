@@ -3090,17 +3090,6 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
         .collect::<Vec<_>>())
 }
 
-pub fn has_explicit_task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<bool> {
-    configs_at_root(dir, config_files)
-        .iter()
-        .find_map(|cf| match cf.task_config_includes() {
-            Ok(Some(_)) => Some(Ok(true)),
-            Ok(None) => None,
-            Err(err) => Some(Err(err)),
-        })
-        .unwrap_or(Ok(false))
-}
-
 pub async fn load_tasks_in_dir(
     config: &Arc<Config>,
     dir: &Path,

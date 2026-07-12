@@ -98,5 +98,5 @@ cat <<'EOF' >mise.toml
 includes = ["tasks.toml"]
 EOF
 
-assert_fail_contains "mise tasks edit no-directory --path" "does not contain a directory"
+assert_fail_contains "mise tasks edit no-directory --path" "do not contain a directory"
 assert_fail "test -e mise-tasks/no-directory"
