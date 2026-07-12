@@ -126,6 +126,7 @@ impl Config {
             Duration::from_secs(5),
         )
         .await?;
+        Settings::reload();
         Config::load().await
     }
 
@@ -3246,6 +3247,18 @@ mod tests {
     async fn test_load() {
         let config = Config::reset().await.unwrap();
         assert_debug_snapshot!(config);
+    }
+
+    #[tokio::test]
+    async fn test_reset_reloads_settings() {
+        Settings::reset(None);
+        let before = Settings::get();
+
+        Config::reset().await.unwrap();
+        let after = Settings::get();
+
+        assert!(!Arc::ptr_eq(&before, &after));
+        Settings::reset(None);
     }
 
     #[test]
