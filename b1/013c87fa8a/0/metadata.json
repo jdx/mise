@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b1013c87fa8a",
+  "session_id": "019f53a5-842d-7383-ab2a-2cd26bcf7f02",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-12T00:18:21.829158Z",
+  "branch": "registry/prefer-aqua-for-codex",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/registry.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "2ef94b54c246",
+  "token_usage": {
+    "input_tokens": 60824,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 973568,
+    "output_tokens": 4174,
+    "api_call_count": 25
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-12T00:18:21.817384Z",
+    "agent_lines": 95,
+    "agent_removed": 10,
+    "human_added": 1630,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1725,
+    "total_lines_changed": 1986,
+    "agent_percentage": 5.287009063444108,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

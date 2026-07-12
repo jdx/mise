@@ -1,0 +1,5 @@
+summarize [jdx/mise#10922](https://github.com/jdx/mise/pull/10922) and why does it ahve a merge conflict
+
+---
+
+merge origin/main into it
