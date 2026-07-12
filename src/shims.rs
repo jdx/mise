@@ -179,7 +179,8 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
             BTreeSet::new(),
         )
     } else {
-        get_shim_diffs(config, &mise_bin, ts).await?
+        let diffs = get_shim_diffs(config, &mise_bin, ts).await?;
+        (diffs.missing, diffs.extra)
     };
 
     for shim in shims_to_add {
@@ -433,26 +434,33 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path, _shim: &str) -> Result<()> {
     Ok(())
 }
 
+pub struct ShimDiffs {
+    pub missing: BTreeSet<String>,
+    pub extra: BTreeSet<String>,
+    pub desired: HashSet<String>,
+}
+
 // get_shim_diffs contrasts the actual shims on disk
 // with the desired shims specified by the Toolset
-// and returns a tuple of (missing shims, extra shims)
 pub async fn get_shim_diffs(
     config: &Arc<Config>,
     mise_bin: impl AsRef<Path>,
     toolset: &Toolset,
-) -> Result<(BTreeSet<String>, BTreeSet<String>)> {
+) -> Result<ShimDiffs> {
     let mise_bin = mise_bin.as_ref();
     let (actual_shims, desired_shims) = tokio::join!(
         get_actual_shims(mise_bin),
         get_desired_shims(config, mise_bin, toolset)
     );
     let (actual_shims, desired_shims) = (actual_shims?, desired_shims?);
-    let out: (BTreeSet<String>, BTreeSet<String>) = (
-        desired_shims.difference(&actual_shims).cloned().collect(),
-        actual_shims.difference(&desired_shims).cloned().collect(),
-    );
-    time!("get_shim_diffs sizes: ({},{})", out.0.len(), out.1.len());
-    Ok(out)
+    let missing: BTreeSet<_> = desired_shims.difference(&actual_shims).cloned().collect();
+    let extra: BTreeSet<_> = actual_shims.difference(&desired_shims).cloned().collect();
+    time!("get_shim_diffs sizes: ({},{})", missing.len(), extra.len());
+    Ok(ShimDiffs {
+        missing,
+        extra,
+        desired: desired_shims,
+    })
 }
 
 async fn get_actual_shims(mise_bin: impl AsRef<Path>) -> Result<HashSet<String>> {
