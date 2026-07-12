@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "04fb7b73ba2f",
+  "session_id": "019f53ae-d4cf-7e63-bb76-11d400dbacf5",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-12T00:19:15.961228Z",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/cli/mcp.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "95ca8c5aaa6d",
+  "token_usage": {
+    "input_tokens": 82708,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 951552,
+    "output_tokens": 2830,
+    "api_call_count": 19
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-12T00:19:15.944521Z",
+    "agent_lines": 11,
+    "agent_removed": 11,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 11,
+    "total_lines_changed": 22,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

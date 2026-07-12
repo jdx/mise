@@ -1,0 +1,1 @@
+fix this pr [jdx/mise#10909](https://github.com/jdx/mise/pull/10909)
