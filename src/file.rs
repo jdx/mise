@@ -1408,9 +1408,13 @@ pub fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
     .run()?;
     let copy_result = copy_dir_all_preserve_symlinks(tmp.path(), dest);
     let detach_result = cmd!("hdiutil", "detach", tmp.path()).run();
-    copy_result?;
-    detach_result?;
-    Ok(())
+    match (copy_result, detach_result) {
+        (Err(copy_err), Err(detach_err)) => Err(copy_err)
+            .wrap_err_with(|| format!("additionally failed to detach DMG: {detach_err}")),
+        (Err(copy_err), _) => Err(copy_err),
+        (Ok(()), Err(detach_err)) => Err(detach_err.into()),
+        (Ok(()), Ok(_)) => Ok(()),
+    }
 }
 
 pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
