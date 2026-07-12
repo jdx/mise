@@ -51,6 +51,19 @@ fn env_pattern_matches(pattern: &str, key: &str) -> bool {
 }
 
 impl SandboxConfig {
+    /// Build sandbox configuration by combining persistent deny settings with CLI options.
+    pub fn from_settings_and_cli(
+        settings: &crate::config::settings::SettingsSandbox,
+        cli_deny_all: bool,
+        mut cli: Self,
+    ) -> Self {
+        cli.deny_read |= settings.deny_all || settings.deny_read || cli_deny_all;
+        cli.deny_write |= settings.deny_all || settings.deny_write || cli_deny_all;
+        cli.deny_net |= settings.deny_all || settings.deny_net || cli_deny_all;
+        cli.deny_env |= settings.deny_all || settings.deny_env || cli_deny_all;
+        cli
+    }
+
     /// Returns true if any sandbox restriction is configured.
     pub fn is_active(&self) -> bool {
         self.deny_read
@@ -252,6 +265,7 @@ pub async fn macos_generate_profile(config: &SandboxConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::settings::SettingsSandbox;
     use std::collections::BTreeMap;
 
     #[test]
@@ -322,5 +336,44 @@ mod tests {
 
         assert!(config.allow_read.is_empty());
         assert!(config.allow_write.is_empty());
+    }
+
+    #[test]
+    fn test_from_settings_and_cli_combines_denies() {
+        let settings = SettingsSandbox {
+            deny_read: true,
+            deny_net: true,
+            ..Default::default()
+        };
+        let config = SandboxConfig::from_settings_and_cli(
+            &settings,
+            false,
+            SandboxConfig {
+                deny_write: true,
+                allow_env: vec!["ALLOWED".to_string()],
+                ..Default::default()
+            },
+        );
+
+        assert!(config.deny_read);
+        assert!(config.deny_write);
+        assert!(config.deny_net);
+        assert!(!config.deny_env);
+        assert_eq!(config.allow_env, ["ALLOWED"]);
+    }
+
+    #[test]
+    fn test_from_settings_and_cli_expands_deny_all() {
+        let settings = SettingsSandbox {
+            deny_all: true,
+            ..Default::default()
+        };
+        let config =
+            SandboxConfig::from_settings_and_cli(&settings, false, SandboxConfig::default());
+
+        assert!(config.deny_read);
+        assert!(config.deny_write);
+        assert!(config.deny_net);
+        assert!(config.deny_env);
     }
 }

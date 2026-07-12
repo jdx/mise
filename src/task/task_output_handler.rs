@@ -254,44 +254,50 @@ impl OutputHandler {
         }
     }
 
-    /// Determine the output mode for a task
+    /// Determine the output *style* for a task.
+    ///
+    /// This resolves the stream-rendering style only (prefix/interleave/…) and
+    /// never returns `Quiet`. Verbosity ("quiet") is a separate axis applied via
+    /// [`quiet`](Self::quiet) at mise's own metadata print sites, so styles and
+    /// quietness combine freely (e.g. `output = "prefix"` + `quiet = true` prints
+    /// prefixed task lines with none of mise's own chatter). Full-silent is the
+    /// one verbosity level that still shows up here, because it nulls both streams.
     pub fn output(&self, task: Option<&Task>) -> TaskOutput {
-        // Check for full silent mode (both streams)
-        // Only Silent::Bool(true) means completely silent, not Silent::Stdout or Silent::Stderr
-        if let Some(task_ref) = task
-            && matches!(task_ref.silent, crate::task::Silent::Bool(true))
-        {
+        // Full-silent (null BOTH streams) is terminal. This must stay distinct
+        // from *partial* per-task silent (`silent = "stdout"`/`"stderr"`), which
+        // falls through to a real style and is nulled per-stream in the executor —
+        // hence the explicit `Silent::Bool(true)` check rather than `silent(task)`.
+        //
+        // The global `task.output = "silent"` setting is deliberately NOT part of
+        // this guard: it's a *style default* and must be overridable by a per-task
+        // `output` field (step 2). When there is no override it is still honored by
+        // step 3, which maps it back to `Silent` via `style_with_raw`.
+        let full_silent = self.silent
+            || Settings::get().silent
+            || self.output.is_some_and(|o| o.is_silent())
+            || task.is_some_and(|t| matches!(t.silent, crate::task::Silent::Bool(true)))
+            || task.is_some_and(|t| t.output == Some(TaskOutput::Silent));
+        if full_silent {
             return TaskOutput::Silent;
         }
 
-        // Check global output settings
+        // Resolve a STYLE only, in precedence order. `Quiet` values map to
+        // `Interleave` (their historical stream behavior); the quiet-ness is kept
+        // by the `quiet()` predicate independently.
+        // 1. CLI `--output` / `MISE_TASK_OUTPUT` (no raw downgrade, matching prior behavior)
         if let Some(o) = self.output {
-            return o;
-        } else if let Some(task_ref) = task {
-            // Fall through to other checks if silent is Off
-            if self.silent_bool() {
-                return TaskOutput::Silent;
-            }
-            if self.quiet(Some(task_ref)) {
-                return TaskOutput::Quiet;
-            }
-        } else if self.silent_bool() {
-            return TaskOutput::Silent;
-        } else if self.quiet(task) {
-            return TaskOutput::Quiet;
+            return o.style_only();
         }
-
-        if let Some(output) = Settings::get().task.output {
-            // Silent/quiet from config override raw (output suppression takes precedence)
-            // Other modes (prefix, etc.) allow raw to take precedence for stdin/stdout
-            if output.is_silent() || output.is_quiet() {
-                output
-            } else if self.raw(task) {
-                TaskOutput::Interleave
-            } else {
-                output
-            }
-        } else if self.raw(task) || self.jobs() == 1 || self.is_linear {
+        // 2. per-task `output` style field
+        if let Some(o) = task.and_then(|t| t.output) {
+            return o.style_with_raw(self.raw(task));
+        }
+        // 3. global `task.output` setting (raw downgrades non-suppression styles)
+        if let Some(o) = Settings::get().task.output {
+            return o.style_with_raw(self.raw(task));
+        }
+        // 4. defaults
+        if self.raw(task) || self.jobs() == 1 || self.is_linear {
             TaskOutput::Interleave
         } else {
             TaskOutput::Prefix
@@ -328,7 +334,9 @@ impl OutputHandler {
     }
 
     pub fn silent(&self, task: Option<&Task>) -> bool {
-        self.silent_bool() || task.is_some_and(|t| t.silent.is_silent())
+        self.silent_bool()
+            || task.is_some_and(|t| t.silent.is_silent())
+            || task.is_some_and(|t| t.output.is_some_and(|o| o.is_silent()))
     }
 
     pub fn quiet(&self, task: Option<&Task>) -> bool {
@@ -337,6 +345,7 @@ impl OutputHandler {
             || self.output.is_some_and(|o| o.is_quiet())
             || Settings::get().task.output.is_some_and(|o| o.is_quiet())
             || task.is_some_and(|t| t.quiet)
+            || task.is_some_and(|t| t.output.is_some_and(|o| o.is_quiet()))
             || self.silent(task)
     }
 

@@ -21,7 +21,7 @@ use jiff::Timestamp;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -307,11 +307,14 @@ impl Backend for NPMBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        // Use npm CLI to respect custom registry configurations
+        // Use npm CLI so user/global .npmrc and NPM_CONFIG_* registry settings apply.
+        // --prefix points at a neutral cache dir so project package.json (e.g. devEngines)
+        // cannot fail the query. Install already uses --prefix the same way.
         self.ensure_npm_for_version_check(config).await;
         timeout::run_with_timeout_async(
             async || {
                 let env = self.dependency_env(config).await?;
+                let prefix = Self::npm_meta_prefix()?;
 
                 let raw = cmd!(
                     NPM_PROGRAM,
@@ -319,7 +322,9 @@ impl Backend for NPMBackend {
                     self.tool_name(),
                     "versions",
                     "time",
-                    "--json"
+                    "--json",
+                    "--prefix",
+                    &prefix
                 )
                 .full_env(&env)
                 .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
@@ -347,11 +352,19 @@ impl Backend for NPMBackend {
                     .get_or_try_init_async(async || {
                         // Always use npm for getting version info since bun info requires package.json
                         // bun is only used for actual package installation
-                        let raw =
-                            cmd!(NPM_PROGRAM, "view", this.tool_name(), "dist-tags", "--json")
-                                .full_env(this.dependency_env(config).await?)
-                                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                                .read()?;
+                        let prefix = Self::npm_meta_prefix()?;
+                        let raw = cmd!(
+                            NPM_PROGRAM,
+                            "view",
+                            this.tool_name(),
+                            "dist-tags",
+                            "--json",
+                            "--prefix",
+                            &prefix
+                        )
+                        .full_env(this.dependency_env(config).await?)
+                        .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+                        .read()?;
                         let dist_tags: Value = serde_json::from_str(&raw)?;
                         npm_view_latest_dist_tag(&dist_tags)
                     })
@@ -712,6 +725,14 @@ impl NPMBackend {
             }
         };
         semver_is_at_least(&output, min_version).unwrap_or(false)
+    }
+
+    /// Empty prefix used for `npm view` so project `package.json` / `devEngines`
+    /// cannot block mise-owned metadata queries. User and global npm config still apply.
+    fn npm_meta_prefix() -> eyre::Result<PathBuf> {
+        let dir = crate::dirs::CACHE.join("npm-meta");
+        crate::file::create_dir_all(&dir)?;
+        Ok(dir)
     }
 
     /// Check dependencies for version checking (always needs npm)

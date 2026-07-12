@@ -636,7 +636,7 @@ impl Run {
                 }
             }
             if let Some(oh) = &this.output_handler
-                && oh.output(None) == TaskOutput::KeepOrder
+                && oh.output(Some(&task)) == TaskOutput::KeepOrder
             {
                 oh.keep_order_state.lock().unwrap().on_task_finished(&task);
             }
@@ -677,8 +677,12 @@ impl Run {
         };
         self.output_handler = Some(OutputHandler::new(output_config));
 
-        // Spawn timed output task if needed
-        if self.output(None) == TaskOutput::Timed {
+        // Spawn the timed-output printer if any task resolves to the Timed style
+        // (run-wide default OR a per-task `output = "timed"` override).
+        let any_timed = tasks
+            .all()
+            .any(|task| self.output(Some(task)) == TaskOutput::Timed);
+        if any_timed {
             let timed_outputs = self.output_handler.as_ref().unwrap().timed_outputs.clone();
             tokio::spawn(async move {
                 let mut interval = tokio::time::interval(Duration::from_millis(100));
@@ -722,16 +726,20 @@ impl Run {
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,
-            sandbox: crate::sandbox::SandboxConfig {
-                deny_read: self.deny_all || self.deny_read,
-                deny_write: self.deny_all || self.deny_write,
-                deny_net: self.deny_all || self.deny_net,
-                deny_env: self.deny_all || self.deny_env,
-                allow_read: self.allow_read.clone(),
-                allow_write: self.allow_write.clone(),
-                allow_net: self.allow_net.clone(),
-                allow_env: self.allow_env.clone(),
-            },
+            sandbox: crate::sandbox::SandboxConfig::from_settings_and_cli(
+                &Settings::get().sandbox,
+                self.deny_all,
+                crate::sandbox::SandboxConfig {
+                    deny_read: self.deny_read,
+                    deny_write: self.deny_write,
+                    deny_net: self.deny_net,
+                    deny_env: self.deny_env,
+                    allow_read: self.allow_read.clone(),
+                    allow_write: self.allow_write.clone(),
+                    allow_net: self.allow_net.clone(),
+                    allow_env: self.allow_env.clone(),
+                },
+            ),
         };
         self.executor = Some(crate::task::task_executor::TaskExecutor::new(
             self.context_builder.clone(),

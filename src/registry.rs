@@ -6,7 +6,7 @@ use heck::ToShoutySnakeCase;
 use indexmap::IndexMap;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::env;
-use std::env::consts::{ARCH, OS};
+use std::env::consts::OS;
 use std::fmt::Display;
 use std::iter::Iterator;
 use std::sync::{LazyLock as Lazy, Mutex};
@@ -113,18 +113,10 @@ impl RegistryTool {
             backend_types
         });
         let settings = Settings::get();
-        let os = settings.os.clone().unwrap_or(OS.to_string());
-        let arch = settings.arch.clone().unwrap_or(ARCH.to_string());
-        let platform = format!("{os}-{arch}");
         let experimental = settings.experimental;
         self.backends
             .iter()
-            .filter(|rb| {
-                rb.platforms.is_empty()
-                    || rb.platforms.contains(&&*os)
-                    || rb.platforms.contains(&&*arch)
-                    || rb.platforms.contains(&&*platform)
-            })
+            .filter(|rb| backend_matches_platform(rb.platforms, &settings))
             .map(|rb| rb.full)
             .filter(|full| {
                 full.split(':')
@@ -175,6 +167,22 @@ impl RegistryTool {
             ..Default::default()
         }
     }
+}
+
+/// Matches registry backend selectors using the schema's normalized platform names.
+///
+/// Unlike `backends.options.platforms.*` lookup, this is deliberately not
+/// alias-tolerant: registry selectors use canonical names such as `macos-x64`,
+/// while option lookup accepts release asset aliases such as `darwin-amd64`.
+fn backend_matches_platform(platforms: &[&str], settings: &Settings) -> bool {
+    let os = settings.os();
+    let arch = settings.arch();
+    let platform = format!("{os}-{arch}");
+
+    platforms.is_empty()
+        || platforms.contains(&os)
+        || platforms.contains(&arch)
+        || platforms.contains(&platform.as_str())
 }
 
 pub fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {
@@ -318,12 +326,80 @@ mod tests {
     }
 
     #[test]
-    fn test_codex_prefers_official_npm_package() {
+    fn test_backend_platform_matching_normalizes_settings() {
         use super::*;
 
-        let codex = REGISTRY.get("codex").unwrap();
+        for (raw_os, raw_arch, selector) in [
+            ("windows", "x86_64", "windows-x64"),
+            ("windows", "amd64", "x64"),
+            ("linux", "aarch64", "linux-arm64"),
+            ("darwin", "x86_64", "macos-x64"),
+        ] {
+            let settings = Settings {
+                os: Some(raw_os.to_string()),
+                arch: Some(raw_arch.to_string()),
+                ..Default::default()
+            };
 
-        assert_eq!(codex.backends[0].full, "npm:@openai/codex");
+            assert!(
+                backend_matches_platform(&[selector], &settings),
+                "{raw_os}-{raw_arch} should match normalized selector {selector}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_backend_platform_matching_preserves_os_only_and_order() {
+        use super::*;
+
+        let settings = Settings {
+            os: Some("darwin".to_string()),
+            arch: Some("amd64".to_string()),
+            ..Default::default()
+        };
+        let backends = [
+            RegistryBackend {
+                full: "aqua:first/tool",
+                platforms: &["macos"],
+                options: &[],
+            },
+            RegistryBackend {
+                full: "github:second/tool",
+                platforms: &["macos-x64"],
+                options: &[],
+            },
+            RegistryBackend {
+                full: "cargo:third-tool",
+                platforms: &[],
+                options: &[],
+            },
+            RegistryBackend {
+                full: "npm:excluded-tool",
+                platforms: &["linux"],
+                options: &[],
+            },
+        ];
+
+        let matching = backends
+            .iter()
+            .filter(|backend| backend_matches_platform(backend.platforms, &settings))
+            .map(|backend| backend.full)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            matching,
+            ["aqua:first/tool", "github:second/tool", "cargo:third-tool"]
+        );
+
+        let alias_selector = RegistryBackend {
+            full: "github:owner/repo",
+            platforms: &["darwin-amd64"],
+            options: &[],
+        };
+        assert!(!backend_matches_platform(
+            alias_selector.platforms,
+            &settings
+        ));
     }
 
     #[test]

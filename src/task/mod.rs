@@ -420,6 +420,10 @@ pub struct Task {
     pub quiet: bool,
     #[serde(default)]
     pub silent: Silent,
+    /// Per-task output *style* override (prefix/interleave/keep-order/…).
+    /// Orthogonal to `quiet`/`silent` verbosity; see [`TaskOutput`].
+    #[serde(default)]
+    pub output: Option<TaskOutput>,
     #[serde(default)]
     pub tools: IndexMap<String, TaskToolValue>,
     #[serde(default)]
@@ -799,6 +803,9 @@ impl Task {
             .get_raw("silent")
             .and_then(|v| Silent::deserialize(v.clone()).ok())
             .unwrap_or_default();
+        task.output = p
+            .get_raw("output")
+            .and_then(|v| TaskOutput::deserialize(v.clone()).ok());
         task.tools = p
             .parse_table("tools")
             .map(|t| {
@@ -1664,6 +1671,9 @@ impl Task {
         if !matches!(other.silent, Silent::Off) {
             self.silent = other.silent;
         }
+        if other.output.is_some() {
+            self.output = other.output;
+        }
         self.sources.extend(other.sources);
         if !other.outputs.is_empty() {
             self.outputs = other.outputs;
@@ -2197,6 +2207,7 @@ impl Default for Task {
             raw_outputs: Default::default(),
             shell: None,
             silent: Silent::Off,
+            output: None,
             run: vec![],
             run_windows: vec![],
             args: vec![],
@@ -2629,6 +2640,8 @@ mod tests {
 
     #[cfg(unix)]
     use super::TaskConfirm;
+    #[cfg(unix)]
+    use super::TaskOutput;
     use super::{name_from_path, tera_tag_has_usage_ref, tera_template_has_usage_ref};
 
     // Thread-local storage to capture parser state during tests
@@ -3676,6 +3689,7 @@ echo "hello world"
 #MISE shell="bash -c"
 #MISE quiet=true
 #MISE silent=true
+#MISE output="prefix"
 #MISE tools={node="20", python="3.11"}
 #MISE confirm="Are you sure?"
 echo "test"
@@ -3701,6 +3715,7 @@ echo "test"
         assert_eq!(task.sources, vec!["src1.txt", "src2.txt"]);
         assert_eq!(task.shell, Some("bash -c".to_string()));
         assert_eq!(task.quiet, true);
+        assert_eq!(task.output, Some(TaskOutput::Prefix));
         assert!(!task.tools.is_empty());
         assert_eq!(
             task.confirm,

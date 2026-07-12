@@ -203,7 +203,7 @@ impl Toolset {
             .into_iter()
             .map(|(p, tv)| {
                 (
-                    (p.ba().installs_path.clone(), tv.version.clone()),
+                    (p.ba().installs_path.clone(), tv.tv_pathname()),
                     (p.clone(), tv),
                 )
             })
@@ -284,24 +284,9 @@ impl Toolset {
         self.list_versions_by_plugin()
             .iter()
             .flat_map(|(p, v)| {
-                v.iter().filter(|v| v.request.is_os_supported()).map(|v| {
-                    // map cargo backend specific prefixes to ref
-                    let tv = match v.version.split_once(':') {
-                        Some((ref_type @ ("tag" | "branch" | "rev"), r)) => {
-                            let request = ToolRequest::Ref {
-                                backend: p.ba().clone(),
-                                ref_: r.to_string(),
-                                ref_type: ref_type.to_string(),
-                                options: v.request.options().clone(),
-                                source: v.request.source().clone(),
-                            };
-                            let version = format!("ref:{r}");
-                            ToolVersion::new(request, version)
-                        }
-                        _ => v.clone(),
-                    };
-                    (p.clone(), tv)
-                })
+                v.iter()
+                    .filter(|v| v.request.is_os_supported())
+                    .map(|v| (p.clone(), v.clone()))
             })
             .collect()
     }

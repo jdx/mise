@@ -905,6 +905,10 @@ impl Settings {
         duration::parse_duration(&self.http_timeout).unwrap()
     }
 
+    pub fn http_download_timeout(&self) -> Duration {
+        duration::parse_duration(&self.http_download_timeout).unwrap()
+    }
+
     /// Returns true if offline mode is enabled via setting or CLI flag/env var.
     pub fn offline(&self) -> bool {
         self.offline || *env::OFFLINE

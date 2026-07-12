@@ -2136,12 +2136,21 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
 
+        // A rolling release (e.g. a `nightly` tag) keeps the same version string,
+        // so its install dir already existing does NOT mean it's up-to-date.
+        let rolling_reinstall = !ctx.force
+            && self.is_version_installed(&ctx.config, &tv, true)
+            && self
+                .is_rolling_version_outdated(&ctx.config, &tv.request.version())
+                .await;
+
         // Handle dry-run mode early to avoid plugin installation
         if ctx.dry_run {
             use crate::ui::progress_report::ProgressIcon;
             let satisfied = self
                 .is_install_satisfied_or_false(&ctx.config, &tv, true)
-                .await;
+                .await
+                && !rolling_reinstall;
             tv.install_satisfied = Some(satisfied);
             if satisfied {
                 ctx.pr
@@ -2166,7 +2175,8 @@ pub trait Backend: Debug + Send + Sync {
             tv.install_path = Some(tv.ba().installs_path.join(tv.tv_pathname()));
         }
 
-        let will_uninstall = ctx.force && self.is_version_installed(&ctx.config, &tv, true);
+        let will_uninstall =
+            (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
         // Query backend for operation count and set up progress tracking
         let install_ops = self.install_operation_count(&tv, &ctx).await;
@@ -2184,6 +2194,7 @@ pub trait Backend: Debug + Send + Sync {
         } else if self
             .is_install_satisfied_or_false(&ctx.config, &tv, true)
             .await
+            && !rolling_reinstall
         {
             return Ok(tv);
         }
@@ -2200,6 +2211,7 @@ pub trait Backend: Debug + Send + Sync {
             .is_install_satisfied_or_false(&ctx.config, &tv, true)
             .await
             && !ctx.force
+            && !rolling_reinstall
         {
             return Ok(tv);
         }
