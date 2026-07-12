@@ -3051,7 +3051,11 @@ async fn load_file_tasks(
     Ok(tasks)
 }
 
-pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
+fn task_includes_for_dir_with_missing_literals(
+    dir: &Path,
+    config_files: &ConfigMap,
+    include_missing_literals: bool,
+) -> Result<Vec<PathBuf>> {
     let configs = configs_at_root(dir, config_files);
 
     // Find the highest-precedence config that has explicit task_config.includes
@@ -3080,7 +3084,7 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
                 return vec![];
             }
             let paths = expand_task_include(&resolve_dir, &p);
-            if paths.is_empty() && !is_glob_pattern(&p) {
+            if include_missing_literals && paths.is_empty() && !is_glob_pattern(&p) {
                 vec![resolve_dir.join(file::replace_path(&p))]
             } else {
                 paths
@@ -3088,6 +3092,17 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
         })
         .unique()
         .collect::<Vec<_>>())
+}
+
+pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
+    task_includes_for_dir_with_missing_literals(dir, config_files, false)
+}
+
+pub fn task_include_candidates_for_dir(
+    dir: &Path,
+    config_files: &ConfigMap,
+) -> Result<Vec<PathBuf>> {
+    task_includes_for_dir_with_missing_literals(dir, config_files, true)
 }
 
 pub async fn load_tasks_in_dir(

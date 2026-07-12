@@ -937,7 +937,8 @@ impl Task {
         let config = Config::get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        let task_includes = config::task_includes_for_dir(&project_root, &config.config_files)?;
+        let task_includes =
+            config::task_include_candidates_for_dir(&project_root, &config.config_files)?;
         for dir in &task_includes {
             if dir.is_dir() {
                 return Ok(dir.clone());
