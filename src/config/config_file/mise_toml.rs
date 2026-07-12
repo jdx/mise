@@ -1025,7 +1025,7 @@ impl ConfigFile for MiseToml {
                     // Start with cached options but filter out install-time-only options
                     // when config provides its own options. This allows:
                     // - Changing url/asset_pattern/checksum without reinstall issues
-                    // - Preserving post-install options like bin_path for binary discovery
+                    // - Replacing stale layout options like bin_path with current config values
                     let mut ba_opts = ba.opts().clone();
                     let backend_type = ba.backend_type();
                     ba_opts.opts.retain(|k, _| {
