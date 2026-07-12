@@ -100,13 +100,8 @@ impl TaskToolValue {
         match self {
             Self::String(version) => format!("{tool}@{version}").parse(),
             Self::Map(map) => {
-                // Preserve the existing behavior until task tools support structured
-                // options: bracket serialization omitted all arrays and tables,
-                // including the core `os` and `depends` fields.
                 let mut task_options = ToolVersionOptions::default();
-                for (key, value) in map.opts.iter().filter(|(_, value)| {
-                    !matches!(value, toml::Value::Array(_) | toml::Value::Table(_))
-                }) {
+                for (key, value) in &map.opts {
                     task_options
                         .insert_option(key.clone(), value.clone())
                         .map_err(|err| eyre!(err))?;
@@ -3963,14 +3958,22 @@ echo "test"
             Some(&toml::Value::Boolean(true))
         );
         assert_eq!(options.get("numeric_string"), Some("1e2"));
-        assert!(!options.contains_key("targets"));
-        assert!(!options.contains_key("platforms"));
+        assert_eq!(
+            options.opts.get("targets"),
+            Some(&toml::Value::Array(vec![toml::Value::String(
+                "x86_64".to_string()
+            )]))
+        );
+        assert_eq!(
+            options.opts.get("platforms"),
+            Some(&toml::Value::Table(toml::map::Map::new()))
+        );
         assert_eq!(options.os, Some(vec!["linux".to_string()]));
         assert_eq!(options.depends, Some(vec!["node".to_string()]));
     }
 
     #[tokio::test]
-    async fn test_to_tool_arg_omits_structured_core_options() {
+    async fn test_to_tool_arg_preserves_structured_core_options() {
         use indexmap::IndexMap;
 
         use crate::config::Config;
@@ -3999,8 +4002,8 @@ echo "test"
             .unwrap()
             .options();
 
-        assert_eq!(options.os, None);
-        assert_eq!(options.depends, None);
+        assert_eq!(options.os, Some(vec!["linux".to_string()]));
+        assert_eq!(options.depends, Some(vec!["node".to_string()]));
     }
 
     #[tokio::test]
