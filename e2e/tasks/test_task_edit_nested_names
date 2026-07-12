@@ -90,14 +90,19 @@ mkdir -p default-project/.mise-tasks
   assert "printf '%s' \"$DEFAULT_PATH\"" "$PWD/.mise-tasks/default-choice"
 )
 
-# Explicit includes never fall back to a default directory.
+# A sole explicit literal directory is created instead of falling back to a default directory.
 cat <<'EOF' >mise.toml
 [task_config]
 includes = ["tasks"]
 EOF
 
-assert_fail_contains "mise tasks edit configured --path" "do not contain an existing directory"
+TASK_PATH4=$(mise tasks edit configured --path 2>&1)
+assert "printf '%s' \"$TASK_PATH4\"" "$PWD/tasks/configured"
+assert "test -f \"$TASK_PATH4\""
+mise tasks add added --file
+assert "test -f tasks/added"
 assert_fail "test -e mise-tasks/configured"
+assert_fail "test -e mise-tasks/added"
 
 # Select the first existing directory in include order.
 mkdir existing-tasks
@@ -109,6 +114,16 @@ EOF
 TASK_PATH5=$(mise tasks edit dotted --path 2>&1)
 assert "printf '%s' \"$TASK_PATH5\"" "$PWD/existing-tasks/dotted"
 assert "test -f \"$TASK_PATH5\""
+
+# Multiple missing literal directories are ambiguous and must not be guessed.
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["missing-a", "missing-b"]
+EOF
+
+assert_fail_contains "mise tasks edit ambiguous --path" "do not contain an existing directory"
+assert_fail "test -e missing-a/ambiguous"
+assert_fail "test -e missing-b/ambiguous"
 
 # Explicit includes replace the default directories; do not fall back to mise-tasks.
 cat <<'EOF' >tasks.toml

@@ -3096,7 +3096,8 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
 ///
 /// Existing directories are selected in effective `task_config.includes` order. When the
 /// built-in defaults are in use and none exist yet, the first default path is returned so the
-/// caller can create it. Explicit includes must contain an existing directory.
+/// caller can create it. A sole missing local literal in explicit includes is treated as an
+/// unambiguous directory to create; other explicit include sets must contain an existing directory.
 pub fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<PathBuf> {
     let (includes, resolve_dir, uses_defaults) = task_include_patterns_for_dir(dir, config_files)?;
     let default_create_dir = if uses_defaults {
@@ -3116,6 +3117,15 @@ pub fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) -> Result
         {
             return Ok(path);
         }
+    }
+    let missing_literal_dirs = includes
+        .iter()
+        .filter(|include| !include.starts_with("git::") && !is_glob_pattern(include))
+        .map(|include| resolve_dir.join(file::replace_path(include)))
+        .filter(|path| !path.exists() && path.extension().is_none_or(|ext| ext != "toml"))
+        .collect::<Vec<_>>();
+    if !uses_defaults && let [dir] = missing_literal_dirs.as_slice() {
+        return Ok(dir.clone());
     }
     if let Some(dir) = default_create_dir {
         return Ok(dir);
