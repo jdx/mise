@@ -1,5 +1,6 @@
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 
 use async_trait::async_trait;
 use eyre::{WrapErr, bail, eyre};
@@ -384,7 +385,7 @@ async fn execute_lifecycle_hook(
     if !has_lifecycle_hook(cask, hook) {
         return Ok(());
     }
-    let ruby = source::ruby_bin().await?;
+    let ruby = cask_ruby_bin().await?;
     let cask_rb = fetch_cask_rb(cask, pr).await?;
     let shim_path = crate::dirs::CACHE
         .join("system-brew")
@@ -414,6 +415,25 @@ async fn execute_lifecycle_hook(
         .execute_async()
         .await
         .wrap_err_with(|| format!("brew-cask:{}: failed to run {hook}", cask.token))
+}
+
+async fn cask_ruby_bin() -> Result<PathBuf> {
+    if let Some(brew) = file::which("brew")
+        && let Ok(output) = Command::new(brew)
+            .args(["ruby", "-e", "print RbConfig.ruby"])
+            .output()
+        && output.status.success()
+        && let Ok(path) = String::from_utf8(output.stdout)
+    {
+        let path = PathBuf::from(path.trim());
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+    if let Some(ruby) = file::which("ruby") {
+        return Ok(ruby);
+    }
+    source::ruby_bin().await
 }
 
 fn ensure_cask_shim(path: &Path) -> Result<()> {
@@ -1409,6 +1429,60 @@ mod tests {
         ensure_cask_shim(&shim_path)?;
 
         assert_eq!(file::read_to_string(&shim_path)?, CASK_SHIM_RB);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn cask_shim_supports_language_and_system_conditionals() -> Result<()> {
+        let Some(ruby) = file::which("ruby") else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("cask_shim.rb");
+        let cask = tmp.path().join("example.rb");
+        let result = tmp.path().join("result");
+        file::write(&shim, CASK_SHIM_RB)?;
+        file::write(
+            &cask,
+            r##"cask "example" do
+  version "1.0.0"
+  language "fr" do
+    "fr"
+  end
+  language "en", default: true do
+    "en-US"
+  end
+  suffix = on_system_conditional linux: "-linux", macos: "-macos"
+  preflight do
+    File.write staged_path/"result", "#{language}#{suffix}"
+  end
+end
+"##,
+        )?;
+
+        let output = Command::new(ruby)
+            .arg(shim)
+            .env("LANG", "zz_ZZ.UTF-8")
+            .env("MISE_BREW_CASK_FILE", cask)
+            .env("MISE_BREW_CASK_TOKEN", "example")
+            .env("MISE_BREW_CASK_VERSION", "1.0.0")
+            .env("MISE_BREW_CASK_STAGED_PATH", tmp.path())
+            .env("MISE_BREW_CASK_APPDIR", tmp.path())
+            .env("MISE_BREW_PREFIX", tmp.path())
+            .env("MISE_BREW_CASK_HOOK", "preflight")
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let suffix = if cfg!(target_os = "macos") {
+            "-macos"
+        } else {
+            "-linux"
+        };
+        assert_eq!(file::read_to_string(result)?, format!("en-US{suffix}"));
         Ok(())
     }
 
