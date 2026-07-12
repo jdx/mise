@@ -104,10 +104,26 @@ assert "printf '%s' \"$TASK_PATH5\"" "$PWD/tasks.d/dotted"
 assert "test -f \"$TASK_PATH5\""
 
 # Explicit includes replace the default directories; do not fall back to mise-tasks.
+cat <<'EOF' >tasks.toml
+[existing]
+run = "echo existing"
+EOF
 cat <<'EOF' >mise.toml
 [task_config]
 includes = ["tasks.toml"]
 EOF
 
+assert "mise tasks edit existing --path" "$PWD/tasks.toml"
 assert_fail_contains "mise tasks edit no-directory --path" "do not contain a directory"
 assert_fail "test -e mise-tasks/no-directory"
+
+# Existing inline tasks also remain editable without a file-task directory.
+cat <<'EOF' >mise.toml
+[task_config]
+includes = []
+
+[tasks.inline]
+run = "echo inline"
+EOF
+
+assert "mise tasks edit inline --path" "$PWD/mise.toml"
