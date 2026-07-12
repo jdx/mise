@@ -20,6 +20,72 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// A marker for an in-progress task execution.
+///
+/// Markers from older failed or interrupted executions are captured when a new
+/// attempt starts. A successful attempt removes those markers along with its
+/// own, while leaving markers created by overlapping newer attempts intact.
+pub struct TaskAttempt {
+    marker: PathBuf,
+    previous_markers: Vec<PathBuf>,
+}
+
+impl TaskAttempt {
+    pub fn succeeded(self) -> Result<()> {
+        for marker in self
+            .previous_markers
+            .into_iter()
+            .chain(std::iter::once(self.marker))
+        {
+            match fs::remove_file(&marker) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err.into()),
+            }
+        }
+        Ok(())
+    }
+}
+
+fn task_attempt_dir(task: &Task, root: &Path) -> PathBuf {
+    let mut hasher = DefaultHasher::new();
+    task.hash(&mut hasher);
+    task.config_source.hash(&mut hasher);
+    root.hash(&mut hasher);
+    dirs::STATE
+        .join("task-attempts")
+        .join(format!("{:x}", hasher.finish()))
+}
+
+fn task_attempt_markers(task: &Task, root: &Path) -> Result<Vec<PathBuf>> {
+    let dir = task_attempt_dir(task, root);
+    if !dir.exists() {
+        return Ok(vec![]);
+    }
+    Ok(fs::read_dir(dir)?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file())
+        .collect())
+}
+
+/// Record that a task with source freshness has started executing.
+pub async fn start_task_attempt(task: &Task, config: &Arc<Config>) -> Result<Option<TaskAttempt>> {
+    if task.sources.is_empty() {
+        return Ok(None);
+    }
+    let root = task_cwd(task, config).await?;
+    let dir = task_attempt_dir(task, &root);
+    file::create_dir_all(&dir)?;
+    let previous_markers = task_attempt_markers(task, &root)?;
+    let marker = dir.join(random_string(16));
+    file::write(&marker, b"")?;
+    Ok(Some(TaskAttempt {
+        marker,
+        previous_markers,
+    }))
+}
+
 /// Check if a path is a glob pattern
 pub fn is_glob_pattern(path: &str) -> bool {
     // This is the character set used for glob detection by glob
@@ -201,6 +267,10 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
 
     let run = async || -> Result<bool> {
         let root = task_cwd(task, config).await?;
+        if !task_attempt_markers(task, &root)?.is_empty() {
+            debug!("task {} has an unfinished previous attempt", task.name);
+            return Ok(false);
+        }
         let matcher = build_source_matcher(&root, &task.sources);
         let glob_patterns = source_glob_patterns(&task.sources);
         let mut source_metadatas = get_file_metadatas(&root, &glob_patterns, &matcher)?;
