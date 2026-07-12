@@ -1,0 +1,9 @@
+address pr feedback
+
+---
+
+does this pr fix this issue? [https://github.com/jdx/mise/discussions/10917](https://github.com/jdx/mise/discussions/10917)
+
+---
+
+ok make a separate pr for that
