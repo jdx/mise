@@ -1,3 +1,4 @@
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
@@ -71,7 +72,7 @@ use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
-use crate::toolset::{Toolset, serialize_tool_options};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, Toolset};
 use crate::ui::style;
 pub use deps::{Deps, TaskKey};
 use task_dep::TaskDep;
@@ -95,18 +96,40 @@ pub struct TaskToolValueMap {
 }
 
 impl TaskToolValue {
-    /// Convert to a tool specification string for ToolArg parsing.
-    /// String values become "{tool}@{version}".
-    /// Map values become "{tool}[{opts}]@{version}" where opts are serialized.
-    pub fn to_tool_spec(&self, tool: &str) -> String {
+    pub fn to_tool_arg(&self, tool: &str) -> Result<ToolArg> {
         match self {
-            TaskToolValue::String(version) => format!("{tool}@{version}"),
-            TaskToolValue::Map(map) => {
-                if let Some(opts_str) = serialize_tool_options(map.opts.iter()) {
-                    format!("{tool}[{opts_str}]@{}", map.version)
-                } else {
-                    format!("{tool}@{}", map.version)
-                }
+            Self::String(version) => format!("{tool}@{version}").parse(),
+            Self::Map(map) => {
+                // Preserve the existing behavior until task tools support structured
+                // options: bracket serialization omitted arrays and tables.
+                let scalar_options = map
+                    .opts
+                    .iter()
+                    .filter(|(_, value)| {
+                        !matches!(value, toml::Value::Array(_) | toml::Value::Table(_))
+                    })
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect();
+                let task_options: ToolVersionOptions =
+                    toml::Value::Table(scalar_options).try_into()?;
+
+                let backend: BackendArg = tool.parse()?;
+                let mut options = backend.opts();
+                options.apply_overrides(&task_options);
+                let backend = Arc::new(backend);
+                let request = ToolRequest::new_opts(
+                    backend.clone(),
+                    &map.version,
+                    options,
+                    ToolSource::Argument,
+                )?;
+                Ok(ToolArg {
+                    short: backend.short.clone(),
+                    ba: backend,
+                    version: Some(map.version.clone()),
+                    version_type: map.version.parse()?,
+                    tvr: Some(request),
+                })
             }
         }
     }
@@ -3869,10 +3892,9 @@ echo "test"
     }
 
     #[tokio::test]
-    async fn test_to_tool_spec_round_trips_string_opts() {
+    async fn test_to_tool_arg_preserves_scalar_options() {
         use indexmap::IndexMap;
 
-        use crate::cli::args::ToolArg;
         use crate::config::Config;
 
         use super::{TaskToolValue, TaskToolValueMap};
@@ -3885,38 +3907,6 @@ echo "test"
             toml::Value::String("first,second=value".to_string()),
         );
         opts.insert(
-            "targets".to_string(),
-            toml::Value::Array(vec![toml::Value::String("x86_64".to_string())]),
-        );
-
-        let tool = TaskToolValue::Map(TaskToolValueMap {
-            version: "1.0.0".to_string(),
-            opts,
-        });
-
-        let spec = tool.to_tool_spec("http:hello");
-        assert_eq!(spec, r#"http:hello[query="first,second=value"]@1.0.0"#);
-
-        let parsed: ToolArg = spec.parse().unwrap();
-        let parsed_opts = parsed.ba.opts();
-        assert_eq!(parsed_opts.get("query"), Some("first,second=value"));
-        assert!(!parsed_opts.contains_key("targets"));
-        assert!(!parsed_opts.contains_key("second"));
-    }
-
-    #[tokio::test]
-    async fn test_to_tool_spec_round_trips_quoted_string_opts() {
-        use indexmap::IndexMap;
-
-        use crate::cli::args::ToolArg;
-        use crate::config::Config;
-
-        use super::{TaskToolValue, TaskToolValueMap};
-
-        let _config = Config::get().await.unwrap();
-
-        let mut opts = IndexMap::new();
-        opts.insert(
             "pattern".to_string(),
             toml::Value::String(r#"a"b"#.to_string()),
         );
@@ -3924,42 +3914,37 @@ echo "test"
             "bin_path".to_string(),
             toml::Value::String("bin[debug]".to_string()),
         );
-
-        let tool = TaskToolValue::Map(TaskToolValueMap {
-            version: "1.0.0".to_string(),
-            opts,
-        });
-
-        let spec = tool.to_tool_spec("http:hello");
-        assert_eq!(
-            spec,
-            r#"http:hello[pattern='a"b',bin_path="bin[debug]"]@1.0.0"#
+        opts.insert("strip_components".to_string(), toml::Value::Integer(1));
+        opts.insert(
+            "github_attestations".to_string(),
+            toml::Value::Boolean(true),
         );
-
-        let parsed: ToolArg = spec.parse().unwrap();
-        let parsed_opts = parsed.ba.opts();
-        assert_eq!(parsed_opts.get("pattern"), Some(r#"a"b"#));
-        assert_eq!(parsed_opts.get("bin_path"), Some("bin[debug]"));
-    }
-
-    #[test]
-    fn test_to_tool_spec_omits_empty_brackets_for_complex_opts() {
-        use indexmap::IndexMap;
-
-        use super::{TaskToolValue, TaskToolValueMap};
-
-        let mut opts = IndexMap::new();
         opts.insert(
             "targets".to_string(),
             toml::Value::Array(vec![toml::Value::String("x86_64".to_string())]),
         );
+        opts.insert(
+            "platforms".to_string(),
+            toml::Value::Table(toml::map::Map::new()),
+        );
 
         let tool = TaskToolValue::Map(TaskToolValueMap {
             version: "1.0.0".to_string(),
             opts,
         });
 
-        assert_eq!(tool.to_tool_spec("cross"), "cross@1.0.0");
+        let request = tool.to_tool_arg("http:hello").unwrap().tvr.unwrap();
+        let options = request.options();
+        assert_eq!(options.get("query"), Some("first,second=value"));
+        assert_eq!(options.get("pattern"), Some(r#"a"b"#));
+        assert_eq!(options.get("bin_path"), Some("bin[debug]"));
+        assert_eq!(options.get_string("strip_components"), Some("1".into()));
+        assert_eq!(
+            options.opts.get("github_attestations"),
+            Some(&toml::Value::Boolean(true))
+        );
+        assert!(!options.contains_key("targets"));
+        assert!(!options.contains_key("platforms"));
     }
 
     #[test]

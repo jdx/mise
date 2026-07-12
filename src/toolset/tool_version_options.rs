@@ -549,42 +549,6 @@ pub fn try_parse_tool_options(s: &str) -> Result<ToolVersionOptions, String> {
     parse_tool_options_manual(s)
 }
 
-/// Serialize tool options to the bracketed `key=value,key2=value2` form used by
-/// task tool specs and backend args.
-///
-/// Complex values that cannot be round-tripped through that syntax (arrays and
-/// tables) are omitted entirely.
-pub fn serialize_tool_options<'a, I>(opts: I) -> Option<String>
-where
-    I: IntoIterator<Item = (&'a String, &'a toml::Value)>,
-{
-    let serialized = opts
-        .into_iter()
-        .filter_map(|(key, value)| serialize_tool_option(key, value))
-        .collect::<Vec<_>>();
-
-    (!serialized.is_empty()).then(|| serialized.join(","))
-}
-
-fn serialize_tool_option(key: &str, value: &toml::Value) -> Option<String> {
-    match value {
-        toml::Value::Table(_) | toml::Value::Array(_) => None,
-        // Strings that contain delimiters or quotes must be TOML-quoted so they
-        // round-trip through both the TOML parser and the legacy manual parser.
-        // Brackets also need quoting because `split_bracketed_opts()` uses a
-        // regex to peel off the outer `[...]` payload from backend args.
-        toml::Value::String(s) if string_requires_tool_option_quotes(s) => {
-            Some(format!("{key}={}", toml::Value::String(s.clone())))
-        }
-        toml::Value::String(s) => Some(format!("{key}={s}")),
-        _ => Some(format!("{key}={value}")),
-    }
-}
-
-fn string_requires_tool_option_quotes(s: &str) -> bool {
-    s.contains(',') || s.contains('"') || s.contains('\'') || s.contains('[') || s.contains(']')
-}
-
 /// Try parsing an options string as a TOML inline table.
 /// Returns `Some(opts)` if the string is valid TOML, `None` otherwise.
 fn try_parse_as_toml(s: &str) -> Option<Result<ToolVersionOptions, String>> {
@@ -958,90 +922,11 @@ mod tests {
     }
 
     #[test]
-    fn test_serialize_tool_options_quotes_comma_strings() {
-        let mut opts = IndexMap::new();
-        opts.insert(
-            "query".to_string(),
-            toml::Value::String("first,second=value".to_string()),
-        );
-        opts.insert(
-            "bin_path".to_string(),
-            toml::Value::String("bin".to_string()),
-        );
-
-        assert_eq!(
-            serialize_tool_options(opts.iter()),
-            Some(r#"query="first,second=value",bin_path=bin"#.to_string())
-        );
-        assert_eq!(
-            parse_tool_options(serialize_tool_options(opts.iter()).unwrap().as_str()).get("query"),
-            Some("first,second=value")
-        );
-    }
-
-    #[test]
-    fn test_serialize_tool_options_quotes_strings_with_quotes_or_brackets() {
-        let mut opts = IndexMap::new();
-        opts.insert(
-            "pattern".to_string(),
-            toml::Value::String(r#"a"b"#.to_string()),
-        );
-        opts.insert(
-            "bin_path".to_string(),
-            toml::Value::String("bin[debug]".to_string()),
-        );
-
-        let serialized = serialize_tool_options(opts.iter()).unwrap();
-        assert_eq!(
-            serialized,
-            r#"pattern='a"b',bin_path="bin[debug]""#.to_string()
-        );
-
-        let reparsed = parse_tool_options(&serialized);
-        assert_eq!(reparsed.get("pattern"), Some(r#"a"b"#));
-        assert_eq!(reparsed.get("bin_path"), Some("bin[debug]"));
-    }
-
-    #[test]
-    fn test_serialize_tool_options_preserves_single_quote_wrapped_strings() {
-        let mut opts = IndexMap::new();
-        opts.insert(
-            "pattern".to_string(),
-            toml::Value::String("'hi'".to_string()),
-        );
-        opts.insert(
-            "bin_path".to_string(),
-            toml::Value::String("bin".to_string()),
-        );
-
-        let serialized = serialize_tool_options(opts.iter()).unwrap();
-        let reparsed = parse_tool_options(&serialized);
-
-        assert_eq!(reparsed.get("pattern"), Some("'hi'"));
-        assert_eq!(reparsed.get("bin_path"), Some("bin"));
-    }
-
-    #[test]
     fn test_parse_tool_options_manual_supports_single_quoted_literals() {
         let reparsed = parse_tool_options(r#"pattern='a"b',bin_path=bin"#);
 
         assert_eq!(reparsed.get("pattern"), Some(r#"a"b"#));
         assert_eq!(reparsed.get("bin_path"), Some("bin"));
-    }
-
-    #[test]
-    fn test_serialize_tool_options_skips_complex_values_and_empty_output() {
-        let mut opts = IndexMap::new();
-        opts.insert(
-            "targets".to_string(),
-            toml::Value::Array(vec![toml::Value::String("x86_64".to_string())]),
-        );
-        opts.insert(
-            "platforms".to_string(),
-            toml::Value::Table(toml::map::Map::new()),
-        );
-
-        assert_eq!(serialize_tool_options(opts.iter()), None);
     }
 
     #[test]

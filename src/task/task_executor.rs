@@ -283,7 +283,7 @@ impl TaskExecutor {
 
         let mut tools = self.tool.clone();
         for (k, v) in &task.tools {
-            tools.push(v.to_tool_spec(k).parse()?);
+            tools.push(v.to_tool_arg(k)?);
         }
         let ts_build_start = std::time::Instant::now();
 
