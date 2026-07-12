@@ -323,6 +323,25 @@ description = "Only use cargo-binstall for installation, fail if not available."
 env = "MISE_CARGO_BINSTALL_ONLY"
 type = "Bool"
 
+[cargo.binstall_quickinstall]
+default = false
+description = "Allow cargo-binstall to use third-party cargo-quickinstall artifacts."
+docs = """
+If true, mise allows the external `cargo-binstall` binary to use artifacts from
+the third-party [cargo-quickinstall](https://github.com/cargo-bins/cargo-quickinstall) host. These
+artifacts are separate from crate-author GitHub releases and artifacts declared in
+`package.metadata.binstall`.
+
+By default, mise passes `--disable-strategies quick-install` when invoking the external
+`cargo-binstall` binary. This setting does not affect mise's `cargo.binstall_native` path, which
+does not use quickinstall.
+
+This only controls external `cargo-binstall`'s quick-install strategy. To disable binstall, set
+`cargo.binstall = false`.
+"""
+env = "MISE_CARGO_BINSTALL_QUICKINSTALL"
+type = "Bool"
+
 [cargo.registry_name]
 description = "Name of the cargo registry to use."
 docs = """

@@ -1612,6 +1612,17 @@ mod tests {
     }
 
     #[test]
+    fn test_cargo_binstall_quickinstall_setting() {
+        let settings = Settings::builder().load().unwrap();
+        assert!(!settings.cargo.binstall_quickinstall);
+
+        let meta = SETTINGS_META
+            .get("cargo.binstall_quickinstall")
+            .expect("cargo.binstall_quickinstall setting should exist");
+        assert_eq!(meta.env, Some("MISE_CARGO_BINSTALL_QUICKINSTALL"));
+    }
+
+    #[test]
     fn test_offline_setting_enables_offline() {
         let mut partial = SettingsPartial::empty();
         partial.offline = Some(true);
