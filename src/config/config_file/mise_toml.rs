@@ -1031,7 +1031,7 @@ impl ConfigFile for MiseToml {
                     ba_opts.opts.retain(|k, _| {
                         !crate::backend::is_install_time_option_key_for_type(&backend_type, k)
                     });
-                    ba_opts.merge(&options.opts);
+                    ba_opts.apply_overrides(&options);
                     // Re-apply registry defaults for install-time keys not overridden by user.
                     // The filtering above strips both stale install-state cache AND registry
                     // defaults. We want to keep registry defaults while discarding stale cache.
@@ -1054,7 +1054,9 @@ impl ConfigFile for MiseToml {
                             ba_opts.opts.entry(k).or_insert(v);
                         }
                     }
-                    // Copy os, depends, and install_env from config (not cached)
+                    // Replace config-owned fields rather than merging them with cached values.
+                    // This intentionally supersedes apply_overrides above so omitted values clear
+                    // stale cache and install_env does not retain cached entries.
                     ba_opts.os = options.os.clone();
                     ba_opts.depends = options.depends.clone();
                     ba_opts.install_env = options.install_env.clone();
@@ -3195,6 +3197,28 @@ run = 'echo "template"'
             opts2.get("pipx_args"),
             Some("--include-deps"),
             "non-overridden registry default pipx_args should still be preserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_table_syntax_user_opts_override_registry_defaults() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            podman = {{ version = "latest", rename_exe = "podman-remote" }}
+        "#});
+        let trs = cf.to_tool_request_set().unwrap();
+        let podman = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "podman")
+            .map(|(_, reqs)| reqs)
+            .expect("podman should be in tool request set");
+
+        assert_eq!(
+            podman[0].options().get("rename_exe"),
+            Some("podman-remote"),
+            "user-provided rename_exe should override the registry default"
         );
     }
 
