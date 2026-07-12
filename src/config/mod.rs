@@ -3094,19 +3094,26 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
 
 pub fn task_create_dir_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<PathBuf> {
     let (includes, resolve_dir, uses_defaults) = task_include_patterns_for_dir(dir, config_files)?;
-    for include in includes {
+    let default_create_dir = if uses_defaults {
+        includes
+            .first()
+            .map(|include| resolve_dir.join(file::replace_path(include)))
+    } else {
+        None
+    };
+    for include in &includes {
         if include.starts_with("git::") {
             continue;
         }
-        if let Some(path) = expand_task_include(&resolve_dir, &include)
+        if let Some(path) = expand_task_include(&resolve_dir, include)
             .into_iter()
             .find(|path| path.is_dir())
         {
             return Ok(path);
         }
     }
-    if uses_defaults {
-        return Ok(resolve_dir.join("mise-tasks"));
+    if let Some(dir) = default_create_dir {
+        return Ok(dir);
     }
     bail!("task includes do not contain an existing directory where a file task can be created")
 }
