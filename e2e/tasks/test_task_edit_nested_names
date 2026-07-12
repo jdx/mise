@@ -81,3 +81,13 @@ assert_contains "mise run deploy:prod:backend:api" "deeply nested task executed"
 
 # Verify it shows up in the task list
 assert_contains "mise tasks ls" "deploy:prod:backend:api"
+
+# A single configured directory is the destination even when it does not exist yet.
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["tasks"]
+EOF
+
+TASK_PATH4=$(mise tasks edit configured --path 2>&1)
+assert "printf '%s' \"$TASK_PATH4\"" "$PWD/tasks/configured"
+assert "test -f \"$TASK_PATH4\""

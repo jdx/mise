@@ -3079,7 +3079,12 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
             if p.starts_with("git::") {
                 return vec![];
             }
-            expand_task_include(&resolve_dir, &p)
+            let paths = expand_task_include(&resolve_dir, &p);
+            if paths.is_empty() && !is_glob_pattern(&p) {
+                vec![resolve_dir.join(file::replace_path(&p))]
+            } else {
+                paths
+            }
         })
         .unique()
         .collect::<Vec<_>>())

@@ -945,10 +945,16 @@ impl Task {
                 Vec::new()
             }
         };
-        for dir in task_includes {
-            if dir.is_dir() && project_root.join(&dir).exists() {
-                return project_root.join(dir);
+        for dir in &task_includes {
+            if dir.is_dir() {
+                return dir.clone();
             }
+        }
+        if let [dir] = task_includes.as_slice()
+            && !dir.exists()
+            && dir.extension().is_none()
+        {
+            return dir.clone();
         }
         project_root.join("mise-tasks")
     }
