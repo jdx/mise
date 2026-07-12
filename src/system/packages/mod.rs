@@ -1,4 +1,4 @@
-//! System package managers (apk, apt, brew, brew-cask, mas) for the `[bootstrap.packages]` config section.
+//! System package managers (apk, apt, brew, brew-cask, flatpak, mas) for the `[bootstrap.packages]` config section.
 //!
 //! These are machine-global, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -14,6 +14,7 @@ pub mod apt;
 #[cfg(unix)]
 pub mod brew;
 pub mod dnf;
+pub mod flatpak;
 pub mod mas;
 pub mod pacman;
 
@@ -120,6 +121,7 @@ pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         #[cfg(unix)]
         Arc::new(brew::BrewCaskManager::new()),
         Arc::new(dnf::DnfManager::new()),
+        Arc::new(flatpak::FlatpakManager::new()),
         Arc::new(mas::MasManager::new()),
         Arc::new(pacman::PacmanManager::new()),
     ]

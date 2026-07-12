@@ -493,14 +493,14 @@ only. `install` is accepted as an alias for this command.
 Examples:
 
     $ mise bootstrap packages apply
-    $ mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835
+    $ mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox mas:497799835
     $ mise bootstrap packages apply --dry-run
     $ mise bootstrap packages apply --manager apt --yes
 
 """#
-            flag "-m --manager" help="Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`" {
+            flag "-m --manager" help="Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, `flatpak`, or `mas`" {
                 arg <MANAGER> {
-                    choices apk apt brew brew-cask dnf mas pacman
+                    choices apk apt brew brew-cask dnf flatpak mas pacman
                 }
             }
             flag "-n --dry-run" help="Print the commands that would run without running them"
@@ -625,7 +625,7 @@ Refreshes package manager metadata and upgrades the configured packages
 that are already installed: apk/apt/dnf/pacman upgrade to the newest available
 version (apk, apt, and dnf honor a version pinned in config), brew pours the
 formula's current bottle and replaces the old keg, brew-cask installs
-the current cask artifact, and mas upgrades App Store apps. Packages that
+the current cask artifact, flatpak updates applications and runtimes, and mas upgrades App Store apps. Packages that
 are not installed yet are skipped — use `mise bootstrap packages apply`
 for those.
 
@@ -642,9 +642,9 @@ Examples:
     $ mise bootstrap packages upgrade --dry-run
 
 """#
-            flag "-m --manager" help="Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`" {
+            flag "-m --manager" help="Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, `flatpak`, or `mas`" {
                 arg <MANAGER> {
-                    choices apk apt brew brew-cask dnf mas pacman
+                    choices apk apt brew brew-cask dnf flatpak mas pacman
                 }
             }
             flag "-n --dry-run" help="Print the commands that would run without running them"
@@ -669,7 +669,7 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
             after_long_help #"""
 Examples:
 
-    $ mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835
+    $ mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox mas:497799835
     $ mise bootstrap packages use -g brew:postgresql@17
     $ mise bootstrap packages use apt:curl@8.5.0-2
 
