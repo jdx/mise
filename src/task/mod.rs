@@ -96,6 +96,15 @@ pub struct TaskToolValueMap {
 }
 
 impl TaskToolValue {
+    fn value_has_template(value: &toml::Value) -> bool {
+        match value {
+            toml::Value::String(value) => contains_template_syntax(value),
+            toml::Value::Array(values) => values.iter().any(Self::value_has_template),
+            toml::Value::Table(values) => values.values().any(Self::value_has_template),
+            _ => false,
+        }
+    }
+
     pub fn to_tool_arg(&self, tool: &str) -> Result<ToolArg> {
         match self {
             Self::String(version) => format!("{tool}@{version}").parse(),
@@ -125,6 +134,65 @@ impl TaskToolValue {
                 })
             }
         }
+    }
+
+    fn has_template(&self) -> bool {
+        match self {
+            Self::String(version) => contains_template_syntax(version),
+            Self::Map(map) => {
+                contains_template_syntax(&map.version)
+                    || map.opts.values().any(Self::value_has_template)
+            }
+        }
+    }
+
+    fn render_templates(&mut self, tera: &mut TeraEngine, context: &tera::Context) -> Result<()> {
+        fn render_value(
+            value: &mut toml::Value,
+            tera: &mut TeraEngine,
+            context: &tera::Context,
+        ) -> Result<()> {
+            match value {
+                toml::Value::String(value) if contains_template_syntax(value) => {
+                    *value = render_str(tera, value, context)?;
+                }
+                toml::Value::Array(values) => {
+                    for value in values {
+                        if TaskToolValue::value_has_template(value) {
+                            render_value(value, tera, context)?;
+                        }
+                    }
+                }
+                toml::Value::Table(values) => {
+                    for (_, value) in values.iter_mut() {
+                        if TaskToolValue::value_has_template(value) {
+                            render_value(value, tera, context)?;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            Ok(())
+        }
+
+        match self {
+            Self::String(version) => {
+                if contains_template_syntax(version) {
+                    *version = render_str(tera, version, context)?;
+                }
+            }
+            Self::Map(map) => {
+                if contains_template_syntax(&map.version) {
+                    map.version = render_str(tera, &map.version, context)?;
+                }
+                for value in map.opts.values_mut() {
+                    if Self::value_has_template(value) {
+                        render_value(value, tera, context)?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1758,16 +1826,7 @@ impl Task {
                         .any(|value| contains_template_syntax(value))
             })
         };
-        let tools_have_template = self.tools.values().any(|tool| match tool {
-            TaskToolValue::String(s) => contains_template_syntax(s),
-            TaskToolValue::Map(map) => {
-                contains_template_syntax(&map.version)
-                    || map
-                        .opts
-                        .values()
-                        .any(|value| value.as_str().is_some_and(contains_template_syntax))
-            }
-        });
+        let tools_have_template = self.tools.values().any(TaskToolValue::has_template);
 
         self.aliases.iter().any(|s| contains_template_syntax(s))
             || contains_template_syntax(&self.description)
@@ -1896,26 +1955,8 @@ impl Task {
         // Tilde expansion is applied later when task and CLI sandbox paths are normalized.
         render_sandbox_paths(&mut self.allow_read)?;
         render_sandbox_paths(&mut self.allow_write)?;
-        for (_, v) in &mut self.tools {
-            match v {
-                TaskToolValue::String(s) => {
-                    if contains_template_syntax(s) {
-                        *v = TaskToolValue::String(render_str(&mut tera, s, &tera_ctx)?);
-                    }
-                }
-                TaskToolValue::Map(map) => {
-                    if contains_template_syntax(&map.version) {
-                        map.version = render_str(&mut tera, &map.version, &tera_ctx)?;
-                    }
-                    for (_ok, ov) in &mut map.opts {
-                        if let toml::Value::String(s) = ov
-                            && contains_template_syntax(s)
-                        {
-                            *ov = toml::Value::String(render_str(&mut tera, s, &tera_ctx)?);
-                        }
-                    }
-                }
-            }
+        for tool in self.tools.values_mut() {
+            tool.render_templates(&mut tera, &tera_ctx)?;
         }
         Ok(())
     }
@@ -4157,6 +4198,111 @@ echo "test"
 
             assert_eq!(request.options().get("query"), Some("value"), "{version}");
         }
+    }
+
+    #[tokio::test]
+    async fn test_task_tool_renders_nested_options() {
+        use indexmap::IndexMap;
+
+        use super::{TaskToolValue, TaskToolValueMap};
+        use crate::config::Config;
+        use crate::tera::TeraEngine;
+
+        let _config = Config::get().await.unwrap();
+
+        let mut platform = toml::map::Map::new();
+        platform.insert(
+            "bin".to_string(),
+            toml::Value::String("bin/{{ target }}".to_string()),
+        );
+        let mut platforms = toml::map::Map::new();
+        platforms.insert("linux-x64".to_string(), toml::Value::Table(platform));
+
+        let mut opts = IndexMap::new();
+        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
+        opts.insert(
+            "matching".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("{{ target }}".to_string()),
+                toml::Value::String("static".to_string()),
+            ]),
+        );
+        let mut tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "{{ version }}".to_string(),
+            opts,
+        });
+
+        let mut context = tera::Context::new();
+        context.insert("target", "tool");
+        context.insert("version", "1.0.0");
+        let mut tera = TeraEngine::V2(Box::new(tera::Tera::default()));
+        tool.render_templates(&mut tera, &context).unwrap();
+
+        let request = tool.to_tool_arg("http:hello").unwrap().tvr.unwrap();
+        assert_eq!(request.version(), "1.0.0");
+        assert_eq!(
+            request
+                .options()
+                .get_nested_string("platforms.linux-x64.bin"),
+            Some("bin/tool".to_string())
+        );
+        assert_eq!(
+            request.options().opts.get("matching"),
+            Some(&toml::Value::Array(vec![
+                toml::Value::String("tool".to_string()),
+                toml::Value::String("static".to_string()),
+            ]))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_task_render_detects_nested_tool_option_templates() {
+        use indexmap::IndexMap;
+
+        use super::{Task, TaskToolValue, TaskToolValueMap};
+        use crate::config::Config;
+
+        let config = Config::get().await.unwrap();
+        let nested_options = |value| {
+            let mut platform = toml::map::Map::new();
+            platform.insert("bin".to_string(), toml::Value::String(value));
+            let mut platforms = toml::map::Map::new();
+            platforms.insert("linux-x64".to_string(), toml::Value::Table(platform));
+            IndexMap::from([("platforms".to_string(), toml::Value::Table(platforms))])
+        };
+
+        let mut task = Task {
+            tools: IndexMap::from([(
+                "http:hello".to_string(),
+                TaskToolValue::Map(TaskToolValueMap {
+                    version: "1.0.0".to_string(),
+                    opts: nested_options("{{ env.HOME }}-bin".to_string()),
+                }),
+            )]),
+            ..Default::default()
+        };
+        task.render(&config, Path::new(".")).await.unwrap();
+
+        let TaskToolValue::Map(tool) = task.tools.get("http:hello").unwrap() else {
+            panic!("expected mapped task tool value");
+        };
+        let expected = format!("{}-bin", crate::env::HOME.display());
+        assert_eq!(
+            tool.opts["platforms"]["linux-x64"]["bin"].as_str(),
+            Some(expected.as_str())
+        );
+
+        let mut invalid_task = Task {
+            tools: IndexMap::from([(
+                "http:hello".to_string(),
+                TaskToolValue::Map(TaskToolValueMap {
+                    version: "1.0.0".to_string(),
+                    opts: nested_options("{{".to_string()),
+                }),
+            )]),
+            ..Default::default()
+        };
+        assert!(invalid_task.render(&config, Path::new(".")).await.is_err());
     }
 
     #[test]
