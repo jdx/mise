@@ -113,7 +113,6 @@ impl Config {
         (*_CONFIG.read().unwrap()).clone().unwrap()
     }
     pub async fn reset() -> Result<Arc<Self>> {
-        Settings::reload();
         backend::reset().await?;
         timeout::run_with_timeout_async(
             async || {
@@ -127,6 +126,7 @@ impl Config {
             Duration::from_secs(5),
         )
         .await?;
+        Settings::reload();
         Config::load().await
     }
 
