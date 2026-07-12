@@ -3107,16 +3107,13 @@ pub fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) -> Result
     } else {
         None
     };
-    for include in &includes {
-        if include.starts_with("git::") {
-            continue;
-        }
-        if let Some(path) = expand_task_include(&resolve_dir, include)
-            .into_iter()
-            .find(|path| path.is_dir())
-        {
-            return Ok(path);
-        }
+    if let Some(path) = includes
+        .iter()
+        .filter(|include| !include.starts_with("git::"))
+        .flat_map(|include| expand_task_include(&resolve_dir, include))
+        .find(|path| path.is_dir())
+    {
+        return Ok(path);
     }
     if let Some(dir) = default_create_dir {
         return Ok(dir);
