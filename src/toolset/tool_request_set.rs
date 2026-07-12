@@ -10,6 +10,7 @@ use crate::config::{Config, ConfigMap, Settings};
 use crate::env;
 use crate::registry::{REGISTRY, tool_enabled};
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
+use heck::{ToKebabCase, ToShoutySnakeCase};
 use indexmap::IndexMap;
 use itertools::Itertools;
 
@@ -300,23 +301,34 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
     b
 }
 
+/// Returns the environment variable used to select a tool version for a shell session.
+pub fn tool_env_var_name(tool: &str) -> String {
+    format!("MISE_{}_VERSION", tool.to_shouty_snake_case())
+}
+
+/// Returns the tool selected by a shell-session environment variable.
+///
+/// Shell environment variable names cannot preserve the distinction between `-` and `_`.
+/// Since mise tool names conventionally use kebab-case, both spellings decode to `-`.
+pub fn tool_from_env_var_name(name: &str) -> Option<String> {
+    let raw = name.strip_prefix("MISE_")?.strip_suffix("_VERSION")?;
+    if raw.is_empty() {
+        return None;
+    }
+    let short = crate::backend::unalias_backend(&raw.to_kebab_case()).to_string();
+    if short == "install" || short == "tool" {
+        return None;
+    }
+    Some(short)
+}
+
 /// Yields `(short, key, value)` for each `MISE_<TOOL>_VERSION` env var that
 /// maps to a tool. `short` is the unaliased backend short name (so
 /// `MISE_NODEJS_VERSION` yields `"node"`). Skips `MISE_VERSION` and the
 /// `MISE_INSTALL_VERSION` / `MISE_TOOL_VERSION` vars set during hooks.
 pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
     env::vars_safe().filter_map(|(k, v)| {
-        if !k.starts_with("MISE_") || !k.ends_with("_VERSION") || k == "MISE_VERSION" {
-            return None;
-        }
-        let raw = k
-            .trim_start_matches("MISE_")
-            .trim_end_matches("_VERSION")
-            .to_lowercase();
-        if raw == "install" || raw == "tool" {
-            return None;
-        }
-        let short = crate::backend::unalias_backend(&raw).to_string();
+        let short = tool_from_env_var_name(&k)?;
         Some((short, k, v))
     })
 }
@@ -325,6 +337,20 @@ pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
 mod tests {
     use super::*;
     use crate::toolset::{CoreToolOptions, ToolVersionOptions};
+
+    #[test]
+    fn test_tool_env_var_name_round_trip() {
+        assert_eq!(tool_env_var_name("ls-lint"), "MISE_LS_LINT_VERSION");
+        assert_eq!(
+            tool_from_env_var_name("MISE_LS_LINT_VERSION").as_deref(),
+            Some("ls-lint")
+        );
+        assert_eq!(tool_env_var_name("ls-lint"), tool_env_var_name("ls_lint"));
+        assert_eq!(
+            tool_from_env_var_name("MISE_NODEJS_VERSION").as_deref(),
+            Some("node")
+        );
+    }
 
     #[test]
     fn test_load_runtime_env_with_valid_utf8() {
