@@ -3,11 +3,12 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::prepared_install::{PreparedHttpInstall, PreparedInstall, SuccessfulInstall};
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
     clean_binary_name, eval_checksum_expr, fetch_checksum_from_file, fetch_checksum_from_shasums,
     get_filename_from_url, rename_binary_name, rename_executable_in_dir, shasums_has_entries,
-    template_string, template_string_for_target, verify_artifact,
+    template_string, template_string_for_target, verify_checksum_str,
 };
 use crate::backend::version_list;
 use crate::cli::args::BackendArg;
@@ -23,7 +24,7 @@ use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file, hash};
 use async_trait::async_trait;
-use eyre::Result;
+use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -74,13 +75,13 @@ struct CachePlan {
 
 impl FileInfo {
     /// Analyze a file path and options to determine format information
-    fn new(file_path: &Path, opts: &HttpOptions<'_>) -> Self {
+    fn new(file_path: &Path, opts: &PreparedHttpInstall) -> Self {
         // Apply format config to determine effective extension
         let effective_path = if let Some(added_ext) = opts.format() {
             let mut path = file_path.to_path_buf();
             let current_ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             let new_ext = if current_ext.is_empty() {
-                added_ext
+                added_ext.to_string()
             } else {
                 format!("{}.{}", current_ext, added_ext)
             };
@@ -145,32 +146,8 @@ impl<'a> HttpOptions<'a> {
         }
     }
 
-    fn raw(&self) -> &'a ToolVersionOptions {
-        self.values.raw()
-    }
-
-    fn url(&self) -> Option<String> {
-        self.values.platform_string("url")
-    }
-
     fn checksum(&self) -> Option<String> {
         self.values.platform_string("checksum")
-    }
-
-    fn format(&self) -> Option<String> {
-        self.values.platform_string("format")
-    }
-
-    fn strip_components(&self) -> Option<String> {
-        self.values.platform_string("strip_components")
-    }
-
-    fn bin(&self) -> Option<String> {
-        self.values.platform_string("bin")
-    }
-
-    fn rename_exe(&self) -> Option<String> {
-        self.values.platform_string("rename_exe")
     }
 
     fn bin_path(&self) -> Option<String> {
@@ -209,6 +186,18 @@ impl<'a> HttpOptions<'a> {
         self.values.platform_string_for_target("rename_exe", target)
     }
 
+    fn bin_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("bin", target)
+    }
+
+    fn bin_path_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("bin_path", target)
+    }
+
+    fn size_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("size", target)
+    }
+
     fn version_list_url(&self) -> Option<&'a str> {
         self.values.str("version_list_url")
     }
@@ -227,6 +216,32 @@ impl<'a> HttpOptions<'a> {
 
     fn url_platforms(&self) -> Vec<String> {
         self.values.available_platforms_with_key("url")
+    }
+}
+
+impl PreparedHttpInstall {
+    fn checksum(&self) -> Option<&str> {
+        self.configured_checksum.as_deref()
+    }
+
+    fn format(&self) -> Option<&str> {
+        self.format.as_deref()
+    }
+
+    fn strip_components(&self) -> Option<&str> {
+        self.strip_components.as_deref()
+    }
+
+    fn bin(&self) -> Option<&str> {
+        self.bin.as_deref()
+    }
+
+    fn rename_exe(&self) -> Option<&str> {
+        self.rename_exe.as_deref()
+    }
+
+    fn bin_path(&self) -> Option<&str> {
+        self.bin_path.as_deref()
     }
 }
 
@@ -267,7 +282,7 @@ impl HttpBackend {
     fn cache_key(
         &self,
         file_path: &Path,
-        opts: &HttpOptions<'_>,
+        opts: &PreparedHttpInstall,
         strip_components: usize,
     ) -> Result<String> {
         let checksum = hash::file_hash_blake3(file_path, None)?;
@@ -297,7 +312,7 @@ impl HttpBackend {
         Ok(key)
     }
 
-    fn cache_plan(&self, file_path: &Path, opts: &HttpOptions<'_>) -> Result<CachePlan> {
+    fn cache_plan(&self, file_path: &Path, opts: &PreparedHttpInstall) -> Result<CachePlan> {
         let file_info = FileInfo::new(file_path, opts);
         let strip_components = self.effective_strip_components(file_path, &file_info, opts)?;
         let key = self.cache_key(file_path, opts, strip_components)?;
@@ -313,7 +328,7 @@ impl HttpBackend {
         &self,
         file_path: &Path,
         file_info: &FileInfo,
-        opts: &HttpOptions<'_>,
+        opts: &PreparedHttpInstall,
     ) -> Result<usize> {
         let mut strip_components: Option<usize> = opts
             .strip_components()
@@ -346,11 +361,11 @@ impl HttpBackend {
         &self,
         file_path: &Path,
         file_info: &FileInfo,
-        opts: &HttpOptions<'_>,
+        opts: &PreparedHttpInstall,
     ) -> String {
         // Check for explicit bin name first
         if let Some(bin_name) = opts.bin() {
-            return bin_name;
+            return bin_name.to_string();
         }
         if let Some(rename_to) = opts.rename_exe() {
             let source_name = if file_info.is_compressed_binary {
@@ -358,7 +373,7 @@ impl HttpBackend {
             } else {
                 file_path.file_name().unwrap().to_string_lossy().to_string()
             };
-            return rename_binary_name(&source_name, &rename_to);
+            return rename_binary_name(&source_name, rename_to);
         }
 
         // Auto-clean the binary name
@@ -412,7 +427,7 @@ impl HttpBackend {
         file_path: &Path,
         cache_plan: &CachePlan,
         url: &str,
-        opts: &HttpOptions<'_>,
+        opts: &PreparedHttpInstall,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         let cache_path = self.cache_path(&cache_plan.key);
@@ -456,7 +471,7 @@ impl HttpBackend {
         dest: &Path,
         file_path: &Path,
         cache_plan: &CachePlan,
-        opts: &HttpOptions<'_>,
+        opts: &PreparedHttpInstall,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         file::create_dir_all(dest)?;
@@ -476,7 +491,7 @@ impl HttpBackend {
         dest: &Path,
         file_path: &Path,
         file_info: &FileInfo,
-        opts: &HttpOptions<'_>,
+        opts: &PreparedHttpInstall,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         let filename = self.dest_filename(file_path, file_info, opts);
@@ -499,7 +514,7 @@ impl HttpBackend {
         dest: &Path,
         file_path: &Path,
         file_info: &FileInfo,
-        opts: &HttpOptions<'_>,
+        opts: &PreparedHttpInstall,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         let filename = self.dest_filename(file_path, file_info, opts);
@@ -523,7 +538,7 @@ impl HttpBackend {
         dest: &Path,
         file_path: &Path,
         cache_plan: &CachePlan,
-        opts: &HttpOptions<'_>,
+        opts: &PreparedHttpInstall,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         let extract_opts = file::ExtractOptions {
@@ -539,7 +554,7 @@ impl HttpBackend {
             // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
             // the same logic used by discover_bin_paths() for PATH construction
             let search_dir = if let Some(bin_path_template) = opts.bin_path() {
-                let bin_path = template_string(&bin_path_template, tv);
+                let bin_path = template_string(bin_path_template, tv);
                 dest.join(&bin_path)
             } else {
                 let bin_dir = dest.join("bin");
@@ -551,7 +566,7 @@ impl HttpBackend {
             };
             // rsplit('/') always yields at least one element (the full string if no delimiter)
             let tool_name = self.ba.tool_name.rsplit('/').next().unwrap();
-            rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
+            rename_executable_in_dir(&search_dir, rename_to, Some(tool_name))?;
         }
 
         Ok(ExtractionType::Archive)
@@ -563,11 +578,11 @@ impl HttpBackend {
         cache_key: &str,
         url: &str,
         file_path: &Path,
-        opts: &HttpOptions<'_>,
+        opts: &PreparedHttpInstall,
     ) -> Result<()> {
         let metadata = CacheMetadata {
             url: url.to_string(),
-            checksum: opts.checksum(),
+            checksum: opts.checksum().map(str::to_string),
             size: file_path.metadata()?.len(),
             extracted_at: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
             platform: self.get_platform_key(),
@@ -645,7 +660,7 @@ impl HttpBackend {
         tv: &ToolVersion,
         cache_key: &str,
         extraction_type: &ExtractionType,
-        opts: &HttpOptions<'_>,
+        opts: &PreparedHttpInstall,
     ) -> Result<()> {
         let cache_path = self.cache_path(cache_key);
 
@@ -664,7 +679,7 @@ impl HttpBackend {
         if let ExtractionType::RawFile { filename } = extraction_type
             && let Some(bin_path_template) = opts.bin_path()
         {
-            let bin_path = template_string(&bin_path_template, tv);
+            let bin_path = template_string(bin_path_template, tv);
             let dest_dir = install_path.join(&bin_path);
             file::create_dir_all(&dest_dir)?;
 
@@ -704,27 +719,44 @@ impl HttpBackend {
     // Checksum verification
     // -------------------------------------------------------------------------
 
-    /// Verify or generate checksum for lockfile support
-    fn verify_checksum(
+    fn verify_prepared_artifact(
+        &self,
+        ctx: &InstallContext,
+        file_path: &Path,
+        spec: &PreparedHttpInstall,
+    ) -> Result<()> {
+        if let Some(checksum) = &spec.configured_checksum {
+            verify_checksum_str(file_path, checksum, Some(ctx.pr.as_ref()))?;
+        }
+        if let Some(expected_size) = spec.configured_size {
+            let actual_size = file_path.metadata()?.len();
+            if actual_size != expected_size {
+                bail!("Size mismatch: expected {expected_size}, got {actual_size}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Verify or enrich the lock contract selected during preparation.
+    fn verify_lock_contract(
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
         file_path: &Path,
+        spec: &PreparedHttpInstall,
     ) -> Result<()> {
         let settings = Settings::get();
         let filename = file_path.file_name().unwrap().to_string_lossy();
         let lockfile_enabled = settings.lockfile_enabled();
 
-        let platform_key = self.get_platform_key();
-        let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+        let platform_info = tv.lock_platforms.entry(spec.target.clone()).or_default();
+        platform_info.url = Some(spec.url.clone());
 
         // Verify or generate checksum
-        if let Some(checksum) = &platform_info.checksum {
+        if let Some(checksum) = &spec.lock_checksum {
             ctx.pr.set_message(format!("checksum {filename}"));
-            let (algo, check) = checksum
-                .split_once(':')
-                .ok_or_else(|| eyre::eyre!("Invalid checksum format: {checksum}"))?;
-            hash::ensure_checksum(file_path, check, Some(ctx.pr.as_ref()), algo)?;
+            verify_checksum_str(file_path, checksum, Some(ctx.pr.as_ref()))?;
+            platform_info.checksum = Some(checksum.clone());
         } else if lockfile_enabled {
             ctx.pr.set_message(format!("generate checksum {filename}"));
             let h = hash::file_hash_blake3(file_path, Some(ctx.pr.as_ref()))?;
@@ -732,7 +764,7 @@ impl HttpBackend {
         }
 
         // Verify or record size
-        if let Some(expected_size) = platform_info.size {
+        if let Some(expected_size) = spec.lock_size {
             ctx.pr.set_message(format!("verify size {filename}"));
             let actual_size = file_path.metadata()?.len();
             if actual_size != expected_size {
@@ -740,6 +772,7 @@ impl HttpBackend {
                     "Size mismatch for {filename}: expected {expected_size}, got {actual_size}"
                 ));
             }
+            platform_info.size = Some(expected_size);
         } else if lockfile_enabled {
             platform_info.size = Some(file_path.metadata()?.len());
         }
@@ -771,6 +804,102 @@ impl HttpBackend {
     // -------------------------------------------------------------------------
     // Cross-platform lock resolution
     // -------------------------------------------------------------------------
+
+    fn prepare_http_target(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+        locked: Option<&PlatformInfo>,
+    ) -> Result<PreparedHttpInstall> {
+        let raw_opts = tv.request.options();
+        let opts = HttpOptions::new(&raw_opts);
+        let locked_url = locked.and_then(|info| info.url.clone());
+        let replaying = locked_url.is_some();
+        let url = locked_url
+            .or_else(|| self.lock_url_for_target(&opts, tv, target))
+            .ok_or_else(|| {
+                let available = opts.url_platforms();
+                if available.is_empty() {
+                    eyre::eyre!("Http backend requires 'url' option")
+                } else {
+                    eyre::eyre!(
+                        "No URL for platform {}. Available: {}. Provide 'url' or add 'platforms.{}.url'",
+                        target.to_key(),
+                        available.join(", "),
+                        target.to_key()
+                    )
+                }
+            })?;
+
+        let strip_components = opts.strip_components_for_target(target);
+        if let Some(strip) = &strip_components {
+            strip
+                .parse::<usize>()
+                .map_err(|_| eyre::eyre!("Invalid strip_components value: {strip}"))?;
+        }
+
+        let configured_size = if replaying {
+            None
+        } else {
+            opts.size_for_target(target)
+                .map(|size| {
+                    size.parse::<u64>()
+                        .map_err(|_| eyre::eyre!("Invalid size value: {size}"))
+                })
+                .transpose()?
+        };
+        let configured_checksum = if replaying {
+            None
+        } else {
+            opts.checksum_for_target(target)
+        };
+
+        for checksum in [
+            locked.and_then(|info| info.checksum.as_deref()),
+            configured_checksum.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if !checksum.contains(':') {
+                bail!("Invalid checksum format: {checksum}");
+            }
+        }
+
+        Ok(PreparedHttpInstall {
+            target: target.to_key(),
+            url,
+            lock_checksum: locked.and_then(|info| info.checksum.clone()),
+            lock_size: locked.and_then(|info| info.size),
+            configured_checksum,
+            configured_size,
+            format: opts.format_for_target(target),
+            strip_components,
+            bin: opts.bin_for_target(target),
+            rename_exe: opts.rename_exe_for_target(target),
+            bin_path: opts.bin_path_for_target(target),
+        })
+    }
+
+    fn prepare_http_install(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+    ) -> Result<PreparedInstall> {
+        let target = PlatformTarget::from_current();
+        let locked = tv.lock_platforms.get(&target.to_key());
+        if ctx.locked && locked.and_then(|info| info.url.as_ref()).is_none() {
+            bail!(
+                "No lockfile URL found for {} on platform {} (--locked mode)\n\
+                 hint: Run `mise lock` to generate lockfile URLs, or disable locked mode",
+                tv.style(),
+                target.to_key()
+            );
+        }
+        Ok(PreparedInstall::http(
+            self.prepare_http_target(tv, &target, locked)?,
+        ))
+    }
 
     /// Resolve the artifact URL for a target platform during `mise lock`.
     /// Renders `os()`/`arch()` for the target rather than the host.
@@ -848,6 +977,76 @@ impl HttpBackend {
             &get_filename_from_url(&checksum_url),
         );
         fetch_checksum_from_file(&checksum_url, &file_algo).await
+    }
+
+    async fn install_prepared_http(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+        spec: &PreparedHttpInstall,
+    ) -> Result<ToolVersion> {
+        let url = spec.url.clone();
+        let filename = get_filename_from_url(&url);
+        let file_path = tv.download_path().join(&filename);
+
+        // Carry only the prepared contract into the successful result. The
+        // writer sees this state only when every operation below succeeds.
+        let platform_info = tv.lock_platforms.entry(spec.target.clone()).or_default();
+        platform_info.url = Some(url.clone());
+        if let Some(checksum) = &spec.lock_checksum {
+            platform_info.checksum = Some(checksum.clone());
+        }
+        if let Some(size) = spec.lock_size {
+            platform_info.size = Some(size);
+        }
+
+        let lockfile_enabled = Settings::get().lockfile_enabled();
+        let has_lockfile_checksum = spec.lock_checksum.is_some();
+
+        ctx.pr.set_message(format!("download {filename}"));
+        HTTP.download_file(&url, &file_path, Some(ctx.pr.as_ref()))
+            .await?;
+
+        if spec.configured_checksum.is_some() {
+            ctx.pr.next_operation();
+        }
+        self.verify_prepared_artifact(ctx, &file_path, spec)?;
+
+        // Validate the locked artifact contract before populating the shared
+        // extraction cache or exposing any install symlink. Enrichment remains
+        // in-memory until the successful result is returned to the writer.
+        if lockfile_enabled || has_lockfile_checksum {
+            ctx.pr.next_operation();
+        }
+        self.verify_lock_contract(ctx, &mut tv, &file_path, spec)?;
+
+        let cache_plan = self.cache_plan(&file_path, spec)?;
+        let cache_path = self.cache_path(&cache_plan.key);
+        let _lock = crate::lock_file::get(&cache_path, ctx.force)?;
+
+        ctx.pr.next_operation();
+        let extraction_type = if self.is_cached(&cache_plan.key) {
+            ctx.pr.set_message("using cached tarball".into());
+            ctx.pr.set_length(1);
+            ctx.pr.set_position(1);
+            self.extraction_type_from_cache(&cache_plan.key, &cache_plan.file_info)
+        } else {
+            ctx.pr.set_message("extracting to cache".into());
+            self.extract_to_cache(
+                &tv,
+                &file_path,
+                &cache_plan,
+                &url,
+                spec,
+                Some(ctx.pr.as_ref()),
+            )?
+        };
+
+        self.create_install_symlink(&tv, &cache_plan.key, &extraction_type, spec)?;
+        self.create_version_alias_symlink(&tv, &cache_plan.key)?;
+        tv.install_path = Some(Self::install_path_for(&tv, &cache_plan.key));
+
+        Ok(tv)
     }
 }
 
@@ -930,17 +1129,14 @@ impl Backend for HttpBackend {
     ) -> Result<PlatformInfo> {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
-
-        // Fail closed when the platform can't be resolved so the lock
-        // orchestration reports it as skipped, rather than returning an empty
-        // entry that is miscounted as a successful platform (see #7113).
-        let Some(url) = self.lock_url_for_target(&opts, tv, target) else {
-            return Err(eyre::eyre!(
-                "no URL configured for {} on {}; skipping",
+        let prepared = self.prepare_http_target(tv, target, None).map_err(|err| {
+            eyre::eyre!(
+                "no URL configured for {} on {}; skipping: {err}",
                 self.ba.full(),
                 target.to_key()
-            ));
-        };
+            )
+        })?;
+        let url = prepared.url;
 
         let checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
 
@@ -974,102 +1170,28 @@ impl Backend for HttpBackend {
             .collect())
     }
 
-    async fn install_version_(
+    fn prepare_install(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<PreparedInstall> {
+        self.prepare_http_install(ctx, tv)
+    }
+
+    async fn install_prepared_version_(
         &self,
         ctx: &InstallContext,
-        mut tv: ToolVersion,
-    ) -> Result<ToolVersion> {
-        let raw_opts = tv.request.options();
-        let opts = HttpOptions::new(&raw_opts);
-
-        // Get URL template
-        let url_template = opts.url().ok_or_else(|| {
-            let platform_key = self.get_platform_key();
-            let available = opts.url_platforms();
-            if !available.is_empty() {
-                eyre::eyre!(
-                    "No URL for platform {platform_key}. Available: {}. \
-                     Provide 'url' or add 'platforms.{platform_key}.url'",
-                    available.join(", ")
-                )
-            } else {
-                eyre::eyre!("Http backend requires 'url' option")
-            }
-        })?;
-
-        let url = template_string(&url_template, &tv);
-
-        // Download
-        let filename = get_filename_from_url(&url);
-        let file_path = tv.download_path().join(&filename);
-
-        // Record URL in lock platforms
-        let platform_key = self.get_platform_key();
-        tv.lock_platforms
-            .entry(platform_key.clone())
-            .or_default()
-            .url = Some(url.clone());
-
-        // For lockfile checksum verification
-        let settings = Settings::get();
-        let lockfile_enabled = settings.lockfile_enabled();
-        let has_lockfile_checksum = tv
-            .lock_platforms
-            .get(&platform_key)
-            .and_then(|p| p.checksum.as_ref())
-            .is_some();
-
-        ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &file_path, Some(ctx.pr.as_ref()))
+        tv: ToolVersion,
+        prepared: PreparedInstall,
+    ) -> Result<SuccessfulInstall> {
+        let tv = self
+            .install_prepared_http(ctx, tv, prepared.http_spec()?)
             .await?;
+        Ok(SuccessfulInstall::new(tv, prepared))
+    }
 
-        // Verify artifact (checksum if provided)
-        if opts.checksum().is_some() {
-            ctx.pr.next_operation();
-        }
-        verify_artifact(&tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
-
-        // Generate cache key
-        let cache_plan = self.cache_plan(&file_path, &opts)?;
-
-        // Acquire lock and extract or reuse cache
-        let cache_path = self.cache_path(&cache_plan.key);
-        let _lock = crate::lock_file::get(&cache_path, ctx.force)?;
-
-        // Determine extraction type based on whether we're using cache or extracting fresh
-        // On cache hit, we need to detect the actual filename from the cache (which may differ
-        // from current options if a previous extraction used different `bin` name)
-        ctx.pr.next_operation();
-        let extraction_type = if self.is_cached(&cache_plan.key) {
-            ctx.pr.set_message("using cached tarball".into());
-            // Report extraction operation as complete (instant since we're using cache)
-            ctx.pr.set_length(1);
-            ctx.pr.set_position(1);
-            self.extraction_type_from_cache(&cache_plan.key, &cache_plan.file_info)
-        } else {
-            ctx.pr.set_message("extracting to cache".into());
-            self.extract_to_cache(
-                &tv,
-                &file_path,
-                &cache_plan,
-                &url,
-                &opts,
-                Some(ctx.pr.as_ref()),
-            )?
-        };
-
-        // Create symlinks
-        self.create_install_symlink(&tv, &cache_plan.key, &extraction_type, &opts)?;
-        self.create_version_alias_symlink(&tv, &cache_plan.key)?;
-        tv.install_path = Some(Self::install_path_for(&tv, &cache_plan.key));
-
-        // Verify checksum for lockfile
-        if lockfile_enabled || has_lockfile_checksum {
-            ctx.pr.next_operation();
-        }
-        self.verify_checksum(ctx, &mut tv, &file_path)?;
-
-        Ok(tv)
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let prepared = self.prepare_http_install(ctx, &tv)?;
+        Ok(self
+            .install_prepared_version_(ctx, tv, prepared)
+            .await?
+            .into_tool_version())
     }
 
     fn is_version_installed(
@@ -1149,7 +1271,7 @@ mod tests {
     use crate::cli::args::BackendResolution;
     use crate::toolset::{ToolRequest, ToolSource};
 
-    fn http_test_tv(version: &str) -> ToolVersion {
+    fn http_test_tv_with_options(version: &str, options: ToolVersionOptions) -> ToolVersion {
         let backend = Arc::new(BackendArg::new_raw(
             "http-absolute-version".to_string(),
             Some("http:absolute-version".to_string()),
@@ -1160,10 +1282,24 @@ mod tests {
         let request = ToolRequest::Version {
             backend,
             version: version.to_string(),
-            options: ToolVersionOptions::default(),
+            options,
             source: ToolSource::Argument,
         };
         ToolVersion::new(request, version.to_string())
+    }
+
+    fn http_test_tv(version: &str) -> ToolVersion {
+        http_test_tv_with_options(version, ToolVersionOptions::default())
+    }
+
+    fn http_test_backend() -> HttpBackend {
+        HttpBackend::from_arg(BackendArg::new_raw(
+            "http-absolute-version".to_string(),
+            Some("http:absolute-version".to_string()),
+            "absolute-version".to_string(),
+            None,
+            BackendResolution::new(true),
+        ))
     }
 
     fn version_hash(version: &str) -> String {
@@ -1185,6 +1321,35 @@ mod tests {
             template_string_for_target(template, &tv, &win),
             "sentinel_0.40.0_windows_amd64.zip"
         );
+    }
+
+    #[test]
+    fn prepared_http_install_prefers_locked_artifact_contract() {
+        let options = crate::toolset::parse_tool_options(
+            "url=https://example.com/current,checksum=sha256:current,size=7,format=tar.gz,strip_components=1,bin=mytool,bin_path=tools/bin",
+        );
+        let tv = http_test_tv_with_options("1.0.0", options);
+        let target = PlatformTarget::from_current();
+        let locked = PlatformInfo {
+            url: Some("https://example.com/locked".to_string()),
+            checksum: Some("sha256:locked".to_string()),
+            size: Some(42),
+            ..Default::default()
+        };
+
+        let prepared = http_test_backend()
+            .prepare_http_target(&tv, &target, Some(&locked))
+            .unwrap();
+
+        assert_eq!(prepared.url, "https://example.com/locked");
+        assert_eq!(prepared.lock_checksum.as_deref(), Some("sha256:locked"));
+        assert_eq!(prepared.lock_size, Some(42));
+        assert_eq!(prepared.configured_checksum, None);
+        assert_eq!(prepared.configured_size, None);
+        assert_eq!(prepared.format.as_deref(), Some("tar.gz"));
+        assert_eq!(prepared.strip_components.as_deref(), Some("1"));
+        assert_eq!(prepared.bin.as_deref(), Some("mytool"));
+        assert_eq!(prepared.bin_path.as_deref(), Some("tools/bin"));
     }
 
     #[test]
@@ -1308,8 +1473,19 @@ mod tests {
                 BackendResolution::new(true),
             )),
         };
-        let raw_opts = crate::toolset::parse_tool_options("rename_exe=code2prompt");
-        let opts = HttpOptions::new(&raw_opts);
+        let opts = PreparedHttpInstall {
+            target: PlatformTarget::from_current().to_key(),
+            url: "https://example.com/code2prompt.gz".to_string(),
+            lock_checksum: None,
+            lock_size: None,
+            configured_checksum: None,
+            configured_size: None,
+            format: None,
+            strip_components: None,
+            bin: None,
+            rename_exe: Some("code2prompt".to_string()),
+            bin_path: None,
+        };
         let file_path = Path::new("code2prompt-x86_64-pc-windows-msvc.exe.gz");
         let file_info = FileInfo::new(file_path, &opts);
 
