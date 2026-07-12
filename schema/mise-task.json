@@ -205,6 +205,19 @@
             }
           ]
         },
+        "output": {
+          "description": "output style for this task (prefix, interleave, keep-order, replacing, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",
+          "enum": [
+            "prefix",
+            "interleave",
+            "keep-order",
+            "replacing",
+            "timed",
+            "quiet",
+            "silent"
+          ],
+          "type": "string"
+        },
         "quiet": {
           "default": false,
           "description": "do not display mise information for this task",

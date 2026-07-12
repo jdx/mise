@@ -471,12 +471,27 @@ Suppress mise's output for the task such as showing the command that is run, e.g
 When this is set, mise won't show any output other than what the script itself outputs. If you'd also
 like to hide even the output that the task emits, use [`silent`](#silent).
 
+`quiet` is a _verbosity_ setting and is independent of the [`output`](#output) _style_: it no longer
+forces un-prefixed output, so `output = "prefix"` together with `quiet = true` keeps the task-name
+prefixes while hiding mise's own messages.
+
 ### `silent`
 
 - **Type**: `bool | "stdout" | "stderr"`
 - **Default**: `false`
 
 Suppress all output from the task. If set to `"stdout"` or `"stderr"`, only that stream will be suppressed.
+
+### `output`
+
+- **Type**: `string`
+- **Default**: unset (inherits the global [`task.output`](/configuration/settings.html#task-output) setting)
+
+Output _style_ for this task: `prefix`, `interleave`, `keep-order`, `replacing`, `timed`, `quiet`, or
+`silent`. This is the per-task equivalent of the global `task.output` setting and is orthogonal to the
+[`quiet`](#quiet)/[`silent`](#silent) verbosity fields, so styles and quietness combine freely
+(e.g. `output = "prefix"` + `quiet = true`). The `quiet`/`silent` _values_ are kept for backwards
+compatibility and bundle a style with that verbosity.
 
 ### `usage`
 

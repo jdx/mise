@@ -636,7 +636,7 @@ impl Run {
                 }
             }
             if let Some(oh) = &this.output_handler
-                && oh.output(None) == TaskOutput::KeepOrder
+                && oh.output(Some(&task)) == TaskOutput::KeepOrder
             {
                 oh.keep_order_state.lock().unwrap().on_task_finished(&task);
             }
@@ -677,8 +677,12 @@ impl Run {
         };
         self.output_handler = Some(OutputHandler::new(output_config));
 
-        // Spawn timed output task if needed
-        if self.output(None) == TaskOutput::Timed {
+        // Spawn the timed-output printer if any task resolves to the Timed style
+        // (run-wide default OR a per-task `output = "timed"` override).
+        let any_timed = tasks
+            .all()
+            .any(|task| self.output(Some(task)) == TaskOutput::Timed);
+        if any_timed {
             let timed_outputs = self.output_handler.as_ref().unwrap().timed_outputs.clone();
             tokio::spawn(async move {
                 let mut interval = tokio::time::interval(Duration::from_millis(100));

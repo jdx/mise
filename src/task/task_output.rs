@@ -27,6 +27,36 @@ pub enum TaskOutput {
     Silent,
 }
 
+impl TaskOutput {
+    /// Reduce a (possibly verbosity-carrying) output value to a STYLE-only value.
+    ///
+    /// `Quiet` historically meant "interleaved streams + suppressed mise output".
+    /// The stream-style half of that is `Interleave`; the suppression half is
+    /// applied separately via the `quiet()` predicate at mise's own metadata
+    /// print sites. `Silent` is resolved before this is ever called (see
+    /// `OutputHandler::output`), so it passes through unchanged.
+    pub(crate) fn style_only(self) -> TaskOutput {
+        match self {
+            TaskOutput::Quiet => TaskOutput::Interleave,
+            other => other,
+        }
+    }
+
+    /// Like [`style_only`](Self::style_only), but a `raw` task downgrades every
+    /// non-suppression style to `Interleave` (raw needs inherited stdio for
+    /// stdin passthrough). Mirrors the pre-existing `raw` handling for the
+    /// global `task.output` setting.
+    pub(crate) fn style_with_raw(self, raw: bool) -> TaskOutput {
+        let style = self.style_only();
+        // `raw` needs inherited stdio, but must never un-silence a `Silent` task.
+        if raw && !matches!(style, TaskOutput::Silent) {
+            TaskOutput::Interleave
+        } else {
+            style
+        }
+    }
+}
+
 /// Returns the first line of a message for display unless task_show_full_cmd is true
 /// In CI mode, returns the full first line without truncation
 /// Otherwise, truncates to terminal width with ellipsis

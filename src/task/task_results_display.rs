@@ -1,5 +1,4 @@
 use crate::exit;
-use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::{FailedTasks, Task};
 use crate::ui::{style, time};
@@ -35,11 +34,13 @@ impl TaskResultsDisplay {
         self.exit_if_failed();
     }
 
-    /// Flush any remaining keep-order output (safety net)
+    /// Flush any remaining keep-order output (safety net).
+    ///
+    /// No task context is available here, so flush unconditionally rather than
+    /// gating on the run-wide output mode: `flush_all` is a no-op when nothing
+    /// was buffered, and per-task `output = "keep-order"` overrides must still be
+    /// drained even when the global default isn't keep-order.
     fn display_keep_order_output(&self) {
-        if self.output_handler.output(None) != TaskOutput::KeepOrder {
-            return;
-        }
         self.output_handler
             .keep_order_state
             .lock()
