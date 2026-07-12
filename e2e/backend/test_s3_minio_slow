@@ -201,4 +201,20 @@ EOF
 
 assert_fail "mise install 2>&1"
 
+# Test 6: mise lock generates lockfile URLs, then locked mode installs from them
+echo "Test 6: locked mode with lockfile URLs from mise lock"
+detect_platform
+cat <<EOF >mise.toml
+[tools]
+"s3:test-tool" = { version = "1.0.0", url = "s3://test-bucket/tools/test-tool-{{ version }}.tar.gz", endpoint = "$MINIO_ENDPOINT", region = "us-east-1", bin_path = "test-tool-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/test-tool-1.0.0/bin/test-tool" }
+EOF
+
+mise uninstall s3:test-tool@1.0.0 2>/dev/null || true
+rm -f mise.lock
+mise lock --platform "$MISE_PLATFORM"
+assert_contains "cat mise.lock" "s3://test-bucket/tools/test-tool-1.0.0.tar.gz"
+
+MISE_LOCKED=1 mise install
+assert_contains "mise x -- test-tool" "test-tool version 1.0.0"
+
 echo "All S3 MinIO tests passed!"

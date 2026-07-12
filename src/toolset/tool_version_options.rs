@@ -303,12 +303,6 @@ impl ToolOptions {
             .collect()
     }
 
-    pub fn merge(&mut self, other: &IndexMap<String, toml::Value>) {
-        for (key, value) in other {
-            self.opts.entry(key.to_string()).or_insert(value.clone());
-        }
-    }
-
     pub fn apply_overrides(&mut self, overrides: &ToolVersionOptions) {
         for (key, value) in &overrides.opts {
             self.opts.insert(key.clone(), value.clone());
@@ -1264,36 +1258,6 @@ mod tests {
         );
         assert!(resolved.has_key_from_sources("install_env", &[ToolOptionSource::Config]));
         assert!(resolved.has_key_from_sources("depends", &[ToolOptionSource::InlineBackendArg]));
-    }
-
-    #[test]
-    fn test_merge_functionality() {
-        let mut opts = IndexMap::new();
-        let mut platforms = toml::map::Map::new();
-        let mut macos = toml::map::Map::new();
-        macos.insert(
-            "url".to_string(),
-            toml::Value::String("https://example.com/macos-x64.tar.gz".to_string()),
-        );
-        platforms.insert("macos-x64".to_string(), toml::Value::Table(macos));
-        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
-
-        let mut tool_opts = ToolVersionOptions {
-            opts: opts.into(),
-            ..Default::default()
-        };
-
-        assert!(tool_opts.contains_key("platforms.macos-x64.url"));
-
-        let mut new_opts = IndexMap::new();
-        new_opts.insert(
-            "simple_option".to_string(),
-            toml::Value::String("value".to_string()),
-        );
-        tool_opts.merge(&new_opts);
-
-        assert!(tool_opts.contains_key("platforms.macos-x64.url"));
-        assert!(tool_opts.contains_key("simple_option"));
     }
 
     #[test]

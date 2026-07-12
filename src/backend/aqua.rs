@@ -570,10 +570,8 @@ impl Backend for AquaBackend {
 
         // Public repos download from the browser URL; private repos return 404/HTML there
         // and must be fetched from the API asset endpoint instead.
-        let download_url = match url_api.as_deref() {
-            Some(url_api) => github::pick_reachable_asset_url(&url, url_api).await,
-            None => url.clone(),
-        };
+        let download_url =
+            select_github_release_download_url(pkg.private, &url, url_api.as_deref()).await;
         self.download(ctx, &tv, &download_url, &filename).await?;
 
         if validated_url.is_none() {
@@ -1427,10 +1425,9 @@ impl AquaBackend {
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
         let (provenance_url, url_api) = self.resolve_slsa_url(pkg, v, os(), arch()).await?;
-        let download_url = match url_api.as_deref() {
-            Some(url_api) => github::pick_reachable_asset_url(&provenance_url, url_api).await,
-            None => provenance_url.clone(),
-        };
+        let download_url =
+            select_github_release_download_url(pkg.private, &provenance_url, url_api.as_deref())
+                .await;
         let provenance_path = download_dir.join(get_filename_from_url(&provenance_url));
         HTTP.download_file(&download_url, &provenance_path, pr)
             .await?;
@@ -1965,10 +1962,8 @@ impl AquaBackend {
         asset_strs: IndexSet<String>,
     ) -> Result<(String, String)> {
         let (url, url_api, _) = self.github_release_asset(pkg, v, asset_strs).await?;
-        let transport = match url_api.as_deref() {
-            Some(url_api) => github::pick_reachable_asset_url(&url, url_api).await,
-            None => url.clone(),
-        };
+        let transport =
+            select_github_release_download_url(pkg.private, &url, url_api.as_deref()).await;
         Ok((url, transport))
     }
 
@@ -3089,6 +3084,18 @@ fn cosign_opt_value<'a>(opts: &'a [String], flag: &str) -> Option<&'a str> {
         .map(|pair| pair[1].as_str())
 }
 
+async fn select_github_release_download_url(
+    private: bool,
+    browser_url: &str,
+    api_url: Option<&str>,
+) -> String {
+    match api_url {
+        Some(api_url) if private => api_url.to_string(),
+        Some(api_url) => github::pick_reachable_asset_url(browser_url, api_url).await,
+        None => browser_url.to_string(),
+    }
+}
+
 fn version_with_prefix<'a>(version: &'a str, version_prefix: Option<&str>) -> Cow<'a, str> {
     if let Some(prefix) = version_prefix
         && !version.starts_with(prefix)
@@ -3249,6 +3256,27 @@ mod tests {
         assert_eq!(
             version_with_prefix("tool-1.0.0", Some("tool-")),
             "tool-1.0.0"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_private_github_release_uses_api_url_without_probe() {
+        let browser_url = "not a valid URL";
+        let api_url = "https://api.github.com/repos/owner/repo/releases/assets/1";
+
+        assert_eq!(
+            select_github_release_download_url(true, browser_url, Some(api_url)).await,
+            api_url
+        );
+    }
+
+    #[tokio::test]
+    async fn test_github_release_without_api_url_uses_browser_url() {
+        let browser_url = "https://example.com/tool.tar.gz";
+
+        assert_eq!(
+            select_github_release_download_url(true, browser_url, None).await,
+            browser_url
         );
     }
 

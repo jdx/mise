@@ -1000,16 +1000,18 @@ impl ConfigFile for MiseToml {
                     // This preserves {{ version }} in the output for install-time rendering
                     let mut opts_context = context.clone();
                     opts_context.insert("version", "{{ version }}");
-                    // The http backend re-renders its url/checksum_url per target
-                    // platform (host at install, any target during `mise lock`), so
-                    // only those two options defer os()/arch() instead of resolving
-                    // them now. Every other option (here and for other backends) is
-                    // consumed verbatim, so it keeps host resolution at config load —
-                    // deferring it would leak raw `{{ os() }}` fragments into
-                    // consumers that never render again (e.g. checksum_expr).
+                    // The http and s3 backends re-render their url/checksum_url per
+                    // target platform (host at install, any target during `mise
+                    // lock`), so only those two options defer os()/arch() instead of
+                    // resolving them now. Every other option (here and for other
+                    // backends) is consumed verbatim, so it keeps host resolution at
+                    // config load — deferring it would leak raw `{{ os() }}`
+                    // fragments into consumers that never render again (e.g.
+                    // checksum_expr).
                     let defer_os_arch = matches!(
                         ba.backend_type(),
                         crate::backend::backend_type::BackendType::Http
+                            | crate::backend::backend_type::BackendType::S3
                     );
                     for (k, v) in options.opts.iter_mut() {
                         self.parse_tool_option_value_template(
@@ -1023,13 +1025,13 @@ impl ConfigFile for MiseToml {
                     // Start with cached options but filter out install-time-only options
                     // when config provides its own options. This allows:
                     // - Changing url/asset_pattern/checksum without reinstall issues
-                    // - Preserving post-install options like bin_path for binary discovery
+                    // - Replacing stale layout options like bin_path with current config values
                     let mut ba_opts = ba.opts().clone();
                     let backend_type = ba.backend_type();
                     ba_opts.opts.retain(|k, _| {
                         !crate::backend::is_install_time_option_key_for_type(&backend_type, k)
                     });
-                    ba_opts.merge(&options.opts);
+                    ba_opts.apply_overrides(&options);
                     // Re-apply registry defaults for install-time keys not overridden by user.
                     // The filtering above strips both stale install-state cache AND registry
                     // defaults. We want to keep registry defaults while discarding stale cache.
@@ -1052,7 +1054,9 @@ impl ConfigFile for MiseToml {
                             ba_opts.opts.entry(k).or_insert(v);
                         }
                     }
-                    // Copy os, depends, and install_env from config (not cached)
+                    // Replace config-owned fields rather than merging them with cached values.
+                    // This intentionally supersedes apply_overrides above so omitted values clear
+                    // stale cache and install_env does not retain cached entries.
                     ba_opts.os = options.os.clone();
                     ba_opts.depends = options.depends.clone();
                     ba_opts.install_env = options.install_env.clone();
@@ -3193,6 +3197,28 @@ run = 'echo "template"'
             opts2.get("pipx_args"),
             Some("--include-deps"),
             "non-overridden registry default pipx_args should still be preserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_table_syntax_user_opts_override_registry_defaults() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            podman = {{ version = "latest", rename_exe = "podman-remote" }}
+        "#});
+        let trs = cf.to_tool_request_set().unwrap();
+        let podman = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "podman")
+            .map(|(_, reqs)| reqs)
+            .expect("podman should be in tool request set");
+
+        assert_eq!(
+            podman[0].options().get("rename_exe"),
+            Some("podman-remote"),
+            "user-provided rename_exe should override the registry default"
         );
     }
 

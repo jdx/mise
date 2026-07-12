@@ -36,8 +36,10 @@ pub const EXPERIMENTAL: bool = false;
 
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    get_filename_from_url, install_artifact, template_string, verify_artifact,
+    get_filename_from_url, install_artifact, template_string, template_string_for_target,
+    verify_artifact,
 };
 use crate::backend::version_list;
 use crate::backend::{Backend, VersionInfo, runtime_path_for_install_path};
@@ -46,6 +48,7 @@ use crate::config::{Config, Settings};
 use crate::file;
 use crate::hash;
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::ui::progress_report::SingleReport;
 use async_trait::async_trait;
@@ -121,6 +124,16 @@ impl<'a> S3Options<'a> {
         self.values.platform_string("checksum")
     }
 
+    // Target-aware accessors for cross-platform `mise lock`. These resolve
+    // `platforms.<key>.<opt>` for an arbitrary target rather than the host.
+    fn url_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("url", target)
+    }
+
+    fn checksum_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("checksum", target)
+    }
+
     fn bin_path(&self) -> Option<String> {
         self.values.platform_string("bin_path")
     }
@@ -182,6 +195,16 @@ impl S3Backend {
         })?;
 
         Ok(template_string(&url_template, tv))
+    }
+
+    fn lock_url_for_target(
+        &self,
+        opts: &S3Options<'_>,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Option<String> {
+        opts.url_for_target(target)
+            .map(|template| template_string_for_target(&template, tv, target))
     }
 
     /// Download an S3 object to a local file
@@ -494,6 +517,33 @@ impl Backend for S3Backend {
         super::http_install_operation_count(opts.checksum().is_some(), &self.get_platform_key(), tv)
     }
 
+    /// Resolve URL + configured checksum for a target platform during `mise lock`,
+    /// without downloading the artifact. Fails closed when no URL is configured
+    /// for the target so the lock run reports it as skipped rather than writing
+    /// nothing under a success count.
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let raw_opts = tv.request.options();
+        let opts = S3Options::new(&raw_opts);
+
+        let Some(url) = self.lock_url_for_target(&opts, tv, target) else {
+            return Err(eyre!(
+                "no URL configured for {} on {}; skipping",
+                self.ba.full(),
+                target.to_key()
+            ));
+        };
+
+        Ok(PlatformInfo {
+            url: Some(url),
+            checksum: opts.checksum_for_target(target),
+            ..Default::default()
+        })
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let versions = self.fetch_versions(config).await?;
         Ok(versions
@@ -617,6 +667,118 @@ impl Backend for S3Backend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::args::BackendResolution;
+    use crate::platform::Platform;
+    use crate::toolset::{ToolRequest, ToolSource};
+    use indexmap::IndexMap;
+
+    fn s3_test_backend() -> S3Backend {
+        S3Backend::from_arg(BackendArg::new_raw(
+            "s3-xtool".to_string(),
+            Some("s3:xtool".to_string()),
+            "xtool".to_string(),
+            None,
+            BackendResolution::new(true),
+        ))
+    }
+
+    fn s3_test_tv(version: &str, options: ToolVersionOptions) -> ToolVersion {
+        let backend = Arc::new(BackendArg::new_raw(
+            "s3-xtool".to_string(),
+            Some("s3:xtool".to_string()),
+            "xtool".to_string(),
+            None,
+            BackendResolution::new(true),
+        ));
+        let request = ToolRequest::Version {
+            backend,
+            version: version.to_string(),
+            options,
+            source: ToolSource::Argument,
+        };
+        ToolVersion::new(request, version.to_string())
+    }
+
+    fn target(key: &str) -> PlatformTarget {
+        PlatformTarget::new(Platform::parse(key).unwrap())
+    }
+
+    #[test]
+    fn test_lock_url_for_target_platforms_table() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platforms".to_string(),
+            toml::from_str::<toml::Value>(
+                r#"
+[linux-x64]
+url = "s3://bucket/tools/xtool-{{version}}-linux-x64.tar.gz"
+
+[macos-arm64]
+url = "s3://bucket/tools/xtool-{{version}}-macos-arm64.tar.gz"
+checksum = "sha256:abc123"
+"#,
+            )
+            .unwrap(),
+        );
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+        let backend = s3_test_backend();
+        let tv = s3_test_tv("1.0.0", tool_opts);
+        let raw_opts = tv.request.options();
+        let opts = S3Options::new(&raw_opts);
+
+        assert_eq!(
+            backend.lock_url_for_target(&opts, &tv, &target("linux-x64")),
+            Some("s3://bucket/tools/xtool-1.0.0-linux-x64.tar.gz".to_string())
+        );
+        assert_eq!(
+            backend.lock_url_for_target(&opts, &tv, &target("macos-arm64")),
+            Some("s3://bucket/tools/xtool-1.0.0-macos-arm64.tar.gz".to_string())
+        );
+        // no URL configured for this platform
+        assert_eq!(
+            backend.lock_url_for_target(&opts, &tv, &target("windows-x64")),
+            None
+        );
+
+        // per-platform checksum is picked up for the target
+        assert_eq!(
+            opts.checksum_for_target(&target("macos-arm64")),
+            Some("sha256:abc123".to_string())
+        );
+        assert_eq!(opts.checksum_for_target(&target("linux-x64")), None);
+    }
+
+    #[test]
+    fn test_lock_url_for_target_base_template() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "url".to_string(),
+            toml::Value::String(
+                "s3://bucket/tools/xtool-{{ version }}-{{ os() }}-{{ arch() }}.tar.gz".to_string(),
+            ),
+        );
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+        let backend = s3_test_backend();
+        let tv = s3_test_tv("2.1.0", tool_opts);
+        let raw_opts = tv.request.options();
+        let opts = S3Options::new(&raw_opts);
+
+        // os()/arch() render for the target platform, not the host
+        assert_eq!(
+            backend.lock_url_for_target(&opts, &tv, &target("linux-arm64")),
+            Some("s3://bucket/tools/xtool-2.1.0-linux-arm64.tar.gz".to_string())
+        );
+        assert_eq!(
+            backend.lock_url_for_target(&opts, &tv, &target("macos-x64")),
+            Some("s3://bucket/tools/xtool-2.1.0-macos-x64.tar.gz".to_string())
+        );
+    }
 
     #[test]
     fn test_s3_url_parse_basic() {

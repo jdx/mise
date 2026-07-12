@@ -160,11 +160,12 @@ impl Doctor {
 
         let config = Config::get().await?;
         let ts = config.get_toolset().await?;
-        self.analyze_shims(&config, ts).await;
+        let desired_shims = self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
         self.check_path_ordering(ts, &config).await;
+        self.check_shim_shadowing(&desired_shims).await;
         data.insert(
             "paths".into(),
             self.paths(ts)
@@ -451,10 +452,11 @@ impl Doctor {
 
         match ToolsetBuilder::new().build(config).await {
             Ok(ts) => {
-                self.analyze_shims(config, &ts).await;
+                let desired_shims = self.analyze_shims(config, &ts).await;
                 self.analyze_toolset(&ts).await?;
                 self.analyze_paths(&ts).await?;
                 self.check_path_ordering(&ts, config).await;
+                self.check_shim_shadowing(&desired_shims).await;
             }
             Err(err) => self.errors.push(format!("failed to load toolset: {err}")),
         }
@@ -786,29 +788,32 @@ impl Doctor {
         Ok(())
     }
 
-    async fn analyze_shims(&mut self, config: &Arc<Config>, toolset: &Toolset) {
+    async fn analyze_shims(&mut self, config: &Arc<Config>, toolset: &Toolset) -> HashSet<String> {
         let mise_bin = file::which_no_shims("mise").unwrap_or(env::MISE_BIN.clone());
 
-        if let Ok((missing, extra)) = shims::get_shim_diffs(config, mise_bin, toolset).await {
+        if let Ok(diffs) = shims::get_shim_diffs(config, mise_bin, toolset).await {
             let cmd = style::nyellow("mise reshim");
 
-            if !missing.is_empty() {
+            if !diffs.missing.is_empty() {
                 self.errors.push(formatdoc!(
                     "shims are missing, run {cmd} to create them
                      Missing shims: {missing}",
-                    missing = missing.into_iter().join(", ")
+                    missing = diffs.missing.into_iter().join(", ")
                 ));
             }
 
-            if !extra.is_empty() {
+            if !diffs.extra.is_empty() {
                 self.errors.push(formatdoc!(
                     "unused shims are present, run {cmd} to remove them
                      Unused shims: {extra}",
-                    extra = extra.into_iter().join(", ")
+                    extra = diffs.extra.into_iter().join(", ")
                 ));
             }
+            time!("doctor::analyze_shims");
+            return diffs.desired;
         }
         time!("doctor::analyze_shims");
+        HashSet::new()
     }
 
     fn analyze_plugins(&mut self) {
@@ -960,6 +965,70 @@ impl Doctor {
             This may cause system-installed tools to be used instead of mise-managed versions.
             Ensure `mise activate` runs after other PATH modifications in your shell rc file."#
         ));
+    }
+
+    /// Check whether commands provided by mise shims resolve to another executable first.
+    /// Paths before the shim directory are allowed to take precedence intentionally, so report
+    /// only concrete command collisions instead of warning merely because shims are not first.
+    async fn check_shim_shadowing(&mut self, desired_shims: &HashSet<String>) {
+        if env::is_activated() || !shims_on_path() {
+            return;
+        }
+
+        let path = match std::env::join_paths(&*env::PATH) {
+            Ok(path) => path,
+            Err(_) => return,
+        };
+        let cwd = dirs::CWD.clone().unwrap_or_default();
+        let mut shadowed = BTreeMap::new();
+        let mut checked_commands = HashSet::new();
+
+        for shim in desired_shims {
+            if !dirs::SHIMS.join(shim).exists() {
+                continue;
+            }
+            let command = shim_command_name(shim);
+            if !checked_commands.insert(command.clone()) {
+                continue;
+            }
+            let Ok(resolved) = which::which_in(&command, Some(&path), &cwd) else {
+                continue;
+            };
+            let is_mise_shim = resolved
+                .parent()
+                .is_some_and(|parent| file::paths_eq(&file::replace_path(parent), &dirs::SHIMS));
+            if !is_mise_shim {
+                shadowed.insert(command, resolved);
+            }
+        }
+
+        if shadowed.is_empty() {
+            return;
+        }
+
+        let shadowed = shadowed
+            .into_iter()
+            .map(|(command, path)| format!("{command}: {}", display_path(path)))
+            .join("\n  ");
+        self.warnings.push(formatdoc!(
+            r#"mise shims are shadowed by executables earlier in PATH:
+              {shadowed}
+            Move {} earlier in PATH to use the mise-managed versions."#,
+            display_path(*dirs::SHIMS),
+        ));
+    }
+}
+
+fn shim_command_name(shim: &str) -> String {
+    if cfg!(windows) {
+        let lower = shim.to_ascii_lowercase();
+        if lower.ends_with(".exe") || lower.ends_with(".cmd") {
+            shim[..shim.len() - 4].to_string()
+        } else {
+            shim.to_string()
+        }
+    } else {
+        shim.to_string()
     }
 }
 
