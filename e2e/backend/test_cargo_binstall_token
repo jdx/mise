@@ -23,8 +23,8 @@ assert_contains "GITHUB_API_TOKEN=foobar GITHUB_TOKEN=barquz mise install -f car
 # This should prefer MISE_GITHUB_TOKEN
 assert_contains "MISE_GITHUB_TOKEN=foobar GITHUB_API_TOKEN=barquz GITHUB_TOKEN=barquz mise install -f cargo:eza@0.18.24 2>&1" "token=foobar"
 
-# quick-install should remain enabled by default
-assert_not_contains "mise install -f cargo:eza@0.18.24 2>&1" "--disable-strategies"
+# quick-install should be disabled by default
+assert_contains "mise install -f cargo:eza@0.18.24 2>&1" "args=-y --disable-strategies quick-install eza@0.18.24"
 
-# The setting should disable only cargo-binstall's quick-install strategy
-assert_contains "MISE_CARGO_BINSTALL_QUICKINSTALL=0 mise install -f cargo:eza@0.18.24 2>&1" "args=-y --disable-strategies quick-install eza@0.18.24"
+# The setting should allow cargo-binstall's quick-install strategy
+assert_not_contains "MISE_CARGO_BINSTALL_QUICKINSTALL=1 mise install -f cargo:eza@0.18.24 2>&1" "--disable-strategies"

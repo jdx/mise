@@ -657,7 +657,7 @@
               "type": "boolean"
             },
             "binstall_quickinstall": {
-              "default": true,
+              "default": false,
               "description": "Allow cargo-binstall to use third-party cargo-quickinstall artifacts.",
               "type": "boolean"
             },

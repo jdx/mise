@@ -70,12 +70,12 @@ When mise uses `cargo-binstall`, mise runs `cargo-binstall` once and lets `cargo
 its own fallback order, including its final fallback to compiling with `cargo install`. mise does
 not retry with a separate `cargo install` command if `cargo-binstall` exits with an error.
 
-By default, external `cargo-binstall` may use the third-party
+By default, mise disables external `cargo-binstall`'s use of the third-party
 [cargo-quickinstall](https://github.com/cargo-bins/cargo-quickinstall) artifact host. This is
 separate from crate-author GitHub releases and artifacts declared in `package.metadata.binstall`.
-Set `cargo.binstall_quickinstall = false` to disable only that strategy. This setting does not
-affect mise's native `cargo.binstall_native` path, which does not use quickinstall. Set
-`cargo.binstall = false` to disable binstall entirely.
+Set `cargo.binstall_quickinstall = true` to allow that strategy. This setting does not affect
+mise's native `cargo.binstall_native` path, which does not use quickinstall. Set `cargo.binstall =
+false` to disable binstall entirely.
 
 <script setup>
 import Settings from '/components/settings.vue';

@@ -1603,7 +1603,7 @@ mod tests {
     #[test]
     fn test_cargo_binstall_quickinstall_setting() {
         let settings = Settings::builder().load().unwrap();
-        assert!(settings.cargo.binstall_quickinstall);
+        assert!(!settings.cargo.binstall_quickinstall);
 
         let meta = SETTINGS_META
             .get("cargo.binstall_quickinstall")
