@@ -77,9 +77,11 @@ never eligible for cargo-binstall.
 By default, mise disables external `cargo-binstall`'s use of the third-party
 [cargo-quickinstall](https://github.com/cargo-bins/cargo-quickinstall) artifact host. This is
 separate from crate-author GitHub releases and artifacts declared in `package.metadata.binstall`.
-Set `cargo.binstall_quickinstall = true` to allow that strategy. This setting does not affect
-mise's native `cargo.binstall_native` path, which does not use quickinstall. Set `cargo.binstall =
-false` to disable binstall entirely.
+Together with the always-disabled compile strategy, the default external cargo-binstall flag is
+`--disable-strategies compile,quick-install`. Set `cargo.binstall_quickinstall = true` to allow
+quick-install; mise then passes `--disable-strategies compile`. This setting does not affect mise's
+native `cargo.binstall_native` path, which does not use quickinstall. Set `cargo.binstall = false`
+to disable binstall entirely.
 
 <script setup>
 import Settings from '/components/settings.vue';
