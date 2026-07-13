@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "cef8e0d67edb",
+  "strategy": "manual-commit",
+  "branch": "codex/add-tera-contrib-helpers",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/templates.md",
+    "src/task/task_script_parser.rs",
+    "src/tera.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ce/f8e0d67edb/0/metadata.json",
+      "transcript": "/ce/f8e0d67edb/0/full.jsonl",
+      "content_hash": "/ce/f8e0d67edb/0/content_hash.txt",
+      "prompt": "/ce/f8e0d67edb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 126397,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 11303680,
+    "output_tokens": 17044,
+    "api_call_count": 54
+  }
+}

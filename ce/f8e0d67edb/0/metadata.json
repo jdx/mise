@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "cef8e0d67edb",
+  "session_id": "019f5ccd-3d12-7ee2-b82d-f7e03a3a735b",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-13T19:23:03.305906Z",
+  "branch": "codex/add-tera-contrib-helpers",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/templates.md",
+    "src/task/task_script_parser.rs",
+    "src/tera.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "5fa6b2338671",
+  "checkpoint_transcript_start": 424,
+  "transcript_lines_at_start": 424,
+  "token_usage": {
+    "input_tokens": 126397,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 11303680,
+    "output_tokens": 17044,
+    "api_call_count": 54
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-13T19:23:03.271613Z",
+    "agent_lines": 191,
+    "agent_removed": 254,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 191,
+    "total_lines_changed": 445,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
