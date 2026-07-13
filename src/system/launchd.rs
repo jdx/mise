@@ -493,6 +493,9 @@ fn bootout_missing_error(error: &str) -> bool {
         || error.contains("could not find service")
         || error.contains("service is not loaded")
         || error.contains("not in domain")
+        // macOS (Darwin 27) returns EIO for `launchctl bootout` of a
+        // service that is not currently loaded, not "No such process".
+        || error.contains("boot-out failed: 5")
 }
 
 #[cfg(test)]
@@ -712,8 +715,11 @@ mod tests {
         assert!(bootout_missing_error(
             "`launchctl bootout gui/501 foo` failed: Could not find specified service"
         ));
-        assert!(!bootout_missing_error(
+        assert!(bootout_missing_error(
             "`launchctl bootout gui/501 foo` failed: Boot-out failed: 5: Input/output error"
+        ));
+        assert!(!bootout_missing_error(
+            "`launchctl bootout gui/501 foo` failed: Boot-out failed: 1: Operation not permitted"
         ));
     }
 }
