@@ -120,6 +120,13 @@ pub fn build_layer_from_path(
     if target.is_empty() {
         eyre::bail!("cannot copy a file or symlink to the image root");
     }
+    if image_path.ends_with('/') {
+        eyre::bail!(
+            "copy image path {image_path:?} ends with `/` but {} is not a directory; \
+             specify the exact destination file name",
+            host_path.display()
+        );
+    }
 
     let kind = if metadata.file_type().is_symlink() {
         EntryKind::Symlink(
@@ -146,13 +153,18 @@ pub fn build_layer_from_path(
         .parent()
         .unwrap_or_else(|| Path::new(""))
         .to_string_lossy();
+    let size = if matches!(kind, EntryKind::Symlink(_)) {
+        0
+    } else {
+        metadata.len()
+    };
     let entry = Entry {
         rel,
         abs: host_path.to_path_buf(),
         kind,
         mode,
         owner,
-        size: metadata.len(),
+        size,
     };
     build_layer_from_entries(&[entry], &prefix, owner)
 }
@@ -661,6 +673,16 @@ mod tests {
 
         assert!(paths.contains(&PathBuf::from("opt/app/greeting.txt")));
         assert!(!paths.contains(&PathBuf::from("opt/app/hello.txt")));
+    }
+
+    #[test]
+    fn host_file_rejects_directory_style_image_path() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("hello.txt");
+        fs::write(&source, b"hello\n").unwrap();
+
+        let err = build_layer_from_path(&source, "/opt/app/", LayerOwner::default()).unwrap_err();
+        assert!(err.to_string().contains("exact destination file name"));
     }
 
     #[test]

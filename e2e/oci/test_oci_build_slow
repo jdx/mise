@@ -143,6 +143,7 @@ assert "jq -r '[.layers[] | select(.annotations.\"dev.mise.copy\") | .annotation
 config_copy_layer="$(jq -r '.layers[] | select(.annotations."dev.mise.copy" == "/srv/assets") | .digest | ltrimstr("sha256:")' ./out-copy/blobs/sha256/"$mf_copy")"
 cli_copy_layer="$(jq -r '.layers[] | select(.annotations."dev.mise.copy" == "/etc/cli-copy.txt") | .digest | ltrimstr("sha256:")' ./out-copy/blobs/sha256/"$mf_copy")"
 assert_contains "tar -tzf ./out-copy/blobs/sha256/$config_copy_layer" "srv/assets/config-copy.txt"
+assert_contains "tar -xOzf ./out-copy/blobs/sha256/$config_copy_layer srv/assets/config-copy.txt" "from-config"
 assert "tar -xOzf ./out-copy/blobs/sha256/$cli_copy_layer etc/cli-copy.txt" "from-cli"
 
 # --- 11. [bootstrap.packages] participates in OCI builds ---

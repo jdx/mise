@@ -245,6 +245,12 @@ impl Builder {
         let mut copy_layers: Vec<(&OciCopy, LayerBlob)> = Vec::new();
         for copy in copies {
             copy.validate().map_err(eyre::Report::msg)?;
+            warn!(
+                "mise oci build: copying host path {} into the image at {} — review its \
+                 contents for secrets or credentials before sharing the image",
+                copy.host.display(),
+                copy.image
+            );
             let blob = layer::build_layer_from_path(&copy.host, &copy.image, owner).wrap_err_with(
                 || {
                     format!(

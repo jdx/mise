@@ -62,6 +62,11 @@ fn validate_image_path(path: &str) -> Result<(), String> {
     if !path.starts_with('/') {
         return Err(format!("copy image path must be absolute (got {path:?})"));
     }
+    if path.trim_matches('/').is_empty() {
+        return Err(format!(
+            "copy image path must not be the root `/` (got {path:?})"
+        ));
+    }
     if path.split('/').any(|part| part == "." || part == "..") {
         return Err(format!(
             "copy image path must not contain `.` or `..` components (got {path:?})"
@@ -144,7 +149,9 @@ impl OciConfig {
     /// value encountered wins, independent of the map's iteration order.
     ///
     /// For map fields (env, labels), keys already present on `self` win;
-    /// new keys from `other` are added.
+    /// new keys from `other` are added. Copy entries accumulate with less
+    /// specific configs first, so a more specific copy targeting the same
+    /// image path is emitted later and takes precedence.
     pub fn fill_defaults_from(&mut self, other: Self) {
         if self.from.is_none() {
             self.from = other.from;
@@ -176,12 +183,49 @@ impl OciConfig {
         if self.mount_point.is_none() {
             self.mount_point = other.mount_point;
         }
-        self.copy.extend(other.copy);
+        let mut copy = other.copy;
+        copy.append(&mut self.copy);
+        self.copy = copy;
         for (k, v) in other.env {
             self.env.entry(k).or_insert(v);
         }
         for (k, v) in other.labels {
             self.labels.entry(k).or_insert(v);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn copy(host: &str, image: &str) -> OciCopy {
+        OciCopy {
+            host: PathBuf::from(host),
+            image: image.to_string(),
+        }
+    }
+
+    #[test]
+    fn copy_rejects_root_and_relative_image_paths() {
+        assert!("file:/".parse::<OciCopy>().is_err());
+        assert!("file:relative".parse::<OciCopy>().is_err());
+    }
+
+    #[test]
+    fn layered_copies_put_more_specific_entries_last() {
+        let mut merged = OciConfig {
+            copy: vec![copy("project", "/same")],
+            ..Default::default()
+        };
+        merged.fill_defaults_from(OciConfig {
+            copy: vec![copy("parent", "/same")],
+            ..Default::default()
+        });
+
+        assert_eq!(
+            merged.copy,
+            vec![copy("parent", "/same"), copy("project", "/same")]
+        );
     }
 }

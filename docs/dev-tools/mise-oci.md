@@ -226,6 +226,8 @@ absolute and may not contain `.` or `..` components. Parent directories are
 created automatically, executable bits are preserved, and ownership follows
 `--owner` or `[oci].user_id` / `[oci].group_id`. Copy layers are annotated
 with `dev.mise.copy=<image path>` so they can be identified during inspection.
+When layered configs copy to the same image path, less-specific entries are
+emitted first so the most-specific config wins. CLI copies are emitted last.
 
 ### `[bootstrap]` and `[dotfiles]` in OCI images
 
