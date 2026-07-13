@@ -126,8 +126,8 @@ assert_contains "tar -xOzf ./out-files/blobs/sha256/$files_layer etc/profile.d/p
 assert_contains "tar -xOzf ./out-files/blobs/sha256/$files_layer root/.config/app/config.toml" "tool=dev"
 
 # --- 10. --copy and [[oci.copy]] each produce an annotated layer ---
-mkdir -p assets
-echo "from-cli" >cli-copy.txt
+mkdir -p assets copy-subdir
+echo "from-cli" >copy-subdir/cli-copy.txt
 echo "from-config" >assets/config-copy.txt
 cat >mise.toml <<EOF
 [tools]
@@ -137,7 +137,7 @@ jq = "1.8.1"
 host = "assets"
 image = "/srv/assets"
 EOF
-assert_succeed "mise oci build -o ./out-copy --from scratch --copy cli-copy.txt:/etc/cli-copy.txt"
+assert_succeed "mise --cd copy-subdir oci build -o ../out-copy --from scratch --copy cli-copy.txt:/etc/cli-copy.txt"
 mf_copy="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-copy/index.json)"
 assert "jq -r '[.layers[] | select(.annotations.\"dev.mise.copy\") | .annotations.\"dev.mise.copy\"] | join(\",\")' ./out-copy/blobs/sha256/$mf_copy" "/srv/assets,/etc/cli-copy.txt"
 config_copy_layer="$(jq -r '.layers[] | select(.annotations."dev.mise.copy" == "/srv/assets") | .digest | ltrimstr("sha256:")' ./out-copy/blobs/sha256/"$mf_copy")"
