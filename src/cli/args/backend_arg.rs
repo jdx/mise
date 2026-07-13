@@ -336,16 +336,20 @@ impl BackendArg {
             }
         }
 
-        // Only check install state for non-plugin:tool format entries
-        if !self.short.contains(':')
-            && let Ok(Some(backend_type)) = install_state::backend_type(&self.short)
+        // Derive the backend type from the same resolved identifier used by
+        // `tool_name()`. For non-explicit tools, `full()` may intentionally
+        // prefer the current registry backend over stale install metadata.
+        let full = self.full();
+        if let Some((backend, _)) = full.split_once(':')
+            && let Ok(backend_type) = backend.parse()
         {
             return backend_type;
         }
 
-        let full = self.full();
-        if let Some((backend, _)) = full.split_once(':')
-            && let Ok(backend_type) = backend.parse()
+        // Legacy install state may have a backend type without a full
+        // identifier. Keep it as a fallback when `full()` was inconclusive.
+        if !self.short.contains(':')
+            && let Ok(Some(backend_type)) = install_state::backend_type(&self.short)
         {
             return backend_type;
         }
