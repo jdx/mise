@@ -647,6 +647,14 @@ impl Cli {
         measure!("handle_shim", { shims::handle_shim().await })?;
         ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
+        // Clap's tool argument parsers consult installed plugin/tool metadata while
+        // resolving registry options. Initialize that filesystem-only state before
+        // parsing, while leaving full backend loading until after registry refresh.
+        if !print_version {
+            measure!("install_state::init", {
+                crate::toolset::install_state::init().await?
+            });
+        }
         // Pre-process args to handle naked runs before clap parsing
         let cmd = Cli::command();
         let processed_args = preprocess_args_for_naked_run(&cmd, args);
