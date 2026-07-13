@@ -33,6 +33,7 @@ impl AquaRegistry {
             settings.aqua.baked_registry,
             settings.prefer_offline(),
             settings.aqua_registry_cache_ttl(),
+            settings.registry_floating,
         )
     }
 
@@ -42,16 +43,20 @@ impl AquaRegistry {
         use_baked_registry: bool,
         prefer_offline: bool,
         source_cache_ttl: duration::Duration,
+        fallback_official_registry_errors: bool,
     ) -> Self {
         let cache = RegistryCache::new(cache_dir);
         let mut registries = registry_urls
             .into_iter()
             .map(|registry_url| {
+                let fallback_on_error =
+                    fallback_official_registry_errors && is_official_aqua_registry(&registry_url);
                 RegistrySource::Downloaded(DownloadedRegistry::new(
                     registry_url,
                     cache.clone(),
                     prefer_offline,
                     source_cache_ttl,
+                    fallback_on_error,
                 ))
             })
             .collect::<Vec<_>>();
@@ -74,6 +79,13 @@ impl RegistrySource {
             Self::Downloaded(registry) => match registry.package(package_id).await {
                 Ok(package) => Ok(Some(package)),
                 Err(AquaRegistryError::PackageNotFound(_)) => Ok(None),
+                Err(err) if registry.fallback_on_error => {
+                    warn!(
+                        "failed to load floating aqua registry {}, using baked-in fallback: {err}",
+                        registry.registry_url
+                    );
+                    Ok(None)
+                }
                 Err(err) => Err(err),
             },
             Self::Baked => super::standard_registry::package(package_id).transpose(),
@@ -89,13 +101,26 @@ impl RegistrySource {
 }
 
 fn configured_registry_urls(settings: &Settings) -> Vec<String> {
-    if let Some(registries) = settings.aqua.registries.clone() {
+    let mut registries = if let Some(registries) = settings.aqua.registries.clone() {
         registries
     } else if settings.aqua.baked_registry {
         Vec::new()
     } else {
         vec![AQUA_DEFAULT_REGISTRY_URL.into()]
+    };
+    if settings.registry_floating
+        && !registries
+            .iter()
+            .any(|registry| is_official_aqua_registry(registry))
+    {
+        registries.push(AQUA_DEFAULT_REGISTRY_URL.into());
     }
+    registries
+}
+
+fn is_official_aqua_registry(registry_url: &str) -> bool {
+    github_repo_slug(registry_url)
+        .is_some_and(|(owner, repo)| owner == "aquaproj" && repo == "aqua-registry")
 }
 
 #[derive(Debug)]
@@ -103,6 +128,7 @@ struct DownloadedRegistry {
     registry_url: String,
     prefer_offline: bool,
     source_cache_ttl: duration::Duration,
+    fallback_on_error: bool,
     cache: RegistryCache,
     registry: OnceCell<std::result::Result<Arc<ActiveRegistry>, String>>,
 }
@@ -113,11 +139,13 @@ impl DownloadedRegistry {
         cache: RegistryCache,
         prefer_offline: bool,
         source_cache_ttl: duration::Duration,
+        fallback_on_error: bool,
     ) -> Self {
         Self {
             registry_url,
             prefer_offline,
             source_cache_ttl,
+            fallback_on_error,
             cache,
             registry: OnceCell::new(),
         }
@@ -589,6 +617,33 @@ mod tests {
         assert_eq!(configured_registry_urls(&settings), Vec::<String>::new());
     }
 
+    #[test]
+    fn floating_registry_adds_downloaded_official_registry_before_baked_fallback() {
+        let mut settings = Settings::default();
+        settings.aqua.baked_registry = true;
+        settings.registry_floating = true;
+
+        assert_eq!(
+            configured_registry_urls(&settings),
+            vec![AQUA_DEFAULT_REGISTRY_URL.to_string()]
+        );
+    }
+
+    #[test]
+    fn floating_registry_keeps_custom_registries_ahead_of_official_registry() {
+        let mut settings = Settings::default();
+        settings.aqua.registries = Some(vec!["https://example.com/custom".into()]);
+        settings.registry_floating = true;
+
+        assert_eq!(
+            configured_registry_urls(&settings),
+            vec![
+                "https://example.com/custom".to_string(),
+                AQUA_DEFAULT_REGISTRY_URL.to_string()
+            ]
+        );
+    }
+
     #[tokio::test]
     async fn registry_load_failure_does_not_check_later_registries() {
         let temp = tempfile::tempdir().unwrap();
@@ -603,6 +658,22 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(err, AquaRegistryError::RegistryNotAvailable(_)));
+    }
+
+    #[tokio::test]
+    async fn unavailable_floating_official_registry_uses_baked_fallback() {
+        let temp = tempfile::tempdir().unwrap();
+        let registry = AquaRegistry::new(
+            temp.path().to_path_buf(),
+            vec![AQUA_DEFAULT_REGISTRY_URL.to_string()],
+            true,
+            true,
+            DEFAULT_AQUA_REGISTRY_CACHE_TTL,
+            true,
+        );
+
+        let package = registry.fetch_package("01mf02/jaq").await.unwrap();
+        assert_eq!(package.repo_name, "jaq");
     }
 
     #[tokio::test]
@@ -760,6 +831,7 @@ mod tests {
             false,
             true,
             DEFAULT_AQUA_REGISTRY_CACHE_TTL,
+            false,
         );
 
         let err = first_downloaded_registry(&fetcher)
@@ -876,6 +948,7 @@ packages:
             use_baked_registry,
             false,
             DEFAULT_AQUA_REGISTRY_CACHE_TTL,
+            false,
         )
     }
 

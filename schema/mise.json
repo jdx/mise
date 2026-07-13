@@ -1394,6 +1394,15 @@
             }
           }
         },
+        "registry_cache_ttl": {
+          "description": "How long to cache the floating mise registry.",
+          "type": "string"
+        },
+        "registry_floating": {
+          "default": false,
+          "description": "Fetch current mise and aqua registries instead of using only the snapshots baked into this mise release.",
+          "type": "boolean"
+        },
         "plugin_autoupdate_last_check_duration": {
           "default": "7d",
           "description": "How long to wait before updating plugins automatically (note this isn't currently implemented).",
