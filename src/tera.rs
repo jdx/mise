@@ -3,7 +3,6 @@ use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, Utc};
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
@@ -210,24 +209,6 @@ fn escape_html(s: &str) -> String {
     output
 }
 
-fn slugify(s: &str) -> String {
-    let mut out = String::new();
-    let mut previous_dash = false;
-    for c in s.chars().flat_map(char::to_lowercase) {
-        if c.is_ascii_alphanumeric() {
-            out.push(c);
-            previous_dash = false;
-        } else if !previous_dash && !out.is_empty() {
-            out.push('-');
-            previous_dash = true;
-        }
-    }
-    if previous_dash {
-        out.pop();
-    }
-    out
-}
-
 fn tera_v1_truthy(value: &Value) -> bool {
     if value.is_none() {
         false
@@ -244,41 +225,6 @@ fn tera_v1_truthy(value: &Value) -> bool {
     } else {
         true
     }
-}
-
-fn tera_v1_date(value: Value, args: Kwargs) -> TeraResult<Value> {
-    let format = args.get::<&str>("format")?.unwrap_or("%Y-%m-%d");
-    let formatted = if let Some(n) = value.as_number() {
-        let ts = n
-            .as_integer()
-            .ok_or_else(|| tera_err(format!("Filter `date` was invoked on a float: {value}")))?;
-        let ts = i64::try_from(ts)
-            .map_err(|_| tera_err(format!("Filter `date` timestamp is out of range: {value}")))?;
-        DateTime::<Utc>::from_timestamp(ts, 0)
-            .ok_or_else(|| tera_err(format!("Filter `date` timestamp is out of range: {ts}")))?
-            .format(format)
-            .to_string()
-    } else if let Some(s) = value.as_str() {
-        if s.contains('T') {
-            match DateTime::<FixedOffset>::parse_from_rfc3339(s) {
-                Ok(dt) => dt.format(format).to_string(),
-                Err(_) => NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
-                    .map(|dt| dt.format(format).to_string())
-                    .map_err(|_| tera_err(format!("Error parsing `{s:?}` as a date")))?,
-            }
-        } else {
-            NaiveDate::parse_from_str(s, "%Y-%m-%d")
-                .map(|dt| dt.format(format).to_string())
-                .map_err(|_| tera_err(format!("Error parsing `{s:?}` as YYYY-MM-DD date")))?
-        }
-    } else {
-        return Err(tera_err(format!(
-            "Filter `date` expected an integer timestamp or string, got {}",
-            value.name()
-        )));
-    };
-
-    Ok(Value::from(formatted))
 }
 
 fn tera_v1_int(value: Value, args: Kwargs) -> TeraResult<Value> {
@@ -577,48 +523,6 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                 .replace('\'', "\\'"),
         )
     });
-    tera.register_filter("slugify", move |s: &str, _: Kwargs, _: &State| {
-        warn_tera_v1_filter(
-            "tera-v1-slugify",
-            "slugify",
-            "Use an explicit slug value or custom template logic instead.",
-        );
-        Value::from(slugify(s))
-    });
-    tera.register_filter("urlencode", move |s: &str, _: Kwargs, _: &State| {
-        warn_tera_v1_filter(
-            "tera-v1-urlencode",
-            "urlencode",
-            "Pre-encode URL components before rendering.",
-        );
-        Value::from(urlencoding::encode(s).replace("%2F", "/"))
-    });
-    tera.register_filter("urlencode_strict", move |s: &str, _: Kwargs, _: &State| {
-        warn_tera_v1_filter(
-            "tera-v1-urlencode-strict",
-            "urlencode_strict",
-            "Pre-encode URL components before rendering.",
-        );
-        Value::from(urlencoding::encode(s).into_owned())
-    });
-    tera.register_filter("striptags", move |s: &str, _: Kwargs, _: &State| {
-        static STRIPTAGS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"<[^>]*>").unwrap());
-        warn_tera_v1_filter(
-            "tera-v1-striptags",
-            "striptags",
-            "Strip tags before rendering or use custom template logic instead.",
-        );
-        Value::from(STRIPTAGS_RE.replace_all(s, "").to_string())
-    });
-    tera.register_filter("spaceless", move |s: &str, _: Kwargs, _: &State| {
-        static SPACELESS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r">\s+<").unwrap());
-        warn_tera_v1_filter(
-            "tera-v1-spaceless",
-            "spaceless",
-            "Minify whitespace before rendering or use custom template logic instead.",
-        );
-        Value::from(SPACELESS_RE.replace_all(s, "><").to_string())
-    });
     tera.register_filter(
         "truncate",
         move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
@@ -767,47 +671,6 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                 }
             }
             Ok(Value::from(out))
-        },
-    );
-    tera.register_filter(
-        "json_encode",
-        move |value: Value, args: Kwargs, _: &State| -> TeraResult<Value> {
-            warn_tera_v1_filter(
-                "tera-v1-json-encode",
-                "json_encode",
-                "Use Tera 2 JSON helpers when available or pre-encode JSON before rendering.",
-            );
-            let pretty = args.get::<bool>("pretty")?.unwrap_or(false);
-            let encoded = if pretty {
-                serde_json::to_string_pretty(&value)
-            } else {
-                serde_json::to_string(&value)
-            }
-            .map_err(|e| tera_err(e.to_string()))?;
-            Ok(Value::from(encoded))
-        },
-    );
-    tera.register_filter(
-        "date",
-        move |value: Value, args: Kwargs, _: &State| -> TeraResult<Value> {
-            warn_tera_v1_filter("tera-v1-date", "date", "Format dates before rendering.");
-            tera_v1_date(value, args)
-        },
-    );
-    tera.register_filter(
-        "filesizeformat",
-        move |value: Value, _: Kwargs, _: &State| -> TeraResult<Value> {
-            warn_tera_v1_filter(
-                "tera-v1-filesizeformat",
-                "filesizeformat",
-                "Format file sizes before rendering.",
-            );
-            let size = value
-                .as_number()
-                .and_then(|n| n.as_integer())
-                .and_then(|n| u64::try_from(n).ok())
-                .ok_or_else(|| tera_err("filesizeformat filter expects a non-negative integer"))?;
-            Ok(Value::from(bytesize::ByteSize(size).to_string()))
         },
     );
     tera.register_filter(
@@ -986,6 +849,41 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
             let result = requirement.matches(&version);
             Ok(result)
         },
+    );
+
+    // Tera 2 keeps helpers that require additional dependencies in tera-contrib.
+    // Register the complete contrib set so all mise templates see the same helpers.
+    tera.register_filter("b64_encode", tera_contrib::base64::b64_encode);
+    tera.register_filter("b64_decode", tera_contrib::base64::b64_decode);
+    tera.register_function("now", tera_contrib::dates::now);
+    tera.register_filter("date", tera_contrib::dates::date);
+    tera.register_test("before", tera_contrib::dates::is_before);
+    tera.register_test("after", tera_contrib::dates::is_after);
+    tera.register_filter(
+        "filesize_format",
+        tera_contrib::filesize_format::filesize_format,
+    );
+    tera.register_filter(
+        "filesizeformat",
+        tera_contrib::filesize_format::filesize_format,
+    );
+    tera.register_filter("format", tera_contrib::format::format);
+    tera.register_filter("json_encode", tera_contrib::json::json_encode);
+    tera.register_function("get_random", tera_contrib::rand::get_random);
+    tera.register_filter("shuffle", tera_contrib::rand::shuffle);
+    tera.register_filter("striptags", tera_contrib::regex::striptags);
+    tera.register_filter("spaceless", tera_contrib::regex::spaceless);
+    tera.register_filter(
+        "regex_replace",
+        tera_contrib::regex::RegexReplace::default(),
+    );
+    tera.register_test("matching", tera_contrib::regex::Matching::default());
+    tera.register_filter("slug", tera_contrib::slug::slug);
+    tera.register_filter("slugify", tera_contrib::slug::slug);
+    tera.register_filter("urlencode", tera_contrib::urlencode::urlencode);
+    tera.register_filter(
+        "urlencode_strict",
+        tera_contrib::urlencode::urlencode_strict,
     );
 
     tera
@@ -2231,6 +2129,47 @@ mod tests {
         );
         assert_eq!(render("{{ {'ok': true} is object }}"), "true");
         assert_eq!(render("{{ 6 is divisibleby(divisor=3) }}"), "true");
+    }
+
+    #[test]
+    fn test_tera_contrib_helpers() {
+        assert_eq!(render("{{ 'hello' | b64_encode | b64_decode }}"), "hello");
+        assert_eq!(
+            render("{{ '2026-07-13' | date(format='%Y/%m/%d') }}"),
+            "2026/07/13"
+        );
+        assert_eq!(render("{{ now() | date(format='%Y') | length }}"), "4");
+        assert_eq!(
+            render("{{ '2026-01-01' is before(other='2026-02-01') }}"),
+            "true"
+        );
+        assert_eq!(
+            render("{{ '2026-02-01' is after(other='2026-01-01') }}"),
+            "true"
+        );
+        assert_eq!(render("{{ 1024 | filesize_format }}"), "1 KiB");
+        assert_eq!(render("{{ 1024 | filesizeformat }}"), "1 KiB");
+        assert_eq!(render("{{ 42 | format(spec='05') }}"), "00042");
+        assert_eq!(render("{{ {'ok': true} | json_encode }}"), r#"{"ok":true}"#);
+        let random = render("{{ get_random(start=10, end=20, seed='mise') }}")
+            .parse::<i64>()
+            .unwrap();
+        assert!((10..20).contains(&random));
+        assert_eq!(
+            render("{{ [1, 2, 3] | shuffle(seed='mise') | length }}"),
+            "3"
+        );
+        assert_eq!(
+            render("{{ 'abc123' | regex_replace(pattern='[0-9]+', rep='') }}"),
+            "abc"
+        );
+        assert_eq!(render("{{ 'abc123' is matching(pat='[0-9]+$') }}"), "true");
+        assert_eq!(render("{{ '<b>x</b>' | striptags }}"), "x");
+        assert_eq!(render("{{ '<p> </p>' | spaceless }}"), "<p></p>");
+        assert_eq!(render("{{ 'Hello World' | slug }}"), "hello-world");
+        assert_eq!(render("{{ 'Hello World' | slugify }}"), "hello-world");
+        assert_eq!(render("{{ 'a/b c' | urlencode }}"), "a/b%20c");
+        assert_eq!(render("{{ 'a/b c' | urlencode_strict }}"), "a%2Fb%20c");
     }
 
     #[tokio::test]
