@@ -4,10 +4,8 @@
 #
 # `mise which` is a binary lookup and must not require HTTP calls when an
 # installed version already satisfies the request. It is now in the
-# prefer-offline auto-enable list (like `where`, `ls`, `exec`), so even an
-# explicit `minimum_release_age` cutoff -- which normally forces date-aware
-# remote resolution on regular commands -- must keep resolving from installed
-# versions instead of fetching a remote version list.
+# prefer-offline auto-enable list (like `where`, `ls`, `exec`), so it keeps
+# resolving from installed versions instead of fetching a remote version list.
 #
 # Scope: this covers config-file tools. An explicit `--tool=spy@1` argument is
 # a `ToolSource::Argument` request, which intentionally opts out of
@@ -38,10 +36,9 @@ mise install spy@1.0.0
 rm -f "$marker"
 rm -rf "$MISE_CACHE_DIR/spy"
 
-# Fuzzy requests ("latest", a prefix) are the dangerous ones: an explicit
-# cutoff pushes those onto the remote date-aware resolution path. Newer remote
-# versions (1.1.0, 2.0.0) exist, so a regressed remote resolution would also
-# report a non-installed version below. Test both with no cutoff (built-in
+# Fuzzy requests ("latest", a prefix) must reuse installed matches. Newer
+# remote versions (1.1.0, 2.0.0) exist, so a regressed remote resolution would
+# also report a non-installed version below. Test both with no cutoff (built-in
 # default) and an explicit cutoff.
 for mra in unset 24h; do
   if [[ $mra == unset ]]; then
