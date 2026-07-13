@@ -42,6 +42,21 @@ $ mise run deploy staging --verbose --region us-west-2
 # $usage_region = "us-west-2"
 ```
 
+Inherited `usage_*` values are cleared for normal task execution, including
+tasks without a usage spec. Tasks with `raw_args = true` retain inherited
+`usage_*` values. To intentionally inherit a value in a normally parsed task,
+use a separately named environment variable, optionally with `env=`:
+
+```mise-toml [mise.toml]
+[tasks.deploy]
+usage = 'arg "[environment]" env="DEPLOY_ENV"'
+run = 'echo "Deploying to ${usage_environment:-default}"'
+```
+
+```shell
+DEPLOY_ENV=staging mise run deploy
+```
+
 In addition to environment variables, **usage values are available inside Tera
 templates in task run scripts** via a `usage` map:
 

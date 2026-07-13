@@ -1179,6 +1179,10 @@ impl Task {
         env: &EnvMap,
         extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<(usage::Spec, Vec<String>)> {
+        let mut env = env.clone();
+        if !self.raw_args {
+            clear_usage_env(&mut env);
+        }
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
             let spec = parse_task_script_usage(&file)
                 .inspect_err(|e| {
@@ -1192,7 +1196,7 @@ impl Task {
         } else {
             let scripts_only = self.run_script_strings();
             let (scripts, spec) = Self::make_script_parser(cwd, extra_vars)
-                .parse_run_scripts(config, self, &scripts_only, env)
+                .parse_run_scripts(config, self, &scripts_only, &env)
                 .await?;
             (spec, scripts)
         };
@@ -1253,9 +1257,11 @@ impl Task {
         // `--`, which breaks proxy tasks that wrap tools with their own
         // argument parsers.
         if !self.should_bypass_usage_parser() && has_any_args_defined(&spec) {
+            let mut env = env.clone();
+            clear_usage_env(&mut env);
             let scripts_only = self.run_script_strings();
             let scripts = Self::make_script_parser(cwd, extra_vars)
-                .parse_run_scripts_with_args(config, self, &scripts_only, env, args, &spec)
+                .parse_run_scripts_with_args(config, self, &scripts_only, &env, args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
@@ -1354,13 +1360,32 @@ impl Task {
     }
 
     pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<tera::Context> {
+        self.build_tera_ctx(config, false).await
+    }
+
+    pub(crate) async fn tera_ctx_for_usage(&self, config: &Arc<Config>) -> Result<tera::Context> {
+        self.build_tera_ctx(config, !self.raw_args).await
+    }
+
+    async fn build_tera_ctx(
+        &self,
+        config: &Arc<Config>,
+        sanitize_usage_env: bool,
+    ) -> Result<tera::Context> {
         let ts = config.get_toolset().await?;
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
+        if sanitize_usage_env {
+            clear_usage_env_from_tera_ctx(&mut tera_ctx);
+        }
         let mut vars = self.resolve_base_vars(config).await?;
         // Insert base vars first so that task-level var templates can reference them
         // (e.g. a task var `foo = "{{vars.bar}}"` can read a config-level `bar`).
         tera_ctx.insert("vars", &vars);
         self.resolve_base_env(config, &mut tera_ctx).await?;
+        if sanitize_usage_env {
+            // A task from another config hierarchy may replace the env map.
+            clear_usage_env_from_tera_ctx(&mut tera_ctx);
+        }
         vars.extend(self.resolve_task_vars(config, &tera_ctx).await?);
         // Re-insert with task-level vars merged in so callers see the final combined map,
         // with task-level values taking precedence over config-level ones.
@@ -2014,6 +2039,43 @@ impl Task {
     }
 }
 
+pub(crate) fn clear_usage_env(env: &mut EnvMap) {
+    env.retain(|key, _| !is_usage_env_key(key));
+}
+
+fn clear_usage_env_from_tera_ctx(tera_ctx: &mut tera::Context) {
+    let mut env: EnvMap = tera_ctx
+        .get("env")
+        .and_then(|value| serde::Deserialize::deserialize(value.clone()).ok())
+        .unwrap_or_default();
+    clear_usage_env(&mut env);
+    tera_ctx.insert("env", &env);
+}
+
+pub(crate) fn is_usage_env_key(key: &str) -> bool {
+    #[cfg(windows)]
+    {
+        key.get(.."usage_".len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("usage_"))
+    }
+    #[cfg(not(windows))]
+    {
+        key.starts_with("usage_")
+    }
+}
+
+pub(crate) fn env_contains_key(env: &EnvMap, key: &str) -> bool {
+    #[cfg(windows)]
+    {
+        env.keys()
+            .any(|candidate| candidate.eq_ignore_ascii_case(key))
+    }
+    #[cfg(not(windows))]
+    {
+        env.contains_key(key)
+    }
+}
+
 fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String> {
     let name = path
         .as_ref()
@@ -2642,7 +2704,10 @@ mod tests {
     use super::TaskConfirm;
     #[cfg(unix)]
     use super::TaskOutput;
-    use super::{name_from_path, tera_tag_has_usage_ref, tera_template_has_usage_ref};
+    use super::{
+        clear_usage_env, env_contains_key, name_from_path, tera_tag_has_usage_ref,
+        tera_template_has_usage_ref,
+    };
 
     // Thread-local storage to capture parser state during tests
     thread_local! {
@@ -2653,6 +2718,30 @@ mod tests {
         CAPTURED_PARSER_FIELDS.with(|captured| {
             *captured.lock().unwrap() = Some(fields);
         });
+    }
+
+    #[test]
+    fn test_clear_usage_env_uses_platform_key_semantics() {
+        let mut env = [
+            ("usage_model".to_string(), "lower".to_string()),
+            ("USAGE_TARGET".to_string(), "upper".to_string()),
+            ("OTHER".to_string(), "keep".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        assert!(env_contains_key(&env, "usage_model"));
+        #[cfg(windows)]
+        assert!(env_contains_key(&env, "Usage_Model"));
+
+        clear_usage_env(&mut env);
+
+        assert!(!env.contains_key("usage_model"));
+        #[cfg(windows)]
+        assert!(!env.contains_key("USAGE_TARGET"));
+        #[cfg(not(windows))]
+        assert_eq!(env.get("USAGE_TARGET").map(String::as_str), Some("upper"));
+        assert_eq!(env.get("OTHER").map(String::as_str), Some("keep"));
     }
 
     #[test]

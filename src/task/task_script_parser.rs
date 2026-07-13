@@ -518,7 +518,7 @@ impl TaskScriptParser {
         }
 
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
-        let mut tera_ctx = task.tera_ctx(config).await?;
+        let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
         // First render the usage field to collect the spec
         let rendered_usage = if usage_has_template {
             Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?
@@ -590,7 +590,7 @@ impl TaskScriptParser {
         }
 
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
-        let mut tera_ctx = task.tera_ctx(config).await?;
+        let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
         self.inject_extra_vars(&mut tera_ctx);
         tera_ctx.insert("env", &env);
         // First render the usage field to collect the spec and build a default
@@ -740,7 +740,7 @@ impl TaskScriptParser {
             };
             tera.register_function("option", flag_func("".to_string()));
             tera.register_function("flag", flag_func(false.to_string()));
-            let mut tera_ctx = task.tera_ctx(config).await?;
+            let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
             self.inject_extra_vars(&mut tera_ctx);
             tera_ctx.insert("env", &env);
             let mut usage_map = Self::make_usage_ctx_from_spec_defaults(spec);
