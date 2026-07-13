@@ -327,15 +327,6 @@ impl BackendArg {
             }
         }
 
-        if self.resolution.explicit {
-            let full = self.full();
-            if let Some((backend, _)) = full.split_once(':')
-                && let Ok(backend_type) = backend.parse()
-            {
-                return backend_type;
-            }
-        }
-
         // Derive the backend type from the same resolved identifier used by
         // `tool_name()`. For non-explicit tools, `full()` may intentionally
         // prefer the current registry backend over stale install metadata.

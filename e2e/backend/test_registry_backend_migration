@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-require_cmd npm
-
 # Simulate npm installed through the old registry default. Non-explicit short
 # names should migrate to the current aqua backend as a single unit: backend
 # type and tool name must both come from aqua:npm/cli.
@@ -13,4 +11,5 @@ explicit_backend = false
 EOF
 
 mise cache clear
+assert "mise tool npm --backend" "aqua:npm/cli"
 assert_succeed "mise latest npm"
