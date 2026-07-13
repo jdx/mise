@@ -1,0 +1,5 @@
+address [https://github.com/jdx/mise/discussions/10936](https://github.com/jdx/mise/discussions/10936) in a new pr and reply to discussion
+
+---
+
+address pr feedback and failing pr checks
