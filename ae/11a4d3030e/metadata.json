@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ae11a4d3030e",
+  "strategy": "manual-commit",
+  "branch": "agent/fix-brew-cask-language",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/system/packages/brew/cask.rs",
+    "src/system/packages/brew/cask_shim.rb"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ae/11a4d3030e/0/metadata.json",
+      "transcript": "/ae/11a4d3030e/0/full.jsonl",
+      "content_hash": "/ae/11a4d3030e/0/content_hash.txt",
+      "prompt": "/ae/11a4d3030e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 200152,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2349824,
+    "output_tokens": 3416,
+    "api_call_count": 13
+  }
+}
