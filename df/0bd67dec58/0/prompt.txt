@@ -1,13 +1,1 @@
-is this fixable? [https://github.com/jdx/mise/discussions/10825#discussioncomment-17625683](https://github.com/jdx/mise/discussions/10825#discussioncomment-17625683)
-
----
-
-what's in tera-contrib?
-
----
-
-i think we should just add all of these in, and without deprecation warnings
-
----
-
-why did tera_v1 not work for this user do you think? multiple config files maybe?
+make a pr and reply to the thread
