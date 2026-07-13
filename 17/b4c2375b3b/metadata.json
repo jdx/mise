@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "17b4c2375b3b",
+  "strategy": "manual-commit",
+  "branch": "codex/floating-registries",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "src/cli/mod.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/17/b4c2375b3b/0/metadata.json",
+      "transcript": "/17/b4c2375b3b/0/full.jsonl",
+      "content_hash": "/17/b4c2375b3b/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 342863,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 10635008,
+    "output_tokens": 9253,
+    "api_call_count": 74
+  }
+}
