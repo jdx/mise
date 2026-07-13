@@ -1,5 +1,1 @@
-what's happening here? [https://github.com/jdx/mise/discussions/10967](https://github.com/jdx/mise/discussions/10967)
-
----
-
 make a pr to fix, reply to discussion
