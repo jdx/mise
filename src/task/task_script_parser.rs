@@ -2,7 +2,7 @@ use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::exit::exit;
 use crate::shell::ShellType;
-use crate::task::Task;
+use crate::task::{Task, clear_usage_env};
 use crate::tera::{contains_template_syntax, get_tera_v2, render_str_v2};
 use eyre::{Context, Result};
 use heck::ToSnakeCase;
@@ -519,6 +519,14 @@ impl TaskScriptParser {
 
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
         let mut tera_ctx = task.tera_ctx(config).await?;
+        if !task.should_bypass_usage_parser() {
+            let mut env: EnvMap = tera_ctx
+                .get("env")
+                .and_then(|value| serde::Deserialize::deserialize(value.clone()).ok())
+                .unwrap_or_default();
+            clear_usage_env(&mut env);
+            tera_ctx.insert("env", &env);
+        }
         // First render the usage field to collect the spec
         let rendered_usage = if usage_has_template {
             Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?

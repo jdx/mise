@@ -24,16 +24,49 @@ run = 'printf "env model=%s\n" "${usage_model-UNSET}"'
 [tasks.tera-child]
 usage = 'arg "[model]"'
 run = 'printf "tera model=%s\n" "{{ env.usage_model | default(value="UNSET") }}"'
+
+[tasks.flag-child]
+usage = 'flag "--model <model>"'
+run = 'printf "flag model=%s\n" "${usage_model-UNSET}"'
+
+[tasks.tera-spec-child]
+usage = '''
+{% if env.usage_model is defined %}
+arg "<leaked>"
+{% endif %}
+'''
+run = 'printf "spec env=%s\n" "{{ env.usage_model | default(value="UNSET") }}"'
+
+[tasks.raw-child]
+raw_args = true
+run = 'printf "raw model=%s\n" "${usage_model-UNSET}"'
+
+[tasks.plain-child]
+run = 'printf "plain model=%s\n" "${usage_model-UNSET}"'
+
+[tasks.help-child]
+run = 'printf "help model=%s\n" "${usage_model-UNSET}"; :'
 EOF
 
 # Ambient values from a shell or parent task do not satisfy omitted arguments.
 assert "usage_model=ambient mise run file-child" "file model=UNSET"
 assert "usage_model=ambient mise run toml-child" "toml model=UNSET"
 assert "usage_model=ambient mise run tera-child" "tera model=UNSET"
+assert "usage_model=ambient mise run flag-child" "flag model=UNSET"
+assert "usage_model=ambient mise run tera-spec-child" "spec env=UNSET"
+assert "usage_model=ambient mise run plain-child" "plain model=UNSET"
+
+# Display-only spec discovery uses the same clean environment as execution.
+assert_not_contains "usage_model=ambient mise run tera-spec-child --help 2>&1 || true" "<leaked>"
+
+# Parser bypass keeps the inherited environment unchanged.
+assert "usage_model=ambient mise run raw-child" "raw model=ambient"
+assert "usage_model=ambient mise run help-child -- --help" "help model=ambient"
 
 # Values parsed for this invocation still win.
 assert "usage_model=ambient mise run file-child explicit" "file model=explicit"
 assert "usage_model=ambient mise run toml-child explicit" "toml model=explicit"
+assert "usage_model=ambient mise run flag-child --model explicit" "flag model=explicit"
 
 # Intentional inheritance uses a separate, explicitly declared input variable.
 assert "usage_model=ambient MODEL=inherited mise run env-child" "env model=inherited"

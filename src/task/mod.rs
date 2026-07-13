@@ -1179,6 +1179,10 @@ impl Task {
         env: &EnvMap,
         extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<(usage::Spec, Vec<String>)> {
+        let mut env = env.clone();
+        if !self.should_bypass_usage_parser() {
+            clear_usage_env(&mut env);
+        }
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
             let spec = parse_task_script_usage(&file)
                 .inspect_err(|e| {
@@ -1192,7 +1196,7 @@ impl Task {
         } else {
             let scripts_only = self.run_script_strings();
             let (scripts, spec) = Self::make_script_parser(cwd, extra_vars)
-                .parse_run_scripts(config, self, &scripts_only, env)
+                .parse_run_scripts(config, self, &scripts_only, &env)
                 .await?;
             (spec, scripts)
         };
@@ -2017,7 +2021,31 @@ impl Task {
 }
 
 pub(crate) fn clear_usage_env(env: &mut EnvMap) {
-    env.retain(|key, _| !key.starts_with("usage_"));
+    env.retain(|key, _| !is_usage_env_key(key));
+}
+
+pub(crate) fn is_usage_env_key(key: &str) -> bool {
+    #[cfg(windows)]
+    {
+        key.get(.."usage_".len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("usage_"))
+    }
+    #[cfg(not(windows))]
+    {
+        key.starts_with("usage_")
+    }
+}
+
+pub(crate) fn env_contains_key(env: &EnvMap, key: &str) -> bool {
+    #[cfg(windows)]
+    {
+        env.keys()
+            .any(|candidate| candidate.eq_ignore_ascii_case(key))
+    }
+    #[cfg(not(windows))]
+    {
+        env.contains_key(key)
+    }
 }
 
 fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String> {
@@ -2648,7 +2676,10 @@ mod tests {
     use super::TaskConfirm;
     #[cfg(unix)]
     use super::TaskOutput;
-    use super::{name_from_path, tera_tag_has_usage_ref, tera_template_has_usage_ref};
+    use super::{
+        clear_usage_env, env_contains_key, name_from_path, tera_tag_has_usage_ref,
+        tera_template_has_usage_ref,
+    };
 
     // Thread-local storage to capture parser state during tests
     thread_local! {
@@ -2659,6 +2690,30 @@ mod tests {
         CAPTURED_PARSER_FIELDS.with(|captured| {
             *captured.lock().unwrap() = Some(fields);
         });
+    }
+
+    #[test]
+    fn test_clear_usage_env_uses_platform_key_semantics() {
+        let mut env = [
+            ("usage_model".to_string(), "lower".to_string()),
+            ("USAGE_TARGET".to_string(), "upper".to_string()),
+            ("OTHER".to_string(), "keep".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        assert!(env_contains_key(&env, "usage_model"));
+        #[cfg(windows)]
+        assert!(env_contains_key(&env, "Usage_Model"));
+
+        clear_usage_env(&mut env);
+
+        assert!(!env.contains_key("usage_model"));
+        #[cfg(windows)]
+        assert!(!env.contains_key("USAGE_TARGET"));
+        #[cfg(not(windows))]
+        assert_eq!(env.get("USAGE_TARGET").map(String::as_str), Some("upper"));
+        assert_eq!(env.get("OTHER").map(String::as_str), Some("keep"));
     }
 
     #[test]

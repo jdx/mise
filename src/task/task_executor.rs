@@ -1130,7 +1130,8 @@ impl TaskExecutor {
         let inherited_usage_keys = std::env::vars_os()
             .filter(|(key, _)| {
                 let key = key.to_string_lossy();
-                key.starts_with("usage_") && !env.contains_key(key.as_ref())
+                crate::task::is_usage_env_key(&key)
+                    && !crate::task::env_contains_key(env.as_ref(), &key)
             })
             .map(|(key, _)| key);
         let runner = inherited_usage_keys.fold(runner, |runner, key| runner.env_remove(key));
@@ -1379,19 +1380,22 @@ impl TaskExecutor {
         get_args: impl Fn() -> Vec<String>,
         extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<()> {
+        let bypass_usage_parser = task.should_bypass_usage_parser();
+        if !bypass_usage_parser {
+            // usage_* variables are outputs of this task's argument parser,
+            // so they must not influence spec discovery or parsing.
+            crate::task::clear_usage_env(env);
+        }
         let (spec, _) = task
             .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
             .await?;
         // raw_args tasks (and `-- --help`/`-- -h` ad-hoc invocations) must
         // skip the usage parser so it can't intercept --help.
-        if !task.should_bypass_usage_parser()
+        if !bypass_usage_parser
             && (!spec.cmd.args.is_empty()
                 || !spec.cmd.flags.is_empty()
                 || !spec.cmd.subcommands.is_empty())
         {
-            // usage_* variables are outputs of the current task's argument parser,
-            // not inputs inherited from a parent task or process.
-            crate::task::clear_usage_env(env);
             let args: Vec<String> = get_args();
             trace!("Parsing usage spec for {:?}", args);
             // Pass env vars to Parser so it can resolve env= defaults in usage specs
