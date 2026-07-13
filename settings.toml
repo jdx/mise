@@ -126,14 +126,17 @@ env = "MISE_AQUA_MINISIGN"
 type = "Bool"
 
 [aqua.registries]
-description = "Aqua registry repositories to fetch before the baked-in registry."
+description = "Aqua registry sources to load before the baked-in registry."
 docs = """
-Aqua registry repositories to fetch before the baked-in registry. mise downloads `registry.yaml`
-from each repository root and falls back to `registry.yml` if needed.
+Aqua registry sources to load before the baked-in registry. Each source can be a repository URL, a
+direct URL to a `registry.yaml` or `registry.yml` file, or an absolute `file://` URL to a local
+registry directory or file. For repository and directory sources, mise loads `registry.yaml` from
+the source root and falls back to `registry.yml` if needed.
 
 Downloaded registries are cached according to `aqua.registry_cache_ttl`, which defaults to one
 week. To refresh sooner, run `mise cache clear`, set `aqua.registry_cache_ttl = "0s"`, or change
-`MISE_CACHE_DIR` to use a different cache location.
+`MISE_CACHE_DIR` to use a different cache location. Local `file://` sources bypass the downloaded
+source cache, so changes are read the next time the registry is loaded.
 
 If this is set, mise checks the configured registries in order. When `aqua.baked_registry` is
 enabled, the baked-in aqua registry remains a fallback for packages missing from all configured
