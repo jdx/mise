@@ -227,7 +227,10 @@ class CaskContext
 
   def on_system_conditional(values)
     key = OS.mac? ? :macos : :linux
-    values.fetch(key) { values.fetch(key.to_s) }
+    return values[key] if values.key?(key)
+    return values[key.to_s] if values.key?(key.to_s)
+
+    shim_unsupported!("on_system_conditional without #{key}")
   end
 
   def sha256(*) nil end

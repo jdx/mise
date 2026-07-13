@@ -1,6 +1,5 @@
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 
 use async_trait::async_trait;
 use eyre::{WrapErr, bail, eyre};
@@ -419,9 +418,10 @@ async fn execute_lifecycle_hook(
 
 async fn cask_ruby_bin() -> Result<PathBuf> {
     if let Some(brew) = file::which("brew")
-        && let Ok(output) = Command::new(brew)
+        && let Ok(output) = tokio::process::Command::new(brew)
             .args(["ruby", "-e", "print RbConfig.ruby"])
             .output()
+            .await
         && output.status.success()
         && let Ok(path) = String::from_utf8(output.stdout)
     {
@@ -1407,6 +1407,25 @@ mod tests {
         }
     }
 
+    fn run_cask_shim(
+        ruby: &Path,
+        shim: &Path,
+        cask: &Path,
+        staged_path: &Path,
+    ) -> std::io::Result<std::process::Output> {
+        std::process::Command::new(ruby)
+            .arg(shim)
+            .env("LANG", "zz_ZZ.UTF-8")
+            .env("MISE_BREW_CASK_FILE", cask)
+            .env("MISE_BREW_CASK_TOKEN", "example")
+            .env("MISE_BREW_CASK_VERSION", "1.0.0")
+            .env("MISE_BREW_CASK_STAGED_PATH", staged_path)
+            .env("MISE_BREW_CASK_APPDIR", staged_path)
+            .env("MISE_BREW_PREFIX", staged_path)
+            .env("MISE_BREW_CASK_HOOK", "preflight")
+            .output()
+    }
+
     fn test_cask(token: &str, version: &str) -> Cask {
         Cask {
             token: token.to_string(),
@@ -1461,17 +1480,7 @@ end
 "##,
         )?;
 
-        let output = Command::new(ruby)
-            .arg(shim)
-            .env("LANG", "zz_ZZ.UTF-8")
-            .env("MISE_BREW_CASK_FILE", cask)
-            .env("MISE_BREW_CASK_TOKEN", "example")
-            .env("MISE_BREW_CASK_VERSION", "1.0.0")
-            .env("MISE_BREW_CASK_STAGED_PATH", tmp.path())
-            .env("MISE_BREW_CASK_APPDIR", tmp.path())
-            .env("MISE_BREW_PREFIX", tmp.path())
-            .env("MISE_BREW_CASK_HOOK", "preflight")
-            .output()?;
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path())?;
         assert!(
             output.status.success(),
             "{}",
@@ -1483,6 +1492,34 @@ end
             "-linux"
         };
         assert_eq!(file::read_to_string(result)?, format!("en-US{suffix}"));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn cask_shim_reports_missing_system_conditional() -> Result<()> {
+        let Some(ruby) = file::which("ruby") else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("cask_shim.rb");
+        let cask = tmp.path().join("example.rb");
+        let (conditional, platform) = if cfg!(target_os = "macos") {
+            ("linux: \"-linux\"", "macos")
+        } else {
+            ("macos: \"-macos\"", "linux")
+        };
+        file::write(&shim, CASK_SHIM_RB)?;
+        file::write(
+            &cask,
+            format!("cask \"example\" do\n  on_system_conditional {conditional}\nend\n"),
+        )?;
+
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path())?;
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains(&format!(
+            "Error: cask uses `on_system_conditional without {platform}`"
+        )));
         Ok(())
     }
 
