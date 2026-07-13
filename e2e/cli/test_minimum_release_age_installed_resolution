@@ -17,6 +17,11 @@ cat >"$MISE_DATA_DIR/plugins/spy/bin/list-all" <<EOF
 touch "$marker"
 exit 1
 EOF
+cat >"$MISE_DATA_DIR/plugins/spy/bin/latest-stable" <<EOF
+#!/usr/bin/env bash
+touch "$marker"
+exit 1
+EOF
 rm -rf "$MISE_CACHE_DIR/spy"
 
 cat >mise.toml <<EOF
