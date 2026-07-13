@@ -731,7 +731,8 @@ impl HttpBackend {
         if let Some(expected_size) = spec.configured_size {
             let actual_size = file_path.metadata()?.len();
             if actual_size != expected_size {
-                bail!("Size mismatch: expected {expected_size}, got {actual_size}");
+                let filename = file_path.file_name().unwrap().to_string_lossy();
+                bail!("Size mismatch for {filename}: expected {expected_size}, got {actual_size}");
             }
         }
         Ok(())
@@ -989,17 +990,6 @@ impl HttpBackend {
         let filename = get_filename_from_url(&url);
         let file_path = tv.download_path().join(&filename);
 
-        // Carry only the prepared contract into the successful result. The
-        // writer sees this state only when every operation below succeeds.
-        let platform_info = tv.lock_platforms.entry(spec.target.clone()).or_default();
-        platform_info.url = Some(url.clone());
-        if let Some(checksum) = &spec.lock_checksum {
-            platform_info.checksum = Some(checksum.clone());
-        }
-        if let Some(size) = spec.lock_size {
-            platform_info.size = Some(size);
-        }
-
         let lockfile_enabled = Settings::get().lockfile_enabled();
         let has_lockfile_checksum = spec.lock_checksum.is_some();
 
@@ -1092,7 +1082,14 @@ impl Backend for HttpBackend {
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
-        super::http_install_operation_count(opts.checksum().is_some(), &self.get_platform_key(), tv)
+        let platform_key = self.get_platform_key();
+        let replaying = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|info| info.url.as_ref())
+            .is_some();
+        let has_configured_checksum = !replaying && opts.checksum().is_some();
+        super::http_install_operation_count(has_configured_checksum, &platform_key, tv)
     }
 
     /// Options that affect which artifact is downloaded, resolved for the target

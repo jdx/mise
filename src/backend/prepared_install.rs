@@ -12,7 +12,7 @@ pub struct PreparedInstall {
 #[derive(Debug)]
 enum PreparedInstallKind {
     Legacy,
-    Http(PreparedHttpInstall),
+    Http(Box<PreparedHttpInstall>),
 }
 
 /// The HTTP inputs that installation is allowed to consume.
@@ -43,7 +43,7 @@ impl PreparedInstall {
 
     pub(crate) fn http(spec: PreparedHttpInstall) -> Self {
         Self {
-            kind: PreparedInstallKind::Http(spec),
+            kind: PreparedInstallKind::Http(Box::new(spec)),
         }
     }
 
@@ -53,7 +53,7 @@ impl PreparedInstall {
 
     pub(crate) fn http_spec(&self) -> eyre::Result<&PreparedHttpInstall> {
         match &self.kind {
-            PreparedInstallKind::Http(spec) => Ok(spec),
+            PreparedInstallKind::Http(spec) => Ok(spec.as_ref()),
             PreparedInstallKind::Legacy => Err(eyre::eyre!("expected prepared HTTP installation")),
         }
     }
