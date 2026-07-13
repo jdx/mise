@@ -1,17 +1,1 @@
-investigate [https://github.com/jdx/mise/discussions/10933](https://github.com/jdx/mise/discussions/10933)
-
----
-
-draft a reply
-
----
-
-eli5 this whole thing
-
----
-
-should it?
-
----
-
 make a pr for this, make it draft unlike most of my prs
