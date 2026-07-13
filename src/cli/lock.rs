@@ -108,12 +108,10 @@ impl Lock {
                 .await?;
             ts_owned = monorepo_ts;
             &ts_owned
-        } else if before_date.is_some() {
+        } else {
             let builder = ToolsetBuilder::new().with_resolve_options(lock_resolve_options.clone());
             ts_owned = builder.build(&config).await?;
             &ts_owned
-        } else {
-            config.get_toolset().await?
         };
 
         let scoped_config_paths = self.config_paths_in_lock_scope(&config, effective_config_files);

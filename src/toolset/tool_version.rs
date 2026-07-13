@@ -392,6 +392,7 @@ impl ToolVersion {
             settings.prefer_offline() && !matches!(request.source(), ToolSource::Argument);
         let should_filter_installed_versions = opts.filter_installed_versions_by_release_date
             && opts.before_date.is_some()
+            && !opts.before_date_from_default
             && !is_offline
             && !prefer_offline;
         if v == "latest" {
@@ -616,6 +617,7 @@ impl ToolVersion {
             settings.prefer_offline() && !matches!(request.source(), ToolSource::Argument);
         let should_filter_installed_versions = opts.filter_installed_versions_by_release_date
             && opts.before_date.is_some()
+            && !opts.before_date_from_default
             && !is_offline
             && !prefer_offline;
         if !opts.latest_versions
