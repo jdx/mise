@@ -80,7 +80,7 @@ impl RegistrySource {
                 Ok(package) => Ok(Some(package)),
                 Err(AquaRegistryError::PackageNotFound(_)) => Ok(None),
                 Err(err) if registry.fallback_on_error => {
-                    warn!(
+                    warn_once!(
                         "failed to load floating aqua registry {}, using baked-in fallback: {err}",
                         registry.registry_url
                     );
