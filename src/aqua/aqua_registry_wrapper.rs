@@ -1,5 +1,6 @@
 use crate::config::Settings;
 use crate::http::HTTP;
+use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, duration};
 use aqua_registry::{AquaRegistryError, CompiledRegistry, ParsedRegistry, RegistryCache};
 use eyre::Result;
@@ -299,7 +300,17 @@ impl DownloadedRegistry {
                 });
         }
 
-        let source = download_registry_source(registry_url).await?;
+        let pr = MultiProgressReport::get().add("aqua registry");
+        let source = match download_registry_source(registry_url).await {
+            Ok(source) => {
+                pr.finish();
+                source
+            }
+            Err(err) => {
+                pr.abandon();
+                return Err(err);
+            }
+        };
         self.cache.write_source(registry_url, &source)?;
         Ok(source)
     }

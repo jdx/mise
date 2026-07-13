@@ -86,6 +86,17 @@ impl MultiProgressReport {
         self.add_with_options(prefix, false)
     }
 
+    /// Create a progress report before backends are loaded, when normal prefix sizing is unavailable.
+    pub(crate) fn add_pre_backend(&self, prefix: &str) -> Box<dyn SingleReport> {
+        if self.quiet {
+            Box::new(QuietReport::new())
+        } else if self.use_progress_ui {
+            Box::new(ProgressReport::new_with_pad(prefix.to_string(), 15))
+        } else {
+            Box::new(VerboseReport::new_with_pad(prefix.to_string(), 15))
+        }
+    }
+
     pub fn add_with_options(&self, prefix: &str, dry_run: bool) -> Box<dyn SingleReport> {
         if self.quiet {
             progress_trace!(

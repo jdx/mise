@@ -34,8 +34,10 @@ registry data without replacing the mise executable:
 mise settings registry_floating=true
 ```
 
-With this enabled, mise fetches the current official mise shorthand registry and aqua registry.
-The bundled snapshots remain available as fallbacks when the remote registries cannot be loaded.
+With this enabled, mise fetches the shorthand registry published with the latest mise release and
+the current official aqua registry. The bundled snapshots remain available as fallbacks when the
+remote registries cannot be loaded. Fast and offline commands never refresh the mise registry; they
+use an existing cached copy or the bundled snapshot.
 The mise registry is cached for [`registry_cache_ttl`](/configuration/settings.html#registry_cache_ttl),
 which defaults to one hour; aqua continues to use
 [`aqua.registry_cache_ttl`](/configuration/settings.html#aqua-registry_cache_ttl), which defaults to

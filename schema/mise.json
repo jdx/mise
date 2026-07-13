@@ -1506,7 +1506,7 @@
         },
         "registry_floating": {
           "default": false,
-          "description": "Fetch current mise and aqua registries instead of using only the snapshots baked into this mise release.",
+          "description": "Fetch the latest released mise registry and current aqua registry instead of using only the snapshots baked into this mise release.",
           "type": "boolean"
         },
         "ruby": {

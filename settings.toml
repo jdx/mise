@@ -2112,15 +2112,16 @@ type = "Duration"
 
 [registry_floating]
 default = false
-description = "Fetch current mise and aqua registries instead of using only the snapshots baked into this mise release."
+description = "Fetch the latest released mise registry and current aqua registry instead of using only the snapshots baked into this mise release."
 docs = """
-Fetch the current official mise and aqua registries, with the snapshots baked into this mise release
-used as a fallback when a remote registry cannot be loaded.
+Fetch the latest released official mise registry and the current aqua registry, with the snapshots
+baked into this mise release used as a fallback when a remote registry cannot be loaded.
 
 This is disabled by default because each mise release is tested with its bundled registry snapshots.
 It can be useful on distributions whose mise package updates lag behind registry changes.
 
-The downloaded mise registry is cached according to [`registry_cache_ttl`](#registry_cache_ttl).
+The downloaded mise registry is refreshed only for commands that allow network access and is cached
+according to [`registry_cache_ttl`](#registry_cache_ttl). Fast and offline commands never refresh it.
 The downloaded aqua registry uses [`aqua.registry_cache_ttl`](#aqua-registry_cache_ttl).
 """
 env = "MISE_REGISTRY_FLOATING"

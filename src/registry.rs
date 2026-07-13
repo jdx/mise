@@ -3,6 +3,7 @@ use crate::cli::args::BackendArg;
 use crate::config::Settings;
 use crate::http::HTTP;
 use crate::toolset::{RawBackendOptions, ToolVersionOptions};
+use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, file};
 use eyre::{Context, Result, bail, ensure};
 use flate2::read::GzDecoder;
@@ -29,7 +30,11 @@ pub static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
         return &BAKED_REGISTRY;
     }
 
-    match load_floating_registry() {
+    if !registry_cache_path().exists() {
+        return &BAKED_REGISTRY;
+    }
+
+    match load_cached_floating_registry() {
         Ok(registry) => Box::leak(Box::new(registry)),
         Err(err) => {
             warn!("failed to load floating mise registry, using baked-in registry: {err:#}");
@@ -38,8 +43,7 @@ pub static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
     }
 });
 
-const MISE_REGISTRY_ARCHIVE_URL: &str =
-    "https://github.com/jdx/mise/archive/refs/heads/main.tar.gz";
+const MISE_REGISTRY_ARCHIVE_URL: &str = "https://mise.jdx.dev/registry/latest.tar.gz";
 
 pub struct Registry {
     entries: &'static [(&'static str, RegistryTool)],
@@ -127,25 +131,13 @@ pub struct RegistryBackend {
     pub options: &'static [(&'static str, &'static str)],
 }
 
-fn load_floating_registry() -> Result<Registry> {
-    let settings = Settings::get();
-    let cache_path = dirs::CACHE.join("mise-registry").join("main.tar.gz");
+fn registry_cache_path() -> PathBuf {
+    dirs::CACHE.join("mise-registry").join("registry.tar.gz")
+}
 
-    if cache_is_fresh(&cache_path, settings.registry_cache_ttl()) {
-        match parse_registry_archive(&cache_path) {
-            Ok(registry) => return Ok(registry),
-            Err(err) => warn!("failed to parse cached floating mise registry: {err:#}"),
-        }
-    }
-
-    if !settings.prefer_offline() {
-        match download_registry_archive(&cache_path) {
-            Ok(registry) => return Ok(registry),
-            Err(err) => warn!("failed to refresh floating mise registry: {err:#}"),
-        }
-    }
-
-    parse_registry_archive(&cache_path).wrap_err("failed to load cached floating mise registry")
+fn load_cached_floating_registry() -> Result<Registry> {
+    parse_registry_archive(&registry_cache_path())
+        .wrap_err("failed to load cached floating mise registry")
 }
 
 fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {
@@ -155,31 +147,57 @@ fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {
         .is_ok_and(|age| age < ttl)
 }
 
-fn download_registry_archive(cache_path: &Path) -> Result<Registry> {
-    let download_path = cache_path.with_extension("tar.gz.download");
-    if download_path.exists() {
-        file::remove_file(&download_path)?;
+/// Refresh the floating mise registry before anything initializes [`REGISTRY`].
+/// Fast and offline commands use the cached archive (or the baked registry) without networking.
+pub async fn refresh() {
+    let settings = Settings::get();
+    if !settings.registry_floating || settings.prefer_offline() {
+        return;
     }
 
-    let path = download_path.clone();
-    let result = std::thread::spawn(move || -> Result<()> {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?;
-        runtime.block_on(HTTP.download_file(MISE_REGISTRY_ARCHIVE_URL, &path, None))
-    })
-    .join()
-    .map_err(|_| eyre::eyre!("floating registry download thread panicked"))?;
-    result?;
-
-    let registry = parse_registry_archive(&download_path)
-        .wrap_err("downloaded mise registry archive is invalid")?;
-    #[cfg(windows)]
-    if cache_path.exists() {
-        file::remove_file(cache_path)?;
+    let cache_path = registry_cache_path();
+    if cache_is_fresh(&cache_path, settings.registry_cache_ttl()) {
+        return;
     }
-    file::rename(&download_path, cache_path)?;
-    Ok(registry)
+
+    if let Err(err) = download_registry_archive(&cache_path).await {
+        warn!("failed to refresh floating mise registry: {err:#}");
+    }
+}
+
+async fn download_registry_archive(cache_path: &Path) -> Result<()> {
+    let download_path = cache_path.with_extension(format!("download-{}", std::process::id()));
+    let pr = MultiProgressReport::get().add_pre_backend("mise registry");
+    if let Err(err) = HTTP
+        .download_file(MISE_REGISTRY_ARCHIVE_URL, &download_path, Some(pr.as_ref()))
+        .await
+    {
+        let _ = file::remove_file(&download_path);
+        pr.abandon();
+        return Err(err);
+    }
+
+    let result = (|| {
+        parse_registry_archive(&download_path)
+            .wrap_err("downloaded mise registry archive is invalid")?;
+        #[cfg(windows)]
+        if cache_path.exists() {
+            file::remove_file(cache_path)?;
+        }
+        file::rename(&download_path, cache_path)?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => {
+            pr.finish();
+            Ok(())
+        }
+        Err(err) => {
+            let _ = file::remove_file(&download_path);
+            pr.abandon();
+            Err(err)
+        }
+    }
 }
 
 fn parse_registry_archive(path: &Path) -> Result<Registry> {
@@ -198,16 +216,10 @@ fn parse_registry_archive(path: &Path) -> Result<Registry> {
             .components()
             .map(|component| component.as_os_str())
             .collect::<Vec<_>>();
-        let Some(registry_index) = components
-            .iter()
-            .position(|component| *component == "registry")
-        else {
-            continue;
-        };
-        if components.len() != registry_index + 2 {
+        if components.len() != 2 || components[0] != "registry" {
             continue;
         }
-        let file_path = PathBuf::from(components[registry_index + 1]);
+        let file_path = PathBuf::from(components[1]);
         if file_path
             .extension()
             .is_none_or(|extension| extension != "toml")
@@ -589,6 +601,27 @@ pub fn tool_enabled<T: Ord>(
 mod tests {
     use crate::config::Config;
 
+    fn registry_archive(entries: &[(&str, &str)]) -> tempfile::NamedTempFile {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        use std::io::Cursor;
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let encoder = GzEncoder::new(file.reopen().unwrap(), Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        for (path, contents) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(contents.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            archive
+                .append_data(&mut header, path, Cursor::new(contents.as_bytes()))
+                .unwrap();
+        }
+        archive.into_inner().unwrap().finish().unwrap();
+        file
+    }
+
     #[test]
     fn test_dynamic_registry_parses_tools_aliases_and_options() {
         use super::*;
@@ -618,6 +651,37 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             Some("example")
         );
         assert_eq!(tool.test.as_ref().unwrap().tools, &["node"]);
+    }
+
+    #[test]
+    fn test_registry_archive_only_reads_top_level_registry_directory() {
+        use super::*;
+
+        let archive = registry_archive(&[
+            ("registry/example.toml", "backends = [\"aqua:good/tool\"]"),
+            (
+                "e2e/registry/example.toml",
+                "backends = [\"aqua:wrong/tool\"]",
+            ),
+        ]);
+        let registry = parse_registry_archive(archive.path()).unwrap();
+
+        assert_eq!(
+            registry.get("example").unwrap().backends[0].full,
+            "aqua:good/tool"
+        );
+    }
+
+    #[test]
+    fn test_registry_archive_rejects_nested_registry_directory() {
+        use super::*;
+
+        let archive = registry_archive(&[(
+            "e2e/registry/example.toml",
+            "backends = [\"aqua:wrong/tool\"]",
+        )]);
+
+        assert!(parse_registry_archive(archive.path()).is_err());
     }
 
     #[test]
