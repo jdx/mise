@@ -26,7 +26,7 @@ Packages in `manager:package` form; defaults to everything configured in [bootst
 
 ### `-m --manager <MANAGER>`
 
-Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`
+Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, `flatpak`, or `mas`
 
 **Choices:**
 
@@ -35,6 +35,7 @@ Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, 
 - `brew`
 - `brew-cask`
 - `dnf`
+- `flatpak`
 - `mas`
 - `pacman`
 
@@ -54,7 +55,7 @@ Examples:
 
 ```
 mise bootstrap packages apply
-mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835
+mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox mas:497799835
 mise bootstrap packages apply --dry-run
 mise bootstrap packages apply --manager apt --yes
 ```

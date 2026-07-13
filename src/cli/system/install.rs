@@ -30,8 +30,8 @@ pub struct SystemInstall {
     #[clap(value_name = "PACKAGE")]
     packages: Vec<String>,
 
-    /// Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`
-    #[clap(long, short, value_parser = ["apk", "apt", "brew", "brew-cask", "dnf", "mas", "pacman"])]
+    /// Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, `flatpak`, or `mas`
+    #[clap(long, short, value_parser = ["apk", "apt", "brew", "brew-cask", "dnf", "flatpak", "mas", "pacman"])]
     manager: Option<String>,
 
     /// Print the commands that would run without running them
@@ -384,7 +384,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise bootstrap packages apply</bold>
-    $ <bold>mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835</bold>
+    $ <bold>mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox mas:497799835</bold>
     $ <bold>mise bootstrap packages apply --dry-run</bold>
     $ <bold>mise bootstrap packages apply --manager apt --yes</bold>
 "#
