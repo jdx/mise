@@ -272,6 +272,8 @@ impl ToolVersion {
             use_locked_version: false,
             before_date: base_opts.before_date,
             before_date_from_default: base_opts.before_date_from_default,
+            filter_installed_versions_by_release_date: base_opts
+                .filter_installed_versions_by_release_date,
             offline: base_opts.offline,
             refresh_remote_versions: base_opts.refresh_remote_versions,
             inactive: base_opts.inactive,
@@ -388,17 +390,11 @@ impl ToolVersion {
         let is_offline = settings.offline() || opts.offline;
         let prefer_offline =
             settings.prefer_offline() && !matches!(request.source(), ToolSource::Argument);
-        let prefer_offline_without_offline = prefer_offline && !is_offline;
-        let should_filter_installed_versions =
-            opts.filters_installed_versions() && !is_offline && !prefer_offline;
-
+        let should_filter_installed_versions = opts.filter_installed_versions_by_release_date
+            && opts.before_date.is_some()
+            && !is_offline
+            && !prefer_offline;
         if v == "latest" {
-            if prefer_offline_without_offline
-                && !opts.latest_versions
-                && let Some(v) = backend.latest_installed_version(None)?
-            {
-                return build(v);
-            }
             if !opts.latest_versions
                 && !should_filter_installed_versions
                 && let Some(v) = backend.latest_installed_version(None)?
@@ -446,12 +442,6 @@ impl ToolVersion {
             // zig@master), never an unrelated installed release, so we don't
             // short-circuit zig@master to a stable version that happens to be
             // installed.
-            if prefer_offline
-                && !opts.latest_versions
-                && let Some(installed) = backend.latest_installed_channel_version(&v)
-            {
-                return build(installed);
-            }
             if !opts.latest_versions
                 && !should_filter_installed_versions
                 && let Some(installed) = backend.latest_installed_channel_version(&v)
@@ -487,15 +477,6 @@ impl ToolVersion {
                 if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
         ) && crate::semver::is_npm_semver_range_query(&v)
         {
-            if prefer_offline && !opts.latest_versions {
-                let installed_versions = backend.list_installed_versions();
-                if let Some(matches) =
-                    crate::semver::npm_semver_range_filter(&installed_versions, &v)
-                    && let Some(v) = matches.last()
-                {
-                    return build(v.clone());
-                }
-            }
             if !opts.latest_versions && !should_filter_installed_versions {
                 let installed_versions = backend.list_installed_versions();
                 if let Some(matches) =
@@ -633,14 +614,10 @@ impl ToolVersion {
         let is_offline = settings.offline() || opts.offline;
         let prefer_offline =
             settings.prefer_offline() && !matches!(request.source(), ToolSource::Argument);
-        let should_filter_installed_versions =
-            opts.filters_installed_versions() && !is_offline && !prefer_offline;
-        if prefer_offline
-            && !opts.latest_versions
-            && let Some(v) = backend.list_installed_versions_matching(prefix).last()
-        {
-            return Ok(Self::new(request, v.to_string()));
-        }
+        let should_filter_installed_versions = opts.filter_installed_versions_by_release_date
+            && opts.before_date.is_some()
+            && !is_offline
+            && !prefer_offline;
         if !opts.latest_versions
             && !should_filter_installed_versions
             && let Some(v) = backend.list_installed_versions_matching(prefix).last()
@@ -738,10 +715,13 @@ pub struct ResolveOptions {
     pub before_date: Option<Timestamp>,
     /// `before_date` came from the built-in default release age rather than
     /// explicit configuration (CLI flag, per-tool option, or the
-    /// `minimum_release_age` setting). The default only gates which versions
-    /// remote resolution may pick — it must not disable installed-version
-    /// fast paths (https://github.com/jdx/mise/discussions/10308).
+    /// `minimum_release_age` setting). This provenance is included in trace
+    /// output to distinguish the implicit policy from a user-selected cutoff.
     pub before_date_from_default: bool,
+    /// Resolve fuzzy installed matches against release metadata when a cutoff
+    /// is active. This is reserved for discovery flows such as lockfile
+    /// generation; ordinary resolution treats installed versions as eligible.
+    pub filter_installed_versions_by_release_date: bool,
     /// Additive to `Settings::offline()` — either being true skips remote version listing.
     pub offline: bool,
     /// Ignore cached remote version lists while resolving this request.
@@ -759,6 +739,7 @@ impl Default for ResolveOptions {
             use_locked_version: true,
             before_date: None,
             before_date_from_default: false,
+            filter_installed_versions_by_release_date: false,
             offline: false,
             refresh_remote_versions: false,
             inactive: false,
@@ -795,13 +776,6 @@ impl ResolveOptions {
             }
         }
         Ok(())
-    }
-
-    /// An explicit cutoff means fuzzy requests must resolve date-aware even
-    /// when an installed version matches; the built-in default must not force
-    /// that remote resolution.
-    fn filters_installed_versions(&self) -> bool {
-        self.before_date.is_some() && !self.before_date_from_default
     }
 }
 

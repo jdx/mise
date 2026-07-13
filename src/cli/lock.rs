@@ -87,6 +87,7 @@ impl Lock {
         let before_date = self.get_before_date()?;
         let lock_resolve_options = ResolveOptions {
             before_date,
+            filter_installed_versions_by_release_date: true,
             ..Default::default()
         };
         let monorepo_union = if !self.global && config.monorepo_lockfile_root().is_some() {
