@@ -3,7 +3,9 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::prepared_install::{PreparedHttpInstall, PreparedInstall, SuccessfulInstall};
+use crate::backend::prepared_install::{
+    PreparedInstall, PreparedInstallEvidencePayload, PreparedInstallPlan,
+};
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
     apply_rename_exe, clean_binary_name, ensure_plain_bin_name, ensure_safe_relative_bin_path,
@@ -130,7 +132,7 @@ impl FileInfo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HttpBackend {
     ba: Arc<BackendArg>,
 }
@@ -138,6 +140,49 @@ pub struct HttpBackend {
 #[derive(Debug, Clone, Copy)]
 struct HttpOptions<'a> {
     values: BackendOptions<'a>,
+}
+
+/// The HTTP inputs that installation is allowed to consume.
+///
+/// Configured verification inputs apply to fresh resolution. Once a lock URL
+/// is replayed, its checksum and size are the sole artifact contract.
+#[derive(Debug)]
+struct PreparedHttpInstall {
+    raw_options: ToolVersionOptions,
+    target: String,
+    url: String,
+    lock_checksum: Option<String>,
+    lock_size: Option<u64>,
+    configured_checksum: Option<String>,
+    configured_size: Option<u64>,
+    format: Option<String>,
+    strip_components: Option<String>,
+    bin: Option<String>,
+    rename_exe: Option<String>,
+    bin_path: Option<String>,
+}
+
+#[derive(Debug)]
+struct PreparedHttpInstallPlan {
+    backend: HttpBackend,
+    spec: Arc<PreparedHttpInstall>,
+}
+
+#[async_trait]
+impl PreparedInstallPlan for PreparedHttpInstallPlan {
+    fn evidence(&self) -> Arc<dyn PreparedInstallEvidencePayload> {
+        self.spec.clone()
+    }
+
+    async fn execute(
+        self: Box<Self>,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> Result<ToolVersion> {
+        self.backend
+            .install_prepared_http(ctx, tv, self.spec.as_ref())
+            .await
+    }
 }
 
 impl<'a> HttpOptions<'a> {
@@ -912,9 +957,10 @@ impl HttpBackend {
                 target.to_key()
             );
         }
-        Ok(PreparedInstall::http(
-            self.prepare_http_target(tv, &target, locked)?,
-        ))
+        Ok(PreparedInstall::prepared(PreparedHttpInstallPlan {
+            backend: self.clone(),
+            spec: Arc::new(self.prepare_http_target(tv, &target, locked)?),
+        }))
     }
 
     /// Resolve the artifact URL for a target platform during `mise lock`.
@@ -1186,24 +1232,9 @@ impl Backend for HttpBackend {
         self.prepare_http_install(ctx, tv)
     }
 
-    async fn install_prepared_version_(
-        &self,
-        ctx: &InstallContext,
-        tv: ToolVersion,
-        prepared: PreparedInstall,
-    ) -> Result<SuccessfulInstall> {
-        let tv = self
-            .install_prepared_http(ctx, tv, prepared.http_spec()?)
-            .await?;
-        Ok(SuccessfulInstall::new(tv, prepared))
-    }
-
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let prepared = self.prepare_http_install(ctx, &tv)?;
-        Ok(self
-            .install_prepared_version_(ctx, tv, prepared)
-            .await?
-            .into_tool_version())
+        Ok(prepared.execute(self, ctx, tv).await?.into_tool_version())
     }
 
     fn is_version_installed(

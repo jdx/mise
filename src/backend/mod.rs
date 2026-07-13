@@ -55,7 +55,7 @@ use regex::Regex;
 use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 
-pub use prepared_install::{PreparedInstall, SuccessfulInstall};
+pub use prepared_install::PreparedInstall;
 
 pub mod aqua;
 pub mod asdf;
@@ -2328,21 +2328,6 @@ pub trait Backend: Debug + Send + Sync {
         Ok(PreparedInstall::legacy())
     }
 
-    /// Execute one prepared installation and return a result tied to those
-    /// inputs. The default keeps every unmigrated backend on its old path.
-    async fn install_prepared_version_(
-        &self,
-        ctx: &InstallContext,
-        tv: ToolVersion,
-        prepared: PreparedInstall,
-    ) -> Result<SuccessfulInstall> {
-        if !prepared.is_legacy() {
-            bail!("{} does not support this prepared install", self.id());
-        }
-        let tv = self.install_version_(ctx, tv).await?;
-        Ok(SuccessfulInstall::new(tv, prepared))
-    }
-
     async fn install_version(
         &self,
         ctx: InstallContext,
@@ -2476,7 +2461,7 @@ pub trait Backend: Debug + Send + Sync {
         self.create_install_dirs(&tv)?;
 
         let old_tv = tv.clone();
-        let successful = match self.install_prepared_version_(&ctx, tv, prepared).await {
+        let successful = match prepared.execute(self, &ctx, tv).await {
             Ok(successful) => successful,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
