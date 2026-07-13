@@ -18,7 +18,7 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
 ### `--copy… <HOST_PATH:IMAGE_PATH>`
 
-Copy a host file or directory into the image (repeatable, HOST:IMAGE)
+Copy a host file, directory, or symlink into the image (repeatable, HOST:IMAGE)
 
 ### `-o --output <OUTPUT>`
 

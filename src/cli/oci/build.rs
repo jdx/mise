@@ -20,7 +20,7 @@ use crate::oci::{BuildOptions, LayerOwner, OciCopy};
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Build {
-    /// Copy a host file or directory into the image (repeatable, HOST:IMAGE)
+    /// Copy a host file, directory, or symlink into the image (repeatable, HOST:IMAGE)
     #[clap(long, value_name = "HOST_PATH:IMAGE_PATH")]
     copy: Vec<OciCopy>,
 

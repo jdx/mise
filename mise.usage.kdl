@@ -2161,7 +2161,7 @@ Notes:
       build on the same OS/arch as your target image (or pass --no-mise).
 
 """#
-        flag --copy help="Copy a host file or directory into the image (repeatable, HOST:IMAGE)" var=#true {
+        flag --copy help="Copy a host file, directory, or symlink into the image (repeatable, HOST:IMAGE)" var=#true {
             arg <HOST_PATH:IMAGE_PATH>
         }
         flag "-o --output" help="Output directory for the OCI image layout" default="./mise-oci" {
