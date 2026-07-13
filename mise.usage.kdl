@@ -2642,6 +2642,7 @@ Examples:
     $ mise deps install            # Same as bare `mise deps`
     $ mise deps install --force    # Force reinstall even if fresh
     $ mise deps install --dry-run  # Show what would run
+    $ mise deps --monorepo         # Install deps from explicit monorepo config roots
     $ mise deps add npm:react      # Add a dependency
     $ mise deps add -D npm:vitest  # Add a dev dependency
     $ mise deps remove npm:lodash  # Remove a dependency
@@ -2675,6 +2676,14 @@ disable = ["npm"]        # Disable specific providers at runtime
     flag --skip help="Skip specific deps rule(s)" var=#true {
         arg <SKIP>
     }
+    flag --monorepo help="Install dependencies from every [monorepo].config_roots config root" {
+        long_help #"""
+Install dependencies from every [monorepo].config_roots config root
+
+Requires monorepo_root = true plus explicit [monorepo].config_roots in
+the monorepo root config. Providers are named like //apps/api:uv.
+"""#
+    }
     arg "[PROVIDER]" help="Provider to operate on (runs only this provider, or use with --explain)" required=#false
     cmd add help="Add a dependency" {
         long_help #"""
@@ -2702,6 +2711,14 @@ and runs install commands if needed.
         }
         flag --skip help="Skip specific deps rule(s)" var=#true {
             arg <SKIP>
+        }
+        flag --monorepo help="Install dependencies from every [monorepo].config_roots config root" {
+            long_help #"""
+Install dependencies from every [monorepo].config_roots config root
+
+Requires monorepo_root = true plus explicit [monorepo].config_roots in
+the monorepo root config. Providers are named like //apps/api:uv.
+"""#
         }
         arg "[PROVIDER]" help="Provider to operate on (runs only this provider, or use with --explain)" required=#false
     }
