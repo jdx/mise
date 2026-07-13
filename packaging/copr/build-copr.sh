@@ -227,6 +227,16 @@ replace-with = "vendored-sources"
 directory = "vendor"
 CARGO_EOF
 
+# aws-lc-sys compiles and links its memcmp compiler probe in one command. It
+# intentionally ignores CFLAGS, but still applies Fedora's LDFLAGS, whose
+# hardened linker specs produce a PIE executable. Add the matching compiler
+# flag so the probe's object file is position-independent as well.
+%if 0%{?fedora}
+%ifarch x86_64
+export LDFLAGS="${LDFLAGS:-} -fPIE"
+%endif
+%endif
+
 # On RHEL/EPEL x86_64, nasm lives in CRB which is not enabled in COPR
 # chroots. Use prebuilt NASM objects bundled inside the aws-lc-sys crate
 # instead. This works at all Cargo profile/optimization levels including
