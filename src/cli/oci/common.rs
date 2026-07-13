@@ -1,5 +1,7 @@
 //! Shared helpers for `mise oci` subcommands.
 
+use std::path::Path;
+
 use eyre::{Result, bail};
 
 use crate::config::{Config, ConfigMap};
@@ -22,11 +24,22 @@ pub fn merged_oci_config_from<'a>(
 ) -> OciConfig {
     let mut out = OciConfig::default();
     for cf in config_files {
-        if let Some(oci) = cf.oci_config() {
+        if let Some(mut oci) = cf.oci_config() {
+            resolve_copy_paths(&mut oci, cf.get_path().parent().unwrap_or(Path::new(".")));
             out.fill_defaults_from(oci);
         }
     }
     out
+}
+
+/// Resolve config-provided copy sources relative to the file that declared
+/// them. CLI copy sources remain relative to the process working directory.
+fn resolve_copy_paths(oci: &mut OciConfig, base: &Path) {
+    for copy in &mut oci.copy {
+        if copy.host.is_relative() {
+            copy.host = base.join(&copy.host);
+        }
+    }
 }
 
 /// Convenience wrapper that merges `[oci]` across *all* loaded configs.
@@ -141,5 +154,33 @@ pub fn short_digest(d: &str) -> String {
         format!("sha256:{}", &hex[..12])
     } else {
         d.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::oci::OciCopy;
+
+    #[test]
+    fn config_copy_paths_resolve_from_declaring_config_directory() {
+        let mut oci = OciConfig {
+            copy: vec![
+                OciCopy {
+                    host: "assets".into(),
+                    image: "/srv/assets".into(),
+                },
+                OciCopy {
+                    host: "/absolute/tool".into(),
+                    image: "/usr/local/bin/tool".into(),
+                },
+            ],
+            ..Default::default()
+        };
+
+        resolve_copy_paths(&mut oci, Path::new("/project"));
+
+        assert_eq!(oci.copy[0].host, Path::new("/project/assets"));
+        assert_eq!(oci.copy[1].host, Path::new("/absolute/tool"));
     }
 }
