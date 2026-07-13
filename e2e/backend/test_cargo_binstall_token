@@ -7,8 +7,13 @@ cat >~/bin/cargo-binstall <<'EOF'
 #!/usr/bin/env bash
 echo "token=$GITHUB_TOKEN"
 echo "args=$*"
+exit "${BINSTALL_EXIT_CODE:-0}"
 EOF
-chmod u+x ~/bin/cargo-binstall
+cat >~/bin/cargo <<'EOF'
+#!/usr/bin/env bash
+echo "cargo-args=$*"
+EOF
+chmod u+x ~/bin/cargo-binstall ~/bin/cargo
 export PATH="$HOME/bin:$PATH"
 
 # This should reuse the existing GITHUB_TOKEN variable
@@ -23,8 +28,31 @@ assert_contains "GITHUB_API_TOKEN=foobar GITHUB_TOKEN=barquz mise install -f car
 # This should prefer MISE_GITHUB_TOKEN
 assert_contains "MISE_GITHUB_TOKEN=foobar GITHUB_API_TOKEN=barquz GITHUB_TOKEN=barquz mise install -f cargo:eza@0.18.24 2>&1" "token=foobar"
 
-# quick-install should be disabled by default
-assert_contains "mise install -f cargo:eza@0.18.24 2>&1" "args=-y --disable-strategies quick-install eza@0.18.24"
+# compile and quick-install should be disabled by default
+assert_contains "mise install -f cargo:eza@0.18.24 2>&1" "args=-y --disable-strategies compile,quick-install eza@0.18.24"
 
-# The setting should allow cargo-binstall's quick-install strategy
-assert_not_contains "MISE_CARGO_BINSTALL_QUICKINSTALL=1 mise install -f cargo:eza@0.18.24 2>&1" "--disable-strategies"
+# The setting should allow quick-install while compile remains disabled
+assert_contains "MISE_CARGO_BINSTALL_QUICKINSTALL=1 mise install -f cargo:eza@0.18.24 2>&1" "args=-y --disable-strategies compile eza@0.18.24"
+
+# Exit code 94 means no prebuilt artifact, so mise should run cargo install
+assert_contains "BINSTALL_EXIT_CODE=94 mise install -f cargo:eza@0.18.24 2>&1" "cargo-args=install eza@0.18.24 --locked"
+
+# Other cargo-binstall failures must not fall back to cargo install
+output="$(BINSTALL_EXIT_CODE=1 mise install -f cargo:eza@0.18.24 2>&1)" && fail "cargo-binstall exit code 1 unexpectedly succeeded"
+assert_not_contains_text "$output" "cargo-args="
+
+# binstall_only must not allow mise's cargo install fallback
+output="$(MISE_CARGO_BINSTALL_ONLY=1 BINSTALL_EXIT_CODE=94 mise install -f cargo:eza@0.18.24 2>&1)" && fail "cargo-binstall exit code 94 unexpectedly succeeded with binstall_only"
+assert_not_contains_text "$output" "cargo-args="
+
+# Explicit git sources use cargo install even when binstall_only is enabled
+output="$(MISE_CARGO_BINSTALL_ONLY=1 mise install -f cargo:https://github.com/example/example@HEAD 2>&1)"
+assert_contains_text "$output" "cargo-args=install --git=https://github.com/example/example"
+assert_not_contains_text "$output" "example@example@HEAD"
+
+# Cargo-only options on explicit git sources remain unaffected by binstall_only
+cat >mise.toml <<'EOF'
+[tools]
+"cargo:https://github.com/example/features" = { version = "HEAD", features = "extra" }
+EOF
+assert_contains "MISE_CARGO_BINSTALL_ONLY=1 mise install 2>&1" "cargo-args=install --git=https://github.com/example/features --locked --features=extra"
