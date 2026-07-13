@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "db71c691bebd",
+  "session_id": "019f53c2-435e-7a81-a685-3fb876829a52",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-13T18:46:00.910664Z",
+  "branch": "codex/oci-copy-layers",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/mise-oci.md",
+    "e2e/oci/test_oci_build_slow",
+    "src/oci/builder.rs",
+    "src/oci/layer.rs",
+    "src/oci/mod.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "d9c0efd6507b",
+  "checkpoint_transcript_start": 266,
+  "transcript_lines_at_start": 266,
+  "token_usage": {
+    "input_tokens": 167440,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4617728,
+    "output_tokens": 5039,
+    "api_call_count": 34
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-13T18:46:00.891729Z",
+    "agent_lines": 78,
+    "agent_removed": 3,
+    "human_added": 3,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 81,
+    "total_lines_changed": 84,
+    "agent_percentage": 96.42857142857143,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
