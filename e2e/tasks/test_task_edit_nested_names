@@ -81,3 +81,70 @@ assert_contains "mise run deploy:prod:backend:api" "deeply nested task executed"
 
 # Verify it shows up in the task list
 assert_contains "mise tasks ls" "deploy:prod:backend:api"
+
+# Default includes select the first directory that already exists.
+mkdir -p default-project/.mise-tasks
+(
+  cd default-project
+  DEFAULT_PATH=$(mise tasks edit default-choice --path 2>&1)
+  assert "printf '%s' \"$DEFAULT_PATH\"" "$PWD/.mise-tasks/default-choice"
+)
+
+# A missing explicit path is not assumed to be a directory and never falls back to a default.
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["tasks"]
+EOF
+
+assert_fail_contains "mise tasks edit configured --path" "do not contain an existing directory"
+assert_fail_contains "mise tasks add added --file" "do not contain an existing directory"
+assert_fail "test -e tasks/configured"
+assert_fail "test -e tasks/added"
+assert_fail "test -e mise-tasks/configured"
+assert_fail "test -e mise-tasks/added"
+
+# Select the first existing directory in include order.
+mkdir existing-tasks
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["tasks.d", "existing-tasks"]
+EOF
+
+TASK_PATH5=$(mise tasks edit dotted --path 2>&1)
+assert "printf '%s' \"$TASK_PATH5\"" "$PWD/existing-tasks/dotted"
+assert "test -f \"$TASK_PATH5\""
+
+# Multiple missing literal directories are ambiguous and must not be guessed.
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["missing-a", "missing-b"]
+EOF
+
+assert_fail_contains "mise tasks edit ambiguous --path" "do not contain an existing directory"
+assert_fail "test -e missing-a/ambiguous"
+assert_fail "test -e missing-b/ambiguous"
+
+# Explicit includes replace the default directories; do not fall back to mise-tasks.
+cat <<'EOF' >tasks.toml
+[existing]
+run = "echo existing"
+EOF
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["tasks.toml"]
+EOF
+
+assert "mise tasks edit existing --path" "$PWD/tasks.toml"
+assert_fail_contains "mise tasks edit no-directory --path" "do not contain an existing directory"
+assert_fail "test -e mise-tasks/no-directory"
+
+# Existing inline tasks also remain editable without a file-task directory.
+cat <<'EOF' >mise.toml
+[task_config]
+includes = []
+
+[tasks.inline]
+run = "echo inline"
+EOF
+
+assert "mise tasks edit inline --path" "$PWD/mise.toml"

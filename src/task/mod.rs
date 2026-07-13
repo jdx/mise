@@ -956,24 +956,11 @@ impl Task {
         matches || self.aliases.contains(&pat.to_string())
     }
 
-    pub async fn task_dir() -> PathBuf {
-        let config = Config::get().await.unwrap();
+    pub async fn task_dir() -> Result<PathBuf> {
+        let config = Config::get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        let task_includes = match config::task_includes_for_dir(&project_root, &config.config_files)
-        {
-            Ok(includes) => includes,
-            Err(err) => {
-                warn!("failed to resolve task include paths: {err:#}");
-                Vec::new()
-            }
-        };
-        for dir in task_includes {
-            if dir.is_dir() && project_root.join(&dir).exists() {
-                return project_root.join(dir);
-            }
-        }
-        project_root.join("mise-tasks")
+        config::task_creation_dir_for_dir(&project_root, &config.config_files)
     }
 
     pub fn with_args(mut self, args: Vec<String>) -> Self {
