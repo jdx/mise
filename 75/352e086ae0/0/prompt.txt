@@ -1,0 +1,29 @@
+address pr feedback and failing pr checks
+
+---
+
+address pr feedback and failing pr checks
+
+---
+
+let's talk about that P1 for a bit, what do you think?
+
+---
+
+the registry is small isn't it? could we host it in R2 maybe along with our other things and publish it on release?
+
+---
+
+along with that, I think we should have a dedicated step during initialization or somewhere so we can show progress indicators when we are fetching the registry maybe, but idk, we shouldn't fetch a registry for "fast" commands right? like a shim or `mise x` unless mise x is installing something I guess. what do you think?
+
+---
+
+do we need a new policy? i thought we already had fast/slow/offline commands
+
+---
+
+ok do you have a plan?
+
+---
+
+modify the pr thne

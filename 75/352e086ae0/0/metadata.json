@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "75352e086ae0",
+  "session_id": "019f5ce9-e6bd-7e92-87b0-d3109e55f606",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-13T20:21:39.007439Z",
+  "branch": "codex/floating-registries",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/registry.md",
+    "scripts/publish-s3.sh",
+    "settings.toml",
+    "src/aqua/aqua_registry_wrapper.rs",
+    "src/cli/mod.rs",
+    "src/registry.rs",
+    "src/ui/multi_progress_report.rs",
+    "src/ui/progress_report.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "d6ec80938d9d",
+  "checkpoint_transcript_start": 780,
+  "transcript_lines_at_start": 780,
+  "token_usage": {
+    "input_tokens": 286132,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 5915648,
+    "output_tokens": 19909,
+    "api_call_count": 63
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-13T20:21:38.964726Z",
+    "agent_lines": 169,
+    "agent_removed": 62,
+    "human_added": 1,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 170,
+    "total_lines_changed": 233,
+    "agent_percentage": 99.14163090128756,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
