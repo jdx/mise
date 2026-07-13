@@ -1774,6 +1774,10 @@ impl Task {
                 .shell
                 .as_ref()
                 .is_some_and(|s| contains_template_syntax(s))
+            || self
+                .timeout
+                .as_ref()
+                .is_some_and(|s| contains_template_syntax(s))
             || self.allow_read.iter().any(|p| path_contains_template(p))
             || self.allow_write.iter().any(|p| path_contains_template(p))
             || tools_have_template
@@ -1856,6 +1860,11 @@ impl Task {
             && contains_template_syntax(shell)
         {
             *shell = render_str(&mut tera, shell, &tera_ctx)?;
+        }
+        if let Some(timeout) = &mut self.timeout
+            && contains_template_syntax(timeout)
+        {
+            *timeout = render_str(&mut tera, timeout, &tera_ctx)?;
         }
         let mut render_sandbox_paths = |paths: &mut Vec<PathBuf>| -> Result<()> {
             let mut rendered = Vec::with_capacity(paths.len());
