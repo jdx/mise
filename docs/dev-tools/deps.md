@@ -91,6 +91,9 @@ mise deps --monorepo
 
 This requires explicit [`[monorepo].config_roots`](/tasks/monorepo.html#explicit-config-roots);
 mise does not search arbitrary subdirectories for dependency providers.
+Providers in the monorepo root config are also included because that config is
+part of every selected config root's hierarchy, matching the behavior of
+`mise install --monorepo`.
 
 Monorepo provider IDs include their config root so the same provider can appear
 in multiple projects. For example, two uv providers are named `//apps/api:uv`

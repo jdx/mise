@@ -30,6 +30,13 @@ pub struct DepsInstall {
     #[clap(long)]
     pub list: bool,
 
+    /// Install dependencies from every [monorepo].config_roots config root
+    ///
+    /// Requires monorepo_root = true plus explicit [monorepo].config_roots in
+    /// the monorepo root config. Providers are named like //apps/api:uv.
+    #[clap(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
+    pub monorepo: bool,
+
     /// Run specific deps rule(s) only
     #[clap(long)]
     pub only: Option<Vec<String>>,
@@ -37,13 +44,6 @@ pub struct DepsInstall {
     /// Skip specific deps rule(s)
     #[clap(long)]
     pub skip: Option<Vec<String>>,
-
-    /// Install dependencies from every [monorepo].config_roots config root
-    ///
-    /// Requires monorepo_root = true plus explicit [monorepo].config_roots in
-    /// the monorepo root config. Providers are named like //apps/api:uv.
-    #[clap(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
-    pub monorepo: bool,
 }
 
 impl DepsInstall {

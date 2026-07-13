@@ -183,6 +183,25 @@ impl DepsEngine {
             .ok_or_else(|| eyre::eyre!("no config file in scope sets monorepo_root = true"))?;
         let mut providers: Vec<Box<dyn DepsProvider>> = vec![];
         let mut seen_ids = HashSet::new();
+        let config_files: Vec<_> = config_files.into_iter().collect();
+        let mut disabled_by_root: HashMap<PathBuf, HashSet<String>> = HashMap::new();
+
+        // Layered config files share one provider namespace at each config root.
+        // Collect disables first so their behavior does not depend on file order.
+        for cf in &config_files {
+            let Some(config_project_root) = cf.project_root() else {
+                continue;
+            };
+            if !config_project_root.starts_with(&monorepo_root) {
+                continue;
+            }
+            if let Some(deps_config) = cf.deps_config() {
+                disabled_by_root
+                    .entry(cf.config_root())
+                    .or_default()
+                    .extend(deps_config.disable.iter().cloned());
+            }
+        }
 
         for cf in config_files {
             let Some(config_project_root) = cf.project_root() else {
@@ -208,7 +227,10 @@ impl DepsEngine {
             };
 
             for (id, provider_config) in &deps_config.providers {
-                if deps_config.disable.contains(id) {
+                if disabled_by_root
+                    .get(&config_root)
+                    .is_some_and(|disabled| disabled.contains(id))
+                {
                     continue;
                 }
 

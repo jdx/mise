@@ -2670,12 +2670,6 @@ disable = ["npm"]        # Disable specific providers at runtime
     flag "-f --force" help="Force run all deps steps even if outputs are fresh"
     flag "-n --dry-run" help="Only check if deps install is needed, don't run commands"
     flag --list help="Show what deps providers are available"
-    flag --only help="Run specific deps rule(s) only" var=#true {
-        arg <ONLY>
-    }
-    flag --skip help="Skip specific deps rule(s)" var=#true {
-        arg <SKIP>
-    }
     flag --monorepo help="Install dependencies from every [monorepo].config_roots config root" {
         long_help #"""
 Install dependencies from every [monorepo].config_roots config root
@@ -2683,6 +2677,12 @@ Install dependencies from every [monorepo].config_roots config root
 Requires monorepo_root = true plus explicit [monorepo].config_roots in
 the monorepo root config. Providers are named like //apps/api:uv.
 """#
+    }
+    flag --only help="Run specific deps rule(s) only" var=#true {
+        arg <ONLY>
+    }
+    flag --skip help="Skip specific deps rule(s)" var=#true {
+        arg <SKIP>
     }
     arg "[PROVIDER]" help="Provider to operate on (runs only this provider, or use with --explain)" required=#false
     cmd add help="Add a dependency" {
@@ -2706,12 +2706,6 @@ and runs install commands if needed.
         flag "-f --force" help="Force run all deps steps even if outputs are fresh"
         flag "-n --dry-run" help="Only check if deps install is needed, don't run commands"
         flag --list help="Show what deps providers are available"
-        flag --only help="Run specific deps rule(s) only" var=#true {
-            arg <ONLY>
-        }
-        flag --skip help="Skip specific deps rule(s)" var=#true {
-            arg <SKIP>
-        }
         flag --monorepo help="Install dependencies from every [monorepo].config_roots config root" {
             long_help #"""
 Install dependencies from every [monorepo].config_roots config root
@@ -2719,6 +2713,12 @@ Install dependencies from every [monorepo].config_roots config root
 Requires monorepo_root = true plus explicit [monorepo].config_roots in
 the monorepo root config. Providers are named like //apps/api:uv.
 """#
+        }
+        flag --only help="Run specific deps rule(s) only" var=#true {
+            arg <ONLY>
+        }
+        flag --skip help="Skip specific deps rule(s)" var=#true {
+            arg <SKIP>
         }
         arg "[PROVIDER]" help="Provider to operate on (runs only this provider, or use with --explain)" required=#false
     }

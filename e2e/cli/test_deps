@@ -671,7 +671,13 @@ monorepo_root = true
 
 [monorepo]
 config_roots = ["packages/*"]
+
+[deps.root]
+sources = ["root-input.txt"]
+outputs = ["root-output.txt"]
+run = "cp root-input.txt root-output.txt"
 EOF
+echo root >deps-monorepo/root-input.txt
 
 for package in a b; do
   cat >"deps-monorepo/packages/$package/mise.toml" <<'EOF'
@@ -685,17 +691,33 @@ depends = ["setup"]
 sources = ["output.txt"]
 outputs = ["built.txt"]
 run = "cp output.txt built.txt"
+
+[deps.disabled]
+sources = ["input.txt"]
+outputs = ["disabled.txt"]
+run = "cp input.txt disabled.txt"
 EOF
   echo "$package" >"deps-monorepo/packages/$package/input.txt"
 done
 
-# Plain deps remains scoped to the root config.
-assert_contains "cd deps-monorepo && mise deps --list" "No deps providers found"
+# A layered disable applies to providers from the same config root.
+cat >deps-monorepo/packages/a/mise.local.toml <<'EOF'
+[deps]
+disable = ["disabled"]
+EOF
+
+# Plain deps remains scoped to the root config, while monorepo mode qualifies it.
+assert_contains "cd deps-monorepo && mise deps --list" "root"
+assert_not_contains "cd deps-monorepo && mise deps --list" "packages/a"
+assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//:root"
 
 # --monorepo loads every explicit config root and qualifies duplicate IDs.
 assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/a:setup"
 assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/b:setup"
+assert_not_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/a:disabled"
+assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/b:disabled"
 assert "cd deps-monorepo && mise deps --monorepo --force"
+assert "test -f deps-monorepo/root-output.txt"
 assert "test -f deps-monorepo/packages/a/built.txt"
 assert "test -f deps-monorepo/packages/b/built.txt"
 
