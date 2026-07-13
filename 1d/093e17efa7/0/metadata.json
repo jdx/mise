@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "1d093e17efa7",
+  "session_id": "019f5d29-32b2-7dc0-b153-ef692ffd3210",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-13T21:00:34.530178Z",
+  "branch": "codex/fix-installed-release-age-resolution",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/security.md",
+    "e2e/cli/test_minimum_release_age_installed_resolution"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "a69268f1ad0f",
+  "checkpoint_transcript_start": 726,
+  "transcript_lines_at_start": 726,
+  "token_usage": {
+    "input_tokens": 26304,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1249280,
+    "output_tokens": 2039,
+    "api_call_count": 13
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-13T21:00:34.504445Z",
+    "agent_lines": 8,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 8,
+    "total_lines_changed": 10,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
