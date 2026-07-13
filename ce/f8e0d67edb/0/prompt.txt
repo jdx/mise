@@ -1,9 +1,1 @@
-make a pr and reply to the thread
-
----
-
-what does the pr comment talk about?
-
----
-
 can we make v1 work like it did before and use the v2 syntax when tera_v1 is not set?
