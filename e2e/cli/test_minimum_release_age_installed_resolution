@@ -32,6 +32,9 @@ minimum_release_age = "2d"
 spy = "latest"
 EOF
 
+# Resolution is concrete, while bin-paths intentionally exposes the fuzzy
+# request's runtime symlink.
+assert "mise current spy" "2.0.0"
 assert "mise bin-paths" "$MISE_DATA_DIR/installs/spy/latest/bin"
 assert "test ! -e '$marker'"
 
