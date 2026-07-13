@@ -17,22 +17,35 @@ impl FlatpakManager {
 }
 
 fn parse_flatpak_list(output: &str, requests: &[PackageRequest]) -> Vec<PackageStatus> {
-    let installed: HashMap<&str, &str> = output
-        .lines()
-        .filter_map(|line| line.split_once('\t'))
-        .collect();
+    let mut installed: HashMap<&str, Vec<&str>> = HashMap::new();
+    for (application, version) in output.lines().filter_map(|line| line.split_once('\t')) {
+        installed.entry(application).or_default().push(version);
+    }
     requests
         .iter()
         .map(|request| {
-            let state = match installed.get(request.name.as_str()) {
-                Some(version) => PackageState::Installed {
-                    version: if version.is_empty() {
-                        "unknown"
-                    } else {
-                        version
+            let state = match installed.get_mut(request.name.as_str()) {
+                Some(versions) => {
+                    versions.sort_unstable();
+                    versions.dedup();
+                    let installed = versions
+                        .iter()
+                        .map(|version| {
+                            if version.is_empty() {
+                                "unknown"
+                            } else {
+                                version
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    match &request.version {
+                        Some(requested) if !versions.contains(&requested.as_str()) => {
+                            PackageState::VersionMismatch { installed }
+                        }
+                        _ => PackageState::Installed { version: installed },
                     }
-                    .to_string(),
-                },
+                }
                 None => PackageState::Missing,
             };
             PackageStatus {
@@ -122,6 +135,12 @@ impl SystemPackageManager for FlatpakManager {
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if pkgs.is_empty() {
+            return Ok(());
+        }
+        if let Some(pkg) = pkgs.iter().find(|pkg| pkg.version.is_some()) {
+            bail!("flatpak cannot upgrade a pinned version ('{pkg}')");
+        }
         let mut args = vec![
             "update".to_string(),
             "--system".to_string(),
@@ -140,10 +159,10 @@ impl SystemPackageManager for FlatpakManager {
 mod tests {
     use super::*;
 
-    fn req(name: &str) -> PackageRequest {
+    fn req(name: &str, version: Option<&str>) -> PackageRequest {
         PackageRequest {
             name: name.to_string(),
-            version: None,
+            version: version.map(str::to_string),
             tap_url: None,
         }
     }
@@ -152,7 +171,10 @@ mod tests {
     fn test_parse_flatpak_list() {
         let statuses = parse_flatpak_list(
             "org.mozilla.firefox\t128.0\norg.freedesktop.Platform\t24.08.1\n",
-            &[req("org.mozilla.firefox"), req("org.gnome.Builder")],
+            &[
+                req("org.mozilla.firefox", None),
+                req("org.gnome.Builder", None),
+            ],
         );
         assert_eq!(
             statuses[0].state,
@@ -161,5 +183,53 @@ mod tests {
             }
         );
         assert_eq!(statuses[1].state, PackageState::Missing);
+    }
+
+    #[test]
+    fn test_parse_flatpak_list_versions() {
+        let statuses = parse_flatpak_list(
+            "org.gnome.Sdk\t44.2\norg.gnome.Sdk\t43.1\norg.gnome.Sdk\t44.2\n",
+            &[
+                req("org.gnome.Sdk", None),
+                req("org.gnome.Sdk", Some("43.1")),
+                req("org.gnome.Sdk", Some("45.0")),
+            ],
+        );
+        assert_eq!(
+            statuses[0].state,
+            PackageState::Installed {
+                version: "43.1, 44.2".to_string()
+            }
+        );
+        assert_eq!(
+            statuses[1].state,
+            PackageState::Installed {
+                version: "43.1, 44.2".to_string()
+            }
+        );
+        assert_eq!(
+            statuses[2].state,
+            PackageState::VersionMismatch {
+                installed: "43.1, 44.2".to_string()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_upgrade_rejects_empty_and_pinned_requests_before_running_flatpak() {
+        let manager = FlatpakManager::new();
+        manager.upgrade(&[], &InstallOpts::default()).await.unwrap();
+
+        let err = manager
+            .upgrade(
+                &[req("org.mozilla.firefox", Some("128.0"))],
+                &InstallOpts::default(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "flatpak cannot upgrade a pinned version ('org.mozilla.firefox@128.0')"
+        );
     }
 }

@@ -1056,7 +1056,7 @@ only. `install` is accepted as an alias for this command.
 .PP
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, or `mas`
+Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, `flatpak`, or `mas`
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without running them
@@ -1191,7 +1191,7 @@ Refreshes package manager metadata and upgrades the configured packages
 that are already installed: apk/apt/dnf/pacman upgrade to the newest available
 version (apk, apt, and dnf honor a version pinned in config), brew pours the
 formula's current bottle and replaces the old keg, brew\-cask installs
-the current cask artifact, and mas upgrades App Store apps. Packages that
+the current cask artifact, flatpak updates applications and runtimes, and mas upgrades App Store apps. Packages that
 are not installed yet are skipped — use `mise bootstrap packages apply`
 for those.
 
@@ -1203,7 +1203,7 @@ Packages can also be given explicitly in `manager:package` form.
 .PP
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, or `mas`
+Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, `flatpak`, or `mas`
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without running them
