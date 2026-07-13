@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# This is intentionally a live end-to-end check of the registry artifact
+# published by the release workflow. Unit tests cover archive parsing and
+# fallback behavior; this verifies that floating mode can download the R2
+# artifact, validate it, and install it in the cache.
+
+archive="$MISE_CACHE_DIR/mise-registry/registry.tar.gz"
+rm -rf "$MISE_CACHE_DIR/mise-registry"
+
+MISE_REGISTRY_FLOATING=1 MISE_REGISTRY_CACHE_TTL=0s mise registry jq >/dev/null
+
+if [[ ! -f $archive ]]; then
+  fail "floating registry was not downloaded to $archive"
+fi
+
+if ! tar -tzf "$archive" | grep -qx 'registry/jq.toml'; then
+  fail "floating registry archive does not contain registry/jq.toml"
+fi
