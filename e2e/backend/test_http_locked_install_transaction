@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+# A locked HTTP install is one transaction: it consumes the artifact URL from
+# the lockfile and validates the locked integrity contract before exposing any
+# shared extraction cache or install path.
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+SRV="$PWD/srv"
+mkdir -p "$SRV"
+
+REAL_SHA="34a3c3a03073287eea9375cd9838e60a3b875715005eb2cc854a4461cf2c428d"
+printf '#!/bin/sh\necho mytool ok\n' >"$SRV/locked-tool"
+printf '#!/bin/sh\necho configured artifact\n' >"$SRV/configured-tool"
+printf '%s  locked-tool\n' "$REAL_SHA" >"$SRV/locked-tool_SHASUMS"
+printf '1.0.0\n' >"$SRV/locked-tool_versions.txt"
+
+PORT_FILE="$TMPDIR/mise_locked_install_transaction_port"
+python3 - "$SRV" "$PORT_FILE" <<'PY' &
+import http.server, socketserver, sys, os
+srv, port_file = sys.argv[1], sys.argv[2]
+os.chdir(srv)
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
+    with open(port_file, "w") as f:
+        f.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "locked install transaction port file" 30 "$SERVER_PID"
+PORT=$(cat "$PORT_FILE")
+
+cat >mise.toml <<EOF
+[tools."http:locked-install-transaction"]
+version = "latest"
+bin = "locked-tool"
+url = "http://127.0.0.1:${PORT}/locked-tool"
+checksum_url = "http://127.0.0.1:${PORT}/locked-tool_SHASUMS"
+version_list_url = "http://127.0.0.1:${PORT}/locked-tool_versions.txt"
+EOF
+
+mise lock --platform "$PLATFORM"
+cp mise.lock mise.lock.initial
+cp mise.toml mise.toml.initial
+
+# Configuration changes after locking must not replace the selected artifact.
+sed 's#/locked-tool"#/configured-tool"#' mise.toml.initial >mise.toml
+mise install --locked
+assert_contains "mise x -- locked-tool" "mytool ok"
+
+# A locked checksum mismatch must fail before persistent install side effects.
+mise uninstall --all
+cp mise.toml.initial mise.toml
+cp mise.lock.initial mise.lock
+printf '#!/bin/sh\necho tampered artifact\n' >"$SRV/locked-tool"
+
+HTTP_CACHE_DIR="$HOME/.local/share/mise/http-tarballs"
+mkdir -p "$HTTP_CACHE_DIR"
+find "$HTTP_CACHE_DIR" -maxdepth 2 -print | sort >http-cache.before-checksum-failure
+assert_fail "mise install --locked"
+find "$HTTP_CACHE_DIR" -maxdepth 2 -print | sort >http-cache.after-checksum-failure
+assert "cmp -s http-cache.before-checksum-failure http-cache.after-checksum-failure"
+assert "test ! -e '$HOME/.local/share/mise/installs/http-locked-install-transaction'"
+
+# A locked size mismatch must fail at the same pre-commit boundary.
+printf '#!/bin/sh\necho mytool ok\n' >"$SRV/locked-tool"
+cp mise.lock.initial mise.lock
+awk '{ print; if ($1 == "checksum" && $2 == "=") print "size = 999999" }' mise.lock >mise.lock.tmp
+mv mise.lock.tmp mise.lock
+
+find "$HTTP_CACHE_DIR" -maxdepth 2 -print | sort >http-cache.before-size-failure
+assert_fail "mise install --locked"
+find "$HTTP_CACHE_DIR" -maxdepth 2 -print | sort >http-cache.after-size-failure
+assert "cmp -s http-cache.before-size-failure http-cache.after-size-failure"
+assert "test ! -e '$HOME/.local/share/mise/installs/http-locked-install-transaction'"
