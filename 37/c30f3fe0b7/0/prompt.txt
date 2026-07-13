@@ -1,0 +1,5 @@
+should this be fixed on origin/main? [https://github.com/jdx/mise/discussions/10921](https://github.com/jdx/mise/discussions/10921)
+
+---
+
+ok fix it, `ssh bamboo` if you need a linux box to test

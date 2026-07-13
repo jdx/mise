@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "37c30f3fe0b7",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-copr-pie-probe",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "packaging/copr/build-copr.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/37/c30f3fe0b7/0/metadata.json",
+      "transcript": "/37/c30f3fe0b7/0/full.jsonl",
+      "content_hash": "/37/c30f3fe0b7/0/content_hash.txt",
+      "prompt": "/37/c30f3fe0b7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 153671,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4067072,
+    "output_tokens": 10542,
+    "api_call_count": 49
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "37c30f3fe0b7",
+  "session_id": "019f5d47-024c-7e21-909a-dcc2ee418eba",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-13T21:10:38.399017Z",
+  "branch": "codex/fix-copr-pie-probe",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "packaging/copr/build-copr.sh"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "df84a24a1947",
+  "token_usage": {
+    "input_tokens": 153671,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4067072,
+    "output_tokens": 10542,
+    "api_call_count": 49
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-13T21:10:38.386037Z",
+    "agent_lines": 10,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 10,
+    "total_lines_changed": 10,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 10,
+      "agent_lines_removed": 0
+    }
+  ]
+}
