@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "72b840cacfdd",
+  "strategy": "manual-commit",
+  "branch": "codex/oci-copy-layers",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/mise-oci.md",
+    "e2e/oci/test_oci_build_slow",
+    "src/cli/oci/common.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/72/b840cacfdd/0/metadata.json",
+      "transcript": "/72/b840cacfdd/0/full.jsonl",
+      "content_hash": "/72/b840cacfdd/0/content_hash.txt",
+      "prompt": "/72/b840cacfdd/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44780,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6566144,
+    "output_tokens": 4083,
+    "api_call_count": 32
+  }
+}
