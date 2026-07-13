@@ -575,7 +575,7 @@ impl TaskExecutor {
             let usage_values = crate::task::parse_usage_values_from_task(config, task).await?;
             let config_root = task.config_root.clone().unwrap_or_default();
             let tera = crate::tera::get_tera(Some(&config_root));
-            let mut tera_ctx = task.tera_ctx(config).await?;
+            let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
             if !usage_values.is_empty() {
                 tera_ctx.insert("usage", &usage_values);
             }
@@ -1347,7 +1347,7 @@ impl TaskExecutor {
             let message = if contains_template_syntax(confirm.message()) {
                 let config_root = task.config_root.clone().unwrap_or_default();
                 let mut tera = crate::tera::get_tera(Some(&config_root));
-                let mut tera_ctx = task.tera_ctx(config).await?;
+                let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
 
                 // Add usage values from parsed environment
                 let mut usage_ctx = std::collections::HashMap::new();
@@ -1381,7 +1381,7 @@ impl TaskExecutor {
         extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<()> {
         let bypass_usage_parser = task.should_bypass_usage_parser();
-        if !bypass_usage_parser {
+        if !task.raw_args {
             // usage_* variables are outputs of this task's argument parser,
             // so they must not influence spec discovery or parsing.
             crate::task::clear_usage_env(env);

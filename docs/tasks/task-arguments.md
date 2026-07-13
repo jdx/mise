@@ -43,9 +43,9 @@ $ mise run deploy staging --verbose --region us-west-2
 ```
 
 Inherited `usage_*` values are cleared for normal task execution, including
-tasks without a usage spec. Tasks with `raw_args = true` retain their inherited
-environment. To intentionally inherit a value in a normally parsed task, use a
-separately named environment variable, optionally with `env=`:
+tasks without a usage spec. Tasks with `raw_args = true` retain inherited
+`usage_*` values. To intentionally inherit a value in a normally parsed task,
+use a separately named environment variable, optionally with `env=`:
 
 ```mise-toml [mise.toml]
 [tasks.deploy]

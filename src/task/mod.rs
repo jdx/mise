@@ -1180,7 +1180,7 @@ impl Task {
         extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<(usage::Spec, Vec<String>)> {
         let mut env = env.clone();
-        if !self.should_bypass_usage_parser() {
+        if !self.raw_args {
             clear_usage_env(&mut env);
         }
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
@@ -1360,13 +1360,32 @@ impl Task {
     }
 
     pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<tera::Context> {
+        self.build_tera_ctx(config, false).await
+    }
+
+    pub(crate) async fn tera_ctx_for_usage(&self, config: &Arc<Config>) -> Result<tera::Context> {
+        self.build_tera_ctx(config, !self.raw_args).await
+    }
+
+    async fn build_tera_ctx(
+        &self,
+        config: &Arc<Config>,
+        sanitize_usage_env: bool,
+    ) -> Result<tera::Context> {
         let ts = config.get_toolset().await?;
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
+        if sanitize_usage_env {
+            clear_usage_env_from_tera_ctx(&mut tera_ctx);
+        }
         let mut vars = self.resolve_base_vars(config).await?;
         // Insert base vars first so that task-level var templates can reference them
         // (e.g. a task var `foo = "{{vars.bar}}"` can read a config-level `bar`).
         tera_ctx.insert("vars", &vars);
         self.resolve_base_env(config, &mut tera_ctx).await?;
+        if sanitize_usage_env {
+            // A task from another config hierarchy may replace the env map.
+            clear_usage_env_from_tera_ctx(&mut tera_ctx);
+        }
         vars.extend(self.resolve_task_vars(config, &tera_ctx).await?);
         // Re-insert with task-level vars merged in so callers see the final combined map,
         // with task-level values taking precedence over config-level ones.
@@ -2022,6 +2041,15 @@ impl Task {
 
 pub(crate) fn clear_usage_env(env: &mut EnvMap) {
     env.retain(|key, _| !is_usage_env_key(key));
+}
+
+fn clear_usage_env_from_tera_ctx(tera_ctx: &mut tera::Context) {
+    let mut env: EnvMap = tera_ctx
+        .get("env")
+        .and_then(|value| serde::Deserialize::deserialize(value.clone()).ok())
+        .unwrap_or_default();
+    clear_usage_env(&mut env);
+    tera_ctx.insert("env", &env);
 }
 
 pub(crate) fn is_usage_env_key(key: &str) -> bool {
