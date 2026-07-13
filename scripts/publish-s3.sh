@@ -1,7 +1,7 @@
 #!/usr/bin/env -S mise x aws-cli@2.22.35 -- bash
 set -euxo pipefail
 
-#cache_hour="max-age=3600,s-maxage=3600,public,immutable"
+cache_hour="max-age=3600,s-maxage=3600,public"
 cache_day="max-age=86400,s-maxage=86400,public,immutable"
 cache_week="max-age=604800,s-maxage=604800,public,immutable"
 
@@ -30,6 +30,15 @@ aws s3 cp "$RELEASE_DIR/install.sh.minisig" "s3://$AWS_S3_BUCKET/" --cache-contr
 aws s3 cp "./schema/mise.json" "s3://$AWS_S3_BUCKET/schema/mise.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 aws s3 cp "./schema/mise.plugin.json" "s3://$AWS_S3_BUCKET/schema/mise.plugin.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 aws s3 cp "./schema/mise-task.json" "s3://$AWS_S3_BUCKET/schema/mise-task.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
+
+# Publish only the registry files so older mise builds can opt into the registry
+# tested by this release without downloading the entire source repository.
+registry_tmpdir="$(mktemp -d)"
+trap 'rm -rf "$registry_tmpdir"' EXIT
+registry_archive="$registry_tmpdir/registry.tar.gz"
+git archive --format=tar HEAD registry | gzip -n >"$registry_archive"
+aws s3 cp "$registry_archive" "s3://$AWS_S3_BUCKET/registry/$MISE_VERSION.tar.gz" --cache-control "$cache_week" --no-progress --content-type "application/gzip"
+aws s3 cp "$registry_archive" "s3://$AWS_S3_BUCKET/registry/latest.tar.gz" --cache-control "$cache_hour" --no-progress --content-type "application/gzip"
 
 # Upload shell-specific mise.run scripts
 aws s3 cp artifacts/mise.run/zsh "s3://$AWS_S3_BUCKET/mise.run/zsh" --cache-control "$cache_week" --no-progress --content-type "text/plain"
