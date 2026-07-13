@@ -141,9 +141,12 @@ MISE_TERA_V1 = true
 ```
 
 The newer `[settings] tera_v1 = true` form also works in mise releases that
-support it, but is less compatible with older releases. This escape hatch is
-scheduled for removal in mise 2027.4.0. Because miserc files are rendered before
-settings are loaded, it does not apply while loading miserc itself.
+support it, but is less compatible with older releases. When enabled, all regular
+config and task templates use the actual Tera v1 engine and its original syntax
+and built-ins. Without it, templates use Tera v2 and the helpers described below.
+This escape hatch is scheduled for removal in mise 2027.4.0. Because miserc files
+are rendered before settings are loaded, it does not apply while loading miserc
+itself.
 
 ### Tera Filters
 
@@ -241,10 +244,13 @@ Some functions:
   - `end: usize`: stop before `end`, mandatory
   - `start: usize`: where to start from, defaults to `0`
   - `step_by: usize`: with what number do we increment, defaults to `1`
-- `now([timezone])` - Returns the current datetime as a string. The timezone
-  defaults to UTC and accepts IANA names such as `America/New_York`.
+- `now([timezone])` - In the default Tera v2 mode, returns the current datetime
+  as a string. The timezone defaults to UTC and accepts IANA names such as
+  `America/New_York`.
   - Tip: use date filter to format date string.
     e.g. <span v-pre>`{{ now() | date(format="%Y") }}`</span> gets the current year.
+  - With `tera_v1 = true`, the original `now([timestamp], [utc])` signature remains
+    available instead.
 - `throw(message)` - Throws with the message.
 - `get_random(start, end, [seed])` - Returns a random integer in a range.
   Providing `seed` makes the result reproducible.

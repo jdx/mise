@@ -3,7 +3,6 @@ use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, Utc};
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
@@ -210,24 +209,6 @@ fn escape_html(s: &str) -> String {
     output
 }
 
-fn slugify(s: &str) -> String {
-    let mut out = String::new();
-    let mut previous_dash = false;
-    for c in s.chars().flat_map(char::to_lowercase) {
-        if c.is_ascii_alphanumeric() {
-            out.push(c);
-            previous_dash = false;
-        } else if !previous_dash && !out.is_empty() {
-            out.push('-');
-            previous_dash = true;
-        }
-    }
-    if previous_dash {
-        out.pop();
-    }
-    out
-}
-
 fn tera_v1_truthy(value: &Value) -> bool {
     if value.is_none() {
         false
@@ -244,41 +225,6 @@ fn tera_v1_truthy(value: &Value) -> bool {
     } else {
         true
     }
-}
-
-fn tera_v1_date(value: Value, args: Kwargs) -> TeraResult<Value> {
-    let format = args.get::<&str>("format")?.unwrap_or("%Y-%m-%d");
-    let formatted = if let Some(n) = value.as_number() {
-        let ts = n
-            .as_integer()
-            .ok_or_else(|| tera_err(format!("Filter `date` was invoked on a float: {value}")))?;
-        let ts = i64::try_from(ts)
-            .map_err(|_| tera_err(format!("Filter `date` timestamp is out of range: {value}")))?;
-        DateTime::<Utc>::from_timestamp(ts, 0)
-            .ok_or_else(|| tera_err(format!("Filter `date` timestamp is out of range: {ts}")))?
-            .format(format)
-            .to_string()
-    } else if let Some(s) = value.as_str() {
-        if s.contains('T') {
-            match DateTime::<FixedOffset>::parse_from_rfc3339(s) {
-                Ok(dt) => dt.format(format).to_string(),
-                Err(_) => NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
-                    .map(|dt| dt.format(format).to_string())
-                    .map_err(|_| tera_err(format!("Error parsing `{s:?}` as a date")))?,
-            }
-        } else {
-            NaiveDate::parse_from_str(s, "%Y-%m-%d")
-                .map(|dt| dt.format(format).to_string())
-                .map_err(|_| tera_err(format!("Error parsing `{s:?}` as YYYY-MM-DD date")))?
-        }
-    } else {
-        return Err(tera_err(format!(
-            "Filter `date` expected an integer timestamp or string, got {}",
-            value.name()
-        )));
-    };
-
-    Ok(Value::from(formatted))
 }
 
 fn tera_v1_int(value: Value, args: Kwargs) -> TeraResult<Value> {
@@ -577,48 +523,6 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                 .replace('\'', "\\'"),
         )
     });
-    tera.register_filter("slugify", move |s: &str, _: Kwargs, _: &State| {
-        warn_tera_v1_filter(
-            "tera-v1-slugify",
-            "slugify",
-            "Use an explicit slug value or custom template logic instead.",
-        );
-        Value::from(slugify(s))
-    });
-    tera.register_filter("urlencode", move |s: &str, _: Kwargs, _: &State| {
-        warn_tera_v1_filter(
-            "tera-v1-urlencode",
-            "urlencode",
-            "Pre-encode URL components before rendering.",
-        );
-        Value::from(urlencoding::encode(s).replace("%2F", "/"))
-    });
-    tera.register_filter("urlencode_strict", move |s: &str, _: Kwargs, _: &State| {
-        warn_tera_v1_filter(
-            "tera-v1-urlencode-strict",
-            "urlencode_strict",
-            "Pre-encode URL components before rendering.",
-        );
-        Value::from(urlencoding::encode(s).into_owned())
-    });
-    tera.register_filter("striptags", move |s: &str, _: Kwargs, _: &State| {
-        static STRIPTAGS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"<[^>]*>").unwrap());
-        warn_tera_v1_filter(
-            "tera-v1-striptags",
-            "striptags",
-            "Strip tags before rendering or use custom template logic instead.",
-        );
-        Value::from(STRIPTAGS_RE.replace_all(s, "").to_string())
-    });
-    tera.register_filter("spaceless", move |s: &str, _: Kwargs, _: &State| {
-        static SPACELESS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r">\s+<").unwrap());
-        warn_tera_v1_filter(
-            "tera-v1-spaceless",
-            "spaceless",
-            "Minify whitespace before rendering or use custom template logic instead.",
-        );
-        Value::from(SPACELESS_RE.replace_all(s, "><").to_string())
-    });
     tera.register_filter(
         "truncate",
         move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
@@ -767,47 +671,6 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                 }
             }
             Ok(Value::from(out))
-        },
-    );
-    tera.register_filter(
-        "json_encode",
-        move |value: Value, args: Kwargs, _: &State| -> TeraResult<Value> {
-            warn_tera_v1_filter(
-                "tera-v1-json-encode",
-                "json_encode",
-                "Use Tera 2 JSON helpers when available or pre-encode JSON before rendering.",
-            );
-            let pretty = args.get::<bool>("pretty")?.unwrap_or(false);
-            let encoded = if pretty {
-                serde_json::to_string_pretty(&value)
-            } else {
-                serde_json::to_string(&value)
-            }
-            .map_err(|e| tera_err(e.to_string()))?;
-            Ok(Value::from(encoded))
-        },
-    );
-    tera.register_filter(
-        "date",
-        move |value: Value, args: Kwargs, _: &State| -> TeraResult<Value> {
-            warn_tera_v1_filter("tera-v1-date", "date", "Format dates before rendering.");
-            tera_v1_date(value, args)
-        },
-    );
-    tera.register_filter(
-        "filesizeformat",
-        move |value: Value, _: Kwargs, _: &State| -> TeraResult<Value> {
-            warn_tera_v1_filter(
-                "tera-v1-filesizeformat",
-                "filesizeformat",
-                "Format file sizes before rendering.",
-            );
-            let size = value
-                .as_number()
-                .and_then(|n| n.as_integer())
-                .and_then(|n| u64::try_from(n).ok())
-                .ok_or_else(|| tera_err("filesizeformat filter expects a non-negative integer"))?;
-            Ok(Value::from(bytesize::ByteSize(size).to_string()))
         },
     );
     tera.register_filter(
