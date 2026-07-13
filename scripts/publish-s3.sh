@@ -36,7 +36,7 @@ aws s3 cp "./schema/mise-task.json" "s3://$AWS_S3_BUCKET/schema/mise-task.json" 
 registry_tmpdir="$(mktemp -d)"
 trap 'rm -rf "$registry_tmpdir"' EXIT
 registry_archive="$registry_tmpdir/registry.tar.gz"
-tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -cf - registry | gzip -n >"$registry_archive"
+git archive --format=tar HEAD registry | gzip -n >"$registry_archive"
 aws s3 cp "$registry_archive" "s3://$AWS_S3_BUCKET/registry/$MISE_VERSION.tar.gz" --cache-control "$cache_week" --no-progress --content-type "application/gzip"
 aws s3 cp "$registry_archive" "s3://$AWS_S3_BUCKET/registry/latest.tar.gz" --cache-control "$cache_hour" --no-progress --content-type "application/gzip"
 
