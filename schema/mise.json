@@ -586,7 +586,7 @@
               "type": "boolean"
             },
             "registries": {
-              "description": "Aqua registry repositories to fetch before the baked-in registry.",
+              "description": "Aqua registry sources to load before the baked-in registry.",
               "type": "array",
               "items": {
                 "type": "string"

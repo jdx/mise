@@ -25,7 +25,7 @@ The code for this is inside the mise repository at [`./src/backend/aqua.rs`](htt
 ## Custom Registry
 
 Set [`aqua.registries`](/configuration/settings.html#aqua-registries) to check custom aqua
-registry repositories before the baked-in registry:
+registry sources before the baked-in registry:
 
 ```toml
 [settings]
@@ -42,10 +42,24 @@ aqua.registries = [
 ]
 ```
 
-mise downloads `registry.yaml` from each repository root, falling back to `registry.yml` if needed.
-Downloaded registry sources are cached under `MISE_CACHE_DIR` for
+Each source can be a repository URL, a direct URL to a `registry.yaml` or `registry.yml` file, or a
+local directory or registry file specified with an absolute `file://` URL:
+
+```toml
+[settings]
+aqua.registries = [
+  "file:///absolute/path/to/aqua-registry",
+  "file:///absolute/path/to/registry.yaml",
+  "https://example.com/registry.yaml",
+]
+```
+
+For repository and directory sources, mise loads `registry.yaml` from the source root, falling back
+to `registry.yml` if needed. Remote registry sources are cached under `MISE_CACHE_DIR` for
 [`aqua.registry_cache_ttl`](/configuration/settings.html#aqua-registry_cache_ttl), which defaults
-to one week. In `MISE_AQUA_REGISTRIES`, separate multiple registry URLs with commas.
+to one week. Local `file://` sources bypass the downloaded source cache, so changes are read the
+next time the registry is loaded. In `MISE_AQUA_REGISTRIES`, separate multiple registry URLs with
+commas.
 
 After a refreshed registry source is downloaded, mise hashes the source and uses that hash in the
 compiled registry cache path. When a new compiled cache is successfully loaded or written, older
