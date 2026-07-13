@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ad773829b385",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-backend-registry-migration",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/backend/test_registry_backend_migration",
+    "src/cli/args/backend_arg.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ad/773829b385/0/metadata.json",
+      "transcript": "/ad/773829b385/0/full.jsonl",
+      "content_hash": "/ad/773829b385/0/content_hash.txt",
+      "prompt": "/ad/773829b385/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 99092,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2213888,
+    "output_tokens": 7351,
+    "api_call_count": 40
+  }
+}
