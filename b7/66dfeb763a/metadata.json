@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b766dfeb763a",
+  "strategy": "manual-commit",
+  "branch": "codex/publish-registry-artifact",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "scripts/publish-s3.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b7/66dfeb763a/0/metadata.json",
+      "transcript": "/b7/66dfeb763a/0/full.jsonl",
+      "content_hash": "/b7/66dfeb763a/0/content_hash.txt",
+      "prompt": "/b7/66dfeb763a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 35556,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3671296,
+    "output_tokens": 5161,
+    "api_call_count": 31
+  }
+}
