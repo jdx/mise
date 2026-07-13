@@ -1,0 +1,13 @@
+address pr feedback if any
+
+---
+
+how is it possible that ci is passing without the other pr being released?
+
+---
+
+what is the fallback path?
+
+---
+
+i think we need e2e coverage this is working, i would expect it to fail until the prereq is released
