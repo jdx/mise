@@ -2815,6 +2815,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "formatx"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c40f9ee993b100102723f778c82d3daf1808c494ce2fd6e9a06d58d6e8e59748"
+
+[[package]]
 name = "fs-err"
 version = "3.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5440,6 +5446,7 @@ dependencies = [
  "tempfile",
  "tera 1.20.1",
  "tera 2.0.0",
+ "tera-contrib",
  "terminal_size",
  "test-log",
  "thiserror 2.0.18",
@@ -8854,6 +8861,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38ea62bd58771b570262e11ffa274fa9eda9986bd886e6e3a1f7f42afef8024c"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "tera-contrib"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3792553c620406661d510095e5885bfb77b2296db30369bcc8308329a6fe78c"
+dependencies = [
+ "base64 0.22.1",
+ "formatx",
+ "humansize",
+ "jiff",
+ "percent-encoding",
+ "rand 0.10.2",
+ "regex",
+ "serde_json",
+ "slug",
+ "tera 2.0.0",
 ]
 
 [[package]]

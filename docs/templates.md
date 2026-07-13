@@ -241,17 +241,18 @@ Some functions:
   - `end: usize`: stop before `end`, mandatory
   - `start: usize`: where to start from, defaults to `0`
   - `step_by: usize`: with what number do we increment, defaults to `1`
-- `now([timestamp], [utc])` - Returns the local datetime as string or
-  the timestamp as integer.
-  - `timestamp: bool`: whether to return the timestamp instead of the datetime
-  - `utc: bool`: whether to return the UTC datetime instead of
-    the local one
+- `now([timezone])` - Returns the current datetime as a string. The timezone
+  defaults to UTC and accepts IANA names such as `America/New_York`.
   - Tip: use date filter to format date string.
     e.g. <span v-pre>`{{ now() | date(format="%Y") }}`</span> gets the current year.
 - `throw(message)` - Throws with the message.
-- `get_random(end, [start])` - Returns a random integer in a range.
-  - `end: usize`: upper end of the range
-  - `start: usize`: defaults to 0
+- `get_random(start, end, [seed])` - Returns a random integer in a range.
+  Providing `seed` makes the result reproducible.
+
+The `before` and `after` tests compare dates and accept `other` and an optional
+`inclusive` argument:
+
+<span v-pre>`{% if release_date is after(other="2026-01-01") %}...{% endif %}`</span>
 
 Tera offers more functions. Read more on [tera documentation](https://keats.github.io/tera/#functions).
 
@@ -336,7 +337,8 @@ Tera offers many [built-in filters](https://keats.github.io/tera/#built-in-filte
 `[]` indicates an optional filter argument.
 Some Tera v1 filters that were removed or renamed in Tera v2 are still supported
 for compatibility until mise 2027.4.0. mise starts emitting deprecation warnings
-for them in mise 2026.10.0.
+for them in mise 2026.10.0. Helpers provided by `tera-contrib` are supported
+without deprecation warnings.
 Some filters:
 
 - `str | lower -> String` – Converts a string to lowercase.
@@ -359,7 +361,7 @@ Some filters:
 - `str | length -> usize` – Returns the length of a string or array.
 - `str | reverse -> String` – Reverses the order of characters in a string or
   elements in an array.
-- `str | urlencode -> String` – Deprecated compatibility filter. Encodes a
+- `str | urlencode -> String` – Encodes a
   string to be safely used in URLs,
   converting special characters to percent-encoded values.
 - `arr | map(attribute) -> Array` – Deprecated compatibility filter. Extracts
@@ -367,13 +369,25 @@ Some filters:
 - `arr | concat(with) -> Array` – Deprecated compatibility filter. Appends
   values to an array. Prefer array literals and spread syntax.
 - `num | abs -> Number` – Returns the absolute value of a number.
-- `num | filesizeformat -> String` – Deprecated compatibility filter. Converts
+- `num | filesize_format -> String` – Converts
   an integer into
-  a human-readable file size (e.g., 110 MB).
-- `str | date(format) -> String` – Deprecated compatibility filter. Converts a timestamp to
+  a human-readable file size. `filesizeformat` is also available as an alias.
+- `str | date(format, [timezone]) -> String` – Converts a timestamp to
   a formatted date string using the provided format,
   such as <span v-pre>`{{ ts | date(format="%Y-%m-%d") }}`</span>.
-  Find a list of time format on [`chrono` documentation](https://docs.rs/chrono/latest/chrono/format/strftime/index.html).
+  Find a list of time formats in the
+  [`jiff` documentation](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html).
+- `str | b64_encode([url_safe], [padded]) -> String` – Encodes a string as base64.
+- `str | b64_decode([url_safe]) -> String` – Decodes a base64 string.
+- `value | format(spec) -> String` – Formats a value with Rust-style formatting.
+- `value | json_encode([pretty]) -> String` – Encodes a value as JSON.
+- `array | shuffle([seed]) -> Array` – Randomly shuffles an array.
+- `str | regex_replace(pattern, rep) -> String` – Replaces regex matches.
+- `str | striptags -> String` – Removes HTML tags.
+- `str | spaceless -> String` – Removes whitespace between HTML tags.
+- `str | slug -> String` – Converts a string to a URL-friendly slug.
+  `slugify` is also available as an alias.
+- `str | urlencode_strict -> String` – Percent-encodes all non-alphanumeric characters.
 - `str | split(pat) -> Array` – Splits a string by the given pattern and
   returns an array of substrings.
 - `str | default(value) -> String` – Returns the default value

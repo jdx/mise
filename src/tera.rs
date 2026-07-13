@@ -988,6 +988,41 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         },
     );
 
+    // Tera 2 keeps helpers that require additional dependencies in tera-contrib.
+    // Register the complete contrib set so all mise templates see the same helpers.
+    tera.register_filter("b64_encode", tera_contrib::base64::b64_encode);
+    tera.register_filter("b64_decode", tera_contrib::base64::b64_decode);
+    tera.register_function("now", tera_contrib::dates::now);
+    tera.register_filter("date", tera_contrib::dates::date);
+    tera.register_test("before", tera_contrib::dates::is_before);
+    tera.register_test("after", tera_contrib::dates::is_after);
+    tera.register_filter(
+        "filesize_format",
+        tera_contrib::filesize_format::filesize_format,
+    );
+    tera.register_filter(
+        "filesizeformat",
+        tera_contrib::filesize_format::filesize_format,
+    );
+    tera.register_filter("format", tera_contrib::format::format);
+    tera.register_filter("json_encode", tera_contrib::json::json_encode);
+    tera.register_function("get_random", tera_contrib::rand::get_random);
+    tera.register_filter("shuffle", tera_contrib::rand::shuffle);
+    tera.register_filter("striptags", tera_contrib::regex::striptags);
+    tera.register_filter("spaceless", tera_contrib::regex::spaceless);
+    tera.register_filter(
+        "regex_replace",
+        tera_contrib::regex::RegexReplace::default(),
+    );
+    tera.register_test("matching", tera_contrib::regex::Matching::default());
+    tera.register_filter("slug", tera_contrib::slug::slug);
+    tera.register_filter("slugify", tera_contrib::slug::slug);
+    tera.register_filter("urlencode", tera_contrib::urlencode::urlencode);
+    tera.register_filter(
+        "urlencode_strict",
+        tera_contrib::urlencode::urlencode_strict,
+    );
+
     tera
 });
 
@@ -2231,6 +2266,47 @@ mod tests {
         );
         assert_eq!(render("{{ {'ok': true} is object }}"), "true");
         assert_eq!(render("{{ 6 is divisibleby(divisor=3) }}"), "true");
+    }
+
+    #[test]
+    fn test_tera_contrib_helpers() {
+        assert_eq!(render("{{ 'hello' | b64_encode | b64_decode }}"), "hello");
+        assert_eq!(
+            render("{{ '2026-07-13' | date(format='%Y/%m/%d') }}"),
+            "2026/07/13"
+        );
+        assert_eq!(render("{{ now() | date(format='%Y') | length }}"), "4");
+        assert_eq!(
+            render("{{ '2026-01-01' is before(other='2026-02-01') }}"),
+            "true"
+        );
+        assert_eq!(
+            render("{{ '2026-02-01' is after(other='2026-01-01') }}"),
+            "true"
+        );
+        assert_eq!(render("{{ 1024 | filesize_format }}"), "1 KiB");
+        assert_eq!(render("{{ 1024 | filesizeformat }}"), "1 KiB");
+        assert_eq!(render("{{ 42 | format(spec='05') }}"), "00042");
+        assert_eq!(render("{{ {'ok': true} | json_encode }}"), r#"{"ok":true}"#);
+        let random = render("{{ get_random(start=10, end=20, seed='mise') }}")
+            .parse::<i64>()
+            .unwrap();
+        assert!((10..20).contains(&random));
+        assert_eq!(
+            render("{{ [1, 2, 3] | shuffle(seed='mise') | length }}"),
+            "3"
+        );
+        assert_eq!(
+            render("{{ 'abc123' | regex_replace(pattern='[0-9]+', rep='') }}"),
+            "abc"
+        );
+        assert_eq!(render("{{ 'abc123' is matching(pat='[0-9]+$') }}"), "true");
+        assert_eq!(render("{{ '<b>x</b>' | striptags }}"), "x");
+        assert_eq!(render("{{ '<p> </p>' | spaceless }}"), "<p></p>");
+        assert_eq!(render("{{ 'Hello World' | slug }}"), "hello-world");
+        assert_eq!(render("{{ 'Hello World' | slugify }}"), "hello-world");
+        assert_eq!(render("{{ 'a/b c' | urlencode }}"), "a/b%20c");
+        assert_eq!(render("{{ 'a/b c' | urlencode_strict }}"), "a%2Fb%20c");
     }
 
     #[tokio::test]

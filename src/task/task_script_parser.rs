@@ -1160,6 +1160,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_task_template_tera_contrib_helpers() {
+        let config = Config::get().await.unwrap();
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+        let scripts = vec!["echo {{ now() | date(format='%Y') }}".to_string()];
+        let (parsed_scripts, _) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        let year = parsed_scripts[0].strip_prefix("echo ").unwrap();
+        assert_eq!(year.len(), 4);
+        assert!(year.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    #[tokio::test]
     async fn test_task_parse_task_source_files() {
         let cases: &[(&[&str], &str, &str)] = &[
             (&[], "echo {{ task_source_files() }}", "echo []"),
