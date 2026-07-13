@@ -44,6 +44,9 @@ pub static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
 });
 
 const MISE_REGISTRY_ARCHIVE_URL: &str = "https://mise.jdx.dev/registry/latest.tar.gz";
+const MAX_REGISTRY_ARCHIVE_ENTRIES: usize = 4096;
+const MAX_REGISTRY_ARCHIVE_ENTRY_SIZE: u64 = 1024 * 1024;
+const MAX_REGISTRY_ARCHIVE_SIZE: u64 = 16 * 1024 * 1024;
 
 pub struct Registry {
     entries: &'static [(&'static str, RegistryTool)],
@@ -157,7 +160,10 @@ pub async fn refresh() {
 
     let cache_path = registry_cache_path();
     if cache_is_fresh(&cache_path, settings.registry_cache_ttl()) {
-        return;
+        if parse_registry_archive(&cache_path).is_ok() {
+            return;
+        }
+        warn!("cached floating mise registry is invalid; refreshing it");
     }
 
     if let Err(err) = download_registry_archive(&cache_path).await {
@@ -180,11 +186,7 @@ async fn download_registry_archive(cache_path: &Path) -> Result<()> {
     let result = (|| {
         parse_registry_archive(&download_path)
             .wrap_err("downloaded mise registry archive is invalid")?;
-        #[cfg(windows)]
-        if cache_path.exists() {
-            file::remove_file(cache_path)?;
-        }
-        file::rename(&download_path, cache_path)?;
+        replace_registry_cache(&download_path, cache_path)?;
         Ok(())
     })();
     match result {
@@ -200,14 +202,45 @@ async fn download_registry_archive(cache_path: &Path) -> Result<()> {
     }
 }
 
+#[cfg(not(windows))]
+fn replace_registry_cache(download_path: &Path, cache_path: &Path) -> Result<()> {
+    file::rename(download_path, cache_path)
+}
+
+#[cfg(windows)]
+fn replace_registry_cache(download_path: &Path, cache_path: &Path) -> Result<()> {
+    let backup_path = cache_path.with_extension(format!("backup-{}", std::process::id()));
+    let had_cache = cache_path.exists();
+    if backup_path.exists() {
+        file::remove_file(&backup_path)?;
+    }
+    if had_cache {
+        file::rename(cache_path, &backup_path)?;
+    }
+    if let Err(install_err) = file::rename(download_path, cache_path) {
+        if had_cache && let Err(restore_err) = file::rename(&backup_path, cache_path) {
+            return Err(install_err).wrap_err(format!(
+                "failed to install downloaded registry and restore cached registry: {restore_err:#}"
+            ));
+        }
+        return Err(install_err).wrap_err("failed to install downloaded registry");
+    }
+    if had_cache {
+        file::remove_file(&backup_path)?;
+    }
+    Ok(())
+}
+
 fn parse_registry_archive(path: &Path) -> Result<Registry> {
     let file = File::open(path)?;
     let decoder = GzDecoder::new(file);
     let mut archive = tar::Archive::new(decoder);
     let mut sources = BTreeMap::new();
+    let mut archive_size = 0_u64;
 
-    for entry in archive.entries()? {
+    for (index, entry) in archive.entries()?.enumerate() {
         let mut entry = entry?;
+        track_registry_archive_entry(index, entry.size(), &mut archive_size)?;
         if !entry.header().entry_type().is_file() {
             continue;
         }
@@ -241,6 +274,29 @@ fn parse_registry_archive(path: &Path) -> Result<Registry> {
         "archive does not contain registry entries"
     );
     registry_from_sources(sources)
+}
+
+fn track_registry_archive_entry(
+    index: usize,
+    entry_size: u64,
+    archive_size: &mut u64,
+) -> Result<()> {
+    ensure!(
+        index < MAX_REGISTRY_ARCHIVE_ENTRIES,
+        "registry archive contains too many entries"
+    );
+    ensure!(
+        entry_size <= MAX_REGISTRY_ARCHIVE_ENTRY_SIZE,
+        "registry archive entry is too large"
+    );
+    *archive_size = archive_size
+        .checked_add(entry_size)
+        .ok_or_else(|| eyre::eyre!("registry archive size overflow"))?;
+    ensure!(
+        *archive_size <= MAX_REGISTRY_ARCHIVE_SIZE,
+        "registry archive is too large"
+    );
+    Ok(())
 }
 
 fn registry_from_sources(sources: BTreeMap<String, String>) -> Result<Registry> {
@@ -682,6 +738,32 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
         )]);
 
         assert!(parse_registry_archive(archive.path()).is_err());
+    }
+
+    #[test]
+    fn test_registry_archive_limits() {
+        use super::*;
+
+        let mut size = 0;
+        assert!(
+            track_registry_archive_entry(MAX_REGISTRY_ARCHIVE_ENTRIES, 0, &mut size)
+                .unwrap_err()
+                .to_string()
+                .contains("too many entries")
+        );
+        assert!(
+            track_registry_archive_entry(0, MAX_REGISTRY_ARCHIVE_ENTRY_SIZE + 1, &mut size)
+                .unwrap_err()
+                .to_string()
+                .contains("entry is too large")
+        );
+        size = MAX_REGISTRY_ARCHIVE_SIZE;
+        assert!(
+            track_registry_archive_entry(0, 1, &mut size)
+                .unwrap_err()
+                .to_string()
+                .contains("archive is too large")
+        );
     }
 
     #[test]
