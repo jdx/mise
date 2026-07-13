@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "6456f0ffb029",
+  "strategy": "manual-commit",
+  "branch": "codex/floating-registries",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "build.rs",
+    "docs/dev-tools/backends/aqua.md",
+    "docs/registry.md",
+    "schema/mise.json",
+    "settings.toml",
+    "src/aqua/aqua_registry_wrapper.rs",
+    "src/config/settings.rs",
+    "src/registry.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/64/56f0ffb029/0/metadata.json",
+      "transcript": "/64/56f0ffb029/0/full.jsonl",
+      "content_hash": "/64/56f0ffb029/0/content_hash.txt",
+      "prompt": "/64/56f0ffb029/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 314853,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 12846080,
+    "output_tokens": 26827,
+    "api_call_count": 132
+  }
+}

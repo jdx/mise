@@ -1,0 +1,75 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "6456f0ffb029",
+  "session_id": "019f5ce9-e6bd-7e92-87b0-d3109e55f606",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-13T19:38:53.354919Z",
+  "branch": "codex/floating-registries",
+  "checkpoints_count": 3,
+  "save_step_count": 3,
+  "files_touched": [
+    "build.rs",
+    "docs/dev-tools/backends/aqua.md",
+    "docs/registry.md",
+    "schema/mise.json",
+    "settings.toml",
+    "src/aqua/aqua_registry_wrapper.rs",
+    "src/config/settings.rs",
+    "src/registry.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "24dc93be761a",
+  "token_usage": {
+    "input_tokens": 314853,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 12846080,
+    "output_tokens": 26827,
+    "api_call_count": 132
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-13T19:38:53.336038Z",
+    "agent_lines": 485,
+    "agent_removed": 7,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 485,
+    "total_lines_changed": 492,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 492,
+      "agent_lines_removed": 7
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 485,
+      "agent_lines_removed": 7
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 485,
+      "agent_lines_removed": 7
+    }
+  ]
+}

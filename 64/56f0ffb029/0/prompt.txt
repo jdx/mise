@@ -1,0 +1,9 @@
+could we support dynamic aqua and mise registries? the use-case I'm thinking is for arch users they often need to wait until the packager gets new mise's into arch but sometimes the registry changes and users need updates. I don't want this general because we test the tools with each mise release so we know the registry is good for a particular release but I think an option that floats the aqua/mise registries would be useful for some users as optional behavior
+
+---
+
+I think we should use registry_floating, what do you think? do we have other things in "registry.*"?
+
+---
+
+how does it fetch the aqua/mise registries?
