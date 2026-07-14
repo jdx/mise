@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "0951684cd8a8",
+  "session_id": "019f5d46-ab15-7ec3-97a7-52bd1e9d2721",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-14T15:16:16.002831Z",
+  "branch": "codex/deps-monorepo",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "man/man1/mise.1"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "f58fbbe094c4",
+  "checkpoint_transcript_start": 893,
+  "transcript_lines_at_start": 893,
+  "token_usage": {
+    "input_tokens": 66306,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1897472,
+    "output_tokens": 2435,
+    "api_call_count": 17
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-14T15:16:15.962815Z",
+    "agent_lines": 12,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 12,
+    "total_lines_changed": 12,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
