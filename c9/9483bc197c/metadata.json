@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "c99483bc197c",
+  "strategy": "manual-commit",
+  "branch": "codex/systemd-timers",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/bootstrap/systemd.md",
+    "src/system/systemd.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c9/9483bc197c/0/metadata.json",
+      "transcript": "/c9/9483bc197c/0/full.jsonl",
+      "content_hash": "/c9/9483bc197c/0/content_hash.txt",
+      "prompt": "/c9/9483bc197c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 167590,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3928064,
+    "output_tokens": 7348,
+    "api_call_count": 28
+  }
+}
