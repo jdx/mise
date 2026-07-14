@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "f6dd4dec857f",
+  "session_id": "019f627f-f4b0-7483-9cec-ec8098d4a2ca",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-14T21:45:00.444016Z",
+  "branch": "codex/fix-ruby-lockfile-platform-options",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "e2e/lockfile/test_lockfile_platform_option_variants"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "28547a202fe8",
+  "checkpoint_transcript_start": 311,
+  "transcript_lines_at_start": 311,
+  "token_usage": {
+    "input_tokens": 33425,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2065152,
+    "output_tokens": 4275,
+    "api_call_count": 13
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-14T21:45:00.420329Z",
+    "agent_lines": 45,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 45,
+    "total_lines_changed": 45,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
