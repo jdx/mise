@@ -1,5 +1,5 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from subprocess import run
+from subprocess import TimeoutExpired, run
 
 
 # OATs drives acceptance tests by sending HTTP requests into a running service.
@@ -12,7 +12,18 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        result = run(["mise", "run", "hello"], capture_output=True, text=True)
+        try:
+            result = run(
+                ["mise", "run", "hello"],
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+        except TimeoutExpired:
+            self.send_response(504)
+            self.end_headers()
+            self.wfile.write(b"mise run hello timed out\n")
+            return
         if result.returncode != 0:
             self.send_response(500)
             self.end_headers()

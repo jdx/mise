@@ -341,6 +341,7 @@ jobs:
       - nightly
       - lint
       - e2e
+      - oats
       - windows-unit
       - windows-e2e
     # Run on success or upstream failure but skip when the workflow is cancelled
@@ -367,6 +368,10 @@ jobs:
           fi
           if [ "${{ needs.e2e.result }}" != "success" ]; then
             echo "e2e failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.oats.result }}" != "success" ]; then
+            echo "oats failed or was skipped"
             exit 1
           fi
           if [ "${{ needs.windows-unit.result }}" != "success" ]; then
