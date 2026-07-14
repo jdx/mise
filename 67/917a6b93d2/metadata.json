@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "67917a6b93d2",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-cache-clear-concurrent-writes",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/file.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/67/917a6b93d2/0/metadata.json",
+      "transcript": "/67/917a6b93d2/0/full.jsonl",
+      "content_hash": "/67/917a6b93d2/0/content_hash.txt",
+      "prompt": "/67/917a6b93d2/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 89746,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 742144,
+    "output_tokens": 2092,
+    "api_call_count": 9
+  }
+}
