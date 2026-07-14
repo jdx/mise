@@ -160,8 +160,42 @@ impl SystemdRequest {
         if kind == SystemdUnitKind::Service && exec_start.as_deref().is_none_or(str::is_empty) {
             bail!("service unit '{name}' must set a non-empty `exec_start`");
         }
-        if kind == SystemdUnitKind::Timer && exec_start.is_some() {
-            bail!("timer unit '{name}' cannot set `exec_start`");
+        if kind == SystemdUnitKind::Timer {
+            let service_only_fields = [
+                (exec_start.is_some(), "exec_start"),
+                (config.service_type.is_some(), "type"),
+                (config.remain_after_exit.is_some(), "remain_after_exit"),
+                (config.exec_stop.is_some(), "exec_stop"),
+                (config.timeout_start_sec.is_some(), "timeout_start_sec"),
+                (config.timeout_stop_sec.is_some(), "timeout_stop_sec"),
+                (config.no_new_privileges.is_some(), "no_new_privileges"),
+                (config.private_tmp.is_some(), "private_tmp"),
+                (!config.environment.is_empty(), "environment"),
+                (config.working_directory.is_some(), "working_directory"),
+                (config.restart.is_some(), "restart"),
+                (config.restart_sec.is_some(), "restart_sec"),
+                (config.standard_output.is_some(), "standard_output"),
+                (config.standard_error.is_some(), "standard_error"),
+            ]
+            .into_iter()
+            .filter_map(|(is_set, field)| is_set.then_some(field))
+            .collect::<Vec<_>>();
+            if !service_only_fields.is_empty() {
+                bail!(
+                    "timer unit '{name}' cannot set service-only directive(s): {}",
+                    service_only_fields.join(", ")
+                );
+            }
+            if config.on_boot_sec.is_none()
+                && config.on_unit_active_sec.is_none()
+                && config.on_unit_inactive_sec.is_none()
+                && config.on_calendar.is_none()
+            {
+                bail!(
+                    "timer unit '{name}' must set at least one of `on_boot_sec`, \
+                     `on_unit_active_sec`, `on_unit_inactive_sec`, or `on_calendar`"
+                );
+            }
         }
         let wanted_by = config.wanted_by.unwrap_or_else(|| match kind {
             SystemdUnitKind::Service => vec!["default.target".to_string()],
@@ -256,14 +290,16 @@ pub async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
         let active = is_active(&req.unit).await?;
         let enabled = is_enabled(&req.unit).await?;
         let desired_enabled = !req.wanted_by.is_empty();
-        let state =
-            if normalize(&current) != normalize(&render_unit(req)) || enabled != desired_enabled {
-                SystemdState::Differs
-            } else if active {
-                SystemdState::Active
-            } else {
-                SystemdState::Inactive
-            };
+        let state = if sibling_unit_path(req).exists()
+            || normalize(&current) != normalize(&render_unit(req))
+            || enabled != desired_enabled
+        {
+            SystemdState::Differs
+        } else if active {
+            SystemdState::Active
+        } else {
+            SystemdState::Inactive
+        };
         out.push(SystemdStatus {
             request: req.clone(),
             path,
@@ -278,7 +314,6 @@ pub async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
 pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
     if dry_run {
         for req in requests {
-            let path = unit_path(req);
             miseprintln!(
                 "{}",
                 shell_words::join([
@@ -287,6 +322,44 @@ pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
                     user_units_dir().display().to_string(),
                 ])
             );
+            let sibling = sibling_unit(req);
+            let sibling_path = sibling_unit_path(req);
+            if sibling_path.exists() {
+                miseprintln!(
+                    "{}",
+                    shell_words::join([
+                        "systemctl".to_string(),
+                        "--user".to_string(),
+                        "stop".to_string(),
+                        sibling.clone(),
+                    ])
+                );
+                miseprintln!(
+                    "{}",
+                    shell_words::join([
+                        "systemctl".to_string(),
+                        "--user".to_string(),
+                        "disable".to_string(),
+                        sibling,
+                    ])
+                );
+                miseprintln!(
+                    "{}",
+                    shell_words::join(["rm".to_string(), sibling_path.display().to_string()])
+                );
+            }
+            miseprintln!(
+                "{}",
+                shell_words::join([
+                    "systemctl".to_string(),
+                    "--user".to_string(),
+                    "disable".to_string(),
+                    req.unit.clone(),
+                ])
+            );
+        }
+        for req in requests {
+            let path = unit_path(req);
             miseprintln!("write {}", shell_words::join([path.display().to_string()]));
         }
         miseprintln!(
@@ -298,15 +371,6 @@ pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
             ])
         );
         for req in requests {
-            miseprintln!(
-                "{}",
-                shell_words::join([
-                    "systemctl".to_string(),
-                    "--user".to_string(),
-                    "disable".to_string(),
-                    req.unit.clone(),
-                ])
-            );
             if !req.wanted_by.is_empty() {
                 miseprintln!(
                     "{}",
@@ -345,6 +409,13 @@ pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
 
     std::fs::create_dir_all(user_units_dir())?;
     for req in requests {
+        let sibling = sibling_unit(req);
+        let sibling_path = sibling_unit_path(req);
+        if sibling_path.exists() {
+            stop_unit(&sibling).await?;
+            disable_unit(&sibling).await?;
+            std::fs::remove_file(sibling_path)?;
+        }
         disable_unit(&req.unit).await?;
     }
     for req in requests {
@@ -486,6 +557,21 @@ fn unit_path(request: &SystemdRequest) -> PathBuf {
     user_units_dir().join(&request.unit)
 }
 
+fn sibling_unit(request: &SystemdRequest) -> String {
+    format!(
+        "dev.mise.{}.{}",
+        request.name,
+        match request.kind {
+            SystemdUnitKind::Service => "timer",
+            SystemdUnitKind::Timer => "service",
+        }
+    )
+}
+
+fn sibling_unit_path(request: &SystemdRequest) -> PathBuf {
+    user_units_dir().join(sibling_unit(request))
+}
+
 fn expand_path_string(path: &str) -> String {
     if path == "~" {
         return crate::dirs::HOME.to_string_lossy().to_string();
@@ -605,12 +691,26 @@ async fn disable_unit(unit: &str) -> Result<()> {
     }
 }
 
+async fn stop_unit(unit: &str) -> Result<()> {
+    match systemctl(&["stop".to_string(), unit.to_string()]).await {
+        Ok(()) => Ok(()),
+        Err(err) if unit_operation_error_is_noop(&err.to_string()) => {
+            debug!("systemd: ignoring stop for {unit}: {err}");
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
+}
+
 fn disable_unit_error_is_noop(error: &str) -> bool {
-    error.contains("does not exist")
-        || error.contains("not loaded")
+    unit_operation_error_is_noop(error)
         || error.contains("no [Install] section")
         || error.contains("has no installation config")
         || error.contains("is a static unit")
+}
+
+fn unit_operation_error_is_noop(error: &str) -> bool {
+    error.contains("does not exist") || error.contains("not loaded")
 }
 
 #[cfg(test)]
@@ -630,6 +730,29 @@ mod tests {
         assert_eq!(request.unit, "dev.mise.my-service.service");
         assert_eq!(request.wanted_by, vec!["default.target"]);
         assert!(SystemdRequest::from_toml("bad/name".to_string(), Default::default()).is_err());
+
+        let err = SystemdRequest::from_toml(
+            "modifier-only-timer".to_string(),
+            SystemdTomlConfig {
+                persistent: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("must set at least one"));
+
+        let err = SystemdRequest::from_toml(
+            "invalid-timer".to_string(),
+            SystemdTomlConfig {
+                on_boot_sec: Some("1min".to_string()),
+                restart: Some("on-failure".to_string()),
+                environment: IndexMap::from([("KEY".to_string(), "value".to_string())]),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("restart"));
+        assert!(err.to_string().contains("environment"));
     }
 
     #[test]
@@ -709,6 +832,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(request.unit, "dev.mise.healthcheck.timer");
+        assert_eq!(sibling_unit(&request), "dev.mise.healthcheck.service");
         assert_eq!(request.wanted_by, vec!["timers.target"]);
         assert_eq!(
             render_unit(&request),

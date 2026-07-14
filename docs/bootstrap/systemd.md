@@ -46,6 +46,11 @@ persistent = true
 unit = "dev.mise.healthcheck.service"
 ```
 
+A timer must set at least one of `on_boot_sec`, `on_unit_active_sec`,
+`on_unit_inactive_sec`, or `on_calendar`. Service-only keys such as
+`exec_start`, `environment`, and `restart` are rejected on timer entries; use a
+separate service entry for the unit triggered by the timer.
+
 Each unit is written to `~/.config/systemd/user/dev.mise.<name>.service` or
 `~/.config/systemd/user/dev.mise.<name>.timer` and
 managed with `systemctl --user`. Unit names may contain letters, numbers, `.`,
@@ -95,7 +100,9 @@ unit running.
 
 - **Declarative and additive** — unit names merge across the
   [config hierarchy](/configuration.html) (global → project). A more local
-  config replaces the full declaration for the same unit name.
+  config replaces the full declaration for the same unit name. When an entry
+  changes between a service and timer, mise stops, disables, and removes the
+  stale sibling unit.
 - **Linux-only** — on other platforms the section is inert:
   `mise bootstrap linux systemd-units status` lists entries as skipped and
   `mise bootstrap linux systemd-units apply` ignores them.
