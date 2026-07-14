@@ -1412,13 +1412,14 @@ mod tests {
         shim: &Path,
         cask: &Path,
         staged_path: &Path,
+        version: &str,
     ) -> std::io::Result<std::process::Output> {
         std::process::Command::new(ruby)
             .arg(shim)
             .env("LANG", "zz_ZZ.UTF-8")
             .env("MISE_BREW_CASK_FILE", cask)
             .env("MISE_BREW_CASK_TOKEN", "example")
-            .env("MISE_BREW_CASK_VERSION", "1.0.0")
+            .env("MISE_BREW_CASK_VERSION", version)
             .env("MISE_BREW_CASK_STAGED_PATH", staged_path)
             .env("MISE_BREW_CASK_APPDIR", staged_path)
             .env("MISE_BREW_PREFIX", staged_path)
@@ -1480,7 +1481,7 @@ end
 "##,
         )?;
 
-        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path())?;
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path(), "1.0.0")?;
         assert!(
             output.status.success(),
             "{}",
@@ -1492,6 +1493,39 @@ end
             "-linux"
         };
         assert_eq!(file::read_to_string(result)?, format!("en-US{suffix}"));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn cask_shim_supports_csv_version_array_helpers() -> Result<()> {
+        let Some(ruby) = file::which("ruby") else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("cask_shim.rb");
+        let cask = tmp.path().join("example.rb");
+        let result = tmp.path().join("result");
+        file::write(&shim, CASK_SHIM_RB)?;
+        file::write(
+            &cask,
+            r#"cask "example" do
+  version "2.2.1,20628"
+  url "https://example.com/OrbStack_v#{version.csv.first}_#{version.csv.second}.dmg"
+  preflight do
+    File.write staged_path/"result", version.csv.second
+  end
+end
+"#,
+        )?;
+
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path(), "2.2.1,20628")?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(file::read_to_string(result)?, "20628");
         Ok(())
     }
 
@@ -1515,7 +1549,7 @@ end
             format!("cask \"example\" do\n  on_system_conditional {conditional}\nend\n"),
         )?;
 
-        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path())?;
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path(), "1.0.0")?;
         assert!(!output.status.success());
         assert!(String::from_utf8_lossy(&output.stderr).contains(&format!(
             "Error: cask uses `on_system_conditional without {platform}`"

@@ -12,6 +12,24 @@ require "fileutils"
 require "pathname"
 require "rbconfig"
 
+class Array
+  def second
+    self[1]
+  end
+
+  def third
+    self[2]
+  end
+
+  def fourth
+    self[3]
+  end
+
+  def fifth
+    self[4]
+  end
+end
+
 MISE_BREW_CASK_FILE = Pathname.new(ENV.fetch("MISE_BREW_CASK_FILE"))
 MISE_BREW_CASK_TOKEN = ENV.fetch("MISE_BREW_CASK_TOKEN")
 MISE_BREW_CASK_VERSION = ENV.fetch("MISE_BREW_CASK_VERSION")
