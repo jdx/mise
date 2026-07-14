@@ -2394,20 +2394,11 @@ fn preserve_absent_tool_entries(
         .map(|tool| (tool.version.clone(), tool.options.clone()))
         .collect();
 
-    // Versions that the freshly-merged output already carries with non-empty
-    // options. Snapshot BEFORE the loop below appends preserved entries, so the
-    // check only matches merge_tool_entries' output (where the #10564 adoption
-    // happened), not entries this loop itself resurrects.
-    //
-    // This over-approximates "was actually adopted" as "has non-empty options
-    // in the output" — the two coincide here because every entry in
-    // `merged_tools` originates from the freshly-resolved `entries` passed to
-    // merge_tool_entries (an existing-only tool is never inserted there, only
-    // merged into a matching fresh entry), and merge_tool_entries' adoption
-    // loop unconditionally processes every existing_tool for a given version.
-    // So whenever a version's fresh entry has non-empty options, any
-    // same-version empty-options entry in `existing_tools` below (the same
-    // list merge_tool_entries was called with) was already merged into it.
+    // Snapshot versions freshly merged with non-empty options. After the exact-key
+    // check below filters variants already preserved by merge_tool_entries (such as
+    // RubyInstaller2 on Windows), an unmatched empty-options entry for one of these
+    // versions is a legacy entry whose overlapping platforms were adopted into the
+    // non-empty variant (#10564).
     let adopted_versions: HashSet<String> = merged_tools
         .iter()
         .filter(|t| !t.options.is_empty())
@@ -2415,14 +2406,15 @@ fn preserve_absent_tool_entries(
         .collect();
 
     for existing_tool in existing_tools {
-        // An empty-options entry whose version was freshly resolved with
-        // non-empty options was adopted by merge_tool_entries (#10564) — its
-        // platforms already live in the adopted entry, so don't resurrect it as
-        // a duplicate sibling.
+        let key = (existing_tool.version.clone(), existing_tool.options.clone());
+        if keys.contains(&key) {
+            continue;
+        }
+        // The remaining unmatched empty-options entry was adopted; its platforms
+        // already live in the non-empty entry, so do not resurrect it.
         if existing_tool.options.is_empty() && adopted_versions.contains(&existing_tool.version) {
             continue;
         }
-        let key = (existing_tool.version.clone(), existing_tool.options.clone());
         if keys.insert(key) {
             merged_tools.push(existing_tool.clone());
         }
