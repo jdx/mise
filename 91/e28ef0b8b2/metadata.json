@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "91e28ef0b8b2",
+  "strategy": "manual-commit",
+  "branch": "codex/deps-monorepo",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_deps",
+    "src/deps/engine.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/91/e28ef0b8b2/0/metadata.json",
+      "transcript": "/91/e28ef0b8b2/0/full.jsonl",
+      "content_hash": "/91/e28ef0b8b2/0/content_hash.txt",
+      "prompt": "/91/e28ef0b8b2/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 430981,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 22581504,
+    "output_tokens": 38603,
+    "api_call_count": 180
+  }
+}
