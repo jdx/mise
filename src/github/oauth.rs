@@ -177,9 +177,9 @@ async fn refresh_cached_token(
     // GitHub refresh tokens are single-use. Serialize the read-refresh-write
     // transaction across mise processes, then re-read after acquiring the
     // lock so a waiter observes any token minted by the previous holder.
-    let _cache_lock = crate::lock_file::LockFile::new(&path).lock()?;
+    let _cache_lock = lock_cache(&path)?;
     let mut cache = read_cache()?;
-    let Some(mut cached) = cache.tokens.get(cache_key).cloned() else {
+    let Some(cached) = cache.tokens.get(cache_key).cloned() else {
         return Ok(None);
     };
 
@@ -194,13 +194,18 @@ async fn refresh_cached_token(
         false
     };
 
-    let Some(refreshed) = refresh_token(&cached).await? else {
-        if invalidate_on_none {
-            cached.expires_at = chrono::Utc::now();
-            cache.tokens.insert(cache_key.to_string(), cached);
-            if let Err(err) = write_cache(&cache) {
-                warn!("failed to invalidate GitHub OAuth token cache: {err:#}");
+    let refreshed = match refresh_token(&cached).await {
+        Ok(refreshed) => refreshed,
+        Err(err) => {
+            if invalidate_on_none && err.downcast_ref::<RefreshRejected>().is_some() {
+                invalidate_cached_token(cache_key, cached, &mut cache);
             }
+            return Err(err);
+        }
+    };
+    let Some(refreshed) = refreshed else {
+        if invalidate_on_none {
+            invalidate_cached_token(cache_key, cached, &mut cache);
         }
         return Ok(None);
     };
@@ -496,10 +501,24 @@ fn write_cache(cache: &TokenCache) -> Result<()> {
 
 fn cache_token(cache_key: String, cached: CachedToken) -> Result<()> {
     let path = cache_path();
-    let _cache_lock = crate::lock_file::LockFile::new(&path).lock()?;
+    let _cache_lock = lock_cache(&path)?;
     let mut cache = read_cache()?;
     cache.tokens.insert(cache_key, cached);
     write_cache(&cache)
+}
+
+fn invalidate_cached_token(cache_key: &str, mut cached: CachedToken, cache: &mut TokenCache) {
+    cached.expires_at = chrono::Utc::now();
+    cache.tokens.insert(cache_key.to_string(), cached);
+    if let Err(err) = write_cache(cache) {
+        warn!("failed to invalidate GitHub OAuth token cache: {err:#}");
+    }
+}
+
+fn lock_cache(path: &Path) -> Result<fslock::LockFile> {
+    crate::lock_file::LockFile::new(path)
+        .with_callback(|_| debug!("waiting for GitHub OAuth token cache lock"))
+        .lock()
 }
 
 pub(crate) fn log_refresh_error(err: &eyre::Report) {
@@ -729,11 +748,16 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         )
         .unwrap();
 
-        let err = refresh_cached_token(&cache_key, None).await.unwrap_err();
+        let err = refresh_cached_token(&cache_key, Some("ghu-stale"))
+            .await
+            .unwrap_err();
         let message = err.to_string();
         assert!(message.contains("bad_refresh_token"));
         assert!(message.contains("Reauthorization is required"));
         assert!(!message.contains("ghr-secret"));
+        let cache = read_cache().unwrap();
+        let cached = cache.tokens.get(&cache_key).unwrap();
+        assert!(cached.expires_at <= chrono::Utc::now());
     }
 
     #[test]
