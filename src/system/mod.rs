@@ -119,15 +119,15 @@ pub struct BootstrapMacosLaunchdTomlConfig {
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct BootstrapLinuxTomlConfig {
     /// `[bootstrap.linux.systemd.units.<name>]`: declarative systemd user
-    /// services rendered to ~/.config/systemd/user.
+    /// services and timers rendered to ~/.config/systemd/user.
     #[serde(default)]
     pub systemd: BootstrapLinuxSystemdTomlConfig,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct BootstrapLinuxSystemdTomlConfig {
-    /// User services, keyed by a short stable name. mise gives these a
-    /// `dev.mise.<name>.service` unit name when rendering the unit file.
+    /// User services and timers, keyed by a short stable name. mise gives
+    /// these a `dev.mise.<name>.<service|timer>` unit name when rendering.
     #[serde(default)]
     pub units: IndexMap<String, SystemdTomlConfig>,
 }

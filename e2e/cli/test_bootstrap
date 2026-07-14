@@ -185,17 +185,23 @@ else
   assert_contains "mise bootstrap macos launchd-agents status" "skipped"
 fi
 
-# systemd user services are declarative and safe to inspect in dry-runs
+# systemd user services and timers are declarative and safe to inspect in dry-runs
 cat <<EOF >mise.toml
 [bootstrap.linux.systemd.units.my-sync]
 description = "sync files"
 exec_start = "~/.local/bin/my-sync --watch"
 restart = "on-failure"
+
+[bootstrap.linux.systemd.units.my-sync-timer]
+on_boot_sec = "2min"
+on_unit_inactive_sec = "5min"
+unit = "dev.mise.my-sync.service"
 EOF
 mkdir -p runtime/systemd/private
 XDG_RUNTIME_DIR="$PWD/runtime" assert_succeed "mise bootstrap --dry-run"
 XDG_RUNTIME_DIR="$PWD/runtime" assert_contains "mise bootstrap systemd status" "my-sync"
 XDG_RUNTIME_DIR="$PWD/runtime" assert_contains "mise bootstrap linux systemd-units status" "my-sync"
+XDG_RUNTIME_DIR="$PWD/runtime" assert_contains "mise bootstrap systemd status" "dev.mise.my-sync-timer.timer"
 
 # unavailable system package managers are skipped, not errors
 cat <<EOF >mise.toml

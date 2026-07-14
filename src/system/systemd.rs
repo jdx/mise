@@ -1,6 +1,6 @@
-//! systemd user services for `[bootstrap.linux.systemd.units]`.
+//! systemd user services and timers for `[bootstrap.linux.systemd.units]`.
 //!
-//! Entries are rendered to `~/.config/systemd/user/dev.mise.<name>.service`
+//! Entries are rendered to `~/.config/systemd/user/dev.mise.<name>.<service|timer>`
 //! and managed with `systemctl --user` when explicitly applied.
 
 use std::path::{Path, PathBuf};
@@ -23,6 +23,20 @@ pub struct SystemdTomlConfig {
     pub wants: Vec<String>,
     #[serde(default)]
     pub exec_start: Option<String>,
+    #[serde(default, rename = "type")]
+    pub service_type: Option<String>,
+    #[serde(default)]
+    pub remain_after_exit: Option<bool>,
+    #[serde(default)]
+    pub exec_stop: Option<String>,
+    #[serde(default)]
+    pub timeout_start_sec: Option<String>,
+    #[serde(default)]
+    pub timeout_stop_sec: Option<String>,
+    #[serde(default)]
+    pub no_new_privileges: Option<bool>,
+    #[serde(default)]
+    pub private_tmp: Option<bool>,
     #[serde(default)]
     pub environment: IndexMap<String, String>,
     #[serde(default)]
@@ -35,26 +49,64 @@ pub struct SystemdTomlConfig {
     pub standard_output: Option<String>,
     #[serde(default)]
     pub standard_error: Option<String>,
+    #[serde(default)]
+    pub on_boot_sec: Option<String>,
+    #[serde(default)]
+    pub on_unit_active_sec: Option<String>,
+    #[serde(default)]
+    pub on_unit_inactive_sec: Option<String>,
+    #[serde(default)]
+    pub on_calendar: Option<String>,
+    #[serde(default)]
+    pub randomized_delay_sec: Option<String>,
+    #[serde(default)]
+    pub accuracy_sec: Option<String>,
+    #[serde(default)]
+    pub persistent: Option<bool>,
+    #[serde(default)]
+    pub unit: Option<String>,
     #[serde(default = "default_start")]
     pub start: bool,
     #[serde(default)]
     pub wanted_by: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemdUnitKind {
+    Service,
+    Timer,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SystemdRequest {
     pub name: String,
     pub unit: String,
+    pub kind: SystemdUnitKind,
     pub description: Option<String>,
     pub after: Vec<String>,
     pub wants: Vec<String>,
-    pub exec_start: String,
+    pub exec_start: Option<String>,
+    pub service_type: Option<String>,
+    pub remain_after_exit: Option<bool>,
+    pub exec_stop: Option<String>,
+    pub timeout_start_sec: Option<String>,
+    pub timeout_stop_sec: Option<String>,
+    pub no_new_privileges: Option<bool>,
+    pub private_tmp: Option<bool>,
     pub environment: IndexMap<String, String>,
     pub working_directory: Option<String>,
     pub restart: Option<String>,
     pub restart_sec: Option<String>,
     pub standard_output: Option<String>,
     pub standard_error: Option<String>,
+    pub on_boot_sec: Option<String>,
+    pub on_unit_active_sec: Option<String>,
+    pub on_unit_inactive_sec: Option<String>,
+    pub on_calendar: Option<String>,
+    pub randomized_delay_sec: Option<String>,
+    pub accuracy_sec: Option<String>,
+    pub persistent: Option<bool>,
+    pub timer_unit: Option<String>,
     pub start: bool,
     pub wanted_by: Vec<String>,
 }
@@ -91,29 +143,67 @@ impl SystemdRequest {
         if !valid_name(&name) {
             bail!("unit name '{name}' must contain only letters, numbers, '.', '_', '-', or '@'");
         }
-        let Some(exec_start) = config.exec_start.map(|s| s.trim().to_string()) else {
-            bail!("unit '{name}' must set `exec_start`");
+        let is_timer = config.on_boot_sec.is_some()
+            || config.on_unit_active_sec.is_some()
+            || config.on_unit_inactive_sec.is_some()
+            || config.on_calendar.is_some()
+            || config.randomized_delay_sec.is_some()
+            || config.accuracy_sec.is_some()
+            || config.persistent.is_some()
+            || config.unit.is_some();
+        let kind = if is_timer {
+            SystemdUnitKind::Timer
+        } else {
+            SystemdUnitKind::Service
         };
-        if exec_start.is_empty() {
-            bail!("unit '{name}' must set a non-empty `exec_start`");
+        let exec_start = config.exec_start.map(|s| s.trim().to_string());
+        if kind == SystemdUnitKind::Service && exec_start.as_deref().is_none_or(str::is_empty) {
+            bail!("service unit '{name}' must set a non-empty `exec_start`");
         }
+        if kind == SystemdUnitKind::Timer && exec_start.is_some() {
+            bail!("timer unit '{name}' cannot set `exec_start`");
+        }
+        let wanted_by = config.wanted_by.unwrap_or_else(|| match kind {
+            SystemdUnitKind::Service => vec!["default.target".to_string()],
+            SystemdUnitKind::Timer => vec!["timers.target".to_string()],
+        });
         Ok(Self {
-            unit: format!("dev.mise.{name}.service"),
+            unit: format!(
+                "dev.mise.{name}.{}",
+                match kind {
+                    SystemdUnitKind::Service => "service",
+                    SystemdUnitKind::Timer => "timer",
+                }
+            ),
             name,
+            kind,
             description: config.description,
             after: config.after,
             wants: config.wants,
             exec_start,
+            service_type: config.service_type,
+            remain_after_exit: config.remain_after_exit,
+            exec_stop: config.exec_stop,
+            timeout_start_sec: config.timeout_start_sec,
+            timeout_stop_sec: config.timeout_stop_sec,
+            no_new_privileges: config.no_new_privileges,
+            private_tmp: config.private_tmp,
             environment: config.environment,
             working_directory: config.working_directory,
             restart: config.restart,
             restart_sec: config.restart_sec,
             standard_output: config.standard_output,
             standard_error: config.standard_error,
+            on_boot_sec: config.on_boot_sec,
+            on_unit_active_sec: config.on_unit_active_sec,
+            on_unit_inactive_sec: config.on_unit_inactive_sec,
+            on_calendar: config.on_calendar,
+            randomized_delay_sec: config.randomized_delay_sec,
+            accuracy_sec: config.accuracy_sec,
+            persistent: config.persistent,
+            timer_unit: config.unit,
             start: config.start,
-            wanted_by: config
-                .wanted_by
-                .unwrap_or_else(|| vec!["default.target".to_string()]),
+            wanted_by,
         })
     }
 }
@@ -288,11 +378,43 @@ pub fn render_unit(request: &SystemdRequest) -> String {
     if !request.wants.is_empty() {
         out.push_str(&format!("Wants={}\n", request.wants.join(" ")));
     }
+    match request.kind {
+        SystemdUnitKind::Service => render_service(request, &mut out),
+        SystemdUnitKind::Timer => render_timer(request, &mut out),
+    }
+    if !request.wanted_by.is_empty() {
+        out.push_str("\n[Install]\n");
+        out.push_str(&format!("WantedBy={}\n", request.wanted_by.join(" ")));
+    }
+    out
+}
+
+fn render_service(request: &SystemdRequest, out: &mut String) {
     out.push_str("\n[Service]\n");
-    out.push_str(&format!(
-        "ExecStart={}\n",
-        expand_path_string(&request.exec_start)
-    ));
+    if let Some(service_type) = &request.service_type {
+        out.push_str(&format!("Type={service_type}\n"));
+    }
+    if let Some(exec_start) = &request.exec_start {
+        out.push_str(&format!("ExecStart={}\n", expand_path_string(exec_start)));
+    }
+    if let Some(remain_after_exit) = request.remain_after_exit {
+        out.push_str(&format!("RemainAfterExit={}\n", yes_no(remain_after_exit)));
+    }
+    if let Some(exec_stop) = &request.exec_stop {
+        out.push_str(&format!("ExecStop={}\n", expand_path_string(exec_stop)));
+    }
+    if let Some(timeout_start_sec) = &request.timeout_start_sec {
+        out.push_str(&format!("TimeoutStartSec={timeout_start_sec}\n"));
+    }
+    if let Some(timeout_stop_sec) = &request.timeout_stop_sec {
+        out.push_str(&format!("TimeoutStopSec={timeout_stop_sec}\n"));
+    }
+    if let Some(no_new_privileges) = request.no_new_privileges {
+        out.push_str(&format!("NoNewPrivileges={}\n", yes_no(no_new_privileges)));
+    }
+    if let Some(private_tmp) = request.private_tmp {
+        out.push_str(&format!("PrivateTmp={}\n", yes_no(private_tmp)));
+    }
     if let Some(path) = &request.working_directory {
         out.push_str(&format!("WorkingDirectory={}\n", expand_path_string(path)));
     }
@@ -314,11 +436,32 @@ pub fn render_unit(request: &SystemdRequest) -> String {
     if let Some(standard_error) = &request.standard_error {
         out.push_str(&format!("StandardError={standard_error}\n"));
     }
-    if !request.wanted_by.is_empty() {
-        out.push_str("\n[Install]\n");
-        out.push_str(&format!("WantedBy={}\n", request.wanted_by.join(" ")));
+}
+
+fn render_timer(request: &SystemdRequest, out: &mut String) {
+    out.push_str("\n[Timer]\n");
+    for (key, value) in [
+        ("OnBootSec", &request.on_boot_sec),
+        ("OnUnitActiveSec", &request.on_unit_active_sec),
+        ("OnUnitInactiveSec", &request.on_unit_inactive_sec),
+        ("OnCalendar", &request.on_calendar),
+        ("RandomizedDelaySec", &request.randomized_delay_sec),
+        ("AccuracySec", &request.accuracy_sec),
+    ] {
+        if let Some(value) = value {
+            out.push_str(&format!("{key}={value}\n"));
+        }
     }
-    out
+    if let Some(persistent) = request.persistent {
+        out.push_str(&format!("Persistent={}\n", yes_no(persistent)));
+    }
+    if let Some(unit) = &request.timer_unit {
+        out.push_str(&format!("Unit={unit}\n"));
+    }
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
 }
 
 fn default_start() -> bool {
@@ -494,22 +637,32 @@ mod tests {
         let mut environment = IndexMap::new();
         environment.insert("PATH".to_string(), "/usr/bin:/bin".to_string());
         environment.insert("QUOTED".to_string(), "hello \"there\"".to_string());
-        let request = SystemdRequest {
-            name: "sync".to_string(),
-            unit: "dev.mise.sync.service".to_string(),
-            description: Some("sync files".to_string()),
-            after: vec!["network-online.target".to_string()],
-            wants: vec!["network-online.target".to_string()],
-            exec_start: "~/.local/bin/sync --watch".to_string(),
-            environment,
-            working_directory: Some("~".to_string()),
-            restart: Some("on-failure".to_string()),
-            restart_sec: Some("5s".to_string()),
-            standard_output: Some("append:%h/.local/state/sync.log".to_string()),
-            standard_error: Some("journal".to_string()),
-            start: true,
-            wanted_by: vec!["default.target".to_string()],
-        };
+        let request = SystemdRequest::from_toml(
+            "sync".to_string(),
+            SystemdTomlConfig {
+                description: Some("sync files".to_string()),
+                after: vec!["network-online.target".to_string()],
+                wants: vec!["network-online.target".to_string()],
+                exec_start: Some("~/.local/bin/sync --watch".to_string()),
+                service_type: Some("oneshot".to_string()),
+                remain_after_exit: Some(true),
+                exec_stop: Some("~/.local/bin/sync --stop".to_string()),
+                timeout_start_sec: Some("120".to_string()),
+                timeout_stop_sec: Some("30".to_string()),
+                no_new_privileges: Some(true),
+                private_tmp: Some(true),
+                environment,
+                working_directory: Some("~".to_string()),
+                restart: Some("on-failure".to_string()),
+                restart_sec: Some("5s".to_string()),
+                standard_output: Some("append:%h/.local/state/sync.log".to_string()),
+                standard_error: Some("journal".to_string()),
+                start: true,
+                wanted_by: Some(vec!["default.target".to_string()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let unit = render_unit(&request);
         assert!(unit.contains("[Unit]\n"));
         assert!(unit.contains("Description=sync files\n"));
@@ -519,6 +672,16 @@ mod tests {
             "ExecStart={}\n",
             expand_path_string("~/.local/bin/sync --watch")
         )));
+        assert!(unit.contains("Type=oneshot\n"));
+        assert!(unit.contains("RemainAfterExit=yes\n"));
+        assert!(unit.contains(&format!(
+            "ExecStop={}\n",
+            expand_path_string("~/.local/bin/sync --stop")
+        )));
+        assert!(unit.contains("TimeoutStartSec=120\n"));
+        assert!(unit.contains("TimeoutStopSec=30\n"));
+        assert!(unit.contains("NoNewPrivileges=yes\n"));
+        assert!(unit.contains("PrivateTmp=yes\n"));
         assert!(unit.contains(&format!("WorkingDirectory={}\n", expand_path_string("~"))));
         assert!(unit.contains("Environment=\"PATH=/usr/bin:/bin\"\n"));
         assert!(unit.contains("Environment=\"QUOTED=hello \\\"there\\\"\"\n"));
@@ -527,6 +690,30 @@ mod tests {
         assert!(unit.contains("StandardOutput=append:%h/.local/state/sync.log\n"));
         assert!(unit.contains("StandardError=journal\n"));
         assert!(unit.contains("[Install]\nWantedBy=default.target\n"));
+    }
+
+    #[test]
+    fn test_render_timer_unit() {
+        let request = SystemdRequest::from_toml(
+            "healthcheck".to_string(),
+            SystemdTomlConfig {
+                on_boot_sec: Some("2min".to_string()),
+                on_unit_inactive_sec: Some("5min".to_string()),
+                randomized_delay_sec: Some("30s".to_string()),
+                accuracy_sec: Some("1s".to_string()),
+                persistent: Some(true),
+                unit: Some("dev.mise.healthcheck.service".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(request.unit, "dev.mise.healthcheck.timer");
+        assert_eq!(request.wanted_by, vec!["timers.target"]);
+        assert_eq!(
+            render_unit(&request),
+            "[Unit]\n\n[Timer]\nOnBootSec=2min\nOnUnitInactiveSec=5min\nRandomizedDelaySec=30s\nAccuracySec=1s\nPersistent=yes\nUnit=dev.mise.healthcheck.service\n\n[Install]\nWantedBy=timers.target\n"
+        );
     }
 
     #[test]
