@@ -87,7 +87,7 @@ pub struct AquaPackage {
     version_constraint: String,
     #[rkyv(omit_bounds)]
     pub version_overrides: Vec<AquaPackage>,
-    pub no_asset: bool,
+    pub no_asset: Option<bool>,
     pub private: bool,
     pub error_message: Option<String>,
     pub path: Option<String>,
@@ -404,7 +404,7 @@ impl Default for AquaPackage {
             overrides: Vec::new(),
             version_constraint: String::new(),
             version_overrides: Vec::new(),
-            no_asset: false,
+            no_asset: None,
             private: false,
             error_message: None,
             path: None,
@@ -1084,8 +1084,8 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
         }
     }
 
-    if avo.no_asset {
-        orig.no_asset = true;
+    if avo.no_asset.is_some() {
+        orig.no_asset = avo.no_asset;
     }
     if let Some(error_message) = avo.error_message.clone() {
         orig.error_message = Some(error_message);
@@ -1573,6 +1573,23 @@ packages:
     }
 
     #[test]
+    fn test_no_asset_can_be_disabled_by_version_override() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - no_asset: true
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        no_asset: false
+"#,
+        )
+        .with_version(&["1.0.0"], "linux", "amd64");
+
+        assert_eq!(pkg.no_asset, Some(false));
+    }
+
+    #[test]
     fn test_omitted_emulation_flags_preserve_base_values() {
         let pkg = first_registry_package(
             r#"
@@ -1592,6 +1609,23 @@ packages:
             pkg.asset("1.0.0", "darwin", "arm64").unwrap(),
             "tool-darwin-amd64"
         );
+    }
+
+    #[test]
+    fn test_omitted_no_asset_preserves_base_value() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - no_asset: true
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        format: raw
+"#,
+        )
+        .with_version(&["1.0.0"], "linux", "amd64");
+
+        assert_eq!(pkg.no_asset, Some(true));
     }
 
     #[test]
