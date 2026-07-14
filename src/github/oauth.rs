@@ -177,8 +177,7 @@ async fn refresh_cached_token(
     // GitHub refresh tokens are single-use. Serialize the read-refresh-write
     // transaction across mise processes, then re-read after acquiring the
     // lock so a waiter observes any token minted by the previous holder.
-    let _cache_lock = lock_cache(&path)?;
-    let mut cache = read_cache()?;
+    let (cache_lock, mut cache) = lock_and_read_cache(path).await?;
     let Some(cached) = cache.tokens.get(cache_key).cloned() else {
         return Ok(None);
     };
@@ -199,6 +198,9 @@ async fn refresh_cached_token(
         Err(err) => {
             if invalidate_on_none && err.downcast_ref::<RefreshRejected>().is_some() {
                 invalidate_cached_token(cache_key, cached, &mut cache);
+                if let Err(cache_err) = write_cache_locked_async(cache_lock, cache).await {
+                    warn!("failed to invalidate GitHub OAuth token cache: {cache_err:#}");
+                }
             }
             return Err(err);
         }
@@ -206,12 +208,15 @@ async fn refresh_cached_token(
     let Some(refreshed) = refreshed else {
         if invalidate_on_none {
             invalidate_cached_token(cache_key, cached, &mut cache);
+            if let Err(err) = write_cache_locked_async(cache_lock, cache).await {
+                warn!("failed to invalidate GitHub OAuth token cache: {err:#}");
+            }
         }
         return Ok(None);
     };
     let access_token = refreshed.access_token.clone();
     cache.tokens.insert(cache_key.to_string(), refreshed);
-    if let Err(err) = write_cache(&cache) {
+    if let Err(err) = write_cache_locked_async(cache_lock, cache).await {
         warn!("failed to cache refreshed GitHub OAuth token: {err:#}");
     }
     Ok(Some(access_token))
@@ -235,7 +240,7 @@ async fn token_async(req: TokenRequest) -> Result<String> {
     let canonical_host =
         api_host(&settings.github.oauth_api_url).unwrap_or_else(|| req.host.clone());
     let cache_key = cache_key(&canonical_host, client_id, scopes);
-    let cache = read_cache()?;
+    let cache = read_cache_async().await?;
     if !req.force_refresh
         && let Some(cached) = cache.tokens.get(&cache_key)
         && reusable(cached)
@@ -266,7 +271,7 @@ async fn token_async(req: TokenRequest) -> Result<String> {
     let token = poll_access_token(&device).await?;
     let cached = token_response_to_cache(token)?;
     let access_token = cached.access_token.clone();
-    if let Err(err) = cache_token(cache_key, cached) {
+    if let Err(err) = cache_token(cache_key, cached).await {
         warn!("failed to cache GitHub OAuth token: {err:#}");
     }
     Ok(access_token)
@@ -471,10 +476,26 @@ fn cache_path() -> PathBuf {
 fn read_cache() -> Result<TokenCache> {
     let path = cache_path();
     match std::fs::read_to_string(&path) {
-        Ok(content) => Ok(toml::from_str(&content)?),
+        Ok(content) => match toml::from_str(&content) {
+            Ok(cache) => Ok(cache),
+            Err(_) => {
+                warn!(
+                    "failed to parse GitHub OAuth token cache at {}; ignoring it",
+                    path.display()
+                );
+                Ok(TokenCache::default())
+            }
+        },
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(TokenCache::default()),
-        Err(err) => Err(err.into()),
+        Err(err) => Err(eyre!(
+            "failed to read GitHub OAuth token cache at {}: {err}",
+            path.display()
+        )),
     }
+}
+
+async fn read_cache_async() -> Result<TokenCache> {
+    tokio::task::spawn_blocking(read_cache).await?
 }
 
 fn write_cache(cache: &TokenCache) -> Result<()> {
@@ -499,20 +520,37 @@ fn write_cache(cache: &TokenCache) -> Result<()> {
     Ok(())
 }
 
-fn cache_token(cache_key: String, cached: CachedToken) -> Result<()> {
-    let path = cache_path();
-    let _cache_lock = lock_cache(&path)?;
-    let mut cache = read_cache()?;
-    cache.tokens.insert(cache_key, cached);
-    write_cache(&cache)
+async fn cache_token(cache_key: String, cached: CachedToken) -> Result<()> {
+    tokio::task::spawn_blocking(move || {
+        let path = cache_path();
+        let _cache_lock = lock_cache(&path)?;
+        let mut cache = read_cache()?;
+        cache.tokens.insert(cache_key, cached);
+        write_cache(&cache)
+    })
+    .await?
 }
 
 fn invalidate_cached_token(cache_key: &str, mut cached: CachedToken, cache: &mut TokenCache) {
     cached.expires_at = chrono::Utc::now();
     cache.tokens.insert(cache_key.to_string(), cached);
-    if let Err(err) = write_cache(cache) {
-        warn!("failed to invalidate GitHub OAuth token cache: {err:#}");
-    }
+}
+
+async fn lock_and_read_cache(path: PathBuf) -> Result<(fslock::LockFile, TokenCache)> {
+    tokio::task::spawn_blocking(move || {
+        let cache_lock = lock_cache(&path)?;
+        let cache = read_cache()?;
+        Ok((cache_lock, cache))
+    })
+    .await?
+}
+
+async fn write_cache_locked_async(cache_lock: fslock::LockFile, cache: TokenCache) -> Result<()> {
+    tokio::task::spawn_blocking(move || {
+        let _cache_lock = cache_lock;
+        write_cache(&cache)
+    })
+    .await?
 }
 
 fn lock_cache(path: &Path) -> Result<fslock::LockFile> {
@@ -758,6 +796,18 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let cache = read_cache().unwrap();
         let cached = cache.tokens.get(&cache_key).unwrap();
         assert!(cached.expires_at <= chrono::Utc::now());
+    }
+
+    #[test]
+    fn corrupt_cache_is_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("github-oauth-tokens.toml");
+        let _guard = OAuthEnvGuard::new("http://127.0.0.1:9/login".to_string(), cache_path.clone());
+        std::fs::write(&cache_path, "[tokens.invalid").unwrap();
+
+        let cache = read_cache().unwrap();
+
+        assert!(cache.tokens.is_empty());
     }
 
     #[test]
