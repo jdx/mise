@@ -700,7 +700,7 @@ impl Client {
                 }
                 Ok(None) => {}
                 Err(err) => {
-                    debug!("failed to refresh GitHub OAuth token after 401: {err:#}");
+                    crate::github::oauth::log_refresh_error(&err);
                 }
             }
         }

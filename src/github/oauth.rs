@@ -4,7 +4,8 @@ use crate::env_diff::EnvMap;
 use eyre::{Result, bail, eyre};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const GRANT_DEVICE_CODE: &str = "urn:ietf:params:oauth:grant-type:device_code";
@@ -59,6 +60,15 @@ struct TokenResponse {
     error_description: Option<String>,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "GitHub OAuth refresh was rejected ({code}): {description}. Reauthorization is required; run `mise token github --oauth --refresh`"
+)]
+struct RefreshRejected {
+    code: String,
+    description: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CachedToken {
     access_token: String,
@@ -108,6 +118,7 @@ pub fn cached_access_token_for_host(host: &str) -> Option<String> {
         settings.github.oauth_scopes.trim(),
     );
     read_cache()
+        .ok()?
         .tokens
         .get(&cache_key)
         .map(|cached| cached.access_token.clone())
@@ -162,7 +173,12 @@ async fn refresh_cached_token(
     stale_access_token: Option<&str>,
 ) -> Result<Option<String>> {
     let _lock = REFRESH_TOKEN_LOCK.lock().await;
-    let mut cache = read_cache();
+    let path = cache_path();
+    // GitHub refresh tokens are single-use. Serialize the read-refresh-write
+    // transaction across mise processes, then re-read after acquiring the
+    // lock so a waiter observes any token minted by the previous holder.
+    let _cache_lock = crate::lock_file::LockFile::new(&path).lock()?;
+    let mut cache = read_cache()?;
     let Some(mut cached) = cache.tokens.get(cache_key).cloned() else {
         return Ok(None);
     };
@@ -214,7 +230,7 @@ async fn token_async(req: TokenRequest) -> Result<String> {
     let canonical_host =
         api_host(&settings.github.oauth_api_url).unwrap_or_else(|| req.host.clone());
     let cache_key = cache_key(&canonical_host, client_id, scopes);
-    let mut cache = read_cache();
+    let cache = read_cache()?;
     if !req.force_refresh
         && let Some(cached) = cache.tokens.get(&cache_key)
         && reusable(cached)
@@ -229,7 +245,7 @@ async fn token_async(req: TokenRequest) -> Result<String> {
             Ok(Some(token)) => return Ok(token),
             Ok(None) => {}
             Err(err) => {
-                debug!("failed to refresh GitHub OAuth token: {err:#}");
+                log_refresh_error(&err);
             }
         }
         if !req.force_refresh && cached.expires_at > chrono::Utc::now() {
@@ -245,8 +261,7 @@ async fn token_async(req: TokenRequest) -> Result<String> {
     let token = poll_access_token(&device).await?;
     let cached = token_response_to_cache(token)?;
     let access_token = cached.access_token.clone();
-    cache.tokens.insert(cache_key, cached);
-    if let Err(err) = write_cache(&cache) {
+    if let Err(err) = cache_token(cache_key, cached) {
         warn!("failed to cache GitHub OAuth token: {err:#}");
     }
     Ok(access_token)
@@ -368,8 +383,16 @@ async fn refresh_token(cached: &CachedToken) -> Result<Option<CachedToken>> {
         .json::<TokenResponse>()
         .await?;
 
-    if response.error.is_some() {
-        return Ok(None);
+    if let Some(code) = response.error.as_deref() {
+        let description = response
+            .error_description
+            .clone()
+            .unwrap_or_else(|| code.to_string());
+        return Err(RefreshRejected {
+            code: code.to_string(),
+            description,
+        }
+        .into());
     }
     let mut refreshed = token_response_to_cache(response)?;
     if refreshed.refresh_token.is_none() {
@@ -440,12 +463,13 @@ fn cache_path() -> PathBuf {
     env::MISE_STATE_DIR.join("github-oauth-tokens.toml")
 }
 
-fn read_cache() -> TokenCache {
+fn read_cache() -> Result<TokenCache> {
     let path = cache_path();
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|s| toml::from_str(&s).ok())
-        .unwrap_or_default()
+    match std::fs::read_to_string(&path) {
+        Ok(content) => Ok(toml::from_str(&content)?),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(TokenCache::default()),
+        Err(err) => Err(err.into()),
+    }
 }
 
 fn write_cache(cache: &TokenCache) -> Result<()> {
@@ -454,23 +478,63 @@ fn write_cache(cache: &TokenCache) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let content = toml::to_string_pretty(cache)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| eyre!("GitHub OAuth cache path has no parent"))?;
+    let mut tmp = tempfile::NamedTempFile::with_prefix_in(".github-oauth-tokens.", parent)?;
     #[cfg(unix)]
     {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)?;
-        file.write_all(content.as_bytes())?;
+        use std::os::unix::fs::PermissionsExt;
+        tmp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))?;
     }
-    #[cfg(not(unix))]
-    {
-        std::fs::write(path, content)?;
-    }
+    tmp.write_all(content.as_bytes())?;
+    tmp.as_file_mut().sync_all()?;
+    persist_cache_tmp(tmp, &path)?;
     Ok(())
+}
+
+fn cache_token(cache_key: String, cached: CachedToken) -> Result<()> {
+    let path = cache_path();
+    let _cache_lock = crate::lock_file::LockFile::new(&path).lock()?;
+    let mut cache = read_cache()?;
+    cache.tokens.insert(cache_key, cached);
+    write_cache(&cache)
+}
+
+pub(crate) fn log_refresh_error(err: &eyre::Report) {
+    if err.downcast_ref::<RefreshRejected>().is_some() {
+        warn!("{err}");
+    } else {
+        debug!("failed to refresh GitHub OAuth token: {err:#}");
+    }
+}
+
+fn persist_cache_tmp(mut tmp: tempfile::NamedTempFile, target: &Path) -> Result<()> {
+    const RETRIES: u32 = 20;
+
+    for attempt in 0..=RETRIES {
+        match tmp.persist(target) {
+            Ok(_) => return Ok(()),
+            Err(err) if should_retry_cache_persist(&err.error) && attempt < RETRIES => {
+                tmp = err.file;
+                std::thread::sleep(Duration::from_millis(5 * u64::from(attempt + 1)));
+            }
+            Err(err) => return Err(err.error.into()),
+        }
+    }
+
+    unreachable!("OAuth cache persist retry loop should always return");
+}
+
+#[cfg(windows)]
+fn should_retry_cache_persist(err: &std::io::Error) -> bool {
+    err.kind() == std::io::ErrorKind::PermissionDenied
+}
+
+#[cfg(not(windows))]
+fn should_retry_cache_persist(_err: &std::io::Error) -> bool {
+    false
 }
 
 fn host_matches_settings(host: &str, oauth_api_url: &str) -> bool {
@@ -622,10 +686,102 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let result = refresh_cached_token(&cache_key, Some("ghu-stale")).await;
 
         assert!(result.is_err());
-        let cache = read_cache();
+        let cache = read_cache().unwrap();
         let cached = cache.tokens.get(&cache_key).unwrap();
         assert_eq!(cached.access_token, "ghu-stale");
         assert_eq!(cached.expires_at, expires_at);
+    }
+
+    #[tokio::test]
+    async fn refresh_rejection_surfaces_sanitized_error() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf).await;
+                let body = r#"{"error":"bad_refresh_token","error_description":"The refresh token is invalid."}"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("github-oauth-tokens.toml");
+        let _guard =
+            OAuthEnvGuard::new(format!("http://127.0.0.1:{port}/login"), cache_path.clone());
+
+        let cache_key = cache_key("api.github.com", "Iv1.mock", "");
+        std::fs::write(
+            &cache_path,
+            format!(
+                r#"[tokens.{cache_key}]
+access_token = "ghu-stale"
+expires_at = "2020-01-01T00:00:00Z"
+refresh_token = "ghr-secret"
+refresh_expires_at = "2099-01-01T00:00:00Z"
+"#
+            ),
+        )
+        .unwrap();
+
+        let err = refresh_cached_token(&cache_key, None).await.unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("bad_refresh_token"));
+        assert!(message.contains("Reauthorization is required"));
+        assert!(!message.contains("ghr-secret"));
+    }
+
+    #[test]
+    fn refresh_rereads_cache_after_filesystem_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("github-oauth-tokens.toml");
+        let _guard = OAuthEnvGuard::new("http://127.0.0.1:9/login".to_string(), cache_path.clone());
+        let cache_key = cache_key("api.github.com", "Iv1.mock", "");
+        std::fs::write(
+            &cache_path,
+            format!(
+                r#"[tokens.{cache_key}]
+access_token = "ghu-stale"
+expires_at = "2020-01-01T00:00:00Z"
+refresh_token = "ghr-stale"
+refresh_expires_at = "2099-01-01T00:00:00Z"
+"#
+            ),
+        )
+        .unwrap();
+
+        let cache_lock = crate::lock_file::LockFile::new(&cache_path).lock().unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let refresh_key = cache_key.clone();
+        let refresh = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            block_on(async move { refresh_cached_token(&refresh_key, Some("ghu-stale")).await })
+        });
+        started_rx.recv().unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+
+        let mut cache = read_cache().unwrap();
+        cache.tokens.insert(
+            cache_key,
+            CachedToken {
+                access_token: "ghu-fresh".to_string(),
+                expires_at: chrono::DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc),
+                refresh_token: Some("ghr-fresh".to_string()),
+                refresh_expires_at: None,
+            },
+        );
+        write_cache(&cache).unwrap();
+        drop(cache_lock);
+
+        let token = refresh.join().unwrap().unwrap();
+        assert_eq!(token.as_deref(), Some("ghu-fresh"));
     }
 
     #[tokio::test]
@@ -686,7 +842,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         .unwrap();
         assert_eq!(token, "ghu-new");
 
-        let cache = read_cache();
+        let cache = read_cache().unwrap();
         let cached = cache.tokens.get(&cache_key).unwrap();
         assert_eq!(cached.access_token, "ghu-new");
         assert_eq!(cached.refresh_token.as_deref(), Some("ghr-new"));
