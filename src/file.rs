@@ -1250,7 +1250,15 @@ fn tar_entry_is_sparse<R: Read>(entry: &mut tar::Entry<'_, R>) -> std::io::Resul
     };
 
     for extension in pax_extensions {
-        let extension = extension?;
+        let extension = match extension {
+            Ok(extension) => extension,
+            Err(err) => {
+                debug!(
+                    "Ignoring malformed PAX extension while checking for sparse metadata: {err}"
+                );
+                continue;
+            }
+        };
         if extension
             .key()
             .is_ok_and(|key| key.starts_with("GNU.sparse."))
@@ -2616,6 +2624,43 @@ mod tests {
         let mut entry = entries.next().unwrap().unwrap();
 
         assert!(tar_entry_is_sparse(&mut entry).unwrap());
+    }
+
+    #[test]
+    fn test_extract_archive_ignores_malformed_non_sparse_pax_metadata() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let archive_path = dir.path().join("pax-xattr.tar");
+        let dest_dir = dir.path().join("out");
+        let archive = File::create(&archive_path).unwrap();
+        let mut builder = tar::Builder::new(archive);
+        builder
+            .append_pax_extensions([(
+                "LIBARCHIVE.xattr.com.apple.cs.CodeSignature",
+                b"signature\nmetadata".as_slice(),
+            )])
+            .unwrap();
+
+        let contents = b"hello world";
+        let mut header = tar::Header::new_ustar();
+        header.set_size(contents.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "tool", contents.as_slice())
+            .unwrap();
+        builder.finish().unwrap();
+
+        extract_archive(
+            &archive_path,
+            &dest_dir,
+            ExtractionFormat::Tar,
+            &ExtractOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::read(dest_dir.join("tool")).unwrap(), contents);
     }
 
     #[test]
