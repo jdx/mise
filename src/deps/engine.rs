@@ -235,13 +235,10 @@ impl DepsEngine {
                 }
 
                 let scoped_id = format!("{scope}:{id}");
-                if !seen_ids.insert(scoped_id.clone()) {
-                    continue;
-                }
-
                 if let Some(provider) =
                     Self::build_provider(id, &config_root, provider_config.clone())
                     && provider.is_applicable()
+                    && seen_ids.insert(scoped_id.clone())
                 {
                     providers.push(Box::new(ScopedDepsProvider::new(
                         provider, scoped_id, &scope,

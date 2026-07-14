@@ -722,9 +722,20 @@ assert "test -f deps-monorepo/packages/a/built.txt"
 assert "test -f deps-monorepo/packages/b/built.txt"
 
 # Qualified names can target one provider when names repeat across config roots.
-rm -f deps-monorepo/packages/a/output.txt deps-monorepo/packages/b/output.txt
+rm -f deps-monorepo/root-output.txt \
+  deps-monorepo/packages/a/output.txt \
+  deps-monorepo/packages/a/built.txt \
+  deps-monorepo/packages/a/disabled.txt \
+  deps-monorepo/packages/b/output.txt \
+  deps-monorepo/packages/b/built.txt \
+  deps-monorepo/packages/b/disabled.txt
 assert "cd deps-monorepo && mise deps --monorepo --force --only //packages/b:setup"
+assert_fail "test -f deps-monorepo/root-output.txt"
 assert_fail "test -f deps-monorepo/packages/a/output.txt"
+assert_fail "test -f deps-monorepo/packages/a/built.txt"
+assert_fail "test -f deps-monorepo/packages/a/disabled.txt"
 assert "test -f deps-monorepo/packages/b/output.txt"
+assert_fail "test -f deps-monorepo/packages/b/built.txt"
+assert_fail "test -f deps-monorepo/packages/b/disabled.txt"
 
 rm -rf deps-monorepo
