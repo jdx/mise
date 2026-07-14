@@ -35,10 +35,9 @@ aws s3 cp "./schema/mise-task.json" "s3://$AWS_S3_BUCKET/schema/mise-task.json" 
 # tested by this release without downloading the entire source repository.
 registry_tmpdir="$(mktemp -d)"
 trap 'rm -rf "$registry_tmpdir"' EXIT
-registry_archive="$registry_tmpdir/registry.tar.gz"
-git archive --format=tar HEAD registry | gzip -n >"$registry_archive"
-aws s3 cp "$registry_archive" "s3://$AWS_S3_BUCKET/registry/$MISE_VERSION.tar.gz" --cache-control "$cache_week" --no-progress --content-type "application/gzip"
-aws s3 cp "$registry_archive" "s3://$AWS_S3_BUCKET/registry/latest.tar.gz" --cache-control "$cache_hour" --no-progress --content-type "application/gzip"
+registry_archive="$registry_tmpdir/registry.tar.zst"
+git archive --format=tar HEAD registry | zstd -q -10 -c >"$registry_archive"
+aws s3 cp "$registry_archive" "s3://$AWS_S3_BUCKET/registry/latest.tar.zst" --cache-control "$cache_hour" --no-progress --content-type "application/zstd"
 
 # Upload shell-specific mise.run scripts
 aws s3 cp artifacts/mise.run/zsh "s3://$AWS_S3_BUCKET/mise.run/zsh" --cache-control "$cache_week" --no-progress --content-type "text/plain"
