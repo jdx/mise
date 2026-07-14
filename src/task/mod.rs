@@ -4235,7 +4235,7 @@ echo "test"
         let mut context = tera::Context::new();
         context.insert("target", "tool");
         context.insert("version", "1.0.0");
-        let mut tera = TeraEngine::V2(Box::new(tera::Tera::default()));
+        let mut tera = TeraEngine::V2(Box::default());
         tool.render_templates(&mut tera, &context).unwrap();
 
         let request = tool.to_tool_arg("http:hello").unwrap().tvr.unwrap();
