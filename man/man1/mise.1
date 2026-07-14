@@ -2726,6 +2726,12 @@ Only check if deps install is needed, don't run commands
 \fB\-\-list\fR
 Show what deps providers are available
 .TP
+\fB\-\-monorepo\fR
+Install dependencies from every [monorepo].config_roots config root
+
+Requires monorepo_root = true plus explicit [monorepo].config_roots in
+the monorepo root config. Providers are named like //apps/api:uv.
+.TP
 \fB\-\-only\fR \fI<ONLY>\fR
 Run specific deps rule(s) only
 .TP
@@ -2776,6 +2782,12 @@ Only check if deps install is needed, don't run commands
 .TP
 \fB\-\-list\fR
 Show what deps providers are available
+.TP
+\fB\-\-monorepo\fR
+Install dependencies from every [monorepo].config_roots config root
+
+Requires monorepo_root = true plus explicit [monorepo].config_roots in
+the monorepo root config. Providers are named like //apps/api:uv.
 .TP
 \fB\-\-only\fR \fI<ONLY>\fR
 Run specific deps rule(s) only
