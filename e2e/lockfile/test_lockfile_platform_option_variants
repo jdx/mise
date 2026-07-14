@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/10996.
+# A version may legitimately use different lockfile options on different
+# platforms. Repeated installs must preserve those entries instead of folding
+# an empty-options variant into a non-empty one and recreating it.
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+if [[ $PLATFORM == windows-x64 ]]; then
+  OTHER_PLATFORM="linux-x64"
+else
+  OTHER_PLATFORM="windows-x64"
+fi
+
+cat <<EOF >mise.toml
+[tools."http:lock-option-variants"]
+version = "1.0.0"
+bin_path = "hello-world-1.0.0/bin"
+postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
+
+[tools."http:lock-option-variants".platforms."$PLATFORM"]
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af"
+format = "tar.gz"
+
+[tools."http:lock-option-variants".platforms."$OTHER_PLATFORM"]
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af"
+EOF
+
+mise lock --platform "$PLATFORM,$OTHER_PLATFORM"
+assert "grep -cF '[[tools.\"http:lock-option-variants\"]]' mise.lock" "2"
+assert "grep -cF 'platforms.$PLATFORM' mise.lock" "1"
+assert "grep -cF 'platforms.$OTHER_PLATFORM' mise.lock" "1"
+
+cp mise.lock mise.lock.expected
+mise install
+assert "diff mise.lock mise.lock.expected" ""
+
+mise uninstall --all
+mise install
+assert "diff mise.lock mise.lock.expected" ""
