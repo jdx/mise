@@ -1,13 +1,1 @@
-address pr feedback, also I'm curious, if it's locked will the user get a warning or something so they know that?
-
----
-
-how long does it wait for?
-
----
-
-couldn't it block for a long time? does it wait for the user to complete the flow?
-
----
-
 address pr feedback and failing pr checks
