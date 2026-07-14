@@ -77,6 +77,35 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
+/// Removes a path, retrying when a concurrent writer recreates directory entries while
+/// [`fs::remove_dir_all`] is running.
+///
+/// This remains a strict removal operation: if the directory is still non-empty after the
+/// retries are exhausted, the final error is returned to the caller.
+pub fn remove_all_with_retry<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    retry_remove_all(|| remove_all(path))
+}
+
+fn retry_remove_all(mut remove: impl FnMut() -> Result<()>) -> Result<()> {
+    const MAX_RETRIES: u32 = 4;
+
+    for retry in 0..MAX_RETRIES {
+        match remove() {
+            Ok(()) => return Ok(()),
+            Err(err)
+                if err
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|err| err.kind() == std::io::ErrorKind::DirectoryNotEmpty) =>
+            {
+                std::thread::sleep(Duration::from_millis(10 * (1 << retry)));
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    remove()
+}
+
 pub fn remove_file_or_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     match path.metadata().map(|m| m.file_type()) {
@@ -1809,6 +1838,55 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    #[test]
+    fn test_retry_remove_all_retries_directory_not_empty() {
+        let mut attempts = 0;
+        retry_remove_all(|| {
+            attempts += 1;
+            if attempts < 3 {
+                Err(std::io::Error::from(std::io::ErrorKind::DirectoryNotEmpty))
+                    .wrap_err("failed rm -rf")
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap();
+
+        assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn test_retry_remove_all_does_not_retry_other_errors() {
+        let mut attempts = 0;
+        let err = retry_remove_all(|| {
+            attempts += 1;
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied).into())
+        })
+        .unwrap_err();
+
+        assert_eq!(attempts, 1);
+        assert_eq!(
+            err.downcast_ref::<std::io::Error>().map(|err| err.kind()),
+            Some(std::io::ErrorKind::PermissionDenied)
+        );
+    }
+
+    #[test]
+    fn test_retry_remove_all_propagates_final_attempt() {
+        let mut attempts = 0;
+        let err = retry_remove_all(|| {
+            attempts += 1;
+            Err(std::io::Error::from(std::io::ErrorKind::DirectoryNotEmpty).into())
+        })
+        .unwrap_err();
+
+        assert_eq!(attempts, 5);
+        assert_eq!(
+            err.downcast_ref::<std::io::Error>().map(|err| err.kind()),
+            Some(std::io::ErrorKind::DirectoryNotEmpty)
+        );
+    }
 
     #[test]
     #[cfg(unix)]
