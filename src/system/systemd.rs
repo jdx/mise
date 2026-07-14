@@ -276,6 +276,17 @@ pub async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
         let current = match std::fs::read_to_string(&path) {
             Ok(current) => current,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                let sibling = sibling_unit(req);
+                if sibling_unit_path(req).exists() {
+                    out.push(SystemdStatus {
+                        request: req.clone(),
+                        path,
+                        active: is_active(&sibling).await?,
+                        enabled: is_enabled(&sibling).await?,
+                        state: SystemdState::Differs,
+                    });
+                    continue;
+                }
                 out.push(SystemdStatus {
                     request: req.clone(),
                     path,
@@ -322,6 +333,10 @@ pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
                     user_units_dir().display().to_string(),
                 ])
             );
+            let path = unit_path(req);
+            miseprintln!("write {}", shell_words::join([path.display().to_string()]));
+        }
+        for req in requests {
             let sibling = sibling_unit(req);
             let sibling_path = sibling_unit_path(req);
             if sibling_path.exists() {
@@ -357,10 +372,6 @@ pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
                     req.unit.clone(),
                 ])
             );
-        }
-        for req in requests {
-            let path = unit_path(req);
-            miseprintln!("write {}", shell_words::join([path.display().to_string()]));
         }
         miseprintln!(
             "{}",
@@ -409,6 +420,11 @@ pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
 
     std::fs::create_dir_all(user_units_dir())?;
     for req in requests {
+        let path = unit_path(req);
+        let unit = render_unit(req);
+        std::fs::write(&path, unit)?;
+    }
+    for req in requests {
         let sibling = sibling_unit(req);
         let sibling_path = sibling_unit_path(req);
         if sibling_path.exists() {
@@ -417,11 +433,6 @@ pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
             std::fs::remove_file(sibling_path)?;
         }
         disable_unit(&req.unit).await?;
-    }
-    for req in requests {
-        let path = unit_path(req);
-        let unit = render_unit(req);
-        std::fs::write(&path, unit)?;
     }
     systemctl(&["daemon-reload".to_string()]).await?;
     for req in requests {
