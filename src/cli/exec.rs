@@ -276,6 +276,9 @@ where
     U: IntoIterator,
     U::Item: Into<OsString>,
 {
+    // Capture the marker before deny-env removes variables from the process.
+    // The lazy state must retain the dispatching shim for candidate filtering.
+    drop(env::MISE_SHIM_PATH.read().unwrap());
     if sandbox.effective_deny_env() {
         // When env is sandboxed, clear all vars and only set the filtered ones
         for (k, _) in std::env::vars() {
@@ -320,8 +323,16 @@ where
                 .collect();
             std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
         });
-        match which::which_in(&program, lookup_path, cwd) {
-            Ok(resolved) => resolved.into_os_string(),
+        match which::which_in_all(&program, lookup_path, cwd) {
+            Ok(mut candidates) => {
+                match candidates.find(|candidate| !crate::file::is_active_mise_shim(candidate)) {
+                    Some(resolved) => resolved.into_os_string(),
+                    None if env::MISE_SHIM_PATH.read().unwrap().is_some() => {
+                        return Err(which::Error::CannotFindBinaryPath.into());
+                    }
+                    None => program, // Fall back to original if resolution fails
+                }
+            }
             Err(err) if env::MISE_SHIM_PATH.read().unwrap().is_some() => return Err(err.into()),
             Err(_) => program, // Fall back to original if resolution fails
         }
@@ -408,13 +419,9 @@ where
             .collect();
         std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
     });
-    let program = which::which_in(program, lookup_path, cwd)?;
-    if crate::file::is_active_mise_shim(&program) {
-        return Err(eyre!(
-            "recursive shim invocation detected: {}",
-            program.to_string_lossy()
-        ));
-    }
+    let program = which::which_in_all(program, lookup_path, cwd)?
+        .find(|candidate| !crate::file::is_active_mise_shim(candidate))
+        .ok_or(which::Error::CannotFindBinaryPath)?;
     env::remove_var(env::MISE_SHIM_PATH_ENV);
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
 

@@ -133,6 +133,9 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
         }
         let bin = path.join(bin_name);
         if bin.exists() {
+            if file::is_active_mise_shim(&bin) {
+                continue;
+            }
             // Skip if this binary is a mise shim (symlink pointing to the mise binary)
             if file::canonicalize_cached(&bin).is_some_and(|bin| bin == mise_bin) {
                 continue;
