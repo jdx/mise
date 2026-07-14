@@ -1,5 +1,1 @@
-[https://github.com/jdx/mise/discussions/10979](https://github.com/jdx/mise/discussions/10979) implement this, reply to pr
-
----
-
 address pr feedback and failing pr checks
