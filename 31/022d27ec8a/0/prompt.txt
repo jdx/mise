@@ -1,0 +1,21 @@
+i think we need e2e coverage this is working, i would expect it to fail until the prereq is released
+
+---
+
+ok rebase it, i think it should work now right?
+
+---
+
+ok what is wrong?
+
+---
+
+# Files mentioned by the user:
+
+## Screenshot 2026-07-14 at 11.44.14.png: /var/folders/6m/23f_80p95q79kmhpm8_w50340000gn/T/TemporaryItems/NSIRD_screencaptureui_aWh9HR/Screenshot 2026-07-14 at 11.44.14.png
+
+## My request for Codex:
+
+---
+
+i think we should use a better format than tar.gz, also, can we remove the versioned tarball? I would prefer not wasting the r2 disk usage
