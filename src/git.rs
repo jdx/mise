@@ -62,12 +62,38 @@ impl Git {
     }
 
     pub fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
-        let gitref = gitref.map_or_else(|| self.current_branch(), Ok)?;
-        self.update_ref(gitref, false)
+        match gitref {
+            Some(gitref) => {
+                let remote_ref_kind = self.remote_ref_kind(&gitref)?;
+                self.update_ref(gitref, remote_ref_kind)
+            }
+            None => self.update_ref(self.current_branch()?, None),
+        }
     }
 
     pub fn update_tag(&self, gitref: String) -> Result<(String, String)> {
-        self.update_ref(gitref, true)
+        self.update_ref(gitref, Some(RemoteRefKind::Tag))
+    }
+
+    fn remote_ref_kind(&self, gitref: &str) -> Result<Option<RemoteRefKind>> {
+        if gitref.starts_with("refs/") || looks_like_sha(gitref) {
+            return Ok(None);
+        }
+
+        let branch_ref = format!("refs/heads/{gitref}");
+        let tag_ref = format!("refs/tags/{gitref}");
+        let output = git_cmd_read!(
+            &self.dir,
+            "ls-remote",
+            "--refs",
+            "origin",
+            &branch_ref,
+            &tag_ref
+        )?;
+
+        // Match git's usual disambiguation: a same-named branch wins over a
+        // tag, while callers can select the tag with `refs/tags/<name>`.
+        Ok(remote_ref_kind(&output, &branch_ref, &tag_ref))
     }
 
     /// Detached `git checkout --force <ref>` with no fetch. Used after `clone`
@@ -102,7 +128,11 @@ impl Git {
         Ok(())
     }
 
-    fn update_ref(&self, gitref: String, is_tag_ref: bool) -> Result<(String, String)> {
+    fn update_ref(
+        &self,
+        gitref: String,
+        remote_ref_kind: Option<RemoteRefKind>,
+    ) -> Result<(String, String)> {
         debug!("updating {} to {}", self.dir.display(), gitref);
         let exec = |cmd: Expression| match cmd.stderr_to_stdout().stdout_capture().unchecked().run()
         {
@@ -120,11 +150,10 @@ impl Git {
         };
         debug!("updating {} to {} with git", self.dir.display(), gitref);
 
-        let refspec = if is_tag_ref {
-            format!("refs/tags/{gitref}:refs/tags/{gitref}")
-        } else {
-            format!("{gitref}:{gitref}")
-        };
+        let qualified_ref = remote_ref_kind.map(|kind| qualify_remote_ref(&gitref, kind));
+        let refspec = qualified_ref
+            .as_ref()
+            .map_or_else(|| format!("{gitref}:{gitref}"), |r| format!("{r}:{r}"));
         exec(git_cmd!(
             &self.dir,
             "fetch",
@@ -134,6 +163,10 @@ impl Git {
             &refspec
         ))?;
         let prev_rev = self.current_sha()?;
+        let checkout_ref = match (remote_ref_kind, qualified_ref.as_deref()) {
+            (Some(RemoteRefKind::Tag), Some(tag_ref)) => tag_ref,
+            _ => &gitref,
+        };
         exec(git_cmd!(
             &self.dir,
             "-c",
@@ -142,7 +175,7 @@ impl Git {
             "advice.objectNameWarning=false",
             "checkout",
             "--force",
-            &gitref
+            &checkout_ref
         ))?;
         let post_rev = self.current_sha()?;
         touch_dir(&self.dir)?;
@@ -389,6 +422,41 @@ const GIT_CONTEXT_ENV: &[&str] = &[
     "GIT_NAMESPACE",
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RemoteRefKind {
+    Branch,
+    Tag,
+}
+
+fn qualify_remote_ref(gitref: &str, kind: RemoteRefKind) -> String {
+    let prefix = match kind {
+        RemoteRefKind::Branch => "refs/heads/",
+        RemoteRefKind::Tag => "refs/tags/",
+    };
+    if gitref.starts_with(prefix) {
+        gitref.to_string()
+    } else {
+        format!("{prefix}{gitref}")
+    }
+}
+
+fn remote_ref_kind(output: &str, branch_ref: &str, tag_ref: &str) -> Option<RemoteRefKind> {
+    let has_ref = |expected: &str| {
+        output.lines().any(|line| {
+            line.split_once(char::is_whitespace)
+                .is_some_and(|(_, name)| name == expected)
+        })
+    };
+
+    if has_ref(branch_ref) {
+        Some(RemoteRefKind::Branch)
+    } else if has_ref(tag_ref) {
+        Some(RemoteRefKind::Tag)
+    } else {
+        None
+    }
+}
+
 /// Heuristic for whether a ref string is a commit SHA (full SHA-1 or SHA-256).
 ///
 /// Branch and tag names that happen to be all-hex would also match, but git
@@ -517,6 +585,106 @@ mod tests {
         assert!(!looks_like_sha("abcdef1")); // short SHA not supported
         assert!(!looks_like_sha(""));
         assert!(!looks_like_sha("g123456789abcdef0123456789abcdef01234567")); // non-hex
+    }
+
+    #[test]
+    fn remote_ref_parser_prefers_branches_over_tags() {
+        let output = "\
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\trefs/heads/release
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
+";
+        assert_eq!(
+            super::remote_ref_kind(output, "refs/heads/release", "refs/tags/release"),
+            Some(super::RemoteRefKind::Branch)
+        );
+        assert_eq!(
+            super::remote_ref_kind(output, "refs/heads/missing", "refs/tags/release"),
+            Some(super::RemoteRefKind::Tag)
+        );
+        assert_eq!(
+            super::remote_ref_kind(output, "refs/heads/missing", "refs/tags/missing"),
+            None
+        );
+    }
+
+    #[test]
+    fn update_resolves_short_branches_and_tags() {
+        let tmp = tempfile::tempdir().unwrap();
+        let origin = tmp.path().join("origin");
+        std::fs::create_dir_all(&origin).unwrap();
+
+        let git_in = |dir: &std::path::Path, args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .output()
+                .expect("spawn git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8(out.stdout).unwrap().trim().to_string()
+        };
+        git_in(&origin, &["-c", "init.defaultBranch=main", "init", "-q"]);
+        git_in(&origin, &["config", "user.email", "test@example.com"]);
+        git_in(&origin, &["config", "user.name", "Test"]);
+
+        std::fs::write(origin.join("version"), "release\n").unwrap();
+        git_in(&origin, &["add", "version"]);
+        git_in(&origin, &["commit", "-q", "-m", "release"]);
+        let release_sha = git_in(&origin, &["rev-parse", "HEAD"]);
+        git_in(&origin, &["branch", "release-branch"]);
+        git_in(&origin, &["branch", "collision"]);
+        git_in(&origin, &["tag", "lightweight-v1"]);
+        git_in(
+            &origin,
+            &["tag", "-a", "annotated-v1", "-m", "annotated-v1"],
+        );
+
+        std::fs::write(origin.join("version"), "tag-collision\n").unwrap();
+        git_in(&origin, &["commit", "-q", "-am", "tag collision"]);
+        let tag_collision_sha = git_in(&origin, &["rev-parse", "HEAD"]);
+        git_in(&origin, &["tag", "-a", "collision", "-m", "collision"]);
+
+        std::fs::write(origin.join("version"), "main\n").unwrap();
+        git_in(&origin, &["commit", "-q", "-am", "main"]);
+
+        let cases = [
+            ("release-branch", release_sha.as_str()),
+            ("lightweight-v1", release_sha.as_str()),
+            ("annotated-v1", release_sha.as_str()),
+            ("refs/tags/annotated-v1", release_sha.as_str()),
+            (release_sha.as_str(), release_sha.as_str()),
+            ("collision", release_sha.as_str()),
+            ("refs/tags/collision", tag_collision_sha.as_str()),
+        ];
+        let url = format!("file://{}", origin.display());
+        for (index, (selector, expected_sha)) in cases.into_iter().enumerate() {
+            let clone = tmp.path().join(format!("clone-{index}"));
+            git_in(tmp.path(), &["clone", "-q", &url, clone.to_str().unwrap()]);
+            if selector == "annotated-v1" {
+                // A stale local branch must not override a remote tag after the
+                // remote branch has disappeared.
+                git_in(&clone, &["branch", "annotated-v1"]);
+            }
+
+            Git::new(&clone)
+                .update(Some(selector.to_string()))
+                .unwrap_or_else(|err| panic!("update {selector} failed: {err:#}"));
+            assert_eq!(
+                git_in(&clone, &["rev-parse", "HEAD"]),
+                expected_sha,
+                "selector {selector} checked out the wrong commit"
+            );
+        }
+
+        let clone = tmp.path().join("clone-update-tag-full-ref");
+        git_in(tmp.path(), &["clone", "-q", &url, clone.to_str().unwrap()]);
+        Git::new(&clone)
+            .update_tag("refs/tags/annotated-v1".to_string())
+            .unwrap_or_else(|err| panic!("update_tag with full ref failed: {err:#}"));
+        assert_eq!(git_in(&clone, &["rev-parse", "HEAD"]), release_sha);
     }
 
     #[test]
