@@ -322,6 +322,7 @@ where
         });
         match which::which_in(&program, lookup_path, cwd) {
             Ok(resolved) => resolved.into_os_string(),
+            Err(err) if env::MISE_SHIM_PATH.read().unwrap().is_some() => return Err(err.into()),
             Err(_) => program, // Fall back to original if resolution fails
         }
     };

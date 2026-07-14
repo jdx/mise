@@ -28,17 +28,26 @@ pub async fn handle_shim() -> Result<()> {
     if env::is_mise_binary(bin_name) || cfg!(test) {
         return Ok(());
     }
-    let shim_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from(&*env::ARGV0));
-    if env::var_path(env::MISE_SHIM_PATH_ENV)
-        .as_ref()
-        .is_some_and(|previous| file::paths_eq(previous, &shim_path))
+    #[cfg(windows)]
     {
-        bail!(
-            "recursive shim invocation detected for {bin_name}: {}",
-            display_path(&shim_path)
-        );
+        let shim_path = invoked_shim_path();
+        if env::var_path(env::MISE_SHIM_PATH_ENV)
+            .as_ref()
+            .is_some_and(|previous| {
+                file::paths_eq(
+                    &file::canonicalize_or_self(previous),
+                    &file::canonicalize_or_self(&shim_path),
+                )
+            })
+        {
+            bail!(
+                "recursive shim invocation detected for {bin_name}: {}",
+                display_path(&shim_path)
+            );
+        }
+        *env::MISE_SHIM_PATH.write().unwrap() = Some(shim_path.clone());
+        env::set_var(env::MISE_SHIM_PATH_ENV, &shim_path);
     }
-    env::set_var(env::MISE_SHIM_PATH_ENV, &shim_path);
     let mut config = Config::get().await?;
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
@@ -69,6 +78,24 @@ pub async fn handle_shim() -> Result<()> {
     time!("shim exec");
     exec.run().await?;
     exit(0);
+}
+
+#[cfg(windows)]
+fn invoked_shim_path() -> PathBuf {
+    let argv0 = PathBuf::from(&*env::ARGV0);
+    if argv0.is_absolute() {
+        return argv0;
+    }
+    if argv0.components().count() > 1 {
+        return argv0
+            .absolutize()
+            .map(|path| path.into_owned())
+            .unwrap_or(argv0);
+    }
+    which::which(&argv0)
+        .ok()
+        .or_else(|| std::env::current_exe().ok())
+        .unwrap_or(argv0)
 }
 
 async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf> {

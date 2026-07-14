@@ -7,13 +7,20 @@ use std::process::{Command, exit};
 const MISE_SHIM_PATH_ENV: &str = "__MISE_SHIM_PATH";
 
 fn paths_eq(a: &Path, b: &Path) -> bool {
-    let a = std::fs::canonicalize(a).unwrap_or_else(|_| a.to_path_buf());
-    let b = std::fs::canonicalize(b).unwrap_or_else(|_| b.to_path_buf());
-    if cfg!(windows) {
-        a.to_string_lossy()
-            .eq_ignore_ascii_case(&b.to_string_lossy())
-    } else {
-        a == b
+    let lexical_eq = |a: &Path, b: &Path| {
+        if cfg!(windows) {
+            a.to_string_lossy()
+                .eq_ignore_ascii_case(&b.to_string_lossy())
+        } else {
+            a == b
+        }
+    };
+    if lexical_eq(a, b) {
+        return true;
+    }
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => lexical_eq(&a, &b),
+        _ => false,
     }
 }
 

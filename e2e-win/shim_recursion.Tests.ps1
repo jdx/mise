@@ -19,6 +19,7 @@ Describe 'shim_exec_recursion' {
         New-Item -ItemType Directory -Path $script:toolDir -Force | Out-Null
         @'
 @echo off
+if defined __MISE_SHIM_PATH echo SHIM_PATH_LEAKED
 echo REAL_TOOL_OUTPUT
 '@ | Out-File -FilePath (Join-Path $script:toolDir "mytool.cmd") -Encoding ascii -NoNewline
 
@@ -52,6 +53,7 @@ echo SHIM_NOT_REAL
         $LASTEXITCODE | Should -Be 0
         $result | Should -Contain "REAL_TOOL_OUTPUT"
         $result | Should -Not -Contain "SHIM_NOT_REAL"
+        $result | Should -Not -Contain "SHIM_PATH_LEAKED"
     }
 
     It 'native shim resolves a real tool when MISE_DATA_DIR is filtered out' {
@@ -70,33 +72,68 @@ echo SHIM_NOT_REAL
 
             $LASTEXITCODE | Should -Be 0
             $result | Should -Contain "REAL_TOOL_OUTPUT"
+            $result | Should -Not -Contain "SHIM_PATH_LEAKED"
         } finally {
             $env:MISE_DATA_DIR = $originalDataDir
             $env:PATH = $previousPath
         }
     }
 
-    It 'direct executable shim resolves a real tool when MISE_DATA_DIR is filtered out' {
-        $customShimPath = Join-Path $TestDrive "direct-shims"
+    It 'file shim resolves a real tool when MISE_DATA_DIR is filtered out' {
+        $customShimPath = Join-Path $TestDrive "file-shims"
         New-Item -ItemType Directory -Path $customShimPath -Force | Out-Null
-        $misePath = Join-Path $PSScriptRoot "..\target\debug\mise.exe"
-        Copy-Item $misePath (Join-Path $customShimPath "mytool.exe")
+        @'
+@echo off
+setlocal
+set "shim_path=%~f0"
+if /I "%__MISE_SHIM_PATH%"=="%shim_path%" exit /b 1
+set "__MISE_SHIM_PATH=%shim_path%"
+mise x -- mytool %*
+'@ | Out-File -FilePath (Join-Path $customShimPath "mytool.cmd") -Encoding ascii -NoNewline
 
         $originalDataDir = $env:MISE_DATA_DIR
-        $originalMiseBin = $env:__MISE_BIN
         $previousPath = $env:PATH
         try {
             Remove-Item Env:\MISE_DATA_DIR -ErrorAction Ignore
-            $env:__MISE_BIN = $misePath
             $env:PATH = "$customShimPath;$($script:toolDir);$env:PATH"
 
-            $result = & (Join-Path $customShimPath "mytool.exe")
+            $result = & (Join-Path $customShimPath "mytool.cmd")
 
             $LASTEXITCODE | Should -Be 0
             $result | Should -Contain "REAL_TOOL_OUTPUT"
+            $result | Should -Not -Contain "SHIM_PATH_LEAKED"
         } finally {
             $env:MISE_DATA_DIR = $originalDataDir
-            $env:__MISE_BIN = $originalMiseBin
+            $env:PATH = $previousPath
+        }
+    }
+
+    It 'hardlink shim resolves a real tool when MISE_DATA_DIR is filtered out' {
+        $customShimPath = Join-Path $TestDrive "direct-shims"
+        $directToolDir = Join-Path $TestDrive "direct-toolbin"
+        New-Item -ItemType Directory -Path $customShimPath -Force | Out-Null
+        New-Item -ItemType Directory -Path $directToolDir -Force | Out-Null
+        $misePath = Join-Path $PSScriptRoot "..\target\debug\mise.exe"
+        $localMisePath = Join-Path $customShimPath "mise.exe"
+        Copy-Item $misePath $localMisePath
+        New-Item -ItemType HardLink -Path (Join-Path $customShimPath "mytool.exe") `
+            -Target $localMisePath | Out-Null
+        Copy-Item $env:ComSpec (Join-Path $directToolDir "mytool.exe")
+
+        $originalDataDir = $env:MISE_DATA_DIR
+        $previousPath = $env:PATH
+        try {
+            Remove-Item Env:\MISE_DATA_DIR -ErrorAction Ignore
+            $env:PATH = "$customShimPath;$directToolDir;$env:PATH"
+
+            $result = & mytool.exe /d /c `
+                'if defined __MISE_SHIM_PATH (echo SHIM_PATH_LEAKED) else echo REAL_TOOL_OUTPUT'
+
+            $LASTEXITCODE | Should -Be 0
+            $result | Should -Contain "REAL_TOOL_OUTPUT"
+            $result | Should -Not -Contain "SHIM_PATH_LEAKED"
+        } finally {
+            $env:MISE_DATA_DIR = $originalDataDir
             $env:PATH = $previousPath
         }
     }

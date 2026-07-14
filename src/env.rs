@@ -431,7 +431,8 @@ pub static __MISE_SHIM: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SHIM"));
 /// this remains reliable when a parent process preserves PATH but filters out
 /// mise's directory configuration variables.
 pub const MISE_SHIM_PATH_ENV: &str = "__MISE_SHIM_PATH";
-pub static MISE_SHIM_PATH: Lazy<Option<PathBuf>> = Lazy::new(|| var_path(MISE_SHIM_PATH_ENV));
+pub static MISE_SHIM_PATH: Lazy<RwLock<Option<PathBuf>>> =
+    Lazy::new(|| RwLock::new(var_path(MISE_SHIM_PATH_ENV)));
 
 // true if the current process is running as a shim (not direct mise invocation)
 pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {

@@ -921,22 +921,18 @@ pub fn canonicalize_or_self(path: &Path) -> PathBuf {
 pub fn is_mise_shims_dir(path: &Path) -> bool {
     let resolved = replace_path(path);
     let sys_shims = env::MISE_SYSTEM_DATA_DIR.join("shims");
-    let active_shims = env::MISE_SHIM_PATH
-        .as_ref()
-        .cloned()
-        .and_then(|shim| shim.parent().map(Path::to_path_buf));
+    let active_shim = env::MISE_SHIM_PATH.read().unwrap();
+    let active_shims = active_shim.as_deref().and_then(Path::parent);
     if paths_eq(&resolved, &dirs::SHIMS)
         || paths_eq(&resolved, &sys_shims)
-        || active_shims
-            .as_ref()
-            .is_some_and(|active| paths_eq(&resolved, active))
+        || active_shims.is_some_and(|active| paths_eq(&resolved, active))
     {
         return true;
     }
     let canon_input = canonicalize_or_self(&resolved);
     let canon_user = canonicalize_or_self(&dirs::SHIMS);
     let canon_sys = canonicalize_or_self(&sys_shims);
-    let canon_active = active_shims.as_deref().map(canonicalize_or_self);
+    let canon_active = active_shims.map(canonicalize_or_self);
     paths_eq(&canon_input, &canon_user)
         || paths_eq(&canon_input, &canon_sys)
         || canon_active
@@ -946,8 +942,11 @@ pub fn is_mise_shims_dir(path: &Path) -> bool {
 
 /// Returns true if `path` resolves to the shim that delegated to this mise
 /// process. This is a final fail-safe after PATH filtering and before exec.
+#[cfg(not(test))]
 pub fn is_active_mise_shim(path: &Path) -> bool {
     env::MISE_SHIM_PATH
+        .read()
+        .unwrap()
         .as_ref()
         .is_some_and(|active| paths_eq(&canonicalize_or_self(path), &canonicalize_or_self(active)))
 }
