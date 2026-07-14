@@ -1,0 +1,3 @@
+backends = ["github:tedilabs/tfvault", "aqua:tedilabs/tfvault"]
+description = "Universal Terraform credentials helper with pluggable secret backends"
+test = { cmd = "tfvault version", expected = "tfvault {{version}}" }
