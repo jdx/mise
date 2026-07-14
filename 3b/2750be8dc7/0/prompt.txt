@@ -1,9 +1,1 @@
-i think we should use a better format than tar.gz, also, can we remove the versioned tarball? I would prefer not wasting the r2 disk usage
-
----
-
-i think we need a new prereq pr don't we
-
----
-
 i don't want you to worry about deleting anything
