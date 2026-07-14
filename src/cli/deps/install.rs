@@ -2,7 +2,7 @@ use eyre::{Result, bail};
 
 use crate::config::Config;
 use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
-use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 
 /// Install all project dependencies
 ///
@@ -30,6 +30,13 @@ pub struct DepsInstall {
     #[clap(long)]
     pub list: bool,
 
+    /// Install dependencies from every [monorepo].config_roots config root
+    ///
+    /// Requires monorepo_root = true plus explicit [monorepo].config_roots in
+    /// the monorepo root config. Providers are named like //apps/api:uv.
+    #[clap(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
+    pub monorepo: bool,
+
     /// Run specific deps rule(s) only
     #[clap(long)]
     pub only: Option<Vec<String>>,
@@ -41,8 +48,16 @@ pub struct DepsInstall {
 
 impl DepsInstall {
     pub async fn run(self) -> Result<()> {
-        let mut config = Config::get().await?;
-        let engine = DepsEngine::new(&config)?;
+        let config = Config::get().await?;
+        let monorepo_union = if self.monorepo {
+            Some(config.monorepo_union().await?)
+        } else {
+            None
+        };
+        let engine = match &monorepo_union {
+            Some(union) => DepsEngine::new_monorepo(&config, union.config_files.values().cloned())?,
+            None => DepsEngine::new(&config)?,
+        };
 
         if self.list {
             self.list_providers(&engine)?;
@@ -58,21 +73,35 @@ impl DepsInstall {
             return self.explain_provider(&engine, provider_id);
         }
 
-        // Build and install toolset so tools like npm are available
-        let mut ts = ToolsetBuilder::new()
-            .with_default_to_latest(true)
-            .build(&config)
-            .await?;
+        // Build and install the effective toolset so package managers declared
+        // in monorepo config roots are available to their deps providers.
+        let mut install_config = match &monorepo_union {
+            Some(union) => config.with_config_files(union.config_files.clone()),
+            None => config.clone(),
+        };
+        let mut ts = match &monorepo_union {
+            Some(union) => {
+                let mut ts: Toolset = union.tool_request_set.clone().into();
+                ts.resolve(&install_config).await?;
+                ts
+            }
+            None => {
+                ToolsetBuilder::new()
+                    .with_default_to_latest(true)
+                    .build(&install_config)
+                    .await?
+            }
+        };
 
         let install_opts = InstallOptions {
             missing_args_only: false,
             ..Default::default()
         };
-        ts.install_missing_versions(&mut config, &install_opts)
+        ts.install_missing_versions(&mut install_config, &install_opts)
             .await?;
 
         // Get toolset environment with PATH
-        let env = ts.env_with_path(&config).await?;
+        let env = ts.env_with_path(&install_config).await?;
 
         // If a provider is specified as a positional arg, treat it like --only
         let only = match (&self.provider, &self.only) {
