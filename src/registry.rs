@@ -6,7 +6,6 @@ use crate::toolset::{RawBackendOptions, ToolVersionOptions};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, file};
 use eyre::{Context, Result, bail, ensure};
-use flate2::read::GzDecoder;
 use heck::ToShoutySnakeCase;
 use indexmap::IndexMap;
 use serde::Serialize as _;
@@ -43,7 +42,7 @@ pub static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
     }
 });
 
-const MISE_REGISTRY_ARCHIVE_URL: &str = "https://mise.jdx.dev/registry/latest.tar.gz";
+const MISE_REGISTRY_ARCHIVE_URL: &str = "https://mise.jdx.dev/registry/latest.tar.zst";
 const MAX_REGISTRY_ARCHIVE_ENTRIES: usize = 4096;
 const MAX_REGISTRY_ARCHIVE_ENTRY_SIZE: u64 = 1024 * 1024;
 const MAX_REGISTRY_ARCHIVE_SIZE: u64 = 16 * 1024 * 1024;
@@ -135,7 +134,7 @@ pub struct RegistryBackend {
 }
 
 fn registry_cache_path() -> PathBuf {
-    dirs::CACHE.join("mise-registry").join("registry.tar.gz")
+    dirs::CACHE.join("mise-registry").join("registry.tar.zst")
 }
 
 fn load_cached_floating_registry() -> Result<Registry> {
@@ -233,7 +232,7 @@ fn replace_registry_cache(download_path: &Path, cache_path: &Path) -> Result<()>
 
 fn parse_registry_archive(path: &Path) -> Result<Registry> {
     let file = File::open(path)?;
-    let decoder = GzDecoder::new(file);
+    let decoder = zstd::Decoder::new(file)?;
     let mut archive = tar::Archive::new(decoder);
     let mut sources = BTreeMap::new();
     let mut archive_size = 0_u64;
@@ -658,12 +657,10 @@ mod tests {
     use crate::config::Config;
 
     fn registry_archive(entries: &[(&str, &str)]) -> tempfile::NamedTempFile {
-        use flate2::Compression;
-        use flate2::write::GzEncoder;
         use std::io::Cursor;
 
         let file = tempfile::NamedTempFile::new().unwrap();
-        let encoder = GzEncoder::new(file.reopen().unwrap(), Compression::default());
+        let encoder = zstd::Encoder::new(file.reopen().unwrap(), 0).unwrap();
         let mut archive = tar::Builder::new(encoder);
         for (path, contents) in entries {
             let mut header = tar::Header::new_gnu();
