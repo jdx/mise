@@ -1,0 +1,3 @@
+backends = ["aqua:superradcompany/microsandbox"]
+description = "Easy, fast and local-first microVM runtime"
+test = { cmd = "msb --version", expected = "msb {{version}}" }
