@@ -88,22 +88,22 @@ pub fn remove_all_with_retry<P: AsRef<Path>>(path: P) -> Result<()> {
 }
 
 fn retry_remove_all(mut remove: impl FnMut() -> Result<()>) -> Result<()> {
-    const MAX_ATTEMPTS: u32 = 5;
+    const MAX_RETRIES: u32 = 4;
 
-    for attempt in 0..MAX_ATTEMPTS {
+    for retry in 0..MAX_RETRIES {
         match remove() {
+            Ok(()) => return Ok(()),
             Err(err)
-                if attempt + 1 < MAX_ATTEMPTS
-                    && err
-                        .downcast_ref::<std::io::Error>()
-                        .is_some_and(|err| err.kind() == std::io::ErrorKind::DirectoryNotEmpty) =>
+                if err
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|err| err.kind() == std::io::ErrorKind::DirectoryNotEmpty) =>
             {
-                std::thread::sleep(Duration::from_millis(10 * (1 << attempt)));
+                std::thread::sleep(Duration::from_millis(10 * (1 << retry)));
             }
-            result => return result,
+            Err(err) => return Err(err),
         }
     }
-    unreachable!()
+    remove()
 }
 
 pub fn remove_file_or_dir<P: AsRef<Path>>(path: P) -> Result<()> {
@@ -1869,6 +1869,22 @@ mod tests {
         assert_eq!(
             err.downcast_ref::<std::io::Error>().map(|err| err.kind()),
             Some(std::io::ErrorKind::PermissionDenied)
+        );
+    }
+
+    #[test]
+    fn test_retry_remove_all_propagates_final_attempt() {
+        let mut attempts = 0;
+        let err = retry_remove_all(|| {
+            attempts += 1;
+            Err(std::io::Error::from(std::io::ErrorKind::DirectoryNotEmpty).into())
+        })
+        .unwrap_err();
+
+        assert_eq!(attempts, 5);
+        assert_eq!(
+            err.downcast_ref::<std::io::Error>().map(|err| err.kind()),
+            Some(std::io::ErrorKind::DirectoryNotEmpty)
         );
     }
 
