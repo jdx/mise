@@ -53,4 +53,51 @@ echo SHIM_NOT_REAL
         $result | Should -Contain "REAL_TOOL_OUTPUT"
         $result | Should -Not -Contain "SHIM_NOT_REAL"
     }
+
+    It 'native shim resolves a real tool when MISE_DATA_DIR is filtered out' {
+        $customShimPath = Join-Path $TestDrive "custom-shims"
+        New-Item -ItemType Directory -Path $customShimPath -Force | Out-Null
+        Copy-Item (Join-Path $PSScriptRoot "..\target\debug\mise-shim.exe") `
+            (Join-Path $customShimPath "mytool.exe")
+
+        $originalDataDir = $env:MISE_DATA_DIR
+        $previousPath = $env:PATH
+        try {
+            Remove-Item Env:\MISE_DATA_DIR -ErrorAction Ignore
+            $env:PATH = "$customShimPath;$($script:toolDir);$env:PATH"
+
+            $result = & (Join-Path $customShimPath "mytool.exe")
+
+            $LASTEXITCODE | Should -Be 0
+            $result | Should -Contain "REAL_TOOL_OUTPUT"
+        } finally {
+            $env:MISE_DATA_DIR = $originalDataDir
+            $env:PATH = $previousPath
+        }
+    }
+
+    It 'direct executable shim resolves a real tool when MISE_DATA_DIR is filtered out' {
+        $customShimPath = Join-Path $TestDrive "direct-shims"
+        New-Item -ItemType Directory -Path $customShimPath -Force | Out-Null
+        $misePath = Join-Path $PSScriptRoot "..\target\debug\mise.exe"
+        Copy-Item $misePath (Join-Path $customShimPath "mytool.exe")
+
+        $originalDataDir = $env:MISE_DATA_DIR
+        $originalMiseBin = $env:__MISE_BIN
+        $previousPath = $env:PATH
+        try {
+            Remove-Item Env:\MISE_DATA_DIR -ErrorAction Ignore
+            $env:__MISE_BIN = $misePath
+            $env:PATH = "$customShimPath;$($script:toolDir);$env:PATH"
+
+            $result = & (Join-Path $customShimPath "mytool.exe")
+
+            $LASTEXITCODE | Should -Be 0
+            $result | Should -Contain "REAL_TOOL_OUTPUT"
+        } finally {
+            $env:MISE_DATA_DIR = $originalDataDir
+            $env:__MISE_BIN = $originalMiseBin
+            $env:PATH = $previousPath
+        }
+    }
 }

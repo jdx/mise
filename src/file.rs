@@ -907,13 +907,12 @@ pub fn canonicalize_or_self(path: &Path) -> PathBuf {
 
 /// Returns true if `path` is one of mise's shim directories.
 ///
-/// Two dirs qualify: the user shims dir (`dirs::SHIMS`) and the system shims
-/// dir (`$MISE_SYSTEM_DATA_DIR/shims`). Devcontainer / Docker setups built
-/// with `mise install --system` put both on PATH, so subprocess-env filters
-/// that strip "the shims dir" must consider both — otherwise the recursion
-/// these filters were added to prevent (#8475 for `dependency_env`, #8816
-/// for `which_shim`, this for the file.rs helpers) leaks back in through the
-/// remaining dir.
+/// Three dirs can qualify: the configured user shims dir (`dirs::SHIMS`), the
+/// system shims dir (`$MISE_SYSTEM_DATA_DIR/shims`), and the parent directory
+/// of the active shim recorded in `__MISE_SHIM_PATH`. The last one is needed
+/// when a parent process preserves PATH but filters out variables such as
+/// `MISE_DATA_DIR`; in that case the configured directory can no longer be
+/// reconstructed, but the shim must still never resolve back to itself.
 ///
 /// Uses `paths_eq` + `replace_path` for the fast path (expands `~`,
 /// case-insensitive on macOS/Windows), then falls back to `canonicalize_or_self`
@@ -922,13 +921,35 @@ pub fn canonicalize_or_self(path: &Path) -> PathBuf {
 pub fn is_mise_shims_dir(path: &Path) -> bool {
     let resolved = replace_path(path);
     let sys_shims = env::MISE_SYSTEM_DATA_DIR.join("shims");
-    if paths_eq(&resolved, &dirs::SHIMS) || paths_eq(&resolved, &sys_shims) {
+    let active_shims = env::MISE_SHIM_PATH
+        .as_ref()
+        .cloned()
+        .and_then(|shim| shim.parent().map(Path::to_path_buf));
+    if paths_eq(&resolved, &dirs::SHIMS)
+        || paths_eq(&resolved, &sys_shims)
+        || active_shims
+            .as_ref()
+            .is_some_and(|active| paths_eq(&resolved, active))
+    {
         return true;
     }
     let canon_input = canonicalize_or_self(&resolved);
     let canon_user = canonicalize_or_self(&dirs::SHIMS);
     let canon_sys = canonicalize_or_self(&sys_shims);
-    paths_eq(&canon_input, &canon_user) || paths_eq(&canon_input, &canon_sys)
+    let canon_active = active_shims.as_deref().map(canonicalize_or_self);
+    paths_eq(&canon_input, &canon_user)
+        || paths_eq(&canon_input, &canon_sys)
+        || canon_active
+            .as_ref()
+            .is_some_and(|active| paths_eq(&canon_input, active))
+}
+
+/// Returns true if `path` resolves to the shim that delegated to this mise
+/// process. This is a final fail-safe after PATH filtering and before exec.
+pub fn is_active_mise_shim(path: &Path) -> bool {
+    env::MISE_SHIM_PATH
+        .as_ref()
+        .is_some_and(|active| paths_eq(&canonicalize_or_self(path), &canonicalize_or_self(active)))
 }
 
 /// Build a PATH value with mise shims filtered out, suitable for passing to

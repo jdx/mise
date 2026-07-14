@@ -304,25 +304,18 @@ where
             // User-configured paths (_.path/venv) maintain their position
             // relative to tool paths since both are "mise-added".
             // The child process still inherits the full unmodified PATH.
-            let user_shims = &*crate::dirs::SHIMS;
-            let sys_shims = crate::env::MISE_SYSTEM_DATA_DIR.join("shims");
-            let is_shims_dir = |p: &std::path::PathBuf| {
-                let expanded = crate::file::replace_path(p);
-                crate::file::paths_eq(&expanded, user_shims)
-                    || crate::file::paths_eq(&expanded, &sys_shims)
-            };
             let pristine: std::collections::HashSet<_> = crate::env::PATH.iter().collect();
             let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
             // Mise-added paths first (preserving relative order)
             let mise_added: Vec<_> = all_paths
                 .iter()
-                .filter(|p| !pristine.contains(p))
+                .filter(|p| !pristine.contains(p) && !crate::file::is_mise_shims_dir(p))
                 .cloned()
                 .collect();
             // Then original system paths (minus shims)
             let original: Vec<_> = all_paths
                 .iter()
-                .filter(|p| pristine.contains(p) && !is_shims_dir(p))
+                .filter(|p| pristine.contains(p) && !crate::file::is_mise_shims_dir(p))
                 .cloned()
                 .collect();
             std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
@@ -332,6 +325,13 @@ where
             Err(_) => program, // Fall back to original if resolution fails
         }
     };
+    if crate::file::is_active_mise_shim(std::path::Path::new(&program)) {
+        return Err(eyre::eyre!(
+            "recursive shim invocation detected: {}",
+            program.to_string_lossy()
+        ));
+    }
+    env::remove_var(env::MISE_SHIM_PATH_ENV);
     // Apply sandbox (Landlock/seccomp on Linux, sandbox-exec on macOS)
     let args_str: Vec<String> = args
         .iter()
@@ -373,13 +373,6 @@ where
     // Reorder PATH for program resolution: mise-added paths first, then
     // original system paths (minus shims). See Unix version for full rationale.
     let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
-        let user_shims = &*crate::dirs::SHIMS;
-        let sys_shims = crate::env::MISE_SYSTEM_DATA_DIR.join("shims");
-        let is_shims = |p: &std::path::PathBuf| {
-            let expanded = crate::file::replace_path(p);
-            crate::file::paths_eq(&expanded, user_shims)
-                || crate::file::paths_eq(&expanded, &sys_shims)
-        };
         let pristine: std::collections::HashSet<_> = crate::env::PATH
             .iter()
             .map(|p| {
@@ -397,7 +390,7 @@ where
                     .to_string_lossy()
                     .to_lowercase()
                     .replace('/', "\\");
-                !pristine.contains(&normalized)
+                !pristine.contains(&normalized) && !crate::file::is_mise_shims_dir(p)
             })
             .cloned()
             .collect();
@@ -408,13 +401,20 @@ where
                     .to_string_lossy()
                     .to_lowercase()
                     .replace('/', "\\");
-                pristine.contains(&normalized) && !is_shims(p)
+                pristine.contains(&normalized) && !crate::file::is_mise_shims_dir(p)
             })
             .cloned()
             .collect();
         std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
     });
     let program = which::which_in(program, lookup_path, cwd)?;
+    if crate::file::is_active_mise_shim(&program) {
+        return Err(eyre!(
+            "recursive shim invocation detected: {}",
+            program.to_string_lossy()
+        ));
+    }
+    env::remove_var(env::MISE_SHIM_PATH_ENV);
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
 
     // Windows does not support exec in the same way as Unix,

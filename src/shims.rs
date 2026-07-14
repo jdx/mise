@@ -28,6 +28,17 @@ pub async fn handle_shim() -> Result<()> {
     if env::is_mise_binary(bin_name) || cfg!(test) {
         return Ok(());
     }
+    let shim_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from(&*env::ARGV0));
+    if env::var_path(env::MISE_SHIM_PATH_ENV)
+        .as_ref()
+        .is_some_and(|previous| file::paths_eq(previous, &shim_path))
+    {
+        bail!(
+            "recursive shim invocation detected for {bin_name}: {}",
+            display_path(&shim_path)
+        );
+    }
+    env::set_var(env::MISE_SHIM_PATH_ENV, &shim_path);
     let mut config = Config::get().await?;
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
@@ -89,15 +100,8 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
     }
     // fallback for "system"
     let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
-    let user_shims = file::canonicalize_cached(&dirs::SHIMS);
-    let sys_shims = {
-        let p = env::MISE_SYSTEM_DATA_DIR.join("shims");
-        file::canonicalize_cached(&p)
-    };
     for path in &*env::PATH {
-        if let Some(canon_path) = file::canonicalize_cached(path)
-            && (user_shims.as_ref() == Some(&canon_path) || sys_shims.as_ref() == Some(&canon_path))
-        {
+        if file::is_mise_shims_dir(path) {
             continue;
         }
         let bin = path.join(bin_name);
@@ -333,8 +337,14 @@ fn bash_shim_script(tool: &str) -> String {
     formatdoc! {r#"
         #!/bin/bash
 
+        shim_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)
+        shim_path="$shim_dir/${{0##*/}}"
+        if [ "${{__MISE_SHIM_PATH:-}}" = "$shim_path" ]; then
+          echo "mise: recursive shim invocation detected for {tool}: $shim_path" >&2
+          exit 1
+        fi
+
         if [ -n "${{WSL_DISTRO_NAME:-}}" ] || [ -n "${{WSL_INTEROP:-}}" ] || [ -e /proc/sys/fs/binfmt_misc/WSLInterop ]; then
-          shim_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)
           new_path=
           # disable globbing so a PATH entry containing * ? [ is not expanded
           set -f
@@ -349,6 +359,7 @@ fn bash_shim_script(tool: &str) -> String {
           exec {tool} "$@"
         fi
 
+        export __MISE_SHIM_PATH="$shim_path"
         exec mise x -- {tool} "$@"
         "#}
 }
@@ -391,6 +402,12 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
                 formatdoc! {r#"
         @echo off
         setlocal
+        set "shim_path=%~f0"
+        if /I "%__MISE_SHIM_PATH%"=="%shim_path%" (
+          echo mise: recursive shim invocation detected for {shim}: %shim_path% 1>&2
+          exit /b 1
+        )
+        set "__MISE_SHIM_PATH=%shim_path%"
         mise x -- {shim} %*
         "#},
             )
@@ -698,6 +715,10 @@ mod tests {
         assert!(script.contains(r#"shim_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)"#));
         // globbing disabled while splitting PATH so wildcard entries are not expanded
         assert!(script.contains("set -f"));
+        // The shim identifies its actual location even if MISE_DATA_DIR is absent.
+        assert!(script.contains(r#"shim_path="$shim_dir/${0##*/}""#));
+        assert!(script.contains(r#"export __MISE_SHIM_PATH="$shim_path""#));
+        assert!(script.contains("recursive shim invocation detected"));
         // In WSL: drop the shim dir and run the native tool directly.
         assert!(script.contains(r#"exec gh "$@""#));
         // Outside WSL: defer to mise as before.
