@@ -109,6 +109,7 @@ output=$(mise lock --before 2019-01-01 --platform linux-x64 --dry-run 2>&1)
 assert_contains "echo '$output'" "jq@1.7.1 for linux-x64"
 
 rm -f mise.lock
+mkdir -p "$MISE_DATA_DIR/installs/jq/1.7.1"
 cat <<EOF >mise.toml
 [settings]
 install_before = "2019-01-01"
@@ -139,7 +140,6 @@ output=$(mise lock --minimum-release-age 2019-01-01 --platform linux-x64 --dry-r
 assert_contains "echo '$output'" "jq@1.6 for linux-x64"
 assert_not_contains "echo '$output'" "jq@1.7.1"
 
-mkdir -p "$MISE_DATA_DIR/installs/jq/1.7.1"
 output=$(mise lock --minimum-release-age 2019-01-01 --platform linux-x64 --dry-run 2>&1)
 assert_contains "echo '$output'" "jq@1.6 for linux-x64"
 assert_not_contains "echo '$output'" "jq@1.7.1"

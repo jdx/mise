@@ -87,8 +87,17 @@ impl Lock {
         let before_date = self.get_before_date()?;
         let lock_resolve_options = ResolveOptions {
             before_date,
+            filter_installed_versions_by_release_date: true,
             ..Default::default()
         };
+        let has_configured_release_age = settings.minimum_release_age.is_some()
+            || config
+                .get_tool_request_set()
+                .await?
+                .tools
+                .values()
+                .flatten()
+                .any(|request| request.options().minimum_release_age().is_some());
         let monorepo_union = if !self.global && config.monorepo_lockfile_root().is_some() {
             Some(config.monorepo_union().await?)
         } else {
@@ -107,7 +116,7 @@ impl Lock {
                 .await?;
             ts_owned = monorepo_ts;
             &ts_owned
-        } else if before_date.is_some() {
+        } else if before_date.is_some() || has_configured_release_age {
             let builder = ToolsetBuilder::new().with_resolve_options(lock_resolve_options.clone());
             ts_owned = builder.build(&config).await?;
             &ts_owned

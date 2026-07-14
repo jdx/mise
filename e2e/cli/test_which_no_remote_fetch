@@ -9,8 +9,8 @@
 # invocation into a remote version-list fetch per tool (~65s shell startups).
 #
 # aqua-backed jq is used because the built-in default applies to it (the asdf
-# dummy plugin is exempt). An explicit `minimum_release_age` setting still
-# forces date-aware remote resolution — only the built-in default must not.
+# dummy plugin is exempt). Installed matches remain eligible regardless of
+# whether the cutoff is implicit or explicitly configured.
 
 mise install jq@1.7.1
 

@@ -379,6 +379,7 @@ impl Install {
                 latest_versions: true,
                 before_date: self.get_before_date()?,
                 before_date_from_default: false,
+                filter_installed_versions_by_release_date: false,
                 offline: false,
                 refresh_remote_versions: false,
                 inactive: false,
