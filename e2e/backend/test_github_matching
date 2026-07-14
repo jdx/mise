@@ -15,6 +15,12 @@
 
 export MISE_EXPERIMENTAL=1
 
+# Package-manager archives are not directly executable and the github backend
+# does not extract them. Autodetection must reject a release containing only
+# .deb/.rpm assets instead of installing the package itself as the executable.
+# Regression test for https://github.com/jdx/mise/discussions/10987.
+assert_fail 'mise install "github:dirk/quickhook@1.6.2"' "No matching asset found for platform"
+
 # A `matching` value that excludes every asset must fail asset selection with an
 # error that names the filter (proves the option is parsed + threaded, and that
 # the failure isn't a misleading "no asset for this platform"). Run this BEFORE
