@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "034abb89a625",
+  "session_id": "019f61f9-98c0-7492-b3c5-50fcef8d2f28",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-14T19:03:19.076714Z",
+  "branch": "codex/fix-github-oauth-refresh-race",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/github/oauth.rs",
+    "src/http.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "2e624913bf67",
+  "token_usage": {
+    "input_tokens": 137087,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3579648,
+    "output_tokens": 15194,
+    "api_call_count": 49
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-14T19:03:19.065566Z",
+    "agent_lines": 185,
+    "agent_removed": 29,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 185,
+    "total_lines_changed": 214,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
