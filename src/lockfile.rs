@@ -1069,14 +1069,11 @@ impl Lockfile {
         platform_info: PlatformInfo,
     ) {
         let tools = self.tools.entry(short.to_string()).or_default();
-        // Find existing tool version with matching options, or (if the resolved
-        // options are non-empty and there's no exact match) adopt an entry for the
-        // same version that still has empty options — this is a tool whose backend
-        // just started reporting deterministic lockfile options (e.g. java's
-        // shorthand_vendor) where it previously reported none. Updating that
-        // entry's options in place keeps its already-collected platform checksums
-        // instead of orphaning them as a stale, never-matched sibling entry.
-        // (#10564)
+        // Find an exact option variant first. If a backend has just started
+        // reporting options, only adopt its legacy empty-options entry when that
+        // entry already owns this platform. Empty options may also be a legitimate
+        // platform-specific variant (for example RubyInstaller2 on Windows), so
+        // adopting a disjoint platform would conflate different installers.
         let idx = tools
             .iter()
             .position(|t| t.version == version && &t.options == options)
@@ -1084,9 +1081,11 @@ impl Lockfile {
                 if options.is_empty() {
                     None
                 } else {
-                    tools
-                        .iter()
-                        .position(|t| t.version == version && t.options.is_empty())
+                    tools.iter().position(|t| {
+                        t.version == version
+                            && t.options.is_empty()
+                            && t.platforms.contains_key(platform_key)
+                    })
                 }
             });
         if let Some(idx) = idx {
@@ -1181,6 +1180,18 @@ impl Lockfile {
                 platforms,
             });
         }
+
+        // A resolved platform belongs to exactly one option variant. Besides
+        // preventing duplicate serialization, this repairs lockfiles written by
+        // the old empty-options adoption logic once that platform is re-locked.
+        for tool in tools.iter_mut() {
+            if tool.version == version && &tool.options != options {
+                tool.platforms.remove(platform_key);
+            }
+        }
+        tools.retain(|tool| {
+            tool.version != version || &tool.options == options || !tool.platforms.is_empty()
+        });
     }
 
     /// Save the lockfile to disk (public for mise lock command)
@@ -1843,24 +1854,19 @@ fn tool_version_needs_auto_lock(
     let Some(tools) = lockfile.tools.get(tv.short()) else {
         return Ok(false);
     };
-    let expected = lockfile_tool_from_tool_version(tv)?;
-    let Some(tool) = tools
-        .iter()
-        .find(|tool| tool.version == expected.version && tool.options == expected.options)
-    else {
-        debug!(
-            "auto-lock candidate {}@{} skipped in lockfile because no matching entry with options {:?} was found",
-            tv.short(),
-            tv.version,
-            expected.options
-        );
-        return Ok(false);
-    };
     let backend = tv.request.backend()?;
 
     for platform in target_platforms {
         for variant in backend.platform_variants(platform) {
+            let target = PlatformTarget::new(variant.clone());
+            let options = backend.resolve_lockfile_options(&tv.request, &target)?;
             let platform_key = variant.to_key();
+            let Some(tool) = tools
+                .iter()
+                .find(|tool| tool.version == tv.version && tool.options == options)
+            else {
+                return Ok(true);
+            };
             if !tool
                 .platforms
                 .get(&platform_key)
@@ -2056,10 +2062,15 @@ pub async fn auto_lock_new_versions(
 
                 for variant in variants {
                     let platform_key = variant.to_key();
+                    let target = PlatformTarget::new(variant.clone());
 
                     // Skip if this tool/version/platform already has both checksum and URL
-                    if let Some(tools) = lockfile.tools.get(&ba.short)
-                        && let Some(tool) = tools.iter().find(|t| t.version == tv.version)
+                    if let Some(ref backend) = backend
+                        && let Ok(options) = backend.resolve_lockfile_options(&tv.request, &target)
+                        && let Some(tools) = lockfile.tools.get(&ba.short)
+                        && let Some(tool) = tools
+                            .iter()
+                            .find(|t| t.version == tv.version && t.options == options)
                         && let Some(info) = tool.platforms.get(&platform_key)
                         && info.checksum.is_some()
                         && info.url.is_some()
@@ -2315,20 +2326,31 @@ fn merge_tool_entries(
             }
             // No exact (version, options) match. If this existing entry has no
             // options and a freshly-resolved entry exists for the same version
-            // that now reports options, adopt its platform data into that entry
-            // instead of silently dropping it — a backend that starts reporting
-            // deterministic lockfile options (e.g. java's shorthand_vendor) must
-            // not orphan previously-collected checksums/URLs. (#10564)
+            // that now reports options for at least one of the same platforms,
+            // adopt its platform data into that entry. Platform overlap is what
+            // distinguishes a legacy empty-options entry from a legitimate
+            // platform-specific empty-options variant. (#10564, #10996)
             // Pick the smallest matching key so the adoption target is
             // deterministic even if several optioned entries share the version
             // (HashMap iteration order is not).
-            if existing_tool.options.is_empty()
-                && let Some(adopt_key) = by_key
-                    .keys()
-                    .filter(|(v, opts)| v == &existing_tool.version && !opts.is_empty())
+            let adopt_key = if existing_tool.options.is_empty() {
+                by_key
+                    .iter()
+                    .filter(|((version, options), entry)| {
+                        version == &existing_tool.version
+                            && !options.is_empty()
+                            && existing_tool
+                                .platforms
+                                .keys()
+                                .any(|platform| entry.platforms.contains_key(platform))
+                    })
+                    .map(|(key, _)| key)
                     .min()
                     .cloned()
-            {
+            } else {
+                None
+            };
+            if let Some(adopt_key) = adopt_key {
                 let entry = by_key.get_mut(&adopt_key).unwrap();
                 for (platform, info) in &existing_tool.platforms {
                     entry
@@ -2337,6 +2359,14 @@ fn merge_tool_entries(
                         .and_modify(|existing| *existing = existing.merge_with(info))
                         .or_insert(info.clone());
                 }
+            } else if existing_tool.options.is_empty()
+                && by_key.keys().any(|(version, options)| {
+                    version == &existing_tool.version && !options.is_empty()
+                })
+            {
+                // Keep a disjoint empty-options variant: its platforms may use a
+                // different installer and cannot inherit the other entry's options.
+                by_key.insert(key, existing_tool.clone());
             }
         }
     }
@@ -2344,7 +2374,11 @@ fn merge_tool_entries(
     // Convert to final list
     by_key
         .into_values()
-        .sorted_by(|a, b| a.version.cmp(&b.version))
+        .sorted_by(|a, b| {
+            a.version
+                .cmp(&b.version)
+                .then_with(|| a.options.cmp(&b.options))
+        })
         .collect()
 }
 
@@ -3357,12 +3391,19 @@ options = { exe = "rg" }
         }];
         let mut options = BTreeMap::new();
         options.insert("shorthand_vendor".to_string(), "openjdk".to_string());
+        let fresh_platforms = BTreeMap::from([(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                checksum: Some("sha256:NEW".to_string()),
+                ..Default::default()
+            },
+        )]);
         let mut merged = merge_tool_entries(
             vec![LockfileTool {
                 version: "26.0.1".to_string(),
                 backend: Some("core:java".to_string()),
                 options,
-                platforms: BTreeMap::new(),
+                platforms: fresh_platforms,
             }],
             Some(&existing),
         );
@@ -3373,7 +3414,7 @@ options = { exe = "rg" }
         assert_eq!(merged.len(), 1, "adopted entry duplicated: {merged:?}");
         assert_eq!(
             merged[0].platforms["linux-x64"].checksum.as_deref(),
-            Some("sha256:OLD")
+            Some("sha256:NEW")
         );
 
         // Counter-case: when the tool was NOT resolved this run (merged has no
@@ -3410,6 +3451,14 @@ options = { exe = "rg" }
                 ..Default::default()
             },
         );
+        existing_platforms.insert(
+            "macos-arm64".to_string(),
+            PlatformInfo {
+                checksum: Some("sha256:OLD-MAC".to_string()),
+                url: Some("https://example.com/java-macos-arm64.tar.gz".to_string()),
+                ..Default::default()
+            },
+        );
         let existing = vec![LockfileTool {
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
@@ -3421,10 +3470,10 @@ options = { exe = "rg" }
         new_options.insert("shorthand_vendor".to_string(), "openjdk".to_string());
         let mut fresh_platforms = BTreeMap::new();
         fresh_platforms.insert(
-            "macos-arm64".to_string(),
+            "linux-x64".to_string(),
             PlatformInfo {
                 checksum: Some("sha256:NEW".to_string()),
-                url: Some("https://example.com/java-macos-arm64.tar.gz".to_string()),
+                url: Some("https://example.com/java-linux-x64.tar.gz".to_string()),
                 ..Default::default()
             },
         );
@@ -3447,12 +3496,84 @@ options = { exe = "rg" }
         assert_eq!(tool.platforms.len(), 2);
         assert_eq!(
             tool.platforms["linux-x64"].checksum.as_deref(),
-            Some("sha256:OLD")
+            Some("sha256:NEW")
         );
         assert_eq!(
             tool.platforms["macos-arm64"].checksum.as_deref(),
-            Some("sha256:NEW")
+            Some("sha256:OLD-MAC")
         );
+    }
+
+    #[test]
+    fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
+        let unix_options = BTreeMap::from([("compile".to_string(), "false".to_string())]);
+        let existing = vec![
+            LockfileTool {
+                version: "3.4.2".to_string(),
+                backend: Some("core:ruby".to_string()),
+                options: unix_options.clone(),
+                platforms: BTreeMap::from([(
+                    "linux-x64".to_string(),
+                    PlatformInfo {
+                        url: Some("https://example.com/ruby-linux.tar.gz".to_string()),
+                        ..Default::default()
+                    },
+                )]),
+            },
+            LockfileTool {
+                version: "3.4.2".to_string(),
+                backend: Some("core:ruby".to_string()),
+                options: BTreeMap::new(),
+                platforms: BTreeMap::from([(
+                    "windows-x64".to_string(),
+                    PlatformInfo {
+                        url: Some("https://example.com/ruby-windows.7z".to_string()),
+                        ..Default::default()
+                    },
+                )]),
+            },
+        ];
+        let fresh = vec![LockfileTool {
+            version: "3.4.2".to_string(),
+            backend: Some("core:ruby".to_string()),
+            options: unix_options,
+            platforms: BTreeMap::from([(
+                "linux-x64".to_string(),
+                PlatformInfo {
+                    url: Some("https://example.com/ruby-linux.tar.gz".to_string()),
+                    ..Default::default()
+                },
+            )]),
+        }];
+
+        let merged = merge_tool_entries(fresh, Some(&existing));
+
+        assert_eq!(
+            merged.len(),
+            2,
+            "option variants were conflated: {merged:?}"
+        );
+        assert!(
+            merged.iter().any(|tool| {
+                tool.options.is_empty() && tool.platforms.contains_key("windows-x64")
+            })
+        );
+        assert!(merged.iter().any(|tool| {
+            !tool.options.is_empty() && !tool.platforms.contains_key("windows-x64")
+        }));
+
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert("ruby".to_string(), merged);
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        lockfile.save(&path).unwrap();
+        let first = std::fs::read_to_string(&path).unwrap();
+        Lockfile::read(&path).unwrap().save(&path).unwrap();
+        let second = std::fs::read_to_string(&path).unwrap();
+
+        assert_eq!(first, second, "lockfile serialization was not idempotent");
+        assert_eq!(second.matches("[[tools.ruby]]").count(), 2);
+        assert_eq!(second.matches("platforms.windows-x64").count(), 1);
     }
 
     #[test]
@@ -3485,6 +3606,47 @@ options = { exe = "rg" }
         let tv = basic_tv("aqua:astral-sh/ruff", "0.15.20");
 
         assert!(!tool_version_needs_auto_lock(&lockfile, &tv, &[Platform::current()]).unwrap());
+    }
+
+    #[test]
+    fn test_tool_version_needs_auto_lock_uses_target_specific_options() {
+        let tv = basic_tv("core:ruby", "3.4.2");
+        let backend = tv.request.backend().unwrap();
+        let platforms = [Platform::current(), Platform::parse("windows-x64").unwrap()];
+        let mut tools_by_options: BTreeMap<BTreeMap<String, String>, LockfileTool> =
+            BTreeMap::new();
+
+        for platform in &platforms {
+            let target = PlatformTarget::new(platform.clone());
+            let options = backend
+                .resolve_lockfile_options(&tv.request, &target)
+                .unwrap();
+            tools_by_options
+                .entry(options.clone())
+                .or_insert_with(|| LockfileTool {
+                    version: tv.version.clone(),
+                    backend: Some("core:ruby".to_string()),
+                    options,
+                    platforms: BTreeMap::new(),
+                })
+                .platforms
+                .insert(
+                    platform.to_key(),
+                    PlatformInfo {
+                        checksum: Some("sha256:abc123".to_string()),
+                        url: Some(format!("https://example.com/{}.tar.gz", platform.to_key())),
+                        ..Default::default()
+                    },
+                );
+        }
+
+        assert_eq!(tools_by_options.len(), 2);
+        let mut lockfile = Lockfile::default();
+        lockfile
+            .tools
+            .insert("ruby".to_string(), tools_by_options.into_values().collect());
+
+        assert!(!tool_version_needs_auto_lock(&lockfile, &tv, &platforms).unwrap());
     }
 
     #[test]
@@ -4394,8 +4556,8 @@ backend = "conda:jq"
         assert_eq!(lockfile.tools["java"].len(), 1);
 
         // The tool now resolves with a non-empty `options` map for the SAME
-        // version (e.g. shorthand_vendor newly attached). Only one platform
-        // resolves this run.
+        // version (e.g. shorthand_vendor newly attached). Re-resolving an
+        // existing platform proves this is an options migration.
         let mut options = BTreeMap::new();
         options.insert("shorthand_vendor".to_string(), "openjdk".to_string());
         lockfile.set_platform_info(
@@ -4403,16 +4565,16 @@ backend = "conda:jq"
             "26.0.1",
             Some("core:java"),
             &options,
-            "windows-x64",
+            "linux-x64",
             PlatformInfo {
                 checksum: Some("sha256:NEW".to_string()),
-                url: Some("https://example.com/java-windows-x64.tar.gz".to_string()),
+                url: Some("https://example.com/java-linux-x64-new.tar.gz".to_string()),
                 ..Default::default()
             },
         );
 
         // Still a single entry — the empty-options entry was adopted, not left
-        // as an orphaned sibling — and it now carries ALL THREE platforms.
+        // as an orphaned sibling — and it still carries both platforms.
         let tools = &lockfile.tools["java"];
         assert_eq!(
             tools.len(),
@@ -4421,19 +4583,54 @@ backend = "conda:jq"
         );
         let tool = &tools[0];
         assert_eq!(tool.options, options);
-        assert_eq!(tool.platforms.len(), 3);
+        assert_eq!(tool.platforms.len(), 2);
         assert_eq!(
             tool.platforms["linux-x64"].checksum.as_deref(),
-            Some("sha256:OLD1")
+            Some("sha256:NEW")
         );
         assert_eq!(
             tool.platforms["macos-arm64"].checksum.as_deref(),
             Some("sha256:OLD2")
         );
-        assert_eq!(
-            tool.platforms["windows-x64"].checksum.as_deref(),
-            Some("sha256:NEW")
+    }
+
+    #[test]
+    fn test_set_platform_info_keeps_platform_specific_option_variants_separate() {
+        let mut lockfile = Lockfile::default();
+        lockfile.set_platform_info(
+            "ruby",
+            "3.4.2",
+            Some("core:ruby"),
+            &BTreeMap::new(),
+            "windows-x64",
+            PlatformInfo {
+                url: Some("https://example.com/ruby-windows.7z".to_string()),
+                ..Default::default()
+            },
         );
+        let unix_options = BTreeMap::from([("compile".to_string(), "false".to_string())]);
+        lockfile.set_platform_info(
+            "ruby",
+            "3.4.2",
+            Some("core:ruby"),
+            &unix_options,
+            "linux-x64",
+            PlatformInfo {
+                url: Some("https://example.com/ruby-linux.tar.gz".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let tools = &lockfile.tools["ruby"];
+        assert_eq!(tools.len(), 2, "option variants were conflated: {tools:?}");
+        assert!(
+            tools.iter().any(|tool| {
+                tool.options.is_empty() && tool.platforms.contains_key("windows-x64")
+            })
+        );
+        assert!(tools.iter().any(|tool| {
+            tool.options == unix_options && tool.platforms.contains_key("linux-x64")
+        }));
     }
 
     #[test]
