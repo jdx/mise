@@ -3604,7 +3604,10 @@ options = { exe = "rg" }
     fn test_tool_version_needs_auto_lock_uses_target_specific_options() {
         let tv = basic_tv("core:ruby", "3.4.2");
         let backend = tv.request.backend().unwrap();
-        let platforms = [Platform::current(), Platform::parse("windows-x64").unwrap()];
+        let platforms = [
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("windows-x64").unwrap(),
+        ];
         let mut tools_by_options: BTreeMap<BTreeMap<String, String>, LockfileTool> =
             BTreeMap::new();
 
