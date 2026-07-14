@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "946bc3f73017",
+  "session_id": "019f6116-1c1e-7a01-a2e0-5b9c7c09675d",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-14T15:31:59.774062Z",
+  "branch": "codex/systemd-timers",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/bootstrap/systemd.md",
+    "e2e/cli/test_bootstrap",
+    "src/config/config_file/mise_toml.rs",
+    "src/system/mod.rs",
+    "src/system/systemd.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "da4a01afd82e",
+  "token_usage": {
+    "input_tokens": 163964,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3971328,
+    "output_tokens": 13560,
+    "api_call_count": 60
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-14T15:31:59.760591Z",
+    "agent_lines": 335,
+    "agent_removed": 62,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 335,
+    "total_lines_changed": 397,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
