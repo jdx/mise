@@ -1,9 +1,1 @@
-thoughts on [https://github.com/jdx/mise/discussions/10988](https://github.com/jdx/mise/discussions/10988)
-
----
-
-should we have a new file helper for this behavior?
-
----
-
 ok make a pr, reply to discussion
