@@ -150,13 +150,10 @@ impl Git {
         };
         debug!("updating {} to {} with git", self.dir.display(), gitref);
 
-        let refspec = match remote_ref_kind {
-            Some(RemoteRefKind::Branch) => {
-                format!("refs/heads/{gitref}:refs/heads/{gitref}")
-            }
-            Some(RemoteRefKind::Tag) => format!("refs/tags/{gitref}:refs/tags/{gitref}"),
-            None => format!("{gitref}:{gitref}"),
-        };
+        let qualified_ref = remote_ref_kind.map(|kind| qualify_remote_ref(&gitref, kind));
+        let refspec = qualified_ref
+            .as_ref()
+            .map_or_else(|| format!("{gitref}:{gitref}"), |r| format!("{r}:{r}"));
         exec(git_cmd!(
             &self.dir,
             "fetch",
@@ -166,9 +163,9 @@ impl Git {
             &refspec
         ))?;
         let prev_rev = self.current_sha()?;
-        let checkout_ref = match remote_ref_kind {
-            Some(RemoteRefKind::Tag) => format!("refs/tags/{gitref}"),
-            _ => gitref,
+        let checkout_ref = match (remote_ref_kind, qualified_ref.as_deref()) {
+            (Some(RemoteRefKind::Tag), Some(tag_ref)) => tag_ref,
+            _ => &gitref,
         };
         exec(git_cmd!(
             &self.dir,
@@ -431,6 +428,18 @@ enum RemoteRefKind {
     Tag,
 }
 
+fn qualify_remote_ref(gitref: &str, kind: RemoteRefKind) -> String {
+    let prefix = match kind {
+        RemoteRefKind::Branch => "refs/heads/",
+        RemoteRefKind::Tag => "refs/tags/",
+    };
+    if gitref.starts_with(prefix) {
+        gitref.to_string()
+    } else {
+        format!("{prefix}{gitref}")
+    }
+}
+
 fn remote_ref_kind(output: &str, branch_ref: &str, tag_ref: &str) -> Option<RemoteRefKind> {
     let has_ref = |expected: &str| {
         output.lines().any(|line| {
@@ -669,6 +678,13 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
                 "selector {selector} checked out the wrong commit"
             );
         }
+
+        let clone = tmp.path().join("clone-update-tag-full-ref");
+        git_in(tmp.path(), &["clone", "-q", &url, clone.to_str().unwrap()]);
+        Git::new(&clone)
+            .update_tag("refs/tags/annotated-v1".to_string())
+            .unwrap_or_else(|err| panic!("update_tag with full ref failed: {err:#}"));
+        assert_eq!(git_in(&clone, &["rev-parse", "HEAD"]), release_sha);
     }
 
     #[test]
