@@ -3407,12 +3407,29 @@ run = 'echo "template"'
         after = ["network-online.target"]
         wants = ["network-online.target"]
         exec_start = "~/.local/bin/my-sync --watch"
+        type = "oneshot"
+        remain_after_exit = true
+        exec_stop = "~/.local/bin/my-sync --stop"
+        timeout_start_sec = "120"
+        timeout_stop_sec = "30"
+        no_new_privileges = true
+        private_tmp = true
         environment = { PATH = "/usr/bin:/bin" }
         working_directory = "~"
         restart = "on-failure"
         restart_sec = "5s"
         standard_output = "append:%h/.local/state/my-sync.log"
         wanted_by = ["default.target"]
+
+        [bootstrap.linux.systemd.units.my-sync-timer]
+        on_boot_sec = "2min"
+        on_unit_active_sec = "10min"
+        on_unit_inactive_sec = "5min"
+        on_calendar = "hourly"
+        randomized_delay_sec = "30s"
+        accuracy_sec = "1s"
+        persistent = true
+        unit = "dev.mise.my-sync.service"
         "#,
         )
         .unwrap();
@@ -3426,6 +3443,16 @@ run = 'echo "template"'
             unit.exec_start.as_deref(),
             Some("~/.local/bin/my-sync --watch")
         );
+        assert_eq!(unit.service_type.as_deref(), Some("oneshot"));
+        assert_eq!(unit.remain_after_exit, Some(true));
+        assert_eq!(
+            unit.exec_stop.as_deref(),
+            Some("~/.local/bin/my-sync --stop")
+        );
+        assert_eq!(unit.timeout_start_sec.as_deref(), Some("120"));
+        assert_eq!(unit.timeout_stop_sec.as_deref(), Some("30"));
+        assert_eq!(unit.no_new_privileges, Some(true));
+        assert_eq!(unit.private_tmp, Some(true));
         assert_eq!(
             unit.environment.get("PATH").map(String::as_str),
             Some("/usr/bin:/bin")
@@ -3441,6 +3468,15 @@ run = 'echo "template"'
             unit.wanted_by.as_deref(),
             Some(["default.target".to_string()].as_slice())
         );
+        let timer = system.linux.systemd.units.get("my-sync-timer").unwrap();
+        assert_eq!(timer.on_boot_sec.as_deref(), Some("2min"));
+        assert_eq!(timer.on_unit_active_sec.as_deref(), Some("10min"));
+        assert_eq!(timer.on_unit_inactive_sec.as_deref(), Some("5min"));
+        assert_eq!(timer.on_calendar.as_deref(), Some("hourly"));
+        assert_eq!(timer.randomized_delay_sec.as_deref(), Some("30s"));
+        assert_eq!(timer.accuracy_sec.as_deref(), Some("1s"));
+        assert_eq!(timer.persistent, Some(true));
+        assert_eq!(timer.unit.as_deref(), Some("dev.mise.my-sync.service"));
         file::remove_file(&p).unwrap();
     }
 }
