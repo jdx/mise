@@ -1835,6 +1835,11 @@ Configure the collector endpoint and other options using the standard OpenTeleme
 environment variables (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
 `OTEL_SERVICE_NAME`, etc.).
 
+W3C trace context is propagated in both directions: if `TRACEPARENT` is set in the
+environment (e.g. by CI or an outer `mise run`), the run joins that trace, and each
+task's environment receives `TRACEPARENT`/`TRACESTATE` so nested `mise run` and
+OTEL-aware tools join the task's span.
+
 This flag prevents mise from unexpectedly emitting spans in environments that set
 `OTEL_EXPORTER_OTLP_ENDPOINT` for other tools.
 """

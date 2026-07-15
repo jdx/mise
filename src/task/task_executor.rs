@@ -263,6 +263,7 @@ impl TaskExecutor {
         dep_ran: bool,
         semaphore: Arc<Semaphore>,
         permit: &mut Option<OwnedSemaphorePermit>,
+        trace_env: Option<crate::otel::TraceEnv>,
     ) -> Result<bool> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
@@ -346,6 +347,26 @@ impl TaskExecutor {
                 "MISE_ENV",
                 crate::env::MISE_ENV.join(","),
             );
+        }
+        // Propagate W3C trace context so nested `mise run` and OTEL-aware
+        // tools the task invokes join this task's distributed trace.
+        // Excluded from __MISE_DIFF so a nested `mise hook-env` doesn't
+        // treat them as mise-managed env and unset/overwrite them.
+        if let Some(te) = &trace_env {
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "TRACEPARENT",
+                te.traceparent.clone(),
+            );
+            if let Some(ts) = &te.tracestate {
+                Self::insert_env_excluded_from_nested_mise_diff(
+                    &mut env,
+                    &mut nested_mise_diff_exclude_keys,
+                    "TRACESTATE",
+                    ts.clone(),
+                );
+            }
         }
         if let Some(cwd) = &*crate::dirs::CWD {
             Self::insert_env_excluded_from_nested_mise_diff(

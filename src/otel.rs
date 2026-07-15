@@ -17,9 +17,11 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use eyre::Result;
+use opentelemetry::propagation::TextMapPropagator;
 use opentelemetry::trace::{Span as _, Status, TraceContextExt, Tracer, TracerProvider as _};
 use opentelemetry::{Array, Context, KeyValue, StringValue, Value};
 use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::runtime;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
@@ -106,13 +108,21 @@ impl RunTelemetry {
     }
 
     fn new(requested_task_names: &[String], provider: SdkTracerProvider) -> Self {
+        Self::new_with_parent(requested_task_names, provider, parent_cx_from_env())
+    }
+
+    fn new_with_parent(
+        requested_task_names: &[String],
+        provider: SdkTracerProvider,
+        parent_cx: Context,
+    ) -> Self {
         let root_name = if requested_task_names.is_empty() {
             "mise run".to_string()
         } else {
             format!("mise run {}", requested_task_names.join(" "))
         };
         let tracer = provider.tracer("mise.tasks");
-        let mut root_span = tracer.start_with_context(root_name, &Context::new());
+        let mut root_span = tracer.start_with_context(root_name, &parent_cx);
         root_span.set_attribute(KeyValue::new("mise.span_type", "run"));
         let root_cx = Context::new().with_span(root_span);
         Self {
@@ -227,6 +237,46 @@ impl Drop for Inner {
     }
 }
 
+/// W3C Trace Context env vars for a task's environment, so nested
+/// `mise run` and OTEL-aware tools the task invokes join this trace.
+/// Plain strings — the task executor never sees OTEL types.
+/// https://opentelemetry.io/docs/specs/otel/context/env-carriers/
+pub struct TraceEnv {
+    pub traceparent: String,
+    pub tracestate: Option<String>,
+}
+
+/// Render a live task span's context as `TRACEPARENT`/`TRACESTATE` values
+/// using the standard W3C propagator.
+pub fn trace_env(span: &TaskSpan) -> Option<TraceEnv> {
+    let cx = Context::new().with_remote_span_context(span.span_context().clone());
+    let mut carrier: HashMap<String, String> = HashMap::new();
+    TraceContextPropagator::new().inject_context(&cx, &mut carrier);
+    Some(TraceEnv {
+        traceparent: carrier.remove("traceparent")?,
+        tracestate: carrier.remove("tracestate").filter(|ts| !ts.is_empty()),
+    })
+}
+
+/// Parent context extracted from the `TRACEPARENT`/`TRACESTATE` env vars,
+/// set by an OTEL-aware parent (CI, or an outer `mise run`). An invalid or
+/// absent traceparent yields an empty context, i.e. a new root trace.
+fn parent_cx_from_env() -> Context {
+    match std::env::var("TRACEPARENT") {
+        Ok(tp) => extract_parent_cx(&tp, std::env::var("TRACESTATE").ok().as_deref()),
+        Err(_) => Context::new(),
+    }
+}
+
+fn extract_parent_cx(traceparent: &str, tracestate: Option<&str>) -> Context {
+    let mut carrier = HashMap::new();
+    carrier.insert("traceparent".to_string(), traceparent.to_string());
+    if let Some(ts) = tracestate {
+        carrier.insert("tracestate".to_string(), ts.to_string());
+    }
+    TraceContextPropagator::new().extract(&carrier)
+}
+
 /// Human-readable span name for a task (display name + args).
 fn task_span_name(task: &Task) -> String {
     let base = if task.display_name.is_empty() {
@@ -324,7 +374,9 @@ mod tests {
             .with_simple_exporter(exporter.clone())
             .build();
         let names: Vec<String> = task_names.iter().map(|s| s.to_string()).collect();
-        (RunTelemetry::new(&names, provider), exporter)
+        // new_with_parent so tests are hermetic to TRACEPARENT in the env
+        let t = RunTelemetry::new_with_parent(&names, provider, Context::new());
+        (t, exporter)
     }
 
     fn task_for(name: &str, args: &[&str], config_root: Option<&str>) -> Task {
@@ -476,6 +528,70 @@ mod tests {
             get("process.command_args"),
             Some(Value::Array(Array::String(argv)))
         );
+    }
+
+    const UPSTREAM_TRACEPARENT: &str = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+
+    #[test]
+    fn root_span_joins_upstream_trace_from_traceparent() {
+        let exporter = RetainingSpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let parent_cx = extract_parent_cx(UPSTREAM_TRACEPARENT, Some("vendor=value"));
+        let t = RunTelemetry::new_with_parent(&[], provider, parent_cx);
+        t.finish();
+
+        let root = &exporter.finished_spans()[0];
+        assert_eq!(
+            root.span_context.trace_id().to_string(),
+            "0af7651916cd43dd8448eb211c80319c"
+        );
+        assert_eq!(root.parent_span_id.to_string(), "b7ad6b7169203331");
+        assert_eq!(root.span_context.trace_state().header(), "vendor=value");
+    }
+
+    #[test]
+    fn invalid_traceparent_starts_a_new_trace() {
+        let exporter = RetainingSpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let parent_cx = extract_parent_cx("00-not-valid-01", None);
+        let t = RunTelemetry::new_with_parent(&[], provider, parent_cx);
+        t.finish();
+
+        let root = &exporter.finished_spans()[0];
+        assert_eq!(root.parent_span_id, opentelemetry::trace::SpanId::INVALID);
+        assert!(root.span_context.is_valid());
+    }
+
+    #[test]
+    fn trace_env_carries_the_live_task_span_context() {
+        let (t, _exporter) = test_telemetry(&[]);
+        let task = task_for("build", &[], None);
+        let span = t.start_task(&task, None);
+        let te = trace_env(&span).unwrap();
+        assert_eq!(
+            te.traceparent,
+            format!(
+                "00-{}-{}-01",
+                span.span_context().trace_id(),
+                span.span_context().span_id()
+            )
+        );
+        // Round-trip: a nested run extracting this env joins the same trace.
+        let cx = extract_parent_cx(&te.traceparent, te.tracestate.as_deref());
+        assert_eq!(
+            cx.span().span_context().trace_id(),
+            span.span_context().trace_id()
+        );
+        assert_eq!(
+            cx.span().span_context().span_id(),
+            span.span_context().span_id()
+        );
+        t.end_task(span, &task, &Ok(true));
+        t.finish();
     }
 
     #[test]

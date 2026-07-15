@@ -602,6 +602,7 @@ impl Run {
                 .otel
                 .as_ref()
                 .map(|otel| otel.start_task(&task, ctx.config.project_root.as_ref()));
+            let trace_env = otel_span.as_ref().and_then(crate::otel::trace_env);
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(
                 &task,
                 &ctx.config,
@@ -610,6 +611,7 @@ impl Run {
                 dep_ran,
                 semaphore,
                 &mut permit,
+                trace_env,
             ))
             .catch_unwind()
             .await
@@ -824,6 +826,7 @@ impl Run {
         dep_ran: bool,
         semaphore: Arc<tokio::sync::Semaphore>,
         permit: &mut Option<tokio::sync::OwnedSemaphorePermit>,
+        trace_env: Option<crate::otel::TraceEnv>,
     ) -> Result<bool> {
         self.executor
             .as_ref()
@@ -836,6 +839,7 @@ impl Run {
                 dep_ran,
                 semaphore,
                 permit,
+                trace_env,
             )
             .await
     }
