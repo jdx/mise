@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "d2f60540b2e6",
+  "session_id": "019f66a6-a0ff-7b71-bd4a-8f4397a00da3",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-15T16:50:54.087096Z",
+  "branch": "codex/fix-brew-cask-homebrew-metadata",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/system/packages/brew/cask.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "b17fbd6332ff",
+  "token_usage": {
+    "input_tokens": 144424,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3752192,
+    "output_tokens": 7803,
+    "api_call_count": 47
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-15T16:50:54.071705Z",
+    "agent_lines": 28,
+    "agent_removed": 4,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 28,
+    "total_lines_changed": 32,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
