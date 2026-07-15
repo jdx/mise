@@ -51,12 +51,6 @@ pub enum Hooks {
     Postinstall,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum HookMode {
-    Execute,
-    Preview,
-}
-
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
 pub enum HookScripts {
@@ -297,7 +291,7 @@ pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell
         mu.drain(..).collect::<Vec<_>>()
     };
     for hook in hooks {
-        run_one_hook(config, ts, hook, Some(shell), HookMode::Execute).await;
+        run_one_hook(config, ts, hook, Some(shell), false).await;
     }
 }
 
@@ -334,9 +328,9 @@ pub async fn run_one_hook(
     ts: &Toolset,
     hook: Hooks,
     shell: Option<&dyn Shell>,
-    mode: HookMode,
+    dry_run: bool,
 ) {
-    run_one_hook_with_context(config, ts, hook, shell, None, mode).await
+    run_one_hook_with_context(config, ts, hook, shell, None, dry_run).await
 }
 
 /// Run a hook with optional installed tools context (for postinstall hooks)
@@ -347,7 +341,7 @@ pub async fn run_one_hook_with_context(
     hook: Hooks,
     shell: Option<&dyn Shell>,
     installed_tools: Option<&[InstalledToolInfo]>,
-    mode: HookMode,
+    dry_run: bool,
 ) {
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
         return;
@@ -391,7 +385,7 @@ pub async fn run_one_hook_with_context(
                 _ => {}
             }
         }
-        run_matched_hook(config, ts, root, h, shell, installed_tools, mode).await;
+        run_matched_hook(config, ts, root, h, shell, installed_tools, dry_run).await;
     }
 }
 
@@ -430,7 +424,7 @@ pub async fn run_enter_hooks_for_newly_loaded_configs(
         if !newly_loaded_roots.contains(&root) {
             continue;
         }
-        run_matched_hook(config, ts, &root, &h, Some(shell), None, HookMode::Execute).await;
+        run_matched_hook(config, ts, &root, &h, Some(shell), None, false).await;
     }
 }
 
@@ -441,9 +435,9 @@ async fn run_matched_hook(
     hook: &Hook,
     shell: Option<&dyn Shell>,
     installed_tools: Option<&[InstalledToolInfo]>,
-    mode: HookMode,
+    dry_run: bool,
 ) {
-    if mode == HookMode::Preview {
+    if dry_run {
         if let Err(e) = preview_matched_hook(root, hook) {
             warn!(
                 "failed to preview {} hook in {}: {e}",

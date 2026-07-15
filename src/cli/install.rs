@@ -500,18 +500,13 @@ impl Install {
                 } else {
                     install_config.get_toolset().await?
                 };
-                let hook_mode = if self.is_dry_run() {
-                    hooks::HookMode::Preview
-                } else {
-                    hooks::HookMode::Execute
-                };
                 hooks::run_one_hook_with_context(
                     &install_config,
                     ts,
                     Hooks::Postinstall,
                     None,
                     Some(&[]),
-                    hook_mode,
+                    self.is_dry_run(),
                 )
                 .await;
                 (vec![], Ok(()))
