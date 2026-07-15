@@ -5,6 +5,7 @@
 # fallback behavior; this verifies that floating mode can download the R2
 # artifact, validate it, and install it in the cache.
 
+: "${MISE_CACHE_DIR:?Environment variable MISE_CACHE_DIR must be set}"
 archive="$MISE_CACHE_DIR/mise-registry/registry.tar.zst"
 rm -rf "$MISE_CACHE_DIR/mise-registry"
 
