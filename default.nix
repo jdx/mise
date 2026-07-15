@@ -32,6 +32,11 @@ rustPlatform.buildRustPackage {
 
   LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
 
+  # tera-contrib's now() resolves its timezone by name (TimeZone::get("UTC")),
+  # which requires a tzdb. The build sandbox provides none, so tests calling
+  # now() fail with "Unknown timezone: UTC".
+  TZDIR = "${pkgs.tzdata}/share/zoneinfo";
+
   prePatch = ''
     substituteInPlace ./src/test.rs ./test/data/plugins/**/bin/* \
       --replace '/usr/bin/env bash' '${bash}/bin/bash'
