@@ -155,7 +155,10 @@ pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         .iter()
         .map(|manager| manager.name().to_string())
         .collect::<std::collections::HashSet<_>>();
-    for (name, plugin_type) in crate::toolset::install_state::list_plugins().iter() {
+    let Some(plugins) = crate::toolset::install_state::try_list_plugins() else {
+        return managers;
+    };
+    for (name, plugin_type) in plugins.iter() {
         if *plugin_type != crate::plugins::PluginType::Package {
             continue;
         }
@@ -171,8 +174,4 @@ pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         }
     }
     managers
-}
-
-pub fn get_manager(name: &str) -> Option<Arc<dyn SystemPackageManager>> {
-    all_managers().into_iter().find(|m| m.name() == name)
 }

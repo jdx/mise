@@ -1150,13 +1150,12 @@ impl BootstrapStatus {
         let mut json_out = serde_json::Map::new();
         for mp in system::packages_from_config(config) {
             let name = mp.manager.name();
-            let unavailable = mp.manager.unavailable_reason_async().await;
-            if mp.disabled || unavailable.is_some() {
-                let reason = if mp.disabled {
-                    "excluded by the system_packages.managers setting".to_string()
-                } else {
-                    unavailable.unwrap()
-                };
+            let reason = if mp.disabled {
+                Some("excluded by the system_packages.managers setting".to_string())
+            } else {
+                mp.manager.unavailable_reason_async().await
+            };
+            if let Some(reason) = reason {
                 for req in &mp.requests {
                     report.row(
                         "packages",

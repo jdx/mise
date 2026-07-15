@@ -478,13 +478,12 @@ impl Doctor {
         let mut total_missing = 0;
         for mp in mgrs {
             let name = mp.manager.name();
-            let unavailable = mp.manager.unavailable_reason_async().await;
-            if mp.disabled || unavailable.is_some() {
-                let reason = if mp.disabled {
-                    "excluded by the system_packages.managers setting".to_string()
-                } else {
-                    unavailable.unwrap()
-                };
+            let reason = if mp.disabled {
+                Some("excluded by the system_packages.managers setting".to_string())
+            } else {
+                mp.manager.unavailable_reason_async().await
+            };
+            if let Some(reason) = reason {
                 map.insert(
                     name.into(),
                     serde_json::json!({
@@ -714,13 +713,12 @@ impl Doctor {
         let mut total_missing = 0;
         for mp in mgrs {
             let name = mp.manager.name();
-            let unavailable = mp.manager.unavailable_reason_async().await;
-            if mp.disabled || unavailable.is_some() {
-                let reason = if mp.disabled {
-                    "excluded by the system_packages.managers setting".to_string()
-                } else {
-                    unavailable.unwrap()
-                };
+            let reason = if mp.disabled {
+                Some("excluded by the system_packages.managers setting".to_string())
+            } else {
+                mp.manager.unavailable_reason_async().await
+            };
+            if let Some(reason) = reason {
                 lines.push(format!(
                     "{name}: unavailable ({reason}), {} package(s) skipped",
                     mp.requests.len()
