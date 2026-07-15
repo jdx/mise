@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "1284a67d2356",
+  "session_id": "019f677b-a986-7692-b9ee-09ff8916f128",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-15T20:42:36.849413Z",
+  "branch": "codex/bootstrap-repos-update-exec",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/bootstrap/repos.md",
+    "e2e/cli/test_bootstrap_repos",
+    "src/cli/bootstrap.rs",
+    "src/cli/system/install.rs",
+    "src/system/repos.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "cabbb34224ab",
+  "token_usage": {
+    "input_tokens": 119602,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3678208,
+    "output_tokens": 13532,
+    "api_call_count": 60
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-15T20:42:36.8399Z",
+    "agent_lines": 411,
+    "agent_removed": 6,
+    "human_added": 112,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 523,
+    "total_lines_changed": 535,
+    "agent_percentage": 77.94392523364486,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
