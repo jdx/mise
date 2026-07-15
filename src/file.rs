@@ -907,13 +907,11 @@ pub fn canonicalize_or_self(path: &Path) -> PathBuf {
 
 /// Returns true if `path` is one of mise's shim directories.
 ///
-/// Two dirs qualify: the user shims dir (`dirs::SHIMS`) and the system shims
-/// dir (`$MISE_SYSTEM_DATA_DIR/shims`). Devcontainer / Docker setups built
-/// with `mise install --system` put both on PATH, so subprocess-env filters
-/// that strip "the shims dir" must consider both — otherwise the recursion
-/// these filters were added to prevent (#8475 for `dependency_env`, #8816
-/// for `which_shim`, this for the file.rs helpers) leaks back in through the
-/// remaining dir.
+/// The configured user shims dir (`dirs::SHIMS`) and system shims dir
+/// (`$MISE_SYSTEM_DATA_DIR/shims`) qualify. An active shim outside these
+/// configured directories is rejected per candidate instead of treating its
+/// entire parent directory as shims, since that directory may also contain
+/// legitimate executables.
 ///
 /// Uses `paths_eq` + `replace_path` for the fast path (expands `~`,
 /// case-insensitive on macOS/Windows), then falls back to `canonicalize_or_self`
@@ -929,6 +927,17 @@ pub fn is_mise_shims_dir(path: &Path) -> bool {
     let canon_user = canonicalize_or_self(&dirs::SHIMS);
     let canon_sys = canonicalize_or_self(&sys_shims);
     paths_eq(&canon_input, &canon_user) || paths_eq(&canon_input, &canon_sys)
+}
+
+/// Returns true if `path` resolves to the shim that delegated to this mise
+/// process. Candidate-level filtering avoids excluding legitimate sibling
+/// executables that happen to share a directory with the active shim.
+pub fn is_active_mise_shim(path: &Path) -> bool {
+    env::MISE_SHIM_PATH
+        .read()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|active| paths_eq(&canonicalize_or_self(path), &canonicalize_or_self(active)))
 }
 
 /// Build a PATH value with mise shims filtered out, suitable for passing to
