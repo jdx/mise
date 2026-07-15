@@ -95,6 +95,7 @@ impl DepsInstall {
 
         let install_opts = InstallOptions {
             missing_args_only: false,
+            dry_run: self.dry_run,
             ..Default::default()
         };
         ts.install_missing_versions(&mut install_config, &install_opts)
