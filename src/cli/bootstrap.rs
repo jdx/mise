@@ -31,7 +31,7 @@ use clap::{Subcommand, ValueEnum};
 /// Runs the bootstrap steps for the current config in order:
 ///
 /// 0. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
-/// 0.7. `[bootstrap.hooks.pre-packages]` — optional setup hook
+///    0.7. `[bootstrap.hooks.pre-packages]` — optional setup hook
 /// 1. Install built-in-manager entries from `[bootstrap.packages]`
 /// 2. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
 ///    surrounded by `pre-repos`/`post-repos` hooks
@@ -51,7 +51,7 @@ use clap::{Subcommand, ValueEnum};
 ///    surrounded by `pre-user`/`post-user` hooks
 /// 9. `mise install` — install missing tools from `[tools]`
 ///    surrounded by `pre-tools`/`post-tools` hooks
-/// 9.5. Install package-plugin entries from `[bootstrap.packages]`, then run
+///    9.5. Install package-plugin entries from `[bootstrap.packages]`, then run
 ///    `[bootstrap.hooks.post-packages]`
 /// 10. `mise run bootstrap` — if a task named `bootstrap` is defined
 /// 11. `[bootstrap.hooks.final]` — optional final hook
@@ -572,6 +572,7 @@ impl Bootstrap {
         let skip = self.skip_parts();
         let mut follow_up = BootstrapFollowUp::new(self.dry_run);
         let mut dry_run_config_files = None;
+        let mut post_packages_ran = false;
 
         if skip.contains(&BootstrapPart::Plugins) {
             debug!("bootstrap: package plugins skipped");
@@ -584,7 +585,11 @@ impl Bootstrap {
         } else {
             self.run_hooks(&hooks, BootstrapHookPhase::PrePackages)
                 .await?;
-            let mgrs = system::packages_from_config(&config)
+            let all_mgrs = system::packages_from_config(&config);
+            let has_plugin_packages = all_mgrs.iter().any(|mp| mp.manager.is_plugin())
+                || (self.dry_run
+                    && !system::pending_plugin_packages_from_config(&config).is_empty());
+            let mgrs = all_mgrs
                 .into_iter()
                 .filter(|mp| !mp.manager.is_plugin())
                 .collect::<Vec<_>>();
@@ -601,6 +606,11 @@ impl Bootstrap {
                     yes: self.yes,
                 };
                 driver::run(mgrs, Action::Install, &opts).await?;
+            }
+            if !has_plugin_packages {
+                self.run_hooks(&hooks, BootstrapHookPhase::PostPackages)
+                    .await?;
+                post_packages_ran = true;
             }
         }
 
@@ -815,8 +825,20 @@ impl Bootstrap {
                 )
                 .await?;
             }
-            self.run_hooks(&hooks, BootstrapHookPhase::PostPackages)
-                .await?;
+            if self.dry_run {
+                for (name, requests) in system::pending_plugin_packages_from_config(&config) {
+                    let packages = requests
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    info!("{name}: would install {packages}");
+                }
+            }
+            if !post_packages_ran {
+                self.run_hooks(&hooks, BootstrapHookPhase::PostPackages)
+                    .await?;
+            }
         }
 
         if skip.contains(&BootstrapPart::Task) {

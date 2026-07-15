@@ -262,6 +262,22 @@ pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
     packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps)
 }
 
+/// Package requests for declared package plugins that are not installed yet.
+///
+/// During a bootstrap dry run, plugin installation is intentionally not
+/// persisted, but the later package phase still needs to show the packages
+/// that the newly declared plugins would manage.
+pub fn pending_plugin_packages_from_config(
+    config: &Config,
+) -> IndexMap<String, Vec<PackageRequest>> {
+    let declared = plugins_from_config(config);
+    let brew_taps = brew_taps_from_config(config);
+    package_requests_from_config_files(&config.config_files, &brew_taps)
+        .into_iter()
+        .filter(|(name, _)| declared.contains_key(name) && packages::get_manager(name).is_none())
+        .collect()
+}
+
 /// Aggregate `[bootstrap.packages]` from the current merged config plus every
 /// tracked config file, mirroring the way `mise prune` protects tool versions
 /// still referenced by other projects.
@@ -324,6 +340,17 @@ fn packages_from_config_files_with_brew_taps(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
 ) -> Vec<ManagerPackages> {
+    resolve_managers(
+        package_requests_from_config_files(config_files, brew_taps),
+        false,
+    )
+    .expect("non-strict resolve is infallible")
+}
+
+fn package_requests_from_config_files(
+    config_files: &ConfigMap,
+    brew_taps: &IndexMap<String, String>,
+) -> IndexMap<String, Vec<PackageRequest>> {
     let mut merged: IndexMap<String, String> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config_files.values().rev() {
@@ -356,7 +383,7 @@ fn packages_from_config_files_with_brew_taps(
             Err(err) => warn!("[bootstrap.packages]: {err}"),
         }
     }
-    resolve_managers(by_mgr, false).expect("non-strict resolve is infallible")
+    by_mgr
 }
 
 /// Aggregate `[bootstrap.macos.defaults]` across all loaded config files.

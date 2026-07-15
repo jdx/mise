@@ -157,6 +157,7 @@ pub(crate) async fn install_plugin(
     }
     if !force && plugin.is_installed() {
         warn!("Plugin {name} already installed");
+        warn!("Use --force to install anyway");
     } else {
         let mpr = MultiProgressReport::get();
         plugin

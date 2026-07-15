@@ -81,6 +81,17 @@ EOF
 assert_contains "mise bootstrap packages status" "required binary"
 assert_fail "mise bootstrap packages apply --manager fake --yes" "not available"
 
+# Without plugin packages, post-packages retains its original position before
+# the tools phase.
+cat >mise.toml <<'EOF'
+[bootstrap.hooks.post-packages]
+run = "touch post-packages-ran"
+
+[bootstrap.hooks.pre-tools]
+run = "test -f post-packages-ran"
+EOF
+assert "mise bootstrap --yes" ""
+
 cp -R fake-package-plugin declared-package-plugin
 cat >declared-package-plugin/mise.plugin.toml <<'EOF'
 [package-manager]
@@ -98,10 +109,15 @@ declared = "file://$PWD/declared-package-plugin"
 "declared:self-provisioned" = "3.0"
 EOF
 
+assert_contains "mise bootstrap --dry-run --yes 2>&1" "declared: would install self-provisioned@3.0"
+assert_fail "test -d $MISE_DATA_DIR/plugins/declared"
 assert "mise bootstrap --yes" ""
 assert_contains "mise plugin ls" "declared"
 assert "cat $HOME/.fake-packages/self-provisioned" "3.0"
 assert_contains "mise bootstrap plugins status" "installed"
+assert_contains \
+  "mise plugin install package:declared file://$PWD/declared-package-plugin 2>&1" \
+  "Use --force to install anyway"
 
 # A required binary supplied only by the global toolset must pass the async
 # availability gate even when the configured shims directory is empty.
