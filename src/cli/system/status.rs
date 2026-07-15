@@ -28,11 +28,12 @@ impl SystemStatus {
         let mut json_out = serde_json::Map::new();
         for mp in mgrs {
             let name = mp.manager.name();
-            if mp.disabled || !mp.manager.is_available() {
+            let unavailable = mp.manager.unavailable_reason_async().await;
+            if mp.disabled || unavailable.is_some() {
                 let reason = if mp.disabled {
                     "excluded by the system_packages.managers setting".to_string()
                 } else {
-                    mp.manager.unavailable_reason()
+                    unavailable.unwrap()
                 };
                 if self.json {
                     json_out.insert(

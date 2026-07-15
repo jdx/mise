@@ -88,6 +88,15 @@ pub trait SystemPackageManager: Send + Sync {
     /// human-readable reason `is_available()` is false, for `status`/`doctor`
     fn unavailable_reason(&self) -> String;
 
+    /// Return why this manager cannot run, or `None` when it is available.
+    ///
+    /// The async form lets plugin managers resolve host binaries from mise's
+    /// global toolset as well as the process PATH and shims. Built-in managers
+    /// use the synchronous checks above by default.
+    async fn unavailable_reason_async(&self) -> Option<String> {
+        (!self.is_available()).then(|| self.unavailable_reason())
+    }
+
     /// Query installed state. Must be side-effect free and never elevate.
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>>;
 
@@ -113,6 +122,7 @@ pub trait SystemPackageManager: Send + Sync {
     }
 
     /// Whether this manager is supplied by a package plugin.
+    #[allow(dead_code)] // used by the stacked bootstrap orchestration change
     fn is_plugin(&self) -> bool {
         false
     }

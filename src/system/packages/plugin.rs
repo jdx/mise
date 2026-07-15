@@ -164,6 +164,28 @@ impl SystemPackageManager for PackagePluginManager {
         }
     }
 
+    async fn unavailable_reason_async(&self) -> Option<String> {
+        if !self.platform_available() {
+            return Some(format!(
+                "not available on {}",
+                crate::config::Settings::get().os()
+            ));
+        }
+        let env = match self.hook_env().await {
+            Ok(env) => env,
+            Err(err) => return Some(format!("failed to resolve host tool PATH: {err:#}")),
+        };
+        let paths = env
+            .get("PATH")
+            .map(|path| split_paths(path).collect::<Vec<_>>())
+            .unwrap_or_default();
+        self.missing_from_path(&paths).map(|binary| {
+            format!(
+                "required binary '{binary}' not found; add it to [tools] or install it manually"
+            )
+        })
+    }
+
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
         let env = self.checked_hook_env().await?;
         let response = self
