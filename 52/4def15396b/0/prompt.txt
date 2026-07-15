@@ -1,11 +1,1 @@
-# Files mentioned by the user:
-
-## Plan: Bootstrap package-manager plugins Goal Let plugins add new package types …: /Users/jdx/.codex/attachments/d96d4512-82d9-4a62-a0e8-334e611e35bc/pasted-text.txt
-
-The attached pasted text file(s) contain the user's request. Read and act on that content.
-
-## My request for Codex:
-
----
-
 address pr feedback and failing pr checks
