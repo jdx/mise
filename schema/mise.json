@@ -2942,6 +2942,39 @@
       ],
       "unevaluatedProperties": false,
       "type": "object"
+    },
+    "launchd_calendar_interval": {
+      "type": "object",
+      "description": "calendar schedule fields for launchd StartCalendarInterval",
+      "properties": {
+        "minute": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 59
+        },
+        "hour": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 23
+        },
+        "day": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31
+        },
+        "weekday": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "month": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        }
+      },
+      "minProperties": 1,
+      "additionalProperties": false
     }
   },
   "unevaluatedProperties": false,
@@ -3472,6 +3505,21 @@
                         "type": "integer",
                         "minimum": 0,
                         "description": "write StartInterval in seconds"
+                      },
+                      "start_calendar_interval": {
+                        "description": "write one or more StartCalendarInterval schedules",
+                        "oneOf": [
+                          {
+                            "$ref": "#/$defs/launchd_calendar_interval"
+                          },
+                          {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                              "$ref": "#/$defs/launchd_calendar_interval"
+                            }
+                          }
+                        ]
                       },
                       "environment": {
                         "type": "object",

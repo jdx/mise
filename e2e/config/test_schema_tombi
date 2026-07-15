@@ -74,6 +74,17 @@ e2e_args = { default = "--headless", redact = true }
 
 [tool_alias.java.versions]
 "11.0" = "temurin-11"
+
+[bootstrap.macos.launchd.agents.daily]
+program = "/bin/echo"
+start_calendar_interval = { hour = 2, minute = 0 }
+
+[bootstrap.macos.launchd.agents.boundaries]
+program = "/bin/echo"
+start_calendar_interval = [
+  { minute = 0, hour = 0, day = 1, weekday = 0, month = 1 },
+  { minute = 59, hour = 23, day = 31, weekday = 7, month = 12 },
+]
 TOML
 
 # Create a separate file for age schema coverage so mise does not try to decrypt
@@ -163,7 +174,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -261,6 +272,25 @@ shell = "bash -c"
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-watch-files.toml"
+
+# Verify that launchd calendar intervals match runtime validation
+for interval in \
+  '{}' \
+  '[]' \
+  '[{}]' \
+  '{ minute = 60 }' \
+  '{ hour = 24 }' \
+  '{ day = 0 }' \
+  '{ weekday = 8 }' \
+  '{ month = 13 }' \
+  '{ second = 0 }'; do
+  cat >"$HOME/workdir/mise-bad-launchd-calendar.toml" <<TOML
+[bootstrap.macos.launchd.agents.invalid]
+program = "/bin/echo"
+start_calendar_interval = $interval
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-launchd-calendar.toml"
+done
 
 cat >"$HOME/workdir/mise-bad-task-os.toml" <<'TOML'
 [build]
