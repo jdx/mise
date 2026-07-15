@@ -1069,30 +1069,13 @@ impl Lockfile {
         platform_info: PlatformInfo,
     ) {
         let tools = self.tools.entry(short.to_string()).or_default();
-        // Find an exact option variant first. If a backend has just started
-        // reporting options, only adopt its legacy empty-options entry when that
-        // entry already owns this platform. Empty options may also be a legitimate
-        // platform-specific variant (for example RubyInstaller2 on Windows), so
-        // adopting a disjoint platform would conflate different installers.
+        // Platform option migration is handled while merging freshly resolved
+        // entries. Writes here always target the exact resolved option variant.
         let idx = tools
             .iter()
-            .position(|t| t.version == version && &t.options == options)
-            .or_else(|| {
-                if options.is_empty() {
-                    None
-                } else {
-                    tools.iter().position(|t| {
-                        t.version == version
-                            && t.options.is_empty()
-                            && t.platforms.contains_key(platform_key)
-                    })
-                }
-            });
+            .position(|t| t.version == version && &t.options == options);
         if let Some(idx) = idx {
             let tool = &mut tools[idx];
-            if tool.options.is_empty() && !options.is_empty() {
-                tool.options = options.clone();
-            }
             // Merge with existing platform info, preferring new values when present.
             // When the URL changes, drop existing checksum/size/url_api — those fields
             // describe a specific artifact and are stale once the URL points elsewhere.
@@ -1181,17 +1164,11 @@ impl Lockfile {
             });
         }
 
-        // A resolved platform belongs to exactly one option variant. Besides
-        // preventing duplicate serialization, this repairs lockfiles written by
-        // the old empty-options adoption logic once that platform is re-locked.
-        for tool in tools.iter_mut() {
-            if tool.version == version && &tool.options != options {
-                tool.platforms.remove(platform_key);
-            }
-        }
-        tools.retain(|tool| {
-            tool.version != version || &tool.options == options || !tool.platforms.is_empty()
-        });
+        // Do not remove this platform from sibling option variants. A monorepo
+        // root lockfile can legitimately contain the same version and platform
+        // for multiple requests with different options. Legacy migration is
+        // handled by the consensus-based merge pass, where all contributing
+        // requests are available.
     }
 
     /// Save the lockfile to disk (public for mise lock command)
@@ -1655,10 +1632,10 @@ pub fn update_lockfiles(
         }
 
         let tools_by_short: HashMap<String, Vec<LockfileTool>> = tool_versions_by_short
-            .into_iter()
+            .iter()
             .map(|(short, versions)| {
                 Ok((
-                    short,
+                    short.clone(),
                     versions
                         .iter()
                         .map(lockfile_tool_from_tool_version)
@@ -1680,11 +1657,32 @@ pub fn update_lockfiles(
             if regressing_tools.contains(&short) {
                 continue;
             }
-            let mut merged_tools = merge_tool_entries(entries, existing_lockfile.tools.get(&short));
+            let versions = &tool_versions_by_short[&short];
+            // Normal monorepo installs load only the current config hierarchy,
+            // not every sibling project. Consensus among those visible requests
+            // is therefore not authoritative for the shared root lockfile. Fail
+            // closed there and preserve legacy entries; ordinary lockfiles can
+            // safely migrate when all requests for the file agree.
+            let rekey_decisions = if is_monorepo_root_lockfile {
+                RekeyDecisions::new()
+            } else {
+                build_rekey_decisions(versions, existing_lockfile.tools.get(&short))
+            };
+            let (mut merged_tools, consumed_keys) = merge_tool_entries(
+                entries,
+                existing_lockfile.tools.get(&short),
+                |version, platform| {
+                    rekey_decisions
+                        .get(&(version.to_string(), platform.to_key()))
+                        .cloned()
+                        .flatten()
+                },
+            );
             if is_monorepo_root_lockfile {
                 preserve_absent_tool_entries(
                     &mut merged_tools,
                     existing_lockfile.tools.get(&short),
+                    &consumed_keys,
                 );
             }
             existing_lockfile.tools.insert(short, merged_tools);
@@ -1867,23 +1865,31 @@ fn tool_version_needs_auto_lock(
             let target = PlatformTarget::new(variant.clone());
             let options = backend.resolve_lockfile_options(&tv.request, &target)?;
             let platform_key = variant.to_key();
-            let Some(tool) = tools
-                .iter()
-                .find(|tool| tool.version == tv.version && tool.options == options)
-            else {
-                return Ok(true);
-            };
-            if !tool
-                .platforms
-                .get(&platform_key)
-                .is_some_and(|info| info.checksum.is_some() && info.url.is_some())
-            {
+            if lockfile_target_needs_auto_lock(tools, &tv.version, &platform_key, &options) {
                 return Ok(true);
             }
         }
     }
 
     Ok(false)
+}
+
+fn lockfile_target_needs_auto_lock(
+    tools: &[LockfileTool],
+    version: &str,
+    platform_key: &str,
+    options: &BTreeMap<String, String>,
+) -> bool {
+    let Some(tool) = tools
+        .iter()
+        .find(|tool| tool.version == version && &tool.options == options)
+    else {
+        return true;
+    };
+    !tool
+        .platforms
+        .get(platform_key)
+        .is_some_and(|info| info.checksum.is_some() && info.url.is_some())
 }
 
 /// Determine target platforms for auto-lock from the pre-install lockfile snapshot.
@@ -2288,18 +2294,87 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
     Ok(())
 }
 
+type RekeyDecisions = HashMap<(String, String), Option<BTreeMap<String, String>>>;
+
+fn record_rekey_decision(
+    decisions: &mut RekeyDecisions,
+    key: (String, String),
+    resolved: Option<BTreeMap<String, String>>,
+) {
+    use std::collections::hash_map::Entry;
+
+    match decisions.entry(key) {
+        Entry::Vacant(entry) => {
+            entry.insert(resolved);
+        }
+        Entry::Occupied(mut entry) if entry.get() != &resolved => {
+            // Resolution errors and disagreement between same-version requests
+            // both fail closed: leave the legacy platform where it is.
+            entry.insert(None);
+        }
+        Entry::Occupied(_) => {}
+    }
+}
+
+fn build_rekey_decisions(
+    versions: &[ToolVersion],
+    existing_tools: Option<&Vec<LockfileTool>>,
+) -> RekeyDecisions {
+    let legacy_platforms: HashMap<&str, BTreeSet<&str>> = existing_tools
+        .into_iter()
+        .flatten()
+        .filter(|tool| tool.options.is_empty())
+        .fold(HashMap::new(), |mut platforms, tool| {
+            platforms
+                .entry(tool.version.as_str())
+                .or_default()
+                .extend(tool.platforms.keys().map(String::as_str));
+            platforms
+        });
+    let mut decisions = HashMap::new();
+
+    for tv in versions {
+        let Some(platforms) = legacy_platforms.get(tv.version.as_str()) else {
+            continue;
+        };
+        for platform_key in platforms {
+            let resolved = Platform::parse(platform_key).ok().and_then(|platform| {
+                let backend = tv.request.backend().ok()?;
+                backend
+                    .resolve_lockfile_options(&tv.request, &PlatformTarget::new(platform))
+                    .ok()
+            });
+            record_rekey_decision(
+                &mut decisions,
+                (tv.version.clone(), (*platform_key).to_string()),
+                resolved,
+            );
+        }
+    }
+
+    decisions
+}
+
 /// Merge tool entries with deduplication by (version, options).
 /// Merges platform info for entries with the same key.
 /// Preserves existing platform info for matching entries.
-/// An existing entry with empty options is adopted into a freshly-resolved
-/// entry for the same version that now has non-empty options, instead of
-/// being silently dropped (#10564).
-fn merge_tool_entries(
+/// Existing empty-options entries are rekeyed platform-by-platform using the
+/// backend's resolved options. This migrates legacy entries without guessing
+/// from platform overlap while preserving data when resolution is ambiguous.
+fn merge_tool_entries<F>(
     entries: Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
-) -> Vec<LockfileTool> {
+    mut resolve: F,
+) -> (
+    Vec<LockfileTool>,
+    HashSet<(String, BTreeMap<String, String>)>,
+)
+where
+    F: FnMut(&str, &Platform) -> Option<BTreeMap<String, String>>,
+{
     // Group by (version, options) - the key for deduplication
     let mut by_key: HashMap<(String, BTreeMap<String, String>), LockfileTool> = HashMap::new();
+    let mut consumed_keys = HashSet::new();
 
     for tool in entries {
         let key = (tool.version.clone(), tool.options.clone());
@@ -2314,83 +2389,84 @@ fn merge_tool_entries(
                 .or_insert(info);
         }
     }
+    let fresh_versions: HashSet<String> =
+        by_key.keys().map(|(version, _)| version.clone()).collect();
 
     // Merge with existing tools to preserve platform info
     if let Some(existing) = existing_tools {
         for existing_tool in existing {
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
-            if let Some(entry) = by_key.get_mut(&key) {
-                // Merge platform info from existing - preserve URLs and prefer sha256
-                for (platform, info) in &existing_tool.platforms {
-                    entry
-                        .platforms
-                        .entry(platform.clone())
-                        .and_modify(|existing| *existing = existing.merge_with(info))
-                        .or_insert(info.clone());
+            if !existing_tool.options.is_empty() {
+                if let Some(entry) = by_key.get_mut(&key) {
+                    // Preserve platform data only for an exact non-empty option
+                    // match. Moving it to another real variant could attach a
+                    // stale checksum to a different artifact.
+                    for (platform, info) in &existing_tool.platforms {
+                        entry
+                            .platforms
+                            .entry(platform.clone())
+                            .and_modify(|existing| *existing = existing.merge_with(info))
+                            .or_insert(info.clone());
+                    }
                 }
                 continue;
             }
-            // No exact (version, options) match. If this existing entry has no
-            // options and a freshly-resolved entry exists for the same version
-            // that now reports options for at least one of the same platforms,
-            // adopt its platform data into that entry. Platform overlap is what
-            // distinguishes a legacy empty-options entry from a legitimate
-            // platform-specific empty-options variant. (#10564, #10996)
-            // Pick the smallest matching key so the adoption target is
-            // deterministic even if several optioned entries share the version
-            // (HashMap iteration order is not).
-            let adopt_key = if existing_tool.options.is_empty() {
-                by_key
-                    .iter()
-                    .filter(|((version, options), entry)| {
-                        version == &existing_tool.version
-                            && !options.is_empty()
-                            && existing_tool
-                                .platforms
-                                .keys()
-                                .any(|platform| entry.platforms.contains_key(platform))
-                    })
-                    .map(|(key, _)| key)
-                    .min()
-                    .cloned()
-            } else {
-                None
-            };
-            if let Some(adopt_key) = adopt_key {
-                let entry = by_key.get_mut(&adopt_key).unwrap();
-                for (platform, info) in &existing_tool.platforms {
-                    entry
+            if !fresh_versions.contains(&existing_tool.version) {
+                continue;
+            }
+
+            for (platform_key, info) in &existing_tool.platforms {
+                let resolved_options = Platform::parse(platform_key)
+                    .ok()
+                    .and_then(|platform| resolve(&existing_tool.version, &platform));
+                let Some(resolved_options) = resolved_options else {
+                    by_key
+                        .entry(key.clone())
+                        .or_insert_with(|| LockfileTool {
+                            version: existing_tool.version.clone(),
+                            backend: existing_tool.backend.clone(),
+                            options: existing_tool.options.clone(),
+                            platforms: BTreeMap::new(),
+                        })
                         .platforms
-                        .entry(platform.clone())
-                        .and_modify(|existing| *existing = existing.merge_with(info))
-                        .or_insert(info.clone());
-                }
-            } else if existing_tool.options.is_empty()
-                && by_key.keys().any(|(version, options)| {
-                    version == &existing_tool.version && !options.is_empty()
-                })
-            {
-                // Keep a disjoint empty-options variant: its platforms may use a
-                // different installer and cannot inherit the other entry's options.
-                by_key.insert(key, existing_tool.clone());
+                        .insert(platform_key.clone(), info.clone());
+                    continue;
+                };
+
+                let target_key = (existing_tool.version.clone(), resolved_options.clone());
+                let target = by_key.entry(target_key).or_insert_with(|| LockfileTool {
+                    version: existing_tool.version.clone(),
+                    backend: existing_tool.backend.clone(),
+                    options: resolved_options,
+                    platforms: BTreeMap::new(),
+                });
+                target
+                    .platforms
+                    .entry(platform_key.clone())
+                    .and_modify(|fresh| *fresh = fresh.merge_with(info))
+                    .or_insert_with(|| info.clone());
+            }
+            if !by_key.contains_key(&key) {
+                consumed_keys.insert(key);
             }
         }
     }
 
-    // Convert to final list
-    by_key
+    let tools = by_key
         .into_values()
         .sorted_by(|a, b| {
             a.version
                 .cmp(&b.version)
                 .then_with(|| a.options.cmp(&b.options))
         })
-        .collect()
+        .collect();
+    (tools, consumed_keys)
 }
 
 fn preserve_absent_tool_entries(
     merged_tools: &mut Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
+    consumed_keys: &HashSet<(String, BTreeMap<String, String>)>,
 ) {
     let Some(existing_tools) = existing_tools else {
         return;
@@ -2400,31 +2476,20 @@ fn preserve_absent_tool_entries(
         .map(|tool| (tool.version.clone(), tool.options.clone()))
         .collect();
 
-    // Snapshot versions freshly merged with non-empty options. After the exact-key
-    // check below filters variants already preserved by merge_tool_entries (such as
-    // RubyInstaller2 on Windows), an unmatched empty-options entry for one of these
-    // versions is a legacy entry whose overlapping platforms were adopted into the
-    // non-empty variant (#10564).
-    let adopted_versions: HashSet<String> = merged_tools
-        .iter()
-        .filter(|t| !t.options.is_empty())
-        .map(|t| t.version.clone())
-        .collect();
-
     for existing_tool in existing_tools {
         let key = (existing_tool.version.clone(), existing_tool.options.clone());
-        if keys.contains(&key) {
-            continue;
-        }
-        // The remaining unmatched empty-options entry was adopted; its platforms
-        // already live in the non-empty entry, so do not resurrect it.
-        if existing_tool.options.is_empty() && adopted_versions.contains(&existing_tool.version) {
+        if keys.contains(&key) || consumed_keys.contains(&key) {
             continue;
         }
         if keys.insert(key) {
             merged_tools.push(existing_tool.clone());
         }
     }
+    merged_tools.sort_by(|a, b| {
+        a.version
+            .cmp(&b.version)
+            .then_with(|| a.options.cmp(&b.options))
+    });
 }
 
 fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
@@ -3354,10 +3419,13 @@ options = { exe = "rg" }
     #[test]
     fn test_preserve_absent_tool_entries_for_monorepo_upsert() {
         let existing = vec![basic_tool("20.0.0", "core:node")];
-        let mut merged =
-            merge_tool_entries(vec![basic_tool("22.0.0", "core:node")], Some(&existing));
+        let (mut merged, consumed) = merge_tool_entries(
+            vec![basic_tool("22.0.0", "core:node")],
+            Some(&existing),
+            |_, _| None,
+        );
 
-        preserve_absent_tool_entries(&mut merged, Some(&existing));
+        preserve_absent_tool_entries(&mut merged, Some(&existing), &consumed);
 
         let versions = merged
             .iter()
@@ -3369,8 +3437,8 @@ options = { exe = "rg" }
     }
 
     #[test]
-    fn test_preserve_absent_does_not_resurrect_adopted_empty_options_entry() {
-        // #10564: after merge_tool_entries adopts an empty-options entry into a
+    fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
+        // #10564: after merge_tool_entries rekeys an empty-options entry into a
         // same-version optioned entry, the monorepo preserve pass must not
         // resurrect the old empty-options entry as a duplicate sibling.
         let mut platforms = BTreeMap::new();
@@ -3396,20 +3464,21 @@ options = { exe = "rg" }
                 ..Default::default()
             },
         )]);
-        let mut merged = merge_tool_entries(
+        let (mut merged, consumed) = merge_tool_entries(
             vec![LockfileTool {
                 version: "26.0.1".to_string(),
                 backend: Some("core:java".to_string()),
-                options,
+                options: options.clone(),
                 platforms: fresh_platforms,
             }],
             Some(&existing),
+            |_, _| Some(options.clone()),
         );
 
-        preserve_absent_tool_entries(&mut merged, Some(&existing));
+        preserve_absent_tool_entries(&mut merged, Some(&existing), &consumed);
 
-        // Single entry: adopted, not duplicated — and it kept the platforms.
-        assert_eq!(merged.len(), 1, "adopted entry duplicated: {merged:?}");
+        // Single entry: rekeyed, not duplicated — and it kept the platforms.
+        assert_eq!(merged.len(), 1, "rekeyed entry duplicated: {merged:?}");
         assert_eq!(
             merged[0].platforms["linux-x64"].checksum.as_deref(),
             Some("sha256:NEW")
@@ -3426,7 +3495,7 @@ options = { exe = "rg" }
             platforms: BTreeMap::new(),
         });
         let mut merged = vec![basic_tool("22.0.0", "core:node")];
-        preserve_absent_tool_entries(&mut merged, Some(&fragmented));
+        preserve_absent_tool_entries(&mut merged, Some(&fragmented), &HashSet::new());
         assert_eq!(
             merged.len(),
             3,
@@ -3435,11 +3504,11 @@ options = { exe = "rg" }
     }
 
     #[test]
-    fn test_merge_tool_entries_adopts_empty_options_entry_on_new_options() {
+    fn test_merge_tool_entries_rekeys_empty_options_entry_on_new_options() {
         // Regression guard for #10564: when a freshly-resolved entry for a
         // version gains non-empty `options` (e.g. java's shorthand_vendor)
         // while the on-disk lockfile still has that version keyed under empty
-        // options, the old entry's platforms must be adopted, not dropped.
+        // options, the old entry's platforms must be rekeyed, not dropped.
         let mut existing_platforms = BTreeMap::new();
         existing_platforms.insert(
             "linux-x64".to_string(),
@@ -3482,8 +3551,10 @@ options = { exe = "rg" }
             platforms: fresh_platforms,
         }];
 
-        let merged = merge_tool_entries(fresh, Some(&existing));
+        let (merged, consumed) =
+            merge_tool_entries(fresh, Some(&existing), |_, _| Some(new_options.clone()));
 
+        assert!(consumed.contains(&("26.0.1".to_string(), BTreeMap::new())));
         assert_eq!(
             merged.len(),
             1,
@@ -3531,21 +3602,45 @@ options = { exe = "rg" }
                 )]),
             },
         ];
-        let fresh = vec![LockfileTool {
-            version: "3.4.2".to_string(),
-            backend: Some("core:ruby".to_string()),
-            options: unix_options,
-            platforms: BTreeMap::from([(
-                "linux-x64".to_string(),
-                PlatformInfo {
-                    url: Some("https://example.com/ruby-linux.tar.gz".to_string()),
-                    ..Default::default()
-                },
-            )]),
-        }];
+        let fresh = vec![
+            LockfileTool {
+                version: "3.4.2".to_string(),
+                backend: Some("core:ruby".to_string()),
+                options: unix_options,
+                platforms: BTreeMap::from([(
+                    "linux-x64".to_string(),
+                    PlatformInfo {
+                        url: Some("https://example.com/ruby-linux.tar.gz".to_string()),
+                        ..Default::default()
+                    },
+                )]),
+            },
+            LockfileTool {
+                version: "3.4.2".to_string(),
+                backend: Some("core:ruby".to_string()),
+                options: BTreeMap::new(),
+                platforms: BTreeMap::from([(
+                    "windows-x64".to_string(),
+                    PlatformInfo {
+                        url: Some("https://example.com/ruby-windows.7z".to_string()),
+                        ..Default::default()
+                    },
+                )]),
+            },
+        ];
 
-        let merged = merge_tool_entries(fresh, Some(&existing));
+        let (merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, platform| {
+            if platform.is_windows() {
+                Some(BTreeMap::new())
+            } else {
+                Some(BTreeMap::from([(
+                    "compile".to_string(),
+                    "false".to_string(),
+                )]))
+            }
+        });
 
+        assert!(consumed.is_empty());
         assert_eq!(
             merged.len(),
             2,
@@ -3572,6 +3667,178 @@ options = { exe = "rg" }
         assert_eq!(first, second, "lockfile serialization was not idempotent");
         assert_eq!(second.matches("[[tools.ruby]]").count(), 2);
         assert_eq!(second.matches("platforms.windows-x64").count(), 1);
+    }
+
+    #[test]
+    fn test_merge_tool_entries_does_not_copy_changed_options_data() {
+        let old_options = BTreeMap::from([("flavor".to_string(), "old".to_string())]);
+        let new_options = BTreeMap::from([("flavor".to_string(), "new".to_string())]);
+        let existing = vec![LockfileTool {
+            version: "1.0.0".to_string(),
+            backend: Some("example:tool".to_string()),
+            options: old_options,
+            platforms: BTreeMap::from([(
+                "linux-x64".to_string(),
+                PlatformInfo {
+                    checksum: Some("sha256:OLD".to_string()),
+                    ..Default::default()
+                },
+            )]),
+        }];
+        let fresh = vec![LockfileTool {
+            version: "1.0.0".to_string(),
+            backend: Some("example:tool".to_string()),
+            options: new_options.clone(),
+            platforms: BTreeMap::from([(
+                "linux-x64".to_string(),
+                PlatformInfo {
+                    checksum: Some("sha256:NEW".to_string()),
+                    ..Default::default()
+                },
+            )]),
+        }];
+
+        let (merged, consumed) =
+            merge_tool_entries(fresh, Some(&existing), |_, _| Some(new_options.clone()));
+
+        assert!(consumed.is_empty());
+        assert_eq!(merged.len(), 1);
+        assert_eq!(
+            merged[0].platforms["linux-x64"].checksum.as_deref(),
+            Some("sha256:NEW")
+        );
+    }
+
+    #[test]
+    fn test_merge_tool_entries_preserves_data_when_resolution_fails() {
+        let existing = vec![LockfileTool {
+            version: "26.0.1".to_string(),
+            backend: Some("core:java".to_string()),
+            options: BTreeMap::new(),
+            platforms: BTreeMap::from([(
+                "linux-x64".to_string(),
+                PlatformInfo {
+                    checksum: Some("sha256:OLD".to_string()),
+                    ..Default::default()
+                },
+            )]),
+        }];
+        let fresh = vec![LockfileTool {
+            version: "26.0.1".to_string(),
+            backend: Some("core:java".to_string()),
+            options: BTreeMap::from([("shorthand_vendor".to_string(), "openjdk".to_string())]),
+            platforms: BTreeMap::new(),
+        }];
+
+        let (merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+
+        assert!(consumed.is_empty());
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().any(|tool| {
+            tool.options.is_empty()
+                && tool.platforms["linux-x64"].checksum.as_deref() == Some("sha256:OLD")
+        }));
+    }
+
+    #[test]
+    fn test_record_rekey_decision_requires_consensus() {
+        let key = ("1.0.0".to_string(), "linux-x64".to_string());
+        let options_a = BTreeMap::from([("flavor".to_string(), "a".to_string())]);
+        let options_b = BTreeMap::from([("flavor".to_string(), "b".to_string())]);
+        let mut decisions = RekeyDecisions::new();
+
+        record_rekey_decision(&mut decisions, key.clone(), Some(options_a.clone()));
+        record_rekey_decision(&mut decisions, key.clone(), Some(options_a));
+        assert!(decisions[&key].is_some());
+
+        record_rekey_decision(&mut decisions, key.clone(), Some(options_b));
+        assert_eq!(decisions[&key], None);
+
+        // Once requests disagree, later candidates cannot make the decision
+        // authoritative again.
+        record_rekey_decision(
+            &mut decisions,
+            key.clone(),
+            Some(BTreeMap::from([("flavor".to_string(), "a".to_string())])),
+        );
+        assert_eq!(decisions[&key], None);
+    }
+
+    #[test]
+    fn test_merge_tool_entries_repairs_empty_non_empty_duplicate() {
+        let unix_options = BTreeMap::from([("compile".to_string(), "false".to_string())]);
+        let existing = vec![
+            LockfileTool {
+                version: "3.4.2".to_string(),
+                backend: Some("core:ruby".to_string()),
+                options: BTreeMap::new(),
+                platforms: BTreeMap::from([(
+                    "linux-x64".to_string(),
+                    PlatformInfo {
+                        checksum: Some("sha256:LEGACY".to_string()),
+                        ..Default::default()
+                    },
+                )]),
+            },
+            LockfileTool {
+                version: "3.4.2".to_string(),
+                backend: Some("core:ruby".to_string()),
+                options: unix_options.clone(),
+                platforms: BTreeMap::from([(
+                    "linux-x64".to_string(),
+                    PlatformInfo {
+                        checksum: Some("sha256:OLD".to_string()),
+                        ..Default::default()
+                    },
+                )]),
+            },
+        ];
+        let fresh = vec![LockfileTool {
+            version: "3.4.2".to_string(),
+            backend: Some("core:ruby".to_string()),
+            options: unix_options.clone(),
+            platforms: BTreeMap::from([(
+                "linux-x64".to_string(),
+                PlatformInfo {
+                    checksum: Some("sha256:NEW".to_string()),
+                    ..Default::default()
+                },
+            )]),
+        }];
+
+        let (merged, consumed) =
+            merge_tool_entries(fresh, Some(&existing), |_, _| Some(unix_options.clone()));
+
+        assert!(consumed.contains(&("3.4.2".to_string(), BTreeMap::new())));
+        assert_eq!(merged.len(), 1);
+        assert_eq!(
+            merged[0].platforms["linux-x64"].checksum.as_deref(),
+            Some("sha256:NEW")
+        );
+    }
+
+    #[test]
+    fn test_preserve_absent_keeps_other_non_empty_monorepo_variant() {
+        let current_options = BTreeMap::from([("vendor".to_string(), "current".to_string())]);
+        let other_options = BTreeMap::from([("vendor".to_string(), "other".to_string())]);
+        let existing = vec![LockfileTool {
+            version: "1.0.0".to_string(),
+            backend: Some("example:tool".to_string()),
+            options: other_options.clone(),
+            platforms: BTreeMap::new(),
+        }];
+        let fresh = vec![LockfileTool {
+            version: "1.0.0".to_string(),
+            backend: Some("example:tool".to_string()),
+            options: current_options,
+            platforms: BTreeMap::new(),
+        }];
+        let (mut merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+
+        preserve_absent_tool_entries(&mut merged, Some(&existing), &consumed);
+
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().any(|tool| tool.options == other_options));
     }
 
     #[test]
@@ -3619,49 +3886,56 @@ options = { exe = "rg" }
         assert!(!tool_version_needs_auto_lock(&lockfile, &stale, &[Platform::current()]).unwrap());
     }
 
-    #[cfg(not(windows))]
     #[test]
     fn test_tool_version_needs_auto_lock_uses_target_specific_options() {
-        let tv = basic_tv("core:ruby", "3.4.2");
-        let backend = tv.request.backend().unwrap();
-        let platforms = [
-            Platform::parse("linux-x64").unwrap(),
-            Platform::parse("windows-x64").unwrap(),
-        ];
-        let mut tools_by_options: BTreeMap<BTreeMap<String, String>, LockfileTool> =
-            BTreeMap::new();
-
-        for platform in &platforms {
-            let target = PlatformTarget::new(platform.clone());
-            let options = backend
-                .resolve_lockfile_options(&tv.request, &target)
-                .unwrap();
-            tools_by_options
-                .entry(options.clone())
-                .or_insert_with(|| LockfileTool {
-                    version: tv.version.clone(),
-                    backend: Some("core:ruby".to_string()),
-                    options,
-                    platforms: BTreeMap::new(),
-                })
-                .platforms
-                .insert(
-                    platform.to_key(),
+        let unix_options = BTreeMap::from([("compile".to_string(), "false".to_string())]);
+        let tools = vec![
+            LockfileTool {
+                version: "3.4.2".to_string(),
+                backend: Some("core:ruby".to_string()),
+                options: unix_options.clone(),
+                platforms: BTreeMap::from([(
+                    "linux-x64".to_string(),
                     PlatformInfo {
-                        checksum: Some("sha256:abc123".to_string()),
-                        url: Some(format!("https://example.com/{}.tar.gz", platform.to_key())),
+                        checksum: Some("sha256:linux".to_string()),
+                        url: Some("https://example.com/ruby-linux.tar.gz".to_string()),
                         ..Default::default()
                     },
-                );
-        }
+                )]),
+            },
+            LockfileTool {
+                version: "3.4.2".to_string(),
+                backend: Some("core:ruby".to_string()),
+                options: BTreeMap::new(),
+                platforms: BTreeMap::from([(
+                    "windows-x64".to_string(),
+                    PlatformInfo {
+                        checksum: Some("sha256:windows".to_string()),
+                        url: Some("https://example.com/ruby-windows.7z".to_string()),
+                        ..Default::default()
+                    },
+                )]),
+            },
+        ];
 
-        assert_eq!(tools_by_options.len(), 2);
-        let mut lockfile = Lockfile::default();
-        lockfile
-            .tools
-            .insert("ruby".to_string(), tools_by_options.into_values().collect());
-
-        assert!(!tool_version_needs_auto_lock(&lockfile, &tv, &platforms).unwrap());
+        assert!(!lockfile_target_needs_auto_lock(
+            &tools,
+            "3.4.2",
+            "linux-x64",
+            &unix_options,
+        ));
+        assert!(!lockfile_target_needs_auto_lock(
+            &tools,
+            "3.4.2",
+            "windows-x64",
+            &BTreeMap::new(),
+        ));
+        assert!(lockfile_target_needs_auto_lock(
+            &tools,
+            "3.4.2",
+            "windows-x64",
+            &unix_options,
+        ));
     }
 
     #[test]
@@ -4537,79 +4811,6 @@ backend = "conda:jq"
     }
 
     #[test]
-    fn test_set_platform_info_adopts_empty_options_entry_on_new_options() {
-        // Regression guard for #10564: a backend that starts reporting lockfile
-        // options (e.g. java's shorthand_vendor) for a version whose lockfile
-        // entry previously had none must not orphan that entry's platforms.
-        let mut lockfile = Lockfile::default();
-        // Simulate a lockfile written before the tool reported any options: two
-        // platforms already carry checksums/URLs.
-        lockfile.set_platform_info(
-            "java",
-            "26.0.1",
-            Some("core:java"),
-            &BTreeMap::new(),
-            "linux-x64",
-            PlatformInfo {
-                checksum: Some("sha256:OLD1".to_string()),
-                url: Some("https://example.com/java-linux-x64.tar.gz".to_string()),
-                ..Default::default()
-            },
-        );
-        lockfile.set_platform_info(
-            "java",
-            "26.0.1",
-            Some("core:java"),
-            &BTreeMap::new(),
-            "macos-arm64",
-            PlatformInfo {
-                checksum: Some("sha256:OLD2".to_string()),
-                url: Some("https://example.com/java-macos-arm64.tar.gz".to_string()),
-                ..Default::default()
-            },
-        );
-        assert_eq!(lockfile.tools["java"].len(), 1);
-
-        // The tool now resolves with a non-empty `options` map for the SAME
-        // version (e.g. shorthand_vendor newly attached). Re-resolving an
-        // existing platform proves this is an options migration.
-        let mut options = BTreeMap::new();
-        options.insert("shorthand_vendor".to_string(), "openjdk".to_string());
-        lockfile.set_platform_info(
-            "java",
-            "26.0.1",
-            Some("core:java"),
-            &options,
-            "linux-x64",
-            PlatformInfo {
-                checksum: Some("sha256:NEW".to_string()),
-                url: Some("https://example.com/java-linux-x64-new.tar.gz".to_string()),
-                ..Default::default()
-            },
-        );
-
-        // Still a single entry — the empty-options entry was adopted, not left
-        // as an orphaned sibling — and it still carries both platforms.
-        let tools = &lockfile.tools["java"];
-        assert_eq!(
-            tools.len(),
-            1,
-            "expected a single merged entry, got {tools:?}"
-        );
-        let tool = &tools[0];
-        assert_eq!(tool.options, options);
-        assert_eq!(tool.platforms.len(), 2);
-        assert_eq!(
-            tool.platforms["linux-x64"].checksum.as_deref(),
-            Some("sha256:NEW")
-        );
-        assert_eq!(
-            tool.platforms["macos-arm64"].checksum.as_deref(),
-            Some("sha256:OLD2")
-        );
-    }
-
-    #[test]
     fn test_set_platform_info_keeps_platform_specific_option_variants_separate() {
         let mut lockfile = Lockfile::default();
         lockfile.set_platform_info(
@@ -4646,6 +4847,38 @@ backend = "conda:jq"
         assert!(tools.iter().any(|tool| {
             tool.options == unix_options && tool.platforms.contains_key("linux-x64")
         }));
+    }
+
+    #[test]
+    fn test_set_platform_info_keeps_same_platform_sibling_variants() {
+        let mut lockfile = Lockfile::default();
+        let empty_options = BTreeMap::new();
+        let options_a = BTreeMap::from([("flavor".to_string(), "a".to_string())]);
+        let options_b = BTreeMap::from([("flavor".to_string(), "b".to_string())]);
+        for options in [&empty_options, &options_a, &options_b] {
+            lockfile.set_platform_info(
+                "example",
+                "1.0.0",
+                Some("example:tool"),
+                options,
+                "linux-x64",
+                PlatformInfo {
+                    checksum: Some(format!(
+                        "sha256:{}",
+                        options.get("flavor").map(String::as_str).unwrap_or("empty")
+                    )),
+                    ..Default::default()
+                },
+            );
+        }
+
+        let tools = &lockfile.tools["example"];
+        assert_eq!(tools.len(), 3);
+        assert!(
+            tools
+                .iter()
+                .all(|tool| tool.platforms.contains_key("linux-x64"))
+        );
     }
 
     #[test]
