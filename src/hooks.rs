@@ -51,6 +51,12 @@ pub enum Hooks {
     Postinstall,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum HookMode {
+    Execute,
+    Preview,
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
 pub enum HookScripts {
@@ -259,6 +265,22 @@ impl Hook {
     }
 }
 
+impl HookAction {
+    fn run_for_current_platform(&self) -> Option<&str> {
+        let Self::Run {
+            run, run_windows, ..
+        } = self
+        else {
+            return None;
+        };
+        if cfg!(windows) {
+            run_windows.as_deref().or(run.as_deref())
+        } else {
+            run.as_deref()
+        }
+    }
+}
+
 pub static SCHEDULED_HOOKS: Lazy<Mutex<IndexSet<Hooks>>> = Lazy::new(Default::default);
 
 pub fn schedule_hook(hook: Hooks) {
@@ -275,7 +297,7 @@ pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell
         mu.drain(..).collect::<Vec<_>>()
     };
     for hook in hooks {
-        run_one_hook(config, ts, hook, Some(shell)).await;
+        run_one_hook(config, ts, hook, Some(shell), HookMode::Execute).await;
     }
 }
 
@@ -312,8 +334,9 @@ pub async fn run_one_hook(
     ts: &Toolset,
     hook: Hooks,
     shell: Option<&dyn Shell>,
+    mode: HookMode,
 ) {
-    run_one_hook_with_context(config, ts, hook, shell, None).await
+    run_one_hook_with_context(config, ts, hook, shell, None, mode).await
 }
 
 /// Run a hook with optional installed tools context (for postinstall hooks)
@@ -324,6 +347,7 @@ pub async fn run_one_hook_with_context(
     hook: Hooks,
     shell: Option<&dyn Shell>,
     installed_tools: Option<&[InstalledToolInfo]>,
+    mode: HookMode,
 ) {
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
         return;
@@ -367,49 +391,8 @@ pub async fn run_one_hook_with_context(
                 _ => {}
             }
         }
-        run_matched_hook(config, ts, root, h, shell, installed_tools).await;
+        run_matched_hook(config, ts, root, h, shell, installed_tools, mode).await;
     }
-}
-
-/// Print the hooks that would run without executing them.
-pub async fn preview_one_hook(config: &Arc<Config>, hook: Hooks) -> Result<()> {
-    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
-        return Ok(());
-    }
-    for (root, h) in all_hooks(config).await {
-        if hook != h.hook || !matches_shell(h, "") {
-            continue;
-        }
-        if !h.global
-            && matches!(hook, Hooks::Preinstall | Hooks::Postinstall)
-            && dirs::CWD.as_ref().is_some_and(|cwd| !cwd.starts_with(root))
-        {
-            continue;
-        }
-        let action = match &h.action {
-            HookAction::Task { task_name } => format!("mise run {task_name}"),
-            HookAction::CurrentShell { script, .. } => script.clone(),
-            HookAction::Run {
-                run, run_windows, ..
-            } => {
-                let run = if cfg!(windows) {
-                    run_windows.as_deref().or(run.as_deref())
-                } else {
-                    run.as_deref()
-                };
-                let Some(run) = run else {
-                    continue;
-                };
-                run.to_string()
-            }
-        };
-        miseprintln!(
-            "Would run {} hook in {}: {action}",
-            hook.to_string().to_lowercase(),
-            root.display()
-        );
-    }
-    Ok(())
 }
 
 pub async fn run_enter_hooks_for_newly_loaded_configs(
@@ -447,7 +430,7 @@ pub async fn run_enter_hooks_for_newly_loaded_configs(
         if !newly_loaded_roots.contains(&root) {
             continue;
         }
-        run_matched_hook(config, ts, &root, &h, Some(shell), None).await;
+        run_matched_hook(config, ts, &root, &h, Some(shell), None, HookMode::Execute).await;
     }
 }
 
@@ -458,7 +441,18 @@ async fn run_matched_hook(
     hook: &Hook,
     shell: Option<&dyn Shell>,
     installed_tools: Option<&[InstalledToolInfo]>,
+    mode: HookMode,
 ) {
+    if mode == HookMode::Preview {
+        if let Err(e) = preview_matched_hook(root, hook) {
+            warn!(
+                "failed to preview {} hook in {}: {e}",
+                hook.hook,
+                root.display()
+            );
+        }
+        return;
+    }
     let hook_type = hook.hook;
     match &hook.action {
         HookAction::Task { task_name } => {
@@ -506,6 +500,36 @@ async fn run_matched_hook(
     }
 }
 
+fn preview_matched_hook(root: &Path, hook: &Hook) -> Result<()> {
+    let action = match &hook.action {
+        HookAction::Task { task_name } => format!(
+            "mise --cd {} run {}",
+            shell_words::quote(&root.to_string_lossy()),
+            shell_words::quote(task_name)
+        ),
+        HookAction::CurrentShell { script, .. } => script.clone(),
+        HookAction::Run { shell, .. } => {
+            let Some(run) = hook.action.run_for_current_platform() else {
+                return Ok(());
+            };
+            // Do not render the command again here: template functions such as
+            // exec() may have side effects. Preview the command as currently loaded.
+            let shell = shell
+                .as_ref()
+                .map(|shell| crate::path::split_shell_command(shell))
+                .transpose()?
+                .unwrap_or(Settings::get().default_inline_shell()?);
+            format!("{} {}", shell.join(" "), shell_words::quote(run))
+        }
+    };
+    miseprintln!(
+        "Would run {} hook in {}: {action}",
+        hook.hook.to_string().to_lowercase(),
+        root.display()
+    );
+    Ok(())
+}
+
 fn matches_shell(hook: &Hook, shell_name: &str) -> bool {
     if let HookAction::CurrentShell { shell, .. } = &hook.action {
         shell == shell_name
@@ -522,11 +546,10 @@ async fn execute(
     installed_tools: Option<&[InstalledToolInfo]>,
 ) -> Result<()> {
     let HookAction::Run {
-        run,
-        run_windows,
         shell,
         legacy_script,
         ignored_shell,
+        ..
     } = &hook.action
     else {
         return Ok(());
@@ -546,12 +569,7 @@ async fn execute(
             hook_name
         );
     }
-    let run = if cfg!(windows) {
-        run_windows.as_deref().or(run.as_deref())
-    } else {
-        run.as_deref()
-    };
-    let Some(run) = run else {
+    let Some(run) = hook.action.run_for_current_platform() else {
         return Ok(());
     };
     let shell = shell

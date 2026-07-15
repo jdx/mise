@@ -125,12 +125,12 @@ impl Toolset {
         };
         mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
 
-        if opts.dry_run {
-            hooks::preview_one_hook(config, Hooks::Preinstall).await?;
+        let hook_mode = if opts.dry_run {
+            hooks::HookMode::Preview
         } else {
-            // Run pre-install hook
-            hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
-        }
+            hooks::HookMode::Execute
+        };
+        hooks::run_one_hook(config, self, Hooks::Preinstall, None, hook_mode).await;
 
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
@@ -217,7 +217,15 @@ impl Toolset {
         }
 
         if opts.dry_run {
-            hooks::preview_one_hook(config, Hooks::Postinstall).await?;
+            hooks::run_one_hook_with_context(
+                config,
+                self,
+                Hooks::Postinstall,
+                None,
+                None,
+                hook_mode,
+            )
+            .await;
         } else {
             // Run post-install hook with installed tools info
             // Use the full resolved toolset so all installed tools are on PATH
@@ -237,6 +245,7 @@ impl Toolset {
                 Hooks::Postinstall,
                 None,
                 Some(&installed_tools),
+                hook_mode,
             )
             .await;
         }

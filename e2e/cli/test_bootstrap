@@ -50,9 +50,10 @@ cat <<EOF >mise.toml
 tiny = "1.0.0"
 
 [hooks]
-postinstall = "touch postinstall_ran"
+postinstall = { run = "touch postinstall_ran", shell = "bash -c" }
 EOF
 assert_contains "mise bootstrap --dry-run" "Would run postinstall hook"
+assert_contains "mise bootstrap --dry-run" "bash -c"
 assert_contains "mise bootstrap --dry-run" "touch postinstall_ran"
 assert_fail "test -f postinstall_ran"
 

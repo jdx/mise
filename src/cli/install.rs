@@ -484,29 +484,36 @@ impl Install {
         let (versions, install_error) = if missing.is_empty() {
             measure!("run_postinstall_hook", {
                 info!("all tools are installed");
-                if self.is_dry_run() {
-                    hooks::preview_one_hook(&install_config, Hooks::Postinstall).await?;
+                // Nothing was installed, but postinstall still runs (idempotent
+                // project setup relies on it); MISE_INSTALLED_TOOLS is [] so hooks
+                // can guard on actual installs. (#10574)
+                let ts_owned;
+                let ts = if self.is_dry_run() {
+                    // Preview mode only needs the hook-selection context. Avoid
+                    // resolving the full toolset solely to describe the hook.
+                    ts_owned = Toolset::from(trs.clone());
+                    &ts_owned
+                } else if self.monorepo {
+                    ts_owned =
+                        Self::resolved_toolset_from_trs(&install_config, trs.clone()).await?;
+                    &ts_owned
                 } else {
-                    // Nothing was installed, but postinstall still runs (idempotent
-                    // project setup relies on it); MISE_INSTALLED_TOOLS is [] so hooks
-                    // can guard on actual installs. (#10574)
-                    let ts_owned;
-                    let ts = if self.monorepo {
-                        ts_owned =
-                            Self::resolved_toolset_from_trs(&install_config, trs.clone()).await?;
-                        &ts_owned
-                    } else {
-                        install_config.get_toolset().await?
-                    };
-                    hooks::run_one_hook_with_context(
-                        &install_config,
-                        ts,
-                        Hooks::Postinstall,
-                        None,
-                        Some(&[]),
-                    )
-                    .await;
-                }
+                    install_config.get_toolset().await?
+                };
+                let hook_mode = if self.is_dry_run() {
+                    hooks::HookMode::Preview
+                } else {
+                    hooks::HookMode::Execute
+                };
+                hooks::run_one_hook_with_context(
+                    &install_config,
+                    ts,
+                    Hooks::Postinstall,
+                    None,
+                    Some(&[]),
+                    hook_mode,
+                )
+                .await;
                 (vec![], Ok(()))
             })
         } else {
