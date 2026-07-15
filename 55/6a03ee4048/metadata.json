@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "556a03ee4048",
+  "strategy": "manual-commit",
+  "branch": "codex/bootstrap-repos-update-exec",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/cli/system/install.rs",
+    "src/system/repos.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/55/6a03ee4048/0/metadata.json",
+      "transcript": "/55/6a03ee4048/0/full.jsonl",
+      "content_hash": "/55/6a03ee4048/0/content_hash.txt",
+      "prompt": "/55/6a03ee4048/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 61888,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3186176,
+    "output_tokens": 8791,
+    "api_call_count": 26
+  }
+}
