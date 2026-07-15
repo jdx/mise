@@ -165,6 +165,19 @@ impl Backend for CargoBackend {
         parse_crate_versions(&response)
     }
 
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> eyre::Result<Option<String>> {
+        if self.git_url().is_some() {
+            return Ok(None);
+        }
+
+        let version = version.strip_prefix('=').unwrap_or(version);
+        Ok(versions::SemVer::new(version).map(|_| version.to_string()))
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         // Check if cargo is available
         self.warn_if_dependency_missing(
@@ -459,6 +472,60 @@ mod tests {
     use super::*;
     use crate::platform::Platform;
     use crate::toolset::parse_tool_options;
+
+    #[tokio::test]
+    async fn exact_semver_versions_resolve_without_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = CargoBackend::from_arg("cargo:tool".into());
+
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "=1.2.3")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.2.3")
+        );
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "1.2.3")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.2.3")
+        );
+    }
+
+    #[tokio::test]
+    async fn fuzzy_versions_require_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = CargoBackend::from_arg("cargo:tool".into());
+
+        for version in ["latest", "1", "1.2", "^1.2.3", ">=1.2.3"] {
+            assert_eq!(
+                backend
+                    .resolve_exact_version(&config, version)
+                    .await
+                    .unwrap(),
+                None,
+                "{version} should use remote discovery"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn git_versions_keep_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = CargoBackend::from_arg("cargo:owner/repo".into());
+
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "1.2.3")
+                .await
+                .unwrap(),
+            None
+        );
+    }
 
     #[test]
     fn test_lockfile_options_uses_target_platform_bin() {
