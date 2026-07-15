@@ -71,6 +71,9 @@ pub struct LockfileTool {
     pub platforms: BTreeMap<String, PlatformInfo>,
 }
 
+type LockfileToolKey = (String, BTreeMap<String, String>);
+type MergeToolEntriesResult = (Vec<LockfileTool>, HashSet<LockfileToolKey>);
+
 /// Type of provenance, ordered by priority (lowest to highest).
 /// The ordering is significant: during verification, higher-priority verified
 /// mechanisms are tried first, and the lockfile records whichever succeeds.
@@ -2365,10 +2368,7 @@ fn merge_tool_entries<F>(
     entries: Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
     mut resolve: F,
-) -> (
-    Vec<LockfileTool>,
-    HashSet<(String, BTreeMap<String, String>)>,
-)
+) -> MergeToolEntriesResult
 where
     F: FnMut(&str, &Platform) -> Option<BTreeMap<String, String>>,
 {
@@ -2466,7 +2466,7 @@ where
 fn preserve_absent_tool_entries(
     merged_tools: &mut Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
-    consumed_keys: &HashSet<(String, BTreeMap<String, String>)>,
+    consumed_keys: &HashSet<LockfileToolKey>,
 ) {
     let Some(existing_tools) = existing_tools else {
         return;
