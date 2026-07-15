@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "abc60c808d7c",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-ruby-lockfile-platform-options",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "e2e/lockfile/test_lockfile_platform_option_variants",
+    "src/lockfile.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ab/c60c808d7c/0/metadata.json",
+      "transcript": "/ab/c60c808d7c/0/full.jsonl",
+      "content_hash": "/ab/c60c808d7c/0/content_hash.txt",
+      "prompt": "/ab/c60c808d7c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 860608,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 15482880,
+    "output_tokens": 37610,
+    "api_call_count": 137
+  }
+}
