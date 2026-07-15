@@ -221,10 +221,13 @@ impl PluginType {
 
     pub fn from_plugin_path(path: &Path) -> Option<Self> {
         if path.join("metadata.lua").exists() {
-            if path.join("hooks").join("package_install.lua").exists() {
-                Some(Self::Package)
-            } else if path.join("hooks").join("backend_install.lua").exists() {
+            let hooks = path.join("hooks");
+            if hooks.join("backend_install.lua").exists() {
                 Some(Self::VfoxBackend)
+            } else if hooks.join("package_install.lua").exists()
+                && hooks.join("package_installed.lua").exists()
+            {
+                Some(Self::Package)
             } else {
                 Some(Self::Vfox)
             }
@@ -712,7 +715,18 @@ mod tests {
         fs::write(package.path().join("hooks/package_install.lua"), "").unwrap();
         assert_eq!(
             PluginType::from_plugin_path(package.path()),
+            Some(PluginType::Vfox)
+        );
+        fs::write(package.path().join("hooks/package_installed.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(package.path()),
             Some(PluginType::Package)
+        );
+
+        fs::write(package.path().join("hooks/backend_install.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(package.path()),
+            Some(PluginType::VfoxBackend)
         );
     }
 
