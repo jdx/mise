@@ -2975,6 +2975,36 @@
       },
       "minProperties": 1,
       "additionalProperties": false
+    },
+    "bootstrap_shell_activation": {
+      "oneOf": [
+        {
+          "type": "boolean",
+          "description": "enable the target with its default mode, or disable it"
+        },
+        {
+          "type": "string",
+          "enum": ["activate", "shims"],
+          "description": "enable the target with the selected activation mode"
+        },
+        {
+          "type": "object",
+          "description": "shell activation settings for the target",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "whether to manage the activation block"
+            },
+            "mode": {
+              "type": "string",
+              "enum": ["activate", "shims"],
+              "description": "activation mode; defaults according to the target"
+            }
+          },
+          "required": ["enabled"],
+          "additionalProperties": false
+        }
+      ]
     }
   },
   "unevaluatedProperties": false,
@@ -3690,48 +3720,33 @@
         "mise_shell_activate": {
           "type": "object",
           "description": "declarative mise shell activation snippets, applied with `mise bootstrap mise-shell-activate apply`",
-          "propertyNames": {
-            "enum": [
-              "bash",
-              "zsh",
-              "fish",
-              "bash_profile",
-              "bashrc",
-              "zshenv",
-              "zprofile",
-              "zshrc"
-            ]
+          "properties": {
+            "bash": {
+              "$ref": "#/$defs/bootstrap_shell_activation"
+            },
+            "zsh": {
+              "$ref": "#/$defs/bootstrap_shell_activation"
+            },
+            "fish": {
+              "$ref": "#/$defs/bootstrap_shell_activation"
+            },
+            "bash_profile": {
+              "$ref": "#/$defs/bootstrap_shell_activation"
+            },
+            "bashrc": {
+              "$ref": "#/$defs/bootstrap_shell_activation"
+            },
+            "zshenv": {
+              "$ref": "#/$defs/bootstrap_shell_activation"
+            },
+            "zprofile": {
+              "$ref": "#/$defs/bootstrap_shell_activation"
+            },
+            "zshrc": {
+              "$ref": "#/$defs/bootstrap_shell_activation"
+            }
           },
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "type": "boolean",
-                "description": "enable the target with its default mode, or disable it"
-              },
-              {
-                "type": "string",
-                "enum": ["activate", "shims"],
-                "description": "enable the target with the selected activation mode"
-              },
-              {
-                "type": "object",
-                "description": "shell activation settings for the target",
-                "properties": {
-                  "enabled": {
-                    "type": "boolean",
-                    "description": "whether to manage the activation block"
-                  },
-                  "mode": {
-                    "type": "string",
-                    "enum": ["activate", "shims"],
-                    "description": "activation mode; defaults according to the target"
-                  }
-                },
-                "required": ["enabled"],
-                "additionalProperties": false
-              }
-            ]
-          }
+          "additionalProperties": false
         }
       }
     },
