@@ -23,7 +23,12 @@ impl<'a> TaskToolInstaller<'a> {
     }
 
     /// Collect and install all tools needed by tasks
-    pub async fn install_tools(&self, config: &mut Arc<Config>, tasks: &Deps) -> Result<()> {
+    pub async fn install_tools(
+        &self,
+        config: &mut Arc<Config>,
+        tasks: &Deps,
+        dry_run: bool,
+    ) -> Result<()> {
         let mut all_tools = self.cli_tools.to_vec();
         let mut all_tool_requests = vec![];
         let all_tasks: Vec<_> = tasks.all().collect();
@@ -53,7 +58,7 @@ impl<'a> TaskToolInstaller<'a> {
         let toolset = self
             .build_toolset(config, all_tools, all_tool_requests)
             .await?;
-        self.install_toolset(config, toolset).await?;
+        self.install_toolset(config, toolset, dry_run).await?;
 
         Ok(())
     }
@@ -180,11 +185,17 @@ impl<'a> TaskToolInstaller<'a> {
     }
 
     /// Install missing versions from the toolset
-    async fn install_toolset(&self, config: &mut Arc<Config>, mut ts: Toolset) -> Result<()> {
+    async fn install_toolset(
+        &self,
+        config: &mut Arc<Config>,
+        mut ts: Toolset,
+        dry_run: bool,
+    ) -> Result<()> {
         let _ = ts
             .install_missing_versions(
                 config,
                 &InstallOptions {
+                    dry_run,
                     missing_args_only: !Settings::get().task.run_auto_install,
                     skip_auto_install: !Settings::get().task.run_auto_install
                         || !Settings::get().auto_install,

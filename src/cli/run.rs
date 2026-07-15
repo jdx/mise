@@ -387,6 +387,7 @@ impl Run {
         let opts = InstallOptions {
             jobs: self.jobs,
             raw: self.raw,
+            dry_run: self.dry_run,
             missing_args_only: !Settings::get().task.run_auto_install,
             skip_auto_install: !Settings::get().task.run_auto_install
                 || !Settings::get().auto_install,
@@ -405,13 +406,19 @@ impl Run {
                 engine.add_config_files(subdir_configs);
             }
 
-            engine
+            let result = engine
                 .run(DepsOptions {
                     auto_only: true, // Only run providers with auto=true
+                    dry_run: self.dry_run,
                     env,
                     ..Default::default()
                 })
                 .await?;
+            for step in result.steps {
+                if let crate::deps::DepsStepResult::WouldRun(id, reason) = step {
+                    info!("[dry-run] Would install dependency: {id} ({reason})");
+                }
+            }
         }
 
         // Apply global timeout for entire run if configured
@@ -756,7 +763,7 @@ impl Run {
             &self.context_builder,
             &self.tool,
         );
-        installer.install_tools(config, tasks).await
+        installer.install_tools(config, tasks, self.dry_run).await
     }
 
     // ============================================================================
