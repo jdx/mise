@@ -93,6 +93,16 @@ image = "/usr/local/bin/my-app"
 [[oci.copy]]
 host = "assets"
 image = "//srv//.assets///"
+
+[bootstrap.mise_shell_activate]
+bash = true
+zsh = false
+fish = "activate"
+bash_profile = "shims"
+bashrc = { enabled = true, mode = "activate" }
+zshenv = { enabled = false }
+zprofile = { enabled = true, mode = "shims" }
+zshrc = true
 TOML
 
 # Create a separate file for age schema coverage so mise does not try to decrypt
@@ -182,7 +192,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-oci-copy.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -317,6 +327,31 @@ copy = [$copy]
 TOML
   assert_fail "$TOMBI_LINT mise-bad-oci-copy.toml"
 done
+
+# Verify that unknown shell activation targets and invalid values are rejected
+cat >"$HOME/workdir/mise-bad-shell-activate.toml" <<'TOML'
+[bootstrap.mise_shell_activate]
+powershell = true
+TOML
+assert_fail "$TOMBI_LINT mise-bad-shell-activate.toml"
+
+cat >"$HOME/workdir/mise-bad-shell-activate.toml" <<'TOML'
+[bootstrap.mise_shell_activate]
+zsh = "invalid"
+TOML
+assert_fail "$TOMBI_LINT mise-bad-shell-activate.toml"
+
+cat >"$HOME/workdir/mise-bad-shell-activate.toml" <<'TOML'
+[bootstrap.mise_shell_activate]
+zsh = { mode = "activate" }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-shell-activate.toml"
+
+cat >"$HOME/workdir/mise-bad-shell-activate.toml" <<'TOML'
+[bootstrap.mise_shell_activate]
+zsh = { enabled = true, unknown = true }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-shell-activate.toml"
 
 cat >"$HOME/workdir/mise-bad-task-os.toml" <<'TOML'
 [build]
