@@ -85,6 +85,14 @@ start_calendar_interval = [
   { minute = 0, hour = 0, day = 1, weekday = 0, month = 1 },
   { minute = 59, hour = 23, day = 31, weekday = 7, month = 12 },
 ]
+
+[[oci.copy]]
+host = "dist/my-app"
+image = "/usr/local/bin/my-app"
+
+[[oci.copy]]
+host = "assets"
+image = "//srv//.assets///"
 TOML
 
 # Create a separate file for age schema coverage so mise does not try to decrypt
@@ -174,7 +182,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-oci-copy.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -290,6 +298,24 @@ program = "/bin/echo"
 start_calendar_interval = $interval
 TOML
   assert_fail "$TOMBI_LINT mise-bad-launchd-calendar.toml"
+done
+
+# Verify that OCI copy entries match runtime validation
+for copy in \
+  '{ image = "/srv/app" }' \
+  '{ host = "assets" }' \
+  '{ host = "", image = "/srv/app" }' \
+  '{ host = "assets", image = "srv/app" }' \
+  '{ host = "assets", image = "/" }' \
+  '{ host = "assets", image = "////" }' \
+  '{ host = "assets", image = "/srv/./app" }' \
+  '{ host = "assets", image = "/srv/../app" }' \
+  '{ host = "assets", image = "/srv/app", extra = true }'; do
+  cat >"$HOME/workdir/mise-bad-oci-copy.toml" <<TOML
+[oci]
+copy = [$copy]
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-oci-copy.toml"
 done
 
 cat >"$HOME/workdir/mise-bad-task-os.toml" <<'TOML'

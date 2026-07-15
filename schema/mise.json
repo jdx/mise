@@ -3219,6 +3219,27 @@
           "type": "string",
           "description": "Override where mise installs go in the image (default /mise)"
         },
+        "copy": {
+          "type": "array",
+          "description": "Host files or directories copied into the image as independent layers",
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string",
+                "minLength": 1,
+                "description": "host path to copy, relative to the config file when not absolute"
+              },
+              "image": {
+                "type": "string",
+                "pattern": "^/+(?:[^./][^/]*|\\.[^./][^/]*|\\.\\.[^/]+)(?:/+(?:[^./][^/]*|\\.[^./][^/]*|\\.\\.[^/]+))*/*$",
+                "description": "absolute non-root image path without `.` or `..` components"
+              }
+            },
+            "required": ["host", "image"],
+            "additionalProperties": false
+          }
+        },
         "env": {
           "type": "object",
           "additionalProperties": {
