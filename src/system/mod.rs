@@ -272,9 +272,13 @@ pub fn pending_plugin_packages_from_config(
 ) -> IndexMap<String, Vec<PackageRequest>> {
     let declared = plugins_from_config(config);
     let brew_taps = brew_taps_from_config(config);
+    let installed = packages::all_managers()
+        .into_iter()
+        .map(|manager| manager.name().to_string())
+        .collect::<std::collections::HashSet<_>>();
     package_requests_from_config_files(&config.config_files, &brew_taps)
         .into_iter()
-        .filter(|(name, _)| declared.contains_key(name) && packages::get_manager(name).is_none())
+        .filter(|(name, _)| declared.contains_key(name) && !installed.contains(name))
         .collect()
 }
 
