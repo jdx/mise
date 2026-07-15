@@ -981,7 +981,7 @@ impl Drop for BootstrapFollowUp {
 
 fn dotfile_mise_config_body(config: &Config, file: &FileRequest) -> Result<String> {
     match file.mode {
-        FileMode::Template => system::files::render_template_no_exec(config, file),
+        FileMode::Template => system::files::render_template(config, file),
         _ => crate::file::read_to_string(&file.source),
     }
 }

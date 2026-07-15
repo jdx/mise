@@ -307,21 +307,6 @@ rm -f templated_hook_ran
 assert_contains "mise bootstrap --dry-run" "echo template-final > templated_hook_ran"
 assert_fail "cat templated_hook_ran"
 
-# dry-run doesn't execute exec() while simulating templated config dotfiles
-cat <<'EOF' >dotfiles/mise/exec.toml.tmpl
-# {{ exec(command="touch template_exec_ran") }}
-[bootstrap.hooks.final]
-run = "touch template_exec_hook_ran"
-EOF
-cat <<EOF >mise.toml
-[dotfiles]
-"~/.config/mise/conf.d/exec.toml" = { source = "dotfiles/mise/exec.toml.tmpl", mode = "template" }
-EOF
-rm -f template_exec_ran template_exec_hook_ran
-assert_succeed "mise bootstrap --dry-run"
-assert_fail "test -f template_exec_ran"
-assert_fail "test -f template_exec_hook_ran"
-
 # dry-run recognizes local config targets such as ~/.mise/config.toml
 cat <<'EOF' >dotfiles/mise/local-config.toml
 [bootstrap.hooks.post-dotfiles]

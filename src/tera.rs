@@ -1211,21 +1211,6 @@ pub fn get_tera(dir: Option<&Path>) -> TeraEngine {
     }
 }
 
-/// Return the configured template engine without the command-executing
-/// `exec()` function. Read-only helpers such as `read_file()` remain available.
-pub fn get_tera_no_exec(dir: Option<&Path>) -> TeraEngine {
-    let dir = dir.map(PathBuf::from);
-    if use_tera_v1() {
-        let mut tera = TERA1.clone();
-        tera.register_function("read_file", tera1_read_file(dir));
-        TeraEngine::V1(Box::new(tera))
-    } else {
-        let mut tera = TERA.clone();
-        tera.register_function("read_file", tera_read_file(dir));
-        TeraEngine::V2(Box::new(tera))
-    }
-}
-
 /// Like [`get_tera`] but with `os()` and `arch()` bound to an explicit target
 /// platform instead of the current host. Used by cross-platform `mise lock` to
 /// render URL/checksum templates for platforms other than the one mise runs on.

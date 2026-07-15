@@ -663,20 +663,8 @@ fn check_content(target: &Path, expected: &[u8]) -> Result<FileState> {
 }
 
 pub fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
-    render_template_with_engine(config, req, crate::tera::get_tera(Some(&req.base)))
-}
-
-/// Render a template without allowing its `exec()` calls to run commands.
-pub fn render_template_no_exec(config: &Config, req: &FileRequest) -> Result<String> {
-    render_template_with_engine(config, req, crate::tera::get_tera_no_exec(Some(&req.base)))
-}
-
-fn render_template_with_engine(
-    config: &Config,
-    req: &FileRequest,
-    mut tera: crate::tera::TeraEngine,
-) -> Result<String> {
     let raw = file::read_to_string(&req.source)?;
+    let mut tera = crate::tera::get_tera(Some(&req.base));
     let rendered = crate::tera::render_str(&mut tera, &raw, &config.tera_ctx).map_err(|err| {
         eyre::eyre!(
             "[dotfiles].\"{}\": failed to render template {}: {err}",
