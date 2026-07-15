@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "030c82cc77bf",
+  "strategy": "manual-commit",
+  "branch": "codex/package-plugin-bootstrap",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/.vitepress/config.ts",
+    "docs/bootstrap.md",
+    "docs/bootstrap/packages/index.md",
+    "docs/bootstrap/packages/plugins.md",
+    "docs/package-plugin-development.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/03/0c82cc77bf/0/metadata.json",
+      "transcript": "/03/0c82cc77bf/0/full.jsonl",
+      "content_hash": "/03/0c82cc77bf/0/content_hash.txt",
+      "prompt": "/03/0c82cc77bf/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 268797,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 16525824,
+    "output_tokens": 35287,
+    "api_call_count": 139
+  }
+}
