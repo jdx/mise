@@ -1,5 +1,50 @@
 # Changelog
 
+## [2026.7.7](https://github.com/jdx/mise/compare/v2026.7.6..v2026.7.7) - 2026-07-15
+
+### 🚀 Features
+
+- **(bootstrap)** support systemd timers by @jdx in [#10984](https://github.com/jdx/mise/pull/10984)
+- **(deps)** add monorepo provider support by @jdx in [#10975](https://github.com/jdx/mise/pull/10975)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** honor explicit false overrides by @risu729 in [#11002](https://github.com/jdx/mise/pull/11002)
+- **(bootstrap)** support cask array position helpers by @casparbreloh in [#10992](https://github.com/jdx/mise/pull/10992)
+- **(cache)** handle concurrent writes during clear by @jdx in [#10993](https://github.com/jdx/mise/pull/10993)
+- **(github)** serialize oauth token refreshes by @jdx in [#10995](https://github.com/jdx/mise/pull/10995)
+- **(github)** skip package assets during autodetection by @risu729 in [#11001](https://github.com/jdx/mise/pull/11001)
+- **(schema)** add launchd calendar intervals by @risu729 in [#11008](https://github.com/jdx/mise/pull/11008)
+- **(status)** respect status.truncate for show_env output by @ytjmt in [#10983](https://github.com/jdx/mise/pull/10983)
+- **(task)** render nested task tool options by @risu729 in [#10960](https://github.com/jdx/mise/pull/10960)
+- **(vfox)** support annotated plugin refs by @junior-ricon in [#10998](https://github.com/jdx/mise/pull/10998)
+
+### 📦️ Dependency Updates
+
+- bump communique to 1.2.3 by @jdx in [#11000](https://github.com/jdx/mise/pull/11000)
+
+### 📦 Registry
+
+- add microsandbox ([aqua:superradcompany/microsandbox](https://github.com/superradcompany/microsandbox)) by @joealden in [#10985](https://github.com/jdx/mise/pull/10985)
+
+### Chore
+
+- **(release)** publish rolling zstd registry archive by @jdx in [#10991](https://github.com/jdx/mise/pull/10991)
+
+### New Contributors
+
+- @junior-ricon made their first contribution in [#10998](https://github.com/jdx/mise/pull/10998)
+- @ytjmt made their first contribution in [#10983](https://github.com/jdx/mise/pull/10983)
+- @casparbreloh made their first contribution in [#10992](https://github.com/jdx/mise/pull/10992)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (3)
+
+- [`kellyjonbrazil/jc`](https://github.com/kellyjonbrazil/jc)
+- [`mikefarah/yq`](https://github.com/mikefarah/yq)
+- [`twpayne/chezmoi`](https://github.com/twpayne/chezmoi)
+
 ## [2026.7.6](https://github.com/jdx/mise/compare/v2026.7.5..v2026.7.6) - 2026-07-14
 
 ### 🚀 Features

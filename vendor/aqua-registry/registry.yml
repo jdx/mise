@@ -55850,33 +55850,66 @@ packages:
     repo_owner: kellyjonbrazil
     repo_name: jc
     description: CLI tool and python library that converts the output of popular command-line tools, file-types, and common strings to JSON, YAML, or Dictionaries. This allows piping of output to tools like jq and simplifying automation scripts
-    asset: jc-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-    format: tar.gz
-    overrides:
-      - goos: windows
-        format: zip
-        asset: jc-{{trimV .Version}}-{{.OS}}.{{.Format}}
-        files:
-          - name: jc
-            src: jc-{{trimV .Version}}-windows/jc.exe
-    replacements:
-      amd64: x86_64
-    supported_envs:
-      - darwin
-      - amd64
-    rosetta2: true
-    version_constraint: semver(">= 1.21.0")
+    version_constraint: "false"
     version_overrides:
-      - version_constraint: semver(">= 1.19.0")
+      - version_constraint: semver("<= 1.18.8")
+        asset: jc-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.25.0")
+        asset: jc-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
         overrides:
           - goos: windows
             format: zip
             asset: jc-{{trimV .Version}}-{{.OS}}.{{.Format}}
-      - version_constraint: semver("< 1.19.0")
-        overrides: []
+            files:
+              - name: jc
+                src: jc-{{trimV .Version}}-windows/jc
         supported_envs:
-          - linux/amd64
           - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.25.6")
+        asset: jc-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        overrides:
+          - goos: windows
+            format: zip
+            asset: jc-{{trimV .Version}}-{{.OS}}.{{.Format}}
+            files:
+              - name: jc
+                src: jc-{{trimV .Version}}-windows/jc
+      - version_constraint: "true"
+        asset: jc-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          arm64: aarch64
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: windows
+            format: zip
+            asset: jc-{{trimV .Version}}-{{.OS}}.{{.Format}}
+            files:
+              - name: jc
+                src: jc-{{trimV .Version}}-windows/jc
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
   - type: github_release
     repo_owner: kentaro-m
     repo_name: md2confl
@@ -64599,10 +64632,10 @@ packages:
       - amd64
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("< 4.9.6")
+        rosetta2: true
       - version_constraint: semver("< 4.35.1")
-        rosetta2: true
       - version_constraint: semver("< 4.53.0")
-        rosetta2: true
         checksum:
           type: github_release
           asset: checksums-bsd
@@ -64613,7 +64646,6 @@ packages:
             checksum: ^SHA512\s+\([^)]+\)\s+=\s+([A-Fa-f0-9]{128})$
             file: ^SHA512\s+\(([^)]+)\)\s+=\s+[A-Fa-f0-9]{128}$
       - version_constraint: "true"
-        rosetta2: true
         checksum:
           type: github_release
           asset: checksums-bsd
@@ -95226,7 +95258,7 @@ packages:
           - goos: windows
             format: zip
             asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-      - version_constraint: "true"
+      - version_constraint: semver("<= 2.70.5")
         asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -95239,6 +95271,23 @@ packages:
               - https://github.com/twpayne/chezmoi/releases/download/{{.Version}}/chezmoi_cosign.pub
               - --signature
               - https://github.com/twpayne/chezmoi/releases/download/{{.Version}}/chezmoi_{{trimV .Version}}_checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: chezmoi_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: chezmoi_{{trimV .Version}}_checksums.txt.sigstore.json
+            opts:
+              - --key
+              - https://github.com/twpayne/chezmoi/releases/download/{{.Version}}/chezmoi_cosign.pub
         overrides:
           - goos: windows
             format: zip
