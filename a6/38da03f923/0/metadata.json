@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "a638da03f923",
+  "session_id": "019f6782-3ad8-7d42-93c6-5400faf21b7f",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-15T20:58:51.730711Z",
+  "branch": "codex/package-plugin-bootstrap",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "e2e/plugins/test_package_plugin",
+    "schema/mise.json",
+    "src/cli/bootstrap.rs",
+    "src/cli/plugins/install.rs",
+    "src/cli/plugins/mod.rs",
+    "src/cli/system/install.rs",
+    "src/cli/system/upgrade.rs",
+    "src/system/mod.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "acf115ddb9e7",
+  "token_usage": {
+    "input_tokens": 266547,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 16156672,
+    "output_tokens": 35082,
+    "api_call_count": 137
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-15T20:58:51.705351Z",
+    "agent_lines": 313,
+    "agent_removed": 33,
+    "human_added": 113,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 426,
+    "total_lines_changed": 513,
+    "agent_percentage": 67.44639376218323,
+    "metric_version": 2
+  }
+}

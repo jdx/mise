@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "a638da03f923",
+  "strategy": "manual-commit",
+  "branch": "codex/package-plugin-bootstrap",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/plugins/test_package_plugin",
+    "schema/mise.json",
+    "src/cli/bootstrap.rs",
+    "src/cli/plugins/install.rs",
+    "src/cli/plugins/mod.rs",
+    "src/cli/system/install.rs",
+    "src/cli/system/upgrade.rs",
+    "src/system/mod.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a6/38da03f923/0/metadata.json",
+      "transcript": "/a6/38da03f923/0/full.jsonl",
+      "content_hash": "/a6/38da03f923/0/content_hash.txt",
+      "prompt": "/a6/38da03f923/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 266547,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 16156672,
+    "output_tokens": 35082,
+    "api_call_count": 137
+  }
+}
