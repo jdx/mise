@@ -2,11 +2,17 @@
 
 mkdir -p ./test
 cat <<EOF >./test/mise.toml
+[settings]
+experimental = true
+
 [tasks.hello]
 run = 'echo "Hello, World!"'
 EOF
 
 assert_contains "mise config --cd $PWD/test ls" "test/mise.toml"
+
+unset MISE_EXPERIMENTAL
+assert "mise -C $PWD/test settings get experimental" "true"
 
 assert_contains "mise run --cd $PWD/test hello" "Hello, World!"
 assert_contains "mise run --cd ./test hello" "Hello, World!"
