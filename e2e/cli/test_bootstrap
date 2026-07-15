@@ -43,6 +43,18 @@ assert_succeed "mise bootstrap packages install --dry-run --yes"
 # idempotent: re-running is fine
 assert_succeed "mise bootstrap --yes"
 
+# dry-run doesn't run the install postinstall hook when all tools already exist
+rm -f postinstall_ran
+cat <<EOF >mise.toml
+[tools]
+tiny = "1.0.0"
+
+[hooks]
+postinstall = "touch postinstall_ran"
+EOF
+assert_succeed "mise bootstrap --dry-run"
+assert_fail "test -f postinstall_ran"
+
 # dry-run doesn't install or run anything
 rm -f bootstrap_ran
 cat <<EOF >mise.toml

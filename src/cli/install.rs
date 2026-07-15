@@ -484,25 +484,27 @@ impl Install {
         let (versions, install_error) = if missing.is_empty() {
             measure!("run_postinstall_hook", {
                 info!("all tools are installed");
-                // Nothing was installed, but postinstall still runs (idempotent
-                // project setup relies on it); MISE_INSTALLED_TOOLS is [] so hooks
-                // can guard on actual installs. (#10574)
-                let ts_owned;
-                let ts = if self.monorepo {
-                    ts_owned =
-                        Self::resolved_toolset_from_trs(&install_config, trs.clone()).await?;
-                    &ts_owned
-                } else {
-                    install_config.get_toolset().await?
-                };
-                hooks::run_one_hook_with_context(
-                    &install_config,
-                    ts,
-                    Hooks::Postinstall,
-                    None,
-                    Some(&[]),
-                )
-                .await;
+                if !self.is_dry_run() {
+                    // Nothing was installed, but postinstall still runs (idempotent
+                    // project setup relies on it); MISE_INSTALLED_TOOLS is [] so hooks
+                    // can guard on actual installs. (#10574)
+                    let ts_owned;
+                    let ts = if self.monorepo {
+                        ts_owned =
+                            Self::resolved_toolset_from_trs(&install_config, trs.clone()).await?;
+                        &ts_owned
+                    } else {
+                        install_config.get_toolset().await?
+                    };
+                    hooks::run_one_hook_with_context(
+                        &install_config,
+                        ts,
+                        Hooks::Postinstall,
+                        None,
+                        Some(&[]),
+                    )
+                    .await;
+                }
                 (vec![], Ok(()))
             })
         } else {
