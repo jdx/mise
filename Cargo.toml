@@ -120,6 +120,7 @@ indexmap = { version = "2", features = ["serde"] }
 clx = "2"
 indoc = "2"
 itertools = "0.15"
+jdx-tar = "1.0.0"
 jiff = "0.2"
 junction = "2"
 log = "0.4"
