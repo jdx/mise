@@ -1,0 +1,17 @@
+i don't want you to worry about deleting anything
+
+---
+
+see pr feedback, if we're sure zstd is available on our runners i don't want to do anything
+
+---
+
+is the latest release published with zstd?
+
+---
+
+ok should we rebase the pr? what work do we have left?
+
+---
+
+ok do it

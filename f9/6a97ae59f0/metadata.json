@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "f96a97ae59f0",
+  "strategy": "manual-commit",
+  "branch": "codex/floating-registries",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_registry_floating"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f9/6a97ae59f0/0/metadata.json",
+      "transcript": "/f9/6a97ae59f0/0/full.jsonl",
+      "content_hash": "/f9/6a97ae59f0/0/content_hash.txt",
+      "prompt": "/f9/6a97ae59f0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2166677,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 74851328,
+    "output_tokens": 116471,
+    "api_call_count": 606
+  }
+}
