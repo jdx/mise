@@ -910,10 +910,8 @@ impl BootstrapFollowUp {
             let name = mp.manager.name();
             let reason = if mp.disabled {
                 Some("excluded by the system_packages.managers setting".to_string())
-            } else if let Some(reason) = mp.manager.unavailable_reason_async().await {
-                Some(reason)
             } else {
-                None
+                mp.manager.unavailable_reason_async().await
             };
             if let Some(reason) = reason {
                 self.add_skipped(format!(
