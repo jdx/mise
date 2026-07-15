@@ -22,6 +22,10 @@ use std::{path::PathBuf, sync::atomic::AtomicBool};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 pub static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
+pub const MISE_INSTALL_VERSION_ENV_VAR: &str = "MISE_INSTALL_VERSION";
+pub const MISE_TOOL_VERSION_ENV_VAR: &str = "MISE_TOOL_VERSION";
+pub const NON_TOOL_VERSION_ENV_VARS: &[&str] =
+    &[MISE_INSTALL_VERSION_ENV_VAR, MISE_TOOL_VERSION_ENV_VAR];
 #[cfg(unix)]
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 #[cfg(windows)]

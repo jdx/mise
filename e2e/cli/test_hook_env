@@ -16,3 +16,13 @@ assert_contains "dummy" "1.0.0"
 export MISE_DUMMY_VERSION=1.1.0
 pushd .. && popd
 assert_contains "dummy" "1.1.0"
+
+ln -s "$ROOT/test/data/plugins/dummy" "$MISE_DATA_DIR/plugins/hyphen-tool"
+mise install hyphen-tool@1.0.0
+mise shell hyphen-tool@1.0.0
+assert "echo $MISE_HYPHEN_TOOL_VERSION" "1.0.0"
+pushd .. && popd
+assert_contains "mise current hyphen-tool" "1.0.0"
+
+mise shell --unset hyphen-tool
+assert "echo ${MISE_HYPHEN_TOOL_VERSION+set}" ""
