@@ -351,7 +351,7 @@ pub async fn run_one_hook_with_context(
         if hook != h.hook || !matches_shell(h, &shell_name) {
             continue;
         }
-        trace!("running hook {hook} in {root:?}");
+        trace!("processing hook {hook} in {root:?}");
         // Global hooks skip directory matching — they fire for all projects
         if !h.global {
             match (hook, hook_env::dir_change()) {
@@ -496,11 +496,13 @@ async fn run_matched_hook(
 
 fn preview_matched_hook(root: &Path, hook: &Hook) -> Result<()> {
     let action = match &hook.action {
-        HookAction::Task { task_name } => format!(
-            "mise --cd {} run {}",
-            shell_words::quote(&root.to_string_lossy()),
-            shell_words::quote(task_name)
-        ),
+        HookAction::Task { task_name } => shell_words::join([
+            "mise".to_string(),
+            "--cd".to_string(),
+            root.to_string_lossy().into_owned(),
+            "run".to_string(),
+            task_name.clone(),
+        ]),
         HookAction::CurrentShell { script, .. } => script.clone(),
         HookAction::Run { shell, .. } => {
             let Some(run) = hook.action.run_for_current_platform() else {
@@ -513,7 +515,7 @@ fn preview_matched_hook(root: &Path, hook: &Hook) -> Result<()> {
                 .map(|shell| crate::path::split_shell_command(shell))
                 .transpose()?
                 .unwrap_or(Settings::get().default_inline_shell()?);
-            format!("{} {}", shell.join(" "), shell_words::quote(run))
+            display_inline_command(&shell, run)
         }
     };
     miseprintln!(
@@ -522,6 +524,10 @@ fn preview_matched_hook(root: &Path, hook: &Hook) -> Result<()> {
         root.display()
     );
     Ok(())
+}
+
+fn display_inline_command(shell: &[String], run: &str) -> String {
+    shell_words::join(shell.iter().cloned().chain(once(run.to_string())))
 }
 
 fn matches_shell(hook: &Hook, shell_name: &str) -> bool {
@@ -770,5 +776,20 @@ mod tests {
             }
             action => panic!("expected run hook, got {action:?}"),
         }
+    }
+
+    #[test]
+    fn inline_command_display_preserves_argv_boundaries() {
+        let shell = vec!["/path with spaces/bash".to_string(), "-c".to_string()];
+        let display = display_inline_command(&shell, "echo hello world");
+
+        assert_eq!(
+            shell_words::split(&display).unwrap(),
+            vec![
+                "/path with spaces/bash".to_string(),
+                "-c".to_string(),
+                "echo hello world".to_string(),
+            ]
+        );
     }
 }
