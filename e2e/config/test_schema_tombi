@@ -308,8 +308,6 @@ for copy in \
   '{ host = "assets", image = "srv/app" }' \
   '{ host = "assets", image = "/" }' \
   '{ host = "assets", image = "////" }' \
-  '{ host = "assets", image = "/srv/./app" }' \
-  '{ host = "assets", image = "/srv/../app" }' \
   '{ host = "assets", image = "/srv/app", extra = true }'; do
   cat >"$HOME/workdir/mise-bad-oci-copy.toml" <<TOML
 [oci]

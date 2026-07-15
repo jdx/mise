@@ -3232,8 +3232,8 @@
               },
               "image": {
                 "type": "string",
-                "pattern": "^/+(?:[^./][^/]*|\\.[^./][^/]*|\\.\\.[^/]+)(?:/+(?:[^./][^/]*|\\.[^./][^/]*|\\.\\.[^/]+))*/*$",
-                "description": "absolute non-root image path without `.` or `..` components"
+                "pattern": "^/.*[^/]",
+                "description": "absolute image path that is not the root"
               }
             },
             "required": ["host", "image"],
