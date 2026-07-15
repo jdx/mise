@@ -43,6 +43,7 @@ fi
 echo SAME_DIRECTORY_REAL_TOOL
 TOOL
 chmod +x "$mixed_dir/siblingtool"
+touch "$mixed_dir/siblingtool.cmd"
 export PATH="$mixed_dir:$PATH"
 
 assert_contains \
