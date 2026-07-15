@@ -52,7 +52,8 @@ tiny = "1.0.0"
 [hooks]
 postinstall = "touch postinstall_ran"
 EOF
-assert_succeed "mise bootstrap --dry-run"
+assert_contains "mise bootstrap --dry-run" "Would run postinstall hook"
+assert_contains "mise bootstrap --dry-run" "touch postinstall_ran"
 assert_fail "test -f postinstall_ran"
 
 # dry-run doesn't install or run anything

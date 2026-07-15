@@ -371,6 +371,47 @@ pub async fn run_one_hook_with_context(
     }
 }
 
+/// Print the hooks that would run without executing them.
+pub async fn preview_one_hook(config: &Arc<Config>, hook: Hooks) -> Result<()> {
+    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
+        return Ok(());
+    }
+    for (root, h) in all_hooks(config).await {
+        if hook != h.hook || !matches_shell(h, "") {
+            continue;
+        }
+        if !h.global
+            && matches!(hook, Hooks::Preinstall | Hooks::Postinstall)
+            && dirs::CWD.as_ref().is_some_and(|cwd| !cwd.starts_with(root))
+        {
+            continue;
+        }
+        let action = match &h.action {
+            HookAction::Task { task_name } => format!("mise run {task_name}"),
+            HookAction::CurrentShell { script, .. } => script.clone(),
+            HookAction::Run {
+                run, run_windows, ..
+            } => {
+                let run = if cfg!(windows) {
+                    run_windows.as_deref().or(run.as_deref())
+                } else {
+                    run.as_deref()
+                };
+                let Some(run) = run else {
+                    continue;
+                };
+                run.to_string()
+            }
+        };
+        miseprintln!(
+            "Would run {} hook in {}: {action}",
+            hook.to_string().to_lowercase(),
+            root.display()
+        );
+    }
+    Ok(())
+}
+
 pub async fn run_enter_hooks_for_newly_loaded_configs(
     config: &Arc<Config>,
     ts: &Toolset,

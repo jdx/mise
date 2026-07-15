@@ -484,7 +484,9 @@ impl Install {
         let (versions, install_error) = if missing.is_empty() {
             measure!("run_postinstall_hook", {
                 info!("all tools are installed");
-                if !self.is_dry_run() {
+                if self.is_dry_run() {
+                    hooks::preview_one_hook(&install_config, Hooks::Postinstall).await?;
+                } else {
                     // Nothing was installed, but postinstall still runs (idempotent
                     // project setup relies on it); MISE_INSTALLED_TOOLS is [] so hooks
                     // can guard on actual installs. (#10574)

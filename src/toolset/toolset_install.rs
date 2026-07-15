@@ -125,8 +125,9 @@ impl Toolset {
         };
         mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
 
-        // Skip hooks in dry-run mode
-        if !opts.dry_run {
+        if opts.dry_run {
+            hooks::preview_one_hook(config, Hooks::Preinstall).await?;
+        } else {
             // Run pre-install hook
             hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
         }
@@ -215,8 +216,9 @@ impl Toolset {
             mpr.footer_finish();
         }
 
-        // Skip hooks in dry-run mode
-        if !opts.dry_run {
+        if opts.dry_run {
+            hooks::preview_one_hook(config, Hooks::Postinstall).await?;
+        } else {
             // Run post-install hook with installed tools info
             // Use the full resolved toolset so all installed tools are on PATH
             // Fall back to self if toolset resolution fails (e.g. due to config issues)
