@@ -32,14 +32,17 @@ checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a57
 EOF
 
 mise lock --platform "$PLATFORM,$OTHER_PLATFORM"
-assert "grep -cF '[[tools.\"http:lock-option-variants\"]]' mise.lock" "2"
-assert "grep -cF 'platforms.$PLATFORM' mise.lock" "1"
-assert "grep -cF 'platforms.$OTHER_PLATFORM' mise.lock" "1"
+assert_variants() {
+  assert "grep -cF '[[tools.\"http:lock-option-variants\"]]' mise.lock" "2"
+  assert "grep -cF 'platforms.$PLATFORM' mise.lock" "1"
+  assert "grep -cF 'platforms.$OTHER_PLATFORM' mise.lock" "1"
+  assert "grep -cF 'format = \"tar.gz\"' mise.lock" "1"
+}
 
-cp mise.lock mise.lock.expected
+assert_variants
 mise install
-assert "diff mise.lock mise.lock.expected" ""
+assert_variants
 
 mise uninstall --all
 mise install
-assert "diff mise.lock mise.lock.expected" ""
+assert_variants

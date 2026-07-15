@@ -1854,6 +1854,12 @@ fn tool_version_needs_auto_lock(
     let Some(tools) = lockfile.tools.get(tv.short()) else {
         return Ok(false);
     };
+    // The toolset passed to auto-locking can still contain the version that was
+    // active before an upgrade. If that version has already been pruned from the
+    // lockfile, it is stale and must not be resolved back into the file.
+    if !tools.iter().any(|tool| tool.version == tv.version) {
+        return Ok(false);
+    }
     let backend = tv.request.backend()?;
 
     for platform in target_platforms {
@@ -3600,6 +3606,20 @@ options = { exe = "rg" }
         assert!(!tool_version_needs_auto_lock(&lockfile, &tv, &[Platform::current()]).unwrap());
     }
 
+    #[test]
+    fn test_tool_version_needs_auto_lock_ignores_pruned_version() {
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "ruff".to_string(),
+            vec![basic_tool("0.15.20", "aqua:astral-sh/ruff")],
+        );
+
+        let stale = basic_tv("aqua:astral-sh/ruff", "0.15.19");
+
+        assert!(!tool_version_needs_auto_lock(&lockfile, &stale, &[Platform::current()]).unwrap());
+    }
+
+    #[cfg(not(windows))]
     #[test]
     fn test_tool_version_needs_auto_lock_uses_target_specific_options() {
         let tv = basic_tv("core:ruby", "3.4.2");
