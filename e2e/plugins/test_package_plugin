@@ -103,6 +103,16 @@ assert_contains "mise plugin ls" "declared"
 assert "cat $HOME/.fake-packages/self-provisioned" "3.0"
 assert_contains "mise bootstrap plugins status" "installed"
 
+# A required binary supplied only by the global toolset must pass the async
+# availability gate even when the configured shims directory is empty.
+assert_succeed "mise use --global dummy@1.0.0"
+cat >"$MISE_DATA_DIR/plugins/declared/mise.plugin.toml" <<'EOF'
+[package-manager]
+requires = ["dummy"]
+supports_version_pins = true
+EOF
+assert_contains "MISE_SHIMS_DIR=$HOME/empty-shims mise bootstrap packages status" "installed"
+
 cat >mise.toml <<EOF
 [bootstrap.plugins]
 apt = "file://$PWD/declared-package-plugin"

@@ -801,7 +801,7 @@ impl Bootstrap {
                 .collect::<Vec<_>>();
             if !mgrs.is_empty() {
                 info!("bootstrap: plugin packages");
-                follow_up.add_package_skips(&mgrs);
+                follow_up.add_package_skips(&mgrs).await;
                 driver::run(
                     mgrs,
                     Action::Install,
