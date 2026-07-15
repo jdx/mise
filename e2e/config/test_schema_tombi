@@ -86,14 +86,6 @@ start_calendar_interval = [
   { minute = 59, hour = 23, day = 31, weekday = 7, month = 12 },
 ]
 
-[[oci.copy]]
-host = "dist/my-app"
-image = "/usr/local/bin/my-app"
-
-[[oci.copy]]
-host = "assets"
-image = "//srv//.assets///"
-
 [bootstrap.mise_shell_activate]
 bash = true
 zsh = false
@@ -103,6 +95,14 @@ bashrc = { enabled = true, mode = "activate" }
 zshenv = { enabled = false }
 zprofile = { enabled = true, mode = "shims" }
 zshrc = true
+
+[[oci.copy]]
+host = "dist/my-app"
+image = "/usr/local/bin/my-app"
+
+[[oci.copy]]
+host = "assets"
+image = "//srv//.assets///"
 TOML
 
 # Create a separate file for age schema coverage so mise does not try to decrypt
