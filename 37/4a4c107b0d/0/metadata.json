@@ -1,0 +1,63 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "374a4c107b0d",
+  "session_id": "019f6782-3ad8-7d42-93c6-5400faf21b7f",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-15T20:58:11.413365Z",
+  "branch": "codex/package-plugin-core",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/vfox/src/hooks/mod.rs",
+    "crates/vfox/src/hooks/package.rs",
+    "crates/vfox/src/lib.rs",
+    "crates/vfox/src/lua_mod/hooks.rs",
+    "crates/vfox/src/vfox.rs",
+    "src/cli/args/backend_arg.rs",
+    "src/cli/doctor/mod.rs",
+    "src/plugins/mise_plugin_toml.rs",
+    "src/plugins/mod.rs",
+    "src/plugins/vfox_plugin.rs",
+    "src/system/packages/apk.rs",
+    "src/system/packages/apt.rs",
+    "src/system/packages/brew/cask.rs",
+    "src/system/packages/brew/mod.rs",
+    "src/system/packages/dnf.rs",
+    "src/system/packages/flatpak.rs",
+    "src/system/packages/mas.rs",
+    "src/system/packages/mod.rs",
+    "src/system/packages/pacman.rs",
+    "src/system/packages/plugin.rs",
+    "src/toolset/install_state.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "acf115ddb9e7",
+  "token_usage": {
+    "input_tokens": 248586,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 14930688,
+    "output_tokens": 33782,
+    "api_call_count": 130
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-15T20:58:11.390017Z",
+    "agent_lines": 612,
+    "agent_removed": 13,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 612,
+    "total_lines_changed": 625,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

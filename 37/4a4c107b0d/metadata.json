@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "374a4c107b0d",
+  "strategy": "manual-commit",
+  "branch": "codex/package-plugin-core",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/vfox/src/hooks/mod.rs",
+    "crates/vfox/src/hooks/package.rs",
+    "crates/vfox/src/lib.rs",
+    "crates/vfox/src/lua_mod/hooks.rs",
+    "crates/vfox/src/vfox.rs",
+    "src/cli/args/backend_arg.rs",
+    "src/cli/doctor/mod.rs",
+    "src/plugins/mise_plugin_toml.rs",
+    "src/plugins/mod.rs",
+    "src/plugins/vfox_plugin.rs",
+    "src/system/packages/apk.rs",
+    "src/system/packages/apt.rs",
+    "src/system/packages/brew/cask.rs",
+    "src/system/packages/brew/mod.rs",
+    "src/system/packages/dnf.rs",
+    "src/system/packages/flatpak.rs",
+    "src/system/packages/mas.rs",
+    "src/system/packages/mod.rs",
+    "src/system/packages/pacman.rs",
+    "src/system/packages/plugin.rs",
+    "src/toolset/install_state.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/37/4a4c107b0d/0/metadata.json",
+      "transcript": "/37/4a4c107b0d/0/full.jsonl",
+      "content_hash": "/37/4a4c107b0d/0/content_hash.txt",
+      "prompt": "/37/4a4c107b0d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 248586,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 14930688,
+    "output_tokens": 33782,
+    "api_call_count": 130
+  }
+}
