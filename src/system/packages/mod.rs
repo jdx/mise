@@ -17,6 +17,7 @@ pub mod dnf;
 pub mod flatpak;
 pub mod mas;
 pub mod pacman;
+pub mod plugin;
 
 /// A single package entry from `[bootstrap.packages]` — the part after the
 /// `manager:` prefix of a `"manager:package" = "version"` config entry.
@@ -77,7 +78,7 @@ pub struct InstallOpts {
 #[async_trait(?Send)]
 pub trait SystemPackageManager: Send + Sync {
     /// config key, e.g. "apt", "brew"
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
 
     /// whether this manager can run on this machine (OS + required binaries).
     /// Entries for unavailable managers are silently skipped so configs can be
@@ -110,9 +111,14 @@ pub trait SystemPackageManager: Send + Sync {
     fn supports_version_pins(&self) -> bool {
         true
     }
+
+    /// Whether this manager is supplied by a package plugin.
+    fn is_plugin(&self) -> bool {
+        false
+    }
 }
 
-pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
+pub fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
     vec![
         Arc::new(apk::ApkManager::new()),
         Arc::new(apt::AptManager::new()),
@@ -125,6 +131,36 @@ pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(mas::MasManager::new()),
         Arc::new(pacman::PacmanManager::new()),
     ]
+}
+
+pub fn is_builtin_manager_name(name: &str) -> bool {
+    builtin_managers()
+        .iter()
+        .any(|manager| manager.name() == name)
+}
+
+pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
+    let mut managers = builtin_managers();
+    let builtins = managers
+        .iter()
+        .map(|manager| manager.name().to_string())
+        .collect::<std::collections::HashSet<_>>();
+    for (name, plugin_type) in crate::toolset::install_state::list_plugins().iter() {
+        if *plugin_type != crate::plugins::PluginType::Package {
+            continue;
+        }
+        if builtins.contains(name) {
+            warn!(
+                "package plugin '{name}' collides with a built-in package manager; ignoring plugin"
+            );
+            continue;
+        }
+        match plugin::PackagePluginManager::new(name.clone()) {
+            Ok(manager) => managers.push(Arc::new(manager)),
+            Err(err) => warn!("failed to load package plugin '{name}': {err:#}"),
+        }
+    }
+    managers
 }
 
 pub fn get_manager(name: &str) -> Option<Arc<dyn SystemPackageManager>> {
