@@ -488,7 +488,12 @@ impl Install {
                 // project setup relies on it); MISE_INSTALLED_TOOLS is [] so hooks
                 // can guard on actual installs. (#10574)
                 let ts_owned;
-                let ts = if self.monorepo {
+                let ts = if self.is_dry_run() {
+                    // Preview mode only needs the hook-selection context. Avoid
+                    // resolving the full toolset solely to describe the hook.
+                    ts_owned = Toolset::from(trs.clone());
+                    &ts_owned
+                } else if self.monorepo {
                     ts_owned =
                         Self::resolved_toolset_from_trs(&install_config, trs.clone()).await?;
                     &ts_owned
@@ -501,6 +506,7 @@ impl Install {
                     Hooks::Postinstall,
                     None,
                     Some(&[]),
+                    self.is_dry_run(),
                 )
                 .await;
                 (vec![], Ok(()))
