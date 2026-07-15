@@ -27,18 +27,7 @@ Packages in `manager:package` form; defaults to everything configured in [bootst
 
 ### `-m --manager <MANAGER>`
 
-Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, `flatpak`, or `mas`
-
-**Choices:**
-
-- `apk`
-- `apt`
-- `brew`
-- `brew-cask`
-- `dnf`
-- `flatpak`
-- `mas`
-- `pacman`
+Only upgrade packages for this built-in or plugin manager
 
 ### `-n --dry-run`
 

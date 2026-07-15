@@ -133,25 +133,40 @@ impl PluginsInstall {
         name: String,
         git_url: Option<String>,
     ) -> Result<()> {
-        let (plugin_type, name) = PluginType::from_plugin_config(&name);
-        let name = name.to_string();
-        let path = dirs::PLUGINS.join(name.to_kebab_case());
-        let plugin = plugin_type.plugin(name.clone());
-        if let Some(url) = git_url {
-            plugin.set_remote_url(url);
-        }
-        if !self.force && plugin.is_installed() {
-            warn!("Plugin {name} already installed");
-            warn!("Use --force to install anyway");
-        } else {
-            let mpr = MultiProgressReport::get();
-            plugin
-                .ensure_installed(config, &mpr, self.force, false)
-                .await?;
+        install_plugin(config, &name, git_url, self.force, false).await
+    }
+}
+
+pub(crate) async fn install_plugin(
+    config: &Arc<Config>,
+    name: &str,
+    git_url: Option<String>,
+    force: bool,
+    dry_run: bool,
+) -> Result<()> {
+    let (plugin_type, name) = PluginType::from_plugin_config(name);
+    let name = name.to_string();
+    if plugin_type == PluginType::Package && crate::system::packages::is_builtin_manager_name(&name)
+    {
+        bail!("package plugin '{name}' collides with a built-in package manager");
+    }
+    let path = dirs::PLUGINS.join(name.to_kebab_case());
+    let plugin = plugin_type.plugin(name.clone());
+    if let Some(url) = git_url {
+        plugin.set_remote_url(url);
+    }
+    if !force && plugin.is_installed() {
+        warn!("Plugin {name} already installed");
+    } else {
+        let mpr = MultiProgressReport::get();
+        plugin
+            .ensure_installed(config, &mpr, force, dry_run)
+            .await?;
+        if !dry_run {
             warn_if_env_plugin_shadows_registry(&name, &path);
         }
-        Ok(())
     }
+    Ok(())
 }
 
 #[ensures(!ret.as_ref().is_ok_and(|(r, _)| r.is_empty()), "plugin name is empty")]

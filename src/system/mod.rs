@@ -45,6 +45,9 @@ pub mod systemd;
 /// `[bootstrap]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct BootstrapTomlConfig {
+    /// Package manager plugins that must be installed, keyed by manager name.
+    #[serde(default)]
+    pub plugins: IndexMap<String, String>,
     /// `"manager:package"` -> version (`"latest"` or a manager-native pin).
     /// String-keyed so configs using managers from newer mise versions (dnf,
     /// pacman, winget, ...) parse fine on older ones.
@@ -73,6 +76,18 @@ pub struct BootstrapTomlConfig {
     /// warn and be skipped without rejecting the whole config.
     #[serde(default)]
     pub hooks: IndexMap<String, toml::Value>,
+}
+
+pub fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
+    let mut plugins = IndexMap::new();
+    for cf in config.config_files.values().rev() {
+        if let Some(bootstrap) = cf.bootstrap_config() {
+            for (name, url) in bootstrap.plugins {
+                plugins.insert(name, url);
+            }
+        }
+    }
+    plugins
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -1255,15 +1270,23 @@ fn resolve_managers(
             }),
             None => {
                 if strict {
-                    bail!("unknown bootstrap package manager '{name}'");
+                    bail!(
+                        "unknown bootstrap package manager '{name}' — install a package plugin: mise plugin install package:{name} <url>"
+                    );
                 }
                 // brew is compiled out on Windows — not unknown, just
                 // unsupported there
                 if cfg!(windows) && name == "brew" {
                     debug!("system package manager 'brew' is not supported on windows");
+                } else if crate::config::is_loaded()
+                    && plugins_from_config(&crate::config::Config::get_()).contains_key(&name)
+                {
+                    warn!(
+                        "unknown bootstrap package manager '{name}' in [bootstrap.packages] — declared in [bootstrap.plugins] but not installed; run `mise bootstrap`"
+                    );
                 } else {
                     warn!(
-                        "unknown bootstrap package manager '{name}' in [bootstrap.packages], ignoring"
+                        "unknown bootstrap package manager '{name}' in [bootstrap.packages], ignoring — install a package plugin: mise plugin install package:{name} <url>"
                     );
                 }
             }

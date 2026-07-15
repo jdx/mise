@@ -3335,6 +3335,14 @@
       "type": "object",
       "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
       "properties": {
+        "plugins": {
+          "type": "object",
+          "description": "package manager plugins to install with `mise bootstrap plugins apply`, keyed by manager name",
+          "additionalProperties": {
+            "type": "string",
+            "description": "plugin git URL"
+          }
+        },
         "packages": {
           "type": "object",
           "description": "system packages to install with `mise bootstrap packages apply`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",

@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 use super::dotfiles::{DotfilesApply, DotfilesStatus};
 use super::install::Install;
+use super::plugins::install::install_plugin;
 use super::run;
 use super::system::driver::{self, Action, DriverOpts};
 use super::system::{import, install, prune, status, upgrade, r#use};
@@ -29,10 +30,9 @@ use clap::{Subcommand, ValueEnum};
 ///
 /// Runs the bootstrap steps for the current config in order:
 ///
-/// 0. `[bootstrap.hooks.pre-packages]` — optional setup hook
-/// 1. `mise bootstrap packages apply` — install missing
-///    `[bootstrap.packages]`
-///    then `[bootstrap.hooks.post-packages]`
+/// 0. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
+/// 0.7. `[bootstrap.hooks.pre-packages]` — optional setup hook
+/// 1. Install built-in-manager entries from `[bootstrap.packages]`
 /// 2. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
 ///    surrounded by `pre-repos`/`post-repos` hooks
 /// 3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
@@ -51,6 +51,8 @@ use clap::{Subcommand, ValueEnum};
 ///    surrounded by `pre-user`/`post-user` hooks
 /// 9. `mise install` — install missing tools from `[tools]`
 ///    surrounded by `pre-tools`/`post-tools` hooks
+/// 9.5. Install package-plugin entries from `[bootstrap.packages]`, then run
+///    `[bootstrap.hooks.post-packages]`
 /// 10. `mise run bootstrap` — if a task named `bootstrap` is defined
 /// 11. `[bootstrap.hooks.final]` — optional final hook
 ///
@@ -101,6 +103,7 @@ pub struct Bootstrap {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, ValueEnum)]
 enum BootstrapPart {
+    Plugins,
     Packages,
     Repos,
     Dotfiles,
@@ -121,7 +124,8 @@ enum BootstrapPart {
 impl BootstrapPart {
     // Keep this in sync with every enum variant. `--only` computes a
     // complement from ALL, so an omitted variant would always run.
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
+        Self::Plugins,
         Self::Packages,
         Self::Repos,
         Self::Dotfiles,
@@ -148,6 +152,7 @@ enum Commands {
     #[clap(name = "mise-shell-activate", alias = "shell")]
     MiseShellActivate(BootstrapShell),
     Packages(BootstrapPackages),
+    Plugins(BootstrapPlugins),
     Repos(BootstrapRepos),
     Status(BootstrapStatus),
     #[clap(hide = true)]
@@ -234,6 +239,33 @@ static BOOTSTRAP_DOTFILES_STATUS_AFTER_LONG_HELP: &str = color_print::cstr!(
 struct BootstrapPackages {
     #[clap(subcommand)]
     command: BootstrapPackagesCommands,
+}
+
+/// Manage package manager plugins declared in `[bootstrap.plugins]`
+#[derive(Debug, clap::Args)]
+struct BootstrapPlugins {
+    #[clap(subcommand)]
+    command: BootstrapPluginsCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapPluginsCommands {
+    Apply(BootstrapPluginsApply),
+    Status(BootstrapPluginsStatus),
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapPluginsApply {
+    /// Print what would happen without installing plugins
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapPluginsStatus {
+    /// Exit with code 1 if a declared plugin is missing
+    #[clap(long)]
+    missing: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -541,12 +573,21 @@ impl Bootstrap {
         let mut follow_up = BootstrapFollowUp::new(self.dry_run);
         let mut dry_run_config_files = None;
 
+        if skip.contains(&BootstrapPart::Plugins) {
+            debug!("bootstrap: package plugins skipped");
+        } else {
+            apply_bootstrap_plugins(&config, self.dry_run).await?;
+        }
+
         if skip.contains(&BootstrapPart::Packages) {
             debug!("bootstrap: system packages skipped");
         } else {
             self.run_hooks(&hooks, BootstrapHookPhase::PrePackages)
                 .await?;
-            let mgrs = system::packages_from_config(&config);
+            let mgrs = system::packages_from_config(&config)
+                .into_iter()
+                .filter(|mp| !mp.manager.is_plugin())
+                .collect::<Vec<_>>();
             if mgrs.is_empty() {
                 debug!("bootstrap: no [bootstrap.packages] configured, skipping");
             } else {
@@ -561,8 +602,6 @@ impl Bootstrap {
                 };
                 driver::run(mgrs, Action::Install, &opts).await?;
             }
-            self.run_hooks(&hooks, BootstrapHookPhase::PostPackages)
-                .await?;
         }
 
         if skip.contains(&BootstrapPart::Repos) {
@@ -752,6 +791,31 @@ impl Bootstrap {
                 hooks = system::hooks_from_config(&config);
             }
             self.run_hooks(&hooks, BootstrapHookPhase::PostTools)
+                .await?;
+        }
+
+        if !skip.contains(&BootstrapPart::Packages) {
+            let mgrs = system::packages_from_config(&config)
+                .into_iter()
+                .filter(|mp| mp.manager.is_plugin())
+                .collect::<Vec<_>>();
+            if !mgrs.is_empty() {
+                info!("bootstrap: plugin packages");
+                follow_up.add_package_skips(&mgrs);
+                driver::run(
+                    mgrs,
+                    Action::Install,
+                    &DriverOpts {
+                        manager: None,
+                        explicit: false,
+                        dry_run: self.dry_run,
+                        update: self.update,
+                        yes: self.yes,
+                    },
+                )
+                .await?;
+            }
+            self.run_hooks(&hooks, BootstrapHookPhase::PostPackages)
                 .await?;
         }
 
@@ -1055,6 +1119,7 @@ impl Commands {
             Self::MacosDefaults(cmd) => cmd.run().await,
             Self::MiseShellActivate(cmd) => cmd.run().await,
             Self::Packages(cmd) => cmd.run().await,
+            Self::Plugins(cmd) => cmd.run().await,
             Self::Repos(cmd) => cmd.run().await,
             Self::Status(cmd) => cmd.run().await,
             Self::Systemd(cmd) => cmd.run().await,
@@ -1787,6 +1852,65 @@ impl BootstrapPackages {
             BootstrapPackagesCommands::Use(cmd) => cmd.run().await,
         }
     }
+}
+
+impl BootstrapPlugins {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapPluginsCommands::Apply(cmd) => cmd.run().await,
+            BootstrapPluginsCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapPluginsApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        apply_bootstrap_plugins(&config, self.dry_run).await
+    }
+}
+
+impl BootstrapPluginsStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let installed = crate::toolset::install_state::list_plugins();
+        let mut any_missing = false;
+        let mut table = MiseTable::new(false, &["Plugin", "URL", "State"]);
+        for (name, url) in system::plugins_from_config(&config) {
+            let present = installed.get(&name) == Some(&crate::plugins::PluginType::Package);
+            any_missing |= !present;
+            table.add_row(vec![
+                name,
+                url,
+                if present { "installed" } else { "missing" }.into(),
+            ]);
+        }
+        table.print()?;
+        if self.missing && any_missing {
+            crate::exit(1);
+        }
+        Ok(())
+    }
+}
+
+async fn apply_bootstrap_plugins(config: &Arc<Config>, dry_run: bool) -> Result<()> {
+    let plugins = system::plugins_from_config(config);
+    if plugins.is_empty() {
+        debug!("bootstrap: no [bootstrap.plugins] configured, skipping");
+        return Ok(());
+    }
+    info!("bootstrap: package plugins");
+    for (name, url) in plugins {
+        install_plugin(
+            config,
+            &format!("package:{name}"),
+            Some(url),
+            false,
+            dry_run,
+        )
+        .await?;
+    }
+    Ok(())
 }
 
 impl BootstrapRepos {
