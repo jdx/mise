@@ -321,7 +321,7 @@ fn registry_code(entries: &[(String, String)]) -> String {
     for (key, tool) in entries {
         code.push_str(&format!("        ({key:?}, {tool}),\n"));
     }
-    code.push_str("    ],\n    lookup: ");
+    code.push_str("    ],\n    lookup: RegistryLookup::Static(");
     code.push_str(&phf_usize_map_code(
         entries
             .iter()
@@ -329,7 +329,7 @@ fn registry_code(entries: &[(String, String)]) -> String {
             .map(|(index, (key, _))| (key.clone(), index.to_string()))
             .collect::<Vec<_>>(),
     ));
-    code.push_str(",\n}");
+    code.push_str("),\n}");
     code
 }
 

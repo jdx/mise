@@ -942,6 +942,15 @@ impl Settings {
             .unwrap_or(crate::aqua::aqua_registry_wrapper::DEFAULT_AQUA_REGISTRY_CACHE_TTL)
     }
 
+    pub fn registry_cache_ttl(&self) -> Duration {
+        self.registry_cache_ttl
+            .as_deref()
+            .map(duration::parse_duration)
+            .transpose()
+            .unwrap()
+            .unwrap_or(duration::HOURLY)
+    }
+
     pub fn task_timeout_duration(&self) -> Option<Duration> {
         self.task
             .timeout
