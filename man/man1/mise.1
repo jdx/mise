@@ -241,7 +241,11 @@ Manage git repo checkouts from `[bootstrap.repos]`
 .TP
 \fBbootstrap repos apply\fR
 .TP
+\fBbootstrap repos exec\fR
+.TP
 \fBbootstrap repos status\fR
+.TP
+\fBbootstrap repos update\fR
 .TP
 \fBbootstrap status\fR
 Show the aggregate bootstrap status
@@ -848,7 +852,7 @@ Runs the bootstrap steps for the current config in order:
 1. `mise bootstrap packages apply` — install missing
    `[bootstrap.packages]`
    then `[bootstrap.hooks.post\-packages]`
-2. `mise bootstrap repos apply` — clone/update `[bootstrap.repos]`
+2. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
    surrounded by `pre\-repos`/`post\-repos` hooks
 3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre\-dotfiles`/`post\-dotfiles` hooks
@@ -904,7 +908,7 @@ Skip one or more bootstrap parts
 Can be passed multiple times or as a comma\-separated list.
 .TP
 \fB\-\-update\fR
-Refresh system package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`)
+Refresh package manager metadata and update configured repos
 .SH "MISE BOOTSTRAP DOTFILES APPLY"
 Apply dotfiles from `[dotfiles]`
 
@@ -1263,6 +1267,25 @@ Print the commands that would run without running them
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.SH "MISE BOOTSTRAP REPOS EXEC"
+\fBUsage:\fR mise bootstrap repos exec [OPTIONS] [<PATH>] ... <COMMAND> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-c, \-\-continue\-on\-error\fR
+Continue running in other repos after a command fails
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Run only in matching configured or expanded paths
+.TP
+\fB<COMMAND>\fR
+Command and arguments to run in each repo
 .SH "MISE BOOTSTRAP REPOS STATUS"
 \fBUsage:\fR mise bootstrap repos status [OPTIONS]
 .PP
@@ -1274,6 +1297,22 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured repo is not in its desired state
+.SH "MISE BOOTSTRAP REPOS UPDATE"
+\fBUsage:\fR mise bootstrap repos update [OPTIONS] [<PATH>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Update only matching configured or expanded paths
 .SH "MISE BOOTSTRAP STATUS"
 Show the aggregate bootstrap status
 .PP

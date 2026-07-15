@@ -260,6 +260,44 @@ pub(crate) fn apply_repos(
     Ok(())
 }
 
+/// Update `[bootstrap.repos]` entries, including unpinned repos.
+pub(crate) fn update_repos(
+    repos: Vec<system::repos::RepoRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    use crate::system::repos;
+    if repos.is_empty() {
+        return Ok(());
+    }
+    let statuses = repos::status(&repos)?;
+    repos::preflight_statuses(&statuses)?;
+    let targets: Vec<_> = statuses
+        .into_iter()
+        .filter(|s| !s.state.is_current() || s.request.git_ref.is_none())
+        .collect();
+    if targets.is_empty() {
+        info!("repos: all repo(s) already current");
+        return Ok(());
+    }
+    let list = targets
+        .iter()
+        .map(|s| s.request.to_string())
+        .collect::<Vec<_>>();
+    if !dry_run && !yes && console::user_attended_stderr() {
+        let msg = format!("repos: update {}?", list.join(", "));
+        if !crate::ui::prompt::confirm(msg)? {
+            info!("repos: skipped");
+            return Ok(());
+        }
+    }
+    repos::update_statuses(&targets, dry_run)?;
+    if !dry_run {
+        info!("repos: updated {}", list.join(", "));
+    }
+    Ok(())
+}
+
 /// Apply `[bootstrap.macos.launchd.agents]` entries that are missing, changed,
 /// or not loaded. Inert off-macOS.
 pub(crate) async fn apply_launchd(
