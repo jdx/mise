@@ -33,7 +33,7 @@ use clap::{Subcommand, ValueEnum};
 /// 1. `mise bootstrap packages apply` — install missing
 ///    `[bootstrap.packages]`
 ///    then `[bootstrap.hooks.post-packages]`
-/// 2. `mise bootstrap repos apply` — clone/update `[bootstrap.repos]`
+/// 2. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
 ///    surrounded by `pre-repos`/`post-repos` hooks
 /// 3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
 ///    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
@@ -94,7 +94,7 @@ pub struct Bootstrap {
     #[clap(long, value_enum, value_delimiter = ',')]
     skip: Vec<BootstrapPart>,
 
-    /// Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
+    /// Refresh package manager metadata and update configured repos
     #[clap(long)]
     update: bool,
 }
@@ -260,7 +260,9 @@ struct BootstrapRepos {
 #[derive(Debug, Subcommand)]
 enum BootstrapReposCommands {
     Apply(BootstrapReposApply),
+    Exec(BootstrapReposExec),
     Status(BootstrapReposStatus),
+    Update(BootstrapReposUpdate),
 }
 
 #[derive(Debug, clap::Args)]
@@ -272,6 +274,40 @@ struct BootstrapReposApply {
     /// Skip the confirmation prompt
     #[clap(long, short)]
     yes: bool,
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapReposUpdate {
+    /// Update only matching configured or expanded paths
+    #[clap(value_name = "PATH")]
+    paths: Vec<String>,
+
+    /// Print the commands that would run without running them
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapReposExec {
+    /// Run only in matching configured or expanded paths
+    #[clap(value_name = "PATH")]
+    paths: Vec<String>,
+
+    /// Continue running in other repos after a command fails
+    #[clap(long, short = 'c')]
+    continue_on_error: bool,
+
+    /// Print the commands that would run without running them
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Command and arguments to run in each repo
+    #[clap(last = true, required = true)]
+    command: Vec<String>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -538,7 +574,11 @@ impl Bootstrap {
                 debug!("bootstrap: no [bootstrap.repos] configured, skipping");
             } else {
                 info!("bootstrap: repos");
-                install::apply_repos(repos, self.dry_run, self.yes)?;
+                if self.update {
+                    install::update_repos(repos, self.dry_run, self.yes)?;
+                } else {
+                    install::apply_repos(repos, self.dry_run, self.yes)?;
+                }
             }
             self.run_hooks(&hooks, BootstrapHookPhase::PostRepos)
                 .await?;
@@ -1755,7 +1795,9 @@ impl BootstrapRepos {
     async fn run(self) -> Result<()> {
         match self.command {
             BootstrapReposCommands::Apply(cmd) => cmd.run().await,
+            BootstrapReposCommands::Exec(cmd) => cmd.run().await,
             BootstrapReposCommands::Status(cmd) => cmd.run().await,
+            BootstrapReposCommands::Update(cmd) => cmd.run().await,
         }
     }
 }
@@ -1765,6 +1807,48 @@ impl BootstrapReposApply {
         let config = Config::get().await?;
         install::apply_repos(system::repos_from_config(&config), self.dry_run, self.yes)
     }
+}
+
+impl BootstrapReposUpdate {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let repos = filter_repos(system::repos_from_config(&config), &self.paths)?;
+        install::update_repos(repos, self.dry_run, self.yes)
+    }
+}
+
+impl BootstrapReposExec {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let repos = filter_repos(system::repos_from_config(&config), &self.paths)?;
+        system::repos::exec(&repos, &self.command, self.dry_run, self.continue_on_error)
+    }
+}
+
+fn filter_repos(
+    repos: Vec<system::repos::RepoRequest>,
+    filters: &[String],
+) -> Result<Vec<system::repos::RepoRequest>> {
+    if filters.is_empty() {
+        return Ok(repos);
+    }
+    for filter in filters {
+        let expanded = crate::file::replace_path(filter);
+        if !repos
+            .iter()
+            .any(|repo| repo.path_raw == *filter || repo.path == expanded)
+        {
+            eyre::bail!("no configured repo matched path: {filter}");
+        }
+    }
+    Ok(repos
+        .into_iter()
+        .filter(|repo| {
+            filters.iter().any(|filter| {
+                repo.path_raw == *filter || repo.path == crate::file::replace_path(filter)
+            })
+        })
+        .collect())
 }
 
 impl BootstrapReposStatus {

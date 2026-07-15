@@ -127,8 +127,8 @@ pub fn preflight_statuses(statuses: &[RepoStatus]) -> Result<()> {
     Ok(())
 }
 
-pub fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
-    preflight_statuses(statuses)?;
+/// Apply statuses previously validated with [`preflight_statuses`].
+pub(crate) fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
     for status in statuses {
         match &status.state {
             RepoState::Current => {
@@ -138,6 +138,86 @@ pub fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
             RepoState::Differs => update_repo(&status.request, dry_run)?,
             RepoState::Dirty | RepoState::Conflict(_) => unreachable!("preflighted above"),
         }
+    }
+    Ok(())
+}
+
+/// Update statuses previously validated with [`preflight_statuses`].
+pub(crate) fn update_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
+    for status in statuses {
+        match &status.state {
+            RepoState::Missing => clone_repo(&status.request, dry_run)?,
+            RepoState::Differs => update_repo(&status.request, dry_run)?,
+            RepoState::Current if status.request.git_ref.is_none() => {
+                update_unpinned_repo(&status.request, dry_run)?
+            }
+            RepoState::Current => {
+                info!("repos: {} already current", status.request);
+            }
+            RepoState::Dirty | RepoState::Conflict(_) => unreachable!("preflighted above"),
+        }
+    }
+    Ok(())
+}
+
+pub fn exec(
+    requests: &[RepoRequest],
+    command: &[String],
+    dry_run: bool,
+    continue_on_error: bool,
+) -> Result<()> {
+    let Some((program, args)) = command.split_first() else {
+        bail!("repos: command is required");
+    };
+    let statuses = status(requests)?;
+    let mut failures = vec![];
+    for status in statuses {
+        match &status.state {
+            RepoState::Missing => {
+                warn!("repos: {}: missing, skipping", status.request);
+                continue;
+            }
+            RepoState::Conflict(reason) => {
+                warn!("repos: {}: {reason}, skipping", status.request);
+                continue;
+            }
+            RepoState::Current | RepoState::Differs | RepoState::Dirty => {}
+        }
+
+        miseprintln!("repo: {}", status.request);
+        if dry_run {
+            let mut parts = vec!["cd".to_string(), status.request.path.display().to_string()];
+            parts.push("&&".to_string());
+            parts.extend(command.iter().cloned());
+            miseprintln!("{}", shell_words::join(parts));
+            continue;
+        }
+
+        debug!(
+            "$ (cd {} && {})",
+            status.request,
+            shell_words::join(command)
+        );
+        let result = Command::new(program)
+            .args(args)
+            .current_dir(&status.request.path)
+            .status();
+        let failed = match result {
+            Ok(exit) => !exit.success(),
+            Err(err) => {
+                warn!("repos: {}: command failed to start: {err}", status.request);
+                true
+            }
+        };
+        if failed {
+            failures.push(status.request.to_string());
+            if !continue_on_error {
+                bail!("repos: command failed in {}", status.request);
+            }
+        }
+    }
+    if !failures.is_empty() {
+        bail!("repos: command failed in {}", failures.join(", "));
     }
     Ok(())
 }
@@ -282,6 +362,30 @@ fn update_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
         )?;
     }
     Ok(())
+}
+
+fn update_unpinned_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
+    if !is_clean(&request.path)? {
+        bail!(
+            "repos: {} has local changes; commit, stash, or clean them before bootstrap",
+            request
+        );
+    }
+    let branch = current_ref(&request.path)?;
+    if dry_run {
+        print_git_command(&request.path, &["fetch", "--prune", "--tags", "origin"])?;
+    } else {
+        git_run(&request.path, &["fetch", "--prune", "--tags", "origin"])?;
+    }
+    if branch == "HEAD" {
+        warn!("repos: {} has detached HEAD, skipping", request);
+        return Ok(());
+    }
+    if dry_run {
+        print_git_command(&request.path, &["pull", "--ff-only", "origin", &branch])?;
+        return Ok(());
+    }
+    git_run(&request.path, &["pull", "--ff-only", "origin", &branch])
 }
 
 fn ref_is_current(
@@ -586,6 +690,47 @@ mod tests {
         );
     }
 
+    fn init_repo(path: &Path) {
+        Command::new("git")
+            .args(["init", "-q", "-b", "main"])
+            .arg(path)
+            .status()
+            .unwrap();
+        fs::write(path.join("version.txt"), "v1").unwrap();
+        test_git(path, &["add", "."]);
+        test_git(
+            path,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test User",
+                "commit",
+                "-q",
+                "-m",
+                "v1",
+            ],
+        );
+    }
+
+    fn commit_version(path: &Path, version: &str) {
+        fs::write(path.join("version.txt"), version).unwrap();
+        test_git(path, &["add", "."]);
+        test_git(
+            path,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test User",
+                "commit",
+                "-q",
+                "-m",
+                version,
+            ],
+        );
+    }
+
     #[test]
     fn validates_repo_request() {
         let request = RepoRequest::from_toml(
@@ -669,7 +814,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_statuses_preflights_blocked_repos_before_mutating() {
+    fn preflight_statuses_blocks_dirty_repos_before_mutation() {
         let tmp = tempfile::tempdir().unwrap();
         let missing_path = tmp.path().join("missing");
         let missing_request = RepoRequest {
@@ -693,10 +838,65 @@ mod tests {
         };
 
         let err =
-            apply_statuses(&[missing_status(&missing_request), dirty_status], false).unwrap_err();
+            preflight_statuses(&[missing_status(&missing_request), dirty_status]).unwrap_err();
 
         assert!(format!("{err:#}").contains("local changes"));
         assert!(!missing_path.exists());
+    }
+
+    #[test]
+    fn ref_less_update_pulls_current_branch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        let target = tmp.path().join("target");
+        init_repo(&source);
+        let url = format!("file://{}", source.display());
+        test_git(tmp.path(), &["clone", "-q", &url, target.to_str().unwrap()]);
+        commit_version(&source, "v2");
+        let request = RepoRequest {
+            path_raw: target.display().to_string(),
+            path: target.clone(),
+            url,
+            git_ref: None,
+        };
+
+        let statuses = status(&[request]).unwrap();
+        assert_eq!(statuses[0].state, RepoState::Current);
+        update_statuses(&statuses, false).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(target.join("version.txt")).unwrap(),
+            "v2"
+        );
+    }
+
+    #[test]
+    fn ref_less_update_skips_detached_head() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        let target = tmp.path().join("target");
+        init_repo(&source);
+        let url = format!("file://{}", source.display());
+        test_git(tmp.path(), &["clone", "-q", &url, target.to_str().unwrap()]);
+        test_git(&target, &["checkout", "-q", "--detach"]);
+        commit_version(&source, "v2");
+        let request = RepoRequest {
+            path_raw: target.display().to_string(),
+            path: target.clone(),
+            url,
+            git_ref: None,
+        };
+
+        update_statuses(&status(&[request]).unwrap(), false).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(target.join("version.txt")).unwrap(),
+            "v1"
+        );
+        assert_eq!(
+            local_ref_sha(&target, "origin/main").unwrap(),
+            current_sha(&source).unwrap()
+        );
     }
 
     #[test]
@@ -735,6 +935,40 @@ mod tests {
         let err = update_repo(&request, false).unwrap_err();
 
         assert!(format!("{err:#}").contains("local changes"));
+    }
+
+    #[test]
+    fn update_unpinned_repo_rechecks_clean_worktree_before_mutating() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        let target = tmp.path().join("target");
+        init_repo(&source);
+        let url = format!("file://{}", source.display());
+        test_git(tmp.path(), &["clone", "-q", &url, target.to_str().unwrap()]);
+        let request = RepoRequest {
+            path_raw: target.display().to_string(),
+            path: target.clone(),
+            url,
+            git_ref: None,
+        };
+        let statuses = status(&[request]).unwrap();
+        let original_origin_sha = local_ref_sha(&target, "origin/main").unwrap();
+        commit_version(&source, "v2");
+        fs::write(target.join("local.txt"), "local").unwrap();
+
+        let err = update_unpinned_repo(&statuses[0].request, false).unwrap_err();
+
+        assert!(format!("{err:#}").contains("local changes"));
+        assert_eq!(
+            local_ref_sha(&target, "origin/main").unwrap(),
+            original_origin_sha
+        );
+    }
+
+    #[test]
+    fn exec_rejects_an_empty_command() {
+        let err = exec(&[], &[], false, false).unwrap_err();
+        assert!(format!("{err:#}").contains("command is required"));
     }
 
     #[test]
