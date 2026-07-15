@@ -167,9 +167,7 @@ async fn delete(
         let pr = mpr.add(&prefix);
         p.uninstall_version(config, &tv, pr.as_ref(), dry_run)
             .await?;
-        if !dry_run {
-            runtime_symlinks::remove_missing_symlinks(p)?;
-        }
+        runtime_symlinks::remove_missing_symlinks(p)?;
         pr.finish();
     }
     Ok(())
