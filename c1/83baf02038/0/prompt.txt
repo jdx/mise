@@ -1,0 +1,85 @@
+ok fix the pr
+
+---
+
+what do you think of this? just tell me first before changing anything:
+
+Keep as-is
+tool_version_needs_auto_lock and the auto-lock skip check — these already resolve options per target platform via the backend. This is the oracle approach; no heuristic here. Keep the stale-version guard too.
+The set_platform_info trailing cleanup (lockfile.rs:1184-1194) — "a freshly resolved platform lives under exactly one variant" is invariant enforcement, not guessing. Keep.
+Deterministic (version, options) sort, the e2e test, and the set_platform_info variant-separation unit test.
+Replace: merge_tool_entries — rekey by resolution instead of platform-overlap
+Delete both the overlap-filtered adoption and the disjoint-preservation else if (lockfile.rs:2342-2376). Replace with:
+
+Change the signature to take a resolver, e.g. resolve: impl Fn(&str /*version*/, &Platform) -> Option<BTreeMap<String, String>> (a closure keeps unit tests trivial — no real backends needed). The call site in update_lockfiles builds it from the ToolVersions it already has: match version → tv.request.backend() → resolve_lockfile_options(&tv.request, target), returning None on parse/resolve errors.
+For each existing entry with empty options whose version was freshly resolved: for each platform key it holds, ask the resolver where that platform belongs and move its data to the (version, resolved_options) entry (creating it if needed, merge_with if data exists). Resolver returns None → leave the platform where it is, never drop data.
+Existing entries with non-empty options that don't exact-match: leave current behavior (dropped for normal lockfiles, resurrected by preserve_absent for monorepo roots). Moving data between real variants would carry a stale checksum into a different artifact — that's the user-changed-options case, and pruning is correct.
+This makes #10564 (java: linux data resolves to {shorthand_vendor} → moves) and #10996 (ruby: windows data resolves to {} → stays, exact match) the same rule, with the backend answering instead of platform-shape inference. It also fixes the residual case the overlap heuristic can't: a legacy entry whose first re-resolved platform is one it doesn't own currently lingers as a sibling — the resolver places it immediately.
+
+Replace: preserve_absent_tool_entries — consumed keys instead of adopted_versions
+The adopted_versions set (lockfile.rs:2408) is the second heuristic ("non-empty options in output ≈ an adoption happened"). Replace it: have merge_tool_entries return the set of existing (version, options) keys it fully drained via rekeying, and have preserve_absent_tool_entries skip exactly those. Two exact-set checks, zero inference — and it stays correct for the monorepo case where another project legitimately holds the same version under different options (a version-level skip would eat those; don't do that).
+
+Delete: the set_platform_info adoption fallback
+Drop the or_else empty-options lookup entirely (lockfile.rs:1080-1090) — exact (version, options) match only. Callers all pass per-target resolved options now, and migration is merge's job. The consequence is benign: on mise lock/auto-lock, a legacy entry drains platform-by-platform via the cleanup loop instead of being adopted wholesale — and since both paths iterate all target platforms in one run, it converges in a single command. This removes the third copy of the heuristic rather than upgrading it.
+
+Don't add
+No options = {} schema marker / format version. I floated this earlier, but rekey-by-resolution makes it unnecessary — the resolver recomputes truth regardless of when a backend started reporting options, so distinguishing "legacy empty" from "authoritative empty" in the serialization buys nothing and rewrites every user's lockfile for cosmetics.
+Tests to adjust
+Rewrite the two adoption unit tests around merge_tool_entries with a fake resolver: java-migration (platforms move), ruby (windows stays under {}), user-changed-options (old variant's checksum does not appear under the new options), resolver-error (data stays put), and a monorepo case (same version, different non-empty options from another project survives preserve_absent).
+Drop the set_platform_info adoption tests; keep the variant-separation one.
+Address the CodeRabbit comment on test_tool_version_needs_auto_lock_uses_target_specific_options while you're in there.
+Net effect: the PR ends up mostly deleting logic — one rekey pass replaces three copies of shape-guessing, and the only remaining assumption ("don't move data between non-empty variants") is stated once, where the resolver can't answer by construction.
+
+---
+
+ok fix the pr
+
+---
+
+hey I spoke with my other agent about this issue and he had this to say. does this change anything for us?
+
+You're right — that's a real hole. In a monorepo root lockfile (and that's exactly where preserve_absent_tool_entries runs), tool_versions_by_short can aggregate two projects pinning the same short+version with different request options, so Fn(&version, &Platform) is underdetermined. Before I give the corrected shape, let me check one related thing this surfaced — whether auto-lock/set_platform_info also write to monorepo root lockfiles, because the PR's cleanup loop has the same "one variant per platform" assumption baked in.
+
+
+Ran 2 commands
+Confirmed, and your objection actually runs deeper than the resolver: lockfile_path_for_tool_source routes every subproject's source through monorepo_lockfile_root() (lockfile.rs:1260), so auto-lock and set_platform_info write into the shared root lockfile too. That means "same short+version, different request options" isn't just a merge-time aggregation case — it's a standing state the write path must tolerate. Two corrections to my proposed changes:
+
+1. Resolver: consensus over requests, not Fn(version, platform)
+Since several fresh ToolVersions can share (short, version) with different request options, precompute the decision per (version, platform) across all matching requests, and only rekey on unanimity:
+
+// built at the update_lockfiles call site, per short
+let mut rekey: HashMap<(String, String), Option<BTreeMap<String, String>>> = HashMap::new();
+for tv in &tool_versions {
+    let Ok(backend) = tv.request.backend() else { continue };
+    for platform_key in platforms_of_existing_legacy_entries(&tv.version) {
+        let resolved = Platform::parse(&platform_key).ok().and_then(|p| {
+            backend.resolve_lockfile_options(&tv.request, &PlatformTarget::new(p)).ok()
+        });
+        match rekey.entry((tv.version.clone(), platform_key)) {
+            Entry::Vacant(e) => { e.insert(resolved); }
+            Entry::Occupied(mut e) => if *e.get() != resolved { e.insert(None); } // disagreement → don't move
+        }
+    }
+}
+None (disagreement, parse failure, or resolve error) means the platform's data stays where it is — never moved, never dropped. That's always safe: each request's own writes land under its exact resolved key anyway, so ambiguity degrades to "no migration", not corruption. The consumed-keys bookkeeping for preserve_absent_tool_entries still works — an entry is consumed only if every platform actually moved.
+
+2. The PR's cleanup loop needs the same medicine — this is a live bug in #10999 as written
+The strip at lockfile.rs:1187-1191 asserts "a platform belongs to exactly one option variant," but in a monorepo root lockfile that's false: project A locking linux-x64 under {format = "tar.gz"} will strip linux-x64 out of project B's legitimate {} variant of the same version, and B's next install strips A's back — cross-invocation ping-pong, each run clobbering the other's checksums. (Pre-PR code was also broken here — the old adoption would fold B's entry into A's outright — so it's not a regression, but since the PR is touching this exact line, fix it now.)
+
+Scope the strip to the corruption it exists to repair. The old folding only ever conflated empty↔non-empty pairs, so:
+
+for tool in tools.iter_mut() {
+    if tool.version == version
+        && &tool.options != options
+        && (tool.options.is_empty() || options.is_empty())
+    {
+        tool.platforms.remove(platform_key);
+    }
+}
+with a comment stating it repairs empty↔non-empty conflation from the old adoption logic and deliberately leaves non-empty sibling variants alone, because monorepo root lockfiles legitimately hold several per version. The known residual — cross-project empty-vs-non-empty coexistence on the same platform — is genuinely undecidable from within one invocation (no run ever sees both requests), and notably can't occur for the ruby case since the platform itself determines emptiness there; document it and move on.
+
+Tests this adds to the previous list
+Two fresh ToolVersions, same version, different request options → rekey map yields None, legacy platform data stays put.
+set_platform_info write under options A does not strip the platform from a same-version non-empty sibling variant B.
+Consensus case still migrates the legacy java entry, and the empty↔non-empty strip still repairs the duplicated ruby state from the discussion repro.
+Everything else from the earlier list stands: delete set_platform_info's adoption fallback, replace adopted_versions with consumed keys, keep the per-target auto-lock matching, keep the e2e test.
