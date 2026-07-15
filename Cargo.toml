@@ -132,6 +132,17 @@ nucleo-matcher = "0.3"
 num_cpus = "1"
 once_cell = "1"
 openssl = { version = "0.10", optional = true }
+opentelemetry = { version = "0.29", features = ["trace"] }
+opentelemetry-otlp = { version = "0.29", default-features = false, features = [
+  "http-proto",
+  "trace",
+  "reqwest-client",
+] }
+opentelemetry_sdk = { version = "0.29", features = [
+  "trace",
+  "rt-tokio",
+  "experimental_trace_batch_span_processor_with_async_runtime",
+] }
 path-absolutize = { version = "3", features = ["unsafe_cache"] }
 petgraph = "0.8"
 phf = "0.14"
@@ -263,6 +274,7 @@ clap-sort = "1"
 ctor = "1"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
+opentelemetry_sdk = { version = "0.29", features = ["testing"] }
 pretty_assertions = "1"
 test-log = "0.2"
 
