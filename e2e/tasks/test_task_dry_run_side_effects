@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "1"
+
+[deps.setup]
+auto = true
+run = "touch deps-ran"
+outputs = ["deps-ran"]
+
+[tasks.check]
+tools = { dummy = "1.0.0" }
+run = "touch task-ran"
+EOF
+
+rm -rf "$MISE_DATA_DIR/installs/tiny" "$MISE_DATA_DIR/installs/dummy"
+
+assert_contains "mise run --dry-run check 2>&1" "touch task-ran"
+assert_fail "test -e deps-ran"
+assert_fail "test -e task-ran"
+assert_fail "test -d '$MISE_DATA_DIR/installs/tiny/1.1.0'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"

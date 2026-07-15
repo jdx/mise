@@ -387,6 +387,7 @@ impl Run {
         let opts = InstallOptions {
             jobs: self.jobs,
             raw: self.raw,
+            dry_run: self.dry_run,
             missing_args_only: !Settings::get().task.run_auto_install,
             skip_auto_install: !Settings::get().task.run_auto_install
                 || !Settings::get().auto_install,
@@ -408,6 +409,7 @@ impl Run {
             engine
                 .run(DepsOptions {
                     auto_only: true, // Only run providers with auto=true
+                    dry_run: self.dry_run,
                     env,
                     ..Default::default()
                 })
@@ -453,7 +455,7 @@ impl Run {
         self.output = Some(self.output(None));
 
         // Step 3: Install tools needed by tasks
-        if !self.skip_tools {
+        if !self.skip_tools && !self.dry_run {
             self.install_task_tools(&mut config, &tasks).await?;
         }
 
