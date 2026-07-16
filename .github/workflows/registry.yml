@@ -364,40 +364,72 @@ jobs:
       - list-changed-tools
       - validate-new-tools
       - test-tool
-    if: |
-      !cancelled() &&
-      (
-        needs.check-changes.result != 'success' ||
-        (
-          needs.check-changes.outputs.registry-changed == 'true' &&
-          (
-            needs.build.result != 'success' ||
-            (github.event_name == 'pull_request' && needs.list-changed-tools.result != 'success') ||
-            (github.event_name != 'pull_request' && needs.list-changed-tools.result != 'skipped') ||
-            (
-              github.event_name == 'pull_request' &&
-              github.event.pull_request.user.login != 'jdx' &&
-              needs.list-changed-tools.outputs.new_tools != '' &&
-              needs.validate-new-tools.result != 'success'
-            ) ||
-            (
-              (
-                github.event_name != 'pull_request' ||
-                github.event.pull_request.user.login == 'jdx' ||
-                needs.list-changed-tools.outputs.new_tools == ''
-              ) &&
-              needs.validate-new-tools.result != 'skipped'
-            ) ||
-            (
-              needs.list-changed-tools.outputs.skip-test-tool == 'true' &&
-              needs.test-tool.result != 'skipped'
-            ) ||
-            (
-              needs.list-changed-tools.outputs.skip-test-tool != 'true' &&
-              needs.test-tool.result != 'success'
-            )
-          )
-        )
-      )
+    if: ${{ !cancelled() }}
     steps:
-      - run: exit 1
+      - name: Check registry CI job results
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          CHECK_CHANGES_RESULT: ${{ needs.check-changes.result }}
+          EVENT_NAME: ${{ github.event_name }}
+          LIST_CHANGED_TOOLS_RESULT: ${{ needs.list-changed-tools.result }}
+          NEW_TOOLS: ${{ needs.list-changed-tools.outputs.new_tools }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REGISTRY_CHANGED: ${{ needs.check-changes.outputs.registry-changed }}
+          SKIP_TEST_TOOL: ${{ needs.list-changed-tools.outputs.skip-test-tool }}
+          TEST_TOOL_RESULT: ${{ needs.test-tool.result }}
+          VALIDATE_NEW_TOOLS_RESULT: ${{ needs.validate-new-tools.result }}
+        run: |
+          if [ "$CHECK_CHANGES_RESULT" != "success" ]; then
+            echo "::error::check-changes concluded $CHECK_CHANGES_RESULT; expected success"
+            exit 1
+          fi
+
+          case "$REGISTRY_CHANGED" in
+          false)
+            echo "No registry changes detected"
+            exit 0
+            ;;
+          true) ;;
+          *)
+            echo "::error::check-changes produced unexpected registry-changed=$REGISTRY_CHANGED"
+            exit 1
+            ;;
+          esac
+
+          if [ "$BUILD_RESULT" != "success" ]; then
+            echo "::error::build concluded $BUILD_RESULT; expected success"
+            exit 1
+          fi
+
+          case "$EVENT_NAME" in
+          pull_request) expected_list_result="success" ;;
+          push | workflow_dispatch) expected_list_result="skipped" ;;
+          *)
+            echo "::error::unexpected event $EVENT_NAME"
+            exit 1
+            ;;
+          esac
+          if [ "$LIST_CHANGED_TOOLS_RESULT" != "$expected_list_result" ]; then
+            echo "::error::list-changed-tools concluded $LIST_CHANGED_TOOLS_RESULT; expected $expected_list_result"
+            exit 1
+          fi
+
+          expected_validate_result="skipped"
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$PR_AUTHOR" != "jdx" ] && [ -n "$NEW_TOOLS" ]; then
+            expected_validate_result="success"
+          fi
+          if [ "$VALIDATE_NEW_TOOLS_RESULT" != "$expected_validate_result" ]; then
+            echo "::error::validate-new-tools concluded $VALIDATE_NEW_TOOLS_RESULT; expected $expected_validate_result"
+            exit 1
+          fi
+
+          expected_test_tool_result="success"
+          if [ "$SKIP_TEST_TOOL" = "true" ]; then
+            expected_test_tool_result="skipped"
+          fi
+          if [ "$TEST_TOOL_RESULT" != "$expected_test_tool_result" ]; then
+            echo "::error::test-tool concluded $TEST_TOOL_RESULT; expected $expected_test_tool_result"
+            exit 1
+          fi
+
+          echo "All required registry CI jobs completed with their expected results"
