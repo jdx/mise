@@ -2965,6 +2965,40 @@
       "minProperties": 1,
       "additionalProperties": false
     },
+    "bootstrap_hook": {
+      "description": "command or commands to run for a bootstrap phase",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "run": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "required": ["run"],
+          "additionalProperties": true
+        }
+      ]
+    },
     "bootstrap_shell_activation": {
       "oneOf": [
         {
@@ -3713,6 +3747,88 @@
               }
             }
           }
+        },
+        "hooks": {
+          "type": "object",
+          "description": "commands to run before and after bootstrap phases",
+          "properties": {
+            "pre-packages": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre_packages": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post-packages": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post_packages": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre-repos": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre_repos": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post-repos": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post_repos": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre-dotfiles": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre_dotfiles": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post-dotfiles": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post_dotfiles": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre-defaults": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre_defaults": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post-defaults": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post_defaults": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre-user": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre_user": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post-user": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post_user": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre-tools": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre_tools": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post-tools": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post_tools": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "final": {
+              "$ref": "#/$defs/bootstrap_hook"
+            }
+          },
+          "additionalProperties": false
         },
         "mise_shell_activate": {
           "type": "object",
