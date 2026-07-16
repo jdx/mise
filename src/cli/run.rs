@@ -1,4 +1,5 @@
 use crate::errors::Error;
+use std::collections::HashSet;
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -7,7 +8,7 @@ use std::time::Duration;
 use super::args::ToolArg;
 use crate::cli::{Cli, unescape_task_args};
 use crate::config::{Config, Settings};
-use crate::deps::{DepsEngine, DepsOptions};
+use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
 use crate::duration;
 use crate::env;
 use crate::file::display_path;
@@ -17,7 +18,7 @@ use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::{Deps, Task};
-use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::{ctrlc, info, style};
 use clap::{CommandFactory, ValueHint};
 use eyre::{Result, bail, eyre};
@@ -387,14 +388,22 @@ impl Run {
         let opts = InstallOptions {
             jobs: self.jobs,
             raw: self.raw,
+            dry_run: self.dry_run,
             missing_args_only: !Settings::get().task.run_auto_install,
             skip_auto_install: !Settings::get().task.run_auto_install
                 || !Settings::get().auto_install,
             ..Default::default()
         };
-        if !self.skip_tools {
-            let _ = ts.install_missing_versions(&mut config, &opts).await?;
-        }
+        let previewed_tools = if !self.skip_tools {
+            let (installed, _) = ts.install_missing_versions(&mut config, &opts).await?;
+            if self.dry_run {
+                installed.into_iter().collect()
+            } else {
+                HashSet::new()
+            }
+        } else {
+            HashSet::new()
+        };
 
         // Run auto-enabled deps steps (unless --no-deps)
         if !self.no_deps {
@@ -405,13 +414,19 @@ impl Run {
                 engine.add_config_files(subdir_configs);
             }
 
-            engine
+            let result = engine
                 .run(DepsOptions {
                     auto_only: true, // Only run providers with auto=true
+                    dry_run: self.dry_run,
                     env,
                     ..Default::default()
                 })
                 .await?;
+            for step in result.steps {
+                if let DepsStepResult::WouldRun(id, reason) = step {
+                    info!("[dry-run] Would install dependency: {id} ({reason})");
+                }
+            }
         }
 
         // Apply global timeout for entire run if configured
@@ -422,11 +437,15 @@ impl Run {
         };
 
         if let Some(timeout) = timeout {
-            tokio::time::timeout(timeout, self.parallelize_tasks(config, resolved_tasks))
-                .await
-                .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
+            tokio::time::timeout(
+                timeout,
+                self.parallelize_tasks(config, resolved_tasks, previewed_tools),
+            )
+            .await
+            .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
         } else {
-            self.parallelize_tasks(config, resolved_tasks).await?
+            self.parallelize_tasks(config, resolved_tasks, previewed_tools)
+                .await?
         }
 
         time!("run done");
@@ -441,7 +460,12 @@ impl Run {
             .clone()
     }
 
-    async fn parallelize_tasks(mut self, mut config: Arc<Config>, tasks: Vec<Task>) -> Result<()> {
+    async fn parallelize_tasks(
+        mut self,
+        mut config: Arc<Config>,
+        tasks: Vec<Task>,
+        previewed_tools: HashSet<ToolVersion>,
+    ) -> Result<()> {
         time!("parallelize_tasks start");
 
         // Step 1: Prepare tasks (resolve dependencies, fetch, validate)
@@ -454,7 +478,8 @@ impl Run {
 
         // Step 3: Install tools needed by tasks
         if !self.skip_tools {
-            self.install_task_tools(&mut config, &tasks).await?;
+            self.install_task_tools(&mut config, &tasks, &previewed_tools)
+                .await?;
         }
 
         // Step 4: Create TaskExecutor after tool installation
@@ -751,12 +776,19 @@ impl Run {
     }
 
     /// Collect and install all tools needed by tasks
-    async fn install_task_tools(&self, config: &mut Arc<Config>, tasks: &Deps) -> Result<()> {
+    async fn install_task_tools(
+        &self,
+        config: &mut Arc<Config>,
+        tasks: &Deps,
+        previewed_tools: &HashSet<ToolVersion>,
+    ) -> Result<()> {
         let installer = crate::task::task_tool_installer::TaskToolInstaller::new(
             &self.context_builder,
             &self.tool,
         );
-        installer.install_tools(config, tasks).await
+        installer
+            .install_tools(config, tasks, self.dry_run, previewed_tools)
+            .await
     }
 
     // ============================================================================
