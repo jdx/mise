@@ -2395,30 +2395,90 @@
         "type": "string"
       }
     },
-    "hook_script_table": {
+    "hook_current_shell_script_table": {
       "unevaluatedProperties": false,
       "properties": {
         "script": {
-          "description": "current-shell script/scripts for enter/leave/cd hooks",
+          "description": "script or scripts to evaluate in the active shell for enter/leave/cd hooks",
           "$ref": "#/$defs/hook_script_value"
         },
         "shell": {
-          "description": "current shell name for script hooks, such as \"bash\"",
+          "description": "active shell name for current-shell hooks, such as \"bash\"",
+          "type": "string"
+        }
+      },
+      "required": ["script", "shell"],
+      "type": "object"
+    },
+    "hook_current_shell_scripts_table": {
+      "unevaluatedProperties": false,
+      "properties": {
+        "scripts": {
+          "description": "scripts to evaluate in the active shell for enter/leave/cd hooks",
+          "$ref": "#/$defs/hook_scripts_value"
+        },
+        "shell": {
+          "description": "active shell name for current-shell hooks, such as \"bash\"",
+          "type": "string"
+        }
+      },
+      "required": ["scripts", "shell"],
+      "type": "object"
+    },
+    "hook_spawned_script_table": {
+      "deprecated": true,
+      "unevaluatedProperties": false,
+      "properties": {
+        "script": {
+          "deprecated": true,
+          "description": "deprecated alias for run when an enter/leave/cd hook has no shell",
+          "$ref": "#/$defs/hook_script_value"
+        }
+      },
+      "required": ["script"],
+      "type": "object"
+    },
+    "hook_spawned_scripts_table": {
+      "deprecated": true,
+      "unevaluatedProperties": false,
+      "properties": {
+        "scripts": {
+          "deprecated": true,
+          "description": "deprecated alias for run when an enter/leave/cd hook has no shell",
+          "$ref": "#/$defs/hook_scripts_value"
+        }
+      },
+      "required": ["scripts"],
+      "type": "object"
+    },
+    "hook_install_script_table": {
+      "deprecated": true,
+      "unevaluatedProperties": false,
+      "properties": {
+        "script": {
+          "deprecated": true,
+          "description": "deprecated alias for run in preinstall/postinstall hooks; executes in a subprocess",
+          "$ref": "#/$defs/hook_script_value"
+        },
+        "shell": {
+          "description": "ignored for this deprecated form; use a run hook to select an inline shell",
           "type": "string"
         }
       },
       "required": ["script"],
       "type": "object"
     },
-    "hook_scripts_table": {
+    "hook_install_scripts_table": {
+      "deprecated": true,
       "unevaluatedProperties": false,
       "properties": {
         "scripts": {
-          "description": "current-shell scripts for enter/leave/cd hooks",
+          "deprecated": true,
+          "description": "deprecated alias for run in preinstall/postinstall hooks; joins the scripts and executes them in a subprocess",
           "$ref": "#/$defs/hook_scripts_value"
         },
         "shell": {
-          "description": "current shell name for script hooks, such as \"bash\"",
+          "description": "ignored for this deprecated form; use a run hook to select an inline shell",
           "type": "string"
         }
       },
@@ -2445,10 +2505,16 @@
           "$ref": "#/$defs/hook_run_table"
         },
         {
-          "$ref": "#/$defs/hook_script_table"
+          "$ref": "#/$defs/hook_current_shell_script_table"
         },
         {
-          "$ref": "#/$defs/hook_scripts_table"
+          "$ref": "#/$defs/hook_current_shell_scripts_table"
+        },
+        {
+          "$ref": "#/$defs/hook_spawned_script_table"
+        },
+        {
+          "$ref": "#/$defs/hook_spawned_scripts_table"
         },
         {
           "$ref": "#/$defs/hook_task_ref"
@@ -2469,12 +2535,60 @@
         }
       ]
     },
+    "hook_install_definition_item": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/hook_run_string"
+        },
+        {
+          "$ref": "#/$defs/hook_run_table"
+        },
+        {
+          "$ref": "#/$defs/hook_install_script_table"
+        },
+        {
+          "$ref": "#/$defs/hook_install_scripts_table"
+        },
+        {
+          "$ref": "#/$defs/hook_task_ref"
+        }
+      ]
+    },
+    "hook_install_definition": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/hook_install_definition_item"
+        },
+        {
+          "description": "install hooks to run",
+          "items": {
+            "$ref": "#/$defs/hook_install_definition_item"
+          },
+          "type": "array"
+        }
+      ]
+    },
     "hooks": {
       "description": "hooks to run",
       "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/hook_definition"
-      }
+      "properties": {
+        "enter": {
+          "$ref": "#/$defs/hook_definition"
+        },
+        "leave": {
+          "$ref": "#/$defs/hook_definition"
+        },
+        "cd": {
+          "$ref": "#/$defs/hook_definition"
+        },
+        "preinstall": {
+          "$ref": "#/$defs/hook_install_definition"
+        },
+        "postinstall": {
+          "$ref": "#/$defs/hook_install_definition"
+        }
+      },
+      "additionalProperties": false
     },
     "watch_files": {
       "description": "files to watch for changes",
