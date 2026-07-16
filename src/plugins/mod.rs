@@ -266,7 +266,7 @@ pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
 
 pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(
-        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|-nightly|-canary|-experimental|-insider|-edge|snapshot|SNAPSHOT|master)"
+        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|-nightly|-canary|-experimental|-insider|-edge|snapshot|SNAPSHOT|master|\d(?:alpha|beta|rc)\d+$)"
     )
         .unwrap()
 });
@@ -740,6 +740,11 @@ mod tests {
         assert!(VERSION_REGEX.is_match("1.0.0-dev"));
         assert!(VERSION_REGEX.is_match("1.0.0-pre1"));
         assert!(VERSION_REGEX.is_match("1.0.0.pre1"));
+
+        // PHP separator-less pre-release suffixes (GitHub discussion #4720)
+        assert!(VERSION_REGEX.is_match("8.5.9alpha1"));
+        assert!(VERSION_REGEX.is_match("8.5.9beta2"));
+        assert!(VERSION_REGEX.is_match("8.5.9RC1"));
 
         // PEP 440 dot-separated dev versions (GitHub discussion #8784)
         assert!(
