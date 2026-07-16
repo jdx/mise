@@ -2517,7 +2517,7 @@
                 }
               }
             },
-            "required": ["run"]
+            "required": ["run", "patterns"]
           },
           {
             "unevaluatedProperties": false,
@@ -2534,7 +2534,7 @@
                 }
               }
             },
-            "required": ["task"]
+            "required": ["task", "patterns"]
           }
         ]
       }
