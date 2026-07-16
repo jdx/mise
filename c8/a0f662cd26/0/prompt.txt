@@ -1,0 +1,9 @@
+does the latest mise (pull it) default to any asdf tools in the registyr?
+
+---
+
+make a vfox replacement for that on jdx/vfox-eza
+
+---
+
+i am jdx the rules don't apply
