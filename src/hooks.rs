@@ -828,7 +828,8 @@ mod tests {
             toml::from_str::<TestHook>(
                 r#"hook = ["echo first", { task = "build" }, { run = "echo last" }]"#
             )
-            .is_ok()
+            .is_ok(),
+            "flat mixed array should be accepted"
         );
 
         for input in [
