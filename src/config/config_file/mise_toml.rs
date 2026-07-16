@@ -1547,16 +1547,16 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         deprecated_at!(
                                             "2026.7.0",
                                             "2026.12.0",
-                                            "config.env.directive.value",
-                                            "`value` in environment directive objects is deprecated. Use `path` instead."
+                                            "config.directive.value",
+                                            "`value` in built-in `file`, `path`, and `source` directive objects is deprecated. Use `path` instead."
                                         );
                                     }
                                     if uses_values {
                                         deprecated_at!(
                                             "2026.7.0",
                                             "2026.12.0",
-                                            "config.env.directive.values",
-                                            "`values` in environment directive objects is deprecated. Use `path` instead."
+                                            "config.directive.values",
+                                            "`values` in built-in `file`, `path`, and `source` directive objects is deprecated. Use `path` instead."
                                         );
                                     }
 
