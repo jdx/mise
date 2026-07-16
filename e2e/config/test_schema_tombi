@@ -141,11 +141,11 @@ TOML
 
 cat >"$HOME/workdir/mise-os.toml" <<'TOML'
 [tools]
-node = { version = "latest", os = ["linux", "macos/arm64", "darwin/aarch64", "win/amd64"], backend_options = { nested = true } }
+node = { version = "latest", os = ["linux", "macos/arm64", "darwin/aarch64", "win/amd64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, backend_options = { nested = true } }
 go = { version = "latest", os = "linux/x64" }
 
 [tasks.build.tools]
-rust = { version = "latest", os = ["linux/x64", "macos/arm64"], profile = "release", targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"], backend_options = { nested = { enabled = true, retries = 2 } } }
+rust = { version = "latest", os = ["linux/x64", "macos/arm64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, profile = "release", targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"], backend_options = { nested = { enabled = true, retries = 2 } } }
 TOML
 
 cat >"$HOME/workdir/mise-task-os.toml" <<'TOML'
@@ -153,7 +153,7 @@ cat >"$HOME/workdir/mise-task-os.toml" <<'TOML'
 run = "echo ok"
 
 [build.tools]
-node = { version = "latest", os = ["linux/x64", "macos/arm64"], profile = "release", matching = ["node", "npm"], platforms = { linux-x64 = { bin = ["node", "npm"], env = { NODE_ENV = "test" } } } }
+node = { version = "latest", os = ["linux/x64", "macos/arm64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, profile = "release", matching = ["node", "npm"], platforms = { linux-x64 = { bin = ["node", "npm"], env = { NODE_ENV = "test" } } } }
 TOML
 
 cat >"$HOME/workdir/mise-registry-tool.toml" <<'TOML'
@@ -192,11 +192,11 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
-include = ["mise-bad-task-os.toml"]
+include = ["mise-bad-task-os.toml", "mise-bad-task-install-env-float.toml"]
 
 [[schemas]]
 path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
@@ -238,6 +238,20 @@ _.file = { path = ".env", required = 123 }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-env-directive.toml"
+
+cat >"$HOME/workdir/mise-bad-env-float.toml" <<'TOML'
+[env]
+FLOAT = 1.23
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-env-float.toml"
+
+cat >"$HOME/workdir/mise-bad-install-env-float.toml" <<'TOML'
+[tools]
+node = { version = "latest", install_env = { FLOAT = 1.23 } }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-install-env-float.toml"
 
 cat >"$HOME/workdir/mise-bad-vars.toml" <<'TOML'
 [vars]
@@ -362,6 +376,16 @@ node = { version = "latest", os = true }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-task-os.toml"
+
+cat >"$HOME/workdir/mise-bad-task-install-env-float.toml" <<'TOML'
+[build]
+run = "echo ok"
+
+[build.tools]
+node = { version = "latest", install_env = { FLOAT = 1.23 } }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-task-install-env-float.toml"
 
 cat >"$HOME/workdir/mise-bad-registry-tool.toml" <<'TOML'
 backends = [

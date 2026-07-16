@@ -2305,7 +2305,18 @@ pub trait Backend: Debug + Send + Sync {
                 env_vars.entry(k).or_insert(v);
             }
         }
-        env_vars.extend(tv.request.options().core.install_env);
+        let mut install_env_removals = Vec::new();
+        for (key, value) in tv.install_env() {
+            match value.into_string() {
+                Some(value) => {
+                    env_vars.insert(key, value);
+                }
+                None => {
+                    env_vars.remove(&key);
+                    install_env_removals.push(key);
+                }
+            }
+        }
 
         // Surface `tools = true` `[env]` *value* directives (e.g. `CLOUDSDK_PYTHON =
         // "{{ tools.python.path }}/bin/python3"`) for the tool-level `postinstall`
@@ -2392,6 +2403,9 @@ pub trait Backend: Debug + Send + Sync {
             .with_pr(ctx.pr.as_ref())
             .cmd_body_args(shell_args, &rendered_script)
             .envs(env_vars);
+        for key in install_env_removals {
+            runner = runner.env_remove(key);
+        }
 
         // Set MISE_CONFIG_ROOT and MISE_PROJECT_ROOT from the tool's source config file
         if let Some(source_path) = tv.request.source().path() {

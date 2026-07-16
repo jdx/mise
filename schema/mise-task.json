@@ -451,13 +451,7 @@
             "description": "[experimental] age-encrypted environment variable"
           },
           {
-            "type": "string"
-          },
-          {
-            "type": "number"
-          },
-          {
-            "type": "boolean"
+            "$ref": "#/$defs/env_value"
           }
         ]
       },
@@ -809,17 +803,7 @@
                 "install_env": {
                   "type": "object",
                   "additionalProperties": {
-                    "oneOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "boolean"
-                      }
-                    ]
+                    "$ref": "#/$defs/env_value"
                   },
                   "description": "environment variables during tool installation"
                 },
@@ -954,12 +938,13 @@
       ]
     },
     "env_value": {
+      "description": "environment variable value; false removes the variable",
       "oneOf": [
         {
           "type": "string"
         },
         {
-          "type": "number"
+          "type": "integer"
         },
         {
           "type": "boolean"

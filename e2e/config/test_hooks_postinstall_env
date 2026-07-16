@@ -15,14 +15,14 @@ EXPLICIT_PRE_TOOLS = {value = "explicitly_pre_tools", tools = false}
 POST_TOOLS_VAR = {value = "available_after_tools", tools = true}
 
 [tools]
-dummy = { version = "latest", install_env = { INSTALL_ENV_VAR = "available_during_install" }, postinstall = "echo PRE_TOOLS_VAR=\$PRE_TOOLS_VAR; echo EXPLICIT_PRE_TOOLS=\$EXPLICIT_PRE_TOOLS; echo POST_TOOLS_VAR=\$POST_TOOLS_VAR; echo INSTALL_ENV_VAR=\$INSTALL_ENV_VAR" }
+dummy = { version = "latest", install_env = { INSTALL_ENV_VAR = "available_during_install", INSTALL_ENV_REMOVE = false }, postinstall = "echo PRE_TOOLS_VAR=\$PRE_TOOLS_VAR; echo EXPLICIT_PRE_TOOLS=\$EXPLICIT_PRE_TOOLS; echo POST_TOOLS_VAR=\$POST_TOOLS_VAR; echo INSTALL_ENV_VAR=\$INSTALL_ENV_VAR; echo INSTALL_ENV_REMOVE=\${INSTALL_ENV_REMOVE-unset}" }
 EOF
 
 # Remove any existing dummy installation to force reinstall
 rm -rf ~/.mise/installs/dummy
 
 # Run install and capture output
-output=$(mise install dummy 2>&1)
+output=$(INSTALL_ENV_REMOVE=inherited mise install dummy 2>&1)
 
 # Check that pre_tools environment variables are available in postinstall
 if [[ $output == *"PRE_TOOLS_VAR=available_before_tools"* ]]; then
@@ -45,6 +45,14 @@ if [[ $output == *"INSTALL_ENV_VAR=available_during_install"* ]]; then
   echo "✓ INSTALL_ENV_VAR is available in postinstall"
 else
   echo "✗ INSTALL_ENV_VAR is NOT available in postinstall"
+  echo "Output: $output"
+  exit 1
+fi
+
+if [[ $output == *"INSTALL_ENV_REMOVE=unset"* ]]; then
+  echo "✓ false install_env removes inherited variables from postinstall"
+else
+  echo "✗ false install_env did not remove inherited variable from postinstall"
   echo "Output: $output"
   exit 1
 fi
