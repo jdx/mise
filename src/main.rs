@@ -112,7 +112,9 @@ fn main() -> eyre::Result<()> {
     // doesn't need a worker per core (blocking work uses tokio's separate
     // on-demand pool), so cap the default on many-core machines. An explicit
     // MISE_JOBS still raises it without limit.
-    let threads = crate::env::MISE_JOBS.unwrap_or_else(|| nprocs.min(16)).max(8);
+    let threads = crate::env::MISE_JOBS
+        .unwrap_or_else(|| nprocs.min(16))
+        .max(8);
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(threads)
