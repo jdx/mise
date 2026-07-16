@@ -302,7 +302,7 @@ impl MiseToml {
         if let Some(legacy_monorepo_root) = rf.experimental_monorepo_root.take() {
             deprecated_at!(
                 "2026.7.7",
-                "2027.7.7",
+                "2027.12.0",
                 "config.experimental_monorepo_root",
                 "`experimental_monorepo_root` in {} is deprecated. Use `monorepo_root` instead.",
                 display_path(path)
