@@ -6,6 +6,7 @@ mise.file = ['.test-env']
 EOF
 echo FOO_FROM_FILE=foo_from_file >.test-env
 echo TEST_ENV2=foo >.test-env2
+assert_contains "mise env 2>&1" "deprecated [config.env.mise]"
 assert "mise x -- env | grep FOO_FROM_FILE" "FOO_FROM_FILE=foo_from_file"
 assert "MISE_ENV_FILE=.test-env2 mise x -- env | grep TEST_ENV2" "TEST_ENV2=foo"
 
