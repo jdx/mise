@@ -1,0 +1,17 @@
+trigger v1.0.0 release, then make a PR for mise to adopt jdx-tar
+
+---
+
+close the other tar pr that a user opened
+
+---
+
+what is using "tar" crate in mise now that we don't use it for mise directly?
+
+---
+
+ok make PRs for jdx-tar so it could be used
+
+---
+
+address pr feedback and failing pr checks if any
