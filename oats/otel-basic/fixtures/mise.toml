@@ -1,0 +1,6 @@
+[settings]
+otel.enabled = true
+otel.logs = true
+
+[tasks.hello]
+run = "./run-task.sh"

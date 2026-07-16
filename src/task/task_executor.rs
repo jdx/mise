@@ -140,6 +140,9 @@ pub struct TaskExecutor {
     pub dry_run: bool,
     pub skip_deps: bool,
     pub sandbox: crate::sandbox::SandboxConfig,
+
+    // Forwards task stdout/stderr to the OTEL log pipeline (when otel is enabled).
+    pub output_forwarder: Option<crate::otel::TaskOutputForwarder>,
 }
 
 impl TaskExecutor {
@@ -161,6 +164,7 @@ impl TaskExecutor {
             dry_run: config.dry_run,
             skip_deps: config.skip_deps,
             sandbox: config.sandbox,
+            output_forwarder: None,
         }
     }
 
@@ -263,6 +267,7 @@ impl TaskExecutor {
         dep_ran: bool,
         semaphore: Arc<Semaphore>,
         permit: &mut Option<OwnedSemaphorePermit>,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<bool> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
@@ -346,6 +351,18 @@ impl TaskExecutor {
                 "MISE_ENV",
                 crate::env::MISE_ENV.join(","),
             );
+        }
+        if let Some(ctx) = &otel_started {
+            // Propagate trace context via the W3C env-carriers spec so
+            // nested `mise run` and any OTEL-instrumented tools the task
+            // invokes automatically join this distributed trace.
+            // https://opentelemetry.io/docs/specs/otel/context/env-carriers/
+            crate::otel::task_run_telemetry::inject_otel_context(&mut env, ctx);
+            // Keep the W3C carrier vars out of __MISE_DIFF so a nested
+            // `mise hook-env` doesn't treat them as mise-managed env and
+            // unset/overwrite the trace context we're propagating.
+            nested_mise_diff_exclude_keys.insert("TRACEPARENT".to_string());
+            nested_mise_diff_exclude_keys.insert("TRACESTATE".to_string());
         }
         if let Some(cwd) = &*crate::dirs::CWD {
             Self::insert_env_excluded_from_nested_mise_diff(
@@ -448,8 +465,16 @@ impl TaskExecutor {
         if let Some(file) = task.file_path(config).await? {
             let exec_start = std::time::Instant::now();
             remove_auto_output(task, config).await?;
-            self.exec_file(config, &file, task, &env, &prefix, extra_vars)
-                .await?;
+            self.exec_file(
+                config,
+                &file,
+                task,
+                &env,
+                &prefix,
+                extra_vars,
+                otel_started.clone(),
+            )
+            .await?;
             trace!(
                 "task {} exec_file took {}ms (total {}ms)",
                 task.name,
@@ -501,6 +526,7 @@ impl TaskExecutor {
                 &completed_tasks,
                 semaphore,
                 permit,
+                otel_started.clone(),
             )
             .await?;
             trace!(
@@ -563,6 +589,7 @@ impl TaskExecutor {
         completed_tasks: &HashSet<TaskKey>,
         semaphore: Arc<Semaphore>,
         permit: &mut Option<OwnedSemaphorePermit>,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<()> {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
@@ -606,7 +633,8 @@ impl TaskExecutor {
                         if guard.is_none() {
                             guard = Some(acquire_runtime_lock(task.interactive).await);
                         }
-                        self.exec_script(&script, &args, task, env, prefix).await?;
+                        self.exec_script(&script, &args, task, env, prefix, otel_started.clone())
+                            .await?;
                     }
                 }
                 RunEntry::SingleTask {
@@ -857,6 +885,7 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
@@ -889,13 +918,21 @@ impl TaskExecutor {
             let file = dir.path().join("script");
             tokio::fs::write(&file, script.as_bytes()).await?;
             file::make_executable(&file)?;
-            self.exec_with_text_file_busy_retry(&file, args, task, env, prefix)
+            self.exec_with_text_file_busy_retry(&file, args, task, env, prefix, otel_started)
                 .await
         } else {
             let (program, args, cmd_verbatim) =
                 self.get_cmd_program_and_args(script, task, args)?;
-            self.exec_program(&program, &args, task, env, prefix, cmd_verbatim)
-                .await
+            self.exec_program(
+                &program,
+                &args,
+                task,
+                env,
+                prefix,
+                cmd_verbatim,
+                otel_started,
+            )
+            .await
         }
     }
 
@@ -991,6 +1028,7 @@ impl TaskExecutor {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn exec_file(
         &self,
         config: &Arc<Config>,
@@ -999,6 +1037,7 @@ impl TaskExecutor {
         env: &BTreeMap<String, String>,
         prefix: &str,
         extra_vars: Option<IndexMap<String, String>>,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<()> {
         let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
@@ -1033,7 +1072,8 @@ impl TaskExecutor {
         } else {
             Some(acquire_runtime_lock(task.interactive).await)
         };
-        self.exec(file, &args, task, &env, prefix).await
+        self.exec(file, &args, task, &env, prefix, otel_started)
+            .await
     }
 
     async fn exec(
@@ -1043,9 +1083,10 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<()> {
         let (program, args) = self.get_file_program_and_args(file, task, args)?;
-        self.exec_program(&program, &args, task, env, prefix, false)
+        self.exec_program(&program, &args, task, env, prefix, false, otel_started)
             .await
     }
 
@@ -1056,13 +1097,17 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<()> {
         const ETXTBUSY_RETRIES: usize = 3;
         const ETXTBUSY_SLEEP_MS: u64 = 50;
 
         let mut attempt = 0;
         loop {
-            match self.exec(file, args, task, env, prefix).await {
+            match self
+                .exec(file, args, task, env, prefix, otel_started.clone())
+                .await
+            {
                 Ok(()) => break Ok(()),
                 Err(err) if Self::is_text_file_busy(&err) && attempt < ETXTBUSY_RETRIES => {
                     attempt += 1;
@@ -1081,6 +1126,7 @@ impl TaskExecutor {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn exec_program(
         &self,
         program: &str,
@@ -1089,6 +1135,7 @@ impl TaskExecutor {
         env: &BTreeMap<String, String>,
         prefix: &str,
         cmd_verbatim: bool,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<()> {
         #[cfg(not(windows))]
         let _ = cmd_verbatim;
@@ -1155,6 +1202,15 @@ impl TaskExecutor {
         }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
+
+        cmd = crate::otel::TaskOutputForwarder::attach_hooks(
+            self.output_forwarder.as_ref(),
+            &task.name,
+            &task.args,
+            otel_started.as_ref(),
+            cmd,
+        );
+
         match output {
             TaskOutput::Prefix => {
                 if !task.silent.suppresses_stdout() {
@@ -1253,17 +1309,19 @@ impl TaskExecutor {
             // from style; it maps to `Interleave`), but the variant still exists as
             // a config value so it's kept here for match exhaustiveness.
             TaskOutput::Quiet | TaskOutput::Interleave => {
+                let has_hooks = cmd.has_stdout_hooks();
                 if raw || redactions.is_empty() {
                     cmd = cmd.stdin(Stdio::inherit());
-                    if !task.silent.suppresses_stdout() {
-                        cmd = cmd.stdout(Stdio::inherit());
-                    } else {
+                    if task.silent.suppresses_stdout() {
                         cmd = cmd.stdout(Stdio::null());
+                    } else if raw || !has_hooks {
+                        cmd = cmd.stdout(Stdio::inherit());
                     }
-                    if !task.silent.suppresses_stderr() {
-                        cmd = cmd.stderr(Stdio::inherit());
-                    } else {
+                    // else: not silent, has hooks, !raw → leave piped so hooks fire
+                    if task.silent.suppresses_stderr() {
                         cmd = cmd.stderr(Stdio::null());
+                    } else if raw || !has_hooks {
+                        cmd = cmd.stderr(Stdio::inherit());
                     }
                 }
             }
@@ -1299,6 +1357,9 @@ impl TaskExecutor {
         }
         // Apply sandbox async (DNS resolution for macOS) before spawning.
         cmd.apply_sandbox().await?;
+        if let Some(started) = &otel_started {
+            started.mark_started(SystemTime::now());
+        }
         cmd.execute_async().await?;
         trace!("{prefix} exited successfully");
         Ok(())

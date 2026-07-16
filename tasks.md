@@ -279,6 +279,12 @@ Run all tests with coverage report
 
 Run end-to-end tests
 
+## `test:oats`
+
+- **Usage**: `test:oats`
+
+run OpenTelemetry acceptance tests
+
 ## `test:perf`
 
 - Depends: test:build-perf-workspace

@@ -1012,6 +1012,7 @@ impl Bootstrap {
             allow_write: vec![],
             allow_net: vec![],
             allow_env: vec![],
+            span_tracker: None,
         }
         .run()
         .await

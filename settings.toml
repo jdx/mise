@@ -1823,6 +1823,44 @@ env = "MISE_OS"
 optional = true
 type = "String"
 
+[otel.enabled]
+default = false
+description = "[experimental] Enable OpenTelemetry trace export for task executions."
+docs = """
+When `true`, mise exports OpenTelemetry traces for `mise run` executions, provided a
+traces endpoint is configured (`OTEL_EXPORTER_OTLP_ENDPOINT` or
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`).
+
+Configure the collector endpoint and other options using the standard OpenTelemetry
+environment variables (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
+`OTEL_SERVICE_NAME`, etc.).
+
+Log export (task stdout/stderr) is a separate, explicit opt-in — see `otel.logs`.
+
+This flag prevents mise from unexpectedly emitting spans in environments that set
+`OTEL_EXPORTER_OTLP_ENDPOINT` for other tools.
+"""
+env = "MISE_OTEL_ENABLED"
+type = "Bool"
+
+[otel.logs]
+default = false
+description = "[experimental] Enable OpenTelemetry log export for task stdout/stderr."
+docs = """
+When `true` (and a logs endpoint is configured via `OTEL_EXPORTER_OTLP_ENDPOINT` or
+`OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`), mise exports each line of task stdout/stderr as
+an OTLP log record linked to the task span.
+
+This is a separate opt-in from `otel.enabled` because log export ships task output
+to the collector, which is a different trust boundary than traces — secrets that
+appear in stdout/stderr will leave the machine. It also changes task stdio behaviour:
+in `interleave`/`quiet` mode the child process's stdio is piped (not a TTY) so mise
+can tee every line to the collector, which can affect `isatty()`-dependent behaviour
+(buffering, colour, progress bars, prompts).
+"""
+env = "MISE_OTEL_LOGS"
+type = "Bool"
+
 [override_config_filenames]
 default = []
 description = "If set, mise will ignore default config files like `mise.toml` and use these filenames instead."
