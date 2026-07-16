@@ -43,6 +43,17 @@
         }
       }
     },
+    "list-idiomatic-filenames": {
+      "description": "configuration for idiomatic filename discovery",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "data": {
+          "description": "list of idiomatic filenames to check for",
+          "type": "string"
+        }
+      }
+    },
     "list-bin-paths": {
       "description": "configuration for bin/list-bin-paths script",
       "$ref": "#/$defs/plugin-script-config"
@@ -50,6 +61,35 @@
     "exec-env": {
       "description": "configuration for bin/exec-env script",
       "$ref": "#/$defs/plugin-script-config"
+    },
+    "package-manager": {
+      "description": "configuration for a package-manager plugin",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "requires": {
+          "description": "host binaries required by the package-manager plugin",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "supports_version_pins": {
+          "description": "whether the package manager supports version-pinned requests",
+          "type": "boolean"
+        },
+        "supports-version-pins": {
+          "description": "whether the package manager supports version-pinned requests",
+          "type": "boolean"
+        },
+        "os": {
+          "description": "operating systems supported by the package-manager plugin",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }
