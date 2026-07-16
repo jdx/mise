@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "7112ea76c44c",
+  "session_id": "019f690b-34ad-7623-95b0-75e74fd5cb75",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-16T04:16:01.918568Z",
+  "branch": "codex/fix-php-prerelease-detection",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "src/backend/mod.rs",
+    "src/plugins/mod.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "4af9d790a2fe",
+  "token_usage": {
+    "input_tokens": 313819,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4965120,
+    "output_tokens": 15720,
+    "api_call_count": 74
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-16T04:16:01.902964Z",
+    "agent_lines": 12,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 12,
+    "total_lines_changed": 13,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

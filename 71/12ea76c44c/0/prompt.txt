@@ -1,0 +1,38 @@
+does mise-php have this bug? [https://github.com/jdx/mise/discussions/4720](https://github.com/jdx/mise/discussions/4720)
+
+---
+
+[https://github.com/jdx/mise/discussions/4720#discussioncomment-17656240](https://github.com/jdx/mise/discussions/4720#discussioncomment-17656240)
+
+---
+
+wait what's the default backend for php in mise?
+
+---
+
+the user said this I tried out vfox one. mise picks PHP alpha/beta/rc as if they are stable releases.
+Is it possible to make it ignore versions with suffixes by default?
+
+---
+
+post a reply to that thread
+
+---
+
+delete that comment and post a reply in the correct thread
+
+---
+
+see their latest comment
+
+---
+
+i thought we had a global regex in mise for this sort of thing?
+
+---
+
+maybe digit then alpha then digit?
+
+---
+
+make a pr, reply to the thread

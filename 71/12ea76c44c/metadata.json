@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "7112ea76c44c",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-php-prerelease-detection",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "src/backend/mod.rs",
+    "src/plugins/mod.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/71/12ea76c44c/0/metadata.json",
+      "transcript": "/71/12ea76c44c/0/full.jsonl",
+      "content_hash": "/71/12ea76c44c/0/content_hash.txt",
+      "prompt": "/71/12ea76c44c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 313819,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4965120,
+    "output_tokens": 15720,
+    "api_call_count": 74
+  }
+}
