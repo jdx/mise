@@ -799,34 +799,7 @@
               "$ref": "#/$defs/tool_options"
             },
             {
-              "properties": {
-                "install_env": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/env_value"
-                  },
-                  "description": "environment variables during tool installation"
-                },
-                "depends": {
-                  "oneOf": [
-                    {
-                      "description": "tools that must be installed before this tool",
-                      "type": "string"
-                    },
-                    {
-                      "description": "tools that must be installed before this tool",
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  ]
-                },
-                "postinstall": {
-                  "description": "command to run after tool installation",
-                  "type": "string"
-                }
-              }
+              "$ref": "#/$defs/tool_common_options"
             }
           ],
           "type": "object",
@@ -1025,6 +998,37 @@
           "required": ["ref"]
         }
       ],
+      "type": "object"
+    },
+    "tool_common_options": {
+      "properties": {
+        "install_env": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/env_value"
+          },
+          "description": "environment variables during tool installation"
+        },
+        "depends": {
+          "oneOf": [
+            {
+              "description": "tools that must be installed before this tool",
+              "type": "string"
+            },
+            {
+              "description": "tools that must be installed before this tool",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "postinstall": {
+          "description": "command to run after tool installation",
+          "type": "string"
+        }
+      },
       "type": "object"
     },
     "env_directive": {
