@@ -364,6 +364,19 @@ jobs:
       - list-changed-tools
       - validate-new-tools
       - test-tool
-    if: ${{ !cancelled() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+    if: |
+      !cancelled() &&
+      (
+        needs.check-changes.result != 'success' ||
+        (
+          needs.check-changes.outputs.registry-changed == 'true' &&
+          (
+            needs.build.result != 'success' ||
+            (needs.list-changed-tools.result != 'success' && needs.list-changed-tools.result != 'skipped') ||
+            needs.validate-new-tools.result == 'failure' ||
+            (needs.list-changed-tools.outputs.skip-test-tool != 'true' && needs.test-tool.result != 'success')
+          )
+        )
+      )
     steps:
       - run: exit 1
