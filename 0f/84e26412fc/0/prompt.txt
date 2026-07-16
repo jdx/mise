@@ -1,5 +1,1 @@
-resolve this and reply to discussion [https://github.com/jdx/mise/discussions/11049](https://github.com/jdx/mise/discussions/11049)
-
----
-
 address pr feedback, consider refactoring the schema if it makes sense
