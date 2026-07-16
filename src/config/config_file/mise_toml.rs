@@ -21,7 +21,9 @@ use crate::config::config_file::{
     ConfigFile, TaskConfig, config_trust_root, is_ignored, trust, trust_check,
 };
 use crate::config::config_file::{config_root, toml::deserialize_arr};
-use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions, RequiredValue};
+use crate::config::env_directive::{
+    AgeFormat, EnvDirective, EnvDirectiveOptions, EnvValue, RequiredValue,
+};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config, Settings};
 use crate::deps::DepsConfig;
@@ -1699,31 +1701,6 @@ impl<'de> de::Deserialize<'de> for EnvList {
                         _ => {
                             #[derive(Deserialize)]
                             #[serde(untagged)]
-                            pub enum PrimitiveVal {
-                                Str(String),
-                                Int(i64),
-                                Bool(bool),
-                            }
-                            impl PrimitiveVal {
-                                fn into_value_string(self) -> Option<String> {
-                                    match self {
-                                        PrimitiveVal::Str(s) => Some(s),
-                                        PrimitiveVal::Int(i) => Some(i.to_string()),
-                                        PrimitiveVal::Bool(true) => Some("true".to_string()),
-                                        PrimitiveVal::Bool(false) => None,
-                                    }
-                                }
-
-                                fn into_default_string(self) -> Option<String> {
-                                    match self {
-                                        PrimitiveVal::Str(s) => Some(s),
-                                        PrimitiveVal::Int(i) => Some(i.to_string()),
-                                        PrimitiveVal::Bool(_) => None,
-                                    }
-                                }
-                            }
-                            #[derive(Deserialize)]
-                            #[serde(untagged)]
                             enum Val {
                                 AgeComplex {
                                     age: AgeComplexVal,
@@ -1734,12 +1711,12 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     options: EnvDirectiveOptions,
                                 },
                                 Map {
-                                    value: PrimitiveVal,
+                                    value: EnvValue,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
                                 DefaultMap {
-                                    default: PrimitiveVal,
+                                    default: EnvValue,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
@@ -1747,7 +1724,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
-                                Primitive(PrimitiveVal),
+                                Primitive(EnvValue),
                             }
 
                             #[derive(Deserialize)]
@@ -1813,7 +1790,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             }
 
                             let directive = match val_result {
-                                Val::Primitive(p) => match p.into_value_string() {
+                                Val::Primitive(value) => match value.into_string() {
                                     Some(s) => {
                                         EnvDirective::Val(key, s, EnvDirectiveOptions::default())
                                     }
@@ -1827,7 +1804,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                             key
                                         )));
                                     }
-                                    match value.into_value_string() {
+                                    match value.into_string() {
                                         Some(s) => EnvDirective::Val(key, s, options),
                                         None => EnvDirective::Rm(key, options),
                                     }
@@ -2627,8 +2604,8 @@ mod tests {
 
         assert_eq!(opts.depends, Some(vec!["{{version}}".to_string()]));
         assert_eq!(
-            opts.install_env.get("FOO").map(String::as_str),
-            Some("{{version}}")
+            opts.install_env.get("FOO"),
+            Some(&EnvValue::String("{{version}}".to_string()))
         );
         assert_eq!(opts.get("url"), Some("https://example.com/{version}"));
         file::remove_file(&p).unwrap();
@@ -3323,7 +3300,7 @@ run = 'echo "template"'
         };
         options
             .install_env
-            .insert("FOO".to_string(), "bar".to_string());
+            .insert("FOO".to_string(), EnvValue::from("bar"));
 
         cf.replace_versions(
             &needs_dummy,

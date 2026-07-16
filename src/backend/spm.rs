@@ -406,7 +406,7 @@ impl SPMBackend {
             .arg("--cache-path")
             .arg(dirs::CACHE.join("spm"))
             .with_pr(ctx.pr.as_ref())
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .prepend_path(
                 self.dependency_toolset(&ctx.config)
                     .await?
@@ -510,7 +510,10 @@ impl SPMBackend {
 
 fn with_install_env(mut command: Expression, tv: &ToolVersion) -> Expression {
     for (key, value) in tv.install_env() {
-        command = command.env(key, value);
+        command = match value.into_string() {
+            Some(value) => command.env(key, value),
+            None => command.env_remove(key),
+        };
     }
     command
 }

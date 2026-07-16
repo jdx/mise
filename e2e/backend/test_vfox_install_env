@@ -33,7 +33,7 @@ LUA
 cat >"$PLUGIN_DIR/hooks/post_install.lua" <<LUA
 function PLUGIN:PostInstall(ctx)
 	local cmd = require("cmd")
-	cmd.exec("printf '%s' \"\$MISE_TEST_INSTALL_ENV_VALUE\" > \"$MARKER\"")
+	cmd.exec("printf '%s:%s' \"\$MISE_TEST_INSTALL_ENV_VALUE\" \"\${MISE_TEST_INSTALL_ENV_REMOVE-unset}\" > \"$MARKER\"")
 end
 LUA
 
@@ -52,8 +52,8 @@ cat >mise.toml <<EOF
 unix_default_inline_shell_args = "sh -c"
 
 [tools]
-"vfox:file://$PLUGIN_DIR" = { version = "1.0.0", install_env = { MISE_TEST_INSTALL_ENV_VALUE = "available" } }
+"vfox:file://$PLUGIN_DIR" = { version = "1.0.0", install_env = { MISE_TEST_INSTALL_ENV_VALUE = "available", MISE_TEST_INSTALL_ENV_REMOVE = false } }
 EOF
 
-mise install
-assert "cat '$MARKER'" "available"
+MISE_TEST_INSTALL_ENV_REMOVE="inherited" mise install
+assert "cat '$MARKER'" "available:unset"

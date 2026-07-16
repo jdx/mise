@@ -7,6 +7,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::{ABackend, VersionInfo};
 use crate::cli::args::BackendArg;
+use crate::config::env_directive::EnvValue;
 use crate::config::{Config, Settings};
 #[cfg(windows)]
 use crate::file;
@@ -215,7 +216,7 @@ impl ToolVersion {
         path
     }
 
-    pub fn install_env(&self) -> IndexMap<String, String> {
+    pub fn install_env(&self) -> IndexMap<String, EnvValue> {
         self.request.options().core.install_env
     }
 
@@ -923,7 +924,7 @@ mod tests {
         };
         options.install_env.insert(
             "NODE_OPTIONS".to_string(),
-            "--enable-source-maps".to_string(),
+            EnvValue::from("--enable-source-maps"),
         );
         options.opts.insert(
             "registry".to_string(),
@@ -950,8 +951,8 @@ mod tests {
         assert_eq!(tv.ba().full_without_opts(), "npm:npm");
         assert_eq!(options.depends, Some(vec!["node".to_string()]));
         assert_eq!(
-            options.install_env.get("NODE_OPTIONS").map(String::as_str),
-            Some("--enable-source-maps")
+            options.install_env.get("NODE_OPTIONS"),
+            Some(&EnvValue::String("--enable-source-maps".to_string()))
         );
         assert_eq!(
             options.opts.get("registry"),

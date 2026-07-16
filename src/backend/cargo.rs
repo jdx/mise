@@ -351,7 +351,7 @@ impl CargoBackend {
             .arg(tv.install_path())
             .with_pr(ctx.pr.as_ref())
             .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
             .prepend_path(
                 self.dependency_toolset(&ctx.config)
