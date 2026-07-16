@@ -7,7 +7,6 @@ use crate::env_diff::EnvDiff;
 use crate::file::is_executable;
 use crate::file::{display_path, replace_path};
 use crate::sandbox::SandboxConfig;
-use crate::task::TaskKey;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
@@ -16,7 +15,7 @@ use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
     remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
 };
-use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
+use crate::task::{Deps, FailedTasks, GetMatchingExt, Task, TaskKey, task_key};
 use crate::tera::{contains_template_syntax, render_str};
 use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
@@ -113,6 +112,8 @@ fn display_first_command(script: &str) -> String {
 /// Configuration for TaskExecutor
 pub struct TaskExecutorConfig {
     pub force: bool,
+    pub force_all: bool,
+    pub root_tasks: HashSet<TaskKey>,
     pub cd: Option<PathBuf>,
     pub shell: Option<String>,
     pub tool: Vec<ToolArg>,
@@ -132,6 +133,8 @@ pub struct TaskExecutor {
 
     // CLI flags
     pub force: bool,
+    pub force_all: bool,
+    pub root_tasks: HashSet<TaskKey>,
     pub cd: Option<PathBuf>,
     pub shell: Option<String>,
     pub tool: Vec<ToolArg>,
@@ -153,6 +156,8 @@ impl TaskExecutor {
             output_handler,
             failed_tasks: Arc::new(StdMutex::new(Vec::new())),
             force: config.force,
+            force_all: config.force_all,
+            root_tasks: config.root_tasks,
             cd: config.cd,
             shell: config.shell,
             tool: config.tool,
@@ -273,8 +278,12 @@ impl TaskExecutor {
             return Ok(false);
         }
         // If any dependency actually ran, skip the source freshness check
-        // so that downstream tasks are invalidated by upstream changes
-        if !self.force && !dep_ran && sources_are_fresh(task, config).await? {
+        // so that downstream tasks are invalidated by upstream changes.
+        // --force applies only to root (named) tasks; --force-all applies to all tasks.
+        let tk = task_key(task);
+        let is_root = self.root_tasks.contains(&tk);
+        let should_force = self.force_all || (self.force && is_root);
+        if !should_force && !dep_ran && sources_are_fresh(task, config).await? {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }

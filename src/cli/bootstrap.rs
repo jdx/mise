@@ -1012,6 +1012,8 @@ impl Bootstrap {
             allow_write: vec![],
             allow_net: vec![],
             allow_env: vec![],
+            force_all: false,
+            root_tasks: Default::default(),
         }
         .run()
         .await

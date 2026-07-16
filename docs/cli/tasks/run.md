@@ -148,6 +148,10 @@ Block filesystem reads (system libs and tool dirs still accessible)
 
 Block all filesystem writes
 
+### `--force-all`
+
+Force the tasks to run even if outputs are up to date, including all dependencies
+
 ### `--fresh-env`
 
 Bypass the environment cache and recompute the environment

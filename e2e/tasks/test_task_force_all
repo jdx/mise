@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# Test --force and --force-all flags with task source freshness.
+# --force: forces only the named (root) task, deps can still be skipped if fresh
+# --force-all: forces all tasks including dependencies
+
+cat <<'EOF' >mise.toml
+[tasks.dep]
+run = "echo dep-ran >> log.txt && touch dep-out.txt"
+sources = ["dep-src.txt"]
+outputs = ["dep-out.txt"]
+
+[tasks.main]
+run = "echo main-ran >> log.txt && touch main-out.txt"
+sources = ["main-src.txt"]
+outputs = ["main-out.txt"]
+depends = ["dep"]
+EOF
+
+echo "v1" >dep-src.txt
+echo "v1" >main-src.txt
+
+# First run: both tasks execute
+mise run main
+assert_contains "cat log.txt" "dep-ran"
+assert_contains "cat log.txt" "main-ran"
+rm -f log.txt
+
+# Second run: nothing changed, both should be skipped
+mise run main
+assert "cat log.txt 2>/dev/null || echo empty" "empty"
+
+# --force: only the named task (main) runs, dep is still skipped
+mise run --force main
+assert_not_contains "cat log.txt" "dep-ran"
+assert_contains "cat log.txt" "main-ran"
+rm -f log.txt
+
+# --force-all: both main and dep run even though sources are still fresh
+mise run --force-all main
+assert_contains "cat log.txt" "dep-ran"
+assert_contains "cat log.txt" "main-ran"
+rm -f log.txt

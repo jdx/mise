@@ -173,6 +173,10 @@ pub struct Run {
     #[clap(long, verbatim_doc_comment)]
     pub deny_write: bool,
 
+    /// Force the tasks to run even if outputs are up to date, including all dependencies
+    #[clap(long, verbatim_doc_comment)]
+    pub force_all: bool,
+
     /// Bypass the environment cache and recompute the environment
     #[clap(long)]
     pub fresh_env: bool,
@@ -224,6 +228,9 @@ pub struct Run {
 
     #[clap(skip)]
     pub executor: Option<crate::task::task_executor::TaskExecutor>,
+
+    #[clap(skip)]
+    pub root_tasks: std::collections::HashSet<crate::task::TaskKey>,
 }
 
 impl Run {
@@ -342,6 +349,10 @@ impl Run {
             }
         }
         time!("run get_task_lists");
+
+        // Capture root (named) tasks before deps are expanded so --force can
+        // apply only to them while --force-all applies to all tasks.
+        self.root_tasks = task_list.iter().map(crate::task::task_key).collect();
 
         // Resolve transitive dependencies once upfront so we can:
         // 1. Discover deps providers from monorepo subdirectory configs
@@ -719,6 +730,8 @@ impl Run {
     fn setup_executor(&mut self) -> Result<()> {
         let executor_config = crate::task::task_executor::TaskExecutorConfig {
             force: self.force,
+            force_all: self.force_all,
+            root_tasks: self.root_tasks.clone(),
             cd: self.cd.clone(),
             shell: self.shell.clone(),
             tool: self.tool.clone(),
