@@ -2279,34 +2279,7 @@
               "$ref": "#/$defs/tool_options"
             },
             {
-              "properties": {
-                "install_env": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/env_value"
-                  },
-                  "description": "environment variables during tool installation"
-                },
-                "depends": {
-                  "oneOf": [
-                    {
-                      "description": "tools that must be installed before this tool",
-                      "type": "string"
-                    },
-                    {
-                      "description": "tools that must be installed before this tool",
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  ]
-                },
-                "postinstall": {
-                  "description": "command to run after tool installation",
-                  "type": "string"
-                }
-              }
+              "$ref": "#/$defs/tool_common_options"
             }
           ],
           "type": "object",
@@ -2333,6 +2306,76 @@
         }
       ]
     },
+    "root_tool": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/root_tool_options"
+            },
+            {
+              "$ref": "#/$defs/tool_common_options"
+            }
+          ],
+          "type": "object",
+          "unevaluatedProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "array"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "tool_common_options": {
+      "properties": {
+        "install_env": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/env_value"
+          },
+          "description": "environment variables during tool installation"
+        },
+        "depends": {
+          "oneOf": [
+            {
+              "description": "tools that must be installed before this tool",
+              "type": "string"
+            },
+            {
+              "description": "tools that must be installed before this tool",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "postinstall": {
+          "description": "command to run after tool installation",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "tool_options": {
       "properties": {
         "version": {
@@ -2344,6 +2387,44 @@
         }
       },
       "required": ["version"],
+      "type": "object"
+    },
+    "root_tool_options": {
+      "properties": {
+        "version": {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        "path": {
+          "description": "path to a custom compiled version",
+          "type": "string"
+        },
+        "prefix": {
+          "description": "version prefix to resolve",
+          "type": "string"
+        },
+        "ref": {
+          "description": "version control reference to compile",
+          "type": "string"
+        },
+        "os": {
+          "$ref": "#/$defs/os_filter"
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["version"]
+        },
+        {
+          "required": ["path"]
+        },
+        {
+          "required": ["prefix"]
+        },
+        {
+          "required": ["ref"]
+        }
+      ],
       "type": "object"
     },
     "hook_run_string": {
@@ -4143,12 +4224,12 @@
         "oneOf": [
           {
             "items": {
-              "$ref": "#/$defs/tool"
+              "$ref": "#/$defs/root_tool"
             },
             "type": "array"
           },
           {
-            "$ref": "#/$defs/tool"
+            "$ref": "#/$defs/root_tool"
           }
         ]
       },

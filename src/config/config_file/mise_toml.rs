@@ -104,6 +104,28 @@ where
     options.insert_option(key, value).map_err(de::Error::custom)
 }
 
+fn parse_tool_selector<E>(
+    key: &str,
+    value: &toml::Value,
+) -> std::result::Result<Option<ToolVersionType>, E>
+where
+    E: de::Error,
+{
+    if !matches!(key, "version" | "path" | "prefix" | "ref") {
+        return Ok(None);
+    }
+
+    let value = value
+        .as_str()
+        .ok_or_else(|| de::Error::custom(format!("tool selector `{key}` must be a string")))?;
+    let value = if key == "version" {
+        value.to_string()
+    } else {
+        format!("{key}:{value}")
+    };
+    value.parse().map(Some).map_err(de::Error::custom)
+}
+
 fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
     let core = options.core;
     if let Some(os) = core.os
@@ -1965,32 +1987,28 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                 M: de::MapAccess<'de>,
             {
                 let mut options: ToolVersionOptions = Default::default();
-                let mut tt: Option<ToolVersionType> = None;
+                let mut selector: Option<(String, ToolVersionType)> = None;
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    match k.as_str() {
-                        "version" => {
-                            tt = Some(v.as_str().unwrap().parse().map_err(de::Error::custom)?);
+                    if let Some(tt) = parse_tool_selector::<M::Error>(&k, &v)? {
+                        if let Some((previous, _)) = &selector {
+                            return Err(de::Error::custom(format!(
+                                "tool definition cannot specify both `{previous}` and `{k}`"
+                            )));
                         }
-                        "path" | "prefix" | "ref" => {
-                            tt = Some(
-                                format!("{k}:{}", v.as_str().unwrap())
-                                    .parse()
-                                    .map_err(de::Error::custom)?,
-                            );
-                        }
-                        _ => {
-                            insert_tool_option(&mut options, k, v)?;
-                        }
+                        selector = Some((k, tt));
+                    } else {
+                        insert_tool_option(&mut options, k, v)?;
                     }
                 }
-                if let Some(tt) = tt {
-                    Ok(MiseTomlToolList(vec![MiseTomlTool {
-                        tt,
-                        options: Some(options),
-                    }]))
-                } else {
-                    Err(de::Error::custom("missing version"))
-                }
+                let (_, tt) = selector.ok_or_else(|| {
+                    de::Error::custom(
+                        "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
+                    )
+                })?;
+                Ok(MiseTomlToolList(vec![MiseTomlTool {
+                    tt,
+                    options: Some(options),
+                }]))
             }
         }
 
@@ -2026,22 +2044,24 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                 M: de::MapAccess<'de>,
             {
                 let mut options: ToolVersionOptions = Default::default();
-                let mut tt = ToolVersionType::System;
+                let mut selector: Option<(String, ToolVersionType)> = None;
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    match k.as_str() {
-                        "version" => {
-                            tt = v.as_str().unwrap().parse().map_err(de::Error::custom)?;
+                    if let Some(tt) = parse_tool_selector::<M::Error>(&k, &v)? {
+                        if let Some((previous, _)) = &selector {
+                            return Err(de::Error::custom(format!(
+                                "tool definition cannot specify both `{previous}` and `{k}`"
+                            )));
                         }
-                        "path" | "prefix" | "ref" => {
-                            tt = format!("{k}:{}", v.as_str().unwrap())
-                                .parse()
-                                .map_err(de::Error::custom)?;
-                        }
-                        _ => {
-                            insert_tool_option(&mut options, k, v)?;
-                        }
+                        selector = Some((k, tt));
+                    } else {
+                        insert_tool_option(&mut options, k, v)?;
                     }
                 }
+                let (_, tt) = selector.ok_or_else(|| {
+                    de::Error::custom(
+                        "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
+                    )
+                })?;
                 Ok(MiseTomlTool {
                     tt,
                     options: Some(options),
@@ -2400,6 +2420,50 @@ mod tests {
             "{:#?}",
             cf.to_tool_request_set().unwrap().tools
         )));
+    }
+
+    #[test]
+    fn test_tool_selectors() {
+        #[derive(Deserialize)]
+        struct ToolConfig {
+            #[allow(dead_code)]
+            tools: IndexMap<BackendArg, MiseTomlToolList>,
+        }
+
+        let valid = indoc! {r#"
+        [tools]
+        node = { version = "20" }
+        go = { prefix = "1.22" }
+        python = { ref = "main" }
+        shellcheck = { path = "/opt/shellcheck" }
+        ruby = [{ prefix = "3.3", os = "linux-x64" }]
+        "#};
+        assert!(toml::from_str::<ToolConfig>(valid).is_ok());
+
+        for (config, expected) in [
+            (
+                "[tools]\nnode = { version = \"20\", prefix = \"20\" }\n",
+                "tool definition cannot specify both `version` and `prefix`",
+            ),
+            (
+                "[tools]\nnode = [{ path = \"/opt/node\", ref = \"main\" }]\n",
+                "tool definition cannot specify both `path` and `ref`",
+            ),
+            (
+                "[tools]\nnode = [{ os = \"linux-x64\" }]\n",
+                "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
+            ),
+            (
+                "[tools]\nnode = { prefix = 20 }\n",
+                "tool selector `prefix` must be a string",
+            ),
+        ] {
+            let err = match toml::from_str::<ToolConfig>(config) {
+                Ok(_) => panic!("expected tool selector validation to fail"),
+                Err(err) => err,
+            };
+            assert!(err.to_string().contains(expected), "{err}");
+        }
     }
 
     #[tokio::test]
