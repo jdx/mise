@@ -347,7 +347,8 @@ done
 for unit in \
   '{ description = "service missing exec_start" }' \
   '{ persistent = true }' \
-  '{ exec_start = "/bin/true", on_boot_sec = "1min" }'; do
+  '{ exec_start = "/bin/true", on_boot_sec = "1min" }' \
+  '{ exec_start = "/bin/true", type = "daemon" }'; do
   cat >"$HOME/workdir/mise-bad-systemd.toml" <<TOML
 [bootstrap.linux.systemd.units]
 invalid = $unit

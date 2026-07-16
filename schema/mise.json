@@ -3745,6 +3745,16 @@
                       },
                       "type": {
                         "type": "string",
+                        "enum": [
+                          "simple",
+                          "exec",
+                          "forking",
+                          "oneshot",
+                          "dbus",
+                          "notify",
+                          "notify-reload",
+                          "idle"
+                        ],
                         "description": "write Type in the [Service] section"
                       },
                       "remain_after_exit": {
