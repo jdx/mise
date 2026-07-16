@@ -81,11 +81,26 @@ use task_sources::{RawOutputTemplates, TaskOutputs};
 /// Represents a tool value in task-level tools field.
 /// Supports both string syntax (e.g., "1.0.0") and object syntax
 /// (e.g., { version = "1.0.0", targets = ["x86_64"] })
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum TaskToolValue {
     String(String),
     Map(TaskToolValueMap),
+}
+
+impl<'de> Deserialize<'de> for TaskToolValue {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match toml::Value::deserialize(deserializer)? {
+            toml::Value::String(value) => Ok(Self::String(value)),
+            toml::Value::Table(fields) => TaskToolValueMap::from_fields(fields).map(Self::Map),
+            _ => Err(serde::de::Error::custom(
+                "task tool definition must be a string or table",
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -95,17 +110,18 @@ pub struct TaskToolValueMap {
     pub opts: IndexMap<String, toml::Value>,
 }
 
-impl<'de> Deserialize<'de> for TaskToolValueMap {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+impl TaskToolValueMap {
+    fn from_fields<E>(
+        fields: impl IntoIterator<Item = (String, toml::Value)>,
+    ) -> std::result::Result<Self, E>
     where
-        D: serde::Deserializer<'de>,
+        E: serde::de::Error,
     {
-        let fields = IndexMap::<String, toml::Value>::deserialize(deserializer)?;
         let mut opts = IndexMap::new();
         let mut selector: Option<(String, String)> = None;
 
         for (key, value) in fields {
-            if let Some(request) = parse_tool_selector::<D::Error>(&key, &value)? {
+            if let Some(request) = parse_tool_selector::<E>(&key, &value)? {
                 if let Some((previous, _)) = &selector {
                     return Err(serde::de::Error::custom(format!(
                         "tool definition cannot specify both `{previous}` and `{key}`"
@@ -123,6 +139,15 @@ impl<'de> Deserialize<'de> for TaskToolValueMap {
             )
         })?;
         Ok(Self { version, opts })
+    }
+}
+
+impl<'de> Deserialize<'de> for TaskToolValueMap {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::from_fields(IndexMap::<String, toml::Value>::deserialize(deserializer)?)
     }
 }
 
@@ -3915,6 +3940,35 @@ echo "test"
 
     #[tokio::test]
     #[cfg(unix)]
+    async fn test_file_task_reports_tool_selector_errors() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let task_file = tasks_dir.join("invalid-tools");
+        fs::write(
+            &task_file,
+            "#!/usr/bin/env bash\n#MISE tools={node={version=\"20\", prefix=\"20\"}}\n",
+        )
+        .unwrap();
+        fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = Config::get().await.unwrap();
+        let err = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains(
+                "failed to parse task tool `node`: tool definition cannot specify both `version` and `prefix`"
+            ),
+            "{err}"
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
     async fn test_multi_line_tools_merge() {
         // Regression test for https://github.com/jdx/mise/discussions/7839
         // Multiple #MISE tools.X=Y lines should be merged into a single tools table
@@ -4160,12 +4214,25 @@ echo "test"
             Some(&vec![toml::Value::Integer(1), toml::Value::Boolean(true)])
         );
 
-        for invalid in [
-            "[tools]\nnode = { version = \"20\", prefix = \"20\" }\n",
-            "[tools]\nnode = { os = \"linux\" }\n",
-            "[tools]\nnode = { prefix = 20 }\n",
+        for (invalid, expected) in [
+            (
+                "[tools]\nnode = { version = \"20\", prefix = \"20\" }\n",
+                "tool definition cannot specify both `version` and `prefix`",
+            ),
+            (
+                "[tools]\nnode = { os = \"linux\" }\n",
+                "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
+            ),
+            (
+                "[tools]\nnode = { prefix = 20 }\n",
+                "tool selector `prefix` must be a string",
+            ),
         ] {
-            assert!(toml::from_str::<TaskTools>(invalid).is_err(), "{invalid}");
+            let err = match toml::from_str::<TaskTools>(invalid) {
+                Ok(_) => panic!("expected task tool selector validation to fail"),
+                Err(err) => err,
+            };
+            assert!(err.to_string().contains(expected), "{err}");
         }
     }
 
