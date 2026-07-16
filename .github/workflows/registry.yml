@@ -372,9 +372,30 @@ jobs:
           needs.check-changes.outputs.registry-changed == 'true' &&
           (
             needs.build.result != 'success' ||
-            (needs.list-changed-tools.result != 'success' && needs.list-changed-tools.result != 'skipped') ||
-            needs.validate-new-tools.result == 'failure' ||
-            (needs.list-changed-tools.outputs.skip-test-tool != 'true' && needs.test-tool.result != 'success')
+            (github.event_name == 'pull_request' && needs.list-changed-tools.result != 'success') ||
+            (github.event_name != 'pull_request' && needs.list-changed-tools.result != 'skipped') ||
+            (
+              github.event_name == 'pull_request' &&
+              github.event.pull_request.user.login != 'jdx' &&
+              needs.list-changed-tools.outputs.new_tools != '' &&
+              needs.validate-new-tools.result != 'success'
+            ) ||
+            (
+              (
+                github.event_name != 'pull_request' ||
+                github.event.pull_request.user.login == 'jdx' ||
+                needs.list-changed-tools.outputs.new_tools == ''
+              ) &&
+              needs.validate-new-tools.result != 'skipped'
+            ) ||
+            (
+              needs.list-changed-tools.outputs.skip-test-tool == 'true' &&
+              needs.test-tool.result != 'skipped'
+            ) ||
+            (
+              needs.list-changed-tools.outputs.skip-test-tool != 'true' &&
+              needs.test-tool.result != 'success'
+            )
           )
         )
       )
