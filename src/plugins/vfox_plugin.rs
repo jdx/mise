@@ -284,10 +284,20 @@ impl Plugin for VfoxPlugin {
         let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
         let pr = mpr.add_with_options(&prefix, dry_run);
         if !dry_run {
-            let _lock = lock_file::get(&self.plugin_path, force)?;
+            let plugin_lock = lock_file::get(&self.plugin_path, force)?;
             self.install(config, pr.as_ref()).await?;
             let plugin_type =
                 PluginType::from_plugin_path(&self.plugin_path).unwrap_or(PluginType::Vfox);
+            if plugin_type == PluginType::Package
+                && crate::system::packages::is_builtin_manager_name(&self.name)
+            {
+                drop(plugin_lock);
+                file::remove_all(&self.plugin_path)?;
+                bail!(
+                    "package plugin '{}' collides with a built-in package manager",
+                    self.name
+                );
+            }
             install_state::add_plugin(&self.name, plugin_type).await?;
             backend::remove(&self.name);
             warn_if_env_plugin_shadows_registry(&self.name, &self.plugin_path);

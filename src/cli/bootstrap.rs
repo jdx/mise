@@ -551,7 +551,7 @@ impl Bootstrap {
                 debug!("bootstrap: no [bootstrap.packages] configured, skipping");
             } else {
                 info!("bootstrap: system packages");
-                follow_up.add_package_skips(&mgrs);
+                follow_up.add_package_skips(&mgrs).await;
                 let opts = DriverOpts {
                     manager: None,
                     explicit: false,
@@ -945,15 +945,13 @@ impl BootstrapFollowUp {
         }
     }
 
-    fn add_package_skips(&mut self, mgrs: &[system::ManagerPackages]) {
+    async fn add_package_skips(&mut self, mgrs: &[system::ManagerPackages]) {
         for mp in mgrs {
             let name = mp.manager.name();
             let reason = if mp.disabled {
                 Some("excluded by the system_packages.managers setting".to_string())
-            } else if !mp.manager.is_available() {
-                Some(mp.manager.unavailable_reason())
             } else {
-                None
+                mp.manager.unavailable_reason_async().await
             };
             if let Some(reason) = reason {
                 self.add_skipped(format!(
@@ -1192,12 +1190,12 @@ impl BootstrapStatus {
         let mut json_out = serde_json::Map::new();
         for mp in system::packages_from_config(config) {
             let name = mp.manager.name();
-            if mp.disabled || !mp.manager.is_available() {
-                let reason = if mp.disabled {
-                    "excluded by the system_packages.managers setting".to_string()
-                } else {
-                    mp.manager.unavailable_reason()
-                };
+            let reason = if mp.disabled {
+                Some("excluded by the system_packages.managers setting".to_string())
+            } else {
+                mp.manager.unavailable_reason_async().await
+            };
+            if let Some(reason) = reason {
                 for req in &mp.requests {
                     report.row(
                         "packages",

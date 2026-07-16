@@ -478,12 +478,12 @@ impl Doctor {
         let mut total_missing = 0;
         for mp in mgrs {
             let name = mp.manager.name();
-            if mp.disabled || !mp.manager.is_available() {
-                let reason = if mp.disabled {
-                    "excluded by the system_packages.managers setting".to_string()
-                } else {
-                    mp.manager.unavailable_reason()
-                };
+            let reason = if mp.disabled {
+                Some("excluded by the system_packages.managers setting".to_string())
+            } else {
+                mp.manager.unavailable_reason_async().await
+            };
+            if let Some(reason) = reason {
                 map.insert(
                     name.into(),
                     serde_json::json!({
@@ -713,12 +713,12 @@ impl Doctor {
         let mut total_missing = 0;
         for mp in mgrs {
             let name = mp.manager.name();
-            if mp.disabled || !mp.manager.is_available() {
-                let reason = if mp.disabled {
-                    "excluded by the system_packages.managers setting".to_string()
-                } else {
-                    mp.manager.unavailable_reason()
-                };
+            let reason = if mp.disabled {
+                Some("excluded by the system_packages.managers setting".to_string())
+            } else {
+                mp.manager.unavailable_reason_async().await
+            };
+            if let Some(reason) = reason {
                 lines.push(format!(
                     "{name}: unavailable ({reason}), {} package(s) skipped",
                     mp.requests.len()
@@ -1187,6 +1187,7 @@ fn plugin_type_name(plugin_type: PluginType) -> &'static str {
         PluginType::Asdf => "asdf",
         PluginType::Vfox => "vfox",
         PluginType::VfoxBackend => "vfox_backend",
+        PluginType::Package => "package",
     }
 }
 

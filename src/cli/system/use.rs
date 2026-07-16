@@ -117,11 +117,13 @@ impl SystemUse {
         // this machine.
         if !self.dry_run {
             for mp in &mgrs {
-                if !mp.disabled && !mp.manager.is_available() {
+                if !mp.disabled
+                    && let Some(reason) = mp.manager.unavailable_reason_async().await
+                {
                     info!(
                         "{}: {} — added to config without installing",
                         mp.manager.name(),
-                        mp.manager.unavailable_reason()
+                        reason
                     );
                 }
             }

@@ -152,9 +152,15 @@ impl Install {
         // packages that would actually be checked is unchanged, so editing
         // [bootstrap.packages] or widening system_packages.managers re-checks
         // immediately
+        let mut available = std::collections::HashSet::new();
+        for mp in &mgrs {
+            if !mp.disabled && mp.manager.unavailable_reason_async().await.is_none() {
+                available.insert(mp.manager.name().to_string());
+            }
+        }
         let fingerprint = mgrs
             .iter()
-            .filter(|mp| !mp.disabled && mp.manager.is_available())
+            .filter(|mp| available.contains(mp.manager.name()))
             .flat_map(|mp| {
                 mp.requests
                     .iter()
@@ -176,7 +182,7 @@ impl Install {
         let mut missing = 0;
         let mut all_queries_ok = true;
         for mp in mgrs {
-            if mp.disabled || !mp.manager.is_available() {
+            if !available.contains(mp.manager.name()) {
                 continue;
             }
             match mp.manager.installed(&mp.requests).await {

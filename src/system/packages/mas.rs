@@ -201,7 +201,7 @@ async fn mas_list() -> Result<Vec<InstalledApp>> {
 
 #[async_trait(?Send)]
 impl SystemPackageManager for MasManager {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "mas"
     }
 

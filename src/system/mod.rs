@@ -1233,6 +1233,10 @@ fn resolve_managers(
         .system_packages
         .managers
         .clone();
+    let managers = packages::all_managers()
+        .into_iter()
+        .map(|manager| (manager.name().to_string(), manager))
+        .collect::<IndexMap<_, _>>();
     let mut out = vec![];
     for (name, requests) in by_mgr {
         let disabled = enabled.as_ref().is_some_and(|e| !e.contains(&name));
@@ -1243,9 +1247,9 @@ fn resolve_managers(
                 enabled.as_deref().unwrap_or_default().join(", ")
             );
         }
-        match packages::get_manager(&name) {
+        match managers.get(&name) {
             Some(manager) => out.push(ManagerPackages {
-                manager,
+                manager: manager.clone(),
                 requests,
                 disabled,
             }),

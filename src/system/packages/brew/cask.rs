@@ -192,7 +192,7 @@ impl BinaryArtifact {
 
 #[async_trait(?Send)]
 impl SystemPackageManager for BrewCaskManager {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "brew-cask"
     }
 
