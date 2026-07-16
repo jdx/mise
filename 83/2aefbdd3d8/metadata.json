@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "832aefbdd3d8",
+  "strategy": "manual-commit",
+  "branch": "codex/fail-fast-offline-http",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/config/settings.rs",
+    "src/http.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/83/2aefbdd3d8/0/metadata.json",
+      "transcript": "/83/2aefbdd3d8/0/full.jsonl",
+      "content_hash": "/83/2aefbdd3d8/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 141264,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 8189696,
+    "output_tokens": 8175,
+    "api_call_count": 62
+  }
+}
