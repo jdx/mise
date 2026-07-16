@@ -551,16 +551,15 @@ For a working example, see the [mise-env-plugin-template](https://github.com/jdx
 
 ## Multiple `env._` Directives
 
-It may be necessary to use multiple `env._` directives, however TOML fails with this syntax
-because it has 2 identical keys in a table:
+Some directives accept an array when you need to apply them more than once. For example,
+multiple scripts can be sourced in order with a single `_.source` key:
 
 ```toml
 [env]
-_.source = "./script_1.sh"
-_.source = "./script_2.sh" # invalid // [!code error]
+_.source = ["./script_1.sh", "./script_2.sh"]
 ```
 
-For this use-case, you can optionally make `[env]` an array-of-tables instead by using `[[env]]` instead:
+The `[[env]]` array-of-tables form remains supported for compatibility:
 
 ```toml
 [[env]]
@@ -569,7 +568,7 @@ _.source = "./script_1.sh"
 _.source = "./script_2.sh"
 ```
 
-It works identically but you can have multiple tables.
+For new configurations, prefer arrays on the directive itself when the directive supports them.
 
 ## Templates
 
