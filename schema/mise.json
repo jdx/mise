@@ -2487,9 +2487,24 @@
     "hooks": {
       "description": "hooks to run",
       "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/hook_definition"
-      }
+      "properties": {
+        "enter": {
+          "$ref": "#/$defs/hook_definition"
+        },
+        "leave": {
+          "$ref": "#/$defs/hook_definition"
+        },
+        "cd": {
+          "$ref": "#/$defs/hook_definition"
+        },
+        "preinstall": {
+          "$ref": "#/$defs/hook_definition"
+        },
+        "postinstall": {
+          "$ref": "#/$defs/hook_definition"
+        }
+      },
+      "additionalProperties": false
     },
     "watch_files": {
       "description": "files to watch for changes",

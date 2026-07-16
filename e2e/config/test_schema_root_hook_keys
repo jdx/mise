@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+TOMBI_VERSION="0.9.22"
+
+mise use -g tombi@$TOMBI_VERSION
+
+SCHEMA_PATH="$ROOT/schema/mise.json"
+TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
+TOMBI_LINT="$TOMBI lint --offline --no-cache --error-on-warnings --quiet"
+assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
+
+cat >"$HOME/tombi.toml" <<EOF
+toml-version = "v1.0.0"
+
+[schema]
+enabled = true
+strict = true
+
+[[schemas]]
+path = "file://$SCHEMA_PATH"
+include = ["mise-hooks.toml", "mise-bad-hooks.toml"]
+EOF
+
+cat >"$HOME/workdir/mise-hooks.toml" <<'TOML'
+[hooks]
+enter = "echo enter"
+leave = "echo leave"
+cd = "echo cd"
+preinstall = "echo preinstall"
+postinstall = "echo postinstall"
+TOML
+
+cat >"$HOME/workdir/mise-bad-hooks.toml" <<'TOML'
+[hooks]
+unknown = "echo unknown"
+TOML
+
+cd "$HOME/workdir"
+assert_succeed "$TOMBI_LINT mise-hooks.toml"
+assert_fail "$TOMBI_LINT mise-bad-hooks.toml"
