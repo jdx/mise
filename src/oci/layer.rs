@@ -20,7 +20,9 @@ use std::str::FromStr;
 use eyre::{Context, Result};
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use jdx_tar::{Archive, Builder, EntryType, Header};
+#[cfg(test)]
+use jdx_tar::Archive;
+use jdx_tar::{Builder, EntryType, Header};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
