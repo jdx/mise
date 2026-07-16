@@ -1899,16 +1899,14 @@ where
     D: de::Deserializer<'de>,
 {
     let value = toml::Value::deserialize(deserializer)?;
-    let contains_mise = match &value {
-        toml::Value::Table(table) => table.contains_key("mise"),
-        toml::Value::Array(values) => values.iter().any(|value| {
-            value
-                .as_table()
-                .is_some_and(|table| table.contains_key("mise"))
-        }),
-        _ => false,
-    };
-    if contains_mise {
+    fn contains_mise(value: &toml::Value) -> bool {
+        match value {
+            toml::Value::Table(table) => table.contains_key("mise"),
+            toml::Value::Array(values) => values.iter().any(contains_mise),
+            _ => false,
+        }
+    }
+    if contains_mise(&value) {
         return Err(de::Error::custom("`vars.mise` is not supported"));
     }
     EnvList::deserialize(value).map_err(de::Error::custom)
@@ -3034,6 +3032,11 @@ run = 'echo "template"'
         "#})
         .unwrap_err()
         .to_string();
+        assert!(err.contains("`vars.mise` is not supported"), "{err}");
+
+        let err = toml::from_str::<MiseToml>(r#"vars = [[{ mise = { file = ".env" } }]]"#)
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("`vars.mise` is not supported"), "{err}");
     }
 
