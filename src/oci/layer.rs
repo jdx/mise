@@ -20,8 +20,10 @@ use std::str::FromStr;
 use eyre::{Context, Result};
 use flate2::Compression;
 use flate2::write::GzEncoder;
+#[cfg(test)]
+use jdx_tar::Archive;
+use jdx_tar::{Builder, EntryType, Header};
 use sha2::{Digest, Sha256};
-use tar::{EntryType, Header};
 use walkdir::WalkDir;
 
 /// The result of building a layer blob.
@@ -205,8 +207,7 @@ pub fn build_layer_from_files_and_dirs(
 
     let mut tar_bytes = Vec::new();
     {
-        let mut builder = tar::Builder::new(&mut tar_bytes);
-        builder.mode(tar::HeaderMode::Deterministic);
+        let mut builder = Builder::new(&mut tar_bytes);
 
         // Track which parent directories we've emitted so we don't repeat them.
         let mut emitted_dirs: std::collections::BTreeSet<String> = Default::default();
@@ -228,13 +229,11 @@ pub fn build_layer_from_files_and_dirs(
                     emit_dir(&mut builder, &dir, owner)?;
                 }
             }
-            let mut header = Header::new_gnu();
-            header.set_entry_type(EntryType::Regular);
+            let mut header = Header::new_gnu(EntryType::File);
             header.set_mode(*mode);
             apply_owner(&mut header, owner);
             header.set_size(contents.len() as u64);
             header.set_mtime(0);
-            header.set_cksum();
             builder
                 .append_data(&mut header, path, contents.as_slice())
                 .wrap_err_with(|| format!("writing file entry {path}"))?;
@@ -338,9 +337,7 @@ fn build_layer_from_entries(
 
     let mut tar_bytes = Vec::new();
     {
-        let mut builder = tar::Builder::new(&mut tar_bytes);
-        builder.mode(tar::HeaderMode::Deterministic);
-        builder.follow_symlinks(false);
+        let mut builder = Builder::new(&mut tar_bytes);
 
         // Always emit a directory entry for the target prefix chain itself
         // (e.g. `/mise`, `/mise/installs`, `/mise/installs/node`). This
@@ -369,13 +366,11 @@ fn build_layer_from_entries(
                     }
                 }
                 EntryKind::File => {
-                    let mut header = Header::new_gnu();
-                    header.set_entry_type(EntryType::Regular);
+                    let mut header = Header::new_gnu(EntryType::File);
                     header.set_mode(e.mode);
                     apply_owner(&mut header, e.owner);
                     header.set_size(e.size);
                     header.set_mtime(0);
-                    header.set_cksum();
                     let f = std::fs::File::open(&e.abs)
                         .wrap_err_with(|| format!("opening {}", e.abs.display()))?;
                     builder
@@ -383,8 +378,7 @@ fn build_layer_from_entries(
                         .wrap_err_with(|| format!("writing {path_in_tar}"))?;
                 }
                 EntryKind::Symlink(target) => {
-                    let mut header = Header::new_gnu();
-                    header.set_entry_type(EntryType::Symlink);
+                    let mut header = Header::new_gnu(EntryType::Symlink);
                     header.set_mode(e.mode);
                     apply_owner(&mut header, e.owner);
                     header.set_size(0);
@@ -432,23 +426,21 @@ fn owner_from_metadata(_md: &std::fs::Metadata) -> LayerOwner {
     LayerOwner::default()
 }
 
-fn emit_dir<W: Write>(builder: &mut tar::Builder<W>, path: &str, owner: LayerOwner) -> Result<()> {
+fn emit_dir<W: Write>(builder: &mut Builder<W>, path: &str, owner: LayerOwner) -> Result<()> {
     emit_dir_with_mode(builder, path, owner, 0o755)
 }
 
 fn emit_dir_with_mode<W: Write>(
-    builder: &mut tar::Builder<W>,
+    builder: &mut Builder<W>,
     path: &str,
     owner: LayerOwner,
     mode: u32,
 ) -> Result<()> {
-    let mut header = Header::new_gnu();
-    header.set_entry_type(EntryType::Directory);
+    let mut header = Header::new_gnu(EntryType::Directory);
     header.set_mode(mode);
     apply_owner(&mut header, owner);
     header.set_size(0);
     header.set_mtime(0);
-    header.set_cksum();
     let path_with_slash = if path.ends_with('/') {
         path.to_string()
     } else {
@@ -664,7 +656,7 @@ mod tests {
         let blob =
             build_layer_from_path(&source, "/opt/app/greeting.txt", LayerOwner::default()).unwrap();
         let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
-        let mut archive = tar::Archive::new(decoder);
+        let mut archive = Archive::new(decoder);
         let paths = archive
             .entries()
             .unwrap()
@@ -698,7 +690,7 @@ mod tests {
         )
         .unwrap();
         let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
-        let mut archive = tar::Archive::new(decoder);
+        let mut archive = Archive::new(decoder);
         let paths = archive
             .entries()
             .unwrap()
@@ -850,14 +842,14 @@ mod tests {
 
     fn assert_layer_owner(blob: &LayerBlob, uid: u64, gid: u64) {
         let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
-        let mut archive = tar::Archive::new(decoder);
+        let mut archive = Archive::new(decoder);
         let mut entries_seen = 0;
 
         for entry in archive.entries().unwrap() {
             let entry = entry.unwrap();
             let path = entry.path().unwrap().to_string_lossy().into_owned();
-            assert_eq!(entry.header().uid().unwrap(), uid, "uid for {path}");
-            assert_eq!(entry.header().gid().unwrap(), gid, "gid for {path}");
+            assert_eq!(entry.header().uid(), uid, "uid for {path}");
+            assert_eq!(entry.header().gid(), gid, "gid for {path}");
             entries_seen += 1;
         }
 
@@ -866,17 +858,13 @@ mod tests {
 
     fn assert_layer_mode(blob: &LayerBlob, expected_path: &str, expected_mode: u32) {
         let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
-        let mut archive = tar::Archive::new(decoder);
+        let mut archive = Archive::new(decoder);
 
         for entry in archive.entries().unwrap() {
             let entry = entry.unwrap();
             let path = entry.path().unwrap().to_string_lossy().into_owned();
             if path.trim_end_matches('/') == expected_path.trim_end_matches('/') {
-                assert_eq!(
-                    entry.header().mode().unwrap(),
-                    expected_mode,
-                    "mode for {path}"
-                );
+                assert_eq!(entry.header().mode(), expected_mode, "mode for {path}");
                 return;
             }
         }
@@ -887,14 +875,14 @@ mod tests {
     #[cfg(unix)]
     fn assert_layer_entry_owner(blob: &LayerBlob, expected_path: &str, uid: u64, gid: u64) {
         let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
-        let mut archive = tar::Archive::new(decoder);
+        let mut archive = Archive::new(decoder);
 
         for entry in archive.entries().unwrap() {
             let entry = entry.unwrap();
             let path = entry.path().unwrap().to_string_lossy().into_owned();
             if path == expected_path {
-                assert_eq!(entry.header().uid().unwrap(), uid, "uid for {path}");
-                assert_eq!(entry.header().gid().unwrap(), gid, "gid for {path}");
+                assert_eq!(entry.header().uid(), uid, "uid for {path}");
+                assert_eq!(entry.header().gid(), gid, "gid for {path}");
                 return;
             }
         }
@@ -975,13 +963,13 @@ mod tests {
 
         // The GNU @LongLink extension must round-trip back to the full target.
         let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
-        let mut archive = tar::Archive::new(decoder);
+        let mut archive = Archive::new(decoder);
         let mut found = false;
         for entry in archive.entries().unwrap() {
             let entry = entry.unwrap();
             let path = entry.path().unwrap().to_string_lossy().into_owned();
             if path == "mise/bin/cli" {
-                let link = entry.link_name().unwrap().unwrap();
+                let link = entry.header().link_name().unwrap();
                 assert_eq!(&*link, Path::new(&long_target));
                 found = true;
             }

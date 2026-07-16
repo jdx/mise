@@ -233,14 +233,14 @@ fn replace_registry_cache(download_path: &Path, cache_path: &Path) -> Result<()>
 fn parse_registry_archive(path: &Path) -> Result<Registry> {
     let file = File::open(path)?;
     let decoder = zstd::Decoder::new(file)?;
-    let mut archive = tar::Archive::new(decoder);
+    let mut archive = jdx_tar::Archive::new(decoder);
     let mut sources = BTreeMap::new();
     let mut archive_size = 0_u64;
 
     for (index, entry) in archive.entries()?.enumerate() {
         let mut entry = entry?;
         track_registry_archive_entry(index, entry.size(), &mut archive_size)?;
-        if !entry.header().entry_type().is_file() {
+        if entry.entry_type() != jdx_tar::EntryType::File {
             continue;
         }
         let path = entry.path()?;
@@ -661,12 +661,11 @@ mod tests {
 
         let file = tempfile::NamedTempFile::new().unwrap();
         let encoder = zstd::Encoder::new(file.reopen().unwrap(), 0).unwrap();
-        let mut archive = tar::Builder::new(encoder);
+        let mut archive = jdx_tar::Builder::new(encoder);
         for (path, contents) in entries {
-            let mut header = tar::Header::new_gnu();
+            let mut header = jdx_tar::Header::new_gnu(jdx_tar::EntryType::File);
             header.set_size(contents.len() as u64);
             header.set_mode(0o644);
-            header.set_cksum();
             archive
                 .append_data(&mut header, path, Cursor::new(contents.as_bytes()))
                 .unwrap();

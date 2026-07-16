@@ -120,6 +120,7 @@ indexmap = { version = "2", features = ["serde"] }
 clx = "2"
 indoc = "2"
 itertools = "0.15"
+jdx-tar = "1.1.0"
 jiff = "0.2"
 junction = "2"
 log = "0.4"
@@ -185,7 +186,6 @@ strum = { version = "0.28", features = ["derive"] }
 supports-hyperlinks = "3"
 tabled = { version = "0.21", features = ["ansi"] }
 taplo = "0.14"
-tar = "0.4"
 tempfile = "3"
 tera = "2"
 tera1 = { package = "tera", version = "1.20.1" }
