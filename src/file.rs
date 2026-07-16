@@ -1225,6 +1225,7 @@ pub fn untar(
     };
 
     let tar = open_tar(format, archive)?;
+    create_dir_all(dest).wrap_err_with(err)?;
     let mut unpack_opts = UnpackOptions::default();
     unpack_opts.strip_components = opts.strip_components;
     unpack_opts.preserve_mtime = opts.preserve_mtime;
