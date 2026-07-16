@@ -18,16 +18,26 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-hooks.toml", "mise-bad-hooks.toml"]
+include = ["mise-hooks.toml", "mise-deprecated-script.toml", "mise-deprecated-scripts.toml", "mise-bad-hooks.toml"]
 EOF
 
 cat >"$HOME/workdir/mise-hooks.toml" <<'TOML'
 [hooks]
-enter = "echo enter"
-leave = "echo leave"
-cd = "echo cd"
-preinstall = "echo preinstall"
-postinstall = "echo postinstall"
+enter = { script = "echo enter", shell = "bash" }
+leave = { scripts = ["echo leave"] }
+cd = [{ task = "change-directory" }, { run = "echo cd", shell = "bash -c" }]
+preinstall = { run = "echo preinstall" }
+postinstall = [{ run = "echo postinstall" }, { task = "after-install" }]
+TOML
+
+cat >"$HOME/workdir/mise-deprecated-script.toml" <<'TOML'
+[hooks]
+preinstall = { script = "echo preinstall" }
+TOML
+
+cat >"$HOME/workdir/mise-deprecated-scripts.toml" <<'TOML'
+[hooks]
+postinstall = { scripts = ["echo postinstall"] }
 TOML
 
 cat >"$HOME/workdir/mise-bad-hooks.toml" <<'TOML'
@@ -37,4 +47,6 @@ TOML
 
 cd "$HOME/workdir"
 assert_succeed "$TOMBI_LINT mise-hooks.toml"
+assert_fail "$TOMBI_LINT mise-deprecated-script.toml"
+assert_fail "$TOMBI_LINT mise-deprecated-scripts.toml"
 assert_fail "$TOMBI_LINT mise-bad-hooks.toml"
