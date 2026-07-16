@@ -75,6 +75,14 @@ if [[ $os == "linux" ]] && [[ $arch == "armv7" ]]; then
 	features="$features,aws-lc-rs"
 fi
 
+if [[ $os == "macos" ]]; then
+	# Targeting macOS 12+ makes ld emit chained fixups (LC_DYLD_CHAINED_FIXUPS),
+	# which dyld applies lazily per page instead of eagerly interpreting ~170k
+	# legacy rebase/bind opcodes on every launch. Measurably faster startup for
+	# a binary this large. macOS 11 (EOL since 2023) cannot run these binaries.
+	export MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-12.0}
+fi
+
 if [[ $os == "linux" ]]; then
 	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 else

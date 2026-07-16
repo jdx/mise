@@ -1378,11 +1378,7 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
             if config_dir_is_ignored(dir, include_ignored) {
                 vec![]
             } else {
-                config_filenames
-                    .iter()
-                    .rev()
-                    .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
-                    .collect()
+                config_paths_in_dir_with_filenames(dir, config_filenames)
             }
         })
         .collect::<Vec<_>>();

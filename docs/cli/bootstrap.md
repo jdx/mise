@@ -12,7 +12,7 @@ Runs the bootstrap steps for the current config in order:
 1. `mise bootstrap packages apply` — install missing
    `[bootstrap.packages]`
    then `[bootstrap.hooks.post-packages]`
-2. `mise bootstrap repos apply` — clone/update `[bootstrap.repos]`
+2. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
    surrounded by `pre-repos`/`post-repos` hooks
 3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
@@ -107,7 +107,7 @@ Can be passed multiple times or as a comma-separated list.
 
 ### `--update`
 
-Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
+Refresh package manager metadata and update configured repos
 
 ## Subcommands
 

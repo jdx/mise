@@ -9,4 +9,6 @@ Manage git repo checkouts from `[bootstrap.repos]`
 ## Subcommands
 
 - [`mise bootstrap repos apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/repos/apply.md)
+- [`mise bootstrap repos exec [-c --continue-on-error] [-n --dry-run] [PATH]… <-- COMMAND>…`](/cli/bootstrap/repos/exec.md)
 - [`mise bootstrap repos status [-J --json] [--missing]`](/cli/bootstrap/repos/status.md)
+- [`mise bootstrap repos update [-n --dry-run] [-y --yes] [PATH]…`](/cli/bootstrap/repos/update.md)

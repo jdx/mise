@@ -1,24 +1,60 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
+use crate::http::HTTP;
 use crate::toolset::{RawBackendOptions, ToolVersionOptions};
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::{dirs, file};
+use eyre::{Context, Result, bail, ensure};
 use heck::ToShoutySnakeCase;
 use indexmap::IndexMap;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use serde::Serialize as _;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
 use std::env::consts::OS;
 use std::fmt::Display;
+use std::fs::File;
+use std::io::Read;
 use std::iter::Iterator;
+use std::path::{Path, PathBuf};
 use std::sync::{LazyLock as Lazy, Mutex};
+use std::time::Duration;
 use strum::IntoEnumIterator;
 use url::Url;
 
 // the registry is generated from registry/ in the project root
-pub static REGISTRY: Registry = include!(concat!(env!("OUT_DIR"), "/registry.rs"));
+static BAKED_REGISTRY: Registry = include!(concat!(env!("OUT_DIR"), "/registry.rs"));
+pub static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
+    if !Settings::get().registry_floating {
+        return &BAKED_REGISTRY;
+    }
+
+    if !registry_cache_path().exists() {
+        return &BAKED_REGISTRY;
+    }
+
+    match load_cached_floating_registry() {
+        Ok(registry) => Box::leak(Box::new(registry)),
+        Err(err) => {
+            warn!("failed to load floating mise registry, using baked-in registry: {err:#}");
+            &BAKED_REGISTRY
+        }
+    }
+});
+
+const MISE_REGISTRY_ARCHIVE_URL: &str = "https://mise.jdx.dev/registry/latest.tar.zst";
+const MAX_REGISTRY_ARCHIVE_ENTRIES: usize = 4096;
+const MAX_REGISTRY_ARCHIVE_ENTRY_SIZE: u64 = 1024 * 1024;
+const MAX_REGISTRY_ARCHIVE_SIZE: u64 = 16 * 1024 * 1024;
 
 pub struct Registry {
     entries: &'static [(&'static str, RegistryTool)],
-    lookup: phf::Map<&'static str, usize>,
+    lookup: RegistryLookup,
+}
+
+enum RegistryLookup {
+    Static(phf::Map<&'static str, usize>),
+    Dynamic(HashMap<&'static str, usize>),
 }
 
 impl Registry {
@@ -27,7 +63,7 @@ impl Registry {
     }
 
     pub fn contains_key(&self, name: &str) -> bool {
-        self.lookup.contains_key(name)
+        self.lookup.get(name).is_some()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&'static str, &'static RegistryTool)> {
@@ -40,6 +76,32 @@ impl Registry {
 
     pub fn values(&self) -> impl Iterator<Item = &'static RegistryTool> {
         self.entries.iter().map(|(_, tool)| tool)
+    }
+
+    fn dynamic(entries: BTreeMap<String, RegistryTool>) -> Self {
+        let entries = entries
+            .into_iter()
+            .map(|(name, tool)| (leak_string(name), tool))
+            .collect::<Vec<_>>();
+        let entries = leak_vec(entries);
+        let lookup = entries
+            .iter()
+            .enumerate()
+            .map(|(index, (name, _))| (*name, index))
+            .collect();
+        Self {
+            entries,
+            lookup: RegistryLookup::Dynamic(lookup),
+        }
+    }
+}
+
+impl RegistryLookup {
+    fn get(&self, name: &str) -> Option<&usize> {
+        match self {
+            Self::Static(lookup) => lookup.get(name),
+            Self::Dynamic(lookup) => lookup.get(name),
+        }
     }
 }
 
@@ -69,6 +131,313 @@ pub struct RegistryBackend {
     pub full: &'static str,
     pub platforms: &'static [&'static str],
     pub options: &'static [(&'static str, &'static str)],
+}
+
+fn registry_cache_path() -> PathBuf {
+    dirs::CACHE.join("mise-registry").join("registry.tar.zst")
+}
+
+fn load_cached_floating_registry() -> Result<Registry> {
+    parse_registry_archive(&registry_cache_path())
+        .wrap_err("failed to load cached floating mise registry")
+}
+
+fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {
+    path.metadata()
+        .and_then(|metadata| metadata.modified())
+        .and_then(|modified| modified.elapsed().map_err(std::io::Error::other))
+        .is_ok_and(|age| age < ttl)
+}
+
+/// Refresh the floating mise registry before anything initializes [`REGISTRY`].
+/// Fast and offline commands use the cached archive (or the baked registry) without networking.
+pub async fn refresh() {
+    let settings = Settings::get();
+    if !settings.registry_floating || settings.prefer_offline() {
+        return;
+    }
+
+    let cache_path = registry_cache_path();
+    if cache_is_fresh(&cache_path, settings.registry_cache_ttl()) {
+        if parse_registry_archive(&cache_path).is_ok() {
+            return;
+        }
+        warn!("cached floating mise registry is invalid; refreshing it");
+    }
+
+    if let Err(err) = download_registry_archive(&cache_path).await {
+        warn!("failed to refresh floating mise registry: {err:#}");
+    }
+}
+
+async fn download_registry_archive(cache_path: &Path) -> Result<()> {
+    let download_path = cache_path.with_extension(format!("download-{}", std::process::id()));
+    let pr = MultiProgressReport::get().add_pre_backend("mise registry");
+    if let Err(err) = HTTP
+        .download_file(MISE_REGISTRY_ARCHIVE_URL, &download_path, Some(pr.as_ref()))
+        .await
+    {
+        let _ = file::remove_file(&download_path);
+        pr.abandon();
+        return Err(err);
+    }
+
+    let result = (|| {
+        parse_registry_archive(&download_path)
+            .wrap_err("downloaded mise registry archive is invalid")?;
+        replace_registry_cache(&download_path, cache_path)?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => {
+            pr.finish();
+            Ok(())
+        }
+        Err(err) => {
+            let _ = file::remove_file(&download_path);
+            pr.abandon();
+            Err(err)
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_registry_cache(download_path: &Path, cache_path: &Path) -> Result<()> {
+    file::rename(download_path, cache_path)
+}
+
+#[cfg(windows)]
+fn replace_registry_cache(download_path: &Path, cache_path: &Path) -> Result<()> {
+    let backup_path = cache_path.with_extension(format!("backup-{}", std::process::id()));
+    let had_cache = cache_path.exists();
+    if backup_path.exists() {
+        file::remove_file(&backup_path)?;
+    }
+    if had_cache {
+        file::rename(cache_path, &backup_path)?;
+    }
+    if let Err(install_err) = file::rename(download_path, cache_path) {
+        if had_cache && let Err(restore_err) = file::rename(&backup_path, cache_path) {
+            return Err(install_err).wrap_err(format!(
+                "failed to install downloaded registry and restore cached registry: {restore_err:#}"
+            ));
+        }
+        return Err(install_err).wrap_err("failed to install downloaded registry");
+    }
+    if had_cache {
+        file::remove_file(&backup_path)?;
+    }
+    Ok(())
+}
+
+fn parse_registry_archive(path: &Path) -> Result<Registry> {
+    let file = File::open(path)?;
+    let decoder = zstd::Decoder::new(file)?;
+    let mut archive = tar::Archive::new(decoder);
+    let mut sources = BTreeMap::new();
+    let mut archive_size = 0_u64;
+
+    for (index, entry) in archive.entries()?.enumerate() {
+        let mut entry = entry?;
+        track_registry_archive_entry(index, entry.size(), &mut archive_size)?;
+        if !entry.header().entry_type().is_file() {
+            continue;
+        }
+        let path = entry.path()?;
+        let components = path
+            .components()
+            .map(|component| component.as_os_str())
+            .collect::<Vec<_>>();
+        if components.len() != 2 || components[0] != "registry" {
+            continue;
+        }
+        let file_path = PathBuf::from(components[1]);
+        if file_path
+            .extension()
+            .is_none_or(|extension| extension != "toml")
+        {
+            continue;
+        }
+        let short = file_path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .ok_or_else(|| eyre::eyre!("invalid registry filename: {}", path.display()))?
+            .to_string();
+        let mut source = String::new();
+        entry.read_to_string(&mut source)?;
+        sources.insert(short, source);
+    }
+
+    ensure!(
+        !sources.is_empty(),
+        "archive does not contain registry entries"
+    );
+    registry_from_sources(sources)
+}
+
+fn track_registry_archive_entry(
+    index: usize,
+    entry_size: u64,
+    archive_size: &mut u64,
+) -> Result<()> {
+    ensure!(
+        index < MAX_REGISTRY_ARCHIVE_ENTRIES,
+        "registry archive contains too many entries"
+    );
+    ensure!(
+        entry_size <= MAX_REGISTRY_ARCHIVE_ENTRY_SIZE,
+        "registry archive entry is too large"
+    );
+    *archive_size = archive_size
+        .checked_add(entry_size)
+        .ok_or_else(|| eyre::eyre!("registry archive size overflow"))?;
+    ensure!(
+        *archive_size <= MAX_REGISTRY_ARCHIVE_SIZE,
+        "registry archive is too large"
+    );
+    Ok(())
+}
+
+fn registry_from_sources(sources: BTreeMap<String, String>) -> Result<Registry> {
+    let mut entries = BTreeMap::new();
+    for (short, source) in sources {
+        let value: toml::Value = toml::from_str(&source)
+            .wrap_err_with(|| format!("failed to parse registry/{short}.toml"))?;
+        let tool = parse_registry_tool(&short, &value)
+            .wrap_err_with(|| format!("invalid registry/{short}.toml"))?;
+        entries.insert(short, tool.clone());
+        for alias in tool.aliases {
+            entries.insert((*alias).to_string(), tool.clone());
+        }
+    }
+    Ok(Registry::dynamic(entries))
+}
+
+fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool> {
+    let table = value
+        .as_table()
+        .ok_or_else(|| eyre::eyre!("registry tool must be a TOML table"))?;
+    let backends = table
+        .get("backends")
+        .and_then(toml::Value::as_array)
+        .ok_or_else(|| eyre::eyre!("backends must be an array"))?
+        .iter()
+        .map(parse_registry_backend)
+        .collect::<Result<Vec<_>>>()?;
+    ensure!(!backends.is_empty(), "backends must not be empty");
+
+    let aliases = string_array(table.get("aliases"), "aliases")?;
+    let overrides = string_array(table.get("overrides"), "overrides")?;
+    let os = string_array(table.get("os"), "os")?;
+    let idiomatic_files = string_array(table.get("idiomatic_files"), "idiomatic_files")?;
+    let detect = string_array(table.get("detect"), "detect")?;
+    let description = table
+        .get("description")
+        .map(|value| {
+            value
+                .as_str()
+                .map(|value| leak_string(value.to_string()))
+                .ok_or_else(|| eyre::eyre!("description must be a string"))
+        })
+        .transpose()?;
+    let test = table.get("test").map(parse_registry_test).transpose()?;
+
+    Ok(RegistryTool {
+        short: leak_string(short.to_string()),
+        description,
+        backends: leak_vec(backends),
+        aliases: leak_vec(aliases),
+        overrides: leak_vec(overrides),
+        test: Box::leak(Box::new(test)),
+        os: leak_vec(os),
+        idiomatic_files: leak_vec(idiomatic_files),
+        detect: leak_vec(detect),
+    })
+}
+
+fn parse_registry_backend(value: &toml::Value) -> Result<RegistryBackend> {
+    match value {
+        toml::Value::String(full) => Ok(RegistryBackend {
+            full: leak_string(full.clone()),
+            platforms: &[],
+            options: &[],
+        }),
+        toml::Value::Table(table) => {
+            let full = table
+                .get("full")
+                .and_then(toml::Value::as_str)
+                .ok_or_else(|| eyre::eyre!("backend full must be a string"))?;
+            let platforms = string_array(table.get("platforms"), "backend platforms")?;
+            let options = table
+                .get("options")
+                .and_then(toml::Value::as_table)
+                .map(|options| {
+                    options
+                        .iter()
+                        .map(|(key, value)| {
+                            let mut serialized = String::new();
+                            value.serialize(toml::ser::ValueSerializer::new(&mut serialized))?;
+                            Ok((leak_string(key.clone()), leak_string(serialized)))
+                        })
+                        .collect::<Result<Vec<_>>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            Ok(RegistryBackend {
+                full: leak_string(full.to_string()),
+                platforms: leak_vec(platforms),
+                options: leak_vec(options),
+            })
+        }
+        _ => bail!("backend must be a string or table"),
+    }
+}
+
+fn parse_registry_test(value: &toml::Value) -> Result<RegistryToolTest> {
+    let table = value
+        .as_table()
+        .ok_or_else(|| eyre::eyre!("test must be a table"))?;
+    let cmd = table
+        .get("cmd")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| eyre::eyre!("test.cmd must be a string"))?;
+    let expected = table
+        .get("expected")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| eyre::eyre!("test.expected must be a string"))?;
+    let tools = string_array(table.get("tools"), "test.tools")?;
+    Ok(RegistryToolTest {
+        cmd: leak_string(cmd.to_string()),
+        expected: leak_string(expected.to_string()),
+        tools: leak_vec(tools),
+    })
+}
+
+fn string_array(value: Option<&toml::Value>, name: &str) -> Result<Vec<&'static str>> {
+    value
+        .map(|value| {
+            value
+                .as_array()
+                .ok_or_else(|| eyre::eyre!("{name} must be an array"))?
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(|value| leak_string(value.to_string()))
+                        .ok_or_else(|| eyre::eyre!("{name} must contain only strings"))
+                })
+                .collect()
+        })
+        .transpose()
+        .map(Option::unwrap_or_default)
+}
+
+fn leak_string(value: String) -> &'static str {
+    Box::leak(value.into_boxed_str())
+}
+
+fn leak_vec<T>(value: Vec<T>) -> &'static [T] {
+    Box::leak(value.into_boxed_slice())
 }
 
 // Cache for environment variable overrides
@@ -286,6 +655,113 @@ pub fn tool_enabled<T: Ord>(
 #[cfg(test)]
 mod tests {
     use crate::config::Config;
+
+    fn registry_archive(entries: &[(&str, &str)]) -> tempfile::NamedTempFile {
+        use std::io::Cursor;
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let encoder = zstd::Encoder::new(file.reopen().unwrap(), 0).unwrap();
+        let mut archive = tar::Builder::new(encoder);
+        for (path, contents) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(contents.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            archive
+                .append_data(&mut header, path, Cursor::new(contents.as_bytes()))
+                .unwrap();
+        }
+        archive.into_inner().unwrap().finish().unwrap();
+        file
+    }
+
+    #[test]
+    fn test_dynamic_registry_parses_tools_aliases_and_options() {
+        use super::*;
+
+        let registry = registry_from_sources(BTreeMap::from([(
+            "example".to_string(),
+            r#"
+aliases = ["example-alias"]
+description = "Example tool"
+backends = [
+  "aqua:example/tool",
+  { full = "github:example/tool", platforms = ["linux-x64"], options = { bin = "example" } },
+]
+test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
+"#
+            .to_string(),
+        )]))
+        .unwrap();
+
+        let tool = registry.get("example-alias").unwrap();
+        assert_eq!(tool.short, "example");
+        assert_eq!(tool.description, Some("Example tool"));
+        assert_eq!(tool.backends[0].full, "aqua:example/tool");
+        assert_eq!(tool.backends[1].platforms, &["linux-x64"]);
+        assert_eq!(
+            tool.backend_options("github:example/tool").get("bin"),
+            Some("example")
+        );
+        assert_eq!(tool.test.as_ref().unwrap().tools, &["node"]);
+    }
+
+    #[test]
+    fn test_registry_archive_only_reads_top_level_registry_directory() {
+        use super::*;
+
+        let archive = registry_archive(&[
+            ("registry/example.toml", "backends = [\"aqua:good/tool\"]"),
+            (
+                "e2e/registry/example.toml",
+                "backends = [\"aqua:wrong/tool\"]",
+            ),
+        ]);
+        let registry = parse_registry_archive(archive.path()).unwrap();
+
+        assert_eq!(
+            registry.get("example").unwrap().backends[0].full,
+            "aqua:good/tool"
+        );
+    }
+
+    #[test]
+    fn test_registry_archive_rejects_nested_registry_directory() {
+        use super::*;
+
+        let archive = registry_archive(&[(
+            "e2e/registry/example.toml",
+            "backends = [\"aqua:wrong/tool\"]",
+        )]);
+
+        assert!(parse_registry_archive(archive.path()).is_err());
+    }
+
+    #[test]
+    fn test_registry_archive_limits() {
+        use super::*;
+
+        let mut size = 0;
+        assert!(
+            track_registry_archive_entry(MAX_REGISTRY_ARCHIVE_ENTRIES, 0, &mut size)
+                .unwrap_err()
+                .to_string()
+                .contains("too many entries")
+        );
+        assert!(
+            track_registry_archive_entry(0, MAX_REGISTRY_ARCHIVE_ENTRY_SIZE + 1, &mut size)
+                .unwrap_err()
+                .to_string()
+                .contains("entry is too large")
+        );
+        size = MAX_REGISTRY_ARCHIVE_SIZE;
+        assert!(
+            track_registry_archive_entry(0, 1, &mut size)
+                .unwrap_err()
+                .to_string()
+                .contains("archive is too large")
+        );
+    }
 
     #[test]
     fn test_tool_disabled() {
