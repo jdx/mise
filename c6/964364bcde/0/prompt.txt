@@ -1,0 +1,30 @@
+do 1 2 and 3, then reply to the discussion:
+
+thoughts on [https://github.com/jdx/mise/discussions/4598](https://github.com/jdx/mise/discussions/4598) ?
+
+
+Ran 10 commands, read 2 files
+Good timing on this one — the discussion is from March 2025 and the original problem (shims hitting the network for bin paths, blocking shell startup) is basically fixed at this point, but there's a comment from pdecat **today** showing one path that still hurts. Here's my read:
+
+**Where things stand**
+The original report's failure modes are handled now: shims force PREFER_OFFLINE (shims.rs:53), resolution prefers installed versions before touching the network (tool_version.rs:399-405, 467-475), and offline/prefer_offline settings exist. So the "plane scenario" with everything installed works fine offline today.
+
+**The remaining case (pdecat's comment)**
+A fuzzy pin (latest or a prefix like fzf@0.7) where **no installed version satisfies it**. Then the installed-version fast path can't help, prefer_offline's fully-qualified skip at tool_version.rs:526 doesn't apply (0.7 has one dot), and resolution must go remote. With DNS blackholed, the failure takes ~45s because:
+
+A stalled resolver eats the full connect timeout per attempt (~6s in their setup)
+is_transient at http.rs:1106 treats **all** connect errors — including DNS lookup failures — as retryable, so each URL gets http_retries=3 attempts with backoff
+Multiple endpoints get tried in sequence (mise-versions.jdx.dev, api.github.com releases list, then the tags endpoint), each with its own full retry cycle
+To their two questions directly: (1) no, a shim does *not* hit the network when a satisfying version is installed — their repro specifically had no installed match, so remote resolution is genuinely required there; the bug is only how long failure takes. (2) The levers today are MISE_OFFLINE=1, http_retries=0, and http_timeout, but nothing automatic.
+
+**What I'd actually change**
+Roughly in order of value:
+
+**Stop retrying DNS lookup failures.** "failed to lookup address information" is not transient the way a 502 is — retrying 2s later in the same process almost never helps and just multiplies wall time by http_retries. This alone cuts ~45s to ~15s. Needs a bit of care extracting DNS-vs-connection-refused from the reqwest error chain, but it's doable.
+**Per-process circuit breaker per host.** After the first hard DNS/connect failure to a host, mark it dead for the rest of the process. The original report's logs show the same registry.yaml URLs fetched 3× each in one invocation — resolving N tools offline shouldn't cost N× the timeout. This collapses the whole failure to one timeout (~6s).
+**Under** **prefer\_offline** **(shims/hook-env), force** **http\_retries=0** and possibly a shorter connect timeout. The contract of a shim is "don't block the shell" — retrying flaky infra is the wrong trade there.
+A cross-process "network is down" marker file with a short TTL (so each *new* shim invocation doesn't re-probe) is the more aggressive fourth option, but 1–3 probably make it unnecessary, and it has cache-invalidation footguns (captive portals, VPN flaps).
+
+One nit on their repro: mise x fzf@0.7 is ToolSource::Argument, which deliberately disables prefer_offline (tool_version.rs:393) — so the CLI repro isn't quite the shim path, though it ends the same way since nothing installed matches.
+
+Want me to implement any of these (1+2 feel like the right scope for one PR), or draft a reply to the discussion first?

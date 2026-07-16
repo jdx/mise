@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "c6964364bcde",
+  "strategy": "manual-commit",
+  "branch": "codex/fail-fast-offline-http",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "settings.toml",
+    "src/config/settings.rs",
+    "src/github/sigstore.rs",
+    "src/http.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c6/964364bcde/0/metadata.json",
+      "transcript": "/c6/964364bcde/0/full.jsonl",
+      "content_hash": "/c6/964364bcde/0/content_hash.txt",
+      "prompt": "/c6/964364bcde/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 311507,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6244608,
+    "output_tokens": 15591,
+    "api_call_count": 71
+  }
+}
