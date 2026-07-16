@@ -57,6 +57,13 @@ impl Toolset {
         // Ensure options from toolset are preserved during auto-install
         self.init_request_options(&mut versions);
         let installed = self.install_all_versions(config, versions, opts).await?;
+        if opts.dry_run {
+            // Dry-run install results describe the planned installs. They are not
+            // present on disk, so rebuilding shims/runtime symlinks or updating
+            // lockfiles for them would both mutate state and advertise tools that
+            // cannot be executed.
+            return Ok((installed, missing));
+        }
         if !installed.is_empty() {
             let ts = config.get_toolset().await?;
             config::rebuild_shims_and_runtime_symlinks(
