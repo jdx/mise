@@ -468,6 +468,8 @@ Then, run the following commands to install the completion script for your shell
 # This requires bash-completion to be installed
 mkdir -p ~/.local/share/bash-completion/completions/
 mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise
+# apply changes to the current terminal immediately
+source ~/.local/share/bash-completion/completions/mise
 ```
 
 ```sh [zsh]
@@ -480,10 +482,16 @@ echo $fpath | tr ' ' '\n'
 # if you installed zsh with `apt-get` for example, this will work:
 mkdir -p /usr/local/share/zsh/site-functions
 mise completion zsh  > /usr/local/share/zsh/site-functions/_mise
+
+# apply changes to the current terminal immediately
+autoload -Uz compinit && compinit
+rehash
 ```
 
 ```sh [fish]
 mise completion fish > ~/.config/fish/completions/mise.fish
+# apply changes to the current terminal immediately
+source ~/.config/fish/completions/mise.fish
 ```
 
 :::
