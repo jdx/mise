@@ -256,6 +256,9 @@ impl BackendArg {
                             "vfox-backend plugin '{plugin_name}' exists but '{tool_name}' is not available or the plugin is not properly installed"
                         );
                     }
+                    PluginType::Package => {
+                        bail!("package plugin '{plugin_name}' is not a tool backend");
+                    }
                 }
             } else {
                 // Plugin doesn't exist
@@ -323,6 +326,7 @@ impl BackendArg {
                     PluginType::Vfox => BackendType::Vfox,
                     PluginType::VfoxBackend => BackendType::VfoxBackend(plugin_name.to_string()),
                     PluginType::Asdf => BackendType::Asdf,
+                    PluginType::Package => BackendType::Unknown,
                 };
             }
         }
@@ -349,6 +353,7 @@ impl BackendArg {
                 PluginType::Vfox => BackendType::Vfox,
                 PluginType::VfoxBackend => BackendType::VfoxBackend(self.short.to_string()),
                 PluginType::Asdf => BackendType::Asdf,
+                PluginType::Package => BackendType::Unknown,
             };
         }
         BackendType::Unknown
@@ -376,6 +381,7 @@ impl BackendArg {
                     PluginType::Asdf => format!("asdf:{url}"),
                     PluginType::Vfox => format!("vfox:{short}"),
                     PluginType::VfoxBackend => short.to_string(),
+                    PluginType::Package => short.to_string(),
                 };
             }
 
@@ -424,6 +430,7 @@ impl BackendArg {
                     // because the plugin itself is the backend specification
                     PluginType::Vfox => short.to_string(),
                     PluginType::VfoxBackend => short.to_string(),
+                    PluginType::Package => short.to_string(),
                 }
             } else if plugin_name.starts_with("asdf-") {
                 // Handle asdf plugin:tool format even if not installed
@@ -436,6 +443,7 @@ impl BackendArg {
                 PluginType::Asdf => format!("asdf:{short}"),
                 PluginType::Vfox => format!("vfox:{short}"),
                 PluginType::VfoxBackend => short.to_string(),
+                PluginType::Package => short.to_string(),
             }
         } else if let Some(full) = REGISTRY
             .get(short)
@@ -582,6 +590,7 @@ impl BackendArg {
                     PluginType::Asdf => format!("asdf:{short}"),
                     PluginType::Vfox => format!("vfox:{short}"),
                     PluginType::VfoxBackend => short.to_string(),
+                    PluginType::Package => short.to_string(),
                 }
             } else {
                 self.full()

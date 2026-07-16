@@ -194,7 +194,7 @@ impl BrewManager {
 
 #[async_trait(?Send)]
 impl SystemPackageManager for BrewManager {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "brew"
     }
 

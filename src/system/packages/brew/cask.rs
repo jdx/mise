@@ -192,7 +192,7 @@ impl BinaryArtifact {
 
 #[async_trait(?Send)]
 impl SystemPackageManager for BrewCaskManager {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "brew-cask"
     }
 
@@ -1118,11 +1118,12 @@ fn installed_version(token: &str) -> Option<String> {
     let versions = entries
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
             entry
                 .file_type()
                 .ok()
-                .filter(|ft| ft.is_dir())
-                .and_then(|_| entry.file_name().into_string().ok())
+                .filter(|ft| ft.is_dir() && name != ".metadata" && !name.starts_with(".mise-tmp-"))
+                .map(|_| name)
         })
         .collect::<Vec<_>>();
     match versions.as_slice() {
@@ -1327,8 +1328,10 @@ fn remove_stale_versions(token_dir: &Path, current_version: &str) -> Result<()> 
         return Ok(());
     };
     for entry in entries.filter_map(|entry| entry.ok()) {
+        let name = entry.file_name();
         if entry.file_type().is_ok_and(|ft| ft.is_dir())
-            && entry.file_name().to_str() != Some(current_version)
+            && name.to_str() != Some(current_version)
+            && name != ".metadata"
         {
             file::remove_all(entry.path())?;
         }
@@ -2421,18 +2424,39 @@ end
     }
 
     #[test]
-    fn remove_stale_versions_keeps_current_version() -> Result<()> {
+    fn installed_version_ignores_homebrew_metadata() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("actual-token");
+        file::create_dir_all(token_dir.join("2.0.0"))?;
+        file::create_dir_all(token_dir.join(".metadata/2.0.0/timestamp/Casks"))?;
+        file::create_dir_all(token_dir.join(".mise-tmp-interrupted"))?;
+
+        assert_eq!(installed_version("actual-token"), Some("2.0.0".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn remove_stale_versions_keeps_current_version_and_homebrew_metadata() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let token_dir = caskroom_token_dir("actual-token");
         file::create_dir_all(token_dir.join("1.0.0"))?;
         file::create_dir_all(token_dir.join("2.0.0"))?;
+        let metadata = token_dir.join(".metadata/2.0.0/timestamp/Casks");
+        file::create_dir_all(&metadata)?;
+        crate::file::write(metadata.join("actual-token.json"), "metadata")?;
 
         remove_stale_versions(&token_dir, "2.0.0")?;
 
         assert!(!token_dir.join("1.0.0").exists());
         assert!(token_dir.join("2.0.0").exists());
+        assert_eq!(
+            crate::file::read_to_string(metadata.join("actual-token.json"))?,
+            "metadata"
+        );
         Ok(())
     }
 }

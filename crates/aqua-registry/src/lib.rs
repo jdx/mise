@@ -1,3 +1,6 @@
+// eyre 0.6.12 emits a trailing semicolon from bail!, which nightly rejects.
+#![allow(semicolon_in_expressions_from_macros)]
+
 //! Aqua Registry
 //!
 //! This crate provides functionality for working with Aqua package registry files.

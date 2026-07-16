@@ -74,7 +74,7 @@ async fn run_flatpak(args: &[String], action: &str) -> Result<()> {
 
 #[async_trait(?Send)]
 impl SystemPackageManager for FlatpakManager {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "flatpak"
     }
 

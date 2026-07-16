@@ -1500,6 +1500,15 @@
           "description": "Connect stdin/stdout/stderr to child processes.",
           "type": "boolean"
         },
+        "registry_cache_ttl": {
+          "description": "How long to cache the floating mise registry.",
+          "type": "string"
+        },
+        "registry_floating": {
+          "default": false,
+          "description": "Fetch the latest released mise registry and current aqua registry instead of using only the snapshots baked into this mise release.",
+          "type": "boolean"
+        },
         "ruby": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -3336,6 +3345,14 @@
       "type": "object",
       "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
       "properties": {
+        "plugins": {
+          "type": "object",
+          "description": "package manager plugins to install with `mise bootstrap plugins apply`, keyed by manager name",
+          "additionalProperties": {
+            "type": "string",
+            "description": "plugin git URL"
+          }
+        },
         "packages": {
           "type": "object",
           "description": "system packages to install with `mise bootstrap packages apply`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",

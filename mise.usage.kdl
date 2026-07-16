@@ -286,11 +286,10 @@ Set up a machine for the current config in one command
 
 Runs the bootstrap steps for the current config in order:
 
-0. `[bootstrap.hooks.pre-packages]` — optional setup hook
-1. `mise bootstrap packages apply` — install missing
-   `[bootstrap.packages]`
-   then `[bootstrap.hooks.post-packages]`
-2. `mise bootstrap repos apply` — clone/update `[bootstrap.repos]`
+0. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
+   0.7. `[bootstrap.hooks.pre-packages]` — optional setup hook
+1. Install built-in-manager entries from `[bootstrap.packages]`
+2. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
    surrounded by `pre-repos`/`post-repos` hooks
 3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
@@ -308,6 +307,8 @@ Runs the bootstrap steps for the current config in order:
    surrounded by `pre-user`/`post-user` hooks
 9. `mise install` — install missing tools from `[tools]`
    surrounded by `pre-tools`/`post-tools` hooks
+   9.5. Install package-plugin entries from `[bootstrap.packages]`, then run
+   `[bootstrap.hooks.post-packages]`
 10. `mise run bootstrap` — if a task named `bootstrap` is defined
 11. `[bootstrap.hooks.final]` — optional final hook
 
@@ -350,7 +351,7 @@ Run only one or more bootstrap parts
 Can be passed multiple times or as a comma-separated list. Cannot be used with `--skip`.
 """#
         arg <ONLY> {
-            choices packages repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
+            choices plugins packages repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
         }
     }
     flag --skip help="Skip one or more bootstrap parts" var=#true {
@@ -360,10 +361,10 @@ Skip one or more bootstrap parts
 Can be passed multiple times or as a comma-separated list.
 """#
         arg <SKIP> {
-            choices packages repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
+            choices plugins packages repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
         }
     }
-    flag --update help="Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
+    flag --update help="Refresh package manager metadata and update configured repos"
     cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" {
         cmd apply help="Apply dotfiles from `[dotfiles]`" {
             long_help #"""
@@ -481,8 +482,8 @@ state (missing, source missing, differs)
 Apply system packages from `[bootstrap.packages]`
 
 Checks which configured packages are missing and installs them with the
-system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting).
+system package manager. Built-in system managers may elevate with sudo when
+not running as root (see `system_packages.sudo`); package plugins never do.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
 `apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
@@ -498,10 +499,8 @@ Examples:
     $ mise bootstrap packages apply --manager apt --yes
 
 """#
-            flag "-m --manager" help="Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, `flatpak`, or `mas`" {
-                arg <MANAGER> {
-                    choices apk apt brew brew-cask dnf flatpak mas pacman
-                }
+            flag "-m --manager" help="Only install packages for this built-in or plugin manager" {
+                arg <MANAGER>
             }
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
@@ -642,10 +641,8 @@ Examples:
     $ mise bootstrap packages upgrade --dry-run
 
 """#
-            flag "-m --manager" help="Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, `flatpak`, or `mas`" {
-                arg <MANAGER> {
-                    choices apk apt brew brew-cask dnf flatpak mas pacman
-                }
+            flag "-m --manager" help="Only upgrade packages for this built-in or plugin manager" {
+                arg <MANAGER>
             }
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
@@ -686,14 +683,33 @@ Examples:
             arg <PACKAGE>… help="Packages in `manager:package[@version]` form" var=#true
         }
     }
+    cmd plugins subcommand_required=#true help="Manage package manager plugins declared in `[bootstrap.plugins]`" {
+        cmd apply {
+            flag "-n --dry-run" help="Print what would happen without installing plugins"
+        }
+        cmd status {
+            flag --missing help="Exit with code 1 if a declared plugin is missing"
+        }
+    }
     cmd repos subcommand_required=#true help="Manage git repo checkouts from `[bootstrap.repos]`" {
         cmd apply {
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
         }
+        cmd exec {
+            flag "-c --continue-on-error" help="Continue running in other repos after a command fails"
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            arg "[PATH]…" help="Run only in matching configured or expanded paths" required=#false var=#true
+            arg "<-- COMMAND>…" help="Command and arguments to run in each repo" var=#true
+        }
         cmd status {
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 if any configured repo is not in its desired state"
+        }
+        cmd update {
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+            arg "[PATH]…" help="Update only matching configured or expanded paths" required=#false var=#true
         }
     }
     cmd status help="Show the aggregate bootstrap status" {

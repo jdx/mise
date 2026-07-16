@@ -236,12 +236,23 @@ Add bootstrap packages to [bootstrap.packages] and install them
 \fIAliases: \fRu
 .RE
 .TP
+\fBbootstrap plugins\fR
+Manage package manager plugins declared in `[bootstrap.plugins]`
+.TP
+\fBbootstrap plugins apply\fR
+.TP
+\fBbootstrap plugins status\fR
+.TP
 \fBbootstrap repos\fR
 Manage git repo checkouts from `[bootstrap.repos]`
 .TP
 \fBbootstrap repos apply\fR
 .TP
+\fBbootstrap repos exec\fR
+.TP
 \fBbootstrap repos status\fR
+.TP
+\fBbootstrap repos update\fR
 .TP
 \fBbootstrap status\fR
 Show the aggregate bootstrap status
@@ -844,11 +855,10 @@ Set up a machine for the current config in one command
 
 Runs the bootstrap steps for the current config in order:
 
-0. `[bootstrap.hooks.pre\-packages]` — optional setup hook
-1. `mise bootstrap packages apply` — install missing
-   `[bootstrap.packages]`
-   then `[bootstrap.hooks.post\-packages]`
-2. `mise bootstrap repos apply` — clone/update `[bootstrap.repos]`
+0. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
+   0.7. `[bootstrap.hooks.pre\-packages]` — optional setup hook
+1. Install built\-in\-manager entries from `[bootstrap.packages]`
+2. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
    surrounded by `pre\-repos`/`post\-repos` hooks
 3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre\-dotfiles`/`post\-dotfiles` hooks
@@ -866,6 +876,8 @@ Runs the bootstrap steps for the current config in order:
    surrounded by `pre\-user`/`post\-user` hooks
 9. `mise install` — install missing tools from `[tools]`
    surrounded by `pre\-tools`/`post\-tools` hooks
+   9.5. Install package\-plugin entries from `[bootstrap.packages]`, then run
+   `[bootstrap.hooks.post\-packages]`
 10. `mise run bootstrap` — if a task named `bootstrap` is defined
 11. `[bootstrap.hooks.final]` — optional final hook
 
@@ -904,7 +916,7 @@ Skip one or more bootstrap parts
 Can be passed multiple times or as a comma\-separated list.
 .TP
 \fB\-\-update\fR
-Refresh system package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`)
+Refresh package manager metadata and update configured repos
 .SH "MISE BOOTSTRAP DOTFILES APPLY"
 Apply dotfiles from `[dotfiles]`
 
@@ -1042,8 +1054,8 @@ Exit with code 1 if any configured shell activation is not in its desired state
 Apply system packages from `[bootstrap.packages]`
 
 Checks which configured packages are missing and installs them with the
-system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting).
+system package manager. Built\-in system managers may elevate with sudo when
+not running as root (see `system_packages.sudo`); package plugins never do.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
 `apk:zlib\-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
@@ -1056,7 +1068,7 @@ only. `install` is accepted as an alias for this command.
 .PP
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, `flatpak`, or `mas`
+Only install packages for this built\-in or plugin manager
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without running them
@@ -1203,7 +1215,7 @@ Packages can also be given explicitly in `manager:package` form.
 .PP
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew\-cask`, `flatpak`, or `mas`
+Only upgrade packages for this built\-in or plugin manager
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without running them
@@ -1252,6 +1264,22 @@ Skip the confirmation prompt
 .TP
 \fB<PACKAGE>\fR
 Packages in `manager:package[@version]` form
+.SH "MISE BOOTSTRAP PLUGINS APPLY"
+\fBUsage:\fR mise bootstrap plugins apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print what would happen without installing plugins
+.SH "MISE BOOTSTRAP PLUGINS STATUS"
+\fBUsage:\fR mise bootstrap plugins status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if a declared plugin is missing
 .SH "MISE BOOTSTRAP REPOS APPLY"
 \fBUsage:\fR mise bootstrap repos apply [OPTIONS]
 .PP
@@ -1263,6 +1291,25 @@ Print the commands that would run without running them
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.SH "MISE BOOTSTRAP REPOS EXEC"
+\fBUsage:\fR mise bootstrap repos exec [OPTIONS] [<PATH>] ... <COMMAND> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-c, \-\-continue\-on\-error\fR
+Continue running in other repos after a command fails
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Run only in matching configured or expanded paths
+.TP
+\fB<COMMAND>\fR
+Command and arguments to run in each repo
 .SH "MISE BOOTSTRAP REPOS STATUS"
 \fBUsage:\fR mise bootstrap repos status [OPTIONS]
 .PP
@@ -1274,6 +1321,22 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured repo is not in its desired state
+.SH "MISE BOOTSTRAP REPOS UPDATE"
+\fBUsage:\fR mise bootstrap repos update [OPTIONS] [<PATH>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Update only matching configured or expanded paths
 .SH "MISE BOOTSTRAP STATUS"
 Show the aggregate bootstrap status
 .PP

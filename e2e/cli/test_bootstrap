@@ -43,17 +43,38 @@ assert_succeed "mise bootstrap packages install --dry-run --yes"
 # idempotent: re-running is fine
 assert_succeed "mise bootstrap --yes"
 
-# dry-run doesn't install or run anything
-rm -f bootstrap_ran
+# dry-run doesn't run the install postinstall hook when all tools already exist
+rm -f postinstall_ran
+cat <<EOF >mise.toml
+[tools]
+tiny = "1.0.0"
+
+[hooks]
+postinstall = { run = "touch postinstall_ran", shell = "bash -c" }
+EOF
+assert_contains "mise bootstrap --dry-run" "Would run postinstall hook"
+assert_contains "mise bootstrap --dry-run" "bash -c"
+assert_contains "mise bootstrap --dry-run" "touch postinstall_ran"
+assert_fail "test -f postinstall_ran"
+
+# dry-run previews install hooks without installing or running anything
+rm -f bootstrap_ran preinstall_ran postinstall_ran
 cat <<EOF >mise.toml
 [tools]
 tiny = "2.1.0"
 
+[hooks]
+preinstall = "touch preinstall_ran"
+postinstall = "touch postinstall_ran"
+
 [tasks.bootstrap]
 run = "touch bootstrap_ran"
 EOF
-assert_succeed "mise bootstrap --dry-run"
+assert_contains "mise bootstrap --dry-run" "Would run preinstall hook"
+assert_contains "mise bootstrap --dry-run" "Would run postinstall hook"
 assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/2.1.0"
+assert_fail "test -f preinstall_ran"
+assert_fail "test -f postinstall_ran"
 assert_fail "cat bootstrap_ran"
 assert_fail "mise bootstrap status --missing" "tiny@2.1.0"
 assert_contains "mise bootstrap status --json" '"state": "missing"'

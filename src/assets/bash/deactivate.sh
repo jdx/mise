@@ -1,12 +1,12 @@
 # shellcheck shell=bash
 if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
 	_mise_prompt_command=()
-	for _mise_pc in "${PROMPT_COMMAND[@]}"; do
+	for _mise_pc in ${PROMPT_COMMAND[@]+"${PROMPT_COMMAND[@]}"}; do
 		if [[ $_mise_pc != "_mise_hook_prompt_command" && $_mise_pc != "_mise_hook" ]]; then
 			_mise_prompt_command+=("$_mise_pc")
 		fi
 	done
-	PROMPT_COMMAND=("${_mise_prompt_command[@]}")
+	PROMPT_COMMAND=(${_mise_prompt_command[@]+"${_mise_prompt_command[@]}"})
 	unset _mise_prompt_command _mise_pc
 elif [[ ${PROMPT_COMMAND-} == *_mise_hook_prompt_command* ]]; then
 	_mise_prompt_command_value="${PROMPT_COMMAND-}"
@@ -26,12 +26,12 @@ fi
 
 if declare -p chpwd_functions >/dev/null 2>&1; then
 	_mise_chpwd_functions=()
-	for _mise_f in "${chpwd_functions[@]}"; do
+	for _mise_f in ${chpwd_functions[@]+"${chpwd_functions[@]}"}; do
 		if [[ $_mise_f != "_mise_hook_chpwd" && $_mise_f != "_mise_hook" ]]; then
 			_mise_chpwd_functions+=("$_mise_f")
 		fi
 	done
-	chpwd_functions=("${_mise_chpwd_functions[@]}")
+	chpwd_functions=(${_mise_chpwd_functions[@]+"${_mise_chpwd_functions[@]}"})
 	unset _mise_chpwd_functions _mise_f
 fi
 

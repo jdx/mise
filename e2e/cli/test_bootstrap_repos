@@ -74,6 +74,38 @@ assert_succeed "mise bootstrap repos apply --yes"
 assert "cat ~/src/full-ref/version.txt" "v3"
 assert "git -C ~/src/full-ref rev-parse --abbrev-ref HEAD" "main"
 
+# apply leaves ref-less repos alone; update pulls them and supports path filters
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/unpinned-a" = { url = "$SRC_URL" }
+"~/src/unpinned-b" = { url = "$SRC_URL" }
+EOF
+assert_succeed "mise bootstrap repos apply --yes"
+echo "v4" >"$SRC/version.txt"
+commit_all "$SRC" "v4"
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat ~/src/unpinned-a/version.txt" "v3"
+assert_contains "mise bootstrap repos update --dry-run ~/src/unpinned-a" "pull --ff-only origin main"
+assert "cat ~/src/unpinned-a/version.txt" "v3"
+assert_succeed "mise bootstrap repos update --yes ~/src/unpinned-a"
+assert "cat ~/src/unpinned-a/version.txt" "v4"
+assert "cat ~/src/unpinned-b/version.txt" "v3"
+assert_succeed "mise bootstrap repos update --yes $HOME/src/unpinned-b"
+assert "cat ~/src/unpinned-b/version.txt" "v4"
+assert_fail "mise bootstrap repos update --yes ~/src/not-configured" "no configured repo matched"
+
+# exec runs argv directly from each repo and supports dry-run
+assert_contains "mise bootstrap repos exec ~/src/unpinned-a -- cat version.txt" "v4"
+assert_contains "mise bootstrap repos exec --dry-run ~/src/unpinned-a -- cat version.txt" "cd $HOME/src/unpinned-a"
+assert_fail "mise bootstrap repos exec --continue-on-error -- false" "unpinned-a, ~/src/unpinned-b"
+
+# top-level --update uses the imperative repos update pass
+echo "v5" >"$SRC/version.txt"
+commit_all "$SRC" "v5"
+assert_succeed "mise bootstrap --update --yes --only repos"
+assert "cat ~/src/unpinned-a/version.txt" "v5"
+assert "cat ~/src/unpinned-b/version.txt" "v5"
+
 # empty target directories can be cloned into
 mkdir -p "$HOME/src/empty"
 cat <<EOF >mise.toml
@@ -82,7 +114,7 @@ cat <<EOF >mise.toml
 EOF
 assert_contains "mise bootstrap repos status" "missing"
 assert_succeed "mise bootstrap repos apply --yes"
-assert "cat ~/src/empty/version.txt" "v3"
+assert "cat ~/src/empty/version.txt" "v5"
 
 # tag refs are supported
 cat <<EOF >mise.toml
