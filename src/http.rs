@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -42,12 +42,30 @@ pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
 type CachedResult = Arc<OnceCell<Result<String, String>>>;
 static HTTP_CACHE: Lazy<Mutex<HashMap<String, CachedResult>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
-/// Hosts that returned a hard connection failure during this process. Once a
-/// host is known to be unreachable, later requests should fail immediately
-/// instead of paying the same resolver/connect timeout again.
-static UNAVAILABLE_HTTP_HOSTS: Lazy<Mutex<HashSet<String>>> =
-    Lazy::new(|| Mutex::new(HashSet::new()));
+/// Origins that returned a hard connection failure during a prefer-offline
+/// process. Keep the original error text so a short-circuited request remains
+/// actionable rather than hiding the reason the circuit opened.
+static UNAVAILABLE_HTTP_HOSTS: Lazy<Mutex<HashMap<String, String>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 type RetryStateHandle = Arc<Mutex<RetryState>>;
+
+#[derive(Debug)]
+struct UnavailableHttpHost {
+    origin: String,
+    cause: String,
+}
+
+impl std::fmt::Display for UnavailableHttpHost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "HTTP host {} is unavailable after an earlier connection failure: {}",
+            self.origin, self.cause
+        )
+    }
+}
+
+impl std::error::Error for UnavailableHttpHost {}
 
 struct RetryState {
     headers: HeaderMap,
@@ -583,7 +601,10 @@ impl Client {
             .await
         {
             Ok(resp) => Ok(resp),
-            Err(err) if url.scheme() == "http" && is_connection_error(&err) => {
+            Err(err)
+                if url.scheme() == "http"
+                    && (is_connection_error(&err) || is_unavailable_http_host_error(&err)) =>
+            {
                 let mut url = url;
                 url.set_scheme("https").unwrap();
                 self.send_once_with_retry_headers(method, url, headers, verb_label, options)
@@ -616,10 +637,15 @@ impl Client {
         let original_url = url.clone();
         apply_url_replacements(&mut url);
         let host_key = http_host_key(&url);
-        if let Some(host) = &host_key
-            && UNAVAILABLE_HTTP_HOSTS.lock().unwrap().contains(host)
+        if Settings::get().prefer_offline()
+            && let Some(host) = &host_key
+            && let Some(cause) = UNAVAILABLE_HTTP_HOSTS.lock().unwrap().get(host).cloned()
         {
-            bail!("HTTP host {host} is unavailable after an earlier connection failure");
+            return Err(UnavailableHttpHost {
+                origin: host.clone(),
+                cause,
+            }
+            .into());
         }
         debug!("{} {}", verb_label, &url);
 
@@ -646,10 +672,14 @@ impl Client {
         let resp = match req.send().await {
             Ok(resp) => resp,
             Err(err) => {
-                if is_hard_connection_failure(&err)
+                if Settings::get().prefer_offline()
+                    && is_hard_connection_failure(&err)
                     && let Some(host) = host_key
                 {
-                    UNAVAILABLE_HTTP_HOSTS.lock().unwrap().insert(host);
+                    UNAVAILABLE_HTTP_HOSTS
+                        .lock()
+                        .unwrap()
+                        .insert(host, err.to_string());
                 }
                 if err.is_timeout() {
                     let (setting, env_var) = match self.kind {
@@ -1117,6 +1147,11 @@ fn http_host_key(url: &Url) -> Option<String> {
     Some(format!("{}://{host}:{port}", url.scheme()))
 }
 
+fn is_unavailable_http_host_error(err: &Report) -> bool {
+    err.chain()
+        .any(|err| err.downcast_ref::<UnavailableHttpHost>().is_some())
+}
+
 /// hyper-util exposes DNS failures in the error chain as a `dns error` source,
 /// but reqwest intentionally erases the concrete connector type. Match that
 /// stable connector error label rather than platform-specific getaddrinfo text.
@@ -1323,6 +1358,30 @@ mod tests {
         settings.offline = Some(true);
         crate::config::Settings::reset(Some(settings));
         SettingsGuard { _lock: lock }
+    }
+
+    struct UnavailableHostsGuard {
+        host_keys: Vec<String>,
+    }
+    impl UnavailableHostsGuard {
+        fn new(host_keys: Vec<String>) -> Self {
+            let mut unavailable = UNAVAILABLE_HTTP_HOSTS.lock().unwrap();
+            for host_key in &host_keys {
+                unavailable.remove(host_key);
+            }
+            drop(unavailable);
+            Self { host_keys }
+        }
+    }
+    impl Drop for UnavailableHostsGuard {
+        fn drop(&mut self) {
+            let mut unavailable = UNAVAILABLE_HTTP_HOSTS
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            for host_key in &self.host_keys {
+                unavailable.remove(host_key);
+            }
+        }
     }
 
     struct GithubOauthSettingsGuard {
@@ -1730,54 +1789,97 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         );
     }
 
-    #[test]
-    fn test_dns_errors_are_not_transient() {
-        let err = eyre!("dns error");
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_reqwest_dns_error_is_not_transient_and_opens_circuit() {
+        let _settings_guard = set_test_prefer_offline(3);
+        let timeout = Duration::from_secs(3);
+        let client = Client {
+            reqwest: Client::_new()
+                .no_proxy()
+                .read_timeout(timeout)
+                .connect_timeout(timeout)
+                .build()
+                .unwrap(),
+            timeout,
+            kind: ClientKind::Fetch,
+        };
+        let url: Url = "https://mise-dns-regression.invalid/".parse().unwrap();
+        let host_key = http_host_key(&url).unwrap();
+        let _hosts_guard = UnavailableHostsGuard::new(vec![host_key.clone()]);
+
+        let err = client.get_async(url).await.unwrap_err();
+
+        assert!(is_dns_error(err.as_ref()), "unexpected error: {err:#}");
         assert!(!is_transient(&err));
+        assert!(
+            UNAVAILABLE_HTTP_HOSTS
+                .lock()
+                .unwrap()
+                .contains_key(&host_key)
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn test_hard_connection_failure_opens_host_circuit() {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-        let _guard = set_test_http_retries(0);
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    async fn test_circuit_broken_http_origin_falls_back_to_https() {
+        let _settings_guard = set_test_prefer_offline(3);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        drop(listener);
+        let http_url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+        let https_url: Url = format!("https://127.0.0.1:{port}/").parse().unwrap();
+        let http_origin = http_host_key(&http_url).unwrap();
+        let https_origin = http_host_key(&https_url).unwrap();
+        let _hosts_guard = UnavailableHostsGuard::new(vec![http_origin.clone(), https_origin]);
+        UNAVAILABLE_HTTP_HOSTS
+            .lock()
+            .unwrap()
+            .insert(http_origin, "connection refused".to_string());
 
-        let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
-        let host_key = http_host_key(&url).unwrap();
-        UNAVAILABLE_HTTP_HOSTS.lock().unwrap().remove(&host_key);
-        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
-        let first_err = client.get_async(url.clone()).await.unwrap_err();
-        assert!(is_connection_error(&first_err));
-        assert!(UNAVAILABLE_HTTP_HOSTS.lock().unwrap().contains(&host_key));
-
-        // Bring the host online after the first failure. The process-local
-        // circuit should still reject the next request without connecting.
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
-            .await
-            .unwrap();
         let accepted = Arc::new(AtomicUsize::new(0));
         let accepted_inner = accepted.clone();
-        tokio::spawn(async move {
+        let server = tokio::spawn(async move {
             if let Ok((mut socket, _)) = listener.accept().await {
                 accepted_inner.fetch_add(1, Ordering::SeqCst);
-                let mut request = [0u8; 4096];
-                let _ = socket.read(&mut request).await;
-                let _ = socket.write_all(ok_response().as_bytes()).await;
+                let _ = socket.shutdown().await;
             }
         });
 
-        let second_err = client.get_async(url).await.unwrap_err();
-        assert!(
-            second_err
-                .to_string()
-                .contains("earlier connection failure")
-        );
-        tokio::task::yield_now().await;
-        assert_eq!(accepted.load(Ordering::SeqCst), 0);
-        UNAVAILABLE_HTTP_HOSTS.lock().unwrap().remove(&host_key);
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let err = client.get_async(http_url).await.unwrap_err();
+        server.await.unwrap();
+
+        assert_eq!(accepted.load(Ordering::SeqCst), 1);
+        assert!(!is_unavailable_http_host_error(&err));
+    }
+
+    #[test]
+    fn test_unavailable_host_error_preserves_original_cause() {
+        let err: Report = UnavailableHttpHost {
+            origin: "https://example.com:443".to_string(),
+            cause: "connection refused".to_string(),
+        }
+        .into();
+
+        assert!(is_unavailable_http_host_error(&err));
+        assert!(err.to_string().contains("connection refused"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_circuit_breaker_is_disabled_without_prefer_offline() {
+        let _settings_guard = set_test_http_retries(0);
+        let (port, count) = spawn_canned_server(vec![ok_response()]).await;
+        let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+        let host_key = http_host_key(&url).unwrap();
+        let _hosts_guard = UnavailableHostsGuard::new(vec![host_key.clone()]);
+        UNAVAILABLE_HTTP_HOSTS
+            .lock()
+            .unwrap()
+            .insert(host_key, "connection refused".to_string());
+
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let resp = client.get_async(url).await.unwrap();
+
+        assert!(resp.status().is_success());
+        assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test(flavor = "current_thread")]
