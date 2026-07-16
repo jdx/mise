@@ -147,6 +147,18 @@ mod tests {
         let cf = MisePluginToml::from_file(&dirs::HOME.join("fixtures/mise.plugin.toml")).unwrap();
 
         assert_debug_snapshot!(cf.exec_env);
+        assert_eq!(
+            cf.list_idiomatic_filenames.data.as_deref(),
+            Some("test-idiomatic-filenames")
+        );
+        assert_eq!(
+            cf.package_manager,
+            MisePluginTomlPackageManagerConfig {
+                requires: vec!["helm".into(), "kubectl".into()],
+                supports_version_pins: true,
+                os: Some(vec!["macos".into(), "linux".into()]),
+            }
+        );
     }
 
     #[test]
