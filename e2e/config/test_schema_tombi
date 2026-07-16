@@ -86,6 +86,25 @@ start_calendar_interval = [
   { minute = 59, hour = 23, day = 31, weekday = 7, month = 12 },
 ]
 
+[bootstrap.linux.systemd.units.sync]
+exec_start = "/usr/bin/rsync --archive source/ destination/"
+type = "oneshot"
+remain_after_exit = true
+exec_stop = "/usr/bin/umount destination"
+timeout_start_sec = "2min"
+timeout_stop_sec = "30s"
+no_new_privileges = true
+private_tmp = true
+
+[bootstrap.linux.systemd.units.sync-timer]
+on_boot_sec = "2min"
+on_unit_inactive_sec = "5min"
+randomized_delay_sec = "30s"
+accuracy_sec = "1s"
+persistent = true
+unit = "dev.mise.sync.service"
+wanted_by = ["timers.target"]
+
 [bootstrap.mise_shell_activate]
 bash = true
 zsh = false
@@ -192,7 +211,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -322,6 +341,19 @@ program = "/bin/echo"
 start_calendar_interval = $interval
 TOML
   assert_fail "$TOMBI_LINT mise-bad-launchd-calendar.toml"
+done
+
+# Verify that systemd service/timer declarations match runtime validation
+for unit in \
+  '{ description = "service missing exec_start" }' \
+  '{ persistent = true }' \
+  '{ exec_start = "/bin/true", on_boot_sec = "1min" }' \
+  '{ exec_start = "/bin/true", type = "daemon" }'; do
+  cat >"$HOME/workdir/mise-bad-systemd.toml" <<TOML
+[bootstrap.linux.systemd.units]
+invalid = $unit
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-systemd.toml"
 done
 
 # Verify that OCI copy entries match runtime validation

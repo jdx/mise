@@ -3742,11 +3742,11 @@
           "properties": {
             "systemd": {
               "type": "object",
-              "description": "systemd user service bootstrap config",
+              "description": "systemd user service and timer bootstrap config",
               "properties": {
                 "units": {
                   "type": "object",
-                  "description": "systemd user services to write and start with `mise bootstrap linux systemd-units apply`",
+                  "description": "systemd user services and timers to write and start with `mise bootstrap linux systemd-units apply`",
                   "propertyNames": {
                     "pattern": "^[A-Za-z0-9._@-]+$"
                   },
@@ -3777,6 +3777,44 @@
                         "pattern": ".*\\S.*",
                         "description": "write ExecStart in the [Service] section"
                       },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "simple",
+                          "exec",
+                          "forking",
+                          "oneshot",
+                          "dbus",
+                          "notify",
+                          "notify-reload",
+                          "idle"
+                        ],
+                        "description": "write Type in the [Service] section"
+                      },
+                      "remain_after_exit": {
+                        "type": "boolean",
+                        "description": "write RemainAfterExit in the [Service] section"
+                      },
+                      "exec_stop": {
+                        "type": "string",
+                        "description": "write ExecStop in the [Service] section"
+                      },
+                      "timeout_start_sec": {
+                        "type": "string",
+                        "description": "write TimeoutStartSec in the [Service] section"
+                      },
+                      "timeout_stop_sec": {
+                        "type": "string",
+                        "description": "write TimeoutStopSec in the [Service] section"
+                      },
+                      "no_new_privileges": {
+                        "type": "boolean",
+                        "description": "write NoNewPrivileges in the [Service] section"
+                      },
+                      "private_tmp": {
+                        "type": "boolean",
+                        "description": "write PrivateTmp in the [Service] section"
+                      },
                       "environment": {
                         "type": "object",
                         "description": "environment variables for Environment entries",
@@ -3804,9 +3842,41 @@
                         "type": "string",
                         "description": "write StandardError in the [Service] section"
                       },
+                      "on_boot_sec": {
+                        "type": "string",
+                        "description": "write OnBootSec in the [Timer] section"
+                      },
+                      "on_unit_active_sec": {
+                        "type": "string",
+                        "description": "write OnUnitActiveSec in the [Timer] section"
+                      },
+                      "on_unit_inactive_sec": {
+                        "type": "string",
+                        "description": "write OnUnitInactiveSec in the [Timer] section"
+                      },
+                      "on_calendar": {
+                        "type": "string",
+                        "description": "write OnCalendar in the [Timer] section"
+                      },
+                      "randomized_delay_sec": {
+                        "type": "string",
+                        "description": "write RandomizedDelaySec in the [Timer] section"
+                      },
+                      "accuracy_sec": {
+                        "type": "string",
+                        "description": "write AccuracySec in the [Timer] section"
+                      },
+                      "persistent": {
+                        "type": "boolean",
+                        "description": "write Persistent in the [Timer] section"
+                      },
+                      "unit": {
+                        "type": "string",
+                        "description": "write Unit in the [Timer] section"
+                      },
                       "start": {
                         "type": "boolean",
-                        "description": "restart the service after writing it; when false, stop the service after writing it"
+                        "description": "restart the unit after writing it; when false, stop the unit after writing it"
                       },
                       "wanted_by": {
                         "type": "array",
@@ -3816,7 +3886,109 @@
                         }
                       }
                     },
-                    "required": ["exec_start"]
+                    "oneOf": [
+                      {
+                        "title": "systemd service",
+                        "required": ["exec_start"],
+                        "not": {
+                          "anyOf": [
+                            {
+                              "required": ["on_boot_sec"]
+                            },
+                            {
+                              "required": ["on_unit_active_sec"]
+                            },
+                            {
+                              "required": ["on_unit_inactive_sec"]
+                            },
+                            {
+                              "required": ["on_calendar"]
+                            },
+                            {
+                              "required": ["randomized_delay_sec"]
+                            },
+                            {
+                              "required": ["accuracy_sec"]
+                            },
+                            {
+                              "required": ["persistent"]
+                            },
+                            {
+                              "required": ["unit"]
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "title": "systemd timer",
+                        "anyOf": [
+                          {
+                            "required": ["on_boot_sec"]
+                          },
+                          {
+                            "required": ["on_unit_active_sec"]
+                          },
+                          {
+                            "required": ["on_unit_inactive_sec"]
+                          },
+                          {
+                            "required": ["on_calendar"]
+                          }
+                        ],
+                        "not": {
+                          "anyOf": [
+                            {
+                              "required": ["exec_start"]
+                            },
+                            {
+                              "required": ["type"]
+                            },
+                            {
+                              "required": ["remain_after_exit"]
+                            },
+                            {
+                              "required": ["exec_stop"]
+                            },
+                            {
+                              "required": ["timeout_start_sec"]
+                            },
+                            {
+                              "required": ["timeout_stop_sec"]
+                            },
+                            {
+                              "required": ["no_new_privileges"]
+                            },
+                            {
+                              "required": ["private_tmp"]
+                            },
+                            {
+                              "required": ["environment"],
+                              "properties": {
+                                "environment": {
+                                  "type": "object",
+                                  "minProperties": 1
+                                }
+                              }
+                            },
+                            {
+                              "required": ["working_directory"]
+                            },
+                            {
+                              "required": ["restart"]
+                            },
+                            {
+                              "required": ["restart_sec"]
+                            },
+                            {
+                              "required": ["standard_output"]
+                            },
+                            {
+                              "required": ["standard_error"]
+                            }
+                          ]
+                        }
+                      }
+                    ]
                   }
                 }
               }
