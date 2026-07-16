@@ -990,6 +990,12 @@ mod tests {
         });
         assert!(rc.prerelease);
 
+        let php_rc = mark_prerelease(VersionInfo {
+            version: "8.5.9RC1".into(),
+            ..Default::default()
+        });
+        assert!(php_rc.prerelease);
+
         let already_flagged = mark_prerelease(VersionInfo {
             version: "2.0.0".into(),
             prerelease: true,
