@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "c894e93e6cff",
+  "strategy": "manual-commit",
+  "branch": "codex/adopt-jdx-tar",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Cargo.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c8/94e93e6cff/0/metadata.json",
+      "transcript": "/c8/94e93e6cff/0/full.jsonl",
+      "content_hash": "/c8/94e93e6cff/0/content_hash.txt",
+      "prompt": "/c8/94e93e6cff/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1240337,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 61091328,
+    "output_tokens": 160383,
+    "api_call_count": 523
+  }
+}
