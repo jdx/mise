@@ -290,7 +290,7 @@ Runs the bootstrap steps for the current config in order:
 1. `mise bootstrap packages apply` — install missing
    `[bootstrap.packages]`
    then `[bootstrap.hooks.post-packages]`
-2. `mise bootstrap repos apply` — clone/update `[bootstrap.repos]`
+2. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
    surrounded by `pre-repos`/`post-repos` hooks
 3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
@@ -363,7 +363,7 @@ Can be passed multiple times or as a comma-separated list.
             choices packages repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
         }
     }
-    flag --update help="Refresh system package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
+    flag --update help="Refresh package manager metadata and update configured repos"
     cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" {
         cmd apply help="Apply dotfiles from `[dotfiles]`" {
             long_help #"""
@@ -691,9 +691,20 @@ Examples:
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
         }
+        cmd exec {
+            flag "-c --continue-on-error" help="Continue running in other repos after a command fails"
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            arg "[PATH]…" help="Run only in matching configured or expanded paths" required=#false var=#true
+            arg "<-- COMMAND>…" help="Command and arguments to run in each repo" var=#true
+        }
         cmd status {
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 if any configured repo is not in its desired state"
+        }
+        cmd update {
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+            arg "[PATH]…" help="Update only matching configured or expanded paths" required=#false var=#true
         }
     }
     cmd status help="Show the aggregate bootstrap status" {

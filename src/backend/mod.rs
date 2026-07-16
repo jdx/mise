@@ -2382,7 +2382,7 @@ pub trait Backend: Debug + Send + Sync {
             .env(&*env::PATH_KEY, path_env.join())
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
-            .env("MISE_TOOL_VERSION", tv.version.clone())
+            .env(env::MISE_TOOL_VERSION_ENV_VAR, tv.version.clone())
             .with_pr(ctx.pr.as_ref())
             .cmd_body_args(shell_args, &rendered_script)
             .envs(env_vars);

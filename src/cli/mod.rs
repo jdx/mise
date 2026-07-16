@@ -5,7 +5,7 @@ use crate::ui::{self, ctrlc};
 use crate::{Result, backend};
 use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{hook_env as hook_env_module, logger, migrate, shims};
-use clap::{ArgAction, CommandFactory, Parser, Subcommand};
+use clap::{ArgAction, CommandFactory, Subcommand};
 use eyre::bail;
 use std::path::PathBuf;
 
@@ -473,8 +473,8 @@ fn uses_deprecated_backends_alias(cmd: &clap::Command, args: &[String]) -> bool 
     )
 }
 
-fn warn_deprecated_backends_alias(cmd: &clap::Command, args: &[String]) {
-    if uses_deprecated_backends_alias(cmd, args) {
+fn warn_deprecated_backends_alias(uses_alias: bool) {
+    if uses_alias {
         deprecated_at!(
             "2026.4.0",
             "2027.4.0",
@@ -647,23 +647,40 @@ impl Cli {
         measure!("handle_shim", { shims::handle_shim().await })?;
         ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
-        let _ = measure!("backend::load_tools", { backend::load_tools().await });
-
+        // Clap's tool argument parsers consult installed plugin/tool metadata while
+        // resolving registry options. Initialize that filesystem-only state before
+        // parsing, while leaving full backend loading until after registry refresh.
+        if !print_version {
+            measure!("install_state::init", {
+                crate::toolset::install_state::init().await?
+            });
+        }
         // Pre-process args to handle naked runs before clap parsing
-        let cmd = Cli::command();
+        let cmd = measure!("build_cli_command", { Cli::command() });
         let processed_args = preprocess_args_for_naked_run(&cmd, args);
         // Escape flags after task names so they go to tasks, not mise
         let processed_args = escape_task_args(&cmd, &processed_args);
+        let deprecated_backends_alias = uses_deprecated_backends_alias(&cmd, args);
 
+        // Reuse the already-built clap command rather than letting
+        // `Cli::parse_from` construct the whole tree a second time.
         let cli = measure!("get_matches_from", {
-            Cli::parse_from(processed_args.iter())
+            let matches = cmd.get_matches_from(processed_args.iter());
+            match <Cli as clap::FromArgMatches>::from_arg_matches(&matches) {
+                Ok(cli) => cli,
+                Err(err) => err.format(&mut Cli::command()).exit(),
+            }
         });
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
-        warn_deprecated_backends_alias(&cmd, args);
+        if !print_version {
+            measure!("registry::refresh", { crate::registry::refresh().await });
+            let _ = measure!("backend::load_tools", { backend::load_tools().await });
+        }
+        warn_deprecated_backends_alias(deprecated_backends_alias);
         measure!("migrate", { migrate::run().await });
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");

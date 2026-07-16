@@ -215,7 +215,7 @@ impl AsdfBackend {
             .with_env("MISE_DOWNLOAD_PATH", download)
             .with_env("MISE_INSTALL_PATH", install)
             .with_env("MISE_INSTALL_TYPE", install_type)
-            .with_env("MISE_INSTALL_VERSION", install_version);
+            .with_env(env::MISE_INSTALL_VERSION_ENV_VAR, install_version);
         Ok(sm)
     }
 }

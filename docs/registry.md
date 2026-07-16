@@ -24,6 +24,29 @@ mise use aqua:aws/aws-cli
 
 If a tool is not available in the registry, you can install it by its full name. [github](./dev-tools/backends/github.html) and [aqua](./dev-tools/backends/aqua.html) give you for example access to almost all programs available on GitHub.
 
+## Floating registries
+
+By default, mise uses the mise and aqua registry snapshots that were tested and bundled with that
+mise release. Users whose system package manager ships mise updates slowly can opt in to current
+registry data without replacing the mise executable:
+
+```shell
+mise settings registry_floating=true
+```
+
+With this enabled, mise fetches the shorthand registry published with the latest mise release and
+the current official aqua registry. The bundled snapshots remain available as fallbacks when the
+remote registries cannot be loaded. Fast and offline commands never refresh the mise registry; they
+use an existing cached copy or the bundled snapshot.
+The mise registry is cached for [`registry_cache_ttl`](/configuration/settings.html#registry_cache_ttl),
+which defaults to one hour; aqua continues to use
+[`aqua.registry_cache_ttl`](/configuration/settings.html#aqua-registry_cache_ttl), which defaults to
+one week. `mise cache clear` forces both to be downloaded again on their next online use.
+
+This behavior is opt-in because a floating registry may contain changes that were made after the
+installed mise version was tested. Updating mise remains preferable when an updated package is
+available.
+
 ## Backends
 
 In addition to built-in [core tools](/core-tools.html), `mise` supports a variety of [backends](/dev-tools/backends/) to install tools.

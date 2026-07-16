@@ -7,7 +7,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
-use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset};
+use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, tool_from_env_var_name};
 use crate::{config, env};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -111,15 +111,7 @@ impl ToolsetBuilder {
             return Ok(());
         }
         for (k, v) in env {
-            if k.starts_with("MISE_") && k.ends_with("_VERSION") && k != "MISE_VERSION" {
-                let tool_name = k
-                    .trim_start_matches("MISE_")
-                    .trim_end_matches("_VERSION")
-                    .to_lowercase();
-                if tool_name == "install" || tool_name == "tool" {
-                    // ignore MISE_INSTALL_VERSION and MISE_TOOL_VERSION (set during hooks)
-                    continue;
-                }
+            if let Some(tool_name) = tool_from_env_var_name(&k) {
                 let ba: Arc<BackendArg> = Arc::new(tool_name.as_str().into());
                 let source = ToolSource::Environment(k, v.clone());
                 let mut env_ts = Toolset::new(source.clone());

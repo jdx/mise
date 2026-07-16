@@ -1,13 +1,12 @@
 use color_eyre::eyre::{Result, bail, eyre};
 use console::style;
-use heck::ToShoutySnakeCase;
 use indoc::formatdoc;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::env;
 use crate::shell::get_shell;
-use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder, tool_env_var_name};
 
 /// Sets a tool version for the current session.
 ///
@@ -48,10 +47,7 @@ impl Shell {
 
         if self.unset {
             for ta in &self.tool {
-                let op = shell.unset_env(&format!(
-                    "MISE_{}_VERSION",
-                    ta.ba.short.to_shouty_snake_case()
-                ));
+                let op = shell.unset_env(&tool_env_var_name(&ta.ba.short));
                 print!("{op}");
             }
             return Ok(());
@@ -82,7 +78,7 @@ impl Shell {
         for (p, tv) in ts.list_current_installed_versions(&config) {
             let source = &ts.versions.get(p.ba().as_ref()).unwrap().source;
             if matches!(source, ToolSource::Argument) {
-                let k = format!("MISE_{}_VERSION", p.id().to_shouty_snake_case());
+                let k = tool_env_var_name(p.id());
                 let op = shell.set_env(&k, &tv.version);
                 print!("{op}");
             }

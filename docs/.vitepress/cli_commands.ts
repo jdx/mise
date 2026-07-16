@@ -155,7 +155,13 @@ export const commands: { [key: string]: Command } = {
           apply: {
             hide: false,
           },
+          exec: {
+            hide: false,
+          },
           status: {
+            hide: false,
+          },
+          update: {
             hide: false,
           },
         },

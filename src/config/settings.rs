@@ -476,8 +476,10 @@ impl Settings {
                 CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
             ))
             .env();
+        time!("try_get builder1+env");
 
         let mut settings = sb.load()?;
+        time!("try_get load1");
         if let Some(mut cd) = settings.cd {
             static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
             if cd.is_relative() {
@@ -492,12 +494,16 @@ impl Settings {
                 CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
             ))
             .env();
+        time!("try_get builder2+env");
         for file in Self::all_settings_files() {
             sb = sb.preloaded(file);
         }
+        time!("try_get all_settings_files");
         sb = sb.preloaded(DEFAULT_SETTINGS.clone());
+        time!("try_get default_settings");
 
         settings = sb.load()?;
+        time!("try_get load2");
         if !settings.legacy_version_file {
             settings.idiomatic_version_file = Some(false);
         }
@@ -940,6 +946,15 @@ impl Settings {
             .transpose()
             .unwrap()
             .unwrap_or(crate::aqua::aqua_registry_wrapper::DEFAULT_AQUA_REGISTRY_CACHE_TTL)
+    }
+
+    pub fn registry_cache_ttl(&self) -> Duration {
+        self.registry_cache_ttl
+            .as_deref()
+            .map(duration::parse_duration)
+            .transpose()
+            .unwrap()
+            .unwrap_or(duration::HOURLY)
     }
 
     pub fn task_timeout_duration(&self) -> Option<Duration> {
