@@ -255,6 +255,26 @@ impl Backend for PIPXBackend {
         }
     }
 
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> eyre::Result<Option<String>> {
+        // Git-sourced tools resolve versions from repo tags, which cannot be
+        // validated from the version string alone.
+        if !matches!(
+            self.tool_name().parse::<PipxRequest>(),
+            Ok(PipxRequest::Pypi(_))
+        ) {
+            return Ok(None);
+        }
+        // PEP 440 allows non-semver versions (1.2.3.4, 1.2.3rc1, 1.2.3.post1)
+        // — those keep using remote discovery. A full semver request is
+        // exact; `pipx install pkg==version` / `uv tool install` fail when it
+        // does not exist upstream.
+        Ok(versions::SemVer::new(version).map(|_| version.to_string()))
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let request_options = tv.request.options();
         let options = PipxOptions::new(&request_options);
@@ -827,6 +847,63 @@ mod tests {
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use std::ffi::OsString;
+
+    #[tokio::test]
+    async fn exact_semver_versions_resolve_without_remote_discovery() {
+        use crate::backend::Backend;
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = PIPXBackend::from_arg("pipx:black".into());
+
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "24.3.0")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("24.3.0")
+        );
+    }
+
+    #[tokio::test]
+    async fn non_semver_versions_require_remote_discovery() {
+        use crate::backend::Backend;
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = PIPXBackend::from_arg("pipx:black".into());
+
+        // PEP 440 versions that are not semver must keep resolving against
+        // the remote version list.
+        for version in ["latest", "24", "24.3", "1.2.3.4", "1.2.3rc1", "1.2.3.post1"] {
+            assert_eq!(
+                backend
+                    .resolve_exact_version(&config, version)
+                    .await
+                    .unwrap(),
+                None,
+                "{version} should use remote discovery"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn git_tools_keep_remote_discovery() {
+        use crate::backend::Backend;
+        let config = crate::config::Config::get().await.unwrap();
+
+        for tool in [
+            "pipx:psf/black",
+            "pipx:git+https://github.com/psf/black.git",
+        ] {
+            let backend = PIPXBackend::from_arg(tool.into());
+            assert_eq!(
+                backend
+                    .resolve_exact_version(&config, "24.3.0")
+                    .await
+                    .unwrap(),
+                None,
+                "{tool} should use remote discovery"
+            );
+        }
+    }
 
     #[test]
     fn test_extras_accepts_string_or_array() {

@@ -122,6 +122,18 @@ impl Backend for GoBackend {
         .await
     }
 
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> eyre::Result<Option<String>> {
+        // Go module versions are strict semver, so a full semver request is
+        // exact. `go install mod@vX.Y.Z` validates the version against the
+        // module proxy and fails when it does not exist.
+        let version = version.strip_prefix('v').unwrap_or(version);
+        Ok(versions::SemVer::new(version).map(|_| version.to_string()))
+    }
+
     async fn install_version_(
         &self,
         ctx: &InstallContext,
@@ -641,6 +653,47 @@ async fn fetch_proxy_version_infos(
 mod tests {
     use super::*;
     use crate::toolset::ToolVersionOptions;
+
+    #[tokio::test]
+    async fn exact_semver_versions_resolve_without_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = GoBackend::from_arg("go:github.com/example/tool".into());
+
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "1.2.3")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.2.3")
+        );
+        // "v" prefixes are normalized away, matching how versions are listed.
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "v1.2.3")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.2.3")
+        );
+    }
+
+    #[tokio::test]
+    async fn fuzzy_versions_require_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = GoBackend::from_arg("go:github.com/example/tool".into());
+
+        for version in ["latest", "1", "1.2", "^1.2.3", "main"] {
+            assert_eq!(
+                backend
+                    .resolve_exact_version(&config, version)
+                    .await
+                    .unwrap(),
+                None,
+                "{version} should use remote discovery"
+            );
+        }
+    }
 
     #[test]
     fn go_options_reads_tags() {
