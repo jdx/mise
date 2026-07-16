@@ -898,12 +898,16 @@ impl Settings {
     }
 
     pub fn fetch_remote_versions_timeout(&self) -> Duration {
-        let timeout = duration::parse_duration(&self.fetch_remote_versions_timeout).unwrap();
+        let timeout = self.configured_fetch_remote_versions_timeout();
         if self.prefer_offline() {
             timeout.min(Duration::from_secs(3))
         } else {
             timeout
         }
+    }
+
+    pub fn configured_fetch_remote_versions_timeout(&self) -> Duration {
+        duration::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
     }
 
     /// duration that remote version cache is kept for

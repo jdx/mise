@@ -29,7 +29,7 @@ pub static HTTP: Lazy<Client> =
 
 pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
     Client::new(
-        Settings::get().fetch_remote_versions_timeout(),
+        Settings::get().configured_fetch_remote_versions_timeout(),
         ClientKind::Fetch,
     )
     .unwrap()
@@ -146,6 +146,15 @@ impl Client {
             .user_agent(format!("mise/{v} {shell}").trim())
             .gzip(true)
             .zstd(true)
+    }
+
+    fn request_timeout(&self) -> Duration {
+        match self.kind {
+            ClientKind::Fetch if Settings::get().prefer_offline() => {
+                self.timeout.min(Duration::from_secs(3))
+            }
+            _ => self.timeout,
+        }
     }
 
     pub async fn get_bytes<U: IntoUrl>(&self, url: U) -> Result<impl AsRef<[u8]>> {
@@ -667,11 +676,16 @@ impl Client {
                 apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
         }
 
+        let request_timeout = self.request_timeout();
         let mut req = self.reqwest.request(method.clone(), url.clone());
+        if matches!(self.kind, ClientKind::Fetch) {
+            req = req.timeout(request_timeout);
+        }
         req = req.headers(final_headers.clone());
         let resp = match req.send().await {
             Ok(resp) => resp,
             Err(err) => {
+                let err = err.without_url();
                 if Settings::get().prefer_offline()
                     && is_hard_connection_failure(&err)
                     && let Some(host) = host_key
@@ -691,7 +705,7 @@ impl Client {
                     };
                     let hint = format!(
                         "HTTP timed out after {} for {} (change with `{}` or env `{}`).",
-                        format_duration(self.timeout),
+                        format_duration(request_timeout),
                         url,
                         setting,
                         env_var
@@ -1789,6 +1803,14 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         );
     }
 
+    #[test]
+    fn test_fetch_client_applies_prefer_offline_timeout_at_request_time() {
+        let client = Client::new(Duration::from_secs(30), ClientKind::Fetch).unwrap();
+        let _guard = set_test_prefer_offline(3);
+
+        assert_eq!(client.request_timeout(), Duration::from_secs(3));
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn test_reqwest_dns_error_is_not_transient_and_opens_circuit() {
         let _settings_guard = set_test_prefer_offline(3);
@@ -1803,7 +1825,9 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
             timeout,
             kind: ClientKind::Fetch,
         };
-        let url: Url = "https://mise-dns-regression.invalid/".parse().unwrap();
+        let url: Url = "https://mise-dns-regression.invalid/?token=secret"
+            .parse()
+            .unwrap();
         let host_key = http_host_key(&url).unwrap();
         let _hosts_guard = UnavailableHostsGuard::new(vec![host_key.clone()]);
 
@@ -1816,6 +1840,14 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
                 .lock()
                 .unwrap()
                 .contains_key(&host_key)
+        );
+        assert!(
+            !UNAVAILABLE_HTTP_HOSTS
+                .lock()
+                .unwrap()
+                .get(&host_key)
+                .unwrap()
+                .contains("token=secret")
         );
     }
 
