@@ -264,7 +264,6 @@ ctor = "1"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
 pretty_assertions = "1"
-tar = "0.4"
 test-log = "0.2"
 
 [features]

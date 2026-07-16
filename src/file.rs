@@ -2636,19 +2636,29 @@ mod tests {
         let archive_path = dir.path().join("pax-xattr.tar");
         let dest_dir = dir.path().join("out");
         let archive = File::create(&archive_path).unwrap();
-        let mut builder = tar::Builder::new(archive);
+        let mut builder = jdx_tar::Builder::new(archive);
+
+        let key = "LIBARCHIVE.xattr.com.apple.cs.CodeSignature";
+        let value = b"signature\nmetadata";
+        let rest_len = 3 + key.len() + value.len();
+        let mut digits = 1;
+        while (rest_len + digits).to_string().len() != digits {
+            digits += 1;
+        }
+        let record_len = rest_len + digits;
+        let mut pax = format!("{record_len} {key}=").into_bytes();
+        pax.extend_from_slice(value);
+        pax.push(b'\n');
+        let mut pax_header = jdx_tar::Header::new_gnu(EntryType::Other(b'x'));
+        pax_header.set_size(pax.len() as u64);
         builder
-            .append_pax_extensions([(
-                "LIBARCHIVE.xattr.com.apple.cs.CodeSignature",
-                b"signature\nmetadata".as_slice(),
-            )])
+            .append_data(&mut pax_header, "pax-xattr", pax.as_slice())
             .unwrap();
 
         let contents = b"hello world";
-        let mut header = tar::Header::new_ustar();
+        let mut header = jdx_tar::Header::new_gnu(EntryType::File);
         header.set_size(contents.len() as u64);
         header.set_mode(0o755);
-        header.set_cksum();
         builder
             .append_data(&mut header, "tool", contents.as_slice())
             .unwrap();
