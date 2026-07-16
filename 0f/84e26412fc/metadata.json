@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "0f84e26412fc",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-systemd-schema",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/config/test_schema_tombi",
+    "schema/mise.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0f/84e26412fc/0/metadata.json",
+      "transcript": "/0f/84e26412fc/0/full.jsonl",
+      "content_hash": "/0f/84e26412fc/0/content_hash.txt",
+      "prompt": "/0f/84e26412fc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42105,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1748224,
+    "output_tokens": 3178,
+    "api_call_count": 15
+  }
+}
