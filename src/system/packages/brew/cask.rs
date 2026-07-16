@@ -1048,6 +1048,7 @@ fn find_artifact(root: &Path, name: &str) -> Option<PathBuf> {
     let name_path = Path::new(name);
     WalkDir::new(root)
         .into_iter()
+        .filter_entry(|entry| entry.file_name() != "__MACOSX")
         .filter_map(|entry| entry.ok())
         .find(|entry| {
             entry
@@ -1583,6 +1584,21 @@ end
             cask_extraction_format(&archive, "claude-1.0.0-claude")?,
             ExtractionFormat::Raw
         );
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_lookup_ignores_macos_metadata_directories() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let metadata_app = tmp.path().join("__MACOSX/Pearcleaner.app");
+        file::create_dir_all(&metadata_app)?;
+
+        assert_eq!(find_app(tmp.path(), "Pearcleaner.app"), None);
+
+        let app = tmp.path().join("Pearcleaner.app");
+        file::create_dir_all(&app)?;
+
+        assert_eq!(find_app(tmp.path(), "Pearcleaner.app"), Some(app));
         Ok(())
     }
 
