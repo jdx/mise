@@ -268,6 +268,10 @@ impl Backend for PIPXBackend {
         ) {
             return Ok(None);
         }
+        // Surface malformed registry configuration at resolve time like
+        // remote discovery would — installation only sees the derived index
+        // URL, which skips this validation.
+        Self::get_registry_url()?;
         // PEP 440 allows non-semver versions (1.2.3.4, 1.2.3rc1, 1.2.3.post1)
         // — those keep using remote discovery. A full semver request is
         // exact; `pipx install pkg==version` / `uv tool install` fail when it
