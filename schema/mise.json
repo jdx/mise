@@ -2647,31 +2647,17 @@
           "description": "Auto-run before `mise x` and `mise run`"
         },
         "sources": {
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ],
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
           "description": "Files/patterns to check for changes"
         },
         "outputs": {
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ],
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
           "description": "Files/directories that should be newer than sources"
         },
         "run": {
