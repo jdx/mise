@@ -183,7 +183,7 @@ pub struct MiseToml {
     bootstrap: Option<BootstrapTomlConfig>,
     #[serde(default)]
     dotfiles: Option<DotfilesTomlConfig>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vars")]
     vars: EnvList,
     #[serde(default)]
     settings: SettingsPartial,
@@ -1506,6 +1506,14 @@ impl<'de> de::Deserialize<'de> for EnvList {
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "_" | "mise" => {
+                            if key == "mise" {
+                                deprecated_at!(
+                                    "2026.7.0",
+                                    "2026.12.0",
+                                    "config.env.mise",
+                                    "`env.mise` is deprecated. Use `env._` instead."
+                                );
+                            }
                             #[derive(Deserialize)]
                             #[serde(untagged)]
                             enum MiseTomlEnvDirectiveValue {
@@ -1884,6 +1892,24 @@ impl<'de> de::Deserialize<'de> for EnvList {
 
         deserializer.deserialize_any(EnvManVisitor)
     }
+}
+
+pub(crate) fn deserialize_vars<'de, D>(deserializer: D) -> std::result::Result<EnvList, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let value = toml::Value::deserialize(deserializer)?;
+    fn contains_mise(value: &toml::Value) -> bool {
+        match value {
+            toml::Value::Table(table) => table.contains_key("mise"),
+            toml::Value::Array(values) => values.iter().any(contains_mise),
+            _ => false,
+        }
+    }
+    if contains_mise(&value) {
+        return Err(de::Error::custom("`vars.mise` is not supported"));
+    }
+    EnvList::deserialize(value).map_err(de::Error::custom)
 }
 
 impl<'de> de::Deserialize<'de> for MiseTomlToolList {
@@ -2996,6 +3022,22 @@ run = 'echo "template"'
         foo2=2
         foo3=3
         "#);
+    }
+
+    #[test]
+    fn test_vars_mise_is_not_a_directive_namespace() {
+        let err = toml::from_str::<MiseToml>(indoc! {r#"
+            [vars.mise]
+            file = ".env"
+        "#})
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("`vars.mise` is not supported"), "{err}");
+
+        let err = toml::from_str::<MiseToml>(r#"vars = [[{ mise = { file = ".env" } }]]"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`vars.mise` is not supported"), "{err}");
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::config_file::mise_toml::EnvList;
+use crate::config::config_file::mise_toml::{EnvList, deserialize_vars};
 use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
@@ -459,7 +459,7 @@ pub struct Task {
     pub wait_for: Vec<TaskDep>,
     #[serde(default)]
     pub env: EnvList,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vars")]
     pub vars: EnvList,
     /// Env vars inherited from parent tasks at runtime (not used for task identity/deduplication)
     #[serde(skip)]

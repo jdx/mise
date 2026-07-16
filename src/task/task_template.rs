@@ -1,4 +1,4 @@
-use crate::config::config_file::mise_toml::EnvList;
+use crate::config::config_file::mise_toml::{EnvList, deserialize_vars};
 use crate::config::config_file::toml::deserialize_arr;
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{RunEntry, Silent, Task, TaskConfirm, TaskDep, TaskOutput, TaskToolValue};
@@ -23,7 +23,7 @@ pub struct TaskTemplate {
     pub wait_for: Vec<TaskDep>,
     #[serde(default)]
     pub env: EnvList,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vars")]
     pub vars: EnvList,
     #[serde(default)]
     pub dir: Option<String>,
