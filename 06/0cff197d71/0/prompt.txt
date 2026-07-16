@@ -1,0 +1,9 @@
+i think this is a dupe [https://github.com/jdx/mise/discussions/11045](https://github.com/jdx/mise/discussions/11045)
+
+---
+
+can you see a potential fix?
+
+---
+
+make a pr, reply to discussion

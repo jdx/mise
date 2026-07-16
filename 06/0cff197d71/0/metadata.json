@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "060cff197d71",
+  "session_id": "019f6b5e-e16e-7d73-9906-d0ed93b18343",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-16T14:51:43.837224Z",
+  "branch": "codex/fix-go-direct-module-prefixes",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/backend/test_go_install",
+    "src/backend/go.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "9ef645500e62",
+  "token_usage": {
+    "input_tokens": 128122,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3265792,
+    "output_tokens": 11330,
+    "api_call_count": 48
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-16T14:51:43.823512Z",
+    "agent_lines": 44,
+    "agent_removed": 11,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 44,
+    "total_lines_changed": 55,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
