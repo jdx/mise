@@ -1227,7 +1227,6 @@ pub fn untar(
     let tar = open_tar(format, archive)?;
     create_dir_all(dest).wrap_err_with(err)?;
     let mut unpack_opts = UnpackOptions::default();
-    unpack_opts.strip_components = opts.strip_components;
     unpack_opts.preserve_mtime = opts.preserve_mtime;
     unpack_opts.on_entry = Some(Box::new(|entry| {
         trace!("extracting {}", entry.path.display());
@@ -1236,7 +1235,12 @@ pub fn untar(
         .unpack(dest, &mut unpack_opts)
         .wrap_err_with(err)?;
     debug!("tar extraction summary: {summary:?}");
-    Ok(())
+    strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+        format!(
+            "failed to strip path components from tar archive: {}",
+            display_path(archive)
+        )
+    })
 }
 
 fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
@@ -1909,6 +1913,47 @@ mod tests {
 
         let err = archive_content_files(&archive_path, ExtractionFormat::Tar, 0).unwrap_err();
         assert!(err.to_string().contains("non-regular archive entry"));
+    }
+
+    #[test]
+    fn test_extract_archive_tar_strip_preserves_root_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("tool.tar");
+        let dest = dir.path().join("out");
+        {
+            let file = File::create(&archive_path).unwrap();
+            let mut builder = jdx_tar::Builder::new(file);
+
+            let mut readme = jdx_tar::Header::new_gnu(EntryType::File);
+            readme.set_size(6);
+            readme.set_mode(0o644);
+            builder
+                .append_data(&mut readme, "README", &b"readme"[..])
+                .unwrap();
+
+            let mut tool = jdx_tar::Header::new_gnu(EntryType::File);
+            tool.set_size(4);
+            tool.set_mode(0o644);
+            builder
+                .append_data(&mut tool, "pkg/tool", &b"tool"[..])
+                .unwrap();
+            builder.finish().unwrap();
+        }
+
+        extract_archive(
+            &archive_path,
+            &dest,
+            ExtractionFormat::Tar,
+            &ExtractOptions {
+                strip_components: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(dest.join("README")).unwrap(), b"readme");
+        assert_eq!(fs::read(dest.join("tool")).unwrap(), b"tool");
+        assert!(!dest.join("pkg").exists());
     }
 
     #[tokio::test]
