@@ -324,7 +324,6 @@ jobs:
       - build-ubuntu
       - build-windows
       - unit
-      - nightly
       - lint
       - e2e
       - windows-unit
