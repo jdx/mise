@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -42,6 +42,11 @@ pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
 type CachedResult = Arc<OnceCell<Result<String, String>>>;
 static HTTP_CACHE: Lazy<Mutex<HashMap<String, CachedResult>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+/// Hosts that returned a hard connection failure during this process. Once a
+/// host is known to be unreachable, later requests should fail immediately
+/// instead of paying the same resolver/connect timeout again.
+static UNAVAILABLE_HTTP_HOSTS: Lazy<Mutex<HashSet<String>>> =
+    Lazy::new(|| Mutex::new(HashSet::new()));
 type RetryStateHandle = Arc<Mutex<RetryState>>;
 
 struct RetryState {
@@ -207,7 +212,7 @@ impl Client {
             client: self,
             url: url.into_url().unwrap(),
             extra_headers: HeaderMap::new(),
-            retries: Settings::get().http_retries,
+            retries: Settings::get().http_retries(),
         }
     }
 
@@ -475,7 +480,7 @@ impl Client {
             url,
             headers,
             verb_label,
-            Settings::get().http_retries,
+            Settings::get().http_retries(),
             true,
         )
         .await
@@ -493,7 +498,7 @@ impl Client {
             url,
             headers,
             verb_label,
-            Settings::get().http_retries,
+            Settings::get().http_retries(),
             false,
         )
         .await
@@ -610,6 +615,12 @@ impl Client {
     ) -> Result<Response> {
         let original_url = url.clone();
         apply_url_replacements(&mut url);
+        let host_key = http_host_key(&url);
+        if let Some(host) = &host_key
+            && UNAVAILABLE_HTTP_HOSTS.lock().unwrap().contains(host)
+        {
+            bail!("HTTP host {host} is unavailable after an earlier connection failure");
+        }
         debug!("{} {}", verb_label, &url);
 
         // Apply netrc credentials after URL replacement.
@@ -635,6 +646,11 @@ impl Client {
         let resp = match req.send().await {
             Ok(resp) => resp,
             Err(err) => {
+                if is_hard_connection_failure(&err)
+                    && let Some(host) = host_key
+                {
+                    UNAVAILABLE_HTTP_HOSTS.lock().unwrap().insert(host);
+                }
                 if err.is_timeout() {
                     let (setting, env_var) = match self.kind {
                         ClientKind::Http => ("http_timeout", "MISE_HTTP_TIMEOUT"),
@@ -1095,9 +1111,36 @@ fn is_connection_error(err: &Report) -> bool {
     })
 }
 
+fn http_host_key(url: &Url) -> Option<String> {
+    let host = url.host_str()?;
+    let port = url.port_or_known_default()?;
+    Some(format!("{}://{host}:{port}", url.scheme()))
+}
+
+/// hyper-util exposes DNS failures in the error chain as a `dns error` source,
+/// but reqwest intentionally erases the concrete connector type. Match that
+/// stable connector error label rather than platform-specific getaddrinfo text.
+fn is_dns_error(err: &(dyn std::error::Error + 'static)) -> bool {
+    let mut current = Some(err);
+    while let Some(source) = current {
+        if source.to_string() == "dns error" {
+            return true;
+        }
+        current = source.source();
+    }
+    false
+}
+
+fn is_hard_connection_failure(err: &reqwest::Error) -> bool {
+    is_dns_error(err) || (err.is_connect() && !err.is_timeout())
+}
+
 /// Classifies an error as transient (should retry) vs permanent.
 /// Walks the error chain so wrapped errors (e.g. our timeout hint) still match.
 pub(crate) fn is_transient(err: &Report) -> bool {
+    if is_dns_error(err.as_ref()) {
+        return false;
+    }
     err.chain().any(|e| {
         let Some(reqwest_err) = e.downcast_ref::<reqwest::Error>() else {
             return false;
@@ -1126,7 +1169,7 @@ where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T>>,
 {
-    retry_async_with_retries(verb_label, url, Settings::get().http_retries, f).await
+    retry_async_with_retries(verb_label, url, Settings::get().http_retries(), f).await
 }
 
 pub(crate) async fn retry_async_with_retries<F, Fut, T>(
@@ -1263,6 +1306,14 @@ mod tests {
         let lock = TEST_SETTINGS_LOCK.lock().unwrap();
         let mut settings = crate::config::settings::SettingsPartial::empty();
         settings.http_retries = Some(retries);
+        crate::config::Settings::reset(Some(settings));
+        SettingsGuard { _lock: lock }
+    }
+    fn set_test_prefer_offline(http_retries: i64) -> SettingsGuard {
+        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.prefer_offline = Some(true);
+        settings.http_retries = Some(http_retries);
         crate::config::Settings::reset(Some(settings));
         SettingsGuard { _lock: lock }
     }
@@ -1661,6 +1712,72 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert!(resp.status().is_success());
         // Should have served 3 connections: two 502s + one 200.
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_prefer_offline_disables_http_retries() {
+        let _guard = set_test_prefer_offline(3);
+        let (port, count) = spawn_canned_server(vec![bad_gateway_response(), ok_response()]).await;
+        let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let err = client.get_async(url).await.unwrap_err();
+
+        assert!(format!("{err:?}").contains("502"));
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            Settings::get().fetch_remote_versions_timeout(),
+            Duration::from_secs(3)
+        );
+    }
+
+    #[test]
+    fn test_dns_errors_are_not_transient() {
+        let err = eyre!("dns error");
+        assert!(!is_transient(&err));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_hard_connection_failure_opens_host_circuit() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let _guard = set_test_http_retries(0);
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+        let host_key = http_host_key(&url).unwrap();
+        UNAVAILABLE_HTTP_HOSTS.lock().unwrap().remove(&host_key);
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let first_err = client.get_async(url.clone()).await.unwrap_err();
+        assert!(is_connection_error(&first_err));
+        assert!(UNAVAILABLE_HTTP_HOSTS.lock().unwrap().contains(&host_key));
+
+        // Bring the host online after the first failure. The process-local
+        // circuit should still reject the next request without connecting.
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+            .await
+            .unwrap();
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let accepted_inner = accepted.clone();
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                accepted_inner.fetch_add(1, Ordering::SeqCst);
+                let mut request = [0u8; 4096];
+                let _ = socket.read(&mut request).await;
+                let _ = socket.write_all(ok_response().as_bytes()).await;
+            }
+        });
+
+        let second_err = client.get_async(url).await.unwrap_err();
+        assert!(
+            second_err
+                .to_string()
+                .contains("earlier connection failure")
+        );
+        tokio::task::yield_now().await;
+        assert_eq!(accepted.load(Ordering::SeqCst), 0);
+        UNAVAILABLE_HTTP_HOSTS.lock().unwrap().remove(&host_key);
     }
 
     #[tokio::test(flavor = "current_thread")]
