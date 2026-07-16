@@ -17,7 +17,11 @@ mise-vscode-extensions/
     └── package_upgrade.lua
 ```
 
-`hooks/package_install.lua` identifies the repository as a package plugin.
+The required `hooks/package_installed.lua` and `hooks/package_install.lua` pair
+identifies the repository as a package plugin. A repository with only one of
+these hooks remains a regular vfox plugin. If `hooks/backend_install.lua` is
+also present, mise treats the repository as a tool backend instead; package
+and tool-backend plugins must be separate repositories.
 
 ```toml
 [package-manager]

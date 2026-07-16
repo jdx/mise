@@ -92,6 +92,24 @@ run = "test -f post-packages-ran"
 EOF
 assert "mise bootstrap --yes" ""
 
+# A disabled plugin manager has no late package work, so post-packages still
+# runs before tools.
+rm -f post-packages-ran
+cat >mise.toml <<'EOF'
+[settings]
+system_packages.managers = []
+
+[bootstrap.packages]
+"fake:disabled" = "latest"
+
+[bootstrap.hooks.post-packages]
+run = "touch post-packages-ran"
+
+[bootstrap.hooks.pre-tools]
+run = "test -f post-packages-ran"
+EOF
+assert "mise bootstrap --yes" ""
+
 cp -R fake-package-plugin declared-package-plugin
 cat >declared-package-plugin/mise.plugin.toml <<'EOF'
 [package-manager]

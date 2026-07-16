@@ -276,9 +276,17 @@ pub fn pending_plugin_packages_from_config(
         .into_iter()
         .map(|manager| manager.name().to_string())
         .collect::<std::collections::HashSet<_>>();
+    let enabled = crate::config::Settings::get()
+        .system_packages
+        .managers
+        .clone();
     package_requests_from_config_files(&config.config_files, &brew_taps)
         .into_iter()
-        .filter(|(name, _)| declared.contains_key(name) && !installed.contains(name))
+        .filter(|(name, _)| {
+            declared.contains_key(name)
+                && !installed.contains(name)
+                && enabled.as_ref().is_none_or(|names| names.contains(name))
+        })
         .collect()
 }
 

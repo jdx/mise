@@ -586,7 +586,9 @@ impl Bootstrap {
             self.run_hooks(&hooks, BootstrapHookPhase::PrePackages)
                 .await?;
             let all_mgrs = system::packages_from_config(&config);
-            let has_plugin_packages = all_mgrs.iter().any(|mp| mp.manager.is_plugin())
+            let has_plugin_packages = all_mgrs
+                .iter()
+                .any(|mp| mp.manager.is_plugin() && !mp.disabled)
                 || (self.dry_run
                     && !system::pending_plugin_packages_from_config(&config).is_empty());
             let mgrs = all_mgrs
