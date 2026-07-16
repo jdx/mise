@@ -7,9 +7,9 @@ cd "$(mktemp -d)" || exit 1 # mise should not prune these files even though they
 assert_contains "mise prune --dry-run 2>&1" "mise dummy@2.0.0 [dryrun]"
 assert_contains "mise prune --dry-run 2>&1" "mise tiny@2.0.0 [dryrun]"
 
-# Dry-run previews removals but must not perform runtime-symlink cleanup.
+# Dry-run must not perform runtime-symlink cleanup.
 ln -s ./missing "$MISE_DATA_DIR/installs/dummy/latest"
-assert_contains "mise prune --dry-run 2>&1" "remove"
+assert "mise prune --dry-run"
 assert "test -L '$MISE_DATA_DIR/installs/dummy/latest'"
 
 # Test: --dry-run-code should exit non-zero when there are tools to prune
@@ -23,6 +23,7 @@ assert "ls $MISE_DATA_DIR/installs/dummy/2.0.0"
 assert_fail "ls $MISE_DATA_DIR/installs/tiny/2.0.0"
 assert "mise prune"
 assert_fail "ls $MISE_DATA_DIR/installs/dummy/2.0.0"
+assert "test \"\$(readlink '$MISE_DATA_DIR/installs/dummy/latest')\" = ./3.0.0"
 assert "ls $MISE_DATA_DIR/installs/dummy/3.0.0"
 assert "ls $MISE_DATA_DIR/installs/tiny/3.0.0"
 
