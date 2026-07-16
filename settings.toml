@@ -748,6 +748,11 @@ type = "Duration"
 aliases = ["fetch_remote_version_timeout"]
 default = "20s"
 description = "Timeout in seconds for HTTP requests to fetch new tool versions in mise."
+docs = """
+Fast commands using `prefer_offline` cap this timeout at 3 seconds so shims and
+shell activation do not block for a long time when cached data is insufficient
+and the network is unavailable.
+"""
 env = "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT"
 type = "Duration"
 
@@ -1205,6 +1210,10 @@ treated as permanent and not retried.
 
 Backoff schedule with jitter: ~200ms / ~1s / ~4s / ~15s. Set to 0 to disable
 retries entirely.
+
+Retries are automatically disabled for fast commands using `prefer_offline`,
+including shims and shell activation. These paths make one network attempt when
+cached data is insufficient, then fail or fall back immediately.
 
 When a retry rescues a request, a warning is logged with the original error so
 flaky infrastructure doesn't silently mask itself.
