@@ -106,7 +106,15 @@ fn main() -> eyre::Result<()> {
     let nprocs = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or_default();
-    let threads = crate::env::MISE_JOBS.unwrap_or(nprocs).max(8);
+    // Tokio spawns every worker thread eagerly when the runtime is built, so
+    // the default worker count is startup cost paid by every invocation —
+    // clone + stack + TLS per thread before any work happens. Async I/O
+    // doesn't need a worker per core (blocking work uses tokio's separate
+    // on-demand pool), so cap the default on many-core machines. An explicit
+    // MISE_JOBS still raises it without limit.
+    let threads = crate::env::MISE_JOBS
+        .unwrap_or_else(|| nprocs.min(16))
+        .max(8);
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(threads)
