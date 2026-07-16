@@ -28088,6 +28088,210 @@ packages:
         supported_envs:
           - linux/amd64
           - windows/amd64
+  - type: github_release
+    repo_owner: conceptadev
+    repo_name: fvm
+    aliases:
+      - name: leoafarias/fvm
+    description: "Flutter Version Management: A simple CLI to manage Flutter SDK versions"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.13")
+        asset: fvm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.2.8")
+        asset: fvm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.3.0")
+        asset: fvm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.8.3")
+        no_asset: true
+      - version_constraint: Version == "App-1.0.0-alpha"
+        asset: fvm-app-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        supported_envs:
+          - windows/amd64
+      - version_constraint: Version == "App-1.0.0-alpha.1"
+        asset: fvm_{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        supported_envs:
+          - windows/amd64
+      - version_constraint: semver("<= 1.2.3")
+        no_asset: true
+      - version_constraint: semver("<= 1.3.4")
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm.bat
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.3.8")
+        no_asset: true
+      - version_constraint: semver("<= 2.2.4")
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm.bat
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "2.2.5-dev"
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "2.2.5-dev.1"
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 2.3.1")
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm.bat
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.4.1")
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm.bat
+      - version_constraint: semver("<= 3.0.0-alpha.2")
+        no_asset: true
+      - version_constraint: semver("<= 4.0.0")
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm.bat
+      - version_constraint: "true"
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm
   - name: concourse/concourse/concourse
     type: github_release
     repo_owner: concourse
@@ -60747,208 +60951,6 @@ packages:
           asset: checksums.txt
           algorithm: sha256
   - type: github_release
-    repo_owner: leoafarias
-    repo_name: fvm
-    description: "Flutter Version Management: A simple CLI to manage Flutter SDK versions"
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 0.1.13")
-        asset: fvm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        replacements:
-          amd64: x86_64
-          darwin: Darwin
-          linux: Linux
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-        supported_envs:
-          - linux/amd64
-          - darwin
-      - version_constraint: semver("<= 0.2.8")
-        asset: fvm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        replacements:
-          amd64: x86_64
-          darwin: Darwin
-          linux: Linux
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-        supported_envs:
-          - linux
-          - darwin
-      - version_constraint: semver("<= 0.3.0")
-        asset: fvm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-        supported_envs:
-          - linux
-          - darwin
-      - version_constraint: semver("<= 0.8.3")
-        no_asset: true
-      - version_constraint: Version == "App-1.0.0-alpha"
-        asset: fvm-app-{{.OS}}.{{.Format}}
-        format: zip
-        windows_arm_emulation: true
-        supported_envs:
-          - windows/amd64
-      - version_constraint: Version == "App-1.0.0-alpha.1"
-        asset: fvm_{{.OS}}.{{.Format}}
-        format: zip
-        windows_arm_emulation: true
-        supported_envs:
-          - windows/amd64
-      - version_constraint: semver("<= 1.2.3")
-        no_asset: true
-      - version_constraint: semver("<= 1.3.4")
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: fvm
-                src: fvm/fvm.bat
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: semver("<= 1.3.8")
-        no_asset: true
-      - version_constraint: semver("<= 2.2.4")
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: fvm
-                src: fvm/fvm.bat
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: Version == "2.2.5-dev"
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        supported_envs:
-          - linux/amd64
-          - darwin
-      - version_constraint: Version == "2.2.5-dev.1"
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-        supported_envs:
-          - linux/amd64
-      - version_constraint: semver("<= 2.3.1")
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: fvm
-                src: fvm/fvm.bat
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: semver("<= 2.4.1")
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: fvm
-                src: fvm/fvm.bat
-      - version_constraint: semver("<= 3.0.0-alpha.2")
-        no_asset: true
-      - version_constraint: semver("<= 4.0.0")
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: fvm
-                src: fvm/fvm.bat
-      - version_constraint: "true"
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: fvm
-                src: fvm/fvm.exe
-  - type: github_release
     repo_owner: levibostian
     repo_name: decaf
     description: Calm & reliable automated deployments. No more coffee breaks to deploy your code
@@ -78483,10 +78485,16 @@ packages:
         files:
           - name: kubectl-grafana
             src: kubectl-grafana-{{.OS}}-{{.Arch}}
+      - version_constraint: semver("< 0.6.0")
+        asset: kubectl-grafana-{{.OS}}-{{.Arch}}.tar.gz
+        format: tar.gz
+        windows_arm_emulation: true
       - version_constraint: "true"
         asset: kubectl-grafana-{{.OS}}-{{.Arch}}.tar.gz
         format: tar.gz
         windows_arm_emulation: true
+        github_artifact_attestations:
+          signer_workflow: ricoberger/grafana-kubernetes-plugin/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: rlmcpherson
     repo_name: s3gof3r
@@ -93151,13 +93159,32 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("< 1.13.0")
         asset: tlrc-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
         replacements:
           amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        github_artifact_attestations:
+          signer_workflow: tldr-pages/tlrc/.github/workflows/build-release.yml
+      - version_constraint: "true"
+        asset: tlrc-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
           darwin: apple-darwin
           linux: unknown-linux-musl
           windows: pc-windows-msvc
