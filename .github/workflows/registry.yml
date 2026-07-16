@@ -367,8 +367,37 @@ jobs:
     if: |
       !cancelled() &&
       (
-        contains(needs.*.result, 'failure') ||
-        contains(needs.*.result, 'cancelled')
+        needs.check-changes.result != 'success' ||
+        (
+          needs.check-changes.outputs.registry-changed == 'true' &&
+          (
+            needs.build.result != 'success' ||
+            (github.event_name == 'pull_request' && needs.list-changed-tools.result != 'success') ||
+            (github.event_name != 'pull_request' && needs.list-changed-tools.result != 'skipped') ||
+            (
+              github.event_name == 'pull_request' &&
+              github.event.pull_request.user.login != 'jdx' &&
+              needs.list-changed-tools.outputs.new_tools != '' &&
+              needs.validate-new-tools.result != 'success'
+            ) ||
+            (
+              (
+                github.event_name != 'pull_request' ||
+                github.event.pull_request.user.login == 'jdx' ||
+                needs.list-changed-tools.outputs.new_tools == ''
+              ) &&
+              needs.validate-new-tools.result != 'skipped'
+            ) ||
+            (
+              needs.list-changed-tools.outputs.skip-test-tool == 'true' &&
+              needs.test-tool.result != 'skipped'
+            ) ||
+            (
+              needs.list-changed-tools.outputs.skip-test-tool != 'true' &&
+              needs.test-tool.result != 'success'
+            )
+          )
+        )
       )
     steps:
       - run: exit 1
