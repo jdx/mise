@@ -81,6 +81,23 @@ EOF
 assert_contains "mise tasks build" "Local description"
 assert_not_contains "mise tasks build" "Template description"
 
+# Test output style inheritance and local override
+cat <<'EOF' >mise.toml
+[task_templates.base]
+run = "echo task output"
+output = "silent"
+
+[tasks.inherited]
+extends = "base"
+
+[tasks.overridden]
+extends = "base"
+output = "interleave"
+EOF
+
+assert_not_contains "mise run inherited" "task output"
+assert "mise run overridden" "task output"
+
 # Test depends from template (using task name, not :prefix syntax)
 cat <<'EOF' >mise.toml
 [task_templates."python:test"]
