@@ -2410,7 +2410,7 @@
         "type": "string"
       }
     },
-    "hook_script_table": {
+    "hook_current_shell_script_table": {
       "unevaluatedProperties": false,
       "properties": {
         "script": {
@@ -2422,10 +2422,10 @@
           "type": "string"
         }
       },
-      "required": ["script"],
+      "required": ["script", "shell"],
       "type": "object"
     },
-    "hook_scripts_table": {
+    "hook_current_shell_scripts_table": {
       "unevaluatedProperties": false,
       "properties": {
         "scripts": {
@@ -2435,6 +2435,32 @@
         "shell": {
           "description": "active shell name for current-shell hooks, such as \"bash\"",
           "type": "string"
+        }
+      },
+      "required": ["scripts", "shell"],
+      "type": "object"
+    },
+    "hook_spawned_script_table": {
+      "deprecated": true,
+      "unevaluatedProperties": false,
+      "properties": {
+        "script": {
+          "deprecated": true,
+          "description": "deprecated alias for run when an enter/leave/cd hook has no shell",
+          "$ref": "#/$defs/hook_script_value"
+        }
+      },
+      "required": ["script"],
+      "type": "object"
+    },
+    "hook_spawned_scripts_table": {
+      "deprecated": true,
+      "unevaluatedProperties": false,
+      "properties": {
+        "scripts": {
+          "deprecated": true,
+          "description": "deprecated alias for run when an enter/leave/cd hook has no shell",
+          "$ref": "#/$defs/hook_scripts_value"
         }
       },
       "required": ["scripts"],
@@ -2494,10 +2520,16 @@
           "$ref": "#/$defs/hook_run_table"
         },
         {
-          "$ref": "#/$defs/hook_script_table"
+          "$ref": "#/$defs/hook_current_shell_script_table"
         },
         {
-          "$ref": "#/$defs/hook_scripts_table"
+          "$ref": "#/$defs/hook_current_shell_scripts_table"
+        },
+        {
+          "$ref": "#/$defs/hook_spawned_script_table"
+        },
+        {
+          "$ref": "#/$defs/hook_spawned_scripts_table"
         },
         {
           "$ref": "#/$defs/hook_task_ref"
