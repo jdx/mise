@@ -320,6 +320,13 @@ from a file). Since nested environment variables do not make sense,
 we make use of this fact by creating a key named "\_" which is a
 TOML table for the configuration of these directives.
 
+::: warning
+The `value` and `values` keys in built-in `file`, `path`, and `source` directive objects under
+`env._` or `vars._` are deprecated. Use `path`, which accepts either a single string or an array of
+strings. They will be removed in mise 2026.12.0. This does not affect `value` in ordinary environment
+variable objects or options for plugin-provided directives.
+:::
+
 ### `env._.file`
 
 In `mise.toml`: `env._.file` can be used to specify a [dotenv](https://dotenv.org) file to load.
