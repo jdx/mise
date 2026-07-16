@@ -32,6 +32,20 @@ EOF
 assert_contains "mise run package --target linux" "compiling for linux"
 assert_contains "mise run package --target linux" "packaging for linux"
 
+# Test conditionally passing a boolean flag with structured dependency syntax
+cat <<'EOF' >mise.toml
+[tasks."lint:check"]
+usage = 'flag "--fix" default=#false'
+run = 'echo "fix=$usage_fix"'
+
+[tasks.lint]
+usage = 'flag "--fix" default=#false'
+depends = [{ task = "lint:check", args = ["{% if usage.fix %}--fix{% endif %}"] }]
+EOF
+
+assert_contains "mise run lint" "fix=false"
+assert_contains "mise run lint --fix" "fix=true"
+
 # Test with multiple args
 cat <<'EOF' >mise.toml
 [tasks.start-backend]
