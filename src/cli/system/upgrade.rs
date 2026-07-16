@@ -23,8 +23,8 @@ pub struct SystemUpgrade {
     #[clap(value_name = "PACKAGE")]
     packages: Vec<String>,
 
-    /// Only upgrade packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, `flatpak`, or `mas`
-    #[clap(long, short, value_parser = ["apk", "apt", "brew", "brew-cask", "dnf", "flatpak", "mas", "pacman"])]
+    /// Only upgrade packages for this built-in or plugin manager
+    #[clap(long, short)]
     manager: Option<String>,
 
     /// Print the commands that would run without running them

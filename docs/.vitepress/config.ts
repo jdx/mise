@@ -152,6 +152,10 @@ export default withMermaid(
                 { text: "pacman", link: "/bootstrap/packages/pacman" },
                 { text: "brew", link: "/bootstrap/packages/brew" },
                 { text: "mas", link: "/bootstrap/packages/mas" },
+                {
+                  text: "Package Plugins",
+                  link: "/bootstrap/packages/plugins",
+                },
               ],
             },
             {
@@ -233,6 +237,10 @@ export default withMermaid(
             {
               text: "Environment Plugin Development",
               link: "/env-plugin-development",
+            },
+            {
+              text: "Package Plugin Development",
+              link: "/package-plugin-development",
             },
             { text: "Plugin Lua Modules", link: "/plugin-lua-modules" },
             { text: "Plugin Publishing", link: "/plugin-publishing" },

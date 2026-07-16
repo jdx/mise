@@ -8,10 +8,9 @@ Set up a machine for the current config in one command
 
 Runs the bootstrap steps for the current config in order:
 
-0. `[bootstrap.hooks.pre-packages]` — optional setup hook
-1. `mise bootstrap packages apply` — install missing
-   `[bootstrap.packages]`
-   then `[bootstrap.hooks.post-packages]`
+0. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
+   0.7. `[bootstrap.hooks.pre-packages]` — optional setup hook
+1. Install built-in-manager entries from `[bootstrap.packages]`
 2. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
    surrounded by `pre-repos`/`post-repos` hooks
 3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
@@ -30,6 +29,8 @@ Runs the bootstrap steps for the current config in order:
    surrounded by `pre-user`/`post-user` hooks
 9. `mise install` — install missing tools from `[tools]`
    surrounded by `pre-tools`/`post-tools` hooks
+   9.5. Install package-plugin entries from `[bootstrap.packages]`, then run
+   `[bootstrap.hooks.post-packages]`
 10. `mise run bootstrap` — if a task named `bootstrap` is defined
 11. `[bootstrap.hooks.final]` — optional final hook
 
@@ -65,6 +66,7 @@ Can be passed multiple times or as a comma-separated list. Cannot be used with `
 
 **Choices:**
 
+- `plugins`
 - `packages`
 - `repos`
 - `dotfiles`
@@ -89,6 +91,7 @@ Can be passed multiple times or as a comma-separated list.
 
 **Choices:**
 
+- `plugins`
 - `packages`
 - `repos`
 - `dotfiles`
@@ -116,6 +119,7 @@ Refresh package manager metadata and update configured repos
 - [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.md)
 - [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.md)
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.md)
+- [`mise bootstrap plugins <SUBCOMMAND>`](/cli/bootstrap/plugins.md)
 - [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.md)
 - [`mise bootstrap status [-J --json] [--missing]`](/cli/bootstrap/status.md)
 - [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.md)
