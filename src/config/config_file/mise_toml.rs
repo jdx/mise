@@ -1508,8 +1508,8 @@ impl<'de> de::Deserialize<'de> for EnvList {
                         "_" | "mise" => {
                             if key == "mise" {
                                 deprecated_at!(
-                                    "2026.7.7",
-                                    "2027.7.0",
+                                    "2026.7.0",
+                                    "2026.12.0",
                                     "config.env.mise",
                                     "`env.mise` is deprecated. Use `env._` instead."
                                 );

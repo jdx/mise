@@ -327,7 +327,7 @@ strings. They will be removed in mise 2026.12.0. This does not affect `value` in
 variable objects or options for plugin-provided directives.
 
 The legacy `env.mise.*` spelling is deprecated. Use `env._.*` instead. It will be removed in mise
-2027.7.0.
+2026.12.0.
 :::
 
 ### `env._.file`
