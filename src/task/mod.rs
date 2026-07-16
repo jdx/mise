@@ -1905,21 +1905,9 @@ impl Task {
         // Render deps that don't contain {{usage.*}} references. Deps with usage
         // references are deferred until render_depends_with_usage() is called with
         // the actual arg values from CLI or parent dependency.
-        for d in &mut self.depends {
-            if !dep_has_usage_ref(d) {
-                d.render(&mut tera, &tera_ctx)?;
-            }
-        }
-        for d in &mut self.depends_post {
-            if !dep_has_usage_ref(d) {
-                d.render(&mut tera, &tera_ctx)?;
-            }
-        }
-        for d in &mut self.wait_for {
-            if !dep_has_usage_ref(d) {
-                d.render(&mut tera, &tera_ctx)?;
-            }
-        }
+        render_task_deps(&mut self.depends, &mut tera, &tera_ctx, true)?;
+        render_task_deps(&mut self.depends_post, &mut tera, &tera_ctx, true)?;
+        render_task_deps(&mut self.wait_for, &mut tera, &tera_ctx, true)?;
         if let Some(dir) = &mut self.dir
             && contains_template_syntax(dir)
         {
@@ -1996,25 +1984,19 @@ impl Task {
             && let Some(raw) = &self.depends_raw
         {
             self.depends = raw.clone();
-            for d in &mut self.depends {
-                d.render(&mut tera, &tera_ctx)?;
-            }
+            render_task_deps(&mut self.depends, &mut tera, &tera_ctx, false)?;
         }
         if !self.depends_post.is_empty()
             && let Some(raw) = &self.depends_post_raw
         {
             self.depends_post = raw.clone();
-            for d in &mut self.depends_post {
-                d.render(&mut tera, &tera_ctx)?;
-            }
+            render_task_deps(&mut self.depends_post, &mut tera, &tera_ctx, false)?;
         }
         if !self.wait_for.is_empty()
             && let Some(raw) = &self.wait_for_raw
         {
             self.wait_for = raw.clone();
-            for d in &mut self.wait_for {
-                d.render(&mut tera, &tera_ctx)?;
-            }
+            render_task_deps(&mut self.wait_for, &mut tera, &tera_ctx, false)?;
         }
         Ok(())
     }
@@ -2681,6 +2663,24 @@ pub(crate) fn dep_has_usage_ref(dep: &TaskDep) -> bool {
     tera_template_has_usage_ref(&dep.task)
         || dep.args.iter().any(|a| tera_template_has_usage_ref(a))
         || dep.env.values().any(|v| tera_template_has_usage_ref(v))
+}
+
+fn render_task_deps(
+    deps: &mut Vec<TaskDep>,
+    tera: &mut TeraEngine,
+    tera_ctx: &tera::Context,
+    defer_usage: bool,
+) -> Result<()> {
+    let mut rendered = Vec::with_capacity(deps.len());
+    for mut dep in std::mem::take(deps) {
+        if defer_usage && dep_has_usage_ref(&dep) {
+            rendered.push(dep);
+        } else if dep.render(tera, tera_ctx)? {
+            rendered.push(dep);
+        }
+    }
+    *deps = rendered;
+    Ok(())
 }
 
 fn tera_template_has_usage_ref(s: &str) -> bool {
