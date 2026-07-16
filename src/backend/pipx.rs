@@ -537,7 +537,7 @@ impl PIPXBackend {
         }
         cmd.with_pr(pr)
             .envs(ts.env_with_path_without_tools(config).await?)
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .env("UV_TOOL_DIR", tv.install_path())
             .env("UV_TOOL_BIN_DIR", tv.install_path().join("bin"))
             .env("UV_INDEX", Self::get_index_url()?)
@@ -560,7 +560,7 @@ impl PIPXBackend {
         }
         cmd.with_pr(pr)
             .envs(ts.env_with_path_without_tools(config).await?)
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             // pipx 1.12+ auto-picks uv on PATH; this path passes pip-only --pip-args.
             .env("PIPX_DEFAULT_BACKEND", "pip")
             .env("PIP_INDEX_URL", Self::get_index_url()?)

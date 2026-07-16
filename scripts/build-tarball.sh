@@ -83,7 +83,17 @@ if [[ $os == "macos" ]]; then
 	export MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-12.0}
 fi
 
-if [[ $os == "linux" ]]; then
+if [[ -n "${MISE_PGO:-}" ]]; then
+	# Profile-guided optimization: instrument, train against the hermetic
+	# offline workload in scripts/pgo.bash, rebuild with the profile.
+	# Only valid for targets whose binaries can execute on this machine.
+	build_tool=cargo
+	if [[ $os == "linux" ]]; then
+		build_tool=cross
+	fi
+	MISE_PGO_BUILD_TOOL="$build_tool" MISE_PGO_TARGET="$RUST_TRIPLE" \
+		bash scripts/pgo.bash --no-default-features --features "$features"
+elif [[ $os == "linux" ]]; then
 	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 else
 	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"

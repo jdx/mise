@@ -82,7 +82,7 @@ fn mise_retry_config() -> RetryConfig {
     let settings = crate::config::Settings::get();
     RetryConfig {
         timeout: settings.http_timeout(),
-        retries: settings.http_retries.max(0) as usize,
+        retries: settings.http_retries().max(0) as usize,
         ..RetryConfig::default()
     }
 }

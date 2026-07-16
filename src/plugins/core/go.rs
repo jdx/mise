@@ -94,7 +94,7 @@ impl GoPlugin {
                 .arg("install")
                 .arg(package)
                 .envs(self._exec_env(tv)?)
-                .envs(tv.install_env())
+                .env_values(tv.install_env())
                 .execute()?;
         }
         Ok(())
@@ -107,7 +107,7 @@ impl GoPlugin {
             .current_dir(tv.install_path())
             .with_pr(pr)
             .arg("version")
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .execute()
     }
 

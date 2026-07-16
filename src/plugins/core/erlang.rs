@@ -340,7 +340,7 @@ impl ErlangPlugin {
             .with_pr(ctx.pr.as_ref())
             .arg("-minimal")
             .arg(tv.install_path())
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .execute()?;
 
         Ok(Some(tv))
@@ -551,7 +551,10 @@ impl ErlangPlugin {
                 )
                 .env("MAKEFLAGS", format!("-j{}", num_cpus::get()));
                 for (key, value) in source_build_kerl_env(tv.install_env(), &kerl_base_dir) {
-                    cmd = cmd.env(key, value);
+                    cmd = match value {
+                        Some(value) => cmd.env(key, value),
+                        None => cmd.env_remove(key),
+                    };
                 }
                 cmd.run()?;
             }
@@ -709,25 +712,28 @@ impl Backend for ErlangPlugin {
 }
 
 fn source_build_kerl_env(
-    install_env: IndexMap<String, String>,
+    install_env: IndexMap<String, crate::config::env_directive::EnvValue>,
     kerl_base_dir: &Path,
-) -> IndexMap<String, OsString> {
+) -> IndexMap<String, Option<OsString>> {
     let mut env = install_env
         .into_iter()
-        .map(|(key, value)| (key, OsString::from(value)))
+        .map(|(key, value)| (key, value.into_string().map(OsString::from)))
         .collect::<IndexMap<_, _>>();
     // Source lock metadata resolves a GitHub archive and stages it here. Keep
     // kerl from selecting another backend or download directory and silently
     // building a different archive instead.
     env.insert(
         "KERL_BASE_DIR".to_string(),
-        kerl_base_dir.as_os_str().to_owned(),
+        Some(kerl_base_dir.as_os_str().to_owned()),
     );
     env.insert(
         "KERL_DOWNLOAD_DIR".to_string(),
-        kerl_base_dir.join("archives").into_os_string(),
+        Some(kerl_base_dir.join("archives").into_os_string()),
     );
-    env.insert("KERL_BUILD_BACKEND".to_string(), OsString::from("git"));
+    env.insert(
+        "KERL_BUILD_BACKEND".to_string(),
+        Some(OsString::from("git")),
+    );
     env
 }
 
@@ -766,26 +772,38 @@ mod tests {
     #[test]
     fn test_source_build_kerl_env_pins_staged_archive() {
         let install_env = IndexMap::from([
-            ("KERL_BUILD_BACKEND".to_string(), "tarball".to_string()),
+            (
+                "KERL_BUILD_BACKEND".to_string(),
+                crate::config::env_directive::EnvValue::from("tarball"),
+            ),
             (
                 "KERL_DOWNLOAD_DIR".to_string(),
-                "/custom/downloads".to_string(),
+                crate::config::env_directive::EnvValue::from("/custom/downloads"),
             ),
             (
                 "KERL_CONFIGURE_OPTIONS".to_string(),
-                "--without-javac".to_string(),
+                crate::config::env_directive::EnvValue::from("--without-javac"),
             ),
         ]);
         let kerl_base_dir = Path::new("/mise/kerl");
         let env = source_build_kerl_env(install_env, kerl_base_dir);
 
-        assert_eq!(env["KERL_BUILD_BACKEND"], "git");
-        assert_eq!(env["KERL_BASE_DIR"], kerl_base_dir.as_os_str());
         assert_eq!(
-            env["KERL_DOWNLOAD_DIR"],
-            kerl_base_dir.join("archives").as_os_str()
+            env["KERL_BUILD_BACKEND"].as_deref(),
+            Some(std::ffi::OsStr::new("git"))
         );
-        assert_eq!(env["KERL_CONFIGURE_OPTIONS"], "--without-javac");
+        assert_eq!(
+            env["KERL_BASE_DIR"].as_deref(),
+            Some(kerl_base_dir.as_os_str())
+        );
+        assert_eq!(
+            env["KERL_DOWNLOAD_DIR"].as_deref(),
+            Some(kerl_base_dir.join("archives").as_os_str())
+        );
+        assert_eq!(
+            env["KERL_CONFIGURE_OPTIONS"].as_deref(),
+            Some(std::ffi::OsStr::new("--without-javac"))
+        );
     }
 
     #[test]

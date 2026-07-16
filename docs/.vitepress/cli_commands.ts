@@ -149,6 +149,17 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      plugins: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
       repos: {
         hide: false,
         subcommands: {

@@ -869,14 +869,20 @@ mod tests {
     async fn test_parse_backend_opts_core_fields() {
         let _config = Config::get().await.unwrap();
         let ba: BackendArg =
-            "pipx:ruff[depends=python,os=linux,install_env.PIPX_HOME=/tmp/pipx]".into();
+            "pipx:ruff[depends=python,os=linux,install_env.PIPX_HOME=/tmp/pipx,install_env.REMOVE=false]".into();
         let opts = ba.opts();
 
         assert_eq!(opts.depends, Some(vec!["python".to_string()]));
         assert_eq!(opts.os, Some(vec!["linux".to_string()]));
         assert_eq!(
-            opts.install_env.get("PIPX_HOME").map(String::as_str),
-            Some("/tmp/pipx")
+            opts.install_env.get("PIPX_HOME"),
+            Some(&crate::config::env_directive::EnvValue::String(
+                "/tmp/pipx".to_string()
+            ))
+        );
+        assert_eq!(
+            opts.install_env.get("REMOVE"),
+            Some(&crate::config::env_directive::EnvValue::Boolean(false))
         );
         assert!(!opts.opts.contains_key("depends"));
         assert!(!opts.opts.contains_key("os"));

@@ -407,7 +407,7 @@ impl Backend for NPMBackend {
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                    .envs(tv.install_env())
+                    .env_values(tv.install_env())
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
                         self.dependency_toolset(&ctx.config)
@@ -434,7 +434,7 @@ impl Backend for NPMBackend {
                     .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                    .envs(tv.install_env())
+                    .env_values(tv.install_env())
                     .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
                     .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
@@ -464,7 +464,7 @@ impl Backend for NPMBackend {
                     .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                    .envs(tv.install_env())
+                    .env_values(tv.install_env())
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
                         self.dependency_toolset(&ctx.config)
@@ -509,7 +509,7 @@ impl Backend for NPMBackend {
                     .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                    .envs(tv.install_env())
+                    .env_values(tv.install_env())
                     .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
@@ -1553,7 +1553,7 @@ mod tests {
         );
         options.install_env.insert(
             "NPM_CONFIG_REGISTRY".to_string(),
-            "https://registry.example.com".to_string(),
+            crate::config::env_directive::EnvValue::from("https://registry.example.com"),
         );
 
         let request =

@@ -94,12 +94,13 @@
       ]
     },
     "env_value": {
+      "description": "environment variable value; false removes the variable",
       "oneOf": [
         {
           "type": "string"
         },
         {
-          "type": "number"
+          "type": "integer"
         },
         {
           "type": "boolean"
@@ -318,13 +319,7 @@
             "description": "[experimental] age-encrypted environment variable"
           },
           {
-            "type": "string"
-          },
-          {
-            "type": "number"
-          },
-          {
-            "type": "boolean"
+            "$ref": "#/$defs/env_value"
           }
         ]
       },
@@ -1091,7 +1086,7 @@
         "http_retries": {
           "default": 3,
           "description": "Number of retries for transient HTTP failures in mise.",
-          "type": "number"
+          "type": "integer"
         },
         "http_timeout": {
           "default": "30s",
@@ -1147,7 +1142,7 @@
         "jobs": {
           "default": 8,
           "description": "How many jobs to run concurrently such as tool installs.",
-          "type": "number"
+          "type": "integer"
         },
         "legacy_version_file": {
           "default": true,
@@ -1244,7 +1239,7 @@
             },
             "concurrency": {
               "description": "How many jobs should be used in compilation.",
-              "type": "number"
+              "type": "integer"
             },
             "configure_opts": {
               "description": "Additional ./configure options.",
@@ -1772,7 +1767,7 @@
             "monorepo_depth": {
               "default": 5,
               "description": "Maximum depth to search for task files in monorepo subdirectories.",
-              "type": "number"
+              "type": "integer"
             },
             "monorepo_exclude_dirs": {
               "default": [],
@@ -2288,17 +2283,7 @@
                 "install_env": {
                   "type": "object",
                   "additionalProperties": {
-                    "oneOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "boolean"
-                      }
-                    ]
+                    "$ref": "#/$defs/env_value"
                   },
                   "description": "environment variables during tool installation"
                 },
@@ -2410,30 +2395,90 @@
         "type": "string"
       }
     },
-    "hook_script_table": {
+    "hook_current_shell_script_table": {
       "unevaluatedProperties": false,
       "properties": {
         "script": {
-          "description": "current-shell script/scripts for enter/leave/cd hooks",
+          "description": "script or scripts to evaluate in the active shell for enter/leave/cd hooks",
           "$ref": "#/$defs/hook_script_value"
         },
         "shell": {
-          "description": "current shell name for script hooks, such as \"bash\"",
+          "description": "active shell name for current-shell hooks, such as \"bash\"",
+          "type": "string"
+        }
+      },
+      "required": ["script", "shell"],
+      "type": "object"
+    },
+    "hook_current_shell_scripts_table": {
+      "unevaluatedProperties": false,
+      "properties": {
+        "scripts": {
+          "description": "scripts to evaluate in the active shell for enter/leave/cd hooks",
+          "$ref": "#/$defs/hook_scripts_value"
+        },
+        "shell": {
+          "description": "active shell name for current-shell hooks, such as \"bash\"",
+          "type": "string"
+        }
+      },
+      "required": ["scripts", "shell"],
+      "type": "object"
+    },
+    "hook_spawned_script_table": {
+      "deprecated": true,
+      "unevaluatedProperties": false,
+      "properties": {
+        "script": {
+          "deprecated": true,
+          "description": "deprecated alias for run when an enter/leave/cd hook has no shell",
+          "$ref": "#/$defs/hook_script_value"
+        }
+      },
+      "required": ["script"],
+      "type": "object"
+    },
+    "hook_spawned_scripts_table": {
+      "deprecated": true,
+      "unevaluatedProperties": false,
+      "properties": {
+        "scripts": {
+          "deprecated": true,
+          "description": "deprecated alias for run when an enter/leave/cd hook has no shell",
+          "$ref": "#/$defs/hook_scripts_value"
+        }
+      },
+      "required": ["scripts"],
+      "type": "object"
+    },
+    "hook_install_script_table": {
+      "deprecated": true,
+      "unevaluatedProperties": false,
+      "properties": {
+        "script": {
+          "deprecated": true,
+          "description": "deprecated alias for run in preinstall/postinstall hooks; executes in a subprocess",
+          "$ref": "#/$defs/hook_script_value"
+        },
+        "shell": {
+          "description": "ignored for this deprecated form; use a run hook to select an inline shell",
           "type": "string"
         }
       },
       "required": ["script"],
       "type": "object"
     },
-    "hook_scripts_table": {
+    "hook_install_scripts_table": {
+      "deprecated": true,
       "unevaluatedProperties": false,
       "properties": {
         "scripts": {
-          "description": "current-shell scripts for enter/leave/cd hooks",
+          "deprecated": true,
+          "description": "deprecated alias for run in preinstall/postinstall hooks; joins the scripts and executes them in a subprocess",
           "$ref": "#/$defs/hook_scripts_value"
         },
         "shell": {
-          "description": "current shell name for script hooks, such as \"bash\"",
+          "description": "ignored for this deprecated form; use a run hook to select an inline shell",
           "type": "string"
         }
       },
@@ -2460,10 +2505,16 @@
           "$ref": "#/$defs/hook_run_table"
         },
         {
-          "$ref": "#/$defs/hook_script_table"
+          "$ref": "#/$defs/hook_current_shell_script_table"
         },
         {
-          "$ref": "#/$defs/hook_scripts_table"
+          "$ref": "#/$defs/hook_current_shell_scripts_table"
+        },
+        {
+          "$ref": "#/$defs/hook_spawned_script_table"
+        },
+        {
+          "$ref": "#/$defs/hook_spawned_scripts_table"
         },
         {
           "$ref": "#/$defs/hook_task_ref"
@@ -2484,12 +2535,60 @@
         }
       ]
     },
+    "hook_install_definition_item": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/hook_run_string"
+        },
+        {
+          "$ref": "#/$defs/hook_run_table"
+        },
+        {
+          "$ref": "#/$defs/hook_install_script_table"
+        },
+        {
+          "$ref": "#/$defs/hook_install_scripts_table"
+        },
+        {
+          "$ref": "#/$defs/hook_task_ref"
+        }
+      ]
+    },
+    "hook_install_definition": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/hook_install_definition_item"
+        },
+        {
+          "description": "install hooks to run",
+          "items": {
+            "$ref": "#/$defs/hook_install_definition_item"
+          },
+          "type": "array"
+        }
+      ]
+    },
     "hooks": {
       "description": "hooks to run",
       "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/hook_definition"
-      }
+      "properties": {
+        "enter": {
+          "$ref": "#/$defs/hook_definition"
+        },
+        "leave": {
+          "$ref": "#/$defs/hook_definition"
+        },
+        "cd": {
+          "$ref": "#/$defs/hook_definition"
+        },
+        "preinstall": {
+          "$ref": "#/$defs/hook_install_definition"
+        },
+        "postinstall": {
+          "$ref": "#/$defs/hook_install_definition"
+        }
+      },
+      "additionalProperties": false
     },
     "watch_files": {
       "description": "files to watch for changes",
@@ -2517,7 +2616,7 @@
                 }
               }
             },
-            "required": ["run"]
+            "required": ["run", "patterns"]
           },
           {
             "unevaluatedProperties": false,
@@ -2534,7 +2633,7 @@
                 }
               }
             },
-            "required": ["task"]
+            "required": ["task", "patterns"]
           }
         ]
       }
@@ -2548,31 +2647,17 @@
           "description": "Auto-run before `mise x` and `mise run`"
         },
         "sources": {
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ],
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
           "description": "Files/patterns to check for changes"
         },
         "outputs": {
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ],
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
           "description": "Files/directories that should be newer than sources"
         },
         "run": {
@@ -2716,27 +2801,7 @@
         "tools": {
           "description": "tools to install/activate before running this task",
           "additionalProperties": {
-            "oneOf": [
-              {
-                "description": "version of the tool to install",
-                "type": "string"
-              },
-              {
-                "allOf": [
-                  {
-                    "$ref": "#/$defs/tool_options"
-                  }
-                ],
-                "type": "object",
-                "unevaluatedProperties": {
-                  "oneOf": [
-                    {
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            ]
+            "$ref": "#/$defs/tool"
           },
           "type": "object"
         },
@@ -2984,6 +3049,40 @@
       },
       "minProperties": 1,
       "additionalProperties": false
+    },
+    "bootstrap_hook": {
+      "description": "command or commands to run for a bootstrap phase",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "run": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "required": ["run"],
+          "additionalProperties": true
+        }
+      ]
     },
     "bootstrap_shell_activation": {
       "oneOf": [
@@ -3365,6 +3464,14 @@
       "type": "object",
       "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
       "properties": {
+        "plugins": {
+          "type": "object",
+          "description": "package manager plugins to install with `mise bootstrap plugins apply`, keyed by manager name",
+          "additionalProperties": {
+            "type": "string",
+            "description": "plugin git URL"
+          }
+        },
         "packages": {
           "type": "object",
           "description": "system packages to install with `mise bootstrap packages apply`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
@@ -3621,11 +3728,11 @@
           "properties": {
             "systemd": {
               "type": "object",
-              "description": "systemd user service bootstrap config",
+              "description": "systemd user service and timer bootstrap config",
               "properties": {
                 "units": {
                   "type": "object",
-                  "description": "systemd user services to write and start with `mise bootstrap linux systemd-units apply`",
+                  "description": "systemd user services and timers to write and start with `mise bootstrap linux systemd-units apply`",
                   "propertyNames": {
                     "pattern": "^[A-Za-z0-9._@-]+$"
                   },
@@ -3656,6 +3763,44 @@
                         "pattern": ".*\\S.*",
                         "description": "write ExecStart in the [Service] section"
                       },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "simple",
+                          "exec",
+                          "forking",
+                          "oneshot",
+                          "dbus",
+                          "notify",
+                          "notify-reload",
+                          "idle"
+                        ],
+                        "description": "write Type in the [Service] section"
+                      },
+                      "remain_after_exit": {
+                        "type": "boolean",
+                        "description": "write RemainAfterExit in the [Service] section"
+                      },
+                      "exec_stop": {
+                        "type": "string",
+                        "description": "write ExecStop in the [Service] section"
+                      },
+                      "timeout_start_sec": {
+                        "type": "string",
+                        "description": "write TimeoutStartSec in the [Service] section"
+                      },
+                      "timeout_stop_sec": {
+                        "type": "string",
+                        "description": "write TimeoutStopSec in the [Service] section"
+                      },
+                      "no_new_privileges": {
+                        "type": "boolean",
+                        "description": "write NoNewPrivileges in the [Service] section"
+                      },
+                      "private_tmp": {
+                        "type": "boolean",
+                        "description": "write PrivateTmp in the [Service] section"
+                      },
                       "environment": {
                         "type": "object",
                         "description": "environment variables for Environment entries",
@@ -3683,9 +3828,41 @@
                         "type": "string",
                         "description": "write StandardError in the [Service] section"
                       },
+                      "on_boot_sec": {
+                        "type": "string",
+                        "description": "write OnBootSec in the [Timer] section"
+                      },
+                      "on_unit_active_sec": {
+                        "type": "string",
+                        "description": "write OnUnitActiveSec in the [Timer] section"
+                      },
+                      "on_unit_inactive_sec": {
+                        "type": "string",
+                        "description": "write OnUnitInactiveSec in the [Timer] section"
+                      },
+                      "on_calendar": {
+                        "type": "string",
+                        "description": "write OnCalendar in the [Timer] section"
+                      },
+                      "randomized_delay_sec": {
+                        "type": "string",
+                        "description": "write RandomizedDelaySec in the [Timer] section"
+                      },
+                      "accuracy_sec": {
+                        "type": "string",
+                        "description": "write AccuracySec in the [Timer] section"
+                      },
+                      "persistent": {
+                        "type": "boolean",
+                        "description": "write Persistent in the [Timer] section"
+                      },
+                      "unit": {
+                        "type": "string",
+                        "description": "write Unit in the [Timer] section"
+                      },
                       "start": {
                         "type": "boolean",
-                        "description": "restart the service after writing it; when false, stop the service after writing it"
+                        "description": "restart the unit after writing it; when false, stop the unit after writing it"
                       },
                       "wanted_by": {
                         "type": "array",
@@ -3695,7 +3872,109 @@
                         }
                       }
                     },
-                    "required": ["exec_start"]
+                    "oneOf": [
+                      {
+                        "title": "systemd service",
+                        "required": ["exec_start"],
+                        "not": {
+                          "anyOf": [
+                            {
+                              "required": ["on_boot_sec"]
+                            },
+                            {
+                              "required": ["on_unit_active_sec"]
+                            },
+                            {
+                              "required": ["on_unit_inactive_sec"]
+                            },
+                            {
+                              "required": ["on_calendar"]
+                            },
+                            {
+                              "required": ["randomized_delay_sec"]
+                            },
+                            {
+                              "required": ["accuracy_sec"]
+                            },
+                            {
+                              "required": ["persistent"]
+                            },
+                            {
+                              "required": ["unit"]
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "title": "systemd timer",
+                        "anyOf": [
+                          {
+                            "required": ["on_boot_sec"]
+                          },
+                          {
+                            "required": ["on_unit_active_sec"]
+                          },
+                          {
+                            "required": ["on_unit_inactive_sec"]
+                          },
+                          {
+                            "required": ["on_calendar"]
+                          }
+                        ],
+                        "not": {
+                          "anyOf": [
+                            {
+                              "required": ["exec_start"]
+                            },
+                            {
+                              "required": ["type"]
+                            },
+                            {
+                              "required": ["remain_after_exit"]
+                            },
+                            {
+                              "required": ["exec_stop"]
+                            },
+                            {
+                              "required": ["timeout_start_sec"]
+                            },
+                            {
+                              "required": ["timeout_stop_sec"]
+                            },
+                            {
+                              "required": ["no_new_privileges"]
+                            },
+                            {
+                              "required": ["private_tmp"]
+                            },
+                            {
+                              "required": ["environment"],
+                              "properties": {
+                                "environment": {
+                                  "type": "object",
+                                  "minProperties": 1
+                                }
+                              }
+                            },
+                            {
+                              "required": ["working_directory"]
+                            },
+                            {
+                              "required": ["restart"]
+                            },
+                            {
+                              "required": ["restart_sec"]
+                            },
+                            {
+                              "required": ["standard_output"]
+                            },
+                            {
+                              "required": ["standard_error"]
+                            }
+                          ]
+                        }
+                      }
+                    ]
                   }
                 }
               }
@@ -3725,6 +4004,88 @@
               }
             }
           }
+        },
+        "hooks": {
+          "type": "object",
+          "description": "commands to run before and after bootstrap phases",
+          "properties": {
+            "pre-packages": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre_packages": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post-packages": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post_packages": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre-repos": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre_repos": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post-repos": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post_repos": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre-dotfiles": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre_dotfiles": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post-dotfiles": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post_dotfiles": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre-defaults": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre_defaults": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post-defaults": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post_defaults": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre-user": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre_user": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post-user": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post_user": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre-tools": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "pre_tools": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post-tools": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "post_tools": {
+              "$ref": "#/$defs/bootstrap_hook"
+            },
+            "final": {
+              "$ref": "#/$defs/bootstrap_hook"
+            }
+          },
+          "additionalProperties": false
         },
         "mise_shell_activate": {
           "type": "object",

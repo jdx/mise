@@ -128,7 +128,7 @@ function buildElement(key: string, props: Props): Element {
     Url: "string",
     Duration: "string",
     Bool: "boolean",
-    Integer: "number",
+    Integer: "integer",
     ListString: "string[]",
     ListPath: "string[]",
     SetString: "string[]",

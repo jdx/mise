@@ -283,7 +283,7 @@ impl NodePlugin {
         if let Some(cflags) = settings.node.cflags() {
             cmd = cmd.env("CFLAGS", cflags);
         }
-        cmd = cmd.envs(tv.install_env());
+        cmd = cmd.env_values(tv.install_env());
         Ok(cmd)
     }
 
@@ -369,7 +369,7 @@ impl NodePlugin {
             .arg(sig_file)
             .arg(shasums_file)
             .with_pr(ctx.pr.as_ref())
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .execute()?;
         Ok(())
     }
@@ -399,7 +399,7 @@ impl NodePlugin {
         Ok(CmdLineRunner::new(self.npm_path(tv))
             .with_pr(pr)
             .envs(config.env().await?)
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .env("NPM_CONFIG_UPDATE_NOTIFIER", "false"))
     }
@@ -456,7 +456,7 @@ impl NodePlugin {
         CmdLineRunner::new(corepack)
             .with_pr(pr)
             .arg("enable")
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()?;
         Ok(())
@@ -470,7 +470,7 @@ impl NodePlugin {
             .arg("enable")
             .arg("npm")
             .env("COREPACK_ENABLE_DOWNLOAD_PROMPT", "0")
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()?;
         Ok(())
@@ -487,7 +487,7 @@ impl NodePlugin {
             .with_pr(pr)
             .arg("-v")
             .envs(config.env().await?)
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .execute()
     }
 

@@ -4788,6 +4788,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
+name = "jdx-tar"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea172082e0f86db95eb1eb387cf802b02749322e79219378e59ca390dd0cd284"
+dependencies = [
+ "filetime",
+]
+
+[[package]]
 name = "jiff"
 version = "0.2.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5336,7 +5345,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.7.7"
+version = "2026.7.8"
 dependencies = [
  "age",
  "aho-corasick",
@@ -5390,6 +5399,7 @@ dependencies = [
  "indoc",
  "insta",
  "itertools 0.15.0",
+ "jdx-tar",
  "jiff",
  "junction",
  "landlock",
@@ -5442,7 +5452,6 @@ dependencies = [
  "supports-hyperlinks",
  "tabled",
  "taplo",
- "tar",
  "tempfile",
  "tera 1.20.1",
  "tera 2.0.0",

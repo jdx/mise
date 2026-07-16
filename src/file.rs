@@ -19,9 +19,9 @@ use eyre::bail;
 use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
+use jdx_tar::{Archive, EntryType, UnpackOptions};
 use sha2::{Digest, Sha256};
 use std::sync::LazyLock as Lazy;
-use tar::Archive;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
@@ -1225,112 +1225,20 @@ pub fn untar(
     };
 
     let tar = open_tar(format, archive)?;
-    // TODO: put this back in when we can read+write in parallel
-    // let mut cur = Cursor::new(vec![]);
-    // let mut total = 0;
-    // loop {
-    //     let mut buf = Cursor::new(vec![0; 1024 * 1024]);
-    //     let n = tar.read(buf.get_mut()).wrap_err_with(err)?;
-    //     cur.get_mut().extend_from_slice(&buf.get_ref()[..n]);
-    //     if n == 0 {
-    //         break;
-    //     }
-    //     if let Some(pr) = &opts.pr {
-    //         total += n as u64;
-    //         pr.set_length(total);
-    //     }
-    // }
     create_dir_all(dest).wrap_err_with(err)?;
-
-    // Try to extract using the tar crate, detecting sparse files during extraction
-    let mut needs_system_tar = false;
-    for entry in Archive::new(tar).entries().wrap_err_with(err)? {
-        let mut entry = entry.wrap_err_with(err)?;
-
-        let entry_path = entry.path().wrap_err_with(err)?.into_owned();
-        if tar_entry_is_sparse(&mut entry).wrap_err_with(err)?
-            || path_has_gnu_sparse_artifact(&entry_path)
-        {
-            debug!("Detected sparse tar entry, falling back to system tar");
-            needs_system_tar = true;
-            break;
-        }
-
-        // Configure mtime preservation based on options
-        entry.set_preserve_mtime(opts.preserve_mtime);
-
-        trace!("extracting {}", entry_path.display());
-        entry.unpack_in(dest).wrap_err_with(err)?;
-    }
-
-    if needs_system_tar {
-        // Use system tar for archives with problematic sparse files
-        // The tar crate doesn't properly handle certain GNU sparse formats
-        debug!("Using system tar for: {}", archive.display());
-
-        remove_all(dest)?;
-        create_dir_all(dest)?;
-        extract_with_system_tar(archive, dest, opts)?;
-    }
-
-    // Always use our manual strip to ensure consistent behavior across backends
-    strip_archive_path_components(dest, opts.strip_components).wrap_err_with(err)?;
-    Ok(())
-}
-
-fn tar_entry_is_sparse<R: Read>(entry: &mut tar::Entry<'_, R>) -> std::io::Result<bool> {
-    if entry.header().entry_type().is_gnu_sparse() {
-        return Ok(true);
-    }
-
-    let Some(pax_extensions) = entry.pax_extensions()? else {
-        return Ok(false);
-    };
-
-    for extension in pax_extensions {
-        let extension = match extension {
-            Ok(extension) => extension,
-            Err(err) => {
-                debug!(
-                    "Ignoring malformed PAX extension while checking for sparse metadata: {err}"
-                );
-                continue;
-            }
-        };
-        if extension
-            .key()
-            .is_ok_and(|key| key.starts_with("GNU.sparse."))
-        {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
-}
-
-fn path_has_gnu_sparse_artifact(path: &Path) -> bool {
-    path.components().any(|component| {
-        component
-            .as_os_str()
-            .to_str()
-            .is_some_and(|name| name.starts_with("GNUSparseFile."))
-    })
-}
-
-fn extract_with_system_tar(archive: &Path, dest: &Path, opts: &ExtractOptions) -> Result<()> {
-    // When preserve_mtime is false, use -m flag to not restore modification times.
-    // This causes extracted files to have current time, which is important for
-    // cache invalidation and autopruning. Works on both BSD and GNU tar.
-    let result = if opts.preserve_mtime {
-        cmd!("tar", "-xf", archive, "-C", dest).run()
-    } else {
-        cmd!("tar", "-mxf", archive, "-C", dest).run()
-    };
-
-    result.map(|_| ()).wrap_err_with(|| {
+    let mut unpack_opts = UnpackOptions::default();
+    unpack_opts.preserve_mtime = opts.preserve_mtime;
+    unpack_opts.on_entry = Some(Box::new(|entry| {
+        trace!("extracting {}", entry.path.display());
+    }));
+    let summary = Archive::new(tar)
+        .unpack(dest, &mut unpack_opts)
+        .wrap_err_with(err)?;
+    debug!("tar extraction summary: {summary:?}");
+    strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
         format!(
-            "failed to extract {} using system tar for sparse archive fallback",
-            archive.display()
+            "failed to strip path components from tar archive: {}",
+            display_path(archive)
         )
     })
 }
@@ -1573,7 +1481,7 @@ pub fn inspect_tar_contents(
     for entry in archive.entries()? {
         let entry = entry?;
         let path = entry.path()?;
-        let header = entry.header();
+        let entry_type = entry.entry_type();
 
         // Get the first non-CurDir component of the path (top-level directory/file)
         let mut components = skip_curdir_components(&path);
@@ -1583,7 +1491,7 @@ pub fn inspect_tar_contents(
 
             // Check if this entry indicates the component is a directory
             // It's a directory if the entry type is dir OR if there are more components after the first
-            let is_directory = header.entry_type().is_dir() || components.next().is_some();
+            let is_directory = entry_type == EntryType::Directory || components.next().is_some();
 
             // Update the component's directory status
             // A component is a directory if ANY entry indicates it's a directory
@@ -1727,11 +1635,11 @@ fn archive_content_files_tar(
     for entry in archive.entries()? {
         let mut entry = entry?;
         let path = entry.path()?.into_owned();
-        let entry_type = entry.header().entry_type();
-        if entry_type.is_dir() {
+        let entry_type = entry.entry_type();
+        if entry_type == EntryType::Directory {
             continue;
         }
-        if !entry_type.is_file() {
+        if entry_type != EntryType::File {
             bail!(
                 "content-level SLSA verification does not support non-regular archive entry: {}",
                 path.display()
@@ -1972,13 +1880,13 @@ mod tests {
         let archive_path = dir.path().join("tool.tar");
         {
             let file = File::create(&archive_path).unwrap();
-            let mut builder = tar::Builder::new(file);
-            let mut header = tar::Header::new_gnu();
-            header.set_path("pkg/tool").unwrap();
+            let mut builder = jdx_tar::Builder::new(file);
+            let mut header = jdx_tar::Header::new_gnu(EntryType::File);
             header.set_size(4);
             header.set_mode(0o755);
-            header.set_cksum();
-            builder.append(&header, &b"tool"[..]).unwrap();
+            builder
+                .append_data(&mut header, "pkg/tool", &b"tool"[..])
+                .unwrap();
             builder.finish().unwrap();
         }
 
@@ -1994,20 +1902,58 @@ mod tests {
         let archive_path = dir.path().join("tool.tar");
         {
             let file = File::create(&archive_path).unwrap();
-            let mut builder = tar::Builder::new(file);
-            let mut header = tar::Header::new_gnu();
-            header.set_entry_type(tar::EntryType::Symlink);
-            header.set_path("tool-link").unwrap();
-            header.set_link_name("tool").unwrap();
-            header.set_size(0);
+            let mut builder = jdx_tar::Builder::new(file);
+            let mut header = jdx_tar::Header::new_gnu(EntryType::Symlink);
             header.set_mode(0o777);
-            header.set_cksum();
-            builder.append(&header, std::io::empty()).unwrap();
+            builder
+                .append_link(&mut header, "tool-link", "tool")
+                .unwrap();
             builder.finish().unwrap();
         }
 
         let err = archive_content_files(&archive_path, ExtractionFormat::Tar, 0).unwrap_err();
         assert!(err.to_string().contains("non-regular archive entry"));
+    }
+
+    #[test]
+    fn test_extract_archive_tar_strip_preserves_root_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("tool.tar");
+        let dest = dir.path().join("out");
+        {
+            let file = File::create(&archive_path).unwrap();
+            let mut builder = jdx_tar::Builder::new(file);
+
+            let mut readme = jdx_tar::Header::new_gnu(EntryType::File);
+            readme.set_size(6);
+            readme.set_mode(0o644);
+            builder
+                .append_data(&mut readme, "README", &b"readme"[..])
+                .unwrap();
+
+            let mut tool = jdx_tar::Header::new_gnu(EntryType::File);
+            tool.set_size(4);
+            tool.set_mode(0o644);
+            builder
+                .append_data(&mut tool, "pkg/tool", &b"tool"[..])
+                .unwrap();
+            builder.finish().unwrap();
+        }
+
+        extract_archive(
+            &archive_path,
+            &dest,
+            ExtractionFormat::Tar,
+            &ExtractOptions {
+                strip_components: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(dest.join("README")).unwrap(), b"readme");
+        assert_eq!(fs::read(dest.join("tool")).unwrap(), b"tool");
+        assert!(!dest.join("pkg").exists());
     }
 
     #[tokio::test]
@@ -2159,7 +2105,7 @@ mod tests {
         // This reproduces the bug from https://github.com/jdx/mise/discussions/7862
         use flate2::Compression;
         use flate2::write::GzEncoder;
-        use tar::Builder;
+        use jdx_tar::{Builder, Header};
         use tempfile::NamedTempFile;
 
         // Create a temp tar.gz with "./" prefixed paths (like unison's archive)
@@ -2171,11 +2117,9 @@ mod tests {
         // ./dir1/file1
         // ./dir2/file2
         // ./standalone
-        let mut header = tar::Header::new_gnu();
+        let mut header = Header::new_gnu(EntryType::File);
         header.set_size(0);
         header.set_mode(0o755);
-        header.set_entry_type(tar::EntryType::Regular);
-        header.set_cksum();
 
         // Add ./dir1/file1
         builder
@@ -2685,35 +2629,6 @@ mod tests {
     }
 
     #[test]
-    fn test_tar_entry_is_sparse_detects_pax_sparse_metadata() {
-        use std::io::Cursor;
-
-        let mut builder = tar::Builder::new(Vec::new());
-        builder
-            .append_pax_extensions([("GNU.sparse.name", b"pkg/disk.img".as_slice())])
-            .unwrap();
-
-        let mut header = tar::Header::new_ustar();
-        header.set_size(0);
-        header.set_mode(0o644);
-        header.set_cksum();
-        builder
-            .append_data(
-                &mut header,
-                "pkg/GNUSparseFile.0/disk.img",
-                std::io::empty(),
-            )
-            .unwrap();
-
-        let data = builder.into_inner().unwrap();
-        let mut archive = Archive::new(Cursor::new(data));
-        let mut entries = archive.entries().unwrap();
-        let mut entry = entries.next().unwrap().unwrap();
-
-        assert!(tar_entry_is_sparse(&mut entry).unwrap());
-    }
-
-    #[test]
     fn test_extract_archive_ignores_malformed_non_sparse_pax_metadata() {
         use tempfile::tempdir;
 
@@ -2721,19 +2636,29 @@ mod tests {
         let archive_path = dir.path().join("pax-xattr.tar");
         let dest_dir = dir.path().join("out");
         let archive = File::create(&archive_path).unwrap();
-        let mut builder = tar::Builder::new(archive);
+        let mut builder = jdx_tar::Builder::new(archive);
+
+        let key = "LIBARCHIVE.xattr.com.apple.cs.CodeSignature";
+        let value = b"signature\nmetadata";
+        let rest_len = 3 + key.len() + value.len();
+        let mut digits = 1;
+        while (rest_len + digits).to_string().len() != digits {
+            digits += 1;
+        }
+        let record_len = rest_len + digits;
+        let mut pax = format!("{record_len} {key}=").into_bytes();
+        pax.extend_from_slice(value);
+        pax.push(b'\n');
+        let mut pax_header = jdx_tar::Header::new_gnu(EntryType::Other(b'x'));
+        pax_header.set_size(pax.len() as u64);
         builder
-            .append_pax_extensions([(
-                "LIBARCHIVE.xattr.com.apple.cs.CodeSignature",
-                b"signature\nmetadata".as_slice(),
-            )])
+            .append_data(&mut pax_header, "pax-xattr", pax.as_slice())
             .unwrap();
 
         let contents = b"hello world";
-        let mut header = tar::Header::new_ustar();
+        let mut header = jdx_tar::Header::new_gnu(EntryType::File);
         header.set_size(contents.len() as u64);
         header.set_mode(0o755);
-        header.set_cksum();
         builder
             .append_data(&mut header, "tool", contents.as_slice())
             .unwrap();
@@ -2751,16 +2676,8 @@ mod tests {
     }
 
     #[test]
-    fn test_path_has_gnu_sparse_artifact_detects_nested_paths() {
-        assert!(path_has_gnu_sparse_artifact(Path::new(
-            "pkg/GNUSparseFile.0/disk.img"
-        )));
-        assert!(!path_has_gnu_sparse_artifact(Path::new("pkg/disk.img")));
-    }
-
-    #[test]
     #[cfg(unix)]
-    fn test_extract_archive_falls_back_for_pax_sparse_tar() {
+    fn test_extract_archive_handles_pax_sparse_tar() {
         use std::io::{Seek, SeekFrom, Write};
         use std::process::Command;
         use tempfile::tempdir;

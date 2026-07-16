@@ -70,6 +70,14 @@ impl HookScripts {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
 pub enum HookDef {
+    One(HookDefItem),
+    /// Array of hook definitions: `enter = ["echo hello", { task = "setup" }]`
+    Array(Vec<HookDefItem>),
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum HookDefItem {
     /// Simple run string: `enter = "echo hello"`
     RunString(String),
     /// Table with run: `enter = { run = "echo hello" }`
@@ -86,8 +94,6 @@ pub enum HookDef {
     },
     /// Task reference: `enter = { task = "setup" }`
     TaskRef { task: String },
-    /// Array of hook definitions: `enter = ["echo hello", { task = "setup" }]`
-    Array(Vec<HookDef>),
 }
 
 #[derive(Debug, Clone)]
@@ -128,7 +134,19 @@ impl HookDef {
     /// Convert to a list of Hook structs with the given hook type
     pub fn into_hooks(self, hook_type: Hooks) -> Vec<Hook> {
         match self {
-            HookDef::RunString(script) => vec![Hook {
+            HookDef::One(def) => vec![def.into_hook(hook_type)],
+            HookDef::Array(arr) => arr
+                .into_iter()
+                .map(|def| def.into_hook(hook_type))
+                .collect(),
+        }
+    }
+}
+
+impl HookDefItem {
+    fn into_hook(self, hook_type: Hooks) -> Hook {
+        match self {
+            HookDefItem::RunString(script) => Hook {
                 hook: hook_type,
                 action: HookAction::Run {
                     run: Some(script),
@@ -138,8 +156,8 @@ impl HookDef {
                     ignored_shell: None,
                 },
                 global: false,
-            }],
-            HookDef::Run(table) => vec![Hook {
+            },
+            HookDefItem::Run(table) => Hook {
                 hook: hook_type,
                 action: HookAction::Run {
                     run: table.run,
@@ -149,26 +167,22 @@ impl HookDef {
                     ignored_shell: None,
                 },
                 global: false,
-            }],
-            HookDef::ScriptTable { script, shell } => vec![Hook {
+            },
+            HookDefItem::ScriptTable { script, shell } => Hook {
                 hook: hook_type,
                 action: script_hook_action(hook_type, script.into_script(), shell, true),
                 global: false,
-            }],
-            HookDef::ScriptsTable { scripts, shell } => vec![Hook {
+            },
+            HookDefItem::ScriptsTable { scripts, shell } => Hook {
                 hook: hook_type,
-                action: script_hook_action(hook_type, scripts.join("\n"), shell, false),
+                action: script_hook_action(hook_type, scripts.join("\n"), shell, true),
                 global: false,
-            }],
-            HookDef::TaskRef { task } => vec![Hook {
+            },
+            HookDefItem::TaskRef { task } => Hook {
                 hook: hook_type,
                 action: HookAction::Task { task_name: task },
                 global: false,
-            }],
-            HookDef::Array(arr) => arr
-                .into_iter()
-                .flat_map(|d| d.into_hooks(hook_type))
-                .collect(),
+            },
         }
     }
 }
@@ -559,7 +573,7 @@ async fn execute(
             "2026.9.0",
             "2027.3.0",
             "hook_script_table_spawned_run",
-            "hook tables using `script` for spawned commands are deprecated. Use `run` instead."
+            "hook tables using `script` or `scripts` for spawned commands are deprecated. Use `run` instead."
         );
     }
     if ignored_shell.is_some() && matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
@@ -776,6 +790,83 @@ mod tests {
             }
             action => panic!("expected run hook, got {action:?}"),
         }
+    }
+
+    #[test]
+    fn hook_tables_reject_unknown_fields() {
+        for input in [
+            r#"hook = { script = "echo script", typo = true }"#,
+            r#"hook = { scripts = ["echo scripts"], typo = true }"#,
+            r#"hook = { task = "build", typo = true }"#,
+        ] {
+            assert!(
+                toml::from_str::<TestHook>(input).is_err(),
+                "unexpectedly accepted {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn hook_tables_reject_mixed_actions() {
+        for input in [
+            r#"hook = { run = "echo run", script = "echo script" }"#,
+            r#"hook = { run = "echo run", task = "build" }"#,
+            r#"hook = { script = "echo script", scripts = ["echo scripts"] }"#,
+            r#"hook = { script = "echo script", task = "build" }"#,
+            r#"hook = { scripts = ["echo scripts"], task = "build" }"#,
+        ] {
+            assert!(
+                toml::from_str::<TestHook>(input).is_err(),
+                "unexpectedly accepted {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn hook_arrays_reject_nested_arrays() {
+        assert!(
+            toml::from_str::<TestHook>(
+                r#"hook = ["echo first", { task = "build" }, { run = "echo last" }]"#
+            )
+            .is_ok(),
+            "flat mixed array should be accepted"
+        );
+
+        for input in [
+            r#"hook = [["echo nested"]]"#,
+            r#"hook = ["echo first", [{ task = "build" }]]"#,
+        ] {
+            assert!(
+                toml::from_str::<TestHook>(input).is_err(),
+                "unexpectedly accepted {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn scripts_tables_are_legacy_only_when_spawned() {
+        let spawned = HookDef::One(HookDefItem::ScriptsTable {
+            scripts: vec!["echo one".into(), "echo two".into()],
+            shell: None,
+        })
+        .into_hooks(Hooks::Postinstall);
+        assert!(matches!(
+            &spawned[0].action,
+            HookAction::Run {
+                legacy_script: true,
+                ..
+            }
+        ));
+
+        let current_shell = HookDef::One(HookDefItem::ScriptsTable {
+            scripts: vec!["echo one".into(), "echo two".into()],
+            shell: Some("bash".into()),
+        })
+        .into_hooks(Hooks::Enter);
+        assert!(matches!(
+            &current_shell[0].action,
+            HookAction::CurrentShell { .. }
+        ));
     }
 
     #[test]

@@ -32,6 +32,75 @@ EOF
 assert_contains "mise run package --target linux" "compiling for linux"
 assert_contains "mise run package --target linux" "packaging for linux"
 
+# Test conditionally passing a boolean flag with structured dependency syntax
+cat <<'EOF' >mise.toml
+[tasks."lint:check"]
+usage = 'flag "--fix" default=#false'
+run = 'echo "fix=$usage_fix"'
+
+[tasks.lint]
+usage = 'flag "--fix" default=#false'
+depends = [{ task = "lint:check", args = ["{% if usage.fix %}--fix{% endif %}"] }]
+EOF
+
+assert_contains "mise run lint" "fix=false"
+assert_contains "mise run lint --fix" "fix=true"
+
+# Skip dependency entries whose task name template renders empty, both during
+# initial rendering and deferred usage rendering.
+cat <<'EOF' >mise.toml
+[tasks.initial-dependency]
+run = 'echo "initial dependency ran"'
+
+[tasks.usage-dependency]
+run = 'echo "usage dependency ran"'
+
+[tasks.usage-post-dependency]
+run = 'echo "usage post-dependency ran"'
+
+[tasks.usage-wait-task]
+run = 'sleep 0.3; echo wait >> wait-order.txt; echo "usage wait task ran"'
+
+[tasks.optional]
+usage = 'flag "--enabled" default=#false'
+depends = [
+    "{% if false %}initial-dependency{% endif %}",
+    "{% if true %}initial-dependency{% endif %}",
+    "{% if usage.enabled %}usage-dependency{% endif %}",
+]
+depends_post = [
+    "{% if false %}initial-post-dependency{% endif %}",
+    "{% if usage.enabled %}usage-post-dependency{% endif %}",
+]
+wait_for = [
+    "{% if false %}initial-wait-task{% endif %}",
+    "{% if usage.enabled %}usage-wait-task{% endif %}",
+]
+run = 'echo optional >> wait-order.txt; echo "optional ran"'
+EOF
+
+assert_contains "mise run optional" "optional ran"
+assert_contains "mise run optional" "initial dependency ran"
+output=$(mise run optional --enabled 2>&1)
+assert_contains_text "$output" "usage dependency ran"
+assert_contains_text "$output" "usage post-dependency ran"
+assert_contains_text "$output" "optional ran"
+
+rm -f wait-order.txt
+mise run optional --enabled ::: usage-wait-task
+assert "cat wait-order.txt" "wait
+optional"
+
+# Literal empty task names remain invalid rather than being treated as an
+# optional templated dependency.
+cat <<'EOF' >mise.toml
+[tasks.invalid]
+depends = [""]
+run = 'echo "should not run"'
+EOF
+
+assert_fail "mise run invalid" "task not found:"
+
 # Test with multiple args
 cat <<'EOF' >mise.toml
 [tasks.start-backend]

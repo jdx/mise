@@ -5,7 +5,7 @@ use eyre::Result;
 
 use crate::config::Config;
 
-mod install;
+pub(crate) mod install;
 mod link;
 mod ls;
 mod ls_remote;

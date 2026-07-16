@@ -62,7 +62,7 @@ impl ZigPlugin {
         CmdLineRunner::new(self.zig_bin(tv))
             .with_pr(ctx.pr.as_ref())
             .arg("version")
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .execute()
     }
 

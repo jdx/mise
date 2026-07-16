@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+TOMBI_VERSION="0.9.22"
+
+mise use -g tombi@$TOMBI_VERSION
+
+SCHEMA_PATH="$ROOT/schema/mise.json"
+TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
+TOMBI_LINT="$TOMBI lint --offline --no-cache --error-on-warnings --quiet"
+assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
+
+cat >"$HOME/tombi.toml" <<EOF
+toml-version = "v1.0.0"
+
+[schema]
+enabled = true
+strict = true
+
+[[schemas]]
+path = "file://$SCHEMA_PATH"
+include = ["mise-watch-files.toml", "mise-bad-watch-files.toml"]
+EOF
+
+cat >"$HOME/workdir/mise-watch-files.toml" <<'TOML'
+[[watch_files]]
+patterns = []
+run = "echo changed"
+
+[[watch_files]]
+patterns = ["src/**/*.rs"]
+task = "check"
+TOML
+
+cd "$HOME/workdir"
+assert_succeed "$TOMBI_LINT mise-watch-files.toml"
+
+for action in \
+  'run = "echo changed"' \
+  'task = "check"'; do
+  cat >"$HOME/workdir/mise-bad-watch-files.toml" <<TOML
+[[watch_files]]
+$action
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-watch-files.toml"
+done

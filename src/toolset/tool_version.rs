@@ -7,6 +7,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::{ABackend, VersionInfo};
 use crate::cli::args::BackendArg;
+use crate::config::env_directive::EnvValue;
 use crate::config::{Config, Settings};
 #[cfg(windows)]
 use crate::file;
@@ -215,7 +216,7 @@ impl ToolVersion {
         path
     }
 
-    pub fn install_env(&self) -> IndexMap<String, String> {
+    pub fn install_env(&self) -> IndexMap<String, EnvValue> {
         self.request.options().core.install_env
     }
 
@@ -525,10 +526,12 @@ impl ToolVersion {
         if prefer_offline && !opts.latest_versions && v.matches('.').count() >= 2 {
             return build(v);
         }
-        // Exact pinned GitHub versions do not need the full releases list when
-        // the backend can cheaply prove the tag exists. If it cannot, fall
-        // through to normal prefix resolution so requests like "1.2.3" can
-        // still resolve to "1.2.3.4" when that is the latest matching version.
+        // Exact pinned versions do not need the full versions list when the
+        // backend can validate them directly or defer validation to its
+        // installer. This also keeps explicit pins outside release-age
+        // filtering. If the backend returns None, fall through to normal
+        // prefix resolution so requests like "1.2.3" can still resolve to
+        // "1.2.3.4" when that is the latest matching version.
         if v.matches('.').count() >= 2
             && let Some(v) = backend.resolve_exact_version(config, &v).await?
         {
@@ -923,7 +926,7 @@ mod tests {
         };
         options.install_env.insert(
             "NODE_OPTIONS".to_string(),
-            "--enable-source-maps".to_string(),
+            EnvValue::from("--enable-source-maps"),
         );
         options.opts.insert(
             "registry".to_string(),
@@ -950,8 +953,8 @@ mod tests {
         assert_eq!(tv.ba().full_without_opts(), "npm:npm");
         assert_eq!(options.depends, Some(vec!["node".to_string()]));
         assert_eq!(
-            options.install_env.get("NODE_OPTIONS").map(String::as_str),
-            Some("--enable-source-maps")
+            options.install_env.get("NODE_OPTIONS"),
+            Some(&EnvValue::String("--enable-source-maps".to_string()))
         );
         assert_eq!(
             options.opts.get("registry"),

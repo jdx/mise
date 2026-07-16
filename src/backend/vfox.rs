@@ -37,6 +37,21 @@ pub struct VfoxBackend {
     system_deps: OnceLock<Vec<crate::system::deps::SystemDep>>,
 }
 
+fn remove_env_var(env: &mut indexmap::IndexMap<String, String>, key: &str) {
+    #[cfg(windows)]
+    {
+        if let Some(existing) = env
+            .keys()
+            .find(|existing| existing.eq_ignore_ascii_case(key))
+            .cloned()
+        {
+            env.shift_remove(&existing);
+        }
+    }
+    #[cfg(not(windows))]
+    env.shift_remove(key);
+}
+
 #[async_trait]
 impl Backend for VfoxBackend {
     fn get_type(&self) -> BackendType {
@@ -161,7 +176,18 @@ impl Backend for VfoxBackend {
             .unwrap_or_default()
             .into_iter()
             .collect();
-        cmd_env.extend(tv.install_env());
+        let mut install_env_removals = Vec::new();
+        for (key, value) in tv.install_env() {
+            match value.into_string() {
+                Some(value) => {
+                    cmd_env.insert(key, value);
+                }
+                None => {
+                    remove_env_var(&mut cmd_env, &key);
+                    install_env_removals.push(key);
+                }
+            }
+        }
         // Surface `tools = true` `[env]` *value* directives (e.g.
         // `CLOUDSDK_PYTHON = "{{ tools.python.path }}/bin/python3"`) so the plugin's
         // install hooks (including os.execute) see the resolved value during a
@@ -203,6 +229,9 @@ impl Backend for VfoxBackend {
                 }
                 Err(e) => debug!("vfox: skipping tools=true value directives: {e:#}"),
             }
+        }
+        for key in install_env_removals {
+            remove_env_var(&mut cmd_env, &key);
         }
         if !cmd_env.is_empty() {
             vfox.cmd_env = Some(cmd_env);

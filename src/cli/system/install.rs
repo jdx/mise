@@ -15,8 +15,8 @@ pub(crate) struct BootstrapApplyReport {
 /// Apply system packages from `[bootstrap.packages]`
 ///
 /// Checks which configured packages are missing and installs them with the
-/// system package manager. This may elevate with sudo when not running as
-/// root (see the `system_packages.sudo` setting).
+/// system package manager. Built-in system managers may elevate with sudo when
+/// not running as root (see `system_packages.sudo`); package plugins never do.
 ///
 /// Packages can also be given explicitly in `manager:package` form (e.g.
 /// `apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
@@ -30,8 +30,8 @@ pub struct SystemInstall {
     #[clap(value_name = "PACKAGE")]
     packages: Vec<String>,
 
-    /// Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, `flatpak`, or `mas`
-    #[clap(long, short, value_parser = ["apk", "apt", "brew", "brew-cask", "dnf", "flatpak", "mas", "pacman"])]
+    /// Only install packages for this built-in or plugin manager
+    #[clap(long, short)]
     manager: Option<String>,
 
     /// Print the commands that would run without running them

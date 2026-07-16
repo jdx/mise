@@ -635,12 +635,39 @@ async fn is_active(unit: &str) -> Result<bool> {
 }
 
 async fn is_enabled(unit: &str) -> Result<bool> {
-    systemctl_status(&[
-        "is-enabled".to_string(),
-        "--quiet".to_string(),
-        unit.to_string(),
-    ])
-    .await
+    let args = ["is-enabled".to_string(), unit.to_string()];
+    debug!("$ systemctl --user {}", shell_words::join(&args));
+    let mut cmd = tokio::process::Command::new("systemctl");
+    cmd.arg("--user")
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(SYSTEMCTL_TIMEOUT, cmd.output())
+        .await
+        .map_err(|_| eyre!("`systemctl --user {}` timed out", shell_words::join(&args)))??;
+    let state = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    debug!(
+        "`systemctl --user {}` state: {}",
+        shell_words::join(&args),
+        state
+    );
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if !stderr.is_empty() {
+            debug!(
+                "`systemctl --user {}` exited non-zero: {}",
+                shell_words::join(&args),
+                stderr
+            );
+        }
+    }
+    Ok(unit_file_state_is_enabled(&state))
+}
+
+fn unit_file_state_is_enabled(state: &str) -> bool {
+    matches!(state, "enabled" | "enabled-runtime")
 }
 
 async fn systemctl_status(args: &[String]) -> Result<bool> {
@@ -890,6 +917,29 @@ mod tests {
             state: SystemdState::Inactive,
         };
         assert!(inactive_stopped.is_desired());
+    }
+
+    #[test]
+    fn test_unit_file_state_is_enabled() {
+        for state in ["enabled", "enabled-runtime"] {
+            assert!(unit_file_state_is_enabled(state), "{state}");
+        }
+        for state in [
+            "static",
+            "disabled",
+            "linked",
+            "linked-runtime",
+            "alias",
+            "masked",
+            "masked-runtime",
+            "indirect",
+            "generated",
+            "transient",
+            "not-found",
+            "bad",
+        ] {
+            assert!(!unit_file_state_is_enabled(state), "{state}");
+        }
     }
 
     #[test]

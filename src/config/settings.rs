@@ -898,6 +898,15 @@ impl Settings {
     }
 
     pub fn fetch_remote_versions_timeout(&self) -> Duration {
+        let timeout = self.configured_fetch_remote_versions_timeout();
+        if self.prefer_offline() {
+            timeout.min(Duration::from_secs(3))
+        } else {
+            timeout
+        }
+    }
+
+    pub fn configured_fetch_remote_versions_timeout(&self) -> Duration {
         duration::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
     }
 
@@ -920,6 +929,17 @@ impl Settings {
 
     pub fn http_download_timeout(&self) -> Duration {
         duration::parse_duration(&self.http_download_timeout).unwrap()
+    }
+
+    /// Fast-path commands should make at most one network attempt before falling
+    /// back to cached/local behavior. In particular, shims must not multiply a
+    /// stalled resolver timeout by the configured retry count.
+    pub fn http_retries(&self) -> i64 {
+        if self.prefer_offline() {
+            0
+        } else {
+            self.http_retries
+        }
     }
 
     /// Returns true if offline mode is enabled via setting or CLI flag/env var.

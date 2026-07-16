@@ -21,7 +21,9 @@ use crate::config::config_file::{
     ConfigFile, TaskConfig, config_trust_root, is_ignored, trust, trust_check,
 };
 use crate::config::config_file::{config_root, toml::deserialize_arr};
-use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions, RequiredValue};
+use crate::config::env_directive::{
+    AgeFormat, EnvDirective, EnvDirectiveOptions, EnvValue, RequiredValue,
+};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config, Settings};
 use crate::deps::DepsConfig;
@@ -181,13 +183,16 @@ pub struct MiseToml {
     bootstrap: Option<BootstrapTomlConfig>,
     #[serde(default)]
     dotfiles: Option<DotfilesTomlConfig>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vars")]
     vars: EnvList,
     #[serde(default)]
     settings: SettingsPartial,
     /// Marks this config as a monorepo root, enabling target path syntax for tasks
-    #[serde(default, alias = "experimental_monorepo_root")]
+    #[serde(default)]
     monorepo_root: Option<bool>,
+    /// Legacy name for monorepo_root, retained during its deprecation period
+    #[serde(default)]
+    experimental_monorepo_root: Option<bool>,
     /// Configuration for monorepo task discovery
     #[serde(default)]
     monorepo: Option<MonorepoConfig>,
@@ -294,6 +299,16 @@ impl MiseToml {
                 return Err(toml_parse_error(&err, body, path));
             }
         };
+        if let Some(legacy_monorepo_root) = rf.experimental_monorepo_root.take() {
+            deprecated_at!(
+                "2026.7.7",
+                "2027.12.0",
+                "config.experimental_monorepo_root",
+                "`experimental_monorepo_root` in {} is deprecated. Use `monorepo_root` instead.",
+                display_path(path)
+            );
+            rf.monorepo_root.get_or_insert(legacy_monorepo_root);
+        }
         rf.context = BASE_CONTEXT.clone();
         rf.context.insert(
             "config_root",
@@ -1290,6 +1305,7 @@ impl Clone for MiseToml {
             dotfiles: self.dotfiles.clone(),
             vars: self.vars.clone(),
             monorepo_root: self.monorepo_root,
+            experimental_monorepo_root: self.experimental_monorepo_root,
             monorepo: self.monorepo.clone(),
         }
     }
@@ -1504,30 +1520,79 @@ impl<'de> de::Deserialize<'de> for EnvList {
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "_" | "mise" => {
+                            if key == "mise" {
+                                deprecated_at!(
+                                    "2026.7.0",
+                                    "2026.12.0",
+                                    "config.env.mise",
+                                    "`env.mise` is deprecated. Use `env._` instead."
+                                );
+                            }
                             #[derive(Deserialize)]
                             #[serde(untagged)]
-                            enum MiseTomlEnvDirective {
+                            enum MiseTomlEnvDirectiveValue {
                                 Single {
-                                    #[serde(alias = "path")]
-                                    value: String,
+                                    #[serde(alias = "value")]
+                                    path: String,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
                                 Multiple {
-                                    #[serde(alias = "value", alias = "path", alias = "paths")]
-                                    values: Vec<String>,
+                                    #[serde(alias = "value", alias = "values", alias = "paths")]
+                                    path: Vec<String>,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
                             }
 
+                            struct MiseTomlEnvDirective(MiseTomlEnvDirectiveValue);
+
+                            impl<'de> Deserialize<'de> for MiseTomlEnvDirective {
+                                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                                where
+                                    D: Deserializer<'de>,
+                                {
+                                    let value = toml::Value::deserialize(deserializer)?;
+                                    let (uses_value, uses_values) = value
+                                        .as_table()
+                                        .map(|table| {
+                                            (
+                                                table.contains_key("value"),
+                                                table.contains_key("values"),
+                                            )
+                                        })
+                                        .unwrap_or_default();
+                                    let directive = MiseTomlEnvDirectiveValue::deserialize(value)
+                                        .map_err(de::Error::custom)?;
+
+                                    if uses_value {
+                                        deprecated_at!(
+                                            "2026.7.0",
+                                            "2026.12.0",
+                                            "config.directive.value",
+                                            "`value` in built-in `file`, `path`, and `source` directive objects is deprecated. Use `path` instead."
+                                        );
+                                    }
+                                    if uses_values {
+                                        deprecated_at!(
+                                            "2026.7.0",
+                                            "2026.12.0",
+                                            "config.directive.values",
+                                            "`values` in built-in `file`, `path`, and `source` directive objects is deprecated. Use `path` instead."
+                                        );
+                                    }
+
+                                    Ok(MiseTomlEnvDirective(directive))
+                                }
+                            }
+
                             impl FromStr for MiseTomlEnvDirective {
                                 type Err = String;
                                 fn from_str(s: &str) -> Result<Self, Self::Err> {
-                                    Ok(MiseTomlEnvDirective::Single {
-                                        value: s.to_string(),
+                                    Ok(MiseTomlEnvDirective(MiseTomlEnvDirectiveValue::Single {
+                                        path: s.to_string(),
                                         options: Default::default(),
-                                    })
+                                    }))
                                 }
                             }
 
@@ -1656,11 +1721,11 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             where
                                 F: Fn(String, EnvDirectiveOptions) -> EnvDirective + 'static,
                             {
-                                directives.into_iter().flat_map(move |d| match d {
-                                    MiseTomlEnvDirective::Single { value, options } => {
-                                        vec![constructor(value, options)]
+                                directives.into_iter().flat_map(move |d| match d.0 {
+                                    MiseTomlEnvDirectiveValue::Single { path, options } => {
+                                        vec![constructor(path, options)]
                                     }
-                                    MiseTomlEnvDirective::Multiple { values, options } => values
+                                    MiseTomlEnvDirectiveValue::Multiple { path, options } => path
                                         .into_iter()
                                         .map(|v| constructor(v, options.clone()))
                                         .collect(),
@@ -1699,31 +1764,6 @@ impl<'de> de::Deserialize<'de> for EnvList {
                         _ => {
                             #[derive(Deserialize)]
                             #[serde(untagged)]
-                            pub enum PrimitiveVal {
-                                Str(String),
-                                Int(i64),
-                                Bool(bool),
-                            }
-                            impl PrimitiveVal {
-                                fn into_value_string(self) -> Option<String> {
-                                    match self {
-                                        PrimitiveVal::Str(s) => Some(s),
-                                        PrimitiveVal::Int(i) => Some(i.to_string()),
-                                        PrimitiveVal::Bool(true) => Some("true".to_string()),
-                                        PrimitiveVal::Bool(false) => None,
-                                    }
-                                }
-
-                                fn into_default_string(self) -> Option<String> {
-                                    match self {
-                                        PrimitiveVal::Str(s) => Some(s),
-                                        PrimitiveVal::Int(i) => Some(i.to_string()),
-                                        PrimitiveVal::Bool(_) => None,
-                                    }
-                                }
-                            }
-                            #[derive(Deserialize)]
-                            #[serde(untagged)]
                             enum Val {
                                 AgeComplex {
                                     age: AgeComplexVal,
@@ -1734,12 +1774,12 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     options: EnvDirectiveOptions,
                                 },
                                 Map {
-                                    value: PrimitiveVal,
+                                    value: EnvValue,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
                                 DefaultMap {
-                                    default: PrimitiveVal,
+                                    default: EnvValue,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
@@ -1747,7 +1787,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
-                                Primitive(PrimitiveVal),
+                                Primitive(EnvValue),
                             }
 
                             #[derive(Deserialize)]
@@ -1813,7 +1853,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             }
 
                             let directive = match val_result {
-                                Val::Primitive(p) => match p.into_value_string() {
+                                Val::Primitive(value) => match value.into_string() {
                                     Some(s) => {
                                         EnvDirective::Val(key, s, EnvDirectiveOptions::default())
                                     }
@@ -1827,7 +1867,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                             key
                                         )));
                                     }
-                                    match value.into_value_string() {
+                                    match value.into_string() {
                                         Some(s) => EnvDirective::Val(key, s, options),
                                         None => EnvDirective::Rm(key, options),
                                     }
@@ -1866,6 +1906,24 @@ impl<'de> de::Deserialize<'de> for EnvList {
 
         deserializer.deserialize_any(EnvManVisitor)
     }
+}
+
+pub(crate) fn deserialize_vars<'de, D>(deserializer: D) -> std::result::Result<EnvList, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let value = toml::Value::deserialize(deserializer)?;
+    fn contains_mise(value: &toml::Value) -> bool {
+        match value {
+            toml::Value::Table(table) => table.contains_key("mise"),
+            toml::Value::Array(values) => values.iter().any(contains_mise),
+            _ => false,
+        }
+    }
+    if contains_mise(&value) {
+        return Err(de::Error::custom("`vars.mise` is not supported"));
+    }
+    EnvList::deserialize(value).map_err(de::Error::custom)
 }
 
 impl<'de> de::Deserialize<'de> for MiseTomlToolList {
@@ -2627,8 +2685,8 @@ mod tests {
 
         assert_eq!(opts.depends, Some(vec!["{{version}}".to_string()]));
         assert_eq!(
-            opts.install_env.get("FOO").map(String::as_str),
-            Some("{{version}}")
+            opts.install_env.get("FOO"),
+            Some(&EnvValue::String("{{version}}".to_string()))
         );
         assert_eq!(opts.get("url"), Some("https://example.com/{version}"));
         file::remove_file(&p).unwrap();
@@ -2981,6 +3039,22 @@ run = 'echo "template"'
     }
 
     #[test]
+    fn test_vars_mise_is_not_a_directive_namespace() {
+        let err = toml::from_str::<MiseToml>(indoc! {r#"
+            [vars.mise]
+            file = ".env"
+        "#})
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("`vars.mise` is not supported"), "{err}");
+
+        let err = toml::from_str::<MiseToml>(r#"vars = [[{ mise = { file = ".env" } }]]"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`vars.mise` is not supported"), "{err}");
+    }
+
+    #[test]
     fn test_env_default_entries() {
         let toml = indoc! {r#"
         [env]
@@ -3323,7 +3397,7 @@ run = 'echo "template"'
         };
         options
             .install_env
-            .insert("FOO".to_string(), "bar".to_string());
+            .insert("FOO".to_string(), EnvValue::from("bar"));
 
         cf.replace_versions(
             &needs_dummy,

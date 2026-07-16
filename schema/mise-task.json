@@ -148,27 +148,7 @@
         "tools": {
           "description": "tools to install/activate before running this task",
           "additionalProperties": {
-            "oneOf": [
-              {
-                "description": "version of the tool to install",
-                "type": "string"
-              },
-              {
-                "allOf": [
-                  {
-                    "$ref": "#/$defs/tool_options"
-                  }
-                ],
-                "type": "object",
-                "unevaluatedProperties": {
-                  "oneOf": [
-                    {
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            ]
+            "$ref": "#/$defs/tool"
           },
           "type": "object"
         },
@@ -471,13 +451,7 @@
             "description": "[experimental] age-encrypted environment variable"
           },
           {
-            "type": "string"
-          },
-          {
-            "type": "number"
-          },
-          {
-            "type": "boolean"
+            "$ref": "#/$defs/env_value"
           }
         ]
       },
@@ -813,6 +787,72 @@
         ]
       }
     },
+    "tool": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool_options"
+            },
+            {
+              "properties": {
+                "install_env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/env_value"
+                  },
+                  "description": "environment variables during tool installation"
+                },
+                "depends": {
+                  "oneOf": [
+                    {
+                      "description": "tools that must be installed before this tool",
+                      "type": "string"
+                    },
+                    {
+                      "description": "tools that must be installed before this tool",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "postinstall": {
+                  "description": "command to run after tool installation",
+                  "type": "string"
+                }
+              }
+            }
+          ],
+          "type": "object",
+          "unevaluatedProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "array"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          }
+        }
+      ]
+    },
     "task_run_entry": {
       "oneOf": [
         {
@@ -897,26 +937,14 @@
         }
       ]
     },
-    "tool_options": {
-      "properties": {
-        "version": {
-          "description": "version of the tool to install",
-          "type": "string"
-        },
-        "os": {
-          "$ref": "#/$defs/os_filter"
-        }
-      },
-      "required": ["version"],
-      "type": "object"
-    },
     "env_value": {
+      "description": "environment variable value; false removes the variable",
       "oneOf": [
         {
           "type": "string"
         },
         {
-          "type": "number"
+          "type": "integer"
         },
         {
           "type": "boolean"
@@ -960,6 +988,19 @@
     "env_age": {
       "type": "string",
       "description": "[experimental] age-encrypted value (simplified format)"
+    },
+    "tool_options": {
+      "properties": {
+        "version": {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        "os": {
+          "$ref": "#/$defs/os_filter"
+        }
+      },
+      "required": ["version"],
+      "type": "object"
     },
     "env_directive": {
       "type": "object",
@@ -1010,20 +1051,6 @@
       "enum": ["raw", "zstd"],
       "description": "[experimental] compression format for the encrypted value"
     },
-    "os_filter": {
-      "description": "operating system filters to install on",
-      "oneOf": [
-        {
-          "$ref": "#/$defs/os_filter_item"
-        },
-        {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/os_filter_item"
-          }
-        }
-      ]
-    },
     "env_path": {
       "oneOf": [
         {
@@ -1042,6 +1069,20 @@
       "items": {
         "type": "string"
       }
+    },
+    "os_filter": {
+      "description": "operating system filters to install on",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/os_filter_item"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/os_filter_item"
+          }
+        }
+      ]
     },
     "os_filter_item": {
       "description": "operating system or os/arch pair to install on",

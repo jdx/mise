@@ -35,6 +35,14 @@ assert "mise dr path" "$PWD/a"
 
 cat <<'EOF' >mise.toml
 [env]
+_.path = { paths = ["a", "b"], tools = true }
+EOF
+assert_not_contains "mise dr path 2>&1" "deprecated [config.directive"
+assert "mise dr path" "$PWD/a
+$PWD/b"
+
+cat <<'EOF' >mise.toml
+[env]
 _.path = [{ path = "a", tools = true }, "b"]
 EOF
 assert "mise dr path" "$PWD/a

@@ -86,6 +86,25 @@ start_calendar_interval = [
   { minute = 59, hour = 23, day = 31, weekday = 7, month = 12 },
 ]
 
+[bootstrap.linux.systemd.units.sync]
+exec_start = "/usr/bin/rsync --archive source/ destination/"
+type = "oneshot"
+remain_after_exit = true
+exec_stop = "/usr/bin/umount destination"
+timeout_start_sec = "2min"
+timeout_stop_sec = "30s"
+no_new_privileges = true
+private_tmp = true
+
+[bootstrap.linux.systemd.units.sync-timer]
+on_boot_sec = "2min"
+on_unit_inactive_sec = "5min"
+randomized_delay_sec = "30s"
+accuracy_sec = "1s"
+persistent = true
+unit = "dev.mise.sync.service"
+wanted_by = ["timers.target"]
+
 [bootstrap.mise_shell_activate]
 bash = true
 zsh = false
@@ -141,11 +160,11 @@ TOML
 
 cat >"$HOME/workdir/mise-os.toml" <<'TOML'
 [tools]
-node = { version = "latest", os = ["linux", "macos/arm64", "darwin/aarch64", "win/amd64"], backend_options = { nested = true } }
+node = { version = "latest", os = ["linux", "macos/arm64", "darwin/aarch64", "win/amd64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, backend_options = { nested = true } }
 go = { version = "latest", os = "linux/x64" }
 
 [tasks.build.tools]
-rust = { version = "latest", os = ["linux/x64", "macos/arm64"], profile = "release" }
+rust = { version = "latest", os = ["linux/x64", "macos/arm64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, profile = "release", targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"], backend_options = { nested = { enabled = true, retries = 2 } } }
 TOML
 
 cat >"$HOME/workdir/mise-task-os.toml" <<'TOML'
@@ -153,7 +172,7 @@ cat >"$HOME/workdir/mise-task-os.toml" <<'TOML'
 run = "echo ok"
 
 [build.tools]
-node = { version = "latest", os = ["linux/x64", "macos/arm64"], profile = "release" }
+node = { version = "latest", os = ["linux/x64", "macos/arm64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, profile = "release", matching = ["node", "npm"], platforms = { linux-x64 = { bin = ["node", "npm"], env = { NODE_ENV = "test" } } } }
 TOML
 
 cat >"$HOME/workdir/mise-registry-tool.toml" <<'TOML'
@@ -192,11 +211,11 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
-include = ["mise-bad-task-os.toml", "mise-bad-task-tool-extra.toml"]
+include = ["mise-bad-task-os.toml", "mise-bad-task-install-env-float.toml", "mise-bad-task-postinstall.toml"]
 
 [[schemas]]
 path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
@@ -238,6 +257,38 @@ _.file = { path = ".env", required = 123 }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-env-directive.toml"
+
+cat >"$HOME/workdir/mise-bad-env-float.toml" <<'TOML'
+[env]
+FLOAT = 1.23
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-env-float.toml"
+
+cat >"$HOME/workdir/mise-bad-install-env-float.toml" <<'TOML'
+[tools]
+node = { version = "latest", install_env = { FLOAT = 1.23 } }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-install-env-float.toml"
+
+# Tool-level postinstall hooks must be strings in both schemas.
+for postinstall in 123 true 1.23 2026-07-17T12:34:56Z; do
+  cat >"$HOME/workdir/mise-bad-postinstall.toml" <<TOML
+[tools]
+node = { version = "latest", postinstall = $postinstall }
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-postinstall.toml"
+
+  cat >"$HOME/workdir/mise-bad-task-postinstall.toml" <<TOML
+[build]
+run = "echo ok"
+
+[build.tools]
+node = { version = "latest", postinstall = $postinstall }
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-task-postinstall.toml"
+done
 
 cat >"$HOME/workdir/mise-bad-vars.toml" <<'TOML'
 [vars]
@@ -310,6 +361,19 @@ TOML
   assert_fail "$TOMBI_LINT mise-bad-launchd-calendar.toml"
 done
 
+# Verify that systemd service/timer declarations match runtime validation
+for unit in \
+  '{ description = "service missing exec_start" }' \
+  '{ persistent = true }' \
+  '{ exec_start = "/bin/true", on_boot_sec = "1min" }' \
+  '{ exec_start = "/bin/true", type = "daemon" }'; do
+  cat >"$HOME/workdir/mise-bad-systemd.toml" <<TOML
+[bootstrap.linux.systemd.units]
+invalid = $unit
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-systemd.toml"
+done
+
 # Verify that OCI copy entries match runtime validation
 for copy in \
   '{ image = "/srv/app" }' \
@@ -363,15 +427,15 @@ TOML
 
 assert_fail "$TOMBI_LINT mise-bad-task-os.toml"
 
-cat >"$HOME/workdir/mise-bad-task-tool-extra.toml" <<'TOML'
+cat >"$HOME/workdir/mise-bad-task-install-env-float.toml" <<'TOML'
 [build]
 run = "echo ok"
 
 [build.tools]
-node = { version = "latest", os = "linux/x64", backend_options = { nested = true } }
+node = { version = "latest", install_env = { FLOAT = 1.23 } }
 TOML
 
-assert_fail "$TOMBI_LINT mise-bad-task-tool-extra.toml"
+assert_fail "$TOMBI_LINT mise-bad-task-install-env-float.toml"
 
 cat >"$HOME/workdir/mise-bad-registry-tool.toml" <<'TOML'
 backends = [
