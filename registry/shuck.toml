@@ -1,0 +1,3 @@
+backends = ["github:ewhauser/shuck"]
+description = "A lightning fast shell linter/formatter/LSP server"
+test = { cmd = "shuck --version", expected = "shuck {{version}}" }
