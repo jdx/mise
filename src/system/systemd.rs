@@ -648,6 +648,11 @@ async fn is_enabled(unit: &str) -> Result<bool> {
         .await
         .map_err(|_| eyre!("`systemctl --user {}` timed out", shell_words::join(&args)))??;
     let state = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    debug!(
+        "`systemctl --user {}` state: {}",
+        shell_words::join(&args),
+        state
+    );
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if !stderr.is_empty() {
@@ -931,6 +936,7 @@ mod tests {
             "generated",
             "transient",
             "not-found",
+            "bad",
         ] {
             assert!(!unit_file_state_is_enabled(state), "{state}");
         }
