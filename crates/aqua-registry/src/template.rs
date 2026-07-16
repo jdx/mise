@@ -1,4 +1,4 @@
-use eyre::{ContextCompat, Result, bail};
+use eyre::{ContextCompat, Result, bail, eyre};
 use heck::ToTitleCase;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -39,7 +39,7 @@ impl Value for StringValue {
     }
 
     fn get_property(&self, _prop: &str) -> Result<String> {
-        bail!("cannot access property on string")
+        Err(eyre!("cannot access property on string"))
     }
 }
 
@@ -62,7 +62,7 @@ impl Value for SemVerValue {
             "Major" => self.major.to_string(),
             "Minor" => self.minor.to_string(),
             "Patch" => self.patch.to_string(),
-            _ => bail!("unknown semver property: {prop}"),
+            _ => return Err(eyre!("unknown semver property: {prop}")),
         })
     }
 }
@@ -265,7 +265,7 @@ fn parse_primary(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> R
 
             Expr::FuncCall(func_name, args)
         }
-        _ => bail!("unexpected token: {token:?}"),
+        _ => return Err(eyre!("unexpected token: {token:?}")),
     };
 
     parse_property_chain(tokens, expr)
@@ -294,7 +294,7 @@ fn parse_arg(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Resul
             tokens.next();
             Ok(Expr::Literal(s.to_string()))
         }
-        _ => bail!("expected argument"),
+        _ => Err(eyre!("expected argument")),
     }
 }
 
@@ -442,7 +442,7 @@ impl<'a> Evaluator<'a> {
                 full_args.push(Expr::Literal(input.as_string()));
                 self.eval_func(func, &full_args)
             }
-            _ => bail!("can only pipe to function calls"),
+            _ => Err(eyre!("can only pipe to function calls")),
         }
     }
 
@@ -470,7 +470,7 @@ impl<'a> Evaluator<'a> {
         if let Some(func_impl) = FUNCTION_REGISTRY.get(func) {
             func_impl(&evaluated_args)
         } else {
-            bail!("unknown function: {func}")
+            Err(eyre!("unknown function: {func}"))
         }
     }
 }
