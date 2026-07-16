@@ -68,7 +68,7 @@ impl HookScripts {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum HookDef {
     /// Simple run string: `enter = "echo hello"`
     RunString(String),
@@ -775,6 +775,36 @@ mod tests {
                 assert_eq!(shell.as_deref(), Some("bash -c"));
             }
             action => panic!("expected run hook, got {action:?}"),
+        }
+    }
+
+    #[test]
+    fn hook_tables_reject_unknown_fields() {
+        for input in [
+            r#"hook = { script = "echo script", typo = true }"#,
+            r#"hook = { scripts = ["echo scripts"], typo = true }"#,
+            r#"hook = { task = "build", typo = true }"#,
+        ] {
+            assert!(
+                toml::from_str::<TestHook>(input).is_err(),
+                "unexpectedly accepted {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn hook_tables_reject_mixed_actions() {
+        for input in [
+            r#"hook = { run = "echo run", script = "echo script" }"#,
+            r#"hook = { run = "echo run", task = "build" }"#,
+            r#"hook = { script = "echo script", scripts = ["echo scripts"] }"#,
+            r#"hook = { script = "echo script", task = "build" }"#,
+            r#"hook = { scripts = ["echo scripts"], task = "build" }"#,
+        ] {
+            assert!(
+                toml::from_str::<TestHook>(input).is_err(),
+                "unexpectedly accepted {input}"
+            );
         }
     }
 
