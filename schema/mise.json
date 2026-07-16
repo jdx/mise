@@ -1091,7 +1091,7 @@
         "http_retries": {
           "default": 3,
           "description": "Number of retries for transient HTTP failures in mise.",
-          "type": "number"
+          "type": "integer"
         },
         "http_timeout": {
           "default": "30s",
@@ -1147,7 +1147,7 @@
         "jobs": {
           "default": 8,
           "description": "How many jobs to run concurrently such as tool installs.",
-          "type": "number"
+          "type": "integer"
         },
         "legacy_version_file": {
           "default": true,
@@ -1244,7 +1244,7 @@
             },
             "concurrency": {
               "description": "How many jobs should be used in compilation.",
-              "type": "number"
+              "type": "integer"
             },
             "configure_opts": {
               "description": "Additional ./configure options.",
@@ -1772,7 +1772,7 @@
             "monorepo_depth": {
               "default": 5,
               "description": "Maximum depth to search for task files in monorepo subdirectories.",
-              "type": "number"
+              "type": "integer"
             },
             "monorepo_exclude_dirs": {
               "default": [],
