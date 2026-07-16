@@ -273,14 +273,6 @@ of the task definition they are used in. In other words, their return values are
 across task definition(s).
 
 - `exec(command) -> String` – Runs a shell command and returns its output as a string.
-
-::: warning
-`exec()` runs whenever its template is rendered, including during `--dry-run`
-operations that evaluate configuration templates. Dry-run mode suppresses the
-planned mise operation; it does not sandbox or suppress commands executed by
-template functions. Keep commands passed to `exec()` free of side effects.
-:::
-
 - `get_env(name, [default]) -> String` – Returns the original process environment
   variable value by name. This helper is provided by mise for compatibility with
   older Tera templates. Prefer the `env` variable in new templates when possible.
@@ -296,6 +288,13 @@ template functions. Keep commands passed to `exec()` free of side effects.
   64-character lowercase hex string.
 - `read_file(path) -> String` – Reads the contents of a file at the given path and returns
   it as a string.
+
+::: warning
+`exec()` runs whenever its template is rendered, including during `--dry-run`
+operations that evaluate configuration templates. Dry-run mode suppresses the
+planned mise operation; it does not sandbox or suppress commands executed by
+template functions. Keep commands passed to `exec()` free of side effects.
+:::
 
 ##### Task-Specific Functions
 
