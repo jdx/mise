@@ -3,7 +3,7 @@
   "checkpoint_id": "c8a0f662cd26",
   "strategy": "manual-commit",
   "branch": "codex/fix-macos-pgo-toolchain",
-  "checkpoints_count": 3,
+  "checkpoints_count": 4,
   "files_touched": [
     ".github/workflows/release.yml"
   ],
@@ -13,13 +13,19 @@
       "transcript": "/c8/a0f662cd26/0/full.jsonl",
       "content_hash": "/c8/a0f662cd26/0/content_hash.txt",
       "prompt": "/c8/a0f662cd26/0/prompt.txt"
+    },
+    {
+      "metadata": "/c8/a0f662cd26/1/metadata.json",
+      "transcript": "/c8/a0f662cd26/1/full.jsonl",
+      "content_hash": "/c8/a0f662cd26/1/content_hash.txt",
+      "prompt": "/c8/a0f662cd26/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 136918,
+    "input_tokens": 180910,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 4499712,
-    "output_tokens": 19941,
-    "api_call_count": 76
+    "cache_read_tokens": 4685056,
+    "output_tokens": 22018,
+    "api_call_count": 84
   }
 }
