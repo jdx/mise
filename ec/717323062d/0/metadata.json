@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ec717323062d",
+  "session_id": "019f6b42-4ed2-7140-95a2-5d863ba7e17d",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-16T14:15:46.590281Z",
+  "branch": "codex/fix-systemd-schema",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/config/test_schema_tombi",
+    "schema/mise.json"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "29c19e942dcd",
+  "token_usage": {
+    "input_tokens": 110243,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2476544,
+    "output_tokens": 8358,
+    "api_call_count": 42
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-16T14:15:46.578126Z",
+    "agent_lines": 198,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 198,
+    "total_lines_changed": 203,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
