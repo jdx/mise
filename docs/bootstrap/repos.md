@@ -23,7 +23,11 @@ from that checkout.
   for that path.
 - **Safe updates only** — mise clones missing repos or empty target
   directories and updates existing repos only when the worktree is clean and
-  the configured `origin` URL matches.
+  the configured `origin` URL matches. Common network URL forms are compared
+  transport-agnostically: `git@host:path`, `ssh://git@host/path`, and
+  `https://host/path` identify the same repo. Different hosts, ssh aliases,
+  explicit ports, paths, or non-`git` ssh users still conflict, and local
+  paths and `file://` URLs require an exact match.
 - **No implicit writes** — repos are changed only by explicit `apply`, `update`,
   `exec`, or top-level `mise bootstrap` commands. Applying never pulls an
   existing repo without a configured `ref`; use `mise bootstrap repos update`
