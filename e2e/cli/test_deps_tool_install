@@ -25,7 +25,7 @@ output="$(mise deps --only needs_tool --dry-run 2>&1)"
 echo "$output"
 assert_contains_text "$output" "tiny@1"
 assert_contains_text "$output" "Would install: needs_tool"
-assert_fail "test -d '$MISE_DATA_DIR/installs/tiny/1.1.0'"
+assert_fail "compgen -G '$MISE_DATA_DIR/installs/tiny/1*'"
 assert_fail "test -f output.txt"
 
 # mise deps should install tiny THEN run the prepare step (which uses tiny)
