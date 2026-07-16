@@ -10,6 +10,9 @@ use aqua_registry::types::{AquaPackage, RegistryPackageRow, RegistryYaml};
 use eyre::{Result, eyre};
 use serde_yaml::Value;
 
+// cfg_aliases 0.2.1 emits semicolon-terminated helper macros in expression
+// position, which the latest nightly compiler rejects as future-incompatible.
+#[allow(semicolon_in_expressions_from_macros)]
 fn main() -> Result<()> {
     cfg_aliases::cfg_aliases! {
         asdf: { any(feature = "asdf", not(target_os = "windows")) },

@@ -1,5 +1,7 @@
 #![allow(unknown_lints)]
 #![allow(clippy::literal_string_with_formatting_args)]
+// eyre 0.6.12 emits a trailing semicolon from bail!, which nightly rejects.
+#![allow(semicolon_in_expressions_from_macros)]
 
 use std::{
     panic,
