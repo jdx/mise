@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "480eba957ca7",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-nightly-bail-macros",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "build.rs",
+    "crates/aqua-registry/src/lib.rs",
+    "src/main.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/48/0eba957ca7/0/metadata.json",
+      "transcript": "/48/0eba957ca7/0/full.jsonl",
+      "content_hash": "/48/0eba957ca7/0/content_hash.txt",
+      "prompt": "/48/0eba957ca7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 200656,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 7500032,
+    "output_tokens": 11861,
+    "api_call_count": 67
+  }
+}

@@ -1,0 +1,9 @@
+fix it
+
+---
+
+[https://github.com/jdx/mise/actions/runs/29467699443/job/87524235396?pr=11029](https://github.com/jdx/mise/actions/runs/29467699443/job/87524235396?pr=11029)
+
+---
+
+make a separate pr
