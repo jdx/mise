@@ -415,6 +415,9 @@ fn format_tool_options(options: &[&'static str]) -> String {
 }
 
 fn get_crate_url(name: &str) -> eyre::Result<Url> {
+    if name.is_empty() || !name.is_ascii() {
+        bail!("invalid Cargo crate name: {name:?}");
+    }
     let name = name.to_lowercase();
     let url = match name.len() {
         1 => format!("https://index.crates.io/1/{name}"),
@@ -584,6 +587,20 @@ mod tests {
         for (name, expected) in cases {
             assert_eq!(get_crate_url(name).unwrap().as_str(), expected);
         }
+    }
+
+    #[test]
+    fn crate_index_url_rejects_empty_name() {
+        let error = get_crate_url("").unwrap_err();
+
+        assert_eq!(error.to_string(), "invalid Cargo crate name: \"\"");
+    }
+
+    #[test]
+    fn crate_index_url_rejects_non_ascii_name() {
+        let error = get_crate_url("aébc").unwrap_err();
+
+        assert_eq!(error.to_string(), "invalid Cargo crate name: \"aébc\"");
     }
 
     #[test]
