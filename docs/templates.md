@@ -289,6 +289,13 @@ across task definition(s).
 - `read_file(path) -> String` – Reads the contents of a file at the given path and returns
   it as a string.
 
+::: warning
+`exec()` runs whenever its template is rendered, including during `--dry-run`
+operations that evaluate configuration templates. Dry-run mode suppresses the
+planned mise operation; it does not sandbox or suppress commands executed by
+template functions. Keep commands passed to `exec()` free of side effects.
+:::
+
 ##### Task-Specific Functions
 
 These functions are task-specific and behave differently depending on the task they are used
