@@ -434,21 +434,30 @@ fn origin_matches_config(origin: Option<&str>, config_url: &str) -> bool {
 }
 
 /// Reduces a network remote URL to a host/path identity so the same repo is
-/// recognized across transports: `git@host:path`, `ssh://git@host/path`, and
-/// `https://host/path` all compare equal. Explicit ports and non-`git` users
-/// stay part of the identity since they can address different repositories.
-/// Local paths, `file://` URLs, and unrecognized syntax return `None` and keep
-/// exact matching.
+/// recognized across transports — exactly the forms agreed in #10997:
+/// `git@host:path`, `ssh://git@host/path`, and `https://host/path` compare
+/// equal. Everything else keeps exact matching: `http://` and `git://` stay
+/// distinct so an insecure transport is never silently preserved as
+/// equivalent to a configured https url; ssh forms without a user are not
+/// normalized (git resolves an omitted ssh user to the current login user,
+/// not `git`); URLs carrying a query or fragment, local paths, `file://`
+/// URLs, and unrecognized syntax return `None`. Explicit ports and non-`git`
+/// users stay part of the identity since they can address different
+/// repositories.
 fn repo_identity(url: &str) -> Option<String> {
     let url = normalize_remote_url(url);
     if let Some((scheme, _)) = url.split_once("://") {
-        if !matches!(
-            scheme.to_ascii_lowercase().as_str(),
-            "ssh" | "git" | "http" | "https"
-        ) {
+        let scheme = scheme.to_ascii_lowercase();
+        if !matches!(scheme.as_str(), "ssh" | "https") {
             return None;
         }
         let url = Url::parse(&url).ok()?;
+        if url.query().is_some() || url.fragment().is_some() {
+            return None;
+        }
+        if scheme == "ssh" && url.username().is_empty() {
+            return None;
+        }
         let host = url.host_str()?.to_string();
         repo_identity_parts(url.username(), &host, url.port(), url.path())
     } else if is_scp_like_url(&url) {
@@ -456,10 +465,12 @@ fn repo_identity(url: &str) -> Option<String> {
         if authority.contains(['[', ']']) {
             return None;
         }
-        let (user, host) = match authority.rsplit_once('@') {
-            Some((user, host)) => (user, host),
-            None => ("", authority),
-        };
+        // scp-like syntax is always ssh: no user means the login user, so
+        // only explicit-user forms participate in identity comparison.
+        let (user, host) = authority.rsplit_once('@')?;
+        if user.is_empty() {
+            return None;
+        }
         repo_identity_parts(user, host, None, path)
     } else {
         None
@@ -877,8 +888,6 @@ mod tests {
             "git@github.com:jdx/mise",
             "ssh://git@github.com/jdx/mise.git",
             "ssh://git@github.com/jdx/mise",
-            "git://github.com/jdx/mise.git",
-            "http://github.com/jdx/mise",
             "https://GitHub.com/jdx/mise.git",
         ] {
             assert!(
@@ -918,6 +927,11 @@ mod tests {
             "git@github.com:other/mise.git",          // different owner
             "alice@github.com:jdx/mise.git",          // non-git ssh user
             "ssh://alice@github.com/jdx/mise.git",    // non-git ssh user (url form)
+            "ssh://github.com/jdx/mise.git",          // userless ssh = login user, not git
+            "github.com:jdx/mise.git",                // userless scp = login user, not git
+            "https://github.com/jdx/mise?tenant=a",   // query strings are not identity
+            "http://github.com/jdx/mise.git",         // insecure transport is not equivalent
+            "git://github.com/jdx/mise.git",          // insecure transport is not equivalent
             "ftp://github.com/jdx/mise.git",          // unrecognized scheme
         ] {
             assert!(
@@ -932,6 +946,19 @@ mod tests {
         assert!(!origin_matches_config(
             Some("alice@github.com:jdx/mise.git"),
             "git@github.com:jdx/mise.git"
+        ));
+        // userless ssh and query-carrying URLs only match themselves exactly
+        assert!(origin_matches_config(
+            Some("ssh://github.com/jdx/mise.git"),
+            "ssh://github.com/jdx/mise.git"
+        ));
+        assert!(!origin_matches_config(
+            Some("ssh://github.com/jdx/mise.git"),
+            "git@github.com:jdx/mise.git"
+        ));
+        assert!(!origin_matches_config(
+            Some("https://github.com/jdx/mise?tenant=a"),
+            "https://github.com/jdx/mise?tenant=b"
         ));
         // local and file:// forms keep exact matching
         assert!(!origin_matches_config(
