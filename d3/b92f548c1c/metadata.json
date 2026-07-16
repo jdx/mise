@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "d3b92f548c1c",
+  "strategy": "manual-commit",
+  "branch": "feat/resolve-exact-version-backends",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/d3/b92f548c1c/0/metadata.json",
+      "transcript": "/d3/b92f548c1c/0/full.jsonl",
+      "content_hash": "/d3/b92f548c1c/0/content_hash.txt",
+      "prompt": "/d3/b92f548c1c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 246630,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 9688064,
+    "output_tokens": 13911,
+    "api_call_count": 88
+  }
+}
