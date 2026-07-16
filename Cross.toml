@@ -8,14 +8,18 @@ passthrough = [
   "CARGO_TERM_COLOR",
   "AWS_LC_SYS_EXTERNAL_BINDGEN",
   "BINDGEN_EXTRA_CLANG_ARGS",
-  # scripts/pgo.bash passes -Cprofile-generate / -Cprofile-use through
-  # RUSTFLAGS; without this the flags never reach cargo in the container.
-  "RUSTFLAGS",
 ]
 
 # Explicitly use 0.2.5 images for GNU targets (Ubuntu 16.04, glibc 2.23)
+# The x86_64 targets are the PGO targets (see scripts/pgo.bash): RUSTFLAGS
+# passthrough is scoped to them so -Cprofile-generate/-Cprofile-use reach
+# cargo inside the container without silently injecting host RUSTFLAGS
+# into every other cross build.
 [target.x86_64-unknown-linux-gnu]
 image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:0.2.5"
+
+[target.x86_64-unknown-linux-gnu.env]
+passthrough = ["RUSTFLAGS"]
 
 [target.aarch64-unknown-linux-gnu]
 # Keep this pinned so the release binary does not inherit a newer glibc
@@ -39,6 +43,9 @@ pre-build = [
 # Musl targets for static linking
 [target.x86_64-unknown-linux-musl]
 image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5"
+
+[target.x86_64-unknown-linux-musl.env]
+passthrough = ["RUSTFLAGS"]
 
 [target.aarch64-unknown-linux-musl]
 image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5"

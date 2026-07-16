@@ -215,5 +215,9 @@ echo ">>> Rebuilding with -Cprofile-use"
 RUSTFLAGS="${RUSTFLAGS:-} -Cprofile-use=$PGO_MERGED -Cllvm-args=-pgo-warn-missing-function=false" \
 	"$PGO_BUILD_TOOL" build --profile="$PGO_PROFILE" $target_arg --bin mise "$@"
 
-echo ">>> PGO build complete: $INSTRUMENTED_BIN"
-ls -lh "$INSTRUMENTED_BIN"
+# Phase 3b wrote to the same path as phase 1, so the file at
+# $INSTRUMENTED_BIN is now the PGO-optimized build, not the instrumented
+# one. Alias for clarity.
+PGO_FINAL_BIN="$INSTRUMENTED_BIN"
+echo ">>> PGO build complete: $PGO_FINAL_BIN"
+ls -lh "$PGO_FINAL_BIN"
