@@ -1,5 +1,1 @@
-address feedback on [jdx/mise#11029](https://github.com/jdx/mise/pull/11029)
-
----
-
 fix it
