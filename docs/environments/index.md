@@ -559,17 +559,6 @@ multiple scripts can be sourced in order with a single `_.source` key:
 _.source = ["./script_1.sh", "./script_2.sh"]
 ```
 
-The `[[env]]` array-of-tables form remains supported for compatibility:
-
-```toml
-[[env]]
-_.source = "./script_1.sh"
-[[env]]
-_.source = "./script_2.sh"
-```
-
-For new configurations, prefer arrays on the directive itself when the directive supports them.
-
 ## Templates
 
 Environment variable values can be templates, see [Templates](/templates) for details.
