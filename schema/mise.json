@@ -2716,27 +2716,7 @@
         "tools": {
           "description": "tools to install/activate before running this task",
           "additionalProperties": {
-            "oneOf": [
-              {
-                "description": "version of the tool to install",
-                "type": "string"
-              },
-              {
-                "allOf": [
-                  {
-                    "$ref": "#/$defs/tool_options"
-                  }
-                ],
-                "type": "object",
-                "unevaluatedProperties": {
-                  "oneOf": [
-                    {
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            ]
+            "$ref": "#/$defs/tool"
           },
           "type": "object"
         },
