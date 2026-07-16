@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "5e941ec8d9ce",
+  "strategy": "manual-commit",
+  "branch": "codex/adopt-jdx-tar",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/aqua-registry/src/template.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5e/941ec8d9ce/0/metadata.json",
+      "transcript": "/5e/941ec8d9ce/0/full.jsonl",
+      "content_hash": "/5e/941ec8d9ce/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 43470,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3402752,
+    "output_tokens": 4001,
+    "api_call_count": 20
+  }
+}

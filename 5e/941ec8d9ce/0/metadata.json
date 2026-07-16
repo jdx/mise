@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "5e941ec8d9ce",
+  "session_id": "019f67a6-199d-76d0-ae8b-b6f5c28f5a69",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-16T03:01:12.932886Z",
+  "branch": "codex/adopt-jdx-tar",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/aqua-registry/src/template.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "d3e9a3397761",
+  "checkpoint_transcript_start": 2169,
+  "transcript_lines_at_start": 2169,
+  "token_usage": {
+    "input_tokens": 43470,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3402752,
+    "output_tokens": 4001,
+    "api_call_count": 20
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-16T03:01:12.805087Z",
+    "agent_lines": 7,
+    "agent_removed": 7,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 7,
+    "total_lines_changed": 14,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
