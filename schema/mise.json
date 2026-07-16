@@ -2306,45 +2306,6 @@
         }
       ]
     },
-    "root_tool": {
-      "oneOf": [
-        {
-          "description": "version of the tool to install",
-          "type": "string"
-        },
-        {
-          "allOf": [
-            {
-              "$ref": "#/$defs/root_tool_options"
-            },
-            {
-              "$ref": "#/$defs/tool_common_options"
-            }
-          ],
-          "type": "object",
-          "unevaluatedProperties": {
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "array"
-              },
-              {
-                "type": "object",
-                "additionalProperties": true
-              }
-            ]
-          }
-        }
-      ]
-    },
     "tool_common_options": {
       "properties": {
         "install_env": {
@@ -2377,19 +2338,6 @@
       "type": "object"
     },
     "tool_options": {
-      "properties": {
-        "version": {
-          "description": "version of the tool to install",
-          "type": "string"
-        },
-        "os": {
-          "$ref": "#/$defs/os_filter"
-        }
-      },
-      "required": ["version"],
-      "type": "object"
-    },
-    "root_tool_options": {
       "properties": {
         "version": {
           "description": "version of the tool to install",
@@ -4224,12 +4172,12 @@
         "oneOf": [
           {
             "items": {
-              "$ref": "#/$defs/root_tool"
+              "$ref": "#/$defs/tool"
             },
             "type": "array"
           },
           {
-            "$ref": "#/$defs/root_tool"
+            "$ref": "#/$defs/tool"
           }
         ]
       },

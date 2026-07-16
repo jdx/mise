@@ -104,10 +104,10 @@ where
     options.insert_option(key, value).map_err(de::Error::custom)
 }
 
-fn parse_tool_selector<E>(
+pub(crate) fn parse_tool_selector<E>(
     key: &str,
     value: &toml::Value,
-) -> std::result::Result<Option<ToolVersionType>, E>
+) -> std::result::Result<Option<String>, E>
 where
     E: de::Error,
 {
@@ -123,7 +123,7 @@ where
     } else {
         format!("{key}:{value}")
     };
-    value.parse().map(Some).map_err(de::Error::custom)
+    Ok(Some(value))
 }
 
 fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
@@ -1989,12 +1989,13 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                 let mut options: ToolVersionOptions = Default::default();
                 let mut selector: Option<(String, ToolVersionType)> = None;
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    if let Some(tt) = parse_tool_selector::<M::Error>(&k, &v)? {
+                    if let Some(selector_value) = parse_tool_selector::<M::Error>(&k, &v)? {
                         if let Some((previous, _)) = &selector {
                             return Err(de::Error::custom(format!(
                                 "tool definition cannot specify both `{previous}` and `{k}`"
                             )));
                         }
+                        let tt = selector_value.parse().map_err(de::Error::custom)?;
                         selector = Some((k, tt));
                     } else {
                         insert_tool_option(&mut options, k, v)?;
@@ -2046,12 +2047,13 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                 let mut options: ToolVersionOptions = Default::default();
                 let mut selector: Option<(String, ToolVersionType)> = None;
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    if let Some(tt) = parse_tool_selector::<M::Error>(&k, &v)? {
+                    if let Some(selector_value) = parse_tool_selector::<M::Error>(&k, &v)? {
                         if let Some((previous, _)) = &selector {
                             return Err(de::Error::custom(format!(
                                 "tool definition cannot specify both `{previous}` and `{k}`"
                             )));
                         }
+                        let tt = selector_value.parse().map_err(de::Error::custom)?;
                         selector = Some((k, tt));
                     } else {
                         insert_tool_option(&mut options, k, v)?;

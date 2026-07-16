@@ -33,7 +33,10 @@ ruby = [{ prefix = "3.3", os = "linux-x64" }]
 run = "echo check"
 
 [tasks.check.tools]
-node = { version = "20", prefix = "backend-option", backend_options = { nested = [1, true] } }
+node = { version = "20", backend_options = { nested = [1, true] } }
+go = { prefix = "1.22" }
+python = { ref = "main" }
+shellcheck = { path = "/opt/shellcheck" }
 TOML
 
 cd "$HOME/workdir"
@@ -56,6 +59,15 @@ cat >mise-bad-tool-selectors.toml <<'TOML'
 run = "echo check"
 
 [tasks.check.tools]
-node = { prefix = "20" }
+node = { version = "20", prefix = "20" }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-tool-selectors.toml"
+
+cat >mise-bad-tool-selectors.toml <<'TOML'
+[tasks.check]
+run = "echo check"
+
+[tasks.check.tools]
+node = { os = "linux" }
 TOML
 assert_fail "$TOMBI_LINT mise-bad-tool-selectors.toml"
