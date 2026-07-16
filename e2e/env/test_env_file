@@ -27,7 +27,16 @@ cat <<EOF >mise.toml
 _.file = { value = 'b.json' }
 EOF
 echo '{"B": 2}' >b.json
+assert_contains "mise env 2>&1" "deprecated [config.env.directive.value]"
 assert "mise env | grep -v PATH" "export B=2"
+
+cat <<EOF >mise.toml
+[env]
+_.file = { values = ['a', 'b.json'] }
+EOF
+assert_contains "mise env 2>&1" "deprecated [config.env.directive.values]"
+assert "mise env | grep -v PATH" "export A=1
+export B=2"
 
 cat <<EOF >mise.toml
 [env]

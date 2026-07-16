@@ -1508,28 +1508,69 @@ impl<'de> de::Deserialize<'de> for EnvList {
                         "_" | "mise" => {
                             #[derive(Deserialize)]
                             #[serde(untagged)]
-                            enum MiseTomlEnvDirective {
+                            enum MiseTomlEnvDirectiveValue {
                                 Single {
-                                    #[serde(alias = "path")]
-                                    value: String,
+                                    #[serde(alias = "value")]
+                                    path: String,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
                                 Multiple {
-                                    #[serde(alias = "value", alias = "path", alias = "paths")]
-                                    values: Vec<String>,
+                                    #[serde(alias = "value", alias = "values", alias = "paths")]
+                                    path: Vec<String>,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
                             }
 
+                            struct MiseTomlEnvDirective(MiseTomlEnvDirectiveValue);
+
+                            impl<'de> Deserialize<'de> for MiseTomlEnvDirective {
+                                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                                where
+                                    D: Deserializer<'de>,
+                                {
+                                    let value = toml::Value::deserialize(deserializer)?;
+                                    let (uses_value, uses_values) = value
+                                        .as_table()
+                                        .map(|table| {
+                                            (
+                                                table.contains_key("value"),
+                                                table.contains_key("values"),
+                                            )
+                                        })
+                                        .unwrap_or_default();
+                                    let directive = MiseTomlEnvDirectiveValue::deserialize(value)
+                                        .map_err(de::Error::custom)?;
+
+                                    if uses_value {
+                                        deprecated_at!(
+                                            "2026.7.0",
+                                            "2026.12.0",
+                                            "config.env.directive.value",
+                                            "`value` in environment directive objects is deprecated. Use `path` instead."
+                                        );
+                                    }
+                                    if uses_values {
+                                        deprecated_at!(
+                                            "2026.7.0",
+                                            "2026.12.0",
+                                            "config.env.directive.values",
+                                            "`values` in environment directive objects is deprecated. Use `path` instead."
+                                        );
+                                    }
+
+                                    Ok(MiseTomlEnvDirective(directive))
+                                }
+                            }
+
                             impl FromStr for MiseTomlEnvDirective {
                                 type Err = String;
                                 fn from_str(s: &str) -> Result<Self, Self::Err> {
-                                    Ok(MiseTomlEnvDirective::Single {
-                                        value: s.to_string(),
+                                    Ok(MiseTomlEnvDirective(MiseTomlEnvDirectiveValue::Single {
+                                        path: s.to_string(),
                                         options: Default::default(),
-                                    })
+                                    }))
                                 }
                             }
 
@@ -1658,11 +1699,11 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             where
                                 F: Fn(String, EnvDirectiveOptions) -> EnvDirective + 'static,
                             {
-                                directives.into_iter().flat_map(move |d| match d {
-                                    MiseTomlEnvDirective::Single { value, options } => {
-                                        vec![constructor(value, options)]
+                                directives.into_iter().flat_map(move |d| match d.0 {
+                                    MiseTomlEnvDirectiveValue::Single { path, options } => {
+                                        vec![constructor(path, options)]
                                     }
-                                    MiseTomlEnvDirective::Multiple { values, options } => values
+                                    MiseTomlEnvDirectiveValue::Multiple { path, options } => path
                                         .into_iter()
                                         .map(|v| constructor(v, options.clone()))
                                         .collect(),
