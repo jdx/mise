@@ -157,7 +157,7 @@ impl HookDef {
             }],
             HookDef::ScriptsTable { scripts, shell } => vec![Hook {
                 hook: hook_type,
-                action: script_hook_action(hook_type, scripts.join("\n"), shell, false),
+                action: script_hook_action(hook_type, scripts.join("\n"), shell, true),
                 global: false,
             }],
             HookDef::TaskRef { task } => vec![Hook {
@@ -559,7 +559,7 @@ async fn execute(
             "2026.9.0",
             "2027.3.0",
             "hook_script_table_spawned_run",
-            "hook tables using `script` for spawned commands are deprecated. Use `run` instead."
+            "hook tables using `script` or `scripts` for spawned commands are deprecated. Use `run` instead."
         );
     }
     if ignored_shell.is_some() && matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
@@ -776,6 +776,32 @@ mod tests {
             }
             action => panic!("expected run hook, got {action:?}"),
         }
+    }
+
+    #[test]
+    fn scripts_tables_are_legacy_only_when_spawned() {
+        let spawned = HookDef::ScriptsTable {
+            scripts: vec!["echo one".into(), "echo two".into()],
+            shell: None,
+        }
+        .into_hooks(Hooks::Postinstall);
+        assert!(matches!(
+            &spawned[0].action,
+            HookAction::Run {
+                legacy_script: true,
+                ..
+            }
+        ));
+
+        let current_shell = HookDef::ScriptsTable {
+            scripts: vec!["echo one".into(), "echo two".into()],
+            shell: Some("bash".into()),
+        }
+        .into_hooks(Hooks::Enter);
+        assert!(matches!(
+            &current_shell[0].action,
+            HookAction::CurrentShell { .. }
+        ));
     }
 
     #[test]

@@ -57,7 +57,7 @@ platforms, a hook with only `run_windows` is skipped.
 postinstall = { run = "echo installed", run_windows = "Write-Output installed" }
 ```
 
-For `preinstall` and `postinstall`, `script = ...` is a legacy alias for `run = ...`. If a `shell` is also set on a `script`/`scripts` hook, mise warns that the shell is ignored and still runs the script with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the inline shell command. The `script` alias for install hooks is deprecated.
+For `preinstall` and `postinstall`, `script = ...` and `scripts = ...` are legacy aliases for `run = ...`. If a `shell` is also set on a `script`/`scripts` hook, mise warns that the shell is ignored and still runs the script with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the inline shell command. The `script` and `scripts` aliases for install hooks are deprecated.
 
 A `mise install` that finds nothing to install (all configured tools are already present) still runs the `postinstall` hook — it is not skipped on a no-op install.
 
@@ -223,7 +223,7 @@ scripts = [
 when the active `mise activate` shell matches.
 
 Use `run` when the hook should execute as an inline command in a subprocess. `preinstall` and
-`postinstall` do not have a current shell, so `script` is only kept there as a legacy alias for `run`;
+`postinstall` do not have a current shell, so `script`/`scripts` are only kept there as legacy aliases for `run`;
 if `shell` is set with `script`/`scripts` on those hooks, it is ignored.
 
 ::: warning
