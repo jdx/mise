@@ -45,6 +45,8 @@ use super::min_version::MinVersionSpec;
 
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
+const EXPERIMENTAL_MONOREPO_ROOT_DEPRECATED_WARN_AT: &str = "2026.12.12";
+const EXPERIMENTAL_MONOREPO_ROOT_DEPRECATED_REMOVE_AT: &str = "2027.12.12";
 
 /// Convert a `toml::Value` to a `toml_edit::Value` for serialization.
 fn toml_value_to_edit(v: toml::Value) -> Value {
@@ -188,8 +190,11 @@ pub struct MiseToml {
     #[serde(default)]
     settings: SettingsPartial,
     /// Marks this config as a monorepo root, enabling target path syntax for tasks
-    #[serde(default, alias = "experimental_monorepo_root")]
+    #[serde(default)]
     monorepo_root: Option<bool>,
+    /// Legacy name for monorepo_root, retained during its deprecation period
+    #[serde(default)]
+    experimental_monorepo_root: Option<bool>,
     /// Configuration for monorepo task discovery
     #[serde(default)]
     monorepo: Option<MonorepoConfig>,
@@ -296,6 +301,16 @@ impl MiseToml {
                 return Err(toml_parse_error(&err, body, path));
             }
         };
+        if let Some(legacy_monorepo_root) = rf.experimental_monorepo_root.take() {
+            deprecated_at!(
+                EXPERIMENTAL_MONOREPO_ROOT_DEPRECATED_WARN_AT,
+                EXPERIMENTAL_MONOREPO_ROOT_DEPRECATED_REMOVE_AT,
+                "config.experimental_monorepo_root",
+                "`experimental_monorepo_root` in {} is deprecated. Use `monorepo_root` instead.",
+                display_path(path)
+            );
+            rf.monorepo_root.get_or_insert(legacy_monorepo_root);
+        }
         rf.context = BASE_CONTEXT.clone();
         rf.context.insert(
             "config_root",
@@ -1292,6 +1307,7 @@ impl Clone for MiseToml {
             dotfiles: self.dotfiles.clone(),
             vars: self.vars.clone(),
             monorepo_root: self.monorepo_root,
+            experimental_monorepo_root: self.experimental_monorepo_root,
             monorepo: self.monorepo.clone(),
         }
     }
