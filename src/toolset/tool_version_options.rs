@@ -352,7 +352,15 @@ impl ToolOptions {
                 }
                 Ok(true)
             }
-            "postinstall" | "minimum_release_age" | "install_before" => {
+            "postinstall" => {
+                let script = value
+                    .as_str()
+                    .ok_or_else(|| "postinstall must be a string".to_string())?;
+                self.opts
+                    .insert(key.to_string(), toml::Value::String(script.to_string()));
+                Ok(true)
+            }
+            "minimum_release_age" | "install_before" => {
                 self.opts.insert(
                     key.to_string(),
                     toml::Value::String(scalar_value_to_string(value).ok_or_else(|| {
@@ -847,6 +855,22 @@ mod tests {
         assert!(!opts.opts.contains_key("depends"));
         assert!(!opts.opts.contains_key("os"));
         assert!(!opts.opts.contains_key("install_env"));
+    }
+
+    #[test]
+    fn test_parse_tool_options_rejects_non_string_postinstall() {
+        for input in [
+            "postinstall=123",
+            "postinstall=true",
+            "postinstall=1.23",
+            "postinstall=2026-07-17T12:34:56Z",
+        ] {
+            assert_eq!(
+                try_parse_tool_options(input),
+                Err("postinstall must be a string".to_string()),
+                "input: {input}"
+            );
+        }
     }
 
     #[test]
