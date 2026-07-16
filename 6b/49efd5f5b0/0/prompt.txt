@@ -1,0 +1,9 @@
+is it bumping now? once it's done update the mise pr
+
+---
+
+can we broaden the pr to use jdx-tar for more things now?
+
+---
+
+ok commit and push, address any pr feedback
