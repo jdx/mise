@@ -2673,9 +2673,7 @@ fn render_task_deps(
 ) -> Result<()> {
     let mut rendered = Vec::with_capacity(deps.len());
     for mut dep in std::mem::take(deps) {
-        if defer_usage && dep_has_usage_ref(&dep) {
-            rendered.push(dep);
-        } else if dep.render(tera, tera_ctx)? {
+        if (defer_usage && dep_has_usage_ref(&dep)) || dep.render(tera, tera_ctx)? {
             rendered.push(dep);
         }
     }
