@@ -1,5 +1,32 @@
 # Changelog
 
+## [2026.7.9](https://github.com/jdx/mise/compare/v2026.7.8..v2026.7.9) - 2026-07-16
+
+### 🚀 Features
+
+- **(cargo)** skip remote discovery for exact versions by @Turbo87 in [#11013](https://github.com/jdx/mise/pull/11013)
+- **(task)** skip dependencies with empty templated names by @risu729 in [#11057](https://github.com/jdx/mise/pull/11057)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** ignore macos metadata in cask artifacts by @jdx in [#11063](https://github.com/jdx/mise/pull/11063)
+- **(config)** deprecate env directive value aliases by @risu729 in [#11062](https://github.com/jdx/mise/pull/11062)
+- **(config)** deprecate env.mise directives by @risu729 in [#11053](https://github.com/jdx/mise/pull/11053)
+- **(config)** reject non-string postinstall hooks by @risu729 in [#11061](https://github.com/jdx/mise/pull/11061)
+- **(config)** deprecate experimental monorepo root key by @risu729 in [#11052](https://github.com/jdx/mise/pull/11052)
+- **(hooks)** reject nested hook arrays by @risu729 in [#11051](https://github.com/jdx/mise/pull/11051)
+- **(http)** fail fast when network is unavailable by @jdx in [#11066](https://github.com/jdx/mise/pull/11066)
+- **(schema)** require arrays for deps provider paths by @risu729 in [#11064](https://github.com/jdx/mise/pull/11064)
+- **(task)** prevent setup side effects during dry runs by @risu729 in [#11015](https://github.com/jdx/mise/pull/11015)
+
+### 📦 Registry
+
+- replace eza asdf backend with vfox by @jdx in [#11068](https://github.com/jdx/mise/pull/11068)
+
+### Chore
+
+- **(ci)** align macos pgo toolchain by @jdx in [#11071](https://github.com/jdx/mise/pull/11071)
+
 ## [2026.7.8](https://github.com/jdx/mise/compare/v2026.7.7..v2026.7.8) - 2026-07-16
 
 ### 🚀 Features
