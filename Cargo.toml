@@ -186,7 +186,6 @@ strum = { version = "0.28", features = ["derive"] }
 supports-hyperlinks = "3"
 tabled = { version = "0.21", features = ["ansi"] }
 taplo = "0.14"
-tar = "0.4"
 tempfile = "3"
 tera = "2"
 tera1 = { package = "tera", version = "1.20.1" }
@@ -265,6 +264,7 @@ ctor = "1"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
 pretty_assertions = "1"
+tar = "0.4"
 test-log = "0.2"
 
 [features]

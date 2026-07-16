@@ -1876,13 +1876,13 @@ mod tests {
         let archive_path = dir.path().join("tool.tar");
         {
             let file = File::create(&archive_path).unwrap();
-            let mut builder = tar::Builder::new(file);
-            let mut header = tar::Header::new_gnu();
-            header.set_path("pkg/tool").unwrap();
+            let mut builder = jdx_tar::Builder::new(file);
+            let mut header = jdx_tar::Header::new_gnu(EntryType::File);
             header.set_size(4);
             header.set_mode(0o755);
-            header.set_cksum();
-            builder.append(&header, &b"tool"[..]).unwrap();
+            builder
+                .append_data(&mut header, "pkg/tool", &b"tool"[..])
+                .unwrap();
             builder.finish().unwrap();
         }
 
@@ -1898,15 +1898,12 @@ mod tests {
         let archive_path = dir.path().join("tool.tar");
         {
             let file = File::create(&archive_path).unwrap();
-            let mut builder = tar::Builder::new(file);
-            let mut header = tar::Header::new_gnu();
-            header.set_entry_type(tar::EntryType::Symlink);
-            header.set_path("tool-link").unwrap();
-            header.set_link_name("tool").unwrap();
-            header.set_size(0);
+            let mut builder = jdx_tar::Builder::new(file);
+            let mut header = jdx_tar::Header::new_gnu(EntryType::Symlink);
             header.set_mode(0o777);
-            header.set_cksum();
-            builder.append(&header, std::io::empty()).unwrap();
+            builder
+                .append_link(&mut header, "tool-link", "tool")
+                .unwrap();
             builder.finish().unwrap();
         }
 
@@ -2063,7 +2060,7 @@ mod tests {
         // This reproduces the bug from https://github.com/jdx/mise/discussions/7862
         use flate2::Compression;
         use flate2::write::GzEncoder;
-        use tar::Builder;
+        use jdx_tar::{Builder, Header};
         use tempfile::NamedTempFile;
 
         // Create a temp tar.gz with "./" prefixed paths (like unison's archive)
@@ -2075,11 +2072,9 @@ mod tests {
         // ./dir1/file1
         // ./dir2/file2
         // ./standalone
-        let mut header = tar::Header::new_gnu();
+        let mut header = Header::new_gnu(EntryType::File);
         header.set_size(0);
         header.set_mode(0o755);
-        header.set_entry_type(tar::EntryType::Regular);
-        header.set_cksum();
 
         // Add ./dir1/file1
         builder

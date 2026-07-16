@@ -15,6 +15,7 @@ use std::process::Command;
 
 use eyre::{Context, Result, bail};
 use flate2::read::GzDecoder;
+use jdx_tar::{Archive, EntryUnpacker, UnpackOptions};
 use tempfile::TempDir;
 use walkdir::WalkDir;
 
@@ -123,7 +124,10 @@ fn unpack_base_layers(layout: &ImageLayout, layers: &[Descriptor], rootfs: &Path
     for layer in layers {
         let path = layout.blob_path(&layer.digest);
         let reader = open_layer_reader(layer, &path)?;
-        let mut archive = tar::Archive::new(reader);
+        let mut archive = Archive::new(reader);
+        let mut options = UnpackOptions::default();
+        let mut unpacker = EntryUnpacker::new(rootfs, &mut options)
+            .wrap_err_with(|| format!("preparing base layer extraction {}", layer.digest))?;
         for entry in archive
             .entries()
             .wrap_err_with(|| format!("reading base layer {}", layer.digest))?
@@ -135,10 +139,13 @@ fn unpack_base_layers(layout: &ImageLayout, layers: &[Descriptor], rootfs: &Path
             if rel.as_os_str().is_empty() || apply_oci_whiteout(rootfs, &rel)? {
                 continue;
             }
-            entry
-                .unpack_in(rootfs)
+            unpacker
+                .unpack(&mut entry)
                 .wrap_err_with(|| format!("unpacking base layer {}", layer.digest))?;
         }
+        unpacker
+            .finish()
+            .wrap_err_with(|| format!("finishing base layer extraction {}", layer.digest))?;
     }
     Ok(())
 }
