@@ -455,8 +455,13 @@ fn repo_identity(url: &str) -> Option<String> {
         if url.query().is_some() || url.fragment().is_some() {
             return None;
         }
-        if scheme == "ssh" && url.username().is_empty() {
-            return None;
+        // https userinfo is credential material, not repository identity — it
+        // must not occupy the same identity slot as an ssh user. ssh needs an
+        // explicit user (an omitted one means the login user, not `git`).
+        match scheme.as_str() {
+            "https" if !url.username().is_empty() || url.password().is_some() => return None,
+            "ssh" if url.username().is_empty() => return None,
+            _ => {}
         }
         let host = url.host_str()?.to_string();
         repo_identity_parts(url.username(), &host, url.port(), url.path())
@@ -932,6 +937,7 @@ mod tests {
             "https://github.com/jdx/mise?tenant=a",   // query strings are not identity
             "http://github.com/jdx/mise.git",         // insecure transport is not equivalent
             "git://github.com/jdx/mise.git",          // insecure transport is not equivalent
+            "https://alice@github.com/jdx/mise.git",  // https userinfo is credentials, not identity
             "ftp://github.com/jdx/mise.git",          // unrecognized scheme
         ] {
             assert!(
@@ -959,6 +965,11 @@ mod tests {
         assert!(!origin_matches_config(
             Some("https://github.com/jdx/mise?tenant=a"),
             "https://github.com/jdx/mise?tenant=b"
+        ));
+        // https userinfo never occupies the ssh-user identity slot
+        assert!(!origin_matches_config(
+            Some("ssh://alice@example.com/team/repo.git"),
+            "https://alice@example.com/team/repo.git"
         ));
         // local and file:// forms keep exact matching
         assert!(!origin_matches_config(
