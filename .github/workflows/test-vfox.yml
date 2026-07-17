@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "crates/vfox/**"
+      - "mise.lock"
+      - "mise.toml"
   push:
     branches: [main, release]
 
@@ -44,18 +46,15 @@ jobs:
             echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
           } >> "$GITHUB_ENV"
           sccache --zero-stats
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4
+        with:
+          cache_key: "mise-vfox-v1-{{platform}}-${{ hashFiles('mise.toml', 'mise.lock') }}"
+          install_args: prettier
+          working_directory: crates/vfox
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
-      - run: mise --cd crates/vfox install
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6 # zizmor: ignore[cache-poisoning] cache key is scoped by mise.toml hash; tool installs only
-        with:
-          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-vfox-${{ hashFiles('crates/vfox/mise.toml') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-vfox-
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
       - run: mise --cd crates/vfox run build
       - run: mise --cd crates/vfox run lint
       - run: mise --cd crates/vfox run test

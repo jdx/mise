@@ -1,6 +1,3 @@
-[tools]
-prettier = "latest"
-
 [tasks.build]
 run = "cargo build"
 [tasks.test]
