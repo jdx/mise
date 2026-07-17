@@ -1,7 +1,4 @@
 [tools]
-cargo-binstall = "latest"
-"cargo:cargo-edit" = "latest"
-git-cliff = "latest"
 prettier = "latest"
 
 [tasks.build]
