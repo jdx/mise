@@ -113,13 +113,24 @@ pub(crate) struct ParsedToolMap {
 
 #[derive(Deserialize)]
 struct RawToolMap {
-    version: Option<String>,
-    path: Option<String>,
-    prefix: Option<String>,
+    version: Option<toml::Value>,
+    path: Option<toml::Value>,
+    prefix: Option<toml::Value>,
     #[serde(rename = "ref")]
-    ref_: Option<String>,
+    ref_: Option<toml::Value>,
     #[serde(flatten)]
     options: IndexMap<String, toml::Value>,
+}
+
+fn parse_tool_selector(
+    key: &'static str,
+    value: Option<toml::Value>,
+) -> std::result::Result<Option<(&'static str, String)>, String> {
+    match value {
+        Some(toml::Value::String(value)) => Ok(Some((key, value))),
+        Some(_) => Err(format!("tool selector `{key}` must be a string")),
+        None => Ok(None),
+    }
 }
 
 impl TryFrom<RawToolMap> for ParsedToolMap {
@@ -127,10 +138,10 @@ impl TryFrom<RawToolMap> for ParsedToolMap {
 
     fn try_from(raw: RawToolMap) -> std::result::Result<Self, Self::Error> {
         let selectors = [
-            raw.version.map(|value| ("version", value)),
-            raw.path.map(|value| ("path", value)),
-            raw.prefix.map(|value| ("prefix", value)),
-            raw.ref_.map(|value| ("ref", value)),
+            parse_tool_selector("version", raw.version)?,
+            parse_tool_selector("path", raw.path)?,
+            parse_tool_selector("prefix", raw.prefix)?,
+            parse_tool_selector("ref", raw.ref_)?,
         ];
         let mut selectors = selectors.into_iter().flatten();
         let Some((key, value)) = selectors.next() else {
@@ -2460,7 +2471,10 @@ mod tests {
                 "[tools]\nnode = [{ os = \"linux-x64\" }]\n",
                 "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
             ),
-            ("[tools]\nnode = { prefix = 20 }\n", "expected a string"),
+            (
+                "[tools]\nnode = { prefix = 20 }\n",
+                "tool selector `prefix` must be a string",
+            ),
         ] {
             let err = match toml::from_str::<ToolConfig>(config) {
                 Ok(_) => panic!("expected tool selector validation to fail"),

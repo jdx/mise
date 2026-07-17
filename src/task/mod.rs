@@ -4205,7 +4205,10 @@ echo "test"
                 "[tools]\nnode = { os = \"linux\" }\n",
                 "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
             ),
-            ("[tools]\nnode = { prefix = 20 }\n", "expected a string"),
+            (
+                "[tools]\nnode = { prefix = 20 }\n",
+                "tool selector `prefix` must be a string",
+            ),
         ] {
             let err = match toml::from_str::<TaskTools>(invalid) {
                 Ok(_) => panic!("expected task tool selector validation to fail"),
