@@ -1,5 +1,5 @@
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::config_file::mise_toml::{EnvList, deserialize_vars, parse_tool_selector};
+use crate::config::config_file::mise_toml::{EnvList, ToolSelector, deserialize_vars};
 use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
@@ -118,26 +118,15 @@ impl TaskToolValueMap {
         E: serde::de::Error,
     {
         let mut opts = IndexMap::new();
-        let mut selector: Option<(String, String)> = None;
+        let mut selector = ToolSelector::default();
 
         for (key, value) in fields {
-            if let Some(request) = parse_tool_selector::<E>(&key, &value)? {
-                if let Some((previous, _)) = &selector {
-                    return Err(serde::de::Error::custom(format!(
-                        "tool definition cannot specify both `{previous}` and `{key}`"
-                    )));
-                }
-                selector = Some((key, request));
-            } else {
+            if !selector.parse_field::<E>(&key, &value)? {
                 opts.insert(key, value);
             }
         }
 
-        let (_, version) = selector.ok_or_else(|| {
-            serde::de::Error::custom(
-                "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
-            )
-        })?;
+        let version = selector.finish::<E>()?;
         Ok(Self { version, opts })
     }
 }

@@ -104,26 +104,51 @@ where
     options.insert_option(key, value).map_err(de::Error::custom)
 }
 
-pub(crate) fn parse_tool_selector<E>(
-    key: &str,
-    value: &toml::Value,
-) -> std::result::Result<Option<String>, E>
-where
-    E: de::Error,
-{
-    if !matches!(key, "version" | "path" | "prefix" | "ref") {
-        return Ok(None);
+#[derive(Default)]
+pub(crate) struct ToolSelector {
+    selector: Option<(String, String)>,
+}
+
+impl ToolSelector {
+    pub(crate) fn parse_field<E>(
+        &mut self,
+        key: &str,
+        value: &toml::Value,
+    ) -> std::result::Result<bool, E>
+    where
+        E: de::Error,
+    {
+        if !matches!(key, "version" | "path" | "prefix" | "ref") {
+            return Ok(false);
+        }
+
+        let value = value
+            .as_str()
+            .ok_or_else(|| de::Error::custom(format!("tool selector `{key}` must be a string")))?;
+        let request = if key == "version" {
+            value.to_string()
+        } else {
+            format!("{key}:{value}")
+        };
+        if let Some((previous, _)) = &self.selector {
+            return Err(de::Error::custom(format!(
+                "tool definition cannot specify both `{previous}` and `{key}`"
+            )));
+        }
+        self.selector = Some((key.to_string(), request));
+        Ok(true)
     }
 
-    let value = value
-        .as_str()
-        .ok_or_else(|| de::Error::custom(format!("tool selector `{key}` must be a string")))?;
-    let value = if key == "version" {
-        value.to_string()
-    } else {
-        format!("{key}:{value}")
-    };
-    Ok(Some(value))
+    pub(crate) fn finish<E>(self) -> std::result::Result<String, E>
+    where
+        E: de::Error,
+    {
+        self.selector.map(|(_, request)| request).ok_or_else(|| {
+            de::Error::custom(
+                "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
+            )
+        })
+    }
 }
 
 fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
@@ -1987,25 +2012,16 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                 M: de::MapAccess<'de>,
             {
                 let mut options: ToolVersionOptions = Default::default();
-                let mut selector: Option<(String, ToolVersionType)> = None;
+                let mut selector = ToolSelector::default();
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    if let Some(selector_value) = parse_tool_selector::<M::Error>(&k, &v)? {
-                        if let Some((previous, _)) = &selector {
-                            return Err(de::Error::custom(format!(
-                                "tool definition cannot specify both `{previous}` and `{k}`"
-                            )));
-                        }
-                        let tt = selector_value.parse().map_err(de::Error::custom)?;
-                        selector = Some((k, tt));
-                    } else {
+                    if !selector.parse_field::<M::Error>(&k, &v)? {
                         insert_tool_option(&mut options, k, v)?;
                     }
                 }
-                let (_, tt) = selector.ok_or_else(|| {
-                    de::Error::custom(
-                        "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
-                    )
-                })?;
+                let tt = selector
+                    .finish::<M::Error>()?
+                    .parse()
+                    .map_err(de::Error::custom)?;
                 Ok(MiseTomlToolList(vec![MiseTomlTool {
                     tt,
                     options: Some(options),
@@ -2045,25 +2061,16 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                 M: de::MapAccess<'de>,
             {
                 let mut options: ToolVersionOptions = Default::default();
-                let mut selector: Option<(String, ToolVersionType)> = None;
+                let mut selector = ToolSelector::default();
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    if let Some(selector_value) = parse_tool_selector::<M::Error>(&k, &v)? {
-                        if let Some((previous, _)) = &selector {
-                            return Err(de::Error::custom(format!(
-                                "tool definition cannot specify both `{previous}` and `{k}`"
-                            )));
-                        }
-                        let tt = selector_value.parse().map_err(de::Error::custom)?;
-                        selector = Some((k, tt));
-                    } else {
+                    if !selector.parse_field::<M::Error>(&k, &v)? {
                         insert_tool_option(&mut options, k, v)?;
                     }
                 }
-                let (_, tt) = selector.ok_or_else(|| {
-                    de::Error::custom(
-                        "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
-                    )
-                })?;
+                let tt = selector
+                    .finish::<M::Error>()?
+                    .parse()
+                    .map_err(de::Error::custom)?;
                 Ok(MiseTomlTool {
                     tt,
                     options: Some(options),
