@@ -1273,7 +1273,11 @@ impl Task {
             (spec, vec![])
         } else {
             let scripts_only = self.run_script_strings();
-            let (scripts, spec) = Self::make_script_parser(cwd, extra_vars)
+            let parser_dir = match cwd {
+                Some(cwd) => Some(cwd),
+                None => self.dir(config).await?,
+            };
+            let (scripts, spec) = Self::make_script_parser(parser_dir, extra_vars)
                 .parse_run_scripts(config, self, &scripts_only, &env)
                 .await?;
             (spec, scripts)
@@ -1337,8 +1341,12 @@ impl Task {
         if !self.should_bypass_usage_parser() && has_any_args_defined(&spec) {
             let mut env = env.clone();
             clear_usage_env(&mut env);
+            let parser_dir = match cwd {
+                Some(cwd) => Some(cwd),
+                None => self.dir(config).await?,
+            };
             let scripts_only = self.run_script_strings();
-            let scripts = Self::make_script_parser(cwd, extra_vars)
+            let scripts = Self::make_script_parser(parser_dir, extra_vars)
                 .parse_run_scripts_with_args(config, self, &scripts_only, &env, args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
