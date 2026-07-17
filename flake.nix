@@ -26,7 +26,6 @@
             inputsFrom = [ mise ];
 
             nativeBuildInputs = with pkgs; [
-              just
               clippy
               rustfmt
               shellcheck
