@@ -706,17 +706,7 @@ pub async fn verify_cosign_signature_with_key(
         // Bundle path: needs the trust root for tlog (Rekor) verification.
         let trusted_root = production_trusted_root().await?;
         let artifact = tokio::fs::read(artifact_path).await?;
-        let result = sigstore_verify::verify_with_key(
-            artifact.as_slice(),
-            &bundle,
-            &public_key,
-            &trusted_root,
-        )?;
-        if !result.success {
-            return Err(AttestationError::Verification(
-                "sigstore verification returned false".to_string(),
-            ));
-        }
+        sigstore_verify::verify_with_key(artifact.as_slice(), &bundle, &public_key, &trusted_root)?;
         return Ok(true);
     }
 
@@ -1239,11 +1229,6 @@ fn verify_bundle<'a>(
         policy = policy.skip_sct();
     }
     let result = sigstore_verify::verify(artifact, bundle, &policy, trusted_root)?;
-    if !result.success {
-        return Err(AttestationError::Verification(
-            "sigstore verification returned false".to_string(),
-        ));
-    }
 
     verify_signer_workflow_identity(result.identity.as_deref(), signer_workflow)?;
 
