@@ -104,51 +104,48 @@ where
     options.insert_option(key, value).map_err(de::Error::custom)
 }
 
-#[derive(Default)]
-pub(crate) struct ToolSelector {
-    selector: Option<(String, String)>,
+pub(crate) struct ParsedToolMap {
+    pub request: String,
+    pub options: IndexMap<String, toml::Value>,
 }
 
-impl ToolSelector {
-    pub(crate) fn parse_field<E>(
-        &mut self,
-        key: &str,
-        value: &toml::Value,
-    ) -> std::result::Result<bool, E>
-    where
-        E: de::Error,
-    {
-        if !matches!(key, "version" | "path" | "prefix" | "ref") {
-            return Ok(false);
+pub(crate) fn parse_tool_map<E>(
+    fields: impl IntoIterator<Item = (String, toml::Value)>,
+) -> std::result::Result<ParsedToolMap, E>
+where
+    E: de::Error,
+{
+    let mut selector: Option<(String, String)> = None;
+    let mut options = IndexMap::new();
+
+    for (key, value) in fields {
+        if !matches!(key.as_str(), "version" | "path" | "prefix" | "ref") {
+            options.insert(key, value);
+            continue;
         }
 
-        let value = value
+        let selector_value = value
             .as_str()
             .ok_or_else(|| de::Error::custom(format!("tool selector `{key}` must be a string")))?;
         let request = if key == "version" {
-            value.to_string()
+            selector_value.to_string()
         } else {
-            format!("{key}:{value}")
+            format!("{key}:{selector_value}")
         };
-        if let Some((previous, _)) = &self.selector {
+        if let Some((previous, _)) = &selector {
             return Err(de::Error::custom(format!(
                 "tool definition cannot specify both `{previous}` and `{key}`"
             )));
         }
-        self.selector = Some((key.to_string(), request));
-        Ok(true)
+        selector = Some((key, request));
     }
 
-    pub(crate) fn finish<E>(self) -> std::result::Result<String, E>
-    where
-        E: de::Error,
-    {
-        self.selector.map(|(_, request)| request).ok_or_else(|| {
-            de::Error::custom(
-                "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
-            )
-        })
-    }
+    let request = selector.map(|(_, request)| request).ok_or_else(|| {
+        de::Error::custom(
+            "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
+        )
+    })?;
+    Ok(ParsedToolMap { request, options })
 }
 
 fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
@@ -252,6 +249,24 @@ pub struct MiseTomlToolList(Vec<MiseTomlTool>);
 pub struct MiseTomlTool {
     pub tt: ToolVersionType,
     pub options: Option<ToolVersionOptions>,
+}
+
+fn parse_mise_toml_tool_map<E>(
+    fields: impl IntoIterator<Item = (String, toml::Value)>,
+) -> std::result::Result<MiseTomlTool, E>
+where
+    E: de::Error,
+{
+    let parsed = parse_tool_map::<E>(fields)?;
+    let tt = parsed.request.parse().map_err(de::Error::custom)?;
+    let mut options = ToolVersionOptions::default();
+    for (key, value) in parsed.options {
+        insert_tool_option(&mut options, key, value)?;
+    }
+    Ok(MiseTomlTool {
+        tt,
+        options: Some(options),
+    })
 }
 
 #[derive(Debug, Default, Clone)]
@@ -2007,25 +2022,16 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                 Ok(MiseTomlToolList(tools))
             }
 
-            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
+            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
             {
-                let mut options: ToolVersionOptions = Default::default();
-                let mut selector = ToolSelector::default();
-                while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    if !selector.parse_field::<M::Error>(&k, &v)? {
-                        insert_tool_option(&mut options, k, v)?;
-                    }
-                }
-                let tt = selector
-                    .finish::<M::Error>()?
-                    .parse()
-                    .map_err(de::Error::custom)?;
-                Ok(MiseTomlToolList(vec![MiseTomlTool {
-                    tt,
-                    options: Some(options),
-                }]))
+                let fields = IndexMap::<String, toml::Value>::deserialize(
+                    de::value::MapAccessDeserializer::new(map),
+                )?;
+                Ok(MiseTomlToolList(vec![
+                    parse_mise_toml_tool_map::<M::Error>(fields)?,
+                ]))
             }
         }
 
@@ -2056,25 +2062,14 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                 Ok(MiseTomlTool { tt, options: None })
             }
 
-            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
             {
-                let mut options: ToolVersionOptions = Default::default();
-                let mut selector = ToolSelector::default();
-                while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    if !selector.parse_field::<M::Error>(&k, &v)? {
-                        insert_tool_option(&mut options, k, v)?;
-                    }
-                }
-                let tt = selector
-                    .finish::<M::Error>()?
-                    .parse()
-                    .map_err(de::Error::custom)?;
-                Ok(MiseTomlTool {
-                    tt,
-                    options: Some(options),
-                })
+                let fields = IndexMap::<String, toml::Value>::deserialize(
+                    de::value::MapAccessDeserializer::new(map),
+                )?;
+                parse_mise_toml_tool_map::<M::Error>(fields)
             }
         }
 

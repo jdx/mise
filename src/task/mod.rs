@@ -1,5 +1,5 @@
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::config_file::mise_toml::{EnvList, ToolSelector, deserialize_vars};
+use crate::config::config_file::mise_toml::{EnvList, deserialize_vars, parse_tool_map};
 use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
@@ -95,7 +95,7 @@ impl<'de> Deserialize<'de> for TaskToolValue {
     {
         match toml::Value::deserialize(deserializer)? {
             toml::Value::String(value) => Ok(Self::String(value)),
-            toml::Value::Table(fields) => TaskToolValueMap::from_fields(fields).map(Self::Map),
+            toml::Value::Table(fields) => parse_task_tool_map(fields).map(Self::Map),
             _ => Err(serde::de::Error::custom(
                 "task tool definition must be a string or table",
             )),
@@ -110,25 +110,17 @@ pub struct TaskToolValueMap {
     pub opts: IndexMap<String, toml::Value>,
 }
 
-impl TaskToolValueMap {
-    fn from_fields<E>(
-        fields: impl IntoIterator<Item = (String, toml::Value)>,
-    ) -> std::result::Result<Self, E>
-    where
-        E: serde::de::Error,
-    {
-        let mut opts = IndexMap::new();
-        let mut selector = ToolSelector::default();
-
-        for (key, value) in fields {
-            if !selector.parse_field::<E>(&key, &value)? {
-                opts.insert(key, value);
-            }
-        }
-
-        let version = selector.finish::<E>()?;
-        Ok(Self { version, opts })
-    }
+fn parse_task_tool_map<E>(
+    fields: impl IntoIterator<Item = (String, toml::Value)>,
+) -> std::result::Result<TaskToolValueMap, E>
+where
+    E: serde::de::Error,
+{
+    let parsed = parse_tool_map::<E>(fields)?;
+    Ok(TaskToolValueMap {
+        version: parsed.request,
+        opts: parsed.options,
+    })
 }
 
 impl<'de> Deserialize<'de> for TaskToolValueMap {
@@ -136,7 +128,7 @@ impl<'de> Deserialize<'de> for TaskToolValueMap {
     where
         D: serde::Deserializer<'de>,
     {
-        Self::from_fields(IndexMap::<String, toml::Value>::deserialize(deserializer)?)
+        parse_task_tool_map(IndexMap::<String, toml::Value>::deserialize(deserializer)?)
     }
 }
 
