@@ -2725,7 +2725,11 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
     for t in prefer_windows_file_task_siblings(file_tasks) {
         by_name.insert(t.name.clone(), t);
     }
+    let mut seen_config_task_names = BTreeSet::new();
     for t in config_tasks {
+        if !seen_config_task_names.insert(t.name.clone()) {
+            continue;
+        }
         if let Some(existing) = by_name.get_mut(&t.name) {
             if existing.file.is_some() {
                 existing.merge_toml_overlay(t);

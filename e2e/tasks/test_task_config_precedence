@@ -1,20 +1,38 @@
 #!/usr/bin/env bash
 
-mkdir -p .config .mise
+mkdir -p .config .mise/tasks
 
 cat <<'EOF' >.config/mise.toml
 [tasks.a]
 description = ".config/a"
 run = "echo .config/a"
+
+[tasks.b]
+description = ".config/b"
 EOF
 
 cat <<'EOF' >.mise/config.toml
 [tasks.a]
 description = ".mise/a"
 run = "echo .mise/a"
+
+[tasks.b]
+description = ".mise/b"
 EOF
+
+cat <<'EOF' >.mise/tasks/b
+#!/usr/bin/env bash
+echo file/b
+EOF
+chmod +x .mise/tasks/b
 
 assert_contains "mise tasks" "a  .mise/a"
 assert_not_contains "mise tasks" "a  .config/a"
 assert_contains "mise run a" ".mise/a"
 assert_not_contains "mise run a" ".config/a"
+
+# A file task should receive metadata from only the highest-precedence inline
+# task definition. Lower-precedence definitions must not overlay it again.
+assert_contains "mise tasks" "b  .mise/b"
+assert_not_contains "mise tasks" "b  .config/b"
+assert_contains "mise run b" "file/b"
