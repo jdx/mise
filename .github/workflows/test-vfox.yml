@@ -46,7 +46,7 @@ jobs:
             echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
           } >> "$GITHUB_ENV"
           sccache --zero-stats
-      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4 # zizmor: ignore[cache-poisoning] cache key includes root config hashes; installs only prettier
         with:
           cache_key: "mise-vfox-v1-{{platform}}-${{ hashFiles('mise.toml', 'mise.lock') }}"
           install_args: prettier
