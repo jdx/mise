@@ -18,7 +18,7 @@ yq = "4.45.4"
         Remove-Item $cfg -ErrorAction Ignore
     }
 
-    # https://github.com/jdx/mise/discussions/5260 — on Windows, version
+    # https://github.com/jdx/mise/discussions/5260 - on Windows, version
     # pointer files (regular files containing the target path) were left
     # behind on uninstall because they never look like missing symlinks
     It 'removes stale version pointers when a version is uninstalled' {
@@ -35,7 +35,8 @@ yq = "4.45.4"
     }
 
     It 'removes the tool directory when the last version is uninstalled' {
-        mise uninstall yq@4.45.4
+        # --all keeps this independent of the previous test's uninstall
+        mise uninstall --all yq
         Test-Path $yqDir | Should -BeFalse
     }
 }

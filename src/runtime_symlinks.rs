@@ -234,8 +234,7 @@ fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> {
         // target, so `path.exists()` cannot detect a dangling pointer — resolve
         // the stored target and check that instead. On unix this is equivalent
         // to following the symlink. (#5260)
-        if is_runtime_symlink(&path)
-            && let Ok(Some(target)) = file::resolve_symlink(&path)
+        if let Some(target) = runtime_symlink_target(&path)
             && !installs_dir.join(target).exists()
         {
             trace!("Removing missing symlink: {}", path.display());
@@ -248,10 +247,18 @@ fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> {
 }
 
 pub fn is_runtime_symlink(path: &Path) -> bool {
-    if let Ok(Some(link)) = file::resolve_symlink(path) {
-        return link.starts_with("./");
+    runtime_symlink_target(path).is_some()
+}
+
+/// Returns the (relative) target a runtime symlink points to, or None if
+/// `path` is not a runtime symlink.
+fn runtime_symlink_target(path: &Path) -> Option<PathBuf> {
+    if let Ok(Some(link)) = file::resolve_symlink(path)
+        && link.starts_with("./")
+    {
+        return Some(link);
     }
-    false
+    None
 }
 
 #[cfg(test)]
