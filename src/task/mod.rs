@@ -445,6 +445,12 @@ pub struct Task {
     pub aliases: Vec<String>,
     #[serde(skip)]
     pub config_source: PathBuf,
+    /// Additional files that contributed to this task's definition.
+    ///
+    /// The primary definition remains in `config_source`; this contains
+    /// metadata overlays merged from same-named `[tasks.<name>]` blocks.
+    #[serde(skip)]
+    pub additional_config_sources: Vec<PathBuf>,
     #[serde(skip)]
     pub cf: Option<Arc<dyn ConfigFile>>,
     #[serde(skip)]
@@ -772,6 +778,13 @@ fn normalize_root_mount_node(line: &str) -> String {
 }
 
 impl Task {
+    pub fn config_sources(&self) -> Vec<&Path> {
+        once(self.config_source.as_path())
+            .chain(self.additional_config_sources.iter().map(PathBuf::as_path))
+            .unique()
+            .collect()
+    }
+
     pub(crate) fn tool_args(&self) -> Result<Vec<ToolArg>> {
         self.tools
             .iter()
@@ -1714,6 +1727,16 @@ impl Task {
     /// directives (e.g. `_.file = ".env"`) keep resolving relative to the
     /// TOML file they were written in rather than the file task's script path.
     pub fn merge_toml_overlay(&mut self, other: Task) {
+        for source in other.config_sources() {
+            if source != self.config_source
+                && !self
+                    .additional_config_sources
+                    .iter()
+                    .any(|existing| existing == source)
+            {
+                self.additional_config_sources.push(source.to_path_buf());
+            }
+        }
         if !other.description.is_empty() {
             self.description = other.description;
         }
@@ -2296,6 +2319,7 @@ impl Default for Task {
             description: "".to_string(),
             aliases: vec![],
             config_source: PathBuf::new(),
+            additional_config_sources: vec![],
             cf: None,
             config_root: None,
             confirm: None,
@@ -2759,7 +2783,7 @@ pub async fn parse_usage_values_from_task(
 mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::sync::Mutex;
 
     use crate::task::{RunEntry, Task};
@@ -2774,6 +2798,27 @@ mod tests {
         clear_usage_env, env_contains_key, name_from_path, tera_tag_has_usage_ref,
         tera_template_has_usage_ref,
     };
+
+    #[test]
+    fn test_merge_toml_overlay_tracks_definition_sources() {
+        let mut file_task = Task {
+            config_source: PathBuf::from(".mise/tasks/build"),
+            file: Some(PathBuf::from(".mise/tasks/build")),
+            ..Default::default()
+        };
+        let overlay = Task {
+            config_source: PathBuf::from("mise.toml"),
+            depends: vec!["lint".to_string().into()],
+            ..Default::default()
+        };
+
+        file_task.merge_toml_overlay(overlay);
+
+        assert_eq!(
+            file_task.config_sources(),
+            vec![Path::new(".mise/tasks/build"), Path::new("mise.toml")]
+        );
+    }
 
     // Thread-local storage to capture parser state during tests
     thread_local! {

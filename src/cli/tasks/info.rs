@@ -71,7 +71,10 @@ impl TasksInfo {
             info::inline_section("Aliases", task.aliases.join(", "))?;
         }
         info::inline_section("Description", &task.description)?;
-        info::inline_section("Source", display_path(&task.config_source))?;
+        info::inline_section(
+            "Source",
+            task.config_sources().iter().map(display_path).join(", "),
+        )?;
         let mut properties = vec![];
         if task.hide {
             properties.push("hide");
@@ -138,6 +141,7 @@ impl TasksInfo {
             "aliases": task.aliases,
             "description": task.description,
             "source": task.config_source,
+            "config_sources": task.config_sources(),
             "depends": task.depends,
             "depends_post": task.depends_post,
             "wait_for": task.wait_for,

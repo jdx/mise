@@ -38,6 +38,20 @@ assert_contains "mise tasks ls" "Echo the configured TASK_VAR"
 assert_contains "mise tasks ls --json" '"description": "Echo the configured TASK_VAR"'
 assert_contains "mise tasks ls --json" '"TASK_VAR=from-toml"'
 
+# Task info reports both files that contributed to the merged definition.
+assert_contains "mise tasks info echo-env" \
+  "Source: ~/workdir/.mise/tasks/echo-env, ~/workdir/mise.toml"
+assert_json_partial_object "mise tasks info echo-env --json" \
+  "source,config_sources" \
+  '{
+    "source": "'"$PWD"'/.mise/tasks/echo-env",
+    "config_sources": [
+      "'"$PWD"'/.mise/tasks/echo-env",
+      "'"$PWD"'/mise.toml"
+    ],
+    "sources": []
+  }'
+
 # Overlay deps (including usage-arg refs) survive re-rendering. The overlay
 # adds a `depends` with a `{{usage.app}}` template that must resolve when
 # the parent task receives `--app=demo` from the CLI.
