@@ -3010,6 +3010,7 @@ async fn load_file_tasks(
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
 ) -> Result<Vec<Task>> {
+    let is_global = is_global_config(cf.get_path());
     let includes = cf
         .task_config_includes()?
         .unwrap_or_else(default_task_includes);
@@ -3039,7 +3040,7 @@ async fn load_file_tasks(
                 require_task_include_trust,
             )
             .await?;
-            if is_global_task_include_path(&path) {
+            if is_global || is_global_task_include_path(&path) {
                 mark_tasks_as_global(&mut loaded);
             }
             tasks.extend(loaded);
