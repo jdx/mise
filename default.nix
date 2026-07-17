@@ -1,4 +1,4 @@
-{ pkgs, lib, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, openssl, git }:
+{ pkgs, lib, rustPlatform, coreutils, bash, direnv, openssl, git }:
 
 rustPlatform.buildRustPackage {
   pname = "mise";
