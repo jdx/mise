@@ -1,5 +1,45 @@
 # Changelog
 
+## [2026.7.10](https://github.com/jdx/mise/compare/v2026.7.8..v2026.7.10) - 2026-07-17
+
+### 🚀 Features
+
+- **(backend)** skip remote discovery for exact versions in more backends by @jdx in [#11070](https://github.com/jdx/mise/pull/11070)
+- **(cargo)** skip remote discovery for exact versions by @Turbo87 in [#11013](https://github.com/jdx/mise/pull/11013)
+- **(task)** skip dependencies with empty templated names by @risu729 in [#11057](https://github.com/jdx/mise/pull/11057)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** ignore macos metadata in cask artifacts by @jdx in [#11063](https://github.com/jdx/mise/pull/11063)
+- **(config)** deprecate env directive value aliases by @risu729 in [#11062](https://github.com/jdx/mise/pull/11062)
+- **(config)** deprecate env.mise directives by @risu729 in [#11053](https://github.com/jdx/mise/pull/11053)
+- **(config)** reject non-string postinstall hooks by @risu729 in [#11061](https://github.com/jdx/mise/pull/11061)
+- **(config)** deprecate experimental monorepo root key by @risu729 in [#11052](https://github.com/jdx/mise/pull/11052)
+- **(hooks)** reject nested hook arrays by @risu729 in [#11051](https://github.com/jdx/mise/pull/11051)
+- **(http)** fail fast when network is unavailable by @jdx in [#11066](https://github.com/jdx/mise/pull/11066)
+- **(schema)** require arrays for deps provider paths by @risu729 in [#11064](https://github.com/jdx/mise/pull/11064)
+- **(task)** prevent setup side effects during dry runs by @risu729 in [#11015](https://github.com/jdx/mise/pull/11015)
+- **(task)** resolve task source files from task directory by @JamBalaya56562 in [#11073](https://github.com/jdx/mise/pull/11073)
+
+### ◀️ Revert
+
+- "chore(ci): tighten required CI guards" by @jdx in [b2d78ad](https://github.com/jdx/mise/commit/b2d78adf46f263acd5e160b96a6443128262f89b)
+
+### 📦 Registry
+
+- replace eza asdf backend with vfox by @jdx in [#11068](https://github.com/jdx/mise/pull/11068)
+
+### Chore
+
+- **(ci)** align macos pgo toolchain by @jdx in [#11071](https://github.com/jdx/mise/pull/11071)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (2)
+
+- [`daveshanley/vacuum`](https://github.com/daveshanley/vacuum)
+- [`openbao/openbao/bao`](https://github.com/openbao/openbao)
+
 ## [2026.7.9](https://github.com/jdx/mise/compare/v2026.7.8..v2026.7.9) - 2026-07-16
 
 ### 🚀 Features
