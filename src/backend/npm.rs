@@ -376,6 +376,18 @@ impl Backend for NPMBackend {
         .cloned()
     }
 
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> eyre::Result<Option<String>> {
+        // npm registry versions are strict semver and dist-tags may not be
+        // valid semver, so a full semver request is exact. Installation
+        // passes `pkg@version` through to the package manager, which fails
+        // when the version does not exist upstream.
+        Ok(versions::SemVer::new(version).map(|_| version.to_string()))
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let package_manager = self
             .package_manager_for_install(&ctx.config, Some(&ctx.ts))
@@ -1071,6 +1083,46 @@ mod tests {
             BackendResolution::new(true),
         );
         NPMBackend::from_arg(ba)
+    }
+
+    #[tokio::test]
+    async fn exact_semver_versions_resolve_without_remote_discovery() {
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = create_npm_backend("prettier");
+
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "3.1.0")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("3.1.0")
+        );
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "1.1.0-beta.1")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.1.0-beta.1")
+        );
+    }
+
+    #[tokio::test]
+    async fn fuzzy_versions_require_remote_discovery() {
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = create_npm_backend("prettier");
+
+        for version in ["latest", "3", "3.1", "^3.1.0", ">=3.1.0", "next"] {
+            assert_eq!(
+                backend
+                    .resolve_exact_version(&config, version)
+                    .await
+                    .unwrap(),
+                None,
+                "{version} should use remote discovery"
+            );
+        }
     }
 
     #[test]
