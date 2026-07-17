@@ -14,6 +14,14 @@ echo "FROM_DOTENV=${FROM_DOTENV:-<unset>}"
 SCRIPT
 chmod +x .mise/tasks/echo-env
 
+cat <<'SCRIPT' >.mise/tasks/cached
+#!/usr/bin/env bash
+echo run >>cached-runs
+touch cached-output
+SCRIPT
+chmod +x .mise/tasks/cached
+touch cached-input
+
 cat <<'EOF' >.env
 FROM_DOTENV=hello-from-dotenv
 EOF
@@ -22,6 +30,10 @@ cat <<'EOF' >mise.toml
 [tasks.echo-env]
 description = "Echo the configured TASK_VAR"
 env = { TASK_VAR = "from-toml", _.file = ".env" }
+
+[tasks.cached]
+sources = ["cached-input"]
+outputs = ["cached-output"]
 EOF
 
 # TOML env merges into the file task.
@@ -37,12 +49,15 @@ assert_contains "mise tasks ls" "Echo the configured TASK_VAR"
 # And through `tasks ls --json` with the expected env directive.
 assert_contains "mise tasks ls --json" '"description": "Echo the configured TASK_VAR"'
 assert_contains "mise tasks ls --json" '"TASK_VAR=from-toml"'
+assert_json "mise tasks ls --json | jq '.[] | select(.name == \"echo-env\") | .config_sources'" \
+  '["'"$PWD"'/.mise/tasks/echo-env", "'"$PWD"'/mise.toml"]'
+assert_contains "mise tasks -x ls" "./.mise/tasks/echo-env, ./mise.toml"
 
 # Task info reports both files that contributed to the merged definition.
 assert_contains "mise tasks info echo-env" \
   "Source: ~/workdir/.mise/tasks/echo-env, ~/workdir/mise.toml"
 assert_json_partial_object "mise tasks info echo-env --json" \
-  "source,config_sources" \
+  "source,config_sources,sources" \
   '{
     "source": "'"$PWD"'/.mise/tasks/echo-env",
     "config_sources": [
@@ -51,6 +66,18 @@ assert_json_partial_object "mise tasks info echo-env --json" \
     ],
     "sources": []
   }'
+assert_contains "mise run echo-env --help" \
+  "Source: ~/workdir/.mise/tasks/echo-env, ~/workdir/mise.toml"
+
+# Changing a TOML overlay invalidates source freshness just like changing the
+# primary file task definition.
+mise run cached >/dev/null
+mise run cached >/dev/null
+assert "wc -l <cached-runs" "1"
+sleep 1
+touch mise.toml
+mise run cached >/dev/null
+assert "wc -l <cached-runs" "2"
 
 # Overlay deps (including usage-arg refs) survive re-rendering. The overlay
 # adds a `depends` with a `{{usage.app}}` template that must resolve when

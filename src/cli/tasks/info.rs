@@ -186,6 +186,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
       "aliases": "t",
       "description": "Test the application",
       "source": "~/src/myproj/mise.toml",
+      "config_sources": ["~/src/myproj/mise.toml"],
       "depends": [],
       "env": {},
       "dir": null,

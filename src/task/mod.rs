@@ -781,7 +781,6 @@ impl Task {
     pub fn config_sources(&self) -> Vec<&Path> {
         once(self.config_source.as_path())
             .chain(self.additional_config_sources.iter().map(PathBuf::as_path))
-            .unique()
             .collect()
     }
 

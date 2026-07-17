@@ -247,6 +247,7 @@ impl TasksLs {
                 "aliases": task.aliases,
                 "description": task.description,
                 "source": task.config_source,
+                "config_sources": task.config_sources(),
                 "depends": task.depends,
                 "depends_post": task.depends_post,
                 "wait_for": task.wait_for,
@@ -291,7 +292,12 @@ impl TasksLs {
         let mut row = vec![Cell::new(&task.display_name).add_attribute(Attribute::Bold)];
         if self.extended {
             row.push(Cell::new(task.aliases.join(", ")));
-            row.push(Cell::new(display_rel_path(&task.config_source)));
+            row.push(Cell::new(
+                task.config_sources()
+                    .iter()
+                    .map(display_rel_path)
+                    .join(", "),
+            ));
         }
         row.push(Cell::new(&task.description).add_attribute(Attribute::Dim));
         row.into()

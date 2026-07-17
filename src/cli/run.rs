@@ -899,7 +899,10 @@ fn display_task_help(task: &Task) -> Result<()> {
     if !task.description.is_empty() {
         info::inline_section("Description", &task.description)?;
     }
-    info::inline_section("Source", display_path(&task.config_source))?;
+    info::inline_section(
+        "Source",
+        task.config_sources().iter().map(display_path).join(", "),
+    )?;
     if !task.depends.is_empty() {
         info::inline_section("Depends on", task.depends.iter().join(", "))?;
     }
