@@ -19,13 +19,27 @@ cat <<'EOF' >~/dotfiles/tasks/customglobalfile
 echo "PROJECT_ROOT=$MISE_PROJECT_ROOT"
 EOF
 chmod +x ~/dotfiles/tasks/customglobalfile
+mkdir -p "$PWD/system-config" "$PWD/system-tasks"
+cat >"$PWD/system-config/config.toml" <<EOF
+[task_config]
+includes = ["$PWD/system-tasks"]
+EOF
+cat <<'EOF' >"$PWD/system-tasks/systemglobalfile"
+#!/usr/bin/env bash
+echo "PROJECT_ROOT=$MISE_PROJECT_ROOT"
+EOF
+chmod +x "$PWD/system-tasks/systemglobalfile"
+export MISE_SYSTEM_CONFIG_FILE="$PWD/system-config/config.toml"
 
 assert "mise tasks" "customglobalfile
 myglobal
 myglobalfile
-mylocal"
+mylocal
+systemglobalfile"
 assert "mise tasks --local" "mylocal"
 assert "mise tasks --global" "customglobalfile
 myglobal
-myglobalfile"
+myglobalfile
+systemglobalfile"
 assert "mise run customglobalfile" "PROJECT_ROOT=$PWD"
+assert "mise run systemglobalfile" "PROJECT_ROOT=$PWD"
