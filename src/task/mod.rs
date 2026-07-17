@@ -93,18 +93,40 @@ impl<'de> Deserialize<'de> for TaskToolValue {
     where
         D: serde::Deserializer<'de>,
     {
-        match toml::Value::deserialize(deserializer)? {
-            toml::Value::String(value) => Ok(Self::String(value)),
-            toml::Value::Table(fields) => {
-                let parsed: ParsedToolMap = toml::Value::Table(fields)
-                    .try_into()
-                    .map_err(serde::de::Error::custom)?;
-                Ok(Self::Map(TaskToolValueMap::from(parsed)))
+        struct TaskToolValueVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for TaskToolValueVisitor {
+            type Value = TaskToolValue;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a task tool definition as a string or table")
             }
-            _ => Err(serde::de::Error::custom(
-                "task tool definition must be a string or table",
-            )),
+
+            fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(TaskToolValue::String(value.to_string()))
+            }
+
+            fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(TaskToolValue::String(value))
+            }
+
+            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                let parsed =
+                    ParsedToolMap::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(TaskToolValue::Map(parsed.into()))
+            }
         }
+
+        deserializer.deserialize_any(TaskToolValueVisitor)
     }
 }
 
