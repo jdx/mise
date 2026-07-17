@@ -1,5 +1,5 @@
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::config_file::mise_toml::{EnvList, deserialize_vars, parse_tool_map};
+use crate::config::config_file::mise_toml::{EnvList, ParsedToolMap, deserialize_vars};
 use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
@@ -95,7 +95,12 @@ impl<'de> Deserialize<'de> for TaskToolValue {
     {
         match toml::Value::deserialize(deserializer)? {
             toml::Value::String(value) => Ok(Self::String(value)),
-            toml::Value::Table(fields) => parse_task_tool_map(fields).map(Self::Map),
+            toml::Value::Table(fields) => {
+                let parsed: ParsedToolMap = toml::Value::Table(fields)
+                    .try_into()
+                    .map_err(serde::de::Error::custom)?;
+                Ok(Self::Map(TaskToolValueMap::from(parsed)))
+            }
             _ => Err(serde::de::Error::custom(
                 "task tool definition must be a string or table",
             )),
@@ -110,17 +115,13 @@ pub struct TaskToolValueMap {
     pub opts: IndexMap<String, toml::Value>,
 }
 
-fn parse_task_tool_map<E>(
-    fields: impl IntoIterator<Item = (String, toml::Value)>,
-) -> std::result::Result<TaskToolValueMap, E>
-where
-    E: serde::de::Error,
-{
-    let parsed = parse_tool_map::<E>(fields)?;
-    Ok(TaskToolValueMap {
-        version: parsed.request,
-        opts: parsed.options,
-    })
+impl From<ParsedToolMap> for TaskToolValueMap {
+    fn from(parsed: ParsedToolMap) -> Self {
+        Self {
+            version: parsed.request,
+            opts: parsed.options,
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for TaskToolValueMap {
@@ -128,7 +129,7 @@ impl<'de> Deserialize<'de> for TaskToolValueMap {
     where
         D: serde::Deserializer<'de>,
     {
-        parse_task_tool_map(IndexMap::<String, toml::Value>::deserialize(deserializer)?)
+        Ok(ParsedToolMap::deserialize(deserializer)?.into())
     }
 }
 
@@ -4204,10 +4205,7 @@ echo "test"
                 "[tools]\nnode = { os = \"linux\" }\n",
                 "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
             ),
-            (
-                "[tools]\nnode = { prefix = 20 }\n",
-                "tool selector `prefix` must be a string",
-            ),
+            ("[tools]\nnode = { prefix = 20 }\n", "expected a string"),
         ] {
             let err = match toml::from_str::<TaskTools>(invalid) {
                 Ok(_) => panic!("expected task tool selector validation to fail"),
