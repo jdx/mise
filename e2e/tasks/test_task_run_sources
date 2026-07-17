@@ -78,3 +78,13 @@ assert_empty "mise build"
 assert "rm src/foo.txt"
 assert "mise build" "done"
 assert_empty "mise build"
+
+mkdir source-files-project && cd source-files-project || exit 1
+cat <<EOF >mise.toml
+[tasks.source-files]
+sources = ["pen", "apple"]
+run = "echo {{ task_source_files() | join(sep=' ') }} {{ arg(name='value') }}"
+EOF
+touch pen apple
+mkdir child && cd child || exit 1
+assert "mise run -q source-files test" "pen apple test"
