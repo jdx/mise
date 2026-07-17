@@ -4,8 +4,6 @@ on:
   pull_request:
     paths:
       - "crates/vfox/**"
-      - "mise.lock"
-      - "mise.toml"
   push:
     branches: [main, release]
 
