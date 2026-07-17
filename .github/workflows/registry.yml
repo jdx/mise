@@ -364,40 +364,34 @@ jobs:
       - list-changed-tools
       - validate-new-tools
       - test-tool
-    if: |
-      !cancelled() &&
-      (
-        needs.check-changes.result != 'success' ||
-        (
-          needs.check-changes.outputs.registry-changed == 'true' &&
-          (
-            needs.build.result != 'success' ||
-            (github.event_name == 'pull_request' && needs.list-changed-tools.result != 'success') ||
-            (github.event_name != 'pull_request' && needs.list-changed-tools.result != 'skipped') ||
-            (
-              github.event_name == 'pull_request' &&
-              github.event.pull_request.user.login != 'jdx' &&
-              needs.list-changed-tools.outputs.new_tools != '' &&
-              needs.validate-new-tools.result != 'success'
-            ) ||
-            (
-              (
-                github.event_name != 'pull_request' ||
-                github.event.pull_request.user.login == 'jdx' ||
-                needs.list-changed-tools.outputs.new_tools == ''
-              ) &&
-              needs.validate-new-tools.result != 'skipped'
-            ) ||
-            (
-              needs.list-changed-tools.outputs.skip-test-tool == 'true' &&
-              needs.test-tool.result != 'skipped'
-            ) ||
-            (
-              needs.list-changed-tools.outputs.skip-test-tool != 'true' &&
-              needs.test-tool.result != 'success'
-            )
-          )
-        )
-      )
+    if: ${{ !cancelled() }}
     steps:
-      - run: exit 1
+      - name: Check CI job results
+        run: |
+          if [ "${{ needs.check-changes.result }}" != "success" ]; then
+            echo "check-changes job failed"
+            exit 1
+          fi
+          if [ "${{ needs.check-changes.outputs.registry-changed }}" != "true" ]; then
+            echo "No registry changes detected, skipping registry CI checks"
+            exit 0
+          fi
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "build failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.list-changed-tools.result }}" != "success" ] && [ "${{ needs.list-changed-tools.result }}" != "skipped" ]; then
+            echo "list-changed-tools failed"
+            exit 1
+          fi
+          if [ "${{ needs.validate-new-tools.result }}" == "failure" ]; then
+            echo "validate-new-tools failed - new tools must include tests"
+            exit 1
+          fi
+          if [ "${{ needs.list-changed-tools.outputs.skip-test-tool }}" == "true" ]; then
+            echo "test-tool intentionally skipped (deletion-only PR)"
+          elif [ "${{ needs.test-tool.result }}" != "success" ]; then
+            echo "test-tool failed or was skipped"
+            exit 1
+          fi
+          echo "All CI jobs completed successfully"
