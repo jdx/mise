@@ -32036,6 +32036,15 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+      - version_constraint: semver("<= 0.29.9")
+        asset: vacuum_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
       - version_constraint: "true"
         asset: vacuum_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -32045,6 +32054,15 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/daveshanley/vacuum/.github/workflows/publish.yaml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
   - type: github_release
     repo_owner: ddddddO
     repo_name: gtree
@@ -70777,7 +70795,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<= 2.5.5")
         asset: bao_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -70798,6 +70816,25 @@ packages:
             bundle:
               type: github_release
               asset: checksums-{{.OS}}.txt.sigstore.json
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: openbao_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - '^https://github\.com/openbao/openbao/\.github/workflows/release\.yml@refs/(tags/.*|heads/release/.*)$'
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
         overrides:
           - goos: windows
             format: zip
