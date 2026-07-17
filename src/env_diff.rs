@@ -73,10 +73,71 @@ impl EnvDiff {
         U: Into<OsString>,
         V: Into<OsString>,
     {
-        let env: IndexMap<OsString, OsString> =
-            env.into_iter().map(|(k, v)| (k.into(), v.into())).collect();
-        let bash_path = file::which(if cfg!(windows) { "bash.exe" } else { "bash" })
-            .unwrap_or("/bin/bash".into());
+        // The into_string().unwrap() panic on invalid UTF-8 is pre-existing
+        // behavior (the conversion used to happen after the spawn).
+        let env: EnvMap = env
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k.into().into_string().unwrap(),
+                    v.into().into_string().unwrap(),
+                )
+            })
+            .collect();
+
+        // On Windows, resolve a real POSIX bash (Git Bash / MSYS2) instead of
+        // whatever `bash.exe` happens to be first on PATH — which is usually the
+        // WSL launcher at C:\Windows\System32\bash.exe when mise is invoked from
+        // PowerShell, and WSL cannot read `C:\...` script paths. On GitHub
+        // runners Git Bash is not on PATH at all, so the candidate probe inside
+        // resolve_posix_shell_program_path is what finds it. See discussion #6513.
+        #[cfg(windows)]
+        let bash_path: PathBuf =
+            crate::path::resolve_posix_shell_program_path(std::ffi::OsStr::new("bash"), &env)
+                .map(PathBuf::from)
+                .or_else(|| {
+                    file::which("bash.exe").filter(|p| !crate::path::is_wsl_launcher_bash(p))
+                })
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "no POSIX bash found to source {}; install Git for Windows or MSYS2, or \
+                         set MISE_BASH_PATH (the WSL launcher at C:\\Windows\\System32\\bash.exe \
+                         cannot read Windows script paths)",
+                        script.display()
+                    )
+                })?;
+        #[cfg(not(windows))]
+        let bash_path = file::which("bash").unwrap_or("/bin/bash".into());
+
+        // Windows: dump the exported env BEFORE and AFTER sourcing, separated
+        // by a NUL byte (environment values cannot contain NUL, so the split is
+        // unambiguous even for hostile multi-line values). The first dump
+        // self-captures the baseline the MSYS runtime and the Git-for-Windows
+        // bash wrapper create (PATH converted to `/c/...` form with
+        // `/mingw64/bin:/usr/bin` prepended, TMP/TEMP rewritten to `/tmp`,
+        // MSYSTEM exported, ...), so diffing the two dumps leaves only what the
+        // script itself changed. The script path is passed as a positional
+        // argument (`$1`, in forward-slash form so MSYS bash reads it verbatim)
+        // rather than interpolated into the command, so `$`/backticks in the
+        // path are not expanded by bash.
+        #[cfg(windows)]
+        let out = cmd!(
+            bash_path,
+            "--noprofile",
+            "-c",
+            indoc::indoc! {r#"
+                export -p
+                printf '\0'
+                . "$1"
+                export -p
+            "#},
+            "mise", // $0 for the -c body
+            script.to_string_lossy().replace('\\', "/"),
+        )
+        .dir(dir)
+        .full_env(&env)
+        .read()?;
+        #[cfg(not(windows))]
         let out = cmd!(
             bash_path,
             "--noprofile",
@@ -89,31 +150,26 @@ impl EnvDiff {
         .dir(dir)
         .full_env(&env)
         .read()?;
-        let env: EnvMap = env
-            .into_iter()
-            .map(|(k, v)| (k.into_string().unwrap(), v.into_string().unwrap()))
-            .collect();
 
-        let mut additions = EnvMap::new();
-        let mut cur_key = None;
-        for line in out.lines() {
-            match line.strip_prefix("declare -x ") {
-                Some(line) => {
-                    let (k, v) = line.split_once('=').unwrap_or_default();
-                    if invalid_key(k, opts) {
-                        continue;
-                    }
-                    cur_key = Some(k.to_string());
-                    additions.insert(k.to_string(), v.to_string());
-                }
-                None => {
-                    if let Some(k) = &cur_key {
-                        let v = format!("\n{line}");
-                        additions.get_mut(k).unwrap().push_str(&v);
-                    }
-                }
-            }
-        }
+        #[cfg(windows)]
+        let (mut additions, baseline_path) = {
+            let (before, after) = out.split_once('\0').ok_or_else(|| {
+                eyre::eyre!("failed to parse env after sourcing {}", script.display())
+            })?;
+            let baseline = parse_export_p(before, opts);
+            let after = parse_export_p(after, opts);
+            let additions: EnvMap = after
+                .into_iter()
+                .filter(|(k, v)| baseline.get(k) != Some(v))
+                .collect();
+            let baseline_path = baseline
+                .get(PATH_KEY.as_str())
+                .map(|v| normalize_escape_sequences(v));
+            (additions, baseline_path)
+        };
+        #[cfg(not(windows))]
+        let mut additions = parse_export_p(&out, opts);
+
         for (k, v) in additions.clone().iter() {
             let v = normalize_escape_sequences(v);
             if let Some(orig) = env.get(k)
@@ -124,6 +180,11 @@ impl EnvDiff {
             }
             additions.insert(k.into(), v);
         }
+        // After the normalize loop — the reconstructed Windows-form PATH value
+        // must not run through normalize_escape_sequences (`\f` in `C:\fake`
+        // would turn into a form feed).
+        #[cfg(windows)]
+        fixup_windows_path(&mut additions, baseline_path.as_deref(), &env, script);
         Ok(Self::new(&env, additions))
     }
 
@@ -198,6 +259,100 @@ impl EnvDiff {
 
         diff
     }
+}
+
+/// Parse the output of bash's `export -p` into a map of exported variables.
+/// Multi-line values continue until the next `declare -x ` line.
+fn parse_export_p(out: &str, opts: &EnvDiffOptions) -> EnvMap {
+    let mut additions = EnvMap::new();
+    let mut cur_key = None;
+    for line in out.lines() {
+        match line.strip_prefix("declare -x ") {
+            Some(line) => {
+                // A new declaration always ends any multi-line continuation;
+                // only a valid one re-arms it below. Otherwise continuation
+                // lines of a skipped declaration (e.g. an exported bash
+                // function body) would be appended to the previous variable.
+                cur_key = None;
+                let Some((k, v)) = line.split_once('=') else {
+                    continue;
+                };
+                // bash always reports the PATH variable as `PATH`, but the
+                // Windows host key is usually `Path`. Normalize to the host
+                // casing so ignore_keys, EnvDiff::new, and callers comparing
+                // against env::PATH_KEY behave identically cross-platform.
+                let k = if cfg!(windows) && k.eq_ignore_ascii_case("PATH") {
+                    PATH_KEY.to_string()
+                } else {
+                    k.to_string()
+                };
+                if invalid_key(&k, opts) {
+                    continue;
+                }
+                cur_key = Some(k.clone());
+                additions.insert(k, v.to_string());
+            }
+            None => {
+                if let Some(k) = &cur_key {
+                    let v = format!("\n{line}");
+                    additions.get_mut(k).unwrap().push_str(&v);
+                }
+            }
+        }
+    }
+    additions
+}
+
+/// Recover only what a sourced script *prepended* to PATH: strip the
+/// self-captured MSYS-form baseline off the tail, convert each remaining entry
+/// back to Windows form, and re-attach the ORIGINAL Windows-form PATH so that
+/// callers' suffix logic (`EnvResults::source` strips the original PATH and
+/// splits the rest on `;`) works unchanged cross-platform.
+#[cfg(windows)]
+fn fixup_windows_path(
+    additions: &mut EnvMap,
+    baseline_path: Option<&str>,
+    orig_env: &EnvMap,
+    script: &Path,
+) {
+    let Some(new_path) = additions.remove(PATH_KEY.as_str()) else {
+        return;
+    };
+    let Some(prepended) = baseline_path.and_then(|b| new_path.strip_suffix(b)) else {
+        // The script rewrote or appended to PATH rather than prepending —
+        // matches the unix semantics, where only prepended entries are
+        // recovered (EnvResults::source's strip_suffix).
+        trace!(
+            "sourcing {}: PATH was not prepended-to; ignoring PATH changes",
+            script.display()
+        );
+        return;
+    };
+    let converted = prepended
+        .trim_end_matches(':')
+        .split(':')
+        .filter(|e| !e.is_empty())
+        .filter_map(|e| {
+            let win = crate::path::unix_path_to_windows(e);
+            if win.is_none() {
+                trace!(
+                    "sourcing {}: skipping PATH entry {e} with no Windows equivalent",
+                    script.display()
+                );
+            }
+            win
+        })
+        .collect::<Vec<_>>();
+    if converted.is_empty() {
+        return;
+    }
+    let orig = orig_env.get(PATH_KEY.as_str()).cloned().unwrap_or_default();
+    let joined = if orig.is_empty() {
+        converted.join(";")
+    } else {
+        format!("{};{}", converted.join(";"), orig)
+    };
+    additions.insert(PATH_KEY.to_string(), joined);
 }
 
 fn invalid_key(k: &str, opts: &EnvDiffOptions) -> bool {
@@ -510,5 +665,98 @@ mod tests {
         let output = normalize_escape_sequences(input);
         // just warns
         assert_str_eq!(output, r"\g");
+    }
+
+    #[test]
+    fn test_parse_export_p_skipped_declaration_does_not_pollute_previous_key() {
+        // A skipped declaration with a multi-line value (e.g. an exported bash
+        // function) must not have its continuation lines appended to the
+        // previous valid key, and a valueless `declare -x FOO` must end any
+        // running continuation.
+        let out = indoc::indoc! {r#"
+            declare -x GOOD="value"
+            declare -x BASH_FUNC_foo%%="() { echo a
+            echo b
+            }"
+            declare -x AFTER="after"
+        "#};
+        let parsed = parse_export_p(out, &EnvDiffOptions::default());
+        assert_eq!(parsed.get("GOOD").map(String::as_str), Some("\"value\""));
+        assert_eq!(parsed.get("AFTER").map(String::as_str), Some("\"after\""));
+        assert!(!parsed.keys().any(|k| k.starts_with("BASH_FUNC_")));
+    }
+
+    /// Source `script_body` through the real resolved bash (Git Bash on CI)
+    /// with PATH pinned to a known Windows-form value, mirroring how
+    /// `EnvResults::source` calls `from_bash_script` (PATH not ignored).
+    #[cfg(windows)]
+    fn from_bash_script_windows(script_body: &str, orig_path: &str) -> EnvDiff {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("env.sh");
+        std::fs::write(&script, script_body).unwrap();
+        // Inherit the real env (bash needs SYSTEMROOT etc.) but pin PATH and
+        // add a marker var.
+        let mut env: Vec<(String, String)> = crate::env::vars_safe().collect();
+        env.retain(|(k, _)| !k.eq_ignore_ascii_case("PATH"));
+        env.push(((*crate::env::PATH_KEY).to_string(), orig_path.to_string()));
+        env.push(("EXISTING_VAR".to_string(), "unchanged".to_string()));
+        let mut opts = EnvDiffOptions::default();
+        opts.ignore_keys.shift_remove(&*crate::env::PATH_KEY);
+        EnvDiff::from_bash_script(&script, tmp.path(), env, &opts).unwrap()
+    }
+
+    // https://github.com/jdx/mise/discussions/6513 — `_.source` was broken on
+    // Windows (WSL launcher routing / literal /bin/bash fallback).
+    #[tokio::test]
+    #[cfg(windows)]
+    async fn test_from_bash_script_windows() {
+        let _config = Config::get().await.unwrap();
+        let orig_path = r"C:\Windows\System32;C:\Windows";
+        let ed = from_bash_script_windows(
+            "export SOURCED_VAR=\"hello world\"\nexport PATH=\"/c/fake/prepended:$PATH\"\n",
+            orig_path,
+        );
+        assert_eq!(
+            ed.new.get("SOURCED_VAR").map(String::as_str),
+            Some("hello world")
+        );
+        assert!(!ed.new.contains_key("EXISTING_VAR"));
+        // the two-dump baseline keeps MSYS runtime/wrapper noise out of the diff
+        assert!(!ed.new.contains_key("MSYSTEM"));
+        assert!(
+            !ed.new
+                .keys()
+                .any(|k| k.eq_ignore_ascii_case("TMP") || k.eq_ignore_ascii_case("TEMP"))
+        );
+        // the prepended entry comes back in Windows form, re-attached to the
+        // original Windows-form PATH so EnvResults::source's strip_suffix works
+        assert_eq!(
+            ed.new.get(&*crate::env::PATH_KEY).map(String::as_str),
+            Some(format!(r"C:\fake\prepended;{orig_path}").as_str())
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(windows)]
+    async fn test_from_bash_script_windows_skips_unconvertible_path_entries() {
+        let _config = Config::get().await.unwrap();
+        let ed = from_bash_script_windows(
+            "export PATH=\"/usr/local/custom:$PATH\"\n",
+            r"C:\Windows\System32;C:\Windows",
+        );
+        // `/usr/local/custom` has no Windows equivalent → no PATH change at all
+        assert!(!ed.new.contains_key(&*crate::env::PATH_KEY));
+    }
+
+    #[tokio::test]
+    #[cfg(windows)]
+    async fn test_from_bash_script_windows_ignores_path_rewrite() {
+        let _config = Config::get().await.unwrap();
+        let ed = from_bash_script_windows(
+            "export PATH=\"/c/only\"\n",
+            r"C:\Windows\System32;C:\Windows",
+        );
+        // wholesale rewrite (not a prepend) → ignored, matching unix semantics
+        assert!(!ed.new.contains_key(&*crate::env::PATH_KEY));
     }
 }
