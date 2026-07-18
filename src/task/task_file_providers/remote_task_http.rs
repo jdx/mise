@@ -254,10 +254,12 @@ mod tests {
         };
         let request_url = format!("{}/task", server.url());
         let destination = storage.path().join(provider.get_cache_key(&request_url));
+        let temp_destination = RemoteTaskHttp::temp_download_path(&destination);
+        std::fs::write(&temp_destination, b"partial download").unwrap();
 
         assert!(provider.get_local_path(&request_url).await.is_err());
         assert!(!destination.exists());
-        assert!(!RemoteTaskHttp::temp_download_path(&destination).exists());
+        assert!(!temp_destination.exists());
         remote.assert_async().await;
     }
 }
