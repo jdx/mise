@@ -617,6 +617,11 @@ pub struct Task {
     #[serde(skip)]
     pub remote_metadata_has_tools: bool,
 
+    /// Keeps a no-cache remote snapshot alive while this Task (and any clones)
+    /// may still execute it. The final clone removes the temporary file/repo.
+    #[serde(skip)]
+    pub(crate) remote_artifact_cleanups: Vec<Arc<task_file_providers::TaskFileArtifactCleanup>>,
+
     /// Block reads, writes, network, and env vars
     #[serde(default)]
     pub deny_all: bool,
@@ -704,6 +709,17 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
             .iter()
             .any(toml_value_has_template)
     }
+}
+
+/// Check decoded `#MISE` header values regardless of the script filename.
+/// Remote file tasks are always scripts, even when their URL/path ends in
+/// `.toml`, so extension-based dispatch is not appropriate for them.
+pub(crate) fn script_header_has_decoded_template(body: &str) -> bool {
+    use crate::config::config_file::mise_toml::toml_value_has_template;
+    parse_mise_header_toml(body)
+        .unwrap_or_default()
+        .iter()
+        .any(toml_value_has_template)
 }
 
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
@@ -1896,7 +1912,7 @@ impl Task {
         self.allow_env.extend(other.allow_env);
     }
 
-    pub(crate) fn has_render_templates(&self) -> bool {
+    fn has_render_templates(&self) -> bool {
         fn path_contains_template(path: &Path) -> bool {
             path.to_str().is_some_and(contains_template_syntax)
         }
@@ -2117,7 +2133,7 @@ impl Task {
         env_directives.extend(self.overlay_env.iter().cloned());
 
         // Resolve environment directives using the same system as global env
-        let env_results = EnvResults::resolve(
+        let env_results = EnvResults::resolve_with_trust_source(
             config,
             tera_ctx.clone(),
             &env,
@@ -2127,6 +2143,7 @@ impl Task {
                 tools: ToolsFilter::Both,
                 warn_on_missing_required: false,
             },
+            self.remote_config_source.as_deref(),
         )
         .await?;
         // Register task-specific redactions with the global redactor
@@ -2409,6 +2426,7 @@ impl Default for Task {
             remote_file_source: None,
             remote_config_source: None,
             remote_metadata_has_tools: false,
+            remote_artifact_cleanups: vec![],
             deny_all: false,
             deny_read: false,
             deny_write: false,

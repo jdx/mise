@@ -22,6 +22,7 @@ HEADERS_LOG_DIR = None
 
 class TestFileHandler(http.server.SimpleHTTPRequestHandler):
     changing_remote_revision = 0
+    raw_help_revision = 0
 
     def do_GET(self):
         """Handle GET requests for test files"""
@@ -43,7 +44,32 @@ class TestFileHandler(http.server.SimpleHTTPRequestHandler):
             content = (
                 '#!/usr/bin/env bash\n'
                 '#MISE description="{{ exec(command=\'touch $MISE_REMOTE_TEMPLATE_MARKER\') }}"\n'
+                '#MISE depends=["remote_dep"]\n'
+                '#USAGE flag "--remote-flag" help="Remote usage flag"\n'
                 'echo "remote template task ran"\n'
+            )
+            self.wfile.write(content.encode('utf-8'))
+        elif self.path == '/test/remote-raw-help':
+            TestFileHandler.raw_help_revision += 1
+            revision = TestFileHandler.raw_help_revision
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            content = (
+                '#!/usr/bin/env bash\n'
+                '#MISE raw_args=true\n'
+                f'echo "remote raw help revision {revision}"\n'
+            )
+            self.wfile.write(content.encode('utf-8'))
+        elif self.path == '/test/remote-deferred-template':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            content = (
+                '#!/usr/bin/env bash\n'
+                '#MISE confirm="\\u007b\\u007b exec(command=\'touch $MISE_REMOTE_DEFERRED_MARKER\') \\u007d\\u007d"\n'
+                '#MISE env={REMOTE_DEFERRED="\\u007b\\u007b exec(command=\'touch $MISE_REMOTE_DEFERRED_MARKER\') \\u007d\\u007d"}\n'
+                'echo "remote deferred task ran"\n'
             )
             self.wfile.write(content.encode('utf-8'))
         elif self.path == '/test/remote-tools':

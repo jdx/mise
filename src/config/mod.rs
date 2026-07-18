@@ -26,7 +26,7 @@ use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
-use crate::task::task_file_providers::TaskFileProvidersBuilder;
+use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
 use crate::task::{Task, TaskTemplate, strip_extension};
 use crate::tera::{contains_template_syntax, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
@@ -597,8 +597,12 @@ impl Config {
         // Default context (None) becomes TaskLoadContext::default()
         let cache_key = ctx.cloned().unwrap_or_default();
 
-        // Check if already cached
-        if let Some(cached) = self.tasks_cache.get(&cache_key) {
+        // No-cache remote includes own temporary snapshots through their Tasks.
+        // The global Config cache is static and would keep those cleanup guards
+        // alive until process teardown (static destructors do not run), so skip
+        // both cache reads and writes in this mode.
+        let use_cache = !Settings::get().task.remote_no_cache.unwrap_or(false);
+        if use_cache && let Some(cached) = self.tasks_cache.get(&cache_key) {
             return Ok(cached.value().clone());
         }
 
@@ -608,8 +612,9 @@ impl Config {
         });
         let tasks_arc = Arc::new(tasks);
 
-        // Insert into cache
-        self.tasks_cache.insert(cache_key, tasks_arc.clone());
+        if use_cache {
+            self.tasks_cache.insert(cache_key, tasks_arc.clone());
+        }
 
         Ok(tasks_arc)
     }
@@ -830,6 +835,7 @@ impl Config {
                 tool_add_paths: Vec::new(),
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
+                template_trust_source: None,
             };
             let redact_keys = self
                 .redaction_keys()
@@ -2982,14 +2988,14 @@ fn is_mise_config_file_in_task_include(root: &Path, path: &Path) -> bool {
     })
 }
 
-async fn resolve_git_url_to_path(git_url: &str) -> Result<PathBuf> {
+async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
     let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
     let task_file_providers = TaskFileProvidersBuilder::new()
         .with_cache(!no_cache)
         .build();
 
     match task_file_providers.get_provider(git_url) {
-        Some(provider) => provider.get_local_path(git_url).await,
+        Some(provider) => provider.get_local_artifact(git_url).await,
         None => bail!("No provider found for git URL: {}", git_url),
     }
 }
@@ -3061,12 +3067,16 @@ async fn load_file_tasks(
     let require_task_include_trust = !is_path_trusted(cf.get_path());
 
     for include in includes {
-        let paths = if include.starts_with("git::") {
+        let artifacts = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(&include).await?]
         } else {
             expand_task_include(&cf_root, &include)
+                .into_iter()
+                .map(TaskFileArtifact::persistent)
+                .collect()
         };
-        for path in paths {
+        for artifact in artifacts {
+            let path = artifact.path;
             let mut loaded = load_tasks_includes(
                 config,
                 &path,
@@ -3077,6 +3087,11 @@ async fn load_file_tasks(
                 require_task_include_trust,
             )
             .await?;
+            if let Some(cleanup) = artifact.cleanup {
+                for task in &mut loaded {
+                    task.remote_artifact_cleanups.push(cleanup.clone());
+                }
+            }
             if is_global || is_global_task_include_path(&path) {
                 mark_tasks_as_global(&mut loaded);
             }
@@ -3188,12 +3203,16 @@ pub async fn load_tasks_in_dir(
 
     let mut file_tasks = vec![];
     for include in &includes {
-        let paths = if include.starts_with("git::") {
+        let artifacts = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(include).await?]
         } else {
             expand_task_include(&resolve_dir, include)
+                .into_iter()
+                .map(TaskFileArtifact::persistent)
+                .collect()
         };
-        for p in paths {
+        for artifact in artifacts {
+            let p = artifact.path;
             let mut loaded = load_tasks_includes(
                 config,
                 &p,
@@ -3204,6 +3223,11 @@ pub async fn load_tasks_in_dir(
                 require_task_include_trust,
             )
             .await?;
+            if let Some(cleanup) = artifact.cleanup {
+                for task in &mut loaded {
+                    task.remote_artifact_cleanups.push(cleanup.clone());
+                }
+            }
             if is_global_task_include_path(&p) {
                 mark_tasks_as_global(&mut loaded);
             }

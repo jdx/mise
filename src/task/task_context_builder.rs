@@ -9,7 +9,7 @@ use crate::toolset::{Toolset, ToolsetBuilder};
 use eyre::Result;
 use indexmap::IndexMap;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 type EnvResolutionResult = (
@@ -252,7 +252,7 @@ impl TaskContextBuilder {
 
         // Resolve config-level env from ALL config files, not just task_cf
         let config_env_results = self
-            .resolve_env_directives(config, &tera_ctx, &env, all_config_env_entries)
+            .resolve_env_directives(config, &tera_ctx, &env, all_config_env_entries, None)
             .await?;
         Self::apply_env_results(&mut env, &config_env_results);
 
@@ -263,7 +263,13 @@ impl TaskContextBuilder {
 
         let task_env_directives = self.build_task_env_directives(task);
         let task_env_results = self
-            .resolve_env_directives(config, &tera_ctx, &env, task_env_directives)
+            .resolve_env_directives(
+                config,
+                &tera_ctx,
+                &env,
+                task_env_directives,
+                task.remote_config_source.as_deref(),
+            )
             .await?;
 
         let task_env = self.extract_task_env(&task_env_results);
@@ -408,8 +414,9 @@ impl TaskContextBuilder {
         tera_ctx: &tera::Context,
         env: &BTreeMap<String, String>,
         directives: Vec<(EnvDirective, PathBuf)>,
+        trust_source: Option<&Path>,
     ) -> Result<EnvResults> {
-        EnvResults::resolve(
+        EnvResults::resolve_with_trust_source(
             config,
             tera_ctx.clone(),
             env,
@@ -419,6 +426,7 @@ impl TaskContextBuilder {
                 tools: ToolsFilter::Both,
                 warn_on_missing_required: false,
             },
+            trust_source,
         )
         .await
     }

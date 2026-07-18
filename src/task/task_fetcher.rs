@@ -1,7 +1,7 @@
 use crate::config::config_file::trust_check;
 use crate::config::{Config, Settings};
-use crate::task::Task;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
+use crate::task::{Task, script_header_has_decoded_template};
 use eyre::{Result, WrapErr, bail};
 use std::sync::Arc;
 
@@ -67,11 +67,12 @@ impl TaskFetcher {
                     bail!("No provider found for file: {}", source);
                 }
 
-                let local_path = provider
+                let artifact = provider
                     .unwrap()
-                    .get_local_path(&source)
+                    .get_local_artifact(&source)
                     .await
                     .wrap_err_with(|| format!("failed to fetch remote task {source}"))?;
+                let local_path = artifact.path;
                 let config_root = original
                     .config_root
                     .clone()
@@ -82,6 +83,10 @@ impl TaskFetcher {
                 // Parse the downloaded script as a regular file task so all #MISE
                 // metadata is honored. The inline TOML task remains the higher-
                 // precedence overlay, matching local file-task behavior.
+                let body = crate::file::read_to_string(&local_path).wrap_err_with(|| {
+                    format!("failed to read remote task metadata from {source}")
+                })?;
+                let header_has_templates = script_header_has_decoded_template(&body);
                 let mut remote = Task::from_path_unrendered_with_cf(
                     &local_path,
                     prefix,
@@ -93,7 +98,7 @@ impl TaskFetcher {
                 // guessing its format from the fetched filename: Git task scripts
                 // may legitimately end in `.toml`, and escaped TOML delimiters
                 // only become visible after header parsing.
-                if remote.has_render_templates() {
+                if header_has_templates {
                     trust_check(&defining_config_source).wrap_err_with(|| {
                         format!(
                             "remote task metadata from {source} requires its defining config to be trusted"
@@ -127,6 +132,12 @@ impl TaskFetcher {
                 remote.remote_file_source = Some(source);
                 remote.remote_config_source = Some(defining_config_source);
                 remote.remote_metadata_has_tools = remote_metadata_has_tools;
+                remote
+                    .remote_artifact_cleanups
+                    .extend(original.remote_artifact_cleanups);
+                if let Some(cleanup) = artifact.cleanup {
+                    remote.remote_artifact_cleanups.push(cleanup);
+                }
                 *t = remote;
             }
         }
@@ -166,6 +177,24 @@ echo ok
             Task::from_path_unrendered_with_cf(&path, root.path(), root.path(), None).unwrap();
 
         assert!(task.has_render_templates());
+        assert!(script_header_has_decoded_template(
+            &fs::read_to_string(path).unwrap()
+        ));
+    }
+
+    #[test]
+    fn test_remote_script_detects_deferred_header_templates() {
+        let confirm = r#"#!/usr/bin/env bash
+#MISE confirm="\u007b\u007b exec(command='echo unsafe') \u007d\u007d"
+echo ok
+"#;
+        let env = r#"#!/usr/bin/env bash
+#MISE env={MARKER="{{ exec(command='echo unsafe') }}"}
+echo ok
+"#;
+
+        assert!(script_header_has_decoded_template(confirm));
+        assert!(script_header_has_decoded_template(env));
     }
 
     #[tokio::test]

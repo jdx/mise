@@ -6,7 +6,7 @@ use crate::{
     Result, dirs, env, file, hash, http::HTTP, lock_file::LockFile, remote_source::RemoteSource,
 };
 
-use super::TaskFileProvider;
+use super::{TaskFileArtifact, TaskFileProvider};
 
 #[derive(Debug)]
 pub struct RemoteTaskHttpBuilder {
@@ -55,6 +55,23 @@ impl RemoteTaskHttp {
         file::make_executable(destination)?;
         Ok(())
     }
+
+    async fn get_unique_artifact(&self, file: &str) -> Result<TaskFileArtifact> {
+        let cache_key = self.get_cache_key(file);
+        file::create_dir_all(&self.storage_path)?;
+        let temp_file =
+            tempfile::NamedTempFile::with_prefix_in(format!("{cache_key}-"), &self.storage_path)?;
+        let (_, destination) = temp_file.keep()?;
+        file::remove_file(&destination)?;
+        if let Err(error) = self.download_file(file, &destination).await {
+            let _ = file::remove_file(&destination);
+            return Err(error);
+        }
+        Ok(TaskFileArtifact::temporary(
+            destination.clone(),
+            destination,
+        ))
+    }
 }
 
 #[async_trait]
@@ -65,9 +82,9 @@ impl TaskFileProvider for RemoteTaskHttp {
 
     async fn get_local_path(&self, file: &str) -> Result<PathBuf> {
         let cache_key = self.get_cache_key(file);
+        let destination = self.storage_path.join(&cache_key);
         if self.is_cached {
             trace!("Cache mode enabled");
-            let destination = self.storage_path.join(&cache_key);
             let _lock = LockFile::new(&destination).lock()?;
             if destination.exists() {
                 debug!("Using cached file: {:?}", destination);
@@ -79,17 +96,18 @@ impl TaskFileProvider for RemoteTaskHttp {
 
         trace!("Cache mode disabled");
         file::create_dir_all(&self.storage_path)?;
-        // A no-cache fetch must not replace a path already retained by another
-        // Task. Keep each response at a unique location until that task runs.
-        let temp_file =
-            tempfile::NamedTempFile::with_prefix_in(format!("{cache_key}-"), &self.storage_path)?;
-        let (_, destination) = temp_file.keep()?;
-        file::remove_file(&destination)?;
-        if let Err(error) = self.download_file(file, &destination).await {
-            let _ = file::remove_file(&destination);
-            return Err(error);
-        }
+        let _lock = LockFile::new(&destination).lock()?;
+        self.download_file(file, &destination).await?;
         Ok(destination)
+    }
+
+    async fn get_local_artifact(&self, file: &str) -> Result<TaskFileArtifact> {
+        if self.is_cached {
+            return Ok(TaskFileArtifact::persistent(
+                self.get_local_path(file).await?,
+            ));
+        }
+        self.get_unique_artifact(file).await
     }
 }
 
@@ -139,7 +157,8 @@ mod tests {
 
             let mut local_paths = vec![];
             for _ in 0..2 {
-                let local_path = provider.get_local_path(&request_url).await.unwrap();
+                let artifact = provider.get_local_artifact(&request_url).await.unwrap();
+                let local_path = artifact.path.clone();
                 assert!(local_path.exists());
                 assert!(local_path.is_file());
                 assert!(
@@ -149,9 +168,15 @@ mod tests {
                         .to_string_lossy()
                         .starts_with(&cache_key)
                 );
-                local_paths.push(local_path);
+                local_paths.push((local_path, artifact));
             }
-            assert_ne!(local_paths[0], local_paths[1]);
+            assert_ne!(local_paths[0].0, local_paths[1].0);
+            let retained_paths = local_paths
+                .iter()
+                .map(|(path, _)| path.clone())
+                .collect::<Vec<_>>();
+            drop(local_paths);
+            assert!(retained_paths.iter().all(|path| !path.exists()));
 
             mocked_server.assert();
         }
