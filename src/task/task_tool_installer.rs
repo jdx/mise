@@ -2,11 +2,11 @@ use crate::cli::args::ToolArg;
 use crate::config::config_file::trust_check;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
-use crate::task::Deps;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_helpers::canonicalize_path;
+use crate::task::{Deps, Task};
 use crate::toolset::{InstallOptions, ToolSource, ToolVersion, Toolset};
-use eyre::{Result, WrapErr};
+use eyre::{Result, WrapErr, eyre};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -43,21 +43,7 @@ impl<'a> TaskToolInstaller<'a> {
         // caller skips this installer entirely for --skip-tools, and disabled
         // auto-install settings remain authoritative here as well.
         if Settings::get().task.run_auto_install && Settings::get().auto_install {
-            for task in &all_tasks {
-                if !task.remote_metadata_has_tools {
-                    continue;
-                }
-                let Some(config_source) = task.remote_config_source.as_deref() else {
-                    continue;
-                };
-                trust_check(config_source).wrap_err_with(|| {
-                    format!(
-                        "tool metadata from remote task {} requires its defining config {} to be trusted",
-                        task.remote_file_source.as_deref().unwrap_or(&task.name),
-                        display_path(config_source)
-                    )
-                })?;
-            }
+            Self::trust_remote_tool_metadata(&all_tasks)?;
         }
 
         trace!("Collecting tools from {} tasks", all_tasks.len());
@@ -88,6 +74,28 @@ impl<'a> TaskToolInstaller<'a> {
         self.install_toolset(config, toolset, dry_run, previewed_tools)
             .await?;
 
+        Ok(())
+    }
+
+    fn trust_remote_tool_metadata(tasks: &[&Task]) -> Result<()> {
+        for task in tasks {
+            if !task.remote_metadata_has_tools {
+                continue;
+            }
+            let remote_source = task.remote_file_source.as_deref().unwrap_or(&task.name);
+            let config_source = task.remote_config_source.as_deref().ok_or_else(|| {
+                eyre!(
+                    "remote task {remote_source} has tool metadata without defining config provenance"
+                )
+            })?;
+            trust_check(config_source).wrap_err_with(|| {
+                format!(
+                    "tool metadata from remote task {} requires its defining config {} to be trusted",
+                    remote_source,
+                    display_path(config_source)
+                )
+            })?;
+        }
         Ok(())
     }
 
@@ -252,5 +260,23 @@ mod tests {
         let cli_tools: Vec<ToolArg> = vec![];
         let installer = TaskToolInstaller::new(&context_builder, &cli_tools);
         assert_eq!(installer.cli_tools.len(), 0);
+    }
+
+    #[test]
+    fn test_remote_tool_metadata_without_provenance_fails_closed() {
+        let task = Task {
+            name: "remote".into(),
+            remote_file_source: Some("https://example.com/task".into()),
+            remote_metadata_has_tools: true,
+            ..Default::default()
+        };
+
+        let error = TaskToolInstaller::trust_remote_tool_metadata(&[&task]).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("tool metadata without defining config provenance")
+        );
     }
 }

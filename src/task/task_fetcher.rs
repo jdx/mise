@@ -1,5 +1,5 @@
 use crate::config::config_file::trust_check;
-use crate::config::{self, Config, Settings};
+use crate::config::{Config, Settings};
 use crate::task::Task;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use eyre::{Result, WrapErr, bail};
@@ -8,11 +8,23 @@ use std::sync::Arc;
 /// Handles fetching remote task files and converting them to local paths
 pub struct TaskFetcher {
     no_cache: bool,
+    trust_before_fetch: bool,
 }
 
 impl TaskFetcher {
     pub fn new(no_cache: bool) -> Self {
-        Self { no_cache }
+        Self {
+            no_cache,
+            trust_before_fetch: false,
+        }
+    }
+
+    /// Require trust before a remote provider performs network or Git work.
+    /// Passive discovery commands use this because merely listing tasks is not
+    /// an explicit request to execute a configured remote task.
+    pub fn require_trust_before_fetch(mut self) -> Self {
+        self.trust_before_fetch = true;
+        self
     }
 
     /// Fetch remote task files, converting remote paths to local cached paths
@@ -31,6 +43,24 @@ impl TaskFetcher {
                     continue;
                 }
 
+                let original = t.clone();
+                let defining_cf = original
+                    .cf
+                    .clone()
+                    .or_else(|| config.config_files.get(&original.config_source).cloned());
+                let defining_config_source = defining_cf
+                    .as_ref()
+                    .map(|cf| cf.get_path().to_path_buf())
+                    .unwrap_or_else(|| original.config_source.clone());
+
+                if self.trust_before_fetch {
+                    trust_check(&defining_config_source).wrap_err_with(|| {
+                        format!(
+                            "fetching remote task {source} requires its defining config to be trusted"
+                        )
+                    })?;
+                }
+
                 let provider = task_file_providers.get_provider(&source);
 
                 if provider.is_none() {
@@ -42,15 +72,6 @@ impl TaskFetcher {
                     .get_local_path(&source)
                     .await
                     .wrap_err_with(|| format!("failed to fetch remote task {source}"))?;
-                let original = t.clone();
-                let defining_cf = original
-                    .cf
-                    .clone()
-                    .or_else(|| config.config_files.get(&original.config_source).cloned());
-                let defining_config_source = defining_cf
-                    .as_ref()
-                    .map(|cf| cf.get_path().to_path_buf())
-                    .unwrap_or_else(|| original.config_source.clone());
                 let config_root = original
                     .config_root
                     .clone()
@@ -61,16 +82,6 @@ impl TaskFetcher {
                 // Parse the downloaded script as a regular file task so all #MISE
                 // metadata is honored. The inline TOML task remains the higher-
                 // precedence overlay, matching local file-task behavior.
-                // Apply the same trust boundary as local task includes before
-                // rendering templates such as `exec()`, but trust the config that
-                // declared the URL rather than the mutable cache path.
-                if config::task_include_requires_trust(&local_path) {
-                    trust_check(&defining_config_source).wrap_err_with(|| {
-                        format!(
-                            "remote task metadata from {source} requires its defining config to be trusted"
-                        )
-                    })?;
-                }
                 let mut remote = Task::from_path_unrendered_with_cf(
                     &local_path,
                     prefix,
@@ -78,6 +89,17 @@ impl TaskFetcher {
                     defining_cf,
                 )
                 .wrap_err_with(|| format!("failed to parse remote task metadata from {source}"))?;
+                // Parsing headers is inert. Check the decoded Task instead of
+                // guessing its format from the fetched filename: Git task scripts
+                // may legitimately end in `.toml`, and escaped TOML delimiters
+                // only become visible after header parsing.
+                if remote.has_render_templates() {
+                    trust_check(&defining_config_source).wrap_err_with(|| {
+                        format!(
+                            "remote task metadata from {source} requires its defining config to be trusted"
+                        )
+                    })?;
+                }
                 let remote_metadata_has_tools = !remote.tools.is_empty();
                 remote.name.clone_from(&original.name);
                 remote.display_name.clone_from(&original.display_name);
@@ -125,7 +147,26 @@ mod tests {
     use super::*;
     use crate::config::env_directive::EnvDirective;
     use crate::task::TaskToolValue;
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf};
+
+    #[test]
+    fn test_remote_script_template_detection_ignores_toml_extension() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("remote-task.toml");
+        fs::write(
+            &path,
+            r#"#!/usr/bin/env bash
+#MISE description="\u007b\u007b exec(command='echo unsafe') \u007d\u007d"
+echo ok
+"#,
+        )
+        .unwrap();
+
+        let task =
+            Task::from_path_unrendered_with_cf(&path, root.path(), root.path(), None).unwrap();
+
+        assert!(task.has_render_templates());
+    }
 
     #[tokio::test]
     async fn test_fetch_remote_task_parses_headers_and_applies_toml_overlay() {

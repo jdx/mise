@@ -21,6 +21,8 @@ HEADERS_LOG_DIR = None
 
 
 class TestFileHandler(http.server.SimpleHTTPRequestHandler):
+    changing_remote_revision = 0
+
     def do_GET(self):
         """Handle GET requests for test files"""
         self._log_headers()
@@ -33,6 +35,8 @@ class TestFileHandler(http.server.SimpleHTTPRequestHandler):
             content = '#!/usr/bin/env bash\necho "running mytask"\n'
             self.wfile.write(content.encode('utf-8'))
         elif self.path == '/test/remote-template':
+            if marker := os.environ.get('MISE_HTTP_REQUEST_MARKER'):
+                Path(marker).touch()
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
             self.end_headers()
@@ -49,7 +53,19 @@ class TestFileHandler(http.server.SimpleHTTPRequestHandler):
             content = (
                 '#!/usr/bin/env bash\n'
                 '#MISE tools={dummy="1.0.0"}\n'
-                'dummy\n'
+                'if command -v dummy >/dev/null 2>&1; then dummy; else echo "dummy not installed"; fi\n'
+            )
+            self.wfile.write(content.encode('utf-8'))
+        elif self.path == '/test/remote-changing':
+            TestFileHandler.changing_remote_revision += 1
+            revision = TestFileHandler.changing_remote_revision
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            content = (
+                '#!/usr/bin/env bash\n'
+                f'#MISE description="remote revision {revision}"\n'
+                f'echo "remote revision {revision}"\n'
             )
             self.wfile.write(content.encode('utf-8'))
         else:

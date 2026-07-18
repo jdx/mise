@@ -124,7 +124,20 @@ impl TaskFileProvider for RemoteTaskGit {
     async fn get_local_path(&self, file: &str) -> Result<PathBuf> {
         let repo_structure = self.get_repo_structure(file);
         let cache_key = self.get_cache_key(&repo_structure);
-        let destination = self.storage_path.join(&cache_key);
+        let destination = if self.is_cached {
+            self.storage_path.join(&cache_key)
+        } else {
+            // No-cache clones must remain available until their owning Task
+            // executes. A unique destination prevents a later fetch of the same
+            // URL/ref from replacing the first task's checked-out contents.
+            file::create_dir_all(&self.storage_path)?;
+            let temp_dir = tempfile::Builder::new()
+                .prefix(&format!("{cache_key}-"))
+                .tempdir_in(&self.storage_path)?;
+            let destination = temp_dir.path().to_path_buf();
+            temp_dir.close()?;
+            destination
+        };
         let repo_file_path = repo_structure.path.clone();
         let full_path = destination.join(&repo_file_path);
 

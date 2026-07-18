@@ -1896,7 +1896,7 @@ impl Task {
         self.allow_env.extend(other.allow_env);
     }
 
-    fn has_render_templates(&self) -> bool {
+    pub(crate) fn has_render_templates(&self) -> bool {
         fn path_contains_template(path: &Path) -> bool {
             path.to_str().is_some_and(contains_template_syntax)
         }

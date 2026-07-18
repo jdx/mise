@@ -119,6 +119,19 @@ def create_test_repo(repo_path):
     ripgrep_file.write_text('#!/usr/bin/env bash\necho "ripgrep task executed"\n')
     ripgrep_file.chmod(0o755)
 
+    # A config-declared remote task whose script filename ends in .toml. This
+    # exercises the script-header path rather than task-include TOML parsing.
+    remote_task_dir = Path(repo_path) / 'xtasks' / 'remote'
+    remote_task_dir.mkdir(parents=True)
+    remote_metadata_file = remote_task_dir / 'remote_metadata.toml'
+    remote_metadata_file.write_text(
+        '#!/usr/bin/env bash\n'
+        '#MISE description="remote git metadata"\n'
+        '#MISE tools={dummy="1.0.0"}\n'
+        'dummy\n'
+    )
+    remote_metadata_file.chmod(0o755)
+
     # A toml task file colocated with the executable scripts. Keys are task
     # names; values are the run command (or a table). Used by tests covering
     # remote toml task includes.

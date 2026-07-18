@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 
-use crate::{Result, dirs, env, file, hash, http::HTTP, remote_source::RemoteSource};
+use crate::{
+    Result, dirs, env, file, hash, http::HTTP, lock_file::LockFile, remote_source::RemoteSource,
+};
 
 use super::TaskFileProvider;
 
@@ -63,27 +65,30 @@ impl TaskFileProvider for RemoteTaskHttp {
 
     async fn get_local_path(&self, file: &str) -> Result<PathBuf> {
         let cache_key = self.get_cache_key(file);
-        let destination = self.storage_path.join(&cache_key);
-
-        match self.is_cached {
-            true => {
-                trace!("Cache mode enabled");
-
-                if destination.exists() {
-                    debug!("Using cached file: {:?}", destination);
-                    return Ok(destination);
-                }
+        if self.is_cached {
+            trace!("Cache mode enabled");
+            let destination = self.storage_path.join(&cache_key);
+            let _lock = LockFile::new(&destination).lock()?;
+            if destination.exists() {
+                debug!("Using cached file: {:?}", destination);
+                return Ok(destination);
             }
-            false => {
-                trace!("Cache mode disabled");
-
-                if destination.exists() {
-                    file::remove_file(&destination)?;
-                }
-            }
+            self.download_file(file, &destination).await?;
+            return Ok(destination);
         }
 
-        self.download_file(file, &destination).await?;
+        trace!("Cache mode disabled");
+        file::create_dir_all(&self.storage_path)?;
+        // A no-cache fetch must not replace a path already retained by another
+        // Task. Keep each response at a unique location until that task runs.
+        let temp_file =
+            tempfile::NamedTempFile::with_prefix_in(format!("{cache_key}-"), &self.storage_path)?;
+        let (_, destination) = temp_file.keep()?;
+        file::remove_file(&destination)?;
+        if let Err(error) = self.download_file(file, &destination).await {
+            let _ = file::remove_file(&destination);
+            return Err(error);
+        }
         Ok(destination)
     }
 }
@@ -132,12 +137,21 @@ mod tests {
             let request_url = format!("{}{}", server.url(), request_path);
             let cache_key = provider.get_cache_key(&request_url);
 
+            let mut local_paths = vec![];
             for _ in 0..2 {
                 let local_path = provider.get_local_path(&request_url).await.unwrap();
                 assert!(local_path.exists());
                 assert!(local_path.is_file());
-                assert!(local_path.ends_with(&cache_key));
+                assert!(
+                    local_path
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with(&cache_key)
+                );
+                local_paths.push(local_path);
             }
+            assert_ne!(local_paths[0], local_paths[1]);
 
             mocked_server.assert();
         }

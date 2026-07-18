@@ -175,4 +175,17 @@ EOF
 assert_contains "mise tasks" "standalone_task"
 assert_contains "mise run standalone_task" "standalone_task executed"
 
+#################################################################################
+# Test config-declared remote git task metadata and tool installation
+#################################################################################
+
+cat <<EOF >mise.toml
+[tasks.remote_metadata]
+file = "git::${LOCAL_GIT_URL}//xtasks/remote/remote_metadata.toml"
+EOF
+
+mise trust
+assert_contains "mise tasks info remote_metadata" "remote git metadata"
+assert_contains "mise run remote_metadata" "This is Dummy 1.0.0!"
+
 echo "All tests passed!"
