@@ -7,6 +7,8 @@ assert "mise latest java | grep -E '^[0-9]+(\\.[0-9]+)*$'"
 assert "mise latest java@temurin | grep -E '\\-[0-9]+(\\.[0-9]+)*(\..*)?$'"
 # assert vendor 21 version ends with -21.N.N(-SUFFIX)?
 assert "mise latest java@temurin-21 | grep -E '\\-21(\\.[0-9]+)*(\..*)?$'"
+# assert base vendor preference (e.g. liberica instead of liberica-nik)
+assert "mise latest java@liberica | grep -E 'liberica\\-[0-9]+(\\.[0-9]+)*(\..*)?$'"
 
 # Python
 # assert shorthand is a N.N.N version
