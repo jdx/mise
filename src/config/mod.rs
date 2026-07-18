@@ -2361,8 +2361,7 @@ async fn load_local_tasks_with_context(
                             &templates,
                             true,
                         )
-                        .await?
-                        .tasks;
+                        .await?;
                         prefix_monorepo_task_names(&mut tasks, &subdir, &monorepo_root);
                         return Ok(tasks);
                     }
@@ -2719,10 +2718,16 @@ async fn load_global_tasks(
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut seen_config_task_names = BTreeSet::new();
     for cf in configs {
-        let LoadedTasks {
-            tasks: loaded,
-            inline_tasks,
-        } = load_tasks_from_configs(config, &cf.config_root(), vec![cf], templates, false).await?;
+        let sources =
+            load_task_sources_from_configs(config, &cf.config_root(), vec![cf], templates, false)
+                .await?;
+        let mut inline_tasks = IndexMap::new();
+        for task in &sources.config_tasks {
+            inline_tasks
+                .entry(task.name.clone())
+                .or_insert_with(|| task.clone());
+        }
+        let loaded = sources.into_tasks();
         for task in loaded {
             if let Some(inline_task) = inline_tasks.get(&task.name) {
                 if seen_config_task_names.insert(task.name.clone()) {
@@ -3162,16 +3167,30 @@ pub async fn load_tasks_in_dir(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
-    Ok(
-        load_tasks_from_configs(config, dir, configs, templates, false)
-            .await?
-            .tasks,
-    )
+    load_tasks_from_configs(config, dir, configs, templates, false).await
 }
 
-struct LoadedTasks {
-    tasks: Vec<Task>,
-    inline_tasks: IndexMap<String, Task>,
+struct TaskSources {
+    file_tasks: Vec<Task>,
+    config_tasks: Vec<Task>,
+}
+
+impl TaskSources {
+    fn into_tasks(self) -> Vec<Task> {
+        let mut tasks = merge_file_and_config_tasks(self.file_tasks, self.config_tasks)
+            .into_iter()
+            .sorted_by_cached_key(|t| t.name.clone())
+            .collect::<Vec<_>>();
+        let all_tasks = tasks
+            .clone()
+            .into_iter()
+            .map(|t| (t.name.clone(), t))
+            .collect::<BTreeMap<_, _>>();
+        for task in tasks.iter_mut() {
+            task.display_name = task.display_name(&all_tasks);
+        }
+        tasks
+    }
 }
 
 /// Load one config root as a single precedence unit.
@@ -3185,7 +3204,26 @@ async fn load_tasks_from_configs(
     configs: Vec<&Arc<dyn ConfigFile>>,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_context: bool,
-) -> Result<LoadedTasks> {
+) -> Result<Vec<Task>> {
+    Ok(
+        load_task_sources_from_configs(config, dir, configs, templates, monorepo_context)
+            .await?
+            .into_tasks(),
+    )
+}
+
+/// Load file and inline task sources without merging them.
+///
+/// Global configs use this boundary because each config has independent file
+/// includes, while inline metadata may still need to decorate a script selected
+/// from a higher-precedence config.
+async fn load_task_sources_from_configs(
+    config: &Arc<Config>,
+    dir: &Path,
+    configs: Vec<&Arc<dyn ConfigFile>>,
+    templates: &IndexMap<String, TaskTemplate>,
+    monorepo_context: bool,
+) -> Result<TaskSources> {
     let is_global = configs.iter().any(|cf| is_global_config(cf.get_path()));
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
@@ -3208,13 +3246,6 @@ async fn load_tasks_from_configs(
         config_tasks
             .extend(load_config_tasks(config, (*cf).clone(), &dir, templates, monorepo_cf).await?);
     }
-    let mut inline_tasks = IndexMap::new();
-    for task in &config_tasks {
-        inline_tasks
-            .entry(task.name.clone())
-            .or_insert_with(|| task.clone());
-    }
-
     // Find task_config.dir from the highest-precedence config that defines it
     let task_config_dir = configs.iter().find_map(|cf| cf.task_config().dir.clone());
 
@@ -3248,21 +3279,9 @@ async fn load_tasks_from_configs(
         }
     }
 
-    let mut tasks = merge_file_and_config_tasks(file_tasks, config_tasks)
-        .into_iter()
-        .sorted_by_cached_key(|t| t.name.clone())
-        .collect::<Vec<_>>();
-    let all_tasks = tasks
-        .clone()
-        .into_iter()
-        .map(|t| (t.name.clone(), t))
-        .collect::<BTreeMap<_, _>>();
-    for task in tasks.iter_mut() {
-        task.display_name = task.display_name(&all_tasks);
-    }
-    Ok(LoadedTasks {
-        tasks,
-        inline_tasks,
+    Ok(TaskSources {
+        file_tasks,
+        config_tasks,
     })
 }
 
