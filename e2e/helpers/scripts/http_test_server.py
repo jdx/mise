@@ -32,6 +32,26 @@ class TestFileHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             content = '#!/usr/bin/env bash\necho "running mytask"\n'
             self.wfile.write(content.encode('utf-8'))
+        elif self.path == '/test/remote-template':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            content = (
+                '#!/usr/bin/env bash\n'
+                '#MISE description="{{ exec(command=\'touch $MISE_REMOTE_TEMPLATE_MARKER\') }}"\n'
+                'echo "remote template task ran"\n'
+            )
+            self.wfile.write(content.encode('utf-8'))
+        elif self.path == '/test/remote-tools':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            content = (
+                '#!/usr/bin/env bash\n'
+                '#MISE tools={dummy="1.0.0"}\n'
+                'dummy\n'
+            )
+            self.wfile.write(content.encode('utf-8'))
         else:
             # Return 404 for other paths
             self.send_error(404, "File not found")

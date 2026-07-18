@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# Remote task metadata can render Tera templates during discovery and install
+# tools before execution. Both actions must respect the defining config's trust.
+
+HTTP_PORT_FILE="$TMPDIR/mise_http_test_port"
+MISE_HTTP_TEST_PORT_FILE="$HTTP_PORT_FILE" python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" 0 &
+HTTP_SERVER_PID=$!
+
+cleanup() {
+  kill "$HTTP_SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+wait_for_file "$HTTP_PORT_FILE" "HTTP test server port file" 30 "$HTTP_SERVER_PID"
+HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+
+MARKER="$TMPDIR/remote-template-executed"
+UNTRUSTED_ENV="env -u CI -u GITHUB_ACTION -u GITHUB_ACTIONS MISE_TRUSTED_CONFIG_PATHS=$TMPDIR/not-trusted MISE_YES=0 MISE_REMOTE_TEMPLATE_MARKER=$MARKER"
+
+cat <<EOF >mise.toml
+[tasks.remote_template]
+file = "http://localhost:${HTTP_PORT}/test/remote-template"
+EOF
+
+assert_fail "$UNTRUSTED_ENV mise tasks ls" "not trusted"
+[[ ! -e $MARKER ]] || fail "remote metadata template executed before trust"
+
+# Tool metadata is inert when installation is disabled, but normal task auto-
+# installation must require trust. Preinstall the fixture so the disabled paths
+# can still execute the task and prove they do not trip the trust gate.
+mise install dummy@1.0.0
+cat <<EOF >mise.toml
+[tasks.remote_tools]
+file = "http://localhost:${HTTP_PORT}/test/remote-tools"
+EOF
+
+assert_fail "$UNTRUSTED_ENV mise run remote_tools" "not trusted"
+assert_contains "$UNTRUSTED_ENV mise run --skip-tools remote_tools" "This is Dummy 1.0.0!"
+assert_contains "$UNTRUSTED_ENV MISE_TASK_RUN_AUTO_INSTALL=0 mise run remote_tools" "This is Dummy 1.0.0!"
+assert_contains "$UNTRUSTED_ENV MISE_AUTO_INSTALL=0 mise run remote_tools" "This is Dummy 1.0.0!"
+
+mise uninstall dummy@1.0.0
+assert_succeed "$UNTRUSTED_ENV mise trust mise.toml"
+assert_contains "$UNTRUSTED_ENV mise run remote_tools" "This is Dummy 1.0.0!"

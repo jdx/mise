@@ -3238,7 +3238,7 @@ fn trust_check_task_include(path: &Path, require_trust: bool) -> Result<()> {
 /// `mise run`. Templates are what can execute code while tasks load (via
 /// exec() etc. when task fields render), so only files containing template
 /// syntax need trust. Paranoid mode keeps requiring trust for everything.
-fn task_include_requires_trust(path: &Path) -> bool {
+pub(crate) fn task_include_requires_trust(path: &Path) -> bool {
     if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
         return true;
     }

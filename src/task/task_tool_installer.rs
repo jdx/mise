@@ -1,10 +1,12 @@
 use crate::cli::args::ToolArg;
+use crate::config::config_file::trust_check;
 use crate::config::{Config, Settings};
+use crate::file::display_path;
 use crate::task::Deps;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_helpers::canonicalize_path;
 use crate::toolset::{InstallOptions, ToolSource, ToolVersion, Toolset};
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -34,6 +36,29 @@ impl<'a> TaskToolInstaller<'a> {
         let mut all_tools = self.cli_tools.to_vec();
         let mut all_tool_requests = vec![];
         let all_tasks: Vec<_> = tasks.all().collect();
+
+        // A template-free remote header is safe to inspect during task
+        // discovery, but its tool requirements can cause downloads and install
+        // hooks when a task runs. Require trust at that action boundary. The
+        // caller skips this installer entirely for --skip-tools, and disabled
+        // auto-install settings remain authoritative here as well.
+        if Settings::get().task.run_auto_install && Settings::get().auto_install {
+            for task in &all_tasks {
+                if !task.remote_metadata_has_tools {
+                    continue;
+                }
+                let Some(config_source) = task.remote_config_source.as_deref() else {
+                    continue;
+                };
+                trust_check(config_source).wrap_err_with(|| {
+                    format!(
+                        "tool metadata from remote task {} requires its defining config {} to be trusted",
+                        task.remote_file_source.as_deref().unwrap_or(&task.name),
+                        display_path(config_source)
+                    )
+                })?;
+            }
+        }
 
         trace!("Collecting tools from {} tasks", all_tasks.len());
 

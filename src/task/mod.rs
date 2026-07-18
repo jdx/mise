@@ -605,6 +605,18 @@ pub struct Task {
     #[serde(skip)]
     pub remote_file_source: Option<String>,
 
+    /// Config file that declared a remote task. The fetched task's
+    /// `config_source` is its cache path, so retain the defining config path for
+    /// trust checks that must happen after fetching.
+    #[serde(skip)]
+    pub remote_config_source: Option<PathBuf>,
+
+    /// Whether the fetched remote header contributed tool requirements.
+    /// Remote metadata is parsed during discovery, but these requirements must
+    /// not trigger installation until the defining config is trusted.
+    #[serde(skip)]
+    pub remote_metadata_has_tools: bool,
+
     /// Block reads, writes, network, and env vars
     #[serde(default)]
     pub deny_all: bool,
@@ -2395,6 +2407,8 @@ impl Default for Task {
             usage: "".to_string(),
             timeout: None,
             remote_file_source: None,
+            remote_config_source: None,
+            remote_metadata_has_tools: false,
             deny_all: false,
             deny_read: false,
             deny_write: false,
