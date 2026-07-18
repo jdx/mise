@@ -684,8 +684,13 @@ impl Config {
 
         let templates = collect_task_templates(&config.config_files);
 
-        let local_tasks = load_local_tasks_with_context(&config, ctx, &templates).await?;
+        let mut local_tasks = load_local_tasks_with_context(&config, ctx, &templates).await?;
         let global_tasks = load_global_tasks(&config, &templates).await?;
+        local_tasks.retain(|local| {
+            !global_tasks
+                .iter()
+                .any(|global| tasks_have_same_source(local, global))
+        });
         let mut tasks: BTreeMap<String, Task> = local_tasks
             .into_iter()
             .chain(global_tasks)
@@ -1686,6 +1691,21 @@ fn path_starts_with_resolved(path: &Path, prefix: &Path) -> bool {
     path.starts_with(prefix) || file::desymlink_path(path).starts_with(file::desymlink_path(prefix))
 }
 
+fn tasks_have_same_source(left: &Task, right: &Task) -> bool {
+    if left.name != right.name {
+        return false;
+    }
+    match (left.file.as_deref(), right.file.as_deref()) {
+        (Some(left), Some(right)) => paths_equal_resolved(left, right),
+        (None, None) => {
+            !left.config_source.as_os_str().is_empty()
+                && !right.config_source.as_os_str().is_empty()
+                && paths_equal_resolved(&left.config_source, &right.config_source)
+        }
+        _ => false,
+    }
+}
+
 /// Returns true if the path should be filtered out due to MISE_CONFIG_DIR override.
 /// When MISE_CONFIG_DIR is set to a non-default location, this filters out configs
 /// found under the default location (~/.config/mise) during traversal.
@@ -2284,11 +2304,6 @@ async fn load_local_tasks_with_context(
             continue;
         }
         let mut dir_tasks = load_tasks_in_dir(config, &d, &local_config_files, templates).await?;
-        if paths_equal_resolved(&d, env::MISE_GLOBAL_CONFIG_ROOT.as_path()) {
-            // Walking ancestors can reach the global task directory under HOME.
-            // Global tasks are loaded with their config overlays in a separate pass.
-            dir_tasks.retain(|task| !task.global);
-        }
 
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);

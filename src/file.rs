@@ -1482,6 +1482,11 @@ pub fn desymlink_path(p: &Path) -> PathBuf {
     if p.is_symlink()
         && let Ok(target) = fs::read_link(p)
     {
+        let target = if target.is_absolute() {
+            target
+        } else {
+            p.parent().unwrap_or_else(|| Path::new("")).join(target)
+        };
         return target
             .canonicalize()
             .unwrap_or_else(|_| target.to_path_buf());
@@ -1827,6 +1832,38 @@ mod tests {
         // matches mise's actual runtime (see main.rs) — takes the real
         // tokio::task::block_in_place path
         assert_eq!(run_blocking(|| 42), 42);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_desymlink_path_resolves_relative_target_from_link_parent() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let target_dir = root.path().join("target");
+        let link_dir = root.path().join("links");
+        fs::create_dir_all(&target_dir).unwrap();
+        fs::create_dir_all(&link_dir).unwrap();
+        let target = target_dir.join("file");
+        fs::write(&target, "test").unwrap();
+        let link = link_dir.join("file");
+        symlink("../target/file", &link).unwrap();
+
+        assert_eq!(desymlink_path(&link), target.canonicalize().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_desymlink_path_preserves_absolute_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("target");
+        fs::write(&target, "test").unwrap();
+        let link = root.path().join("link");
+        symlink(&target, &link).unwrap();
+
+        assert_eq!(desymlink_path(&link), target.canonicalize().unwrap());
     }
 
     #[test]
