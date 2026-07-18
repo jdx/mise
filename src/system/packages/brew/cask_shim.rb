@@ -257,6 +257,7 @@ class CaskContext
   def desc(*) nil end
   def homepage(*) nil end
   def livecheck(*) nil end
+  def auto_updates(*) nil end
   def conflicts_with(*) nil end
   def depends_on(*) nil end
   def caveats(*) nil end

@@ -1516,6 +1516,7 @@ end
             r#"cask "example" do
   version "2.2.1,20628"
   url "https://example.com/OrbStack_v#{version.csv.first}_#{version.csv.second}.dmg"
+  auto_updates true
   preflight do
     File.write staged_path/"result", version.csv.second
   end
