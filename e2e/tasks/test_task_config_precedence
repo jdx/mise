@@ -109,7 +109,8 @@ assert_contains "mise run //projects/app:d" "LOWER_PRECEDENCE=<unset>"
 # when the working directory is outside HOME and global files are loaded in a
 # separate pass.
 mkdir -p "$HOME/.config/mise/conf.d" "$HOME/.config/mise/tasks" \
-  "$HOME/global-custom-tasks" "$HOME/high-global-tasks"
+  "$HOME/global-custom-tasks" "$HOME/high-global-tasks" \
+  "$HOME/high-global-dir" "$HOME/low-global-dir"
 
 cat <<'EOF' >"$MISE_SYSTEM_DIR/config.toml"
 [tasks.e]
@@ -129,7 +130,10 @@ description = "global/conf.d/01/e"
 env = { LOWER_PRECEDENCE = "applied" }
 EOF
 
-cat <<'EOF' >"$HOME/.config/mise/conf.d/02-override.toml"
+cat <<EOF >"$HOME/.config/mise/conf.d/02-override.toml"
+[task_config]
+dir = "$HOME/low-global-dir"
+
 [tasks.e]
 description = "global/conf.d/02/e"
 env = { LOWER_PRECEDENCE = "applied" }
@@ -141,9 +145,10 @@ run = "echo lower-inline/i"
 env = { INLINE_METADATA = "applied" }
 EOF
 
-cat <<'EOF' >"$HOME/.config/mise/config.toml"
+cat <<EOF >"$HOME/.config/mise/config.toml"
 [task_config]
 includes = [".config/mise/tasks", "high-global-tasks"]
+dir = "$HOME/high-global-dir"
 
 [tasks.e]
 description = "global/config/e"
@@ -165,6 +170,7 @@ cat <<'EOF' >"$HOME/.config/mise/tasks/j"
 #!/usr/bin/env bash
 echo same-script/j
 echo "INLINE_METADATA=${INLINE_METADATA:-<unset>}"
+echo "TASK_DIR=$PWD"
 EOF
 chmod +x "$HOME/.config/mise/tasks/j"
 
@@ -202,3 +208,5 @@ assert_contains "mise -C '$TMPDIR/outside-home' run i" "high-script/i"
 assert_not_contains "mise -C '$TMPDIR/outside-home' run i" "lower-inline/i"
 assert_contains "mise -C '$TMPDIR/outside-home' run j" "same-script/j"
 assert_contains "mise -C '$TMPDIR/outside-home' run j" "INLINE_METADATA=applied"
+assert_contains "mise -C '$TMPDIR/outside-home' run j" "TASK_DIR=$HOME/high-global-dir"
+assert_not_contains "mise -C '$TMPDIR/outside-home' run j" "TASK_DIR=$HOME/low-global-dir"

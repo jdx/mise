@@ -2354,14 +2354,15 @@ async fn load_local_tasks_with_context(
                             return Ok(vec![]);
                         }
                         let configs = parsed_configs.values().collect();
-                        let (mut tasks, _) = load_tasks_from_configs(
+                        let mut tasks = load_tasks_from_configs(
                             &config,
                             &subdir,
                             configs,
                             &templates,
                             true,
                         )
-                        .await?;
+                        .await?
+                        .tasks;
                         prefix_monorepo_task_names(&mut tasks, &subdir, &monorepo_root);
                         return Ok(tasks);
                     }
@@ -2711,25 +2712,30 @@ async fn load_global_tasks(
         .collect::<Vec<_>>();
 
     // Global config files keep independent task include sets. Aggregate their
-    // results high-to-low, replacing a rediscovered file-only task when the
-    // first actual inline definition for that name appears.
+    // results high-to-low. When a lower config supplies the first inline
+    // definition for a script already rediscovered by a higher config, apply
+    // only that inline metadata to the higher script so its config context is
+    // preserved.
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut seen_config_task_names = BTreeSet::new();
     for cf in configs {
-        let (loaded, config_task_names) =
-            load_tasks_from_configs(config, &cf.config_root(), vec![cf], templates, false).await?;
+        let LoadedTasks {
+            tasks: loaded,
+            inline_tasks,
+        } = load_tasks_from_configs(config, &cf.config_root(), vec![cf], templates, false).await?;
         for task in loaded {
-            if config_task_names.contains(&task.name) {
+            if let Some(inline_task) = inline_tasks.get(&task.name) {
                 if seen_config_task_names.insert(task.name.clone()) {
-                    let replaces_rediscovered_file =
-                        tasks.get(&task.name).is_some_and(|existing| {
-                            existing
-                                .file
-                                .as_deref()
-                                .zip(task.file.as_deref())
-                                .is_some_and(|(left, right)| paths_equal_resolved(left, right))
-                        });
-                    if !tasks.contains_key(&task.name) || replaces_rediscovered_file {
+                    if let Some(existing) = tasks.get_mut(&task.name) {
+                        let rediscovered_file = existing
+                            .file
+                            .as_deref()
+                            .zip(task.file.as_deref())
+                            .is_some_and(|(left, right)| paths_equal_resolved(left, right));
+                        if rediscovered_file {
+                            existing.merge_toml_overlay(inline_task.clone());
+                        }
+                    } else {
                         tasks.insert(task.name.clone(), task);
                     }
                 }
@@ -3156,8 +3162,16 @@ pub async fn load_tasks_in_dir(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
-    let (tasks, _) = load_tasks_from_configs(config, dir, configs, templates, false).await?;
-    Ok(tasks)
+    Ok(
+        load_tasks_from_configs(config, dir, configs, templates, false)
+            .await?
+            .tasks,
+    )
+}
+
+struct LoadedTasks {
+    tasks: Vec<Task>,
+    inline_tasks: IndexMap<String, Task>,
 }
 
 /// Load one config root as a single precedence unit.
@@ -3171,10 +3185,8 @@ async fn load_tasks_from_configs(
     configs: Vec<&Arc<dyn ConfigFile>>,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_context: bool,
-) -> Result<(Vec<Task>, BTreeSet<String>)> {
-    let is_global = configs
-        .iter()
-        .any(|cf| is_global_config(cf.get_path()));
+) -> Result<LoadedTasks> {
+    let is_global = configs.iter().any(|cf| is_global_config(cf.get_path()));
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
     let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
@@ -3196,7 +3208,12 @@ async fn load_tasks_from_configs(
         config_tasks
             .extend(load_config_tasks(config, (*cf).clone(), &dir, templates, monorepo_cf).await?);
     }
-    let config_task_names = config_tasks.iter().map(|task| task.name.clone()).collect();
+    let mut inline_tasks = IndexMap::new();
+    for task in &config_tasks {
+        inline_tasks
+            .entry(task.name.clone())
+            .or_insert_with(|| task.clone());
+    }
 
     // Find task_config.dir from the highest-precedence config that defines it
     let task_config_dir = configs.iter().find_map(|cf| cf.task_config().dir.clone());
@@ -3243,7 +3260,10 @@ async fn load_tasks_from_configs(
     for task in tasks.iter_mut() {
         task.display_name = task.display_name(&all_tasks);
     }
-    Ok((tasks, config_task_names))
+    Ok(LoadedTasks {
+        tasks,
+        inline_tasks,
+    })
 }
 
 fn trust_check_task_include(path: &Path, require_trust: bool) -> Result<()> {
