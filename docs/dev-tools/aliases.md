@@ -18,6 +18,21 @@ node = 'github:company/our-custom-node'   # shorthand for https://github.com/com
 erlang = 'aqua:company/our-custom-erlang' # use an aqua registry entry
 ```
 
+This can also be used to install multiple tools from the same GitHub release:
+
+```toml [~/.config/mise/config.toml]
+[tool_alias]
+dhall-json = 'github:dhall-lang/dhall-haskell'
+dhall-lsp = 'github:dhall-lang/dhall-haskell'
+
+[tools]
+dhall-json = { version = "v1.42.2", matching = "dhall-json" }
+dhall-lsp = { version = "latest", matching = "dhall-lsp-server" }
+```
+
+The example above uses the [GitHub backend's `matching`](backend/github#matching) feature to download
+two distinct binaries from different releases in the same GitHub respository.
+
 ## Aliased Versions
 
 mise supports aliasing the versions of runtimes. One use-case for this is to define a stable name
