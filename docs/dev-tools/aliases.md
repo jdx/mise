@@ -30,8 +30,8 @@ dhall-json = { version = "v1.42.2", matching = "dhall-json" }
 dhall-lsp = { version = "latest", matching = "dhall-lsp-server" }
 ```
 
-The example above uses the [GitHub backend's `matching`](backend/github#matching) feature to download
-two distinct binaries from different releases in the same GitHub respository.
+The example above uses the [GitHub backend's `matching`](backends/github#matching) feature to download
+two distinct binaries from different releases in the same GitHub repository.
 
 ## Aliased Versions
 
