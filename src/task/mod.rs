@@ -372,6 +372,20 @@ pub enum Silent {
     Stderr,
 }
 
+/// Presence-aware boolean values from a structured TOML task definition.
+///
+/// `Task` keeps resolved booleans for runtime use, but an overlay also needs to
+/// distinguish an omitted field from an explicit `false`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct TaskTomlBoolOverrides {
+    hide: Option<bool>,
+    raw: Option<bool>,
+    raw_args: Option<bool>,
+    interactive: Option<bool>,
+    quiet: Option<bool>,
+    silent: Option<Silent>,
+}
+
 impl Silent {
     pub fn is_silent(&self) -> bool {
         matches!(self, Silent::Bool(true) | Silent::Stdout | Silent::Stderr)
@@ -541,6 +555,9 @@ pub struct Task {
     /// as `overlay_env`.
     #[serde(skip)]
     pub overlay_vars: Vec<(EnvDirective, PathBuf)>,
+    /// Explicit boolean values from a structured TOML task definition.
+    #[serde(skip)]
+    pub(crate) toml_bool_overrides: TaskTomlBoolOverrides,
     #[serde(default)]
     pub dir: Option<String>,
     #[serde(default)]
@@ -842,6 +859,13 @@ impl Task {
         once(self.config_source.as_path())
             .chain(self.additional_config_sources.iter().map(PathBuf::as_path))
             .collect()
+    }
+
+    pub(crate) fn from_toml_definition(value: toml::Value) -> Result<Self, toml::de::Error> {
+        let toml_bool_overrides = value.clone().try_into()?;
+        let mut task: Task = value.try_into()?;
+        task.toml_bool_overrides = toml_bool_overrides;
+        Ok(task)
     }
 
     pub(crate) fn tool_args(&self) -> Result<Vec<ToolArg>> {
@@ -1779,6 +1803,13 @@ impl Task {
                 self.additional_config_sources.push(source.to_path_buf());
             }
         }
+
+        fn merge_bool(base: &mut bool, overlay: bool, explicit: Option<bool>) {
+            if let Some(value) = explicit.or(overlay.then_some(true)) {
+                *base = value;
+            }
+        }
+
         if !other.description.is_empty() {
             self.description = other.description;
         }
@@ -1829,22 +1860,26 @@ impl Task {
         if other.dir.is_some() {
             self.dir = other.dir;
         }
-        if other.hide {
-            self.hide = true;
-        }
-        if other.raw {
-            self.raw = true;
-        }
-        if other.raw_args {
-            self.raw_args = true;
-        }
-        if other.interactive {
-            self.interactive = true;
-        }
-        if other.quiet {
-            self.quiet = true;
-        }
-        if !matches!(other.silent, Silent::Off) {
+        merge_bool(&mut self.hide, other.hide, other.toml_bool_overrides.hide);
+        merge_bool(&mut self.raw, other.raw, other.toml_bool_overrides.raw);
+        merge_bool(
+            &mut self.raw_args,
+            other.raw_args,
+            other.toml_bool_overrides.raw_args,
+        );
+        merge_bool(
+            &mut self.interactive,
+            other.interactive,
+            other.toml_bool_overrides.interactive,
+        );
+        merge_bool(
+            &mut self.quiet,
+            other.quiet,
+            other.toml_bool_overrides.quiet,
+        );
+        if let Some(silent) = other.toml_bool_overrides.silent {
+            self.silent = silent;
+        } else if !matches!(other.silent, Silent::Off) {
             self.silent = other.silent;
         }
         if other.output.is_some() {
@@ -2373,6 +2408,7 @@ impl Default for Task {
             inherited_env: Default::default(),
             overlay_env: vec![],
             overlay_vars: vec![],
+            toml_bool_overrides: Default::default(),
             dir: None,
             hide: false,
             global: false,

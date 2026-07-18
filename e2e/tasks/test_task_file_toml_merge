@@ -103,3 +103,30 @@ EOF
 
 assert_contains "mise run parent --app demo" "child got: demo"
 assert_contains "mise run parent --app demo" "parent app=demo"
+
+# Explicit false values in TOML override true values from the script header.
+# Omitted values continue to preserve the header metadata.
+cat <<'SCRIPT' >.mise/tasks/bool-overrides
+#!/usr/bin/env bash
+#MISE hide=true
+#MISE raw=true
+#MISE raw_args=true
+#MISE interactive=true
+#MISE quiet=true
+#MISE silent=true
+echo bool-overrides
+SCRIPT
+chmod +x .mise/tasks/bool-overrides
+
+cat <<'EOF' >>mise.toml
+
+[tasks.bool-overrides]
+hide = false
+raw = false
+raw_args = false
+interactive = false
+quiet = false
+silent = false
+EOF
+
+assert "mise tasks ls --json | jq -c '.[] | select(.name == \"bool-overrides\") | {hide, raw, interactive, quiet, silent}'" '{"hide":false,"raw":false,"interactive":false,"quiet":false,"silent":false}'
