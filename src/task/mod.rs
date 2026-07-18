@@ -379,6 +379,34 @@ pub enum Silent {
     Stderr,
 }
 
+/// Boolean fields present in a structured TOML task definition.
+///
+/// `Task` keeps resolved booleans for runtime use, but an overlay also needs to
+/// distinguish an omitted field from an explicit `false`.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct TaskTomlBoolPresence {
+    hide: bool,
+    raw: bool,
+    raw_args: bool,
+    interactive: bool,
+    quiet: bool,
+    silent: bool,
+}
+
+impl TaskTomlBoolPresence {
+    pub(crate) fn record(&mut self, key: &str) {
+        match key {
+            "hide" => self.hide = true,
+            "raw" => self.raw = true,
+            "raw_args" => self.raw_args = true,
+            "interactive" => self.interactive = true,
+            "quiet" => self.quiet = true,
+            "silent" => self.silent = true,
+            _ => {}
+        }
+    }
+}
+
 impl Silent {
     pub fn is_silent(&self) -> bool {
         matches!(self, Silent::Bool(true) | Silent::Stdout | Silent::Stderr)
@@ -548,6 +576,9 @@ pub struct Task {
     /// as `overlay_env`.
     #[serde(skip)]
     pub overlay_vars: Vec<(EnvDirective, PathBuf)>,
+    /// Boolean fields explicitly present in a structured TOML task definition.
+    #[serde(skip)]
+    pub(crate) toml_bool_presence: TaskTomlBoolPresence,
     #[serde(default)]
     pub dir: Option<String>,
     #[serde(default)]
@@ -1975,6 +2006,13 @@ impl Task {
                 self.additional_config_sources.push(source.to_path_buf());
             }
         }
+
+        fn merge_bool(base: &mut bool, overlay: bool, explicit: bool) {
+            if explicit || overlay {
+                *base = overlay;
+            }
+        }
+
         if !other.description.is_empty() {
             self.description = other.description;
         }
@@ -2025,22 +2063,20 @@ impl Task {
         if other.dir.is_some() {
             self.dir = other.dir;
         }
-        if other.hide {
-            self.hide = true;
-        }
-        if other.raw {
-            self.raw = true;
-        }
-        if other.raw_args {
-            self.raw_args = true;
-        }
-        if other.interactive {
-            self.interactive = true;
-        }
-        if other.quiet {
-            self.quiet = true;
-        }
-        if !matches!(other.silent, Silent::Off) {
+        merge_bool(&mut self.hide, other.hide, other.toml_bool_presence.hide);
+        merge_bool(&mut self.raw, other.raw, other.toml_bool_presence.raw);
+        merge_bool(
+            &mut self.raw_args,
+            other.raw_args,
+            other.toml_bool_presence.raw_args,
+        );
+        merge_bool(
+            &mut self.interactive,
+            other.interactive,
+            other.toml_bool_presence.interactive,
+        );
+        merge_bool(&mut self.quiet, other.quiet, other.toml_bool_presence.quiet);
+        if other.toml_bool_presence.silent || !matches!(other.silent, Silent::Off) {
             self.silent = other.silent;
         }
         if other.output.is_some() {
@@ -2573,6 +2609,7 @@ impl Default for Task {
             inherited_env: Default::default(),
             overlay_env: vec![],
             overlay_vars: vec![],
+            toml_bool_presence: Default::default(),
             dir: None,
             hide: false,
             global: false,
