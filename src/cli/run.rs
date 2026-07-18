@@ -322,7 +322,7 @@ impl Run {
         // Fetch remote task files before parsing usage specs, so that
         // file-based remote tasks have their files resolved to local cache.
         let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
-        fetcher.fetch_tasks(&mut task_list).await?;
+        fetcher.fetch_tasks(&config, &mut task_list).await?;
 
         // Re-render dependency templates with parent task's usage arg/flag values.
         // This enables patterns like: depends = ["child {{usage.app}}"]
@@ -682,7 +682,7 @@ impl Run {
     /// Dependencies should already be resolved via resolve_depends() before calling this.
     async fn prepare_tasks(&mut self, config: &Arc<Config>, mut tasks: Vec<Task>) -> Result<Deps> {
         let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
-        fetcher.fetch_tasks(&mut tasks).await?;
+        fetcher.fetch_tasks(config, &mut tasks).await?;
         let mut tasks = Deps::new(config, tasks).await?;
         tasks.mark_ambiguous_prefixes();
         self.is_linear = tasks.is_linear();
