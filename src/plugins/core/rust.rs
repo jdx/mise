@@ -120,7 +120,7 @@ impl RustPlugin {
             .arg("--default-toolchain")
             .arg("none")
             .arg("-y")
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .envs(self.exec_env(&ctx.config, ts, tv).await?);
         if let Some(host) = settings.rust.default_host.as_ref() {
             cmd = cmd.arg("--default-host").arg(host);
@@ -135,7 +135,7 @@ impl RustPlugin {
         CmdLineRunner::new(RUSTC_BIN)
             .with_pr(ctx.pr.as_ref())
             .arg("-V")
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .envs(self.exec_env(&ctx.config, ts, tv).await?)
             .prepend_path(self.list_bin_paths(&ctx.config, tv).await?)?
             .execute()
@@ -364,7 +364,7 @@ impl Backend for RustPlugin {
             .opt_args("--component", components)
             .opt_args("--target", targets)
             .prepend_path(self.list_bin_paths(&ctx.config, &tv).await?)?
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .envs(self.exec_env(&ctx.config, ts, &tv).await?);
         if let Some(profile) = profile.as_ref() {
             cmd = cmd.arg("--profile").arg(profile);

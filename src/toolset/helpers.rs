@@ -122,7 +122,7 @@ async fn preflight_system_deps_inner(
         .map(|(_, s)| s.dep.clone())
         .collect();
     let refs: Vec<&SystemDep> = missing_deps.iter().collect();
-    let (mut by_mgr, unremediable) = deps::build_requests(&refs);
+    let (mut by_mgr, unremediable) = deps::build_requests(&refs).await;
     // Attach any `[bootstrap.brew.taps]` git URLs so a tapped formula hint can
     // be installed the same way `mise bootstrap packages use` handles it.
     crate::system::attach_brew_tap_urls(config, &mut by_mgr);
@@ -138,7 +138,7 @@ async fn preflight_system_deps_inner(
     }
 
     if effective == SystemDepsMode::Warn {
-        for line in deps::hint_commands(&refs) {
+        for line in deps::hint_commands(&refs).await {
             warn!("install with: {line}");
         }
         return Ok(());
@@ -176,11 +176,12 @@ async fn preflight_system_deps_inner(
     // package-manager hint), bypassing the memo cache. Deps with no hint, or
     // that the user declined at the driver prompt, are excluded — warning that
     // they "were installed but not detected" would be wrong.
-    let remediated: Vec<SystemDep> = missing_deps
-        .iter()
-        .filter(|d| deps::pick_manager(d).is_some())
-        .cloned()
-        .collect();
+    let mut remediated = vec![];
+    for dep in &missing_deps {
+        if deps::pick_manager(dep).await.is_some() {
+            remediated.push(dep.clone());
+        }
+    }
     for status in deps::detect_fresh(&remediated).await {
         if !status.satisfied {
             warn!(

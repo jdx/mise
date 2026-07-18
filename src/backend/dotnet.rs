@@ -91,6 +91,18 @@ impl Backend for DotnetBackend {
             .collect())
     }
 
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> eyre::Result<Option<String>> {
+        // NuGet allows legacy 4-part versions, which do not parse as semver
+        // and keep using remote discovery. A full semver request is exact;
+        // `dotnet tool install --version` fails when it does not exist
+        // upstream.
+        Ok(versions::SemVer::new(version).map(|_| version.to_string()))
+    }
+
     async fn install_version_(
         &self,
         ctx: &crate::install_context::InstallContext,
@@ -120,7 +132,7 @@ impl Backend for DotnetBackend {
 
         cli.with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .execute()?;
 
         Ok(tv)
@@ -218,6 +230,40 @@ mod tests {
         let mut opts = ToolVersionOptions::default();
         opts.opts.insert("prerelease".to_string(), value);
         opts
+    }
+
+    #[tokio::test]
+    async fn exact_semver_versions_resolve_without_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = DotnetBackend::from_arg("dotnet:GitVersion.Tool".into());
+
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "5.12.0")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("5.12.0")
+        );
+    }
+
+    #[tokio::test]
+    async fn non_semver_versions_require_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = DotnetBackend::from_arg("dotnet:GitVersion.Tool".into());
+
+        // Legacy 4-part NuGet versions are not semver and must keep
+        // resolving against the remote version list.
+        for version in ["latest", "5", "5.12", "1.2.3.4"] {
+            assert_eq!(
+                backend
+                    .resolve_exact_version(&config, version)
+                    .await
+                    .unwrap(),
+                None,
+                "{version} should use remote discovery"
+            );
+        }
     }
 
     #[test]

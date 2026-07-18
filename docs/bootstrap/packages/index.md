@@ -30,6 +30,10 @@ Homebrew itself. Use them for shared libraries, build dependencies, and
 machine-global GUI apps (`libssl-dev`, `postgresql`, `ffmpeg`, `firefox`),
 not for project dev tools — those belong in `[tools]`.
 
+The manager list is extensible through [package manager plugins](./plugins.md),
+which cover host-owned state such as VS Code extensions, Helm plugins, krew
+plugins, and GitHub CLI extensions.
+
 Packages are one part of [mise bootstrap](/bootstrap.html). The other
 declarative sections work the same way:
 
@@ -43,16 +47,17 @@ declarative sections work the same way:
 
 ## Supported package managers
 
-| Manager     | Platform                                                       | Page                                        |
-| ----------- | -------------------------------------------------------------- | ------------------------------------------- |
-| `apk`       | Alpine Linux                                                   | [apk](/bootstrap/packages/apk.html)         |
-| `apt`       | Debian, Ubuntu                                                 | [apt](/bootstrap/packages/apt.html)         |
-| `dnf`       | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/bootstrap/packages/dnf.html)         |
-| `pacman`    | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html)   |
-| `brew`      | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)       |
-| `brew-cask` | macOS — **no Homebrew required**                               | [brew](/bootstrap/packages/brew.html)       |
-| `flatpak`   | Linux with the `flatpak` CLI on `PATH`                         | [Flatpak](/bootstrap/packages/flatpak.html) |
-| `mas`       | macOS with the `mas` CLI on `PATH`                             | [mas](/bootstrap/packages/mas.html)         |
+| Manager     | Platform                                                       | Page                                                |
+| ----------- | -------------------------------------------------------------- | --------------------------------------------------- |
+| `apk`       | Alpine Linux                                                   | [apk](/bootstrap/packages/apk.html)                 |
+| `apt`       | Debian, Ubuntu                                                 | [apt](/bootstrap/packages/apt.html)                 |
+| `dnf`       | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/bootstrap/packages/dnf.html)                 |
+| `pacman`    | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html)           |
+| `brew`      | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)               |
+| `brew-cask` | macOS — **no Homebrew required**                               | [brew](/bootstrap/packages/brew.html)               |
+| `flatpak`   | Linux with the `flatpak` CLI on `PATH`                         | [Flatpak](/bootstrap/packages/flatpak.html)         |
+| `mas`       | macOS with the `mas` CLI on `PATH`                             | [mas](/bootstrap/packages/mas.html)                 |
+| plugin      | Declared by the plugin                                         | [Package plugins](/bootstrap/packages/plugins.html) |
 
 ## Semantics
 
@@ -73,8 +78,8 @@ declarative sections work the same way:
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` will print a one-time hint when packages are
   missing, but only `mise bootstrap packages apply` ever installs anything.
-- **Unknown managers are ignored with a warning** so configs using managers
-  from newer mise versions still parse.
+- **Unknown managers are ignored with a warning** and a package-plugin install
+  hint, so configs using managers from newer mise versions still parse.
 
 For current-user login shell setup, use `[bootstrap.user].login_shell`:
 
@@ -192,6 +197,7 @@ Set [`system_packages.sudo = false`](/configuration/settings.html) to forbid
 elevation entirely; mise will print the command for you to run yourself
 instead. The `brew` manager never needs sudo except once to create
 `/opt/homebrew` (see [brew](/bootstrap/packages/brew.html)).
+Package plugins never use mise's sudo path and must never elevate themselves.
 
 ## CI usage
 

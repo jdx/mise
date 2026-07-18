@@ -45,6 +45,9 @@ pub mod systemd;
 /// `[bootstrap]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct BootstrapTomlConfig {
+    /// Package manager plugins that must be installed, keyed by manager name.
+    #[serde(default)]
+    pub plugins: IndexMap<String, String>,
     /// `"manager:package"` -> version (`"latest"` or a manager-native pin).
     /// String-keyed so configs using managers from newer mise versions (dnf,
     /// pacman, winget, ...) parse fine on older ones.
@@ -73,6 +76,18 @@ pub struct BootstrapTomlConfig {
     /// warn and be skipped without rejecting the whole config.
     #[serde(default)]
     pub hooks: IndexMap<String, toml::Value>,
+}
+
+pub fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
+    let mut plugins = IndexMap::new();
+    for cf in config.config_files.values().rev() {
+        if let Some(bootstrap) = cf.bootstrap_config() {
+            for (name, url) in bootstrap.plugins {
+                plugins.insert(name, url);
+            }
+        }
+    }
+    plugins
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -247,6 +262,34 @@ pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
     packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps)
 }
 
+/// Package requests for declared package plugins that are not installed yet.
+///
+/// During a bootstrap dry run, plugin installation is intentionally not
+/// persisted, but the later package phase still needs to show the packages
+/// that the newly declared plugins would manage.
+pub fn pending_plugin_packages_from_config(
+    config: &Config,
+) -> IndexMap<String, Vec<PackageRequest>> {
+    let declared = plugins_from_config(config);
+    let brew_taps = brew_taps_from_config(config);
+    let installed = packages::all_managers()
+        .into_iter()
+        .map(|manager| manager.name().to_string())
+        .collect::<std::collections::HashSet<_>>();
+    let enabled = crate::config::Settings::get()
+        .system_packages
+        .managers
+        .clone();
+    package_requests_from_config_files(&config.config_files, &brew_taps)
+        .into_iter()
+        .filter(|(name, _)| {
+            declared.contains_key(name)
+                && !installed.contains(name)
+                && enabled.as_ref().is_none_or(|names| names.contains(name))
+        })
+        .collect()
+}
+
 /// Aggregate `[bootstrap.packages]` from the current merged config plus every
 /// tracked config file, mirroring the way `mise prune` protects tool versions
 /// still referenced by other projects.
@@ -309,6 +352,17 @@ fn packages_from_config_files_with_brew_taps(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
 ) -> Vec<ManagerPackages> {
+    resolve_managers(
+        package_requests_from_config_files(config_files, brew_taps),
+        false,
+    )
+    .expect("non-strict resolve is infallible")
+}
+
+fn package_requests_from_config_files(
+    config_files: &ConfigMap,
+    brew_taps: &IndexMap<String, String>,
+) -> IndexMap<String, Vec<PackageRequest>> {
     let mut merged: IndexMap<String, String> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config_files.values().rev() {
@@ -341,7 +395,7 @@ fn packages_from_config_files_with_brew_taps(
             Err(err) => warn!("[bootstrap.packages]: {err}"),
         }
     }
-    resolve_managers(by_mgr, false).expect("non-strict resolve is infallible")
+    by_mgr
 }
 
 /// Aggregate `[bootstrap.macos.defaults]` across all loaded config files.
@@ -1233,6 +1287,10 @@ fn resolve_managers(
         .system_packages
         .managers
         .clone();
+    let managers = packages::all_managers()
+        .into_iter()
+        .map(|manager| (manager.name().to_string(), manager))
+        .collect::<IndexMap<_, _>>();
     let mut out = vec![];
     for (name, requests) in by_mgr {
         let disabled = enabled.as_ref().is_some_and(|e| !e.contains(&name));
@@ -1243,23 +1301,31 @@ fn resolve_managers(
                 enabled.as_deref().unwrap_or_default().join(", ")
             );
         }
-        match packages::get_manager(&name) {
+        match managers.get(&name) {
             Some(manager) => out.push(ManagerPackages {
-                manager,
+                manager: manager.clone(),
                 requests,
                 disabled,
             }),
             None => {
                 if strict {
-                    bail!("unknown bootstrap package manager '{name}'");
+                    bail!(
+                        "unknown bootstrap package manager '{name}' — install a package plugin: mise plugin install package:{name} <url>"
+                    );
                 }
                 // brew is compiled out on Windows — not unknown, just
                 // unsupported there
                 if cfg!(windows) && name == "brew" {
                     debug!("system package manager 'brew' is not supported on windows");
+                } else if crate::config::is_loaded()
+                    && plugins_from_config(&crate::config::Config::get_()).contains_key(&name)
+                {
+                    warn!(
+                        "unknown bootstrap package manager '{name}' in [bootstrap.packages] — declared in [bootstrap.plugins] but not installed; run `mise bootstrap`"
+                    );
                 } else {
                     warn!(
-                        "unknown bootstrap package manager '{name}' in [bootstrap.packages], ignoring"
+                        "unknown bootstrap package manager '{name}' in [bootstrap.packages], ignoring — install a package plugin: mise plugin install package:{name} <url>"
                     );
                 }
             }

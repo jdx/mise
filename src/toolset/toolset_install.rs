@@ -57,6 +57,13 @@ impl Toolset {
         // Ensure options from toolset are preserved during auto-install
         self.init_request_options(&mut versions);
         let installed = self.install_all_versions(config, versions, opts).await?;
+        if opts.dry_run {
+            // Dry-run install results describe the planned installs. They are not
+            // present on disk, so rebuilding shims/runtime symlinks or updating
+            // lockfiles for them would both mutate state and advertise tools that
+            // cannot be executed.
+            return Ok((installed, missing));
+        }
         if !installed.is_empty() {
             let ts = config.get_toolset().await?;
             config::rebuild_shims_and_runtime_symlinks(
@@ -125,11 +132,7 @@ impl Toolset {
         };
         mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
 
-        // Skip hooks in dry-run mode
-        if !opts.dry_run {
-            // Run pre-install hook
-            hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
-        }
+        hooks::run_one_hook(config, self, Hooks::Preinstall, None, opts.dry_run).await;
 
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
@@ -215,8 +218,17 @@ impl Toolset {
             mpr.footer_finish();
         }
 
-        // Skip hooks in dry-run mode
-        if !opts.dry_run {
+        if opts.dry_run {
+            hooks::run_one_hook_with_context(
+                config,
+                self,
+                Hooks::Postinstall,
+                None,
+                None,
+                opts.dry_run,
+            )
+            .await;
+        } else {
             // Run post-install hook with installed tools info
             // Use the full resolved toolset so all installed tools are on PATH
             // Fall back to self if toolset resolution fails (e.g. due to config issues)
@@ -235,6 +247,7 @@ impl Toolset {
                 Hooks::Postinstall,
                 None,
                 Some(&installed_tools),
+                opts.dry_run,
             )
             .await;
         }

@@ -1340,8 +1340,8 @@ fn verify_cert_chain(leaf_der: &[u8], trusted_root: &TrustedRoot) -> Result<()> 
         AttestationError::Verification(format!("failed to parse leaf certificate: {e}"))
     })?;
     let not_after = leaf
-        .tbs_certificate
-        .validity
+        .tbs_certificate()
+        .validity()
         .not_after
         .to_unix_duration()
         .as_secs();
@@ -1415,8 +1415,8 @@ fn cert_issuer_organization(cert_der: &[u8]) -> Option<String> {
     use x509_cert::Certificate;
     use x509_cert::der::Decode;
     let cert = Certificate::from_der(cert_der).ok()?;
-    for rdn in cert.tbs_certificate.issuer.0.iter() {
-        for atv in rdn.0.iter() {
+    for rdn in cert.tbs_certificate().issuer().iter_rdn() {
+        for atv in rdn.iter() {
             // 2.5.4.10 = id-at-organizationName
             if atv.oid.to_string() == "2.5.4.10" {
                 if let Ok(s) = atv.value.decode_as::<String>() {
@@ -1443,8 +1443,8 @@ fn extract_spki_der(cert_der: &[u8]) -> Result<Vec<u8>> {
     use x509_cert::der::{Decode, Encode};
     let cert = Certificate::from_der(cert_der)
         .map_err(|e| AttestationError::Verification(format!("failed to parse certificate: {e}")))?;
-    cert.tbs_certificate
-        .subject_public_key_info
+    cert.tbs_certificate()
+        .subject_public_key_info()
         .to_der()
         .map_err(|e| {
             AttestationError::Verification(format!("failed to encode SubjectPublicKeyInfo: {e}"))

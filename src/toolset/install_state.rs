@@ -416,6 +416,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             PluginType::Asdf => format!("asdf:{short}"),
             PluginType::Vfox => format!("vfox:{short}"),
             PluginType::VfoxBackend => short.clone(),
+            PluginType::Package => continue,
         };
         let tool = tools
             .entry(short.clone())
@@ -437,12 +438,15 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
 }
 
 pub fn list_plugins() -> Arc<BTreeMap<String, PluginType>> {
+    try_list_plugins().expect("INSTALL_STATE_PLUGINS is None")
+}
+
+pub fn try_list_plugins() -> Option<Arc<BTreeMap<String, PluginType>>> {
     INSTALL_STATE_PLUGINS
         .lock()
         .expect("INSTALL_STATE_PLUGINS lock failed")
         .as_ref()
-        .expect("INSTALL_STATE_PLUGINS is None")
-        .clone()
+        .cloned()
 }
 
 fn is_banned_plugin(path: &Path) -> bool {

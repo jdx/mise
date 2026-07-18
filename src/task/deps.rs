@@ -82,7 +82,7 @@ impl Deps {
                 .is_some_and(|f| TaskFetcher::is_remote_source(&f.to_string_lossy()))
             {
                 let mut tasks_to_fetch = vec![a];
-                fetcher.fetch_tasks(&mut tasks_to_fetch).await?;
+                fetcher.fetch_tasks(config, &mut tasks_to_fetch).await?;
                 a = tasks_to_fetch.into_iter().next().unwrap();
             }
             // Re-render dependency templates with usage values (including defaults)

@@ -1,6 +1,8 @@
 use indexmap::IndexMap;
 use std::ops::{Deref, DerefMut};
 
+use crate::config::env_directive::EnvValue;
+
 /// Option keys that are only relevant during initial installation and should not
 /// be persisted in the manifest or serialized into task/backend option specs.
 // install_env is a core field on CoreToolOptions, but parse_tool_options()
@@ -20,7 +22,7 @@ pub struct CoreToolOptions {
     #[serde(default)]
     pub depends: Option<Vec<String>>,
     #[serde(default)]
-    pub install_env: IndexMap<String, String>,
+    pub install_env: IndexMap<String, EnvValue>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -346,11 +348,19 @@ impl ToolOptions {
                     .ok_or_else(|| "install_env must be a table".to_string())?;
                 for (key, value) in env {
                     self.install_env
-                        .insert(key.clone(), env_value_to_string(value)?);
+                        .insert(key.clone(), EnvValue::try_from(value)?);
                 }
                 Ok(true)
             }
-            "postinstall" | "minimum_release_age" | "install_before" => {
+            "postinstall" => {
+                let script = value
+                    .as_str()
+                    .ok_or_else(|| "postinstall must be a string".to_string())?;
+                self.opts
+                    .insert(key.to_string(), toml::Value::String(script.to_string()));
+                Ok(true)
+            }
+            "minimum_release_age" | "install_before" => {
                 self.opts.insert(
                     key.to_string(),
                     toml::Value::String(scalar_value_to_string(value).ok_or_else(|| {
@@ -363,7 +373,7 @@ impl ToolOptions {
                 if let Some(env_key) = key.strip_prefix("install_env.") {
                     self.install_env.insert(
                         env_key.to_string(),
-                        env_value_to_string(value)
+                        EnvValue::try_from(value)
                             .map_err(|_| format!("{key} must be a string, integer, or boolean"))?,
                     );
                     Ok(true)
@@ -496,15 +506,6 @@ fn parse_string_or_array(value: &toml::Value, key: &str) -> Result<Vec<String>, 
     }
 }
 
-fn env_value_to_string(value: &toml::Value) -> Result<String, String> {
-    match value {
-        toml::Value::String(s) => Ok(s.clone()),
-        toml::Value::Integer(i) => Ok(i.to_string()),
-        toml::Value::Boolean(b) => Ok(b.to_string()),
-        _ => Err("install_env values must be strings, integers, or booleans".to_string()),
-    }
-}
-
 fn normalize_backend_option_value(key: &str, value: toml::Value) -> toml::Value {
     if preserves_backend_option_type(key) {
         return value;
@@ -601,8 +602,9 @@ fn parse_manual_tool_options_raw(s: &str) -> IndexMap<String, toml::Value> {
     for opt in split_tool_option_segments(s) {
         if let Some((k, v)) = opt.split_once('=') {
             if !k.trim().is_empty() {
-                raw.insert(k.trim().to_string(), parse_tool_option_value(v));
-                current_key = Some(k.trim().to_string());
+                let key = k.trim().to_string();
+                raw.insert(key.clone(), parse_tool_option_value(&key, v));
+                current_key = Some(key);
             }
         } else if !opt.is_empty() {
             // No '=' found, append to the previous value or create a new key
@@ -653,13 +655,13 @@ fn split_tool_option_segments(s: &str) -> Vec<String> {
     segments
 }
 
-fn parse_tool_option_value(raw: &str) -> toml::Value {
+fn parse_tool_option_value(key: &str, raw: &str) -> toml::Value {
     let trimmed = raw.trim();
 
-    if ((trimmed.starts_with('"') && trimmed.ends_with('"'))
+    let quoted = ((trimmed.starts_with('"') && trimmed.ends_with('"'))
         || (trimmed.starts_with('\'') && trimmed.ends_with('\'')))
-        && trimmed.len() >= 2
-    {
+        && trimmed.len() >= 2;
+    if quoted || key == "install_env" || key.starts_with("install_env.") {
         let toml_str = format!("_x_ = {trimmed}");
         if let Ok(value) = toml::from_str::<toml::Value>(&toml_str)
             && let Some(parsed) = value.get("_x_")
@@ -830,7 +832,7 @@ mod tests {
 
     #[test]
     fn test_parse_tool_options_core_keys_from_toml() {
-        let input = r#"depends=["python","node"],os="linux",install_env={ FOO = "bar", RETRIES = 2 },postinstall="echo hi",minimum_release_age="7d",install_before="2024-01-01""#;
+        let input = r#"depends=["python","node"],os="linux",install_env={ FOO = "bar", RETRIES = 2, REMOVE = false },postinstall="echo hi",minimum_release_age="7d",install_before="2024-01-01""#;
         let opts = parse_tool_options(input);
 
         assert_eq!(
@@ -838,10 +840,14 @@ mod tests {
             Some(vec!["python".to_string(), "node".to_string()])
         );
         assert_eq!(opts.os, Some(vec!["linux".to_string()]));
-        assert_eq!(opts.install_env.get("FOO").map(String::as_str), Some("bar"));
         assert_eq!(
-            opts.install_env.get("RETRIES").map(String::as_str),
-            Some("2")
+            opts.install_env.get("FOO"),
+            Some(&EnvValue::String("bar".to_string()))
+        );
+        assert_eq!(opts.install_env.get("RETRIES"), Some(&EnvValue::Integer(2)));
+        assert_eq!(
+            opts.install_env.get("REMOVE"),
+            Some(&EnvValue::Boolean(false))
         );
         assert_eq!(opts.get("postinstall"), Some("echo hi"));
         assert_eq!(opts.get("minimum_release_age"), Some("7d"));
@@ -849,6 +855,22 @@ mod tests {
         assert!(!opts.opts.contains_key("depends"));
         assert!(!opts.opts.contains_key("os"));
         assert!(!opts.opts.contains_key("install_env"));
+    }
+
+    #[test]
+    fn test_parse_tool_options_rejects_non_string_postinstall() {
+        for input in [
+            "postinstall=123",
+            "postinstall=true",
+            "postinstall=1.23",
+            "postinstall=2026-07-17T12:34:56Z",
+        ] {
+            assert_eq!(
+                try_parse_tool_options(input),
+                Err("postinstall must be a string".to_string()),
+                "input: {input}"
+            );
+        }
     }
 
     #[test]
@@ -873,12 +895,20 @@ mod tests {
     #[test]
     fn test_parse_tool_options_core_keys_from_manual_syntax() {
         let opts = parse_tool_options(
-            "depends=python,os=linux,install_env.FOO=bar,postinstall=echo hi,minimum_release_age=7d",
+            "depends=python,os=linux,install_env.FOO=bar,install_env.REMOVE=false,install_env.RETRIES=2,postinstall=echo hi,minimum_release_age=7d",
         );
 
         assert_eq!(opts.depends, Some(vec!["python".to_string()]));
         assert_eq!(opts.os, Some(vec!["linux".to_string()]));
-        assert_eq!(opts.install_env.get("FOO").map(String::as_str), Some("bar"));
+        assert_eq!(
+            opts.install_env.get("FOO"),
+            Some(&EnvValue::String("bar".to_string()))
+        );
+        assert_eq!(
+            opts.install_env.get("REMOVE"),
+            Some(&EnvValue::Boolean(false))
+        );
+        assert_eq!(opts.install_env.get("RETRIES"), Some(&EnvValue::Integer(2)));
         assert_eq!(opts.get("postinstall"), Some("echo hi"));
         assert_eq!(opts.get("minimum_release_age"), Some("7d"));
         assert!(!opts.opts.contains_key("depends"));
@@ -913,7 +943,10 @@ mod tests {
 
         assert_eq!(opts.os, Some(vec!["linux".to_string()]));
         assert_eq!(opts.depends, Some(vec!["node".to_string()]));
-        assert_eq!(opts.install_env.get("FOO").map(String::as_str), Some("bar"));
+        assert_eq!(
+            opts.install_env.get("FOO"),
+            Some(&EnvValue::String("bar".to_string()))
+        );
         assert_eq!(opts.get("exe"), Some("rg"));
         assert_eq!(opts.get_string("strip_components"), Some("1".to_string()));
         assert!(!opts.opts.contains_key("os"));
@@ -1084,7 +1117,7 @@ mod tests {
                 depends: Some(vec!["node".to_string()]),
                 install_env: [(
                     "NPM_CONFIG_REGISTRY".to_string(),
-                    "https://example.com".to_string(),
+                    EnvValue::from("https://example.com"),
                 )]
                 .iter()
                 .cloned()
@@ -1105,7 +1138,7 @@ mod tests {
         let config_opts = ToolVersionOptions {
             core: CoreToolOptions {
                 os: Some(vec!["linux".to_string()]),
-                install_env: [("CONFIG_ONLY".to_string(), "1".to_string())]
+                install_env: [("CONFIG_ONLY".to_string(), EnvValue::from("1"))]
                     .iter()
                     .cloned()
                     .collect(),
@@ -1116,7 +1149,7 @@ mod tests {
         let inline_opts = ToolVersionOptions {
             core: CoreToolOptions {
                 depends: Some(vec!["node".to_string()]),
-                install_env: [("INLINE_ONLY".to_string(), "2".to_string())]
+                install_env: [("INLINE_ONLY".to_string(), EnvValue::from("2"))]
                     .iter()
                     .cloned()
                     .collect(),
@@ -1243,7 +1276,7 @@ mod tests {
             core: CoreToolOptions {
                 os: Some(vec!["linux".to_string()]),
                 depends: Some(vec!["node".to_string()]),
-                install_env: [("BASE".to_string(), "1".to_string())]
+                install_env: [("BASE".to_string(), EnvValue::from("1"))]
                     .iter()
                     .cloned()
                     .collect(),
@@ -1260,7 +1293,7 @@ mod tests {
             core: CoreToolOptions {
                 os: Some(vec!["macos".to_string()]),
                 depends: Some(vec!["python".to_string()]),
-                install_env: [("BASE".to_string(), "2".to_string())]
+                install_env: [("BASE".to_string(), EnvValue::from("2"))]
                     .iter()
                     .cloned()
                     .collect(),
@@ -1275,7 +1308,10 @@ mod tests {
 
         assert_eq!(base.os, Some(vec!["macos".to_string()]));
         assert_eq!(base.depends, Some(vec!["python".to_string()]));
-        assert_eq!(base.install_env.get("BASE").map(String::as_str), Some("2"));
+        assert_eq!(
+            base.install_env.get("BASE"),
+            Some(&EnvValue::String("2".to_string()))
+        );
         assert_eq!(base.get("api_url"), Some("https://inline.example"));
         assert_eq!(base.get("version_prefix"), Some("v"));
     }

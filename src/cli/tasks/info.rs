@@ -47,7 +47,9 @@ impl TasksInfo {
             let mut tasks = vec![task.clone()];
             // always pass no_cache=false as the command doesn't take no-cache argument
             // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
-            TaskFetcher::new(false).fetch_tasks(&mut tasks).await?;
+            TaskFetcher::new(false)
+                .fetch_tasks(&config, &mut tasks)
+                .await?;
             let task = &tasks[0];
 
             if self.json {

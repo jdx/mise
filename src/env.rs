@@ -22,6 +22,10 @@ use std::{path::PathBuf, sync::atomic::AtomicBool};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 pub static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
+pub const MISE_INSTALL_VERSION_ENV_VAR: &str = "MISE_INSTALL_VERSION";
+pub const MISE_TOOL_VERSION_ENV_VAR: &str = "MISE_TOOL_VERSION";
+pub const NON_TOOL_VERSION_ENV_VARS: &[&str] =
+    &[MISE_INSTALL_VERSION_ENV_VAR, MISE_TOOL_VERSION_ENV_VAR];
 #[cfg(unix)]
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 #[cfg(windows)]
@@ -426,6 +430,13 @@ pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
 
 // true if running inside a shim
 pub static __MISE_SHIM: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SHIM"));
+
+/// Absolute path of the shim that delegated to mise. Unlike `MISE_SHIMS_DIR`,
+/// this remains reliable when a parent process preserves PATH but filters out
+/// mise's directory configuration variables.
+pub const MISE_SHIM_PATH_ENV: &str = "__MISE_SHIM_PATH";
+pub static MISE_SHIM_PATH: Lazy<RwLock<Option<PathBuf>>> =
+    Lazy::new(|| RwLock::new(var_path(MISE_SHIM_PATH_ENV)));
 
 // true if the current process is running as a shim (not direct mise invocation)
 pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {

@@ -12,7 +12,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value as JsonValue, json};
 use std::collections::{HashMap, HashSet};
 use std::iter::once;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 type TeraSpecParsingResult = (
@@ -156,20 +156,22 @@ impl TaskScriptParser {
         }
     }
 
-    fn register_task_source_files_function(tera: &mut TeraEngine, task: &Task) {
+    fn register_task_source_files_function(&self, tera: &mut TeraEngine, task: &Task) {
         Self::register_template_function(tera, "task_source_files", {
             let glob_patterns = Arc::new(crate::task::task_source_checker::source_glob_patterns(
                 &task.sources,
             ));
-            // Anchor the matcher at the process cwd. `is_source` handles
+            // Anchor the matcher at the task directory. `is_source` handles
             // absolute paths outside this root by trusting the glob result,
-            // so absolute outside-cwd patterns (e.g. workspace-root paths)
+            // so absolute outside-root patterns (e.g. workspace-root paths)
             // still flow through.
-            let cwd = crate::dirs::CWD
+            let root = self
+                .dir
                 .clone()
+                .or_else(|| crate::dirs::CWD.clone())
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
             let matcher = Arc::new(crate::task::task_source_checker::build_source_matcher(
-                &cwd,
+                &root,
                 &task.sources,
             ));
 
@@ -182,6 +184,7 @@ impl TaskScriptParser {
                 };
 
                 let mut resolved = Vec::with_capacity(glob_patterns.len());
+                let escaped_root = glob::Pattern::escape(root.to_string_lossy().as_ref());
 
                 for pattern in glob_patterns.iter() {
                     if contains_template_syntax(pattern) {
@@ -192,8 +195,19 @@ impl TaskScriptParser {
                         continue;
                     }
 
+                    let pattern_path = Path::new(pattern);
+                    let is_relative = pattern_path.is_relative();
+                    let rooted_pattern = if is_relative {
+                        Path::new(&escaped_root)
+                            .join(pattern_path)
+                            .to_string_lossy()
+                            .to_string()
+                    } else {
+                        pattern.clone()
+                    };
+
                     match glob::glob_with(
-                        pattern,
+                        &rooted_pattern,
                         glob::MatchOptions {
                             case_sensitive: false,
                             require_literal_separator: false,
@@ -223,7 +237,12 @@ impl TaskScriptParser {
                                             );
                                             continue;
                                         }
-                                        let source = path.display();
+                                        let source = if is_relative {
+                                            path.strip_prefix(&root).unwrap_or(&path)
+                                        } else {
+                                            &path
+                                        };
+                                        let source = source.display();
                                         trace!(
                                             "tera::render::resolve_task_sources resolved source from pattern '{pattern}': {source}"
                                         );
@@ -522,7 +541,7 @@ impl TaskScriptParser {
             }
         });
 
-        Self::register_task_source_files_function(&mut tera, task);
+        self.register_task_source_files_function(&mut tera, task);
 
         (tera, arg_order, input_args, input_flags)
     }
@@ -723,7 +742,7 @@ impl TaskScriptParser {
                 }
             };
             let mut tera = self.get_tera();
-            Self::register_task_source_files_function(&mut tera, task);
+            self.register_task_source_files_function(&mut tera, task);
             Self::register_template_function(&mut tera, "arg", {
                 {
                     let usage_args = m.args.clone();
@@ -1321,6 +1340,28 @@ mod tests {
 
             assert_eq!(parsed, vec![expected]);
         }
+    }
+
+    #[tokio::test]
+    async fn test_task_source_files_resolves_relative_to_parser_dir() {
+        let config = Config::get().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("project[1]");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("input.txt"), "test").unwrap();
+        let task = Task {
+            sources: vec!["*.txt".to_string()],
+            ..Default::default()
+        };
+        let parser = TaskScriptParser::new(Some(root));
+        let scripts = vec!["echo {{ task_source_files() | first }}".to_string()];
+
+        let (parsed, _) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+
+        assert_eq!(parsed, vec!["echo input.txt"]);
     }
 
     #[tokio::test]

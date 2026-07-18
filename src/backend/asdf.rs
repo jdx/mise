@@ -177,7 +177,10 @@ impl AsdfBackend {
             sm = sm.with_env(k, value);
         }
         for (key, value) in tv.install_env() {
-            sm = sm.with_env(key, value.clone());
+            sm = match value.into_string() {
+                Some(value) => sm.with_env(key, value),
+                None => sm.without_env(key),
+            };
         }
         if let Some(project_root) = &config.project_root {
             let project_root = project_root.to_string_lossy().to_string();
@@ -215,7 +218,7 @@ impl AsdfBackend {
             .with_env("MISE_DOWNLOAD_PATH", download)
             .with_env("MISE_INSTALL_PATH", install)
             .with_env("MISE_INSTALL_TYPE", install_type)
-            .with_env("MISE_INSTALL_VERSION", install_version);
+            .with_env(env::MISE_INSTALL_VERSION_ENV_VAR, install_version);
         Ok(sm)
     }
 }

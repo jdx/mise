@@ -52,7 +52,7 @@ fn apk_name(req: &PackageRequest) -> String {
 
 #[async_trait(?Send)]
 impl SystemPackageManager for ApkManager {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "apk"
     }
 

@@ -68,7 +68,7 @@ impl TasksValidate {
         // always no_cache=false as the command doesn't take no-cache argument
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
         TaskFetcher::new(false)
-            .fetch_tasks(&mut resolved_tasks)
+            .fetch_tasks(&config, &mut resolved_tasks)
             .await?;
         let all_tasks: BTreeMap<String, Task> = resolved_tasks
             .into_iter()

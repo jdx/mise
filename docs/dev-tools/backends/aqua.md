@@ -9,6 +9,12 @@ the [aqua registry](https://github.com/aquaproj/aqua-registry) that gets compile
 Here's an example package entry: [`aqua:hashicorp/terraform`](https://github.com/aquaproj/aqua-registry/blob/main/pkgs/hashicorp/terraform/registry.yaml).
 mise has a reimplementation of aqua that knows how to work with these files to install tools.
 
+By default, the bundled snapshot is used. The opt-in
+[`registry_floating`](/configuration/settings.html#registry_floating) setting checks the current
+official aqua registry first while retaining the bundled snapshot as a fallback. It also floats
+mise's shorthand registry; see [Floating registries](/registry.html#floating-registries) for the
+tradeoffs and cache behavior.
+
 As of this writing, aqua is relatively new to mise and because a lot of tools are being converted from
 asdf to aqua, there may be some configuration in aqua tools that need to be tightened up. I put some
 common issues below and would strongly recommend contributing changes back to the aqua registry if you

@@ -376,6 +376,18 @@ impl Backend for NPMBackend {
         .cloned()
     }
 
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> eyre::Result<Option<String>> {
+        // npm registry versions are strict semver and dist-tags may not be
+        // valid semver, so a full semver request is exact. Installation
+        // passes `pkg@version` through to the package manager, which fails
+        // when the version does not exist upstream.
+        Ok(versions::SemVer::new(version).map(|_| version.to_string()))
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let package_manager = self
             .package_manager_for_install(&ctx.config, Some(&ctx.ts))
@@ -407,7 +419,7 @@ impl Backend for NPMBackend {
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                    .envs(tv.install_env())
+                    .env_values(tv.install_env())
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
                         self.dependency_toolset(&ctx.config)
@@ -434,7 +446,7 @@ impl Backend for NPMBackend {
                     .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                    .envs(tv.install_env())
+                    .env_values(tv.install_env())
                     .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
                     .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
@@ -464,7 +476,7 @@ impl Backend for NPMBackend {
                     .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                    .envs(tv.install_env())
+                    .env_values(tv.install_env())
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
                         self.dependency_toolset(&ctx.config)
@@ -509,7 +521,7 @@ impl Backend for NPMBackend {
                     .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                    .envs(tv.install_env())
+                    .env_values(tv.install_env())
                     .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
@@ -1073,6 +1085,46 @@ mod tests {
         NPMBackend::from_arg(ba)
     }
 
+    #[tokio::test]
+    async fn exact_semver_versions_resolve_without_remote_discovery() {
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = create_npm_backend("prettier");
+
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "3.1.0")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("3.1.0")
+        );
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "1.1.0-beta.1")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.1.0-beta.1")
+        );
+    }
+
+    #[tokio::test]
+    async fn fuzzy_versions_require_remote_discovery() {
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = create_npm_backend("prettier");
+
+        for version in ["latest", "3", "3.1", "^3.1.0", ">=3.1.0", "next"] {
+            assert_eq!(
+                backend
+                    .resolve_exact_version(&config, version)
+                    .await
+                    .unwrap(),
+                None,
+                "{version} should use remote discovery"
+            );
+        }
+    }
+
     #[test]
     fn test_get_dependencies_for_npm_itself() {
         // When the tool is npm itself (npm:npm) with default settings (npm as package manager),
@@ -1553,7 +1605,7 @@ mod tests {
         );
         options.install_env.insert(
             "NPM_CONFIG_REGISTRY".to_string(),
-            "https://registry.example.com".to_string(),
+            crate::config::env_directive::EnvValue::from("https://registry.example.com"),
         );
 
         let request =

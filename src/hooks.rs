@@ -70,6 +70,14 @@ impl HookScripts {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
 pub enum HookDef {
+    One(HookDefItem),
+    /// Array of hook definitions: `enter = ["echo hello", { task = "setup" }]`
+    Array(Vec<HookDefItem>),
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum HookDefItem {
     /// Simple run string: `enter = "echo hello"`
     RunString(String),
     /// Table with run: `enter = { run = "echo hello" }`
@@ -86,8 +94,6 @@ pub enum HookDef {
     },
     /// Task reference: `enter = { task = "setup" }`
     TaskRef { task: String },
-    /// Array of hook definitions: `enter = ["echo hello", { task = "setup" }]`
-    Array(Vec<HookDef>),
 }
 
 #[derive(Debug, Clone)]
@@ -128,7 +134,19 @@ impl HookDef {
     /// Convert to a list of Hook structs with the given hook type
     pub fn into_hooks(self, hook_type: Hooks) -> Vec<Hook> {
         match self {
-            HookDef::RunString(script) => vec![Hook {
+            HookDef::One(def) => vec![def.into_hook(hook_type)],
+            HookDef::Array(arr) => arr
+                .into_iter()
+                .map(|def| def.into_hook(hook_type))
+                .collect(),
+        }
+    }
+}
+
+impl HookDefItem {
+    fn into_hook(self, hook_type: Hooks) -> Hook {
+        match self {
+            HookDefItem::RunString(script) => Hook {
                 hook: hook_type,
                 action: HookAction::Run {
                     run: Some(script),
@@ -138,8 +156,8 @@ impl HookDef {
                     ignored_shell: None,
                 },
                 global: false,
-            }],
-            HookDef::Run(table) => vec![Hook {
+            },
+            HookDefItem::Run(table) => Hook {
                 hook: hook_type,
                 action: HookAction::Run {
                     run: table.run,
@@ -149,26 +167,22 @@ impl HookDef {
                     ignored_shell: None,
                 },
                 global: false,
-            }],
-            HookDef::ScriptTable { script, shell } => vec![Hook {
+            },
+            HookDefItem::ScriptTable { script, shell } => Hook {
                 hook: hook_type,
                 action: script_hook_action(hook_type, script.into_script(), shell, true),
                 global: false,
-            }],
-            HookDef::ScriptsTable { scripts, shell } => vec![Hook {
+            },
+            HookDefItem::ScriptsTable { scripts, shell } => Hook {
                 hook: hook_type,
-                action: script_hook_action(hook_type, scripts.join("\n"), shell, false),
+                action: script_hook_action(hook_type, scripts.join("\n"), shell, true),
                 global: false,
-            }],
-            HookDef::TaskRef { task } => vec![Hook {
+            },
+            HookDefItem::TaskRef { task } => Hook {
                 hook: hook_type,
                 action: HookAction::Task { task_name: task },
                 global: false,
-            }],
-            HookDef::Array(arr) => arr
-                .into_iter()
-                .flat_map(|d| d.into_hooks(hook_type))
-                .collect(),
+            },
         }
     }
 }
@@ -259,6 +273,22 @@ impl Hook {
     }
 }
 
+impl HookAction {
+    fn run_for_current_platform(&self) -> Option<&str> {
+        let Self::Run {
+            run, run_windows, ..
+        } = self
+        else {
+            return None;
+        };
+        if cfg!(windows) {
+            run_windows.as_deref().or(run.as_deref())
+        } else {
+            run.as_deref()
+        }
+    }
+}
+
 pub static SCHEDULED_HOOKS: Lazy<Mutex<IndexSet<Hooks>>> = Lazy::new(Default::default);
 
 pub fn schedule_hook(hook: Hooks) {
@@ -275,7 +305,7 @@ pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell
         mu.drain(..).collect::<Vec<_>>()
     };
     for hook in hooks {
-        run_one_hook(config, ts, hook, Some(shell)).await;
+        run_one_hook(config, ts, hook, Some(shell), false).await;
     }
 }
 
@@ -312,8 +342,9 @@ pub async fn run_one_hook(
     ts: &Toolset,
     hook: Hooks,
     shell: Option<&dyn Shell>,
+    dry_run: bool,
 ) {
-    run_one_hook_with_context(config, ts, hook, shell, None).await
+    run_one_hook_with_context(config, ts, hook, shell, None, dry_run).await
 }
 
 /// Run a hook with optional installed tools context (for postinstall hooks)
@@ -324,6 +355,7 @@ pub async fn run_one_hook_with_context(
     hook: Hooks,
     shell: Option<&dyn Shell>,
     installed_tools: Option<&[InstalledToolInfo]>,
+    dry_run: bool,
 ) {
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
         return;
@@ -333,7 +365,7 @@ pub async fn run_one_hook_with_context(
         if hook != h.hook || !matches_shell(h, &shell_name) {
             continue;
         }
-        trace!("running hook {hook} in {root:?}");
+        trace!("processing hook {hook} in {root:?}");
         // Global hooks skip directory matching — they fire for all projects
         if !h.global {
             match (hook, hook_env::dir_change()) {
@@ -367,7 +399,7 @@ pub async fn run_one_hook_with_context(
                 _ => {}
             }
         }
-        run_matched_hook(config, ts, root, h, shell, installed_tools).await;
+        run_matched_hook(config, ts, root, h, shell, installed_tools, dry_run).await;
     }
 }
 
@@ -406,7 +438,7 @@ pub async fn run_enter_hooks_for_newly_loaded_configs(
         if !newly_loaded_roots.contains(&root) {
             continue;
         }
-        run_matched_hook(config, ts, &root, &h, Some(shell), None).await;
+        run_matched_hook(config, ts, &root, &h, Some(shell), None, false).await;
     }
 }
 
@@ -417,7 +449,18 @@ async fn run_matched_hook(
     hook: &Hook,
     shell: Option<&dyn Shell>,
     installed_tools: Option<&[InstalledToolInfo]>,
+    dry_run: bool,
 ) {
+    if dry_run {
+        if let Err(e) = preview_matched_hook(root, hook) {
+            warn!(
+                "failed to preview {} hook in {}: {e}",
+                hook.hook,
+                root.display()
+            );
+        }
+        return;
+    }
     let hook_type = hook.hook;
     match &hook.action {
         HookAction::Task { task_name } => {
@@ -465,6 +508,42 @@ async fn run_matched_hook(
     }
 }
 
+fn preview_matched_hook(root: &Path, hook: &Hook) -> Result<()> {
+    let action = match &hook.action {
+        HookAction::Task { task_name } => shell_words::join([
+            "mise".to_string(),
+            "--cd".to_string(),
+            root.to_string_lossy().into_owned(),
+            "run".to_string(),
+            task_name.clone(),
+        ]),
+        HookAction::CurrentShell { script, .. } => script.clone(),
+        HookAction::Run { shell, .. } => {
+            let Some(run) = hook.action.run_for_current_platform() else {
+                return Ok(());
+            };
+            // Do not render the command again here: template functions such as
+            // exec() may have side effects. Preview the command as currently loaded.
+            let shell = shell
+                .as_ref()
+                .map(|shell| crate::path::split_shell_command(shell))
+                .transpose()?
+                .unwrap_or(Settings::get().default_inline_shell()?);
+            display_inline_command(&shell, run)
+        }
+    };
+    miseprintln!(
+        "Would run {} hook in {}: {action}",
+        hook.hook.to_string().to_lowercase(),
+        root.display()
+    );
+    Ok(())
+}
+
+fn display_inline_command(shell: &[String], run: &str) -> String {
+    shell_words::join(shell.iter().cloned().chain(once(run.to_string())))
+}
+
 fn matches_shell(hook: &Hook, shell_name: &str) -> bool {
     if let HookAction::CurrentShell { shell, .. } = &hook.action {
         shell == shell_name
@@ -481,11 +560,10 @@ async fn execute(
     installed_tools: Option<&[InstalledToolInfo]>,
 ) -> Result<()> {
     let HookAction::Run {
-        run,
-        run_windows,
         shell,
         legacy_script,
         ignored_shell,
+        ..
     } = &hook.action
     else {
         return Ok(());
@@ -495,7 +573,7 @@ async fn execute(
             "2026.9.0",
             "2027.3.0",
             "hook_script_table_spawned_run",
-            "hook tables using `script` for spawned commands are deprecated. Use `run` instead."
+            "hook tables using `script` or `scripts` for spawned commands are deprecated. Use `run` instead."
         );
     }
     if ignored_shell.is_some() && matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
@@ -505,12 +583,7 @@ async fn execute(
             hook_name
         );
     }
-    let run = if cfg!(windows) {
-        run_windows.as_deref().or(run.as_deref())
-    } else {
-        run.as_deref()
-    };
-    let Some(run) = run else {
+    let Some(run) = hook.action.run_for_current_platform() else {
         return Ok(());
     };
     let shell = shell
@@ -717,5 +790,97 @@ mod tests {
             }
             action => panic!("expected run hook, got {action:?}"),
         }
+    }
+
+    #[test]
+    fn hook_tables_reject_unknown_fields() {
+        for input in [
+            r#"hook = { script = "echo script", typo = true }"#,
+            r#"hook = { scripts = ["echo scripts"], typo = true }"#,
+            r#"hook = { task = "build", typo = true }"#,
+        ] {
+            assert!(
+                toml::from_str::<TestHook>(input).is_err(),
+                "unexpectedly accepted {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn hook_tables_reject_mixed_actions() {
+        for input in [
+            r#"hook = { run = "echo run", script = "echo script" }"#,
+            r#"hook = { run = "echo run", task = "build" }"#,
+            r#"hook = { script = "echo script", scripts = ["echo scripts"] }"#,
+            r#"hook = { script = "echo script", task = "build" }"#,
+            r#"hook = { scripts = ["echo scripts"], task = "build" }"#,
+        ] {
+            assert!(
+                toml::from_str::<TestHook>(input).is_err(),
+                "unexpectedly accepted {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn hook_arrays_reject_nested_arrays() {
+        assert!(
+            toml::from_str::<TestHook>(
+                r#"hook = ["echo first", { task = "build" }, { run = "echo last" }]"#
+            )
+            .is_ok(),
+            "flat mixed array should be accepted"
+        );
+
+        for input in [
+            r#"hook = [["echo nested"]]"#,
+            r#"hook = ["echo first", [{ task = "build" }]]"#,
+        ] {
+            assert!(
+                toml::from_str::<TestHook>(input).is_err(),
+                "unexpectedly accepted {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn scripts_tables_are_legacy_only_when_spawned() {
+        let spawned = HookDef::One(HookDefItem::ScriptsTable {
+            scripts: vec!["echo one".into(), "echo two".into()],
+            shell: None,
+        })
+        .into_hooks(Hooks::Postinstall);
+        assert!(matches!(
+            &spawned[0].action,
+            HookAction::Run {
+                legacy_script: true,
+                ..
+            }
+        ));
+
+        let current_shell = HookDef::One(HookDefItem::ScriptsTable {
+            scripts: vec!["echo one".into(), "echo two".into()],
+            shell: Some("bash".into()),
+        })
+        .into_hooks(Hooks::Enter);
+        assert!(matches!(
+            &current_shell[0].action,
+            HookAction::CurrentShell { .. }
+        ));
+    }
+
+    #[test]
+    fn inline_command_display_preserves_argv_boundaries() {
+        let shell = vec!["/path with spaces/bash".to_string(), "-c".to_string()];
+        let display = display_inline_command(&shell, "echo hello world");
+
+        assert_eq!(
+            shell_words::split(&display).unwrap(),
+            vec![
+                "/path with spaces/bash".to_string(),
+                "-c".to_string(),
+                "echo hello world".to_string(),
+            ]
+        );
     }
 }

@@ -13,8 +13,16 @@ pub struct MisePluginTomlScriptConfig {
     pub data: Option<String>,
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct MisePluginTomlPackageManagerConfig {
+    pub requires: Vec<String>,
+    pub supports_version_pins: bool,
+    pub os: Option<Vec<String>>,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct MisePluginToml {
+    pub package_manager: MisePluginTomlPackageManagerConfig,
     pub exec_env: MisePluginTomlScriptConfig,
     pub list_aliases: MisePluginTomlScriptConfig,
     pub list_bin_paths: MisePluginTomlScriptConfig,
@@ -49,6 +57,7 @@ impl MisePluginToml {
                 "list-idiomatic-filenames" | "list-legacy-filenames" => {
                     self.list_idiomatic_filenames = self.parse_script_config(k, v)?
                 }
+                "package-manager" => self.package_manager = self.parse_package_manager(k, v)?,
                 // this is an old key used in rtx-python
                 // this file is invalid, so just stop parsing entirely if we see it
                 "idiomatic-filenames" | "legacy-filenames" => return Ok(()),
@@ -56,6 +65,30 @@ impl MisePluginToml {
             }
         }
         Ok(())
+    }
+
+    fn parse_package_manager(
+        &mut self,
+        key: &str,
+        v: &Item,
+    ) -> Result<MisePluginTomlPackageManagerConfig> {
+        let Some(table) = v.as_table_like() else {
+            parse_error!(key, v, "table");
+        };
+        let mut config = MisePluginTomlPackageManagerConfig::default();
+        for (k, v) in table.iter() {
+            let full_key = format!("{key}.{k}");
+            match k {
+                "requires" => config.requires = self.parse_string_array(&full_key, v)?,
+                "supports_version_pins" | "supports-version-pins" => match v.as_bool() {
+                    Some(value) => config.supports_version_pins = value,
+                    None => parse_error!(full_key, v, "boolean"),
+                },
+                "os" => config.os = Some(self.parse_string_array(&full_key, v)?),
+                _ => parse_error!(full_key, v, "one of: requires, supports_version_pins, os"),
+            }
+        }
+        Ok(config)
     }
 
     fn parse_script_config(&mut self, key: &str, v: &Item) -> Result<MisePluginTomlScriptConfig> {
@@ -114,6 +147,18 @@ mod tests {
         let cf = MisePluginToml::from_file(&dirs::HOME.join("fixtures/mise.plugin.toml")).unwrap();
 
         assert_debug_snapshot!(cf.exec_env);
+        assert_eq!(
+            cf.list_idiomatic_filenames.data.as_deref(),
+            Some("test-idiomatic-filenames")
+        );
+        assert_eq!(
+            cf.package_manager,
+            MisePluginTomlPackageManagerConfig {
+                requires: vec!["helm".into(), "kubectl".into()],
+                supports_version_pins: true,
+                os: Some(vec!["macos".into(), "linux".into()]),
+            }
+        );
     }
 
     #[test]
@@ -140,6 +185,26 @@ mod tests {
             data: None,
         }
         "#);
+    }
+
+    #[test]
+    fn test_package_manager() {
+        let cf = parse(
+            r#"
+            [package-manager]
+            requires = ["helm", "kubectl"]
+            supports_version_pins = true
+            os = ["macos", "linux"]
+            "#,
+        );
+        assert_eq!(
+            cf.package_manager,
+            MisePluginTomlPackageManagerConfig {
+                requires: vec!["helm".into(), "kubectl".into()],
+                supports_version_pins: true,
+                os: Some(vec!["macos".into(), "linux".into()]),
+            }
+        );
     }
 
     fn parse(s: &str) -> MisePluginToml {

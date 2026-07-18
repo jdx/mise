@@ -1,7 +1,7 @@
-use crate::config::config_file::mise_toml::EnvList;
+use crate::config::config_file::mise_toml::{EnvList, deserialize_vars};
 use crate::config::config_file::toml::deserialize_arr;
 use crate::task::task_sources::TaskOutputs;
-use crate::task::{RunEntry, Silent, Task, TaskConfirm, TaskDep, TaskToolValue};
+use crate::task::{RunEntry, Silent, Task, TaskConfirm, TaskDep, TaskOutput, TaskToolValue};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
@@ -23,7 +23,7 @@ pub struct TaskTemplate {
     pub wait_for: Vec<TaskDep>,
     #[serde(default)]
     pub env: EnvList,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vars")]
     pub vars: EnvList,
     #[serde(default)]
     pub dir: Option<String>,
@@ -31,6 +31,8 @@ pub struct TaskTemplate {
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
+    #[serde(default)]
+    pub output: Option<TaskOutput>,
     #[serde(default)]
     pub shell: Option<String>,
     #[serde(default)]
@@ -160,6 +162,11 @@ impl Task {
         // outputs: local overrides completely if default
         if self.outputs == TaskOutputs::default() && template.outputs != TaskOutputs::default() {
             self.outputs = template.outputs.clone();
+        }
+
+        // output: use template only if local not set
+        if self.output.is_none() {
+            self.output = template.output;
         }
 
         // shell: use template only if local not set
@@ -300,6 +307,25 @@ mod tests {
         };
         task2.merge_template(&template);
         assert_eq!(task2.description, "Local description");
+    }
+
+    #[test]
+    fn test_merge_template_output() {
+        let template = TaskTemplate {
+            output: Some(TaskOutput::KeepOrder),
+            ..Default::default()
+        };
+
+        let mut inherited = Task::default();
+        inherited.merge_template(&template);
+        assert_eq!(inherited.output, Some(TaskOutput::KeepOrder));
+
+        let mut overridden = Task {
+            output: Some(TaskOutput::Interleave),
+            ..Default::default()
+        };
+        overridden.merge_template(&template);
+        assert_eq!(overridden.output, Some(TaskOutput::Interleave));
     }
 
     #[test]

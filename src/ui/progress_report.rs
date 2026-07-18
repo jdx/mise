@@ -88,8 +88,11 @@ pub struct ProgressReport {
 
 impl ProgressReport {
     pub fn new(prefix: String) -> ProgressReport {
+        Self::new_with_pad(prefix, *LONGEST_PLUGIN_NAME)
+    }
+
+    pub fn new_with_pad(prefix: String, pad: usize) -> ProgressReport {
         ui::ctrlc::show_cursor_after_ctrl_c();
-        let pad = *LONGEST_PLUGIN_NAME;
         let formatted_prefix = normal_prefix(pad, &prefix);
 
         // Template: prefix + message + optional bytes/progress bar + spinner on right
@@ -176,10 +179,14 @@ pub struct VerboseReport {
 
 impl VerboseReport {
     pub fn new(prefix: String) -> VerboseReport {
+        Self::new_with_pad(prefix, *LONGEST_PLUGIN_NAME)
+    }
+
+    pub fn new_with_pad(prefix: String, pad: usize) -> VerboseReport {
         VerboseReport {
             prefix,
             prev_message: Mutex::new("".to_string()),
-            pad: *LONGEST_PLUGIN_NAME,
+            pad,
             total_operations: Mutex::new(None),
             current_operation: Mutex::new(0),
         }

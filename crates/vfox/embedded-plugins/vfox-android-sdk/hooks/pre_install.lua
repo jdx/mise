@@ -3,7 +3,6 @@
 --- @return table Version information
 function PLUGIN:PreInstall(ctx)
     local http = require("http")
-    local env = require("env")
 
     local version = ctx.version
 
@@ -31,7 +30,7 @@ function PLUGIN:PreInstall(ctx)
         error("Unsupported architecture: " .. arch_type)
     end
 
-    local base_url = env.ANDROID_SDK_MIRROR_URL or "https://dl.google.com/android/repository"
+    local base_url = os.getenv("ANDROID_SDK_MIRROR_URL") or "https://dl.google.com/android/repository"
     local metadata_url = base_url .. "/repository2-3.xml"
 
     local resp = http.get({ url = metadata_url })
