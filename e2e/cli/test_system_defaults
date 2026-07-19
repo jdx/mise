@@ -73,3 +73,16 @@ cat <<EOF >mise.toml
 [bootstrap.macos.defaults]
 EOF
 assert_succeed "mise bootstrap macos defaults status"
+
+if [[ $(uname) == "Darwin" ]]; then
+  # status must not fail when keys don't exist yet (initial setup)
+  cat <<EOF >mise.toml
+[bootstrap.macos.defaults]
+NSGlobalDomain = { "_mise_test_nonexistent_key_42" = true }
+"com.mise.nonexistent" = { TestKey = true }
+EOF
+  assert_succeed "mise bootstrap macos defaults status"
+  assert_contains "mise bootstrap macos defaults status" "unset"
+  # dry-run must not fail either
+  assert_succeed "mise bootstrap macos defaults apply --dry-run --yes"
+fi
