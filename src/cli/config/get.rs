@@ -13,7 +13,7 @@ pub struct ConfigGet {
     /// The path to the mise.toml file to edit
     ///
     /// If not provided, the nearest mise.toml file will be used
-    #[clap(short, long)]
+    #[clap(short, long, visible_alias = "path")]
     pub file: Option<PathBuf>,
 }
 

@@ -1097,7 +1097,7 @@ Write to the local config instead of the global config
 \fB\-n, \-\-dry\-run\fR
 Print the config change without writing it
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
 \fBArguments:\fR
 .PP
@@ -1121,7 +1121,7 @@ Write to the local config instead of the global config
 \fB\-n, \-\-dry\-run\fR
 Print the config change without writing it
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
 \fBArguments:\fR
 .PP
@@ -1158,7 +1158,7 @@ Import every linked formula, including dependencies
 \fB\-n, \-\-dry\-run\fR
 Print the config change without writing config
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
 .SH "MISE BOOTSTRAP PACKAGES PRUNE"
 Prune installed system packages no longer declared in `[bootstrap.packages]`
@@ -1254,7 +1254,7 @@ Write to the global config (~/.config/mise/config.toml) instead of the local one
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without writing config or installing
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
 .TP
 \fB\-y, \-\-yes\fR
@@ -1461,7 +1461,7 @@ Display the value of a setting in a mise.toml file
 \fBOptions:\fR
 .PP
 .TP
-\fB\-f, \-\-file\fR \fI<FILE>\fR
+\fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
 The path to the mise.toml file to edit
 
 If not provided, the nearest mise.toml file will be used
@@ -1494,7 +1494,7 @@ Set the value of a setting in a mise.toml file
 \fBOptions:\fR
 .PP
 .TP
-\fB\-f, \-\-file\fR \fI<FILE>\fR
+\fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
 The path to the mise.toml file to edit
 
 If not provided, the nearest mise.toml file will be used
@@ -1538,7 +1538,7 @@ Dotfile mode to write
 \fB\-n, \-\-dry\-run\fR
 Print the config/source updates without writing anything
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
 .TP
 \fB\-s, \-\-source\fR \fI<PATH>\fR
@@ -3212,7 +3212,7 @@ Can be used multiple times. Requires \-\-age\-encrypt.
 \fB\-\-complete\fR
 Render completions
 .TP
-\fB\-\-file\fR \fI<FILE>\fR
+\fB\-\-file, \-\-path\fR \fI<FILE>\fR
 The TOML file to update
 
 Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
@@ -4148,7 +4148,7 @@ By default, this command modifies `mise.toml` in the current directory.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-f, \-\-file\fR \fI<FILE>\fR
+\fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
 Specify a file to use instead of `mise.toml`
 
 Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`. Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
@@ -4202,7 +4202,7 @@ Create/modify an environment\-specific config file like .mise.<env>.toml
 \fB\-g, \-\-global\fR
 Use the global config file (`~/.config/mise/config.toml`) instead of the local one
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Specify a path to a config file or directory
 
 If a directory is specified, it will look for a config file in that directory following the rules above.
@@ -4328,7 +4328,7 @@ Number of jobs to run in parallel
 \fB\-n, \-\-dry\-run\fR
 Perform a dry run, showing what would be installed and modified without making changes
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Specify a path to a config file or directory
 
 If a directory is specified, it will look for a config file in that directory following the rules above.

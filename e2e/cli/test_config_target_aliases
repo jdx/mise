@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+config_file="$PWD/aliases.toml"
+
+# Tool config commands accept --file as an alias for --path.
+mise use --file "$config_file" dummy@1
+assert "mise config get --file $config_file tools.dummy" "1"
+mise unuse --file "$config_file" --no-prune dummy
+assert_fail "mise config get --file $config_file tools.dummy"
+
+# Environment config commands accept --path as an alias for --file.
+mise set --path "$config_file" ALIAS_VAR=value
+assert "mise config get --path $config_file env.ALIAS_VAR" "value"
+mise unset --path "$config_file" ALIAS_VAR
+assert_fail "mise config get --path $config_file env.ALIAS_VAR"
+
+# Config commands accept --path as an alias for --file.
+mise config set --path "$config_file" env.CONFIG_ALIAS configured
+assert "mise config get --path $config_file env.CONFIG_ALIAS" "configured"

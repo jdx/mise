@@ -21,7 +21,7 @@ pub struct Unset {
     ///
     /// Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
     /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
-    #[clap(short, long, value_hint = clap::ValueHint::FilePath)]
+    #[clap(short, long, visible_alias = "path", value_hint = clap::ValueHint::FilePath)]
     file: Option<PathBuf>,
 
     /// Use the global config file

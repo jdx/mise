@@ -524,7 +524,7 @@ Examples:
 """#
                 flag "-l --local" help="Write to the local config instead of the global config"
                 flag "-n --dry-run" help="Print the config change without writing it"
-                flag "-p --path" help="Write to this config file or directory" {
+                flag "-p --path --file" help="Write to this config file or directory" {
                     arg <PATH>
                 }
                 arg <TAP> help="Tap name, e.g. `owner/repo`"
@@ -540,7 +540,7 @@ Examples:
 """#
                 flag "-l --local" help="Write to the local config instead of the global config"
                 flag "-n --dry-run" help="Print the config change without writing it"
-                flag "-p --path" help="Write to this config file or directory" {
+                flag "-p --path --file" help="Write to this config file or directory" {
                     arg <PATH>
                 }
                 arg <TAPS>… help="Tap name(s), e.g. `owner/repo`" var=#true
@@ -574,7 +574,7 @@ Examples:
             }
             flag --all help="Import every linked formula, including dependencies"
             flag "-n --dry-run" help="Print the config change without writing config"
-            flag "-p --path" help="Write to this config file or directory" {
+            flag "-p --path --file" help="Write to this config file or directory" {
                 arg <PATH>
             }
         }
@@ -676,7 +676,7 @@ Examples:
             }
             flag "-g --global" help="Write to the global config (~/.config/mise/config.toml) instead of the local one"
             flag "-n --dry-run" help="Print the commands that would run without writing config or installing"
-            flag "-p --path" help="Write to this config file or directory" {
+            flag "-p --path --file" help="Write to this config file or directory" {
                 arg <PATH>
             }
             flag "-y --yes" help="Skip the confirmation prompt"
@@ -831,7 +831,7 @@ Examples:
     3.12
 
 """#
-        flag "-f --file" help="The path to the mise.toml file to edit" {
+        flag "-f --file --path" help="The path to the mise.toml file to edit" {
             long_help #"""
 The path to the mise.toml file to edit
 
@@ -869,7 +869,7 @@ Examples:
     $ mise config set settings.jobs 4
 
 """#
-        flag "-f --file" help="The path to the mise.toml file to edit" {
+        flag "-f --file --path" help="The path to the mise.toml file to edit" {
             long_help #"""
 The path to the mise.toml file to edit
 
@@ -996,7 +996,7 @@ Examples:
             arg <MODE>
         }
         flag "-n --dry-run" help="Print the config/source updates without writing anything"
-        flag "-p --path" help="Write to this config file or directory" {
+        flag "-p --path --file" help="Write to this config file or directory" {
             arg <PATH>
         }
         flag "-s --source" help="Source path to use for a single target" {
@@ -3131,7 +3131,7 @@ Can be used multiple times. Requires --age-encrypt.
         arg <PATH_OR_PUBKEY>
     }
     flag --complete help="Render completions" hide=#true
-    flag --file help="The TOML file to update" {
+    flag "--file --path" help="The TOML file to update" {
         long_help #"""
 The TOML file to update
 
@@ -4068,7 +4068,7 @@ Examples:
     $ mise unset NODE_ENV -g
 
 """#
-    flag "-f --file" help="Specify a file to use instead of `mise.toml`" {
+    flag "-f --file --path" help="Specify a file to use instead of `mise.toml`" {
         long_help #"""
 Specify a file to use instead of `mise.toml`
 
@@ -4127,7 +4127,7 @@ Examples:
         arg <ENV>
     }
     flag "-g --global" help="Use the global config file (`~/.config/mise/config.toml`) instead of the local one"
-    flag "-p --path" help="Specify a path to a config file or directory" {
+    flag "-p --path --file" help="Specify a path to a config file or directory" {
         long_help #"""
 Specify a path to a config file or directory
 
@@ -4304,7 +4304,7 @@ Number of jobs to run in parallel
         arg <JOBS>
     }
     flag "-n --dry-run" help="Perform a dry run, showing what would be installed and modified without making changes"
-    flag "-p --path" help="Specify a path to a config file or directory" {
+    flag "-p --path --file" help="Specify a path to a config file or directory" {
         long_help #"""
 Specify a path to a config file or directory
 

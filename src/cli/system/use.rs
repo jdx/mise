@@ -43,7 +43,13 @@ pub struct SystemUse {
     dry_run: bool,
 
     /// Write to this config file or directory
-    #[clap(long, short, value_name = "PATH", conflicts_with = "global")]
+    #[clap(
+        long,
+        short,
+        visible_alias = "file",
+        value_name = "PATH",
+        conflicts_with = "global"
+    )]
     path: Option<PathBuf>,
 
     /// Skip the confirmation prompt

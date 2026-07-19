@@ -19,7 +19,7 @@ pub struct ConfigSet {
     /// The path to the mise.toml file to edit
     ///
     /// If not provided, the nearest mise.toml file will be used
-    #[clap(short, long)]
+    #[clap(short, long, visible_alias = "path")]
     pub file: Option<PathBuf>,
 
     #[clap(value_enum, short, long, default_value_t)]
