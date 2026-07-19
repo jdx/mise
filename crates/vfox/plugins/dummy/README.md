@@ -1,6 +1,6 @@
 # vfox-nodejs
 
-Node.js plugin for [vfox](https://vfox.lhan.me/).
+Node.js plugin for [vfox](https://vfox.dev/).
 
 ## Install
 
