@@ -142,4 +142,4 @@ The MCP server implementation can be found in [`src/cli/mcp.rs`](https://github.
 - Tool invocation (task execution)
 - JSON-RPC communication over stdio
 
-For more information about the Model Context Protocol, visit the [official MCP documentation](https://modelcontextprotocol.io/).
+For more information about the Model Context Protocol, visit the [official MCP documentation](https://modelcontextprotocol.io/docs/getting-started/intro).

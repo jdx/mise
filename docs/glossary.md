@@ -84,7 +84,7 @@ mise supports multiple backends for installing tools from different sources:
 : Universal Binary Installer for tools distributed as single binaries. See [ubi backend](/dev-tools/backends/ubi).
 
 **vfox**
-: Backend compatible with [VersionFox](https://vfox.lhan.me/) plugins. See [vfox backend](/dev-tools/backends/vfox).
+: Backend compatible with [VersionFox](https://vfox.dev/) plugins. See [vfox backend](/dev-tools/backends/vfox).
 
 ## Shell Integration
 
