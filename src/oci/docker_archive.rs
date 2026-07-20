@@ -61,24 +61,47 @@ pub fn load_into_docker(image_dir: &Path, tag: &str) -> Result<()> {
         .wrap_err("spawning `docker load`")?;
     let stdin = child.stdin.take().expect("stdin piped");
 
-    // Write the archive; any pipe error surfaces as an io error here and is
-    // paired with docker's stderr below for diagnosis.
-    let write_result = write_docker_archive(stdin, &layout, &manifest, &config_bytes, tag);
+    // Write the archive on a separate thread so the parent can drain docker's
+    // stdout+stderr concurrently via `wait_with_output`. Writing the whole
+    // archive before draining would deadlock if docker hit a fatal mid-load
+    // error (disk full, overlay failure) on a large image: docker would stop
+    // reading stdin and block once its stderr pipe buffer (~64 KB) filled,
+    // while we blocked writing stdin.
+    let writer = {
+        let root = layout.root.clone();
+        let manifest = manifest.clone();
+        let tag = tag.to_string();
+        std::thread::spawn(move || {
+            let layout = ImageLayout { root };
+            write_docker_archive(stdin, &layout, &manifest, &config_bytes, &tag)
+        })
+    };
 
     let out = child
         .wait_with_output()
         .wrap_err("waiting for `docker load`")?;
+    let write_result = writer
+        .join()
+        .map_err(|_| eyre::eyre!("docker archive writer thread panicked"))?;
+
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        bail!(
+        let mut msg = format!(
             "`docker load` failed ({}): {}. Ensure the docker daemon is running and \
              your user has access to the socket.",
             out.status,
             stderr.trim()
         );
+        // A write error here is usually the broken pipe caused by docker
+        // dying (so docker's stderr is the real cause), but if it's something
+        // else — e.g. a layer failed to decompress — surface it too so the
+        // truncated-archive error from docker doesn't mask the root cause.
+        if let Err(e) = &write_result {
+            msg.push_str(&format!("\n(while writing archive: {e})"));
+        }
+        bail!(msg);
     }
-    // A broken pipe with a zero exit status shouldn't happen, but don't
-    // swallow the write error if it does.
+    // docker succeeded — don't swallow a writer error if one somehow occurred.
     write_result?;
     Ok(())
 }
