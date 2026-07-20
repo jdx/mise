@@ -27,6 +27,47 @@ export MISE_AQUA_MINISIGN=false
 
 For lockfile checksum and provenance behavior, see [mise.lock](/dev-tools/mise-lock.html).
 
+## Safe mode
+
+Safe mode (`MISE_SAFE=1`, or the [`safe`](/configuration/settings.html#safe) setting) is a hard
+boundary against **project configuration executing code**. It is intended for running mise against
+configuration you do not control — most notably automation that refreshes `mise.lock` on pull
+request branches, such as a scheduled `mise lock --bump` job (see
+[mise.lock](/dev-tools/mise-lock.html)).
+
+```sh
+# resolve tool versions from untrusted config without executing any of it
+MISE_SAFE=1 mise lock --bump --dry-run --json
+```
+
+When enabled, mise **refuses with an error** (never a silent fallback) to:
+
+- run `exec()` or `read_file()` in config templates
+- source shell scripts via the `_.source` env directive
+- run hooks (suppressed like `--no-hooks`, since hooks fire ambiently from `mise env`/`hook-env`)
+- run tasks
+- execute asdf plugin scripts
+- install plugins
+
+Version resolution still works for every HTTP-based backend — `core`, `aqua`, `github`, `gitlab`,
+`http`, `cargo`, `pipx`, `gem`, `dotnet`, and `npm` — as well as `go` (which runs with
+`GOTOOLCHAIN=local` so a project `go.mod` cannot trigger a toolchain download). Refreshing
+`mise.lock` and listing installed tools work normally.
+
+Already-installed and embedded vfox plugins also keep working: their code was chosen by the
+operator, not by the repository being processed, and version resolution short-circuits on
+plugins that are not installed without executing anything.
+
+::: tip
+Safe mode is a code-execution boundary; it does not replace the [trust](/cli/trust.html)
+system. Untrusted configs still require `mise trust` (or a
+[trusted config path](/configuration/settings.html#trusted_config_paths)). Safe mode limits what a
+config can do; trust limits which configs are loaded.
+:::
+
+`MISE_SAFE` is `global_only`, so it can only be set via the environment or global config — a project
+`mise.toml` cannot turn it off for itself.
+
 ## Minimum release age
 
 To limit supply-chain risk, you can restrict mise to only install versions released before a
