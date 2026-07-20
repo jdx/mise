@@ -40,6 +40,30 @@ Comma-separated list of platforms to target
 e.g.: linux-x64,macos-arm64,windows-x64
 If not specified, all platforms already in lockfile will be updated
 
+### `--bump`
+
+Re-resolve fuzzy version selectors against the latest available versions
+
+By default, `mise lock` refreshes metadata for the currently locked versions.
+With this flag, selectors like "latest", "lts", or prefixes like "20" are
+re-resolved against the latest matching remote versions, so the lockfile
+advances without installing anything. Config files are never modified:
+exactly pinned versions resolve to themselves and stay unchanged
+(use `mise upgrade --bump` to rewrite pins in mise.toml).
+
+### `--json`
+
+Output version changes as JSON
+
+Prints an array of objects describing lockfile version changes:
+name, backend, lockfile, old_versions, new_versions.
+Version lists keep config/lockfile order; they are not sorted.
+Only version-level changes are reported: checksum/URL refreshes for
+unchanged versions produce no entries, so plain `mise lock --json`
+typically prints `[]` while still updating the lockfile.
+Suppresses the human-readable output. Combine with `--dry-run` to
+detect available updates without writing the lockfile.
+
 ### `--local`
 
 Update mise.local.lock instead of mise.lock
@@ -61,6 +85,8 @@ mise lock                       # update lockfile for all common platforms
 mise lock node python           # update only node and python
 mise lock --platform linux-x64  # update only linux-x64 platform
 mise lock --dry-run             # show what would be updated
+mise lock --bump                # re-resolve selectors like "latest" or "20" to the latest matching versions
+mise lock --bump --dry-run --json   # list available updates as JSON without writing
 mise lock --minimum-release-age 2024-01-01   # lock latest/fuzzy versions released before 2024-01-01
 mise lock --local               # update mise.local.lock for local configs
 mise lock --global              # update only global config lockfiles
