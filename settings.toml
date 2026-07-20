@@ -1810,6 +1810,25 @@ Defaults to `/mise`. The resulting image sets `MISE_DATA_DIR` to this path.
 env = "MISE_OCI_DEFAULT_MOUNT_POINT"
 type = "String"
 
+[oci.insecure_registries]
+description = "Registries (host or host:port) contacted over plain HTTP instead of HTTPS."
+docs = """
+Registries that `mise oci push` / `mise oci build --from` contact over plain
+HTTP instead of HTTPS, matching docker's `insecure-registries` daemon option.
+Loopback registries (`localhost:5000`, `127.0.0.1:5000`) are always treated as
+insecure and don't need to be listed. Entries match on exact `host` or
+`host:port`:
+
+```toml
+[settings.oci]
+insecure_registries = ["registry.lan:5000", "10.0.0.8:5000"]
+```
+"""
+env = "MISE_OCI_INSECURE_REGISTRIES"
+optional = true
+rust_type = "Vec<String>"
+type = "ListString"
+
 [offline]
 description = "Disable all HTTP requests. Tools will only use locally cached data."
 docs = """

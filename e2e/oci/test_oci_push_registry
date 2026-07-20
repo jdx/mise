@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Happy-path test for `mise oci push` against a real registry.
+#
+# Uses `crane registry serve` (an in-memory OCI Distribution registry) on a
+# loopback port, so it needs no external services and runs everywhere. crane
+# also acts as an independent client to validate what mise pushed.
+
+export MISE_EXPERIMENTAL=1
+# Deterministic image config so a rebuild produces identical blobs.
+export SOURCE_DATE_EPOCH=1700000000
+
+mise install crane@latest >/dev/null 2>&1
+
+find_available_port() {
+  python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()"
+}
+
+REGISTRY_PID=""
+cleanup() {
+  if [[ -n ${REGISTRY_PID:-} ]]; then
+    kill "$REGISTRY_PID" 2>/dev/null || true
+    wait "$REGISTRY_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+# --- Start the registry ---
+PORT="$(find_available_port)"
+REGISTRY="127.0.0.1:$PORT"
+mise x crane@latest -- crane registry serve --address "$REGISTRY" >/dev/null 2>&1 &
+REGISTRY_PID=$!
+for _ in $(seq 1 50); do
+  if curl -fsS "http://$REGISTRY/v2/" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.2
+done
+assert_succeed "curl -fsS http://$REGISTRY/v2/"
+
+cat >mise.toml <<EOF
+[tools]
+jq = "1.8.1"
+EOF
+mise install >/dev/null 2>&1
+assert "mise current jq" "1.8.1"
+
+REF="$REGISTRY/e2e/devenv:v1"
+
+# --- 1. Build (offline, scratch base) and push ---
+assert_succeed "mise oci build -o ./img --from scratch --no-mise"
+assert_contains "mise oci push --image-dir ./img $REF" "pushed sha256:"
+
+# --- 2. Idempotent re-push: every blob must already be present ---
+assert_contains "mise oci push --image-dir ./img $REF" "0 blob(s) uploaded"
+
+# --- 3. Remote digest matches the local manifest byte-for-byte ---
+local_digest="$(jq -r '.manifests[0].digest' ./img/index.json)"
+assert "mise x crane@latest -- crane digest --insecure $REF" "$local_digest"
+
+# --- 4. Independent client validates the pushed image end-to-end
+# (manifest/config/layer digests and sizes all consistent) ---
+assert_succeed "mise x crane@latest -- crane validate --insecure --remote $REF"
+
+# --- 5. Manifest content survives the round-trip (tool layer annotation) ---
+assert_contains "mise x crane@latest -- crane manifest --insecure $REF" '"dev.mise.tool.short":"jq"'
+
+# --- 6. Push by digest reference ---
+assert_contains "mise oci push --image-dir ./img $REGISTRY/e2e/devenv@$local_digest" \
+  "0 blob(s) uploaded"
+
+# --- 7. Build+push in one shot (no --image-dir) to a second tag; the
+# reproducible rebuild produces identical blobs so nothing re-uploads ---
+assert_contains "mise oci push --from scratch --no-mise $REGISTRY/e2e/devenv:v2" \
+  "0 blob(s) uploaded"

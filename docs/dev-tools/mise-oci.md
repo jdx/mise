@@ -162,7 +162,15 @@ mise oci push [--image-dir DIR]
 - `<REGISTRY_REF>` — fully-qualified destination (e.g.
   `ghcr.io/me/devenv:latest`). Must include a registry host. Loopback
   registries (`localhost:5000/…`) are contacted over plain HTTP, the
-  same insecure-by-default convention docker applies.
+  same insecure-by-default convention docker applies. Non-loopback
+  plain-HTTP registries (a homelab `registry.lan:5000`) must be opted
+  in via the `oci.insecure_registries` setting:
+
+  ```toml
+  [settings.oci]
+  insecure_registries = ["registry.lan:5000"]
+  ```
+
 - `--image-dir` — push an existing OCI layout instead of building.
 
 - `--owner UID[:GID]` — numeric owner for generated layer entries when

@@ -81,6 +81,18 @@ impl Reference {
     }
 
     pub fn registry_url(&self) -> String {
+        // Loopback registries (localhost:5000 etc.) serve plain HTTP — the
+        // same insecure-by-default convention docker applies to 127.0.0.0/8.
+        // Non-loopback plain-HTTP registries must be opted in via the
+        // `oci.insecure_registries` setting. Evaluate against the
+        // user-facing registry name (not the docker.io→registry-1 rewrite
+        // below) so it matches the lookups `push_image` does with
+        // `self.registry`.
+        let scheme = if is_insecure_registry(&self.registry) {
+            "http"
+        } else {
+            "https"
+        };
         // docker.io is special — the distribution API is served from
         // registry-1.docker.io even though the canonical name is docker.io.
         let host = if self.registry == "docker.io" {
@@ -88,26 +100,43 @@ impl Reference {
         } else {
             &self.registry
         };
-        // Loopback registries (localhost:5000 etc.) serve plain HTTP — the
-        // same insecure-by-default convention docker applies to 127.0.0.0/8.
-        let scheme = if is_loopback_registry(host) {
-            "http"
-        } else {
-            "https"
-        };
         format!("{scheme}://{host}")
     }
 }
 
-/// True when `registry` (a `host[:port]` / `[v6]:port` string) points at a
-/// loopback address, in which case the distribution API is spoken over
-/// plain HTTP.
-fn is_loopback_registry(registry: &str) -> bool {
-    let host = if let Some(rest) = registry.strip_prefix('[') {
+/// True when `registry` (a `host[:port]` / `[v6]:port` string) should be
+/// contacted over plain HTTP: loopback addresses always, plus anything listed
+/// in the `oci.insecure_registries` setting.
+fn is_insecure_registry(registry: &str) -> bool {
+    let settings = crate::config::Settings::get();
+    let entries = settings.oci.insecure_registries.as_deref().unwrap_or(&[]);
+    is_insecure_registry_in(registry, entries)
+}
+
+/// Settings-free core of [`is_insecure_registry`]: loopback, or listed in
+/// `entries` (matched on the exact `host[:port]` string or the bare host).
+fn is_insecure_registry_in(registry: &str, entries: &[String]) -> bool {
+    if is_loopback_registry(registry) {
+        return true;
+    }
+    let host = registry_host(registry);
+    entries
+        .iter()
+        .any(|entry| entry == registry || entry == host)
+}
+
+/// The host portion of a `host[:port]` / `[v6]:port` registry string.
+fn registry_host(registry: &str) -> &str {
+    if let Some(rest) = registry.strip_prefix('[') {
         rest.split(']').next().unwrap_or(rest)
     } else {
         registry.rsplit_once(':').map_or(registry, |(h, _)| h)
-    };
+    }
+}
+
+/// True when `registry` points at a loopback address.
+fn is_loopback_registry(registry: &str) -> bool {
+    let host = registry_host(registry);
     host == "localhost"
         || host
             .parse::<std::net::IpAddr>()
@@ -662,12 +691,20 @@ pub async fn push_image(image_dir: &Path, reference: &str) -> Result<PushSummary
     let session = AuthSession::new(r.clone(), "pull,push").await?;
     if !session.has_credential() {
         // Not fatal — local registries accept anonymous pushes — but worth
-        // surfacing before a 401 does.
-        warn!(
-            "no registry credentials found for {} — pushing anonymously. \
-             Run `docker login {}` (or `podman login`) if the push is rejected.",
-            r.registry, r.registry
-        );
+        // surfacing before a 401 does. For loopback / configured-insecure
+        // registries anonymous is the normal case, so don't warn there.
+        if is_insecure_registry(&r.registry) {
+            debug!(
+                "no registry credentials found for {} — pushing anonymously",
+                r.registry
+            );
+        } else {
+            warn!(
+                "no registry credentials found for {} — pushing anonymously. \
+                 Run `docker login {}` (or `podman login`) if the push is rejected.",
+                r.registry, r.registry
+            );
+        }
     }
     let mut pusher = Pusher {
         base_url: r.registry_url(),
@@ -911,6 +948,29 @@ mod tests {
         assert_eq!(r.registry, "docker.io");
         assert_eq!(r.repository, "library/ubuntu");
         assert_eq!(r.tag, digest);
+    }
+
+    #[test]
+    fn registry_host_strips_port_and_brackets() {
+        assert_eq!(registry_host("registry.lan:5000"), "registry.lan");
+        assert_eq!(registry_host("registry.lan"), "registry.lan");
+        assert_eq!(registry_host("[::1]:5000"), "::1");
+        assert_eq!(registry_host("10.0.0.8:5000"), "10.0.0.8");
+    }
+
+    #[test]
+    fn insecure_registry_entries_match_exact_or_bare_host() {
+        let entries = vec!["registry.lan:5000".to_string(), "10.0.0.8".to_string()];
+        // exact host:port entry
+        assert!(is_insecure_registry_in("registry.lan:5000", &entries));
+        // bare-host entry matches any port on that host
+        assert!(is_insecure_registry_in("10.0.0.8:5000", &entries));
+        assert!(is_insecure_registry_in("10.0.0.8", &entries));
+        // a host:port entry does not cover other ports
+        assert!(!is_insecure_registry_in("registry.lan:9999", &entries));
+        assert!(!is_insecure_registry_in("ghcr.io", &entries));
+        // loopback needs no entry
+        assert!(is_insecure_registry_in("localhost:5000", &[]));
     }
 
     #[test]
