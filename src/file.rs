@@ -1029,6 +1029,23 @@ pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Run long blocking work (archive extraction, subprocess waits) without tying up a tokio worker.
+///
+/// Extraction can take seconds and is called directly from async install paths, where it would
+/// otherwise block a runtime worker thread for the duration. On mise's multi-threaded runtime
+/// (see `main.rs`), `tokio::task::block_in_place` hands the worker's core off to another thread so
+/// concurrent tasks (progress bars, downloads, other installs) keep running. Outside a runtime, or
+/// on a current-thread runtime (e.g. `#[tokio::test]`), `block_in_place` would panic, so fall back
+/// to running the closure inline.
+fn block_in_place<T>(f: impl FnOnce() -> T) -> T {
+    match tokio::runtime::Handle::try_current() {
+        Ok(h) if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(f)
+        }
+        _ => f(),
+    }
+}
+
 pub fn decompress_file(input: &Path, dest: &Path, format: ExtractionFormat) -> Result<()> {
     if let Some(parent) = dest.parent()
         && !parent.as_os_str().is_empty()
@@ -1036,7 +1053,7 @@ pub fn decompress_file(input: &Path, dest: &Path, format: ExtractionFormat) -> R
         create_dir_all(parent)?;
     }
 
-    match format {
+    block_in_place(|| match format {
         ExtractionFormat::Gz => un_gz(input, dest),
         ExtractionFormat::Xz => un_xz(input, dest),
         ExtractionFormat::Zst => un_zst(input, dest),
@@ -1045,7 +1062,7 @@ pub fn decompress_file(input: &Path, dest: &Path, format: ExtractionFormat) -> R
             bail!("{format} format not supported")
         }
         _ => bail!("unsupported compressed file format: {}", format),
-    }
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
@@ -1224,22 +1241,24 @@ pub fn untar(
         format!("failed to extract tar: {archive} to {dest}")
     };
 
-    let tar = open_tar(format, archive)?;
-    create_dir_all(dest).wrap_err_with(err)?;
-    let mut unpack_opts = UnpackOptions::default();
-    unpack_opts.preserve_mtime = opts.preserve_mtime;
-    unpack_opts.on_entry = Some(Box::new(|entry| {
-        trace!("extracting {}", entry.path.display());
-    }));
-    let summary = Archive::new(tar)
-        .unpack(dest, &mut unpack_opts)
-        .wrap_err_with(err)?;
-    debug!("tar extraction summary: {summary:?}");
-    strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
-        format!(
-            "failed to strip path components from tar archive: {}",
-            display_path(archive)
-        )
+    block_in_place(|| {
+        let tar = open_tar(format, archive)?;
+        create_dir_all(dest).wrap_err_with(err)?;
+        let mut unpack_opts = UnpackOptions::default();
+        unpack_opts.preserve_mtime = opts.preserve_mtime;
+        unpack_opts.on_entry = Some(Box::new(|entry| {
+            trace!("extracting {}", entry.path.display());
+        }));
+        let summary = Archive::new(tar)
+            .unpack(dest, &mut unpack_opts)
+            .wrap_err_with(err)?;
+        debug!("tar extraction summary: {summary:?}");
+        strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+            format!(
+                "failed to strip path components from tar archive: {}",
+                display_path(archive)
+            )
+        })
     })
 }
 
@@ -1326,20 +1345,24 @@ pub fn unzip(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<(
             archive.file_name().unwrap().to_string_lossy()
         ));
     }
-    ZipArchive::new(File::open(archive)?)
-        .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
-        .extract(dest)
-        .wrap_err_with(|| format!("failed to extract zip archive: {}", display_path(archive)))?;
+    block_in_place(|| {
+        ZipArchive::new(File::open(archive)?)
+            .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
+            .extract(dest)
+            .wrap_err_with(|| {
+                format!("failed to extract zip archive: {}", display_path(archive))
+            })?;
 
-    if !opts.preserve_mtime {
-        reset_dir_mtime_to_now(dest)?;
-    }
+        if !opts.preserve_mtime {
+            reset_dir_mtime_to_now(dest)?;
+        }
 
-    strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
-        format!(
-            "failed to strip path components from zip archive: {}",
-            display_path(archive)
-        )
+        strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+            format!(
+                "failed to strip path components from zip archive: {}",
+                display_path(archive)
+            )
+        })
     })
 }
 
@@ -1349,26 +1372,28 @@ pub fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
         dest.display(),
         archive.display()
     );
-    let tmp = tempfile::TempDir::new()?;
-    cmd!(
-        "hdiutil",
-        "attach",
-        "-quiet",
-        "-nobrowse",
-        "-mountpoint",
-        tmp.path(),
-        archive.to_path_buf()
-    )
-    .run()?;
-    let copy_result = copy_dir_all_preserve_symlinks(tmp.path(), dest);
-    let detach_result = cmd!("hdiutil", "detach", tmp.path()).run();
-    match (copy_result, detach_result) {
-        (Err(copy_err), Err(detach_err)) => Err(copy_err)
-            .wrap_err_with(|| format!("additionally failed to detach DMG: {detach_err}")),
-        (Err(copy_err), _) => Err(copy_err),
-        (Ok(()), Err(detach_err)) => Err(detach_err.into()),
-        (Ok(()), Ok(_)) => Ok(()),
-    }
+    block_in_place(|| {
+        let tmp = tempfile::TempDir::new()?;
+        cmd!(
+            "hdiutil",
+            "attach",
+            "-quiet",
+            "-nobrowse",
+            "-mountpoint",
+            tmp.path(),
+            archive.to_path_buf()
+        )
+        .run()?;
+        let copy_result = copy_dir_all_preserve_symlinks(tmp.path(), dest);
+        let detach_result = cmd!("hdiutil", "detach", tmp.path()).run();
+        match (copy_result, detach_result) {
+            (Err(copy_err), Err(detach_err)) => Err(copy_err)
+                .wrap_err_with(|| format!("additionally failed to detach DMG: {detach_err}")),
+            (Err(copy_err), _) => Err(copy_err),
+            (Ok(()), Err(detach_err)) => Err(detach_err.into()),
+            (Ok(()), Ok(_)) => Ok(()),
+        }
+    })
 }
 
 pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
@@ -1377,7 +1402,7 @@ pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
         archive.display(),
         dest.display()
     );
-    cmd!("pkgutil", "--expand-full", archive, dest).run()?;
+    block_in_place(|| cmd!("pkgutil", "--expand-full", archive, dest).run())?;
     Ok(())
 }
 
@@ -1388,24 +1413,26 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
             archive.file_name().unwrap().to_string_lossy()
         ));
     }
-    sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
-        let dest_path = dest.join(
-            sanitize_7z_entry_path(entry.name())
-                .map_err(|err| sevenz_rust2::Error::Other(format!("{err:#}").into()))?,
-        );
-        sevenz_rust2::default_entry_extract_fn(entry, reader, &dest_path)
-    })
-    .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
+    block_in_place(|| {
+        sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
+            let dest_path = dest.join(
+                sanitize_7z_entry_path(entry.name())
+                    .map_err(|err| sevenz_rust2::Error::Other(format!("{err:#}").into()))?,
+            );
+            sevenz_rust2::default_entry_extract_fn(entry, reader, &dest_path)
+        })
+        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
 
-    if !opts.preserve_mtime {
-        reset_dir_mtime_to_now(dest)?;
-    }
+        if !opts.preserve_mtime {
+            reset_dir_mtime_to_now(dest)?;
+        }
 
-    strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
-        format!(
-            "failed to strip path components from 7z archive: {}",
-            display_path(archive)
-        )
+        strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+            format!(
+                "failed to strip path components from 7z archive: {}",
+                display_path(archive)
+            )
+        })
     })
 }
 
@@ -1755,6 +1782,27 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    #[test]
+    fn test_block_in_place_outside_runtime() {
+        // no tokio runtime at all — must run the closure inline, not panic
+        assert_eq!(block_in_place(|| 42), 42);
+    }
+
+    #[tokio::test]
+    async fn test_block_in_place_current_thread_runtime() {
+        // #[tokio::test] uses a current-thread runtime, where
+        // tokio::task::block_in_place would panic — the guard must fall back
+        // to running the closure inline
+        assert_eq!(block_in_place(|| 42), 42);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_block_in_place_multi_thread_runtime() {
+        // matches mise's actual runtime (see main.rs) — takes the real
+        // tokio::task::block_in_place path
+        assert_eq!(block_in_place(|| 42), 42);
+    }
 
     #[test]
     fn test_retry_remove_all_retries_directory_not_empty() {
