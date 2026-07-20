@@ -158,7 +158,8 @@ impl CondaBackend {
             .query([channel], [platform, CondaPlatform::NoArch], specs.clone())
             .recursive(true)
             .await
-            .map_err(|e| eyre::eyre!("failed to fetch repodata: {}", e))?;
+            .map_err(|e| eyre::eyre!("failed to fetch repodata: {}", e))?
+            .to_vec();
 
         let flat_records = Self::flatten_repodata(&repodata);
         let virtual_packages = Self::detect_virtual_packages(platform);
@@ -677,7 +678,8 @@ impl Backend for CondaBackend {
                 [match_spec],
             )
             .await
-            .map_err(|e| eyre::eyre!("failed to list versions for '{}': {}", tool_name, e))?;
+            .map_err(|e| eyre::eyre!("failed to list versions for '{}': {}", tool_name, e))?
+            .to_vec();
 
         // Collect unique versions across all repodata results
         let mut version_set: std::collections::HashSet<String> = std::collections::HashSet::new();
