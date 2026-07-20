@@ -48,7 +48,7 @@ subcrate_diff_pathspec() {
 	pathspec=("$crate_dir")
 	case "$crate_name" in
 	vfox)
-		pathspec+=(':(exclude)crates/vfox/embedded-plugins')
+		pathspec+=(":(exclude)${crate_dir}/embedded-plugins")
 		;;
 	esac
 }
@@ -98,12 +98,10 @@ use_published_aqua_registry() {
 
 # Check if the given git pathspecs have uncommitted changes (staged or unstaged)
 has_uncommitted_changes() {
-	# Args: one or more git pathspecs (e.g. a crate dir plus `:(exclude)` entries)
-	if git diff --quiet HEAD -- "$@" 2>/dev/null && git diff --quiet --cached -- "$@" 2>/dev/null; then
-		# Also check for untracked files
-		if [[ -z $(git ls-files --others --exclude-standard -- "$@") ]]; then
-			return 1 # No changes
-		fi
+	# Args: one or more git pathspecs (e.g. a crate dir plus `:(exclude)` entries).
+	# --porcelain covers staged, unstaged, and untracked changes in one check.
+	if [[ -z $(git status --porcelain -- "$@" 2>/dev/null) ]]; then
+		return 1 # No changes
 	fi
 	return 0 # Has changes
 }
