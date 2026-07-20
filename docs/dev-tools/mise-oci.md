@@ -170,6 +170,7 @@ mise oci push [--image-dir DIR]
   [settings.oci]
   insecure_registries = ["registry.lan:5000"]
   ```
+
 - `--image-dir` — push an existing OCI layout instead of building.
 
 - `--owner UID[:GID]` — numeric owner for generated layer entries when

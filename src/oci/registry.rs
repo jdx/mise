@@ -81,21 +81,24 @@ impl Reference {
     }
 
     pub fn registry_url(&self) -> String {
+        // Loopback registries (localhost:5000 etc.) serve plain HTTP — the
+        // same insecure-by-default convention docker applies to 127.0.0.0/8.
+        // Non-loopback plain-HTTP registries must be opted in via the
+        // `oci.insecure_registries` setting. Evaluate against the
+        // user-facing registry name (not the docker.io→registry-1 rewrite
+        // below) so it matches the lookups `push_image` does with
+        // `self.registry`.
+        let scheme = if is_insecure_registry(&self.registry) {
+            "http"
+        } else {
+            "https"
+        };
         // docker.io is special — the distribution API is served from
         // registry-1.docker.io even though the canonical name is docker.io.
         let host = if self.registry == "docker.io" {
             "registry-1.docker.io"
         } else {
             &self.registry
-        };
-        // Loopback registries (localhost:5000 etc.) serve plain HTTP — the
-        // same insecure-by-default convention docker applies to 127.0.0.0/8.
-        // Non-loopback plain-HTTP registries must be opted in via the
-        // `oci.insecure_registries` setting.
-        let scheme = if is_insecure_registry(host) {
-            "http"
-        } else {
-            "https"
         };
         format!("{scheme}://{host}")
     }
