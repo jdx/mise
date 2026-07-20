@@ -58,4 +58,5 @@ unset __MISE_EXE
 unset __MISE_FLAGS
 unset __MISE_HOOK_ENABLED
 unset __MISE_BASH_CHPWD_RAN
+unset __MISE_BASH_SKIP_FIRST_PROMPT
 unset _mise_cmd_not_found

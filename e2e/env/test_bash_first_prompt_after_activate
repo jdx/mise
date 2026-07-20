@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Verify that the first PROMPT_COMMAND run after `mise activate bash` still runs
-# hook-env. This protects the startup path where bash may mutate PATH during
-# shell initialization before the first prompt is rendered.
+# Verify that the first PROMPT_COMMAND run after `mise activate bash` skips the
+# redundant hook-env call, while the second prompt runs it normally.
 
 eval "$(mise activate bash --status)"
 
@@ -12,9 +11,31 @@ if [[ ${__MISE_BASH_CHPWD_RAN:-unset} != "0" ]]; then
   exit 1
 fi
 
+if [[ ${__MISE_BASH_SKIP_FIRST_PROMPT:-unset} != "1" ]]; then
+  echo "expected first prompt skip flag after activation"
+  exit 1
+fi
+
+hook_marker="$PWD/bash-hook-ran"
+mise() {
+  : >"$hook_marker"
+}
+
 _mise_hook_prompt_command >/dev/null 2>&1 || true
 
-if [[ ${__MISE_BASH_CHPWD_RAN:-unset} != "0" ]]; then
-  echo "expected first prompt after activation to leave __MISE_BASH_CHPWD_RAN unchanged"
+if [[ -e $hook_marker ]]; then
+  echo "expected first prompt after activation to skip hook-env"
+  exit 1
+fi
+
+if [[ ${__MISE_BASH_SKIP_FIRST_PROMPT:-unset} != "unset" ]]; then
+  echo "expected first prompt skip flag to be cleared"
+  exit 1
+fi
+
+_mise_hook_prompt_command >/dev/null 2>&1 || true
+
+if [[ ! -e $hook_marker ]]; then
+  echo "expected second prompt after activation to run hook-env"
   exit 1
 fi
