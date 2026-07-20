@@ -78,6 +78,12 @@ not just when the lockfile is first generated.
 This behavior can also be enabled independently via the
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance) setting.
 
+## See also
+
+[Safe mode](/security.html#safe-mode) (`MISE_SAFE=1`) is a related but distinct control: where
+paranoid tightens _trust_ (which configs are loaded and re-verified), safe mode is a hard boundary
+on _code execution_ for running mise against configuration you do not control.
+
 ## More?
 
 If you have suggestions for more that could be added to paranoid, please let

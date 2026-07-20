@@ -178,6 +178,7 @@ impl ScriptManager {
     }
 
     pub fn read(&self, script: &Script) -> Result<String> {
+        Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let mut cmd = self.cmd(script);
         let settings = &Settings::try_get()?;
         if !settings.verbose {
@@ -188,6 +189,7 @@ impl ScriptManager {
     }
 
     pub fn run_by_line(&self, script: &Script, pr: &dyn SingleReport) -> Result<()> {
+        Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let path = self.get_script_path(script);
         pr.set_message(display_path(&path));
         let mut cmd = CmdLineRunner::new(path.clone());

@@ -245,6 +245,19 @@ mise lock --bump --dry-run --json
 ]
 ```
 
+::: tip Run bump automation in safe mode
+When the job runs against configuration you don't control — most commonly a bot bumping
+`mise.lock` on pull request branches — set [`MISE_SAFE=1`](/security.html#safe-mode) so the
+project's config cannot execute code. Safe mode refuses template `exec()`, `_.source` scripts,
+hooks, tasks, asdf plugin scripts, and plugin installs, while `--bump` version resolution over
+HTTP-based backends keeps working:
+
+```sh
+MISE_SAFE=1 mise lock --bump --json
+```
+
+:::
+
 ### Pinning a Locked Version
 
 You can pin a specific version in the lockfile while keeping a fuzzy specifier in `mise.toml`:

@@ -861,16 +861,21 @@ impl EnvResults {
             trust_check(path)?;
             let tera = tera.get_or_insert_with(|| {
                 let mut tera = get_tera(path.parent());
-                if let TeraEngine::V2(tera) = &mut tera {
-                    tera.register_function(
-                        "exec",
-                        tera_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
-                    );
-                } else if let TeraEngine::V1(tera) = &mut tera {
-                    tera.register_function(
-                        "exec",
-                        tera1_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
-                    );
+                // Re-bind exec() to the accumulated env vars — but never in safe
+                // mode, where get_tera has installed an erroring stub that this
+                // registration must not override.
+                if !Settings::get().safe {
+                    if let TeraEngine::V2(tera) = &mut tera {
+                        tera.register_function(
+                            "exec",
+                            tera_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
+                        );
+                    } else if let TeraEngine::V1(tera) = &mut tera {
+                        tera.register_function(
+                            "exec",
+                            tera1_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
+                        );
+                    }
                 }
                 tera
             });

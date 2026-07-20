@@ -102,6 +102,7 @@ impl AsdfPlugin {
         Ok(())
     }
     pub fn fetch_remote_versions(&self) -> eyre::Result<Vec<String>> {
+        Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let cmd = self.script_man.cmd(&Script::ListAll);
         let result = run_with_timeout(
             move || {
@@ -357,6 +358,7 @@ impl Plugin for AsdfPlugin {
     }
 
     async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
+        Settings::ensure_not_safe("installing plugins")?;
         let repository = self.get_repo_url(config)?;
         let source = PluginSource::parse(&repository);
         debug!("asdf_plugin[{}]:install {:?}", self.name, repository);
@@ -455,6 +457,7 @@ Plugins could support local directories in the future but for now a symlink is r
                 .join(format!("command-{command}.bash")),
             args,
         );
+        Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let result = self.script_man.cmd(&script).unchecked().run()?;
         exit(result.status.code().unwrap_or(-1));
     }

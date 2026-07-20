@@ -38,6 +38,21 @@ script: |
   ./bin/mise x -- npm test
 ```
 
+## Running against untrusted config (safe mode)
+
+When a job resolves tool versions from configuration it does not control — most commonly a bot
+that refreshes `mise.lock` on pull request branches — set `MISE_SAFE=1` so that project
+configuration cannot execute code. In safe mode mise refuses (with an error, never a silent
+fallback) to run template `exec()`/`read_file()`, `_.source` scripts, hooks, tasks, asdf plugin
+scripts, or plugin installs, while version resolution over HTTP-based backends continues to work.
+
+```yaml
+script: |
+  MISE_SAFE=1 mise lock --bump --json
+```
+
+See [Safe mode](/security.html#safe-mode) for the full list of what is and isn't allowed.
+
 ## GitHub Actions
 
 If you use GitHub Actions, we provide a [mise-action](https://github.com/jdx/mise-action) that wraps the installation of Mise and the tools. All you need to do is to add the action to your workflow:

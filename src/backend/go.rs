@@ -99,7 +99,9 @@ impl Backend for GoBackend {
 
                 // Fall back to `go list -m -versions` for GOPROXY=direct. Package
                 // paths are not necessarily module paths, so walk their prefixes
-                // just as the proxy resolver does.
+                // just as the proxy resolver does. `go list` runs with
+                // GOTOOLCHAIN=local (see go_list_env), so it is safe against
+                // untrusted config and does not need a safe-mode gate.
                 let mut resolution_error = None;
                 for mod_path in module_path_candidates(&tool_name) {
                     match self.fetch_go_module_versions(config, &mod_path).await {
@@ -288,6 +290,20 @@ impl GoBackend {
         Ok(None)
     }
 
+    /// Environment for `go list` metadata queries.
+    ///
+    /// Adds `GOTOOLCHAIN=local` on top of the normal dependency env so that an
+    /// untrusted project `go.mod` cannot make `go` download and re-exec a
+    /// different toolchain (Go >= 1.21). This is what lets `go list` run under
+    /// safe mode: version listing then only performs module-metadata queries
+    /// (including VCS access for GOPROXY=direct) without any toolchain
+    /// download-and-execute step.
+    async fn go_list_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
+        let mut env = self.dependency_env(config).await?;
+        env.insert("GOTOOLCHAIN".to_string(), "local".to_string());
+        Ok(env)
+    }
+
     async fn fetch_go_module_versions(
         &self,
         config: &Arc<Config>,
@@ -316,7 +332,7 @@ impl GoBackend {
                     "-json",
                     mod_path
                 )
-                .full_env(self.dependency_env(config).await?)
+                .full_env(self.go_list_env(config).await?)
                 .read()
                 {
                     Ok(raw) => raw,
@@ -347,7 +363,7 @@ impl GoBackend {
         config: &Arc<Config>,
         mod_path: &str,
     ) -> eyre::Result<Option<Vec<VersionInfo>>> {
-        let env = self.dependency_env(config).await?;
+        let env = self.go_list_env(config).await?;
         let raw = cmd!(
             "go",
             "list",
@@ -371,7 +387,7 @@ impl GoBackend {
         mod_path: &str,
         versions: &[String],
     ) -> Vec<VersionInfo> {
-        let env = match self.dependency_env(config).await {
+        let env = match self.go_list_env(config).await {
             Ok(env) => env,
             Err(_) => {
                 return versions

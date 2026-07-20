@@ -297,7 +297,7 @@ pub fn schedule_hook(hook: Hooks) {
 }
 
 pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell) {
-    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
+    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) || Settings::get().safe {
         return;
     }
     let hooks = {
@@ -360,6 +360,15 @@ pub async fn run_one_hook_with_context(
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
         return;
     }
+    // Hooks are suppressed rather than refused in safe mode (matching
+    // --no-hooks semantics) because they fire ambiently from commands like
+    // `mise env`/`hook-env` that safe-mode automation still needs to run —
+    // erroring here would break every resolution command instead of blocking
+    // just the hook.
+    if Settings::get().safe {
+        debug!("skipping hooks: safe mode (MISE_SAFE=1)");
+        return;
+    }
     let shell_name = shell.map(|s| s.to_string()).unwrap_or_default();
     for (root, h) in all_hooks(config).await {
         if hook != h.hook || !matches_shell(h, &shell_name) {
@@ -408,7 +417,7 @@ pub async fn run_enter_hooks_for_newly_loaded_configs(
     ts: &Toolset,
     shell: &dyn Shell,
 ) {
-    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
+    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) || Settings::get().safe {
         return;
     }
     if hook_env::dir_change().is_some() {

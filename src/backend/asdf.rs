@@ -123,6 +123,7 @@ impl AsdfBackend {
             //         sm.prepend_path(p);
             //     }
             // }
+            Settings::ensure_not_safe("executing asdf plugin scripts")?;
             let output = sm.cmd(&Script::ListBinPaths).read()?;
             output
                 .split_whitespace()
