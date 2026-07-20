@@ -1339,6 +1339,13 @@
               "default": "/mise",
               "description": "Path inside OCI images where mise tools are installed.",
               "type": "string"
+            },
+            "insecure_registries": {
+              "description": "Registries (host or host:port) contacted over plain HTTP instead of HTTPS.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         },
