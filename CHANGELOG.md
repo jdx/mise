@@ -1,5 +1,85 @@
 # Changelog
 
+## [2026.7.11](https://github.com/jdx/mise/compare/v2026.7.10..v2026.7.11) - 2026-07-20
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** support auto-updating cask metadata by @casparbreloh in [#11107](https://github.com/jdx/mise/pull/11107)
+- **(bootstrap)** resolve bare systemd timer unit names to dev.mise.<name>.service by @jdx in [#11128](https://github.com/jdx/mise/pull/11128)
+- **(bootstrap)** macos defaults bail if key or domain does not exist yet by @roele in [#11118](https://github.com/jdx/mise/pull/11118)
+- **(config)** reject conflicting tool selectors by @risu729 in [#11069](https://github.com/jdx/mise/pull/11069)
+- **(http)** make raw executables readable, not just executable by @jdx in [#11135](https://github.com/jdx/mise/pull/11135)
+- **(java)** prefer base vendor for latest command and ensure proper sorting by @roele in [#11109](https://github.com/jdx/mise/pull/11109)
+- **(release)** keep macos pgo instrumentation rust-only by @jdx in [#11129](https://github.com/jdx/mise/pull/11129)
+- **(release)** don't re-dispatch release workflow while one is active by @jdx in [#11137](https://github.com/jdx/mise/pull/11137)
+- **(task)** parse remote task file headers by @Marukome0743 in [#11111](https://github.com/jdx/mise/pull/11111)
+- **(task)** mark global config file tasks as global by @risu729 in [#11106](https://github.com/jdx/mise/pull/11106)
+- **(task)** report all task definition sources by @risu729 in [#11098](https://github.com/jdx/mise/pull/11098)
+- **(watch)** propagate --env to watched tasks by @Marukome0743 in [#11114](https://github.com/jdx/mise/pull/11114)
+- **(windows)** remove dangling runtime symlink pointer files on uninstall by @JamBalaya56562 in [#11095](https://github.com/jdx/mise/pull/11095)
+
+### 📚 Documentation
+
+- **(environments)** clarify mise directory variables by @jdx in [#11127](https://github.com/jdx/mise/pull/11127)
+- fix dead VersionFox and MCP documentation links by @Bartok9 in [#11117](https://github.com/jdx/mise/pull/11117)
+
+### ⚡ Performance
+
+- **(activate)** skip redundant initial fish prompt hook by @jdx in [#11130](https://github.com/jdx/mise/pull/11130)
+- **(activate)** skip redundant initial bash prompt hook by @jdx in [#11131](https://github.com/jdx/mise/pull/11131)
+- **(activate)** skip unchanged initial zsh prompt hook by @jdx in [#11134](https://github.com/jdx/mise/pull/11134)
+- **(backend)** run archive extraction via block_in_place by @jdx in [#11136](https://github.com/jdx/mise/pull/11136)
+
+### 📦️ Dependency Updates
+
+- update actions/setup-node digest to 2499707 by @renovate[bot] in [#11074](https://github.com/jdx/mise/pull/11074)
+- update ghcr.io/jdx/mise:alpine docker digest to 60f8876 by @renovate[bot] in [#11075](https://github.com/jdx/mise/pull/11075)
+- update rust crate jiff to v0.2.32 by @renovate[bot] in [#11086](https://github.com/jdx/mise/pull/11086)
+- update ghcr.io/jdx/mise:deb docker digest to bdcdb1e by @renovate[bot] in [#11076](https://github.com/jdx/mise/pull/11076)
+- update ghcr.io/jdx/mise:rpm docker digest to d93ee51 by @renovate[bot] in [#11077](https://github.com/jdx/mise/pull/11077)
+- update rust crate ignore to v0.4.28 by @renovate[bot] in [#11083](https://github.com/jdx/mise/pull/11083)
+- update rust docker digest to 9a2cd30 by @renovate[bot] in [#11080](https://github.com/jdx/mise/pull/11080)
+- update jdx/mise-action digest to dad1bfd by @renovate[bot] in [#11078](https://github.com/jdx/mise/pull/11078)
+- update dependency prettier to v3.9.5 by @renovate[bot] in [#11082](https://github.com/jdx/mise/pull/11082)
+- update ghcr.io/jdx/mise:alpine docker digest to f024c27 by @renovate[bot] in [#11085](https://github.com/jdx/mise/pull/11085)
+- update ubuntu:26.04 docker digest to 3131b4c by @renovate[bot] in [#11081](https://github.com/jdx/mise/pull/11081)
+- update rust crate regex to v1.13.0 by @renovate[bot] in [#11088](https://github.com/jdx/mise/pull/11088)
+- update rust crate usage-lib to v3.5.5 by @renovate[bot] in [#11087](https://github.com/jdx/mise/pull/11087)
+- update rust crate x509-cert to 0.3 by @risu729 in [#11102](https://github.com/jdx/mise/pull/11102)
+- update rust crate mlua to 0.12 by @risu729 in [#11099](https://github.com/jdx/mise/pull/11099)
+- update dependency typescript to v7 by @renovate[bot] in [#11093](https://github.com/jdx/mise/pull/11093)
+- update rust crate sigstore-verify to 0.11.0 by @renovate[bot] in [#11091](https://github.com/jdx/mise/pull/11091)
+- update rattler by @renovate[bot] in [#11089](https://github.com/jdx/mise/pull/11089)
+- lock file maintenance by @renovate[bot] in [#11120](https://github.com/jdx/mise/pull/11120)
+
+### 📦 Registry
+
+- allow nub postinstall by @risu729 in [#11126](https://github.com/jdx/mise/pull/11126)
+
+### Chore
+
+- **(nix)** remove unused inputs by @risu729 in [#11104](https://github.com/jdx/mise/pull/11104)
+- **(release)** stop cutting vfox tags on embedded-plugin churn by @jdx in [#11133](https://github.com/jdx/mise/pull/11133)
+- **(vfox)** remove unused development tools by @risu729 in [#11105](https://github.com/jdx/mise/pull/11105)
+
+### New Contributors
+
+- @Bartok9 made their first contribution in [#11117](https://github.com/jdx/mise/pull/11117)
+- @LukasKnuth made their first contribution in [#11110](https://github.com/jdx/mise/pull/11110)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`kbrdn1/gwm-cli`](https://github.com/kbrdn1/gwm-cli)
+- [`planetscale/ghcommit`](https://github.com/planetscale/ghcommit)
+
+#### Updated Packages (3)
+
+- [`anthropics/claude-code`](https://github.com/anthropics/claude-code)
+- [`skaji/relocatable-perl`](https://github.com/skaji/relocatable-perl)
+- [`suzuki-shunsuke/tfrstate`](https://github.com/suzuki-shunsuke/tfrstate)
+
 ## [2026.7.10](https://github.com/jdx/mise/compare/v2026.7.8..v2026.7.10) - 2026-07-17
 
 ### 🚀 Features
