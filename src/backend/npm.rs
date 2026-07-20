@@ -2,6 +2,7 @@ use crate::Result;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::npm_registry;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 #[cfg(windows)]
@@ -43,6 +44,8 @@ pub struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
     latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
+    // one packument fetch serves both version listing and dist-tag lookup
+    packument: tokio::sync::OnceCell<Arc<npm_registry::Packument>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -247,11 +250,14 @@ impl Backend for NPMBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        // npm CLI is always needed for version queries (npm view), plus the configured
-        // package manager for installation. We avoid listing all package managers to
-        // prevent incorrect dependency edges.
+        // Version queries go directly to the npm registry over HTTP, so npm is
+        // only needed when it is (or may be) the installer, or when the legacy
+        // `npm.use_npm_view` setting routes queries through the npm CLI. We
+        // avoid listing all package managers to prevent incorrect dependency
+        // edges.
         let settings = Settings::get();
         let package_manager = settings.npm.package_manager;
+        let use_npm_view = settings.npm.use_npm_view;
         let tool_name = self.tool_name();
 
         // Explicit `npm:npm` still bootstraps through node's bundled npm even
@@ -269,20 +275,24 @@ impl Backend for NPMBackend {
         }
 
         // Avoid circular dependency when installing the configured package manager
-        // e.g., npm:bun with bun configured, or npm:pnpm with pnpm configured
+        // e.g., npm:bun with bun configured, or npm:pnpm with pnpm configured.
+        // npm stays here as the bootstrap installer for that package manager.
         if tool_name == package_manager.to_string() {
-            // Still need npm for version queries
             return Ok(vec!["node", "npm"]);
         }
 
-        // For regular packages: need npm (for version queries) + configured package manager
-        let mut deps = vec!["node", "npm"];
+        // For regular packages: node + the configured package manager. npm is
+        // included when it may end up doing the install (Auto falls back to it)
+        // or when `npm.use_npm_view` needs it for version queries.
+        let mut deps = vec!["node"];
         match package_manager {
-            NpmPackageManager::Auto => {}
+            NpmPackageManager::Auto | NpmPackageManager::Npm => deps.push("npm"),
             NpmPackageManager::Aube => deps.push("aube"),
             NpmPackageManager::Bun => deps.push("bun"),
             NpmPackageManager::Pnpm => deps.push("pnpm"),
-            NpmPackageManager::Npm => {} // npm is already in deps
+        }
+        if use_npm_view && !deps.contains(&"npm") {
+            deps.push("npm");
         }
         Ok(deps)
     }
@@ -307,32 +317,25 @@ impl Backend for NPMBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        // Use npm CLI so user/global .npmrc and NPM_CONFIG_* registry settings apply.
-        // --prefix points at a neutral cache dir so project package.json (e.g. devEngines)
-        // cannot fail the query. Install already uses --prefix the same way.
-        self.ensure_npm_for_version_check(config).await;
+        if Settings::get().npm.use_npm_view {
+            return self.list_remote_versions_npm_view(config).await;
+        }
+        // Query the registry directly over HTTP so node/npm are not required
+        // for version metadata. User .npmrc and NPM_CONFIG_* registry/auth
+        // settings still apply via NPM_REGISTRY_CONFIG.
         timeout::run_with_timeout_async(
             async || {
-                let env = self.dependency_env(config).await?;
-                let prefix = Self::npm_meta_prefix()?;
-
-                let raw = cmd!(
-                    NPM_PROGRAM,
-                    "view",
-                    self.tool_name(),
-                    "versions",
-                    "time",
-                    "--json",
-                    "--prefix",
-                    &prefix
-                )
-                .full_env(&env)
-                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                .read()?;
-                let data: Value = serde_json::from_str(&raw)?;
-                let version_info = npm_view_versions_time(&data)?;
-
-                Ok(version_info)
+                let packument = self.fetch_packument().await?;
+                Ok(packument
+                    .versions_with_time()
+                    .into_iter()
+                    .map(|(version, created_at)| VersionInfo {
+                        version: version.to_string(),
+                        created_at: created_at.map(|s| s.to_string()),
+                        prerelease: is_semver_prerelease(version),
+                        ..Default::default()
+                    })
+                    .collect())
             },
             Settings::get().fetch_remote_versions_timeout(),
         )
@@ -340,9 +343,9 @@ impl Backend for NPMBackend {
     }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
-        // TODO: Add bun support for getting latest version without npm
-        // See TODO in _list_remote_versions for details
-        self.ensure_npm_for_version_check(config).await;
+        if Settings::get().npm.use_npm_view {
+            self.ensure_npm_for_version_check(config).await;
+        }
 
         let cache = self.latest_version_cache.lock().await;
         let this = self;
@@ -350,23 +353,10 @@ impl Backend for NPMBackend {
             async || {
                 cache
                     .get_or_try_init_async(async || {
-                        // Always use npm for getting version info since bun info requires package.json
-                        // bun is only used for actual package installation
-                        let prefix = Self::npm_meta_prefix()?;
-                        let raw = cmd!(
-                            NPM_PROGRAM,
-                            "view",
-                            this.tool_name(),
-                            "dist-tags",
-                            "--json",
-                            "--prefix",
-                            &prefix
-                        )
-                        .full_env(this.dependency_env(config).await?)
-                        .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                        .read()?;
-                        let dist_tags: Value = serde_json::from_str(&raw)?;
-                        npm_view_latest_dist_tag(&dist_tags)
+                        if Settings::get().npm.use_npm_view {
+                            return this.latest_dist_tag_npm_view(config).await;
+                        }
+                        Ok(this.fetch_packument().await?.latest_dist_tag())
                     })
                     .await
             },
@@ -565,7 +555,76 @@ impl NPMBackend {
                     .build(),
             ),
             ba: Arc::new(ba),
+            packument: tokio::sync::OnceCell::new(),
         }
+    }
+
+    async fn fetch_packument(&self) -> eyre::Result<&Arc<npm_registry::Packument>> {
+        self.packument
+            .get_or_try_init(|| async {
+                let packument = npm_registry::NPM_REGISTRY_CONFIG
+                    .fetch_packument(&self.tool_name())
+                    .await?;
+                Ok(Arc::new(packument))
+            })
+            .await
+    }
+
+    /// Legacy `npm view` version listing, kept behind `npm.use_npm_view` for
+    /// setups relying on npm-only config (cafile, client certs, token helpers).
+    /// --prefix points at a neutral cache dir so project package.json (e.g.
+    /// devEngines) cannot fail the query. Install already uses --prefix the
+    /// same way.
+    async fn list_remote_versions_npm_view(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        self.ensure_npm_for_version_check(config).await;
+        timeout::run_with_timeout_async(
+            async || {
+                let env = self.dependency_env(config).await?;
+                let prefix = Self::npm_meta_prefix()?;
+
+                let raw = cmd!(
+                    NPM_PROGRAM,
+                    "view",
+                    self.tool_name(),
+                    "versions",
+                    "time",
+                    "--json",
+                    "--prefix",
+                    &prefix
+                )
+                .full_env(&env)
+                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+                .read()?;
+                let data: Value = serde_json::from_str(&raw)?;
+                let version_info = npm_view_versions_time(&data)?;
+
+                Ok(version_info)
+            },
+            Settings::get().fetch_remote_versions_timeout(),
+        )
+        .await
+    }
+
+    /// Legacy `npm view` dist-tags lookup, see [`Self::list_remote_versions_npm_view`].
+    async fn latest_dist_tag_npm_view(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        let prefix = Self::npm_meta_prefix()?;
+        let raw = cmd!(
+            NPM_PROGRAM,
+            "view",
+            self.tool_name(),
+            "dist-tags",
+            "--json",
+            "--prefix",
+            &prefix
+        )
+        .full_env(self.dependency_env(config).await?)
+        .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+        .read()?;
+        let dist_tags: Value = serde_json::from_str(&raw)?;
+        npm_view_latest_dist_tag(&dist_tags)
     }
 
     async fn build_transitive_release_age_args(

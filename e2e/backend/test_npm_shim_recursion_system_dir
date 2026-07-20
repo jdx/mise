@@ -13,6 +13,11 @@
 # This test mirrors `test_go_shim_recursion` but uses the SYSTEM shims dir
 # specifically to validate the dual-dir fix.
 
+# Version queries only shell out to `npm view` in legacy mode now; the
+# default path queries the registry over HTTP and never spawns npm. Pin the
+# legacy mode so this test keeps covering the shim-recursion guard.
+export MISE_NPM_USE_NPM_VIEW=1
+
 export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
 mkdir -p "$MISE_SYSTEM_DATA_DIR/shims"
 
