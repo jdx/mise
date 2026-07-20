@@ -20,6 +20,14 @@ touch input.txt
 # Remove tiny if installed so we test the install-before-prepare path
 rm -rf "${MISE_DATA_DIR}/installs/tiny/1"* 2>/dev/null || true
 
+# Dry-run previews both the missing tool and provider without installing either.
+output="$(mise deps --only needs_tool --dry-run 2>&1)"
+echo "$output"
+assert_contains_text "$output" "tiny@1"
+assert_contains_text "$output" "Would install: needs_tool"
+assert_fail "compgen -G '$MISE_DATA_DIR/installs/tiny/1*'"
+assert_fail "test -f output.txt"
+
 # mise deps should install tiny THEN run the prepare step (which uses tiny)
 assert_contains "mise deps --only needs_tool 2>&1" "Installed: needs_tool"
 assert_contains "cat output.txt" "rtx-tiny"
