@@ -33,7 +33,7 @@ Safe mode (`MISE_SAFE=1`, or the [`safe`](/configuration/settings.html#safe) set
 boundary against **project configuration executing code**. It is intended for running mise against
 configuration you do not control — most notably automation that refreshes `mise.lock` on pull
 request branches, such as a scheduled `mise lock --bump` job (see
-[mise.lock](/dev-tools/mise-lock.html)).
+[Bumping Locked Versions](/dev-tools/mise-lock.html#bumping-locked-versions)).
 
 ```sh
 # resolve tool versions from untrusted config without executing any of it
