@@ -1323,6 +1323,11 @@
               "description": "Package manager to use for installing npm packages.",
               "type": "string",
               "enum": ["auto", "npm", "aube", "bun", "pnpm"]
+            },
+            "use_npm_view": {
+              "default": false,
+              "description": "Use the npm CLI (`npm view`) for version metadata queries instead of mise's built-in registry client.",
+              "type": "boolean"
             }
           }
         },

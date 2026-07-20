@@ -55,7 +55,13 @@ test_npm() {
   echo "Testing npm backend with missing npm..."
   check_command_missing "npm"
 
-  # Test ls-remote - should show warning but continue
+  # Version queries go directly to the registry over HTTP and work without
+  # node/npm installed, in any package manager mode
+  assert_contains "mise ls-remote npm:left-pad" "1.3.0"
+  MISE_NPM_PACKAGE_MANAGER=bun assert_contains "mise ls-remote npm:left-pad" "1.3.0"
+
+  # Legacy `npm view` mode still needs npm and warns when it is missing
+  export MISE_NPM_USE_NPM_VIEW=1
   test_backend_warning "npm" "mise ls-remote npm:test-package" "npm may be required but was not found"
 
   # Check for helpful install instructions
@@ -63,17 +69,10 @@ test_npm() {
   output=$(MISE_LOG_LEVEL=warn mise ls-remote npm:test-package 2>&1 || true)
   test_error_message "npm suggests installing node" "$output" "mise use node@latest"
   test_error_message "npm mentions npm is needed for queries" "$output" "npm is required for querying package information"
+  unset MISE_NPM_USE_NPM_VIEW
 
   # Test install - should show warning but continue
   test_backend_warning "npm" "mise install npm:test-package@latest" "npm may be required but was not found"
-
-  # Test with bun mode enabled but npm still missing
-  echo "Testing npm backend with bun mode enabled but npm missing..."
-  export MISE_NPM_PACKAGE_MANAGER=bun
-  test_backend_warning "npm (bun mode)" "mise ls-remote npm:test-package" "npm may be required but was not found"
-  output=$(mise ls-remote npm:test-package 2>&1 || true)
-  test_error_message "npm (bun mode) shows npm is required for queries" "$output" "npm is required for querying package information"
-  unset MISE_NPM_PACKAGE_MANAGER
 }
 
 # Test cargo backend

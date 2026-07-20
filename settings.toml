@@ -1781,6 +1781,23 @@ env = "MISE_NPM_PACKAGE_MANAGER"
 rust_type = "NpmPackageManager"
 type = "String"
 
+[npm.use_npm_view]
+default = false
+description = "Use the npm CLI (`npm view`) for version metadata queries instead of mise's built-in registry client."
+docs = """
+By default, mise queries npm version metadata (`mise ls-remote`, `latest` resolution)
+directly from the npm registry over HTTP, honoring the registry, scoped registries,
+and auth tokens configured in `~/.npmrc` and `NPM_CONFIG_*` environment variables.
+This means node/npm do not need to be installed to resolve `npm:` tool versions.
+
+Enable this setting to shell out to `npm view` instead, e.g. if your setup relies on
+npm-specific configuration that mise's registry client does not support, such as
+`cafile`, client certificates, or an auth token helper. When enabled, npm must be
+installed for version queries to work.
+"""
+env = "MISE_NPM_USE_NPM_VIEW"
+type = "Bool"
+
 [oci.default_from]
 default = "debian:bookworm-slim"
 description = "Default base image for `mise oci build` when [oci].from is not set."

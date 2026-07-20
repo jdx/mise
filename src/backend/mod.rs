@@ -67,6 +67,7 @@ pub mod go;
 pub mod http;
 pub mod jq;
 pub mod npm;
+pub mod npm_registry;
 pub(crate) mod options;
 pub mod pipx;
 pub mod pkgx;

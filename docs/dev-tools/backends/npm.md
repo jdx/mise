@@ -7,7 +7,17 @@ The code for this is inside of the mise repository at [`./src/backend/npm.rs`](h
 
 ## Dependencies
 
-This relies on having `npm` installed for resolving package versions.
+Version resolution (`mise ls-remote`, resolving `latest`) queries the npm
+registry directly over HTTP, so no node/npm installation is needed for it. The
+registry, scoped registries (`@scope:registry`), and auth tokens configured in
+`~/.npmrc` (or `NPM_CONFIG_USERCONFIG`) and `NPM_CONFIG_*` environment
+variables are honored. If your setup relies on npm-only configuration such as
+`cafile`, client certificates, or an auth token helper, set
+[`npm.use_npm_view`](/configuration/settings.html#npm_use_npm_view) to shell
+out to `npm view` for version metadata instead (this requires npm to be
+installed).
+
+Installing packages relies on the configured package manager.
 With the default `npm.package_manager = "auto"` setting, mise uses
 [`aube`](https://aube.jdx.dev/) for installing npm packages when it is installed,
 similar to how the pipx backend uses `uv` when available.
