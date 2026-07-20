@@ -206,6 +206,41 @@ mise use node@26
 # This will update both the installation and mise.lock
 ```
 
+### Bumping Locked Versions
+
+`mise lock --bump` re-resolves fuzzy version selectors (like `latest`, `lts`, or
+prefixes like `"22"`) against the latest matching versions and updates the
+lockfile — without installing anything and without modifying `mise.toml`.
+Exactly pinned versions are left unchanged (use [`mise upgrade --bump`](/cli/upgrade.html)
+to rewrite pins in `mise.toml`).
+
+```sh
+# mise.toml has node = "22" locked at 22.14.0; 22.15.0 was released since
+mise lock --bump             # lockfile now pins 22.15.0, mise.toml still says "22"
+mise lock --bump node        # only bump node
+mise lock --bump --dry-run   # show what would change without writing
+```
+
+This is designed for automated dependency updates: run it on a schedule in CI
+and open a PR when the lockfile changes. `--json` prints the changes as
+machine-readable output (and suppresses the human-readable messages):
+
+```sh
+mise lock --bump --dry-run --json
+```
+
+```json
+[
+  {
+    "name": "node",
+    "backend": "core:node",
+    "lockfile": "~/src/myproj/mise.lock",
+    "old_versions": ["22.14.0"],
+    "new_versions": ["22.15.0"]
+  }
+]
+```
+
 ### Pinning a Locked Version
 
 You can pin a specific version in the lockfile while keeping a fuzzy specifier in `mise.toml`:
@@ -233,6 +268,7 @@ The table below shows how each command interacts with `mise.toml` and `mise.lock
 | `mise upgrade node@22.15.0` | Yes      | Only if version doesn't match prefix | Yes                                     |
 | `mise upgrade --bump`       | Yes      | Yes (bumps prefix to match)          | Yes                                     |
 | `mise lock`                 | No       | No                                   | Yes (regenerates for all tools)         |
+| `mise lock --bump`          | No       | No                                   | Yes (re-resolves selectors to latest)   |
 | `mise lock node@22.15.0`    | No       | Only if version doesn't match prefix | Yes                                     |
 
 **Key points:**
@@ -240,7 +276,7 @@ The table below shows how each command interacts with `mise.toml` and `mise.lock
 - **`mise use`** is for changing which version you want in your config — it always writes to `mise.toml`
 - **`mise install`** installs what's in your config without changing it — `mise install node` installs the config's version of node and updates the lockfile, while `mise install node@22.15.0` is a one-off that doesn't
 - **`mise upgrade`** upgrades tools within their configured ranges and updates the lockfile — passing `tool@version` lets you target a specific version
-- **`mise lock`** regenerates lockfile entries without installing — passing `tool@version` lets you pin a specific version
+- **`mise lock`** regenerates lockfile entries without installing — passing `tool@version` lets you pin a specific version, and `--bump` advances fuzzy selectors to the latest matching versions
 
 ## Backend Support
 

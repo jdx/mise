@@ -75,6 +75,36 @@ pub struct Lock {
         verbatim_doc_comment
     )]
     pub minimum_release_age: Option<String>,
+
+    /// Re-resolve fuzzy version selectors against the latest available versions
+    ///
+    /// By default, `mise lock` refreshes metadata for the currently locked versions.
+    /// With this flag, selectors like "latest", "lts", or prefixes like "20" are
+    /// re-resolved against the latest matching remote versions, so the lockfile
+    /// advances without installing anything. Config files are never modified:
+    /// exactly pinned versions resolve to themselves and stay unchanged
+    /// (use `mise upgrade --bump` to rewrite pins in mise.toml).
+    #[clap(long, verbatim_doc_comment)]
+    pub bump: bool,
+
+    /// Output version changes as JSON
+    ///
+    /// Prints an array of objects describing lockfile version changes:
+    /// name, backend, lockfile, old_versions, new_versions.
+    /// Suppresses the human-readable output. Combine with `--dry-run` to
+    /// detect available updates without writing the lockfile.
+    #[clap(long, verbatim_doc_comment)]
+    pub json: bool,
+}
+
+/// A lockfile version change reported by `--json`
+#[derive(serde::Serialize)]
+struct LockChange {
+    name: String,
+    backend: Option<String>,
+    lockfile: String,
+    old_versions: Vec<String>,
+    new_versions: Vec<String>,
 }
 
 impl Lock {
@@ -88,6 +118,8 @@ impl Lock {
         let lock_resolve_options = ResolveOptions {
             before_date,
             filter_installed_versions_by_release_date: true,
+            latest_versions: self.bump,
+            use_locked_version: !self.bump,
             ..Default::default()
         };
         let has_configured_release_age = settings.minimum_release_age.is_some()
@@ -116,7 +148,7 @@ impl Lock {
                 .await?;
             ts_owned = monorepo_ts;
             &ts_owned
-        } else if before_date.is_some() || has_configured_release_age {
+        } else if self.bump || before_date.is_some() || has_configured_release_age {
             let builder = ToolsetBuilder::new().with_resolve_options(lock_resolve_options.clone());
             ts_owned = builder.build(&config).await?;
             &ts_owned
@@ -129,6 +161,7 @@ impl Lock {
             self.get_lockfile_targets(&config, effective_config_files, &scoped_config_paths);
         let mut has_lock_targets = false;
         let mut all_provenance_errors: Vec<String> = Vec::new();
+        let mut all_changes: Vec<LockChange> = Vec::new();
 
         for (lockfile_path, config_paths) in &lockfile_targets {
             let tools = self
@@ -170,32 +203,35 @@ impl Lock {
 
             let target_platforms = self.determine_target_platforms(lockfile_path)?;
 
-            miseprintln!(
-                "{} Targeting {} platform(s) for {}: {}",
-                style("→").cyan(),
-                target_platforms.len(),
-                style(display_path(lockfile_path)).cyan(),
-                target_platforms
-                    .iter()
-                    .map(|p| p.to_key())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
+            if !self.json {
+                miseprintln!(
+                    "{} Targeting {} platform(s) for {}: {}",
+                    style("→").cyan(),
+                    target_platforms.len(),
+                    style(display_path(lockfile_path)).cyan(),
+                    target_platforms
+                        .iter()
+                        .map(|p| p.to_key())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
 
-            miseprintln!(
-                "{} Processing {} tool(s): {}",
-                style("→").cyan(),
-                tools.len(),
-                tools
-                    .iter()
-                    .map(|(ba, tv)| format!("{}@{}", ba.short, tv.version))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
+                miseprintln!(
+                    "{} Processing {} tool(s): {}",
+                    style("→").cyan(),
+                    tools.len(),
+                    tools
+                        .iter()
+                        .map(|(ba, tv)| format!("{}@{}", ba.short, tv.version))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
 
             if self.dry_run {
                 self.show_dry_run(&tools, &target_platforms)?;
                 let lockfile = Lockfile::read(lockfile_path)?;
+                all_changes.extend(self.compute_version_changes(&lockfile, &tools, lockfile_path));
                 if self.is_unfiltered_lock_run() {
                     let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools);
                     self.show_stale_prune_message(lockfile_path, &stale_tools, true)?;
@@ -210,6 +246,7 @@ impl Lock {
                 .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
                 .lock()?;
             let mut lockfile = Lockfile::read(lockfile_path)?;
+            all_changes.extend(self.compute_version_changes(&lockfile, &tools, lockfile_path));
             let stale_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
             self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
 
@@ -230,24 +267,26 @@ impl Lock {
             lockfile.write(lockfile_path)?;
 
             // Print summary
-            let successful = results.iter().filter(|(_, _, ok)| *ok).count();
-            let skipped = results.len() - successful;
-            miseprintln!(
-                "{} Updated {} platform entries ({} skipped)",
-                style("✓").green(),
-                successful,
-                skipped
-            );
-            miseprintln!(
-                "{} Lockfile written to {}",
-                style("✓").green(),
-                style(display_path(lockfile_path)).cyan()
-            );
+            if !self.json {
+                let successful = results.iter().filter(|(_, _, ok)| *ok).count();
+                let skipped = results.len() - successful;
+                miseprintln!(
+                    "{} Updated {} platform entries ({} skipped)",
+                    style("✓").green(),
+                    successful,
+                    skipped
+                );
+                miseprintln!(
+                    "{} Lockfile written to {}",
+                    style("✓").green(),
+                    style(display_path(lockfile_path)).cyan()
+                );
+            }
 
             all_provenance_errors.extend(provenance_errors);
         }
 
-        if !has_lock_targets {
+        if !has_lock_targets && !self.json {
             miseprintln!("{} No tools configured to lock", style("!").yellow());
         }
 
@@ -272,18 +311,24 @@ impl Lock {
                 .collect();
             let bumps = compute_config_bumps_for_paths(&config, &refs, &scoped_config_paths);
             if self.dry_run {
-                for bump in &bumps {
-                    miseprintln!(
-                        "Would update {} from {} to {} in {}",
-                        bump.tool_name,
-                        bump.old_version,
-                        bump.new_version,
-                        display_path(&bump.config_path)
-                    );
+                if !self.json {
+                    for bump in &bumps {
+                        miseprintln!(
+                            "Would update {} from {} to {} in {}",
+                            bump.tool_name,
+                            bump.old_version,
+                            bump.new_version,
+                            display_path(&bump.config_path)
+                        );
+                    }
                 }
             } else {
                 apply_config_bumps(&config, &bumps)?;
             }
+        }
+
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&all_changes)?);
         }
 
         if !all_provenance_errors.is_empty() {
@@ -291,6 +336,44 @@ impl Lock {
         }
 
         Ok(())
+    }
+
+    /// Compare the versions currently in the lockfile against the freshly
+    /// resolved tool versions and report the differences. Only tools targeted
+    /// by this run are compared; entries for other tools are left alone and
+    /// not reported.
+    fn compute_version_changes(
+        &self,
+        lockfile: &Lockfile,
+        tools: &[LockTool],
+        lockfile_path: &Path,
+    ) -> Vec<LockChange> {
+        let mut new_versions: BTreeMap<String, (Option<String>, BTreeSet<String>)> =
+            BTreeMap::new();
+        for (ba, tv) in tools {
+            let entry = new_versions
+                .entry(ba.short.clone())
+                .or_insert_with(|| (Some(ba.full()), BTreeSet::new()));
+            entry.1.insert(tv.version.clone());
+        }
+        let mut changes = vec![];
+        for (short, (backend, versions)) in new_versions {
+            let old_versions: BTreeSet<String> = lockfile
+                .tools()
+                .get(&short)
+                .map(|entries| entries.iter().map(|t| t.version.clone()).collect())
+                .unwrap_or_default();
+            if old_versions != versions {
+                changes.push(LockChange {
+                    name: short,
+                    backend,
+                    lockfile: display_path(lockfile_path),
+                    old_versions: old_versions.into_iter().collect(),
+                    new_versions: versions.into_iter().collect(),
+                });
+            }
+        }
+        changes
     }
 
     /// Get the before_date from the CLI --minimum-release-age flag only.
@@ -375,7 +458,7 @@ impl Lock {
         stale_versions: &BTreeMap<String, Vec<String>>,
         dry_run: bool,
     ) -> Result<()> {
-        if stale_versions.is_empty() {
+        if stale_versions.is_empty() || self.json {
             return Ok(());
         }
         let total: usize = stale_versions.values().map(|v| v.len()).sum();
@@ -437,7 +520,7 @@ impl Lock {
         stale_tools: &BTreeSet<String>,
         dry_run: bool,
     ) -> Result<()> {
-        if stale_tools.is_empty() {
+        if stale_tools.is_empty() || self.json {
             return Ok(());
         }
         let entry_word = if stale_tools.len() == 1 {
@@ -724,7 +807,7 @@ impl Lock {
                         .ok()
                         .and_then(|request| request.resolve_options(base_resolve_options).ok());
                     if let (Ok(request), Some(mut resolve_options)) = (request, resolve_options)
-                        && resolve_options.before_date.is_some()
+                        && (self.bump || resolve_options.before_date.is_some())
                     {
                         resolve_options.use_locked_version = false;
                         resolve_options.latest_versions = true;
@@ -755,6 +838,9 @@ impl Lock {
     }
 
     fn show_dry_run(&self, tools: &[LockTool], platforms: &[Platform]) -> Result<()> {
+        if self.json {
+            return Ok(());
+        }
         miseprintln!("{} Dry run - would update:", style("→").yellow());
         for (ba, tv) in tools {
             let backend = crate::backend::get(ba);
@@ -873,6 +959,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise lock node python</bold>           # update only node and python
     $ <bold>mise lock --platform linux-x64</bold>  # update only linux-x64 platform
     $ <bold>mise lock --dry-run</bold>             # show what would be updated
+    $ <bold>mise lock --bump</bold>                # re-resolve selectors like "latest" or "20" to the latest matching versions
+    $ <bold>mise lock --bump --dry-run --json</bold>   # list available updates as JSON without writing
     $ <bold>mise lock --minimum-release-age 2024-01-01</bold>   # lock latest/fuzzy versions released before 2024-01-01
     $ <bold>mise lock --local</bold>               # update mise.local.lock for local configs
     $ <bold>mise lock --global</bold>              # update only global config lockfiles
@@ -901,6 +989,8 @@ mod tests {
             local: false,
             global: false,
             minimum_release_age: None,
+            bump: false,
+            json: false,
         }
     }
 

@@ -1892,6 +1892,8 @@ Examples:
     $ mise lock node python           # update only node and python
     $ mise lock --platform linux-x64  # update only linux-x64 platform
     $ mise lock --dry-run             # show what would be updated
+    $ mise lock --bump                # re-resolve selectors like "latest" or "20" to the latest matching versions
+    $ mise lock --bump --dry-run --json   # list available updates as JSON without writing
     $ mise lock --minimum-release-age 2024-01-01   # lock latest/fuzzy versions released before 2024-01-01
     $ mise lock --local               # update mise.local.lock for local configs
     $ mise lock --global              # update only global config lockfiles
@@ -1926,6 +1928,28 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
 """#
         arg <MINIMUM_RELEASE_AGE>
+    }
+    flag --bump help="Re-resolve fuzzy version selectors against the latest available versions" {
+        long_help #"""
+Re-resolve fuzzy version selectors against the latest available versions
+
+By default, `mise lock` refreshes metadata for the currently locked versions.
+With this flag, selectors like "latest", "lts", or prefixes like "20" are
+re-resolved against the latest matching remote versions, so the lockfile
+advances without installing anything. Config files are never modified:
+exactly pinned versions resolve to themselves and stay unchanged
+(use `mise upgrade --bump` to rewrite pins in mise.toml).
+"""#
+    }
+    flag --json help="Output version changes as JSON" {
+        long_help #"""
+Output version changes as JSON
+
+Prints an array of objects describing lockfile version changes:
+name, backend, lockfile, old_versions, new_versions.
+Suppresses the human-readable output. Combine with `--dry-run` to
+detect available updates without writing the lockfile.
+"""#
     }
     arg "[TOOL]…" help=#"""
 Tool(s) to update in lockfile
