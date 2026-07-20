@@ -342,6 +342,10 @@ impl Watch {
         for (k, v) in ts.env_with_path(&config).await? {
             cmd = cmd.env(k, v);
         }
+        // Propagate profiles selected with -E/--env to the nested `mise run` command.
+        if !env::MISE_ENV.is_empty() {
+            cmd = cmd.env("MISE_ENV", env::MISE_ENV.join(","));
+        }
 
         // Save terminal state before running watchexec, because --clear=reset
         // sends a full terminal reset (RIS) which can corrupt terminal settings
