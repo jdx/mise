@@ -135,13 +135,17 @@ fn credential_from_file(file: &AuthFile, registry: &str) -> Result<Option<Creden
         }
     }
 
-    // 2. Inline auths.
+    // 2. Inline auths. A malformed matching entry (bad base64/UTF-8/shape) is
+    // warned about and skipped rather than aborting — a valid credsStore or a
+    // later file may still have usable credentials for this registry.
     for (key, entry) in &file.auths {
         if !key_matches(key, &aliases) {
             continue;
         }
-        if let Some(cred) = credential_from_entry(entry, key)? {
-            return Ok(Some(cred));
+        match credential_from_entry(entry, key) {
+            Ok(Some(cred)) => return Ok(Some(cred)),
+            Ok(None) => {}
+            Err(e) => warn!("ignoring malformed auth entry for {key}: {e}"),
         }
     }
 
@@ -329,9 +333,27 @@ mod tests {
     }
 
     #[test]
-    fn malformed_base64_errors() {
+    fn malformed_entry_is_skipped_not_fatal() {
+        // A corrupt matching entry must not abort resolution: it's skipped so
+        // a credsStore (or a later file) can still provide credentials.
         let file = parse(r#"{"auths": {"ghcr.io": {"auth": "!!!"}}}"#);
-        assert!(credential_from_file(&file, "ghcr.io").is_err());
+        assert!(credential_from_file(&file, "ghcr.io").unwrap().is_none());
+    }
+
+    #[test]
+    fn malformed_entry_falls_through_to_other_entry() {
+        // `credential_from_entry` surfaces malformed base64 as an error; ensure
+        // it doesn't shadow a second, valid entry for the same registry.
+        assert!(
+            credential_from_entry(
+                &AuthEntry {
+                    auth: Some("!!!".into()),
+                    ..Default::default()
+                },
+                "ghcr.io"
+            )
+            .is_err()
+        );
     }
 
     #[test]
