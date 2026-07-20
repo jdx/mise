@@ -763,7 +763,7 @@ pub fn make_executable<P: AsRef<Path>>(_path: P) -> Result<()> {
 pub async fn make_executable_async<P: AsRef<Path>>(path: P) -> Result<()> {
     trace!("chmod +x {}", display_path(&path));
     let path = path.as_ref();
-    let mut perms = tokio::fs::metadata(path).await?.permissions();
+    let mut perms = path.metadata()?.permissions();
     perms.set_mode(executable_mode(perms.mode()));
     tokio::fs::set_permissions(path, perms)
         .await
