@@ -83,9 +83,12 @@ impl Shell for Fish {
             end;
 
             function __mise_env_eval_on_prompt --on-event fish_prompt --description {description};
-                if set -q __mise_skip_first_prompt;
-                    set -e __mise_skip_first_prompt;
-                    return;
+                if set -q __mise_skip_first_prompt_pwd;
+                    set -l activate_pwd "$__mise_skip_first_prompt_pwd";
+                    set -e __mise_skip_first_prompt_pwd;
+                    if test "$PWD" = "$activate_pwd";
+                        return;
+                    end;
                 end;
 
                 __mise_env_eval;
@@ -102,7 +105,7 @@ impl Shell for Fish {
             end;
 
             __mise_env_eval
-            set -g __mise_skip_first_prompt 1
+            set -g __mise_skip_first_prompt_pwd "$PWD"
         "#});
         }
         if Settings::get().not_found_auto_install {
@@ -135,7 +138,7 @@ impl Shell for Fish {
           functions --erase __mise_env_eval_2
           functions --erase __mise_cd_hook
           functions --erase mise
-          set -e __mise_skip_first_prompt
+          set -e __mise_skip_first_prompt_pwd
           set -e MISE_SHELL
           set -e __MISE_DIFF
           set -e __MISE_SESSION

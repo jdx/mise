@@ -7,7 +7,7 @@ functions --erase __mise_env_eval_on_prompt
 functions --erase __mise_env_eval_2
 functions --erase __mise_cd_hook
 functions --erase mise
-set -e __mise_skip_first_prompt
+set -e __mise_skip_first_prompt_pwd
 set -e MISE_SHELL
 set -e __MISE_DIFF
 set -e __MISE_SESSION
