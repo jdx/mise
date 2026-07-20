@@ -91,3 +91,29 @@ if ((mise_hook_calls != 1)); then
   echo "expected first precmd to run hook-env after MISE environment changed"
   exit 1
 fi
+
+eval "$(mise activate zsh --status)"
+mise_hook_calls=0
+function _mise_hook() {
+  mise_hook_calls=$((mise_hook_calls + 1))
+  export __MISE_ZSH_PRECMD_RUN=1
+}
+export __MISE_ZSH_CHPWD_RAN=1
+_mise_hook_precmd
+
+if ((mise_hook_calls != 0)); then
+  echo "expected precmd immediately after chpwd to skip hook-env"
+  exit 1
+fi
+
+if [[ -n ${__MISE_ZSH_ACTIVATE_PATH:-} || -n ${__MISE_ZSH_ACTIVATE_ENV:-} ]]; then
+  echo "expected chpwd deferral to clear activation snapshots"
+  exit 1
+fi
+
+_mise_hook_precmd
+
+if ((mise_hook_calls != 1)); then
+  echo "expected precmd after chpwd deferral to run hook-env"
+  exit 1
+fi

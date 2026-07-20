@@ -74,6 +74,8 @@ impl Shell for Zsh {
             _mise_hook_precmd() {{
               if [[ "${{__MISE_ZSH_CHPWD_RAN:-0}}" == "1" ]]; then
                 export __MISE_ZSH_CHPWD_RAN=0
+                unset __MISE_ZSH_ACTIVATE_PATH
+                unset __MISE_ZSH_ACTIVATE_ENV
                 return
               fi
               if [[ "${{__MISE_ZSH_PRECMD_RUN:-0}}" == "0" &&
