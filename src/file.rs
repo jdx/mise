@@ -1037,7 +1037,7 @@ pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
 /// concurrent tasks (progress bars, downloads, other installs) keep running. Outside a runtime, or
 /// on a current-thread runtime (e.g. `#[tokio::test]`), `block_in_place` would panic, so fall back
 /// to running the closure inline.
-fn block_in_place<T>(f: impl FnOnce() -> T) -> T {
+fn run_blocking<T>(f: impl FnOnce() -> T) -> T {
     match tokio::runtime::Handle::try_current() {
         Ok(h) if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
             tokio::task::block_in_place(f)
@@ -1053,7 +1053,7 @@ pub fn decompress_file(input: &Path, dest: &Path, format: ExtractionFormat) -> R
         create_dir_all(parent)?;
     }
 
-    block_in_place(|| match format {
+    run_blocking(|| match format {
         ExtractionFormat::Gz => un_gz(input, dest),
         ExtractionFormat::Xz => un_xz(input, dest),
         ExtractionFormat::Zst => un_zst(input, dest),
@@ -1241,7 +1241,7 @@ pub fn untar(
         format!("failed to extract tar: {archive} to {dest}")
     };
 
-    block_in_place(|| {
+    run_blocking(|| {
         let tar = open_tar(format, archive)?;
         create_dir_all(dest).wrap_err_with(err)?;
         let mut unpack_opts = UnpackOptions::default();
@@ -1345,7 +1345,7 @@ pub fn unzip(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<(
             archive.file_name().unwrap().to_string_lossy()
         ));
     }
-    block_in_place(|| {
+    run_blocking(|| {
         ZipArchive::new(File::open(archive)?)
             .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
             .extract(dest)
@@ -1372,7 +1372,7 @@ pub fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
         dest.display(),
         archive.display()
     );
-    block_in_place(|| {
+    run_blocking(|| {
         let tmp = tempfile::TempDir::new()?;
         cmd!(
             "hdiutil",
@@ -1402,7 +1402,7 @@ pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
         archive.display(),
         dest.display()
     );
-    block_in_place(|| cmd!("pkgutil", "--expand-full", archive, dest).run())?;
+    run_blocking(|| cmd!("pkgutil", "--expand-full", archive, dest).run())?;
     Ok(())
 }
 
@@ -1413,7 +1413,7 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
             archive.file_name().unwrap().to_string_lossy()
         ));
     }
-    block_in_place(|| {
+    run_blocking(|| {
         sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
             let dest_path = dest.join(
                 sanitize_7z_entry_path(entry.name())
@@ -1784,24 +1784,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_block_in_place_outside_runtime() {
+    fn test_run_blocking_outside_runtime() {
         // no tokio runtime at all — must run the closure inline, not panic
-        assert_eq!(block_in_place(|| 42), 42);
+        assert_eq!(run_blocking(|| 42), 42);
     }
 
     #[tokio::test]
-    async fn test_block_in_place_current_thread_runtime() {
+    async fn test_run_blocking_current_thread_runtime() {
         // #[tokio::test] uses a current-thread runtime, where
         // tokio::task::block_in_place would panic — the guard must fall back
         // to running the closure inline
-        assert_eq!(block_in_place(|| 42), 42);
+        assert_eq!(run_blocking(|| 42), 42);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_block_in_place_multi_thread_runtime() {
+    async fn test_run_blocking_multi_thread_runtime() {
         // matches mise's actual runtime (see main.rs) — takes the real
         // tokio::task::block_in_place path
-        assert_eq!(block_in_place(|| 42), 42);
+        assert_eq!(run_blocking(|| 42), 42);
     }
 
     #[test]
