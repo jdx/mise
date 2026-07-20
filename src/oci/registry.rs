@@ -626,15 +626,20 @@ pub async fn pull_base_image(
         }
         let pr = mpr.add(&format!("pull {}", short_digest(&layer.digest)));
         pr.set_length(layer.size);
-        let bytes = match download_blob(&mut session, &layer_url, Some(&*pr)).await {
-            Ok(bytes) => bytes,
+        // Abandon the progress bar on any failure (download *or* the write
+        // below) so a failed layer never leaves a stale in-progress bar.
+        let result = async {
+            let bytes = download_blob(&mut session, &layer_url, Some(&*pr)).await?;
+            layout.write_blob_with_digest(&layer.digest, &bytes)
+        }
+        .await;
+        match result {
+            Ok(()) => pr.finish(),
             Err(e) => {
                 pr.abandon();
                 return Err(e);
             }
-        };
-        layout.write_blob_with_digest(&layer.digest, &bytes)?;
-        pr.finish();
+        }
     }
 
     let config_json: serde_json::Value = serde_json::from_slice(&config_bytes)?;
@@ -1205,6 +1210,11 @@ fn build_upload_request(
 ) -> reqwest::RequestBuilder {
     use futures_util::StreamExt;
     use std::io::{Seek, SeekFrom};
+
+    // Clear any error from a previous attempt so this call's outcome wins:
+    // `AuthSession::send` may invoke this closure twice (retry after 401), and
+    // a stale error from the first attempt must not fail a successful retry.
+    *err_slot.lock().unwrap() = None;
 
     let mut rb = rb.header("Content-Type", "application/octet-stream");
     if let Some(a) = auth {
