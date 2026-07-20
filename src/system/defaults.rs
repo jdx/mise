@@ -7,6 +7,9 @@
 //! or `mise bootstrap`.
 
 use std::process::Stdio;
+use std::sync::LazyLock;
+
+use regex::Regex;
 
 use crate::result::Result;
 
@@ -209,11 +212,16 @@ async fn defaults_cmd(args: &[&str]) -> Result<Option<String>> {
         .output()
         .await?;
     if !output.status.success() {
-        // "does not exist" is the expected missing-key/-domain answer; any
-        // other failure (cfprefsd unavailable, managed domain, ...) must not
+        // "does not exist" is the expected missing-key/-domain answer;
+        // "could not find key" is the same for `read-type`;
+        // "Domain [...] not found" is the expected answer when the domain does not exist;
+        // any other failure (cfprefsd unavailable, managed domain, ...) must not
         // masquerade as Unset
+        static MISSING_KEY_RE: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"(?i)does not exist|could not find key|Domain .* not found").unwrap()
+        });
         let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("does not exist") {
+        if MISSING_KEY_RE.is_match(&stderr) {
             return Ok(None);
         }
         eyre::bail!(
@@ -292,5 +300,39 @@ mod tests {
 
         assert!(DefaultsValue::Str("left".into()).matches("string", "left"));
         assert!(!DefaultsValue::Str("left".into()).matches("string", "right"));
+    }
+
+    /// `status()` must not fail when keys don't exist yet — this is
+    /// the expected path on a fresh macOS install. Non-zero exits from
+    /// `defaults read` / `read-type` are treated as "unset" only for known
+    /// missing key/domain errors.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_status_missing_keys_are_unset() {
+        let reqs = vec![
+            // key doesn't exist in a real domain
+            DefaultsRequest {
+                domain: "NSGlobalDomain".into(),
+                key: "_mise_test_nonexistent_key_42".into(),
+                value: DefaultsValue::Bool(true),
+            },
+            // domain doesn't exist at all
+            DefaultsRequest {
+                domain: "com.mise.nonexistent".into(),
+                key: "TestKey".into(),
+                value: DefaultsValue::Bool(true),
+            },
+        ];
+        let statuses = status(&reqs).await.unwrap();
+        assert_eq!(statuses.len(), 2);
+        for s in &statuses {
+            assert_eq!(
+                s.state,
+                DefaultsState::Unset,
+                "expected Unset for {}, got {:?}",
+                s.request,
+                s.state
+            );
+        }
     }
 }
