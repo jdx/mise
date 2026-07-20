@@ -1031,6 +1031,7 @@ impl Pusher {
             let mut offset = 0u64;
             while offset < size {
                 let len = UPLOAD_CHUNK_SIZE.min(size - offset);
+                let err_slot: UploadErrSlot = Default::default();
                 let resp = self
                     .session
                     .send(|auth| {
@@ -1041,12 +1042,14 @@ impl Pusher {
                             offset,
                             len,
                             pr,
+                            &err_slot,
                         )
                         // Content-Range is inclusive on both ends.
                         .header("Content-Range", format!("{}-{}", offset, offset + len - 1))
                     })
                     .await
                     .wrap_err("PATCH blob chunk")?;
+                check_upload_err(&err_slot, path)?;
                 let status = resp.status();
                 if status != StatusCode::ACCEPTED {
                     resp.error_for_status_ref()?;
@@ -1093,6 +1096,7 @@ impl Pusher {
             // Monolithic PUT with ?digest=…
             let mut put_url = location;
             put_url.query_pairs_mut().append_pair("digest", digest);
+            let err_slot: UploadErrSlot = Default::default();
             let resp = self
                 .session
                 .send(|auth| {
@@ -1103,10 +1107,12 @@ impl Pusher {
                         0,
                         size,
                         pr,
+                        &err_slot,
                     )
                 })
                 .await
                 .wrap_err("PUT blob upload")?;
+            check_upload_err(&err_slot, path)?;
             let status = resp.status();
             if status != StatusCode::CREATED && status != StatusCode::ACCEPTED {
                 resp.error_for_status_ref()?;
@@ -1170,11 +1176,24 @@ impl Pusher {
     }
 }
 
+/// Slot for an I/O error raised inside an upload-body closure so the caller
+/// can surface it after `AuthSession::send` returns (the closure itself can
+/// only return a `RequestBuilder`).
+type UploadErrSlot = Arc<std::sync::Mutex<Option<std::io::Error>>>;
+
 /// Build a PATCH/PUT upload request whose body streams `len` bytes of `path`
 /// starting at `offset`, advancing `pr` as chunks are read off disk.
 /// Constructed fresh on every call so the auth-retry inside
 /// [`AuthSession::send`] can safely re-send the request; the progress
 /// position is reset to `offset` each time so a re-send doesn't double-count.
+///
+/// If the file can't be reopened (it was validated readable before the upload
+/// began, so this means it vanished mid-push), the error is stashed in
+/// `err_slot` and a length-consistent empty body is sent. Emitting `body(())`
+/// with `Content-Length: 0` — rather than an empty body under the real
+/// `Content-Length: len` — is deliberate: a length/body mismatch would leave
+/// the registry blocking on bytes that never arrive. The caller checks
+/// `err_slot` after the request and surfaces the I/O error.
 fn build_upload_request(
     rb: reqwest::RequestBuilder,
     auth: Option<&str>,
@@ -1182,13 +1201,12 @@ fn build_upload_request(
     offset: u64,
     len: u64,
     pr: &Arc<dyn SingleReport>,
+    err_slot: &UploadErrSlot,
 ) -> reqwest::RequestBuilder {
     use futures_util::StreamExt;
     use std::io::{Seek, SeekFrom};
 
-    let mut rb = rb
-        .header("Content-Type", "application/octet-stream")
-        .header("Content-Length", len);
+    let mut rb = rb.header("Content-Type", "application/octet-stream");
     if let Some(a) = auth {
         rb = rb.header("Authorization", a);
     }
@@ -1200,11 +1218,10 @@ fn build_upload_request(
     let file = match file {
         Ok(f) => tokio::fs::File::from_std(f),
         Err(e) => {
-            // The file was validated readable before the upload began; if it
-            // vanished mid-push, surface why before the registry's confusing
-            // digest-mismatch error does.
-            warn!("blob {} became unreadable mid-upload: {e}", path.display());
-            return rb.body(Vec::new());
+            *err_slot.lock().unwrap() = Some(e);
+            // Length-consistent empty body so the request completes instead of
+            // hanging; the caller turns the stashed error into a clear failure.
+            return rb.header("Content-Length", 0).body(Vec::new());
         }
     };
     pr.set_position(offset);
@@ -1215,7 +1232,17 @@ fn build_upload_request(
                 pr.inc(c.len() as u64);
             }
         });
-    rb.body(reqwest::Body::wrap_stream(stream))
+    rb.header("Content-Length", len)
+        .body(reqwest::Body::wrap_stream(stream))
+}
+
+/// Return an error if an upload-body closure stashed one in `slot`.
+fn check_upload_err(slot: &UploadErrSlot, path: &Path) -> Result<()> {
+    if let Some(e) = slot.lock().unwrap().take() {
+        return Err(eyre::Report::new(e))
+            .wrap_err_with(|| format!("reading blob {} during upload", path.display()));
+    }
+    Ok(())
 }
 
 fn push_auth_hint(status: StatusCode, had_credential: bool) -> &'static str {
