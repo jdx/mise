@@ -230,7 +230,13 @@ fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> {
     for entry in std::fs::read_dir(installs_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if is_runtime_symlink(&path) && !path.exists() {
+        // On Windows runtime symlinks are regular files containing the relative
+        // target, so `path.exists()` cannot detect a dangling pointer — resolve
+        // the stored target and check that instead. On unix this is equivalent
+        // to following the symlink. (#5260)
+        if let Some(target) = runtime_symlink_target(&path)
+            && !installs_dir.join(target).exists()
+        {
             trace!("Removing missing symlink: {}", path.display());
             file::remove_file(path)?;
         }
@@ -241,8 +247,63 @@ fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> {
 }
 
 pub fn is_runtime_symlink(path: &Path) -> bool {
-    if let Ok(Some(link)) = file::resolve_symlink(path) {
-        return link.starts_with("./");
+    runtime_symlink_target(path).is_some()
+}
+
+/// Returns the (relative) target a runtime symlink points to, or None if
+/// `path` is not a runtime symlink.
+fn runtime_symlink_target(path: &Path) -> Option<PathBuf> {
+    if let Ok(Some(link)) = file::resolve_symlink(path)
+        && link.starts_with("./")
+    {
+        return Some(link);
     }
-    false
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    // https://github.com/jdx/mise/discussions/5260 — on Windows runtime
+    // symlinks are regular files containing the target, so dangling pointers
+    // were never detected as missing.
+    #[test]
+    fn remove_missing_symlinks_in_dir_removes_dangling_pointers() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        fs::create_dir_all(installs_dir.join("1.0.0"))?;
+        // valid pointer -> concrete install
+        make_symlink_or_file(Path::new("./1.0.0"), &installs_dir.join("1"))?;
+        // dangling pointer -> version that no longer exists
+        make_symlink_or_file(Path::new("./2.0.0"), &installs_dir.join("2"))?;
+
+        remove_missing_symlinks_in_dir(&installs_dir)?;
+
+        // a dangling unix symlink still has metadata even though `exists()` is
+        // false, so this asserts actual removal on both platforms
+        assert!(fs::symlink_metadata(installs_dir.join("2")).is_err());
+        // concrete install and valid pointer retained
+        assert!(installs_dir.join("1.0.0").is_dir());
+        assert!(is_runtime_symlink(&installs_dir.join("1")));
+        Ok(())
+    }
+
+    #[test]
+    fn remove_missing_symlinks_in_dir_removes_dir_when_only_dangling_pointers_remain() -> Result<()>
+    {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        fs::create_dir_all(&installs_dir)?;
+        fs::write(installs_dir.join(".mise.backend.json"), "{}")?;
+        make_symlink_or_file(Path::new("./2.0.0"), &installs_dir.join("2"))?;
+        make_symlink_or_file(Path::new("./2.0.0"), &installs_dir.join("latest"))?;
+
+        remove_missing_symlinks_in_dir(&installs_dir)?;
+
+        // all pointers were dangling -> whole dir removed (metadata ignored)
+        assert!(!installs_dir.exists());
+        Ok(())
+    }
 }
