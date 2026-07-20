@@ -737,10 +737,21 @@ pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
     trace!("chmod +x {}", display_path(&path));
     let path = path.as_ref();
     let mut perms = path.metadata()?.permissions();
-    perms.set_mode(perms.mode() | 0o111);
+    perms.set_mode(executable_mode(perms.mode()));
     fs::set_permissions(path, perms)
         .wrap_err_with(|| format!("failed to chmod +x: {}", display_path(path)))?;
     Ok(())
+}
+
+/// Add execute bits along with the matching read bits.
+///
+/// A file that only receives the execute bits (`mode | 0o111`) can end up executable but not
+/// readable (e.g. a `0o600` tempfile becomes `0o711`). For interpreted executables like PHP PHARs
+/// the interpreter must be able to *read* the file, so any class that gains execute must also gain
+/// read. See https://github.com/jdx/mise/discussions/11108.
+#[cfg(unix)]
+fn executable_mode(mode: u32) -> u32 {
+    mode | 0o111 | 0o444
 }
 
 #[cfg(windows)]
@@ -753,7 +764,7 @@ pub async fn make_executable_async<P: AsRef<Path>>(path: P) -> Result<()> {
     trace!("chmod +x {}", display_path(&path));
     let path = path.as_ref();
     let mut perms = path.metadata()?.permissions();
-    perms.set_mode(perms.mode() | 0o111);
+    perms.set_mode(executable_mode(perms.mode()));
     tokio::fs::set_permissions(path, perms)
         .await
         .wrap_err_with(|| format!("failed to chmod +x: {}", display_path(path)))
@@ -1755,6 +1766,20 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn test_executable_mode_adds_read_with_execute() {
+        // a restrictive tempfile (0o600) must end up readable, not just executable (0o711)
+        assert_eq!(executable_mode(0o600), 0o755);
+        assert_eq!(executable_mode(0o640), 0o755);
+        // owner-only read/write/exec preserved and widened to be world readable+executable
+        assert_eq!(executable_mode(0o700), 0o755);
+        // already-correct modes are unchanged
+        assert_eq!(executable_mode(0o755), 0o755);
+        // group/other write bits are preserved
+        assert_eq!(executable_mode(0o660), 0o775);
+    }
 
     #[test]
     fn test_retry_remove_all_retries_directory_not_empty() {
