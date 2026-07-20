@@ -24,7 +24,11 @@ if [[ -n $latest_tag ]]; then
 		# long enough to finish and the release can never publish (a self-perpetuating
 		# loop, since a missing release keeps re-arming this very check). Only
 		# re-trigger when nothing is already queued or in progress for this tag.
-		active_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release.yml --branch "$latest_tag" --limit 30 --json status --jq '[.[] | select(.status != "completed")] | length' 2>/dev/null || echo 0)"
+		#
+		# Tag-dispatched runs report the tag as `headBranch`, so filter on that.
+		# `gh run list --branch` is documented for branches only and its behavior
+		# with tags is unspecified, so match in jq rather than relying on it.
+		active_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release.yml --limit 60 --json status,headBranch 2>/dev/null | jq --arg tag "$latest_tag" '[.[] | select(.headBranch == $tag and .status != "completed")] | length' 2>/dev/null || echo 0)"
 		if [[ ${active_runs:-0} -gt 0 ]]; then
 			echo "Release workflow already active for $latest_tag ($active_runs queued/running) — not re-triggering"
 		else
