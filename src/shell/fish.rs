@@ -68,7 +68,7 @@ impl Shell for Fish {
         if !opts.no_hook_env {
             out.push_str(&formatdoc! {r#"
 
-            function __mise_env_eval --on-event fish_prompt --description {description};
+            function __mise_env_eval --description {description};
                 {exe} hook-env{flags} -s fish | source;
 
                 if test "$mise_fish_mode" != "disable_arrow";
@@ -82,6 +82,18 @@ impl Shell for Fish {
                 end;
             end;
 
+            function __mise_env_eval_on_prompt --on-event fish_prompt --description {description};
+                if set -q __mise_skip_first_prompt_pwd;
+                    set -l activate_pwd "$__mise_skip_first_prompt_pwd";
+                    set -e __mise_skip_first_prompt_pwd;
+                    if test "$PWD" = "$activate_pwd";
+                        return;
+                    end;
+                end;
+
+                __mise_env_eval;
+            end;
+
             function __mise_env_eval_2 --on-event fish_preexec --description {description};
                 if set -q __mise_env_again;
                     set -e __mise_env_again;
@@ -93,6 +105,7 @@ impl Shell for Fish {
             end;
 
             __mise_env_eval
+            set -g __mise_skip_first_prompt_pwd "$PWD"
         "#});
         }
         if Settings::get().not_found_auto_install {
@@ -121,9 +134,11 @@ impl Shell for Fish {
     fn deactivate(&self) -> String {
         formatdoc! {r#"
           functions --erase __mise_env_eval
+          functions --erase __mise_env_eval_on_prompt
           functions --erase __mise_env_eval_2
           functions --erase __mise_cd_hook
           functions --erase mise
+          set -e __mise_skip_first_prompt_pwd
           set -e MISE_SHELL
           set -e __MISE_DIFF
           set -e __MISE_SESSION
