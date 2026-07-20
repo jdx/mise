@@ -127,6 +127,9 @@ impl SwiftPlugin {
         tarball_path: &Path,
     ) -> Result<()> {
         let sig_path = PathBuf::from(format!("{}.sig", tarball_path.to_string_lossy()));
+        // Unlike Node (which skips a missing .sig), this path only runs on Linux, where swift.org
+        // publishes a detached signature for every release tarball. A missing .sig is therefore
+        // unexpected, so surface the download error rather than silently skipping verification.
         HTTP.download_file(format!("{}.sig", url(tv)), &sig_path, Some(ctx.pr.as_ref()))
             .await?;
         let signature = file::read(&sig_path)?;

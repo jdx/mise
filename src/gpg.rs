@@ -52,14 +52,12 @@ where
             return Ok(());
         }
     }
-    // Fallback: only when a signature carried no usable issuer hint, try every trusted key. A
-    // signature that named an issuer we don't trust is genuinely unverifiable, so don't re-hash.
-    let any_without_issuer = signatures.iter().any(|sig| !has_issuer(&sig.signature));
-    if any_without_issuer {
-        for sig in &signatures {
-            if verify_against_keys(sig, &keys, &open_data, false)? {
-                return Ok(());
-            }
+    // Fallback: try every trusted key, but only for signatures that carried no usable issuer
+    // hint. A signature that named an issuer we don't trust is genuinely unverifiable, so skip it
+    // rather than re-hashing the (potentially large) content against every key.
+    for sig in signatures.iter().filter(|sig| !has_issuer(&sig.signature)) {
+        if verify_against_keys(sig, &keys, &open_data, false)? {
+            return Ok(());
         }
     }
     bail!("signature does not match any trusted public key");
@@ -212,5 +210,39 @@ mod tests {
     fn rejects_unparseable_signature() {
         let sig = "-----BEGIN PGP SIGNATURE-----\n\ngarbage\n-----END PGP SIGNATURE-----\n";
         assert!(verify_node(b"data", sig.as_bytes()).is_err());
+    }
+
+    // A real, checked-in detached signature over the genuine Node.js v20.11.0 `SHASUMS256.txt`
+    // (a binary `.sig` bundle with multiple signature packets). This exercises the full happy
+    // path against the actual bundled keyring so a regression in the verify/reader plumbing
+    // surfaces here rather than as a spurious install failure.
+    const NODE_SHASUMS: &[u8] = include_bytes!("gpg_testdata/node_v20.11.0_SHASUMS256.txt");
+    const NODE_SIG: &[u8] = include_bytes!("gpg_testdata/node_v20.11.0_SHASUMS256.txt.sig");
+
+    #[test]
+    fn verifies_real_node_signature() {
+        verify_node(NODE_SHASUMS, NODE_SIG).expect("genuine node signature must verify");
+    }
+
+    #[test]
+    fn rejects_tampered_content() {
+        let mut tampered = NODE_SHASUMS.to_vec();
+        tampered.push(b'x');
+        assert!(
+            verify_node(&tampered, NODE_SIG).is_err(),
+            "tampered content must not verify"
+        );
+    }
+
+    #[test]
+    fn rejects_signature_from_untrusted_keyring() {
+        // The genuine node signature must not verify against the unrelated swift keyring.
+        assert!(verify_swift_bytes(NODE_SHASUMS, NODE_SIG).is_err());
+    }
+
+    fn verify_swift_bytes(data: &[u8], signature: &[u8]) -> Result<()> {
+        verify_detached(include_str!("assets/gpg/swift.asc"), signature, || {
+            Ok(Cursor::new(data))
+        })
     }
 }
