@@ -34,6 +34,25 @@ exists_on_crates() {
 	return 1
 }
 
+# Git pathspecs used to decide whether a subcrate has meaningfully changed.
+# Some crates embed vendored/generated content that the release process refreshes
+# on every run (e.g. vfox's embedded-plugins are deleted and re-cloned each
+# release). Counting that churn as a change would bump, tag, and publish the crate
+# on every single release even when its hand-written source is untouched, producing
+# a flood of pointless `<crate>-v*` tags. Excluding that content here means a new
+# subcrate version is only cut when the real source actually changes.
+# Populates the caller-declared `pathspec` array (bash 3.2 compatible).
+subcrate_diff_pathspec() {
+	local crate_name="$1"
+	local crate_dir="$2"
+	pathspec=("$crate_dir")
+	case "$crate_name" in
+	vfox)
+		pathspec+=(":(exclude)${crate_dir}/embedded-plugins")
+		;;
+	esac
+}
+
 # Check if a subcrate has changes since its last tagged release
 # Returns 0 if changes exist (should publish), 1 if no changes
 has_crate_changes() {
@@ -49,12 +68,15 @@ has_crate_changes() {
 		return 0
 	fi
 
-	# Check if there are changes in the crate directory since the tag
-	if git diff --quiet "$latest_tag" -- "$crate_dir"; then
-		echo "No changes in $crate_name since $latest_tag"
+	# Check if there are changes in the crate directory since the tag,
+	# ignoring vendored/generated content (see subcrate_diff_pathspec).
+	local pathspec
+	subcrate_diff_pathspec "$crate_name" "$crate_dir"
+	if git diff --quiet "$latest_tag" -- "${pathspec[@]}"; then
+		echo "No source changes in $crate_name since $latest_tag"
 		return 1
 	else
-		echo "Changes detected in $crate_name since $latest_tag"
+		echo "Source changes detected in $crate_name since $latest_tag"
 		return 0
 	fi
 }
@@ -74,15 +96,12 @@ use_published_aqua_registry() {
 	cargo add --build "aqua-registry@$version"
 }
 
-# Check if a directory has uncommitted changes (staged or unstaged)
+# Check if the given git pathspecs have uncommitted changes (staged or unstaged)
 has_uncommitted_changes() {
-	local dir="$1"
-	# Check for any changes (staged or unstaged) in the directory
-	if git diff --quiet HEAD -- "$dir" 2>/dev/null && git diff --quiet --cached -- "$dir" 2>/dev/null; then
-		# Also check for untracked files
-		if [[ -z $(git ls-files --others --exclude-standard -- "$dir") ]]; then
-			return 1 # No changes
-		fi
+	# Args: one or more git pathspecs (e.g. a crate dir plus `:(exclude)` entries).
+	# --porcelain covers staged, unstaged, and untracked changes in one check.
+	if [[ -z $(git status --porcelain -- "$@" 2>/dev/null) ]]; then
+		return 1 # No changes
 	fi
 	return 0 # Has changes
 }
@@ -92,7 +111,11 @@ bump_subcrate_if_changed() {
 	local crate_name="$1"
 	local crate_dir="$2"
 
-	if ! has_uncommitted_changes "$crate_dir"; then
+	# Ignore vendored/generated content (see subcrate_diff_pathspec) so refreshed
+	# embedded content doesn't force an otherwise-unnecessary version bump.
+	local pathspec
+	subcrate_diff_pathspec "$crate_name" "$crate_dir"
+	if ! has_uncommitted_changes "${pathspec[@]}"; then
 		echo "No uncommitted changes in $crate_name, keeping current version"
 		return
 	fi
