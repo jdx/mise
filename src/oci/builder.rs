@@ -344,7 +344,7 @@ impl Builder {
             let tv_prefix = tool_tar_prefix(&mount_point, tv);
             let layer = if let Some(reused) = &tool_reuse[i] {
                 info!(
-                    "oci: reusing {} layer from the destination image (unchanged)",
+                    "oci: reusing {} layer from the cache image (unchanged)",
                     tv.style()
                 );
                 ToolLayer::Reused(reused.clone())
