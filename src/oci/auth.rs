@@ -71,21 +71,30 @@ pub fn resolve_credential(registry: &str) -> Result<Option<Credential>> {
         if !path.is_file() {
             continue;
         }
-        let raw = crate::file::read_to_string(&path)
-            .wrap_err_with(|| format!("reading {}", path.display()))?;
+        // No single source should hard-fail resolution — a later file (or
+        // anonymous access) may still work. Warn and move on for unreadable,
+        // malformed, or otherwise erroring files.
+        let raw = match crate::file::read_to_string(&path) {
+            Ok(raw) => raw,
+            Err(e) => {
+                warn!("skipping unreadable auth file {}: {e}", path.display());
+                continue;
+            }
+        };
         let file: AuthFile = match serde_json::from_str(&raw) {
             Ok(f) => f,
             Err(e) => {
-                // A malformed auth file shouldn't hard-fail the push when a
-                // later file (or anonymous auth) might still work — but the
-                // user should know we skipped it.
                 warn!("skipping malformed auth file {}: {e}", path.display());
                 continue;
             }
         };
-        if let Some(cred) = credential_from_file(&file, registry)? {
-            debug!("using registry credentials from {}", path.display());
-            return Ok(Some(cred));
+        match credential_from_file(&file, registry) {
+            Ok(Some(cred)) => {
+                debug!("using registry credentials from {}", path.display());
+                return Ok(Some(cred));
+            }
+            Ok(None) => {}
+            Err(e) => warn!("skipping auth file {} ({e})", path.display()),
         }
     }
     Ok(None)
@@ -111,10 +120,18 @@ fn auth_file_paths() -> Vec<PathBuf> {
 fn credential_from_file(file: &AuthFile, registry: &str) -> Result<Option<Credential>> {
     let aliases = registry_aliases(registry);
 
-    // 1. Per-registry credential helper.
+    // 1. Per-registry credential helper. A helper that exits non-zero when it
+    // has no entry for the host (the docker "credentials not found"
+    // convention) is a miss, not a failure — fall through to inline auths /
+    // credsStore / the next file rather than aborting the whole push.
     for (key, helper) in &file.cred_helpers {
         if key_matches(key, &aliases) {
-            return run_credential_helper(helper, registry).map(Some);
+            match run_credential_helper(helper, registry) {
+                Ok(cred) => return Ok(Some(cred)),
+                Err(e) => {
+                    debug!("credHelpers helper {helper} has no credentials for {registry}: {e}");
+                }
+            }
         }
     }
 

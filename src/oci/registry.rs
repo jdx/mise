@@ -131,7 +131,8 @@ enum AuthChallenge {
 }
 
 fn parse_auth_challenge(www_auth: &str) -> Option<AuthChallenge> {
-    let lower = www_auth.trim_start().to_ascii_lowercase();
+    let trimmed = www_auth.trim_start();
+    let lower = trimmed.to_ascii_lowercase();
     if lower.starts_with("basic") {
         return Some(AuthChallenge::Basic);
     }
@@ -141,15 +142,62 @@ fn parse_auth_challenge(www_auth: &str) -> Option<AuthChallenge> {
     // WWW-Authenticate: Bearer realm="https://auth.docker.io/token",service="registry.docker.io"
     let mut realm: Option<String> = None;
     let mut service: Option<String> = None;
-    for part in www_auth.trim_start()[6..].split(',') {
-        let part = part.trim();
-        if let Some(rest) = part.strip_prefix("realm=") {
-            realm = Some(rest.trim_matches('"').to_string());
-        } else if let Some(rest) = part.strip_prefix("service=") {
-            service = Some(rest.trim_matches('"').to_string());
+    for (key, value) in parse_challenge_params(&trimmed["bearer".len()..]) {
+        match key.as_str() {
+            "realm" => realm = Some(value),
+            "service" => service = Some(value),
+            _ => {}
         }
     }
     realm.map(|realm| AuthChallenge::Bearer { realm, service })
+}
+
+/// Parse the comma-separated `key=value` / `key="value"` parameters of an
+/// auth-scheme challenge. Double-quoted values are honored, so a realm URL
+/// with a query string (`realm="https://a/token?x=1,y=2"`) or an echoed
+/// scope (`scope="repository:name:pull,push"`) isn't truncated at an
+/// interior comma — the bug a naive `split(',')` would hit.
+fn parse_challenge_params(s: &str) -> Vec<(String, String)> {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut params = Vec::new();
+    let mut i = 0;
+    while i < n {
+        // Skip separators / whitespace between parameters.
+        while i < n && (bytes[i] == b',' || bytes[i].is_ascii_whitespace()) {
+            i += 1;
+        }
+        // Read the key up to '=' (or ',' for a valueless token we ignore).
+        let key_start = i;
+        while i < n && bytes[i] != b'=' && bytes[i] != b',' {
+            i += 1;
+        }
+        let key = s[key_start..i].trim().to_ascii_lowercase();
+        if i >= n || bytes[i] == b',' {
+            continue; // no value — skip
+        }
+        i += 1; // consume '='
+        let value = if i < n && bytes[i] == b'"' {
+            i += 1;
+            let value_start = i;
+            while i < n && bytes[i] != b'"' {
+                i += 1;
+            }
+            let value = s[value_start..i].to_string();
+            i += 1; // consume closing quote (if present)
+            value
+        } else {
+            let value_start = i;
+            while i < n && bytes[i] != b',' {
+                i += 1;
+            }
+            s[value_start..i].trim().to_string()
+        };
+        if !key.is_empty() {
+            params.push((key, value));
+        }
+    }
+    params
 }
 
 /// Read a response header as an owned `String` (empty when absent / non-ASCII).
@@ -335,17 +383,6 @@ async fn fetch_bearer_token(
     Ok(resp.token.or(resp.access_token))
 }
 
-fn auth_headers(authorization: Option<&str>, accept: &[&str]) -> Result<HeaderMap> {
-    let mut headers = HeaderMap::new();
-    if let Some(a) = authorization {
-        headers.insert("Authorization", HeaderValue::from_str(a)?);
-    }
-    if !accept.is_empty() {
-        headers.insert("Accept", HeaderValue::from_str(&accept.join(", "))?);
-    }
-    Ok(headers)
-}
-
 /// Fetch a manifest (or index) as JSON, retrying once on `401` with a
 /// negotiated token. Returns the parsed body and the response `Content-Type`
 /// (the caller uses it to distinguish a single manifest from an index).
@@ -391,14 +428,26 @@ async fn fetch_manifest_json(
     Ok((body, content_type))
 }
 
-async fn get_bytes_with_token(
-    url: &str,
-    authorization: Option<&str>,
-    accept: &[&str],
-) -> Result<Vec<u8>> {
-    let headers = auth_headers(authorization, accept)?;
-    let bytes = HTTP.get_bytes_with_headers(url, &headers).await?;
-    Ok(bytes.as_ref().to_vec())
+/// Download a blob (config or layer) into memory, retrying once on `401`
+/// with a renegotiated token. Going through [`AuthSession::send`] rather
+/// than a fixed header means a token that expires partway through a large
+/// multi-layer pull is refreshed transparently instead of failing the pull.
+async fn download_blob(session: &mut AuthSession, url: &str) -> Result<Vec<u8>> {
+    let resp = session
+        .send(|auth| {
+            let mut rb = HTTP.reqwest().get(url);
+            if let Some(a) = auth {
+                rb = rb.header("Authorization", a);
+            }
+            rb
+        })
+        .await
+        .wrap_err_with(|| format!("GET {url}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        bail!("fetching blob {url} failed: {}", status.as_u16());
+    }
+    Ok(resp.bytes().await?.to_vec())
 }
 
 /// The result of pulling a base image — the config blob and an ordered list
@@ -463,7 +512,7 @@ pub async fn pull_base_image(
         "{base_url}/v2/{}/blobs/{}",
         r.repository, manifest.config.digest
     );
-    let config_bytes = get_bytes_with_token(&config_url, session.header(), &[]).await?;
+    let config_bytes = download_blob(&mut session, &config_url).await?;
     // Preserve the byte-level digest by writing under the exact digest name.
     layout.write_blob_with_digest(&manifest.config.digest, &config_bytes)?;
 
@@ -473,7 +522,7 @@ pub async fn pull_base_image(
         if blob_path.exists() {
             continue;
         }
-        let bytes = get_bytes_with_token(&layer_url, session.header(), &[]).await?;
+        let bytes = download_blob(&mut session, &layer_url).await?;
         layout.write_blob_with_digest(&layer.digest, &bytes)?;
     }
 
@@ -699,6 +748,11 @@ impl Pusher {
 
     async fn upload_blob(&mut self, path: &Path, digest: &str, size: u64) -> Result<()> {
         let had_credential = self.session.has_credential();
+        // Fail early (and clearly) if the blob file is unreadable, rather than
+        // letting an empty-body PUT surface later as a confusing registry
+        // digest/upload error with no hint about the real cause.
+        std::fs::File::open(path)
+            .wrap_err_with(|| format!("opening blob {} for upload", path.display()))?;
         // 1. Open an upload session.
         let start_url = format!("{}/v2/{}/blobs/uploads/", self.base_url, self.repository);
         let resp = self
@@ -904,6 +958,30 @@ mod tests {
     fn bearer_challenge_without_realm_is_none() {
         assert!(parse_auth_challenge("Bearer service=\"x\"").is_none());
         assert!(parse_auth_challenge("Negotiate").is_none());
+    }
+
+    #[test]
+    fn bearer_challenge_preserves_commas_inside_quotes() {
+        // A realm query string and an echoed scope both contain commas that a
+        // naive split(',') would truncate at.
+        let www = r#"Bearer realm="https://auth.example.com/token?a=1,b=2",service="reg,istry",scope="repository:me/app:pull,push""#;
+        match parse_auth_challenge(www) {
+            Some(AuthChallenge::Bearer { realm, service }) => {
+                assert_eq!(realm, "https://auth.example.com/token?a=1,b=2");
+                assert_eq!(service.as_deref(), Some("reg,istry"));
+            }
+            _ => panic!("expected bearer challenge"),
+        }
+    }
+
+    #[test]
+    fn challenge_params_handle_unquoted_and_spaced_values() {
+        let params = parse_challenge_params(r#" realm=https://x/token , service="y" "#);
+        assert_eq!(
+            params[0],
+            ("realm".to_string(), "https://x/token".to_string())
+        );
+        assert_eq!(params[1], ("service".to_string(), "y".to_string()));
     }
 
     #[test]
