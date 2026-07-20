@@ -27,7 +27,7 @@
     "markdown-it": "^14.1.0",
     "toml": "^4.0.0",
     "tsx": "^4.20.6",
-    "typescript": "^6.0.0",
+    "typescript": "^7.0.0",
     "typescript-eslint": "^8.58.2",
     "vitepress": "1.6.4",
     "vitepress-plugin-group-icons": "^1.6.5",
