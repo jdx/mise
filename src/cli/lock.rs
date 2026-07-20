@@ -72,6 +72,10 @@ pub struct Lock {
     ///
     /// Prints an array of objects describing lockfile version changes:
     /// name, backend, lockfile, old_versions, new_versions.
+    /// Version lists keep config/lockfile order; they are not sorted.
+    /// Only version-level changes are reported: checksum/URL refreshes for
+    /// unchanged versions produce no entries, so plain `mise lock --json`
+    /// typically prints `[]` while still updating the lockfile.
     /// Suppresses the human-readable output. Combine with `--dry-run` to
     /// detect available updates without writing the lockfile.
     #[clap(long, verbatim_doc_comment)]
@@ -180,6 +184,13 @@ impl Lock {
                 // For unfiltered runs (`mise lock`), this means "prune all stale lockfile entries".
                 if self.dry_run {
                     let lockfile = Lockfile::read(lockfile_path)?;
+                    if self.json {
+                        all_changes.extend(self.compute_version_changes(
+                            &lockfile,
+                            &tools,
+                            lockfile_path,
+                        ));
+                    }
                     let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools);
                     self.show_stale_prune_message(lockfile_path, &stale_tools, true)?;
                     if !stale_tools.is_empty() {
@@ -190,6 +201,13 @@ impl Lock {
                         .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
                         .lock()?;
                     let mut lockfile = Lockfile::read(lockfile_path)?;
+                    if self.json {
+                        all_changes.extend(self.compute_version_changes(
+                            &lockfile,
+                            &tools,
+                            lockfile_path,
+                        ));
+                    }
                     let pruned_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
                     if !pruned_tools.is_empty() {
                         lockfile.write(lockfile_path)?;
@@ -231,7 +249,13 @@ impl Lock {
             if self.dry_run {
                 self.show_dry_run(&tools, &target_platforms)?;
                 let lockfile = Lockfile::read(lockfile_path)?;
-                all_changes.extend(self.compute_version_changes(&lockfile, &tools, lockfile_path));
+                if self.json {
+                    all_changes.extend(self.compute_version_changes(
+                        &lockfile,
+                        &tools,
+                        lockfile_path,
+                    ));
+                }
                 if self.is_unfiltered_lock_run() {
                     let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools);
                     self.show_stale_prune_message(lockfile_path, &stale_tools, true)?;
@@ -246,7 +270,9 @@ impl Lock {
                 .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
                 .lock()?;
             let mut lockfile = Lockfile::read(lockfile_path)?;
-            all_changes.extend(self.compute_version_changes(&lockfile, &tools, lockfile_path));
+            if self.json {
+                all_changes.extend(self.compute_version_changes(&lockfile, &tools, lockfile_path));
+            }
             let stale_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
             self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
 
@@ -291,8 +317,9 @@ impl Lock {
         }
 
         // Update config files when a specific version is requested that doesn't match
-        // the current prefix (e.g., `mise lock tiny@3.0.1` when config has `tiny = "2"`)
-        {
+        // the current prefix (e.g., `mise lock tiny@3.0.1` when config has `tiny = "2"`).
+        // Never under --bump, which is documented to leave config files untouched.
+        if !self.bump {
             use crate::toolset::outdated_info::{
                 apply_config_bumps, compute_config_bumps_for_paths,
             };
@@ -340,36 +367,61 @@ impl Lock {
 
     /// Compare the versions currently in the lockfile against the freshly
     /// resolved tool versions and report the differences. Only tools targeted
-    /// by this run are compared; entries for other tools are left alone and
-    /// not reported.
+    /// by this run are compared; on unfiltered runs, lockfile tools that are
+    /// no longer configured (and will be pruned) are reported with an empty
+    /// `new_versions`.
+    ///
+    /// Versions are never sorted here: `new_versions` keeps resolution order
+    /// (which follows config declaration order) and `old_versions` keeps
+    /// lockfile entry order. mise does not impose orderings on version
+    /// strings — see "DO NOT ASSUME SEMVER" in the repo guide.
     fn compute_version_changes(
         &self,
         lockfile: &Lockfile,
         tools: &[LockTool],
         lockfile_path: &Path,
     ) -> Vec<LockChange> {
-        let mut new_versions: BTreeMap<String, (Option<String>, BTreeSet<String>)> =
-            BTreeMap::new();
+        let mut new_versions: indexmap::IndexMap<String, (Option<String>, Vec<String>)> =
+            indexmap::IndexMap::new();
         for (ba, tv) in tools {
             let entry = new_versions
                 .entry(ba.short.clone())
-                .or_insert_with(|| (Some(ba.full()), BTreeSet::new()));
-            entry.1.insert(tv.version.clone());
+                .or_insert_with(|| (Some(ba.full()), Vec::new()));
+            if !entry.1.contains(&tv.version) {
+                entry.1.push(tv.version.clone());
+            }
+        }
+        let mut shorts: Vec<String> = new_versions.keys().cloned().collect();
+        if self.is_unfiltered_lock_run() {
+            for short in lockfile.tools().keys() {
+                if !new_versions.contains_key(short) {
+                    shorts.push(short.clone());
+                }
+            }
         }
         let mut changes = vec![];
-        for (short, (backend, versions)) in new_versions {
-            let old_versions: BTreeSet<String> = lockfile
-                .tools()
-                .get(&short)
-                .map(|entries| entries.iter().map(|t| t.version.clone()).collect())
-                .unwrap_or_default();
-            if old_versions != versions {
+        for short in shorts {
+            let old_entries = lockfile.tools().get(&short);
+            let mut old_versions: Vec<String> = vec![];
+            for entry in old_entries.into_iter().flatten() {
+                if !old_versions.contains(&entry.version) {
+                    old_versions.push(entry.version.clone());
+                }
+            }
+            let (backend, versions) = new_versions.shift_remove(&short).unwrap_or_else(|| {
+                let backend =
+                    old_entries.and_then(|entries| entries.iter().find_map(|t| t.backend.clone()));
+                (backend, Vec::new())
+            });
+            let old_set: BTreeSet<&String> = old_versions.iter().collect();
+            let new_set: BTreeSet<&String> = versions.iter().collect();
+            if old_set != new_set {
                 changes.push(LockChange {
                     name: short,
                     backend,
                     lockfile: display_path(lockfile_path),
-                    old_versions: old_versions.into_iter().collect(),
-                    new_versions: versions.into_iter().collect(),
+                    old_versions,
+                    new_versions: versions,
                 });
             }
         }

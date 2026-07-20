@@ -223,7 +223,11 @@ mise lock --bump --dry-run   # show what would change without writing
 
 This is designed for automated dependency updates: run it on a schedule in CI
 and open a PR when the lockfile changes. `--json` prints the changes as
-machine-readable output (and suppresses the human-readable messages):
+machine-readable output (and suppresses the human-readable messages). Only
+version-level changes are reported — checksum/URL refreshes for unchanged
+versions produce no entries — and version lists keep config/lockfile order
+rather than being sorted. Tools removed from config are reported with an
+empty `new_versions`:
 
 ```sh
 mise lock --bump --dry-run --json

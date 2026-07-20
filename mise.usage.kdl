@@ -1932,6 +1932,10 @@ Output version changes as JSON
 
 Prints an array of objects describing lockfile version changes:
 name, backend, lockfile, old_versions, new_versions.
+Version lists keep config/lockfile order; they are not sorted.
+Only version-level changes are reported: checksum/URL refreshes for
+unchanged versions produce no entries, so plain `mise lock --json`
+typically prints `[]` while still updating the lockfile.
 Suppresses the human-readable output. Combine with `--dry-run` to
 detect available updates without writing the lockfile.
 """#
