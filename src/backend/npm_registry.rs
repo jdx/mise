@@ -170,9 +170,11 @@ impl NpmRegistryConfig {
     }
 
     /// Registry URL for a package, honoring `@scope:registry` overrides.
+    /// Scope keys are stored lowercased (npm scopes are case-insensitive on
+    /// the registry side), so the lookup lowercases too.
     pub fn registry_for(&self, name: &str) -> &str {
         package_scope(name)
-            .and_then(|scope| self.scoped_registries.get(scope))
+            .and_then(|scope| self.scoped_registries.get(&scope.to_ascii_lowercase()))
             .unwrap_or(&self.registry)
     }
 
@@ -370,6 +372,20 @@ fn npm_config_env_entries(env_vars: &[(String, String)]) -> Vec<(String, String)
         }
         if suffix.eq_ignore_ascii_case("registry") {
             out.push(("registry".to_string(), value.clone()));
+            continue;
+        }
+        // Bare `_authToken` / `_auth` (no `//uri` prefix), e.g.
+        // `npm_config__authToken` / `NPM_CONFIG__AUTH_TOKEN`. npm applies
+        // these to the default registry; `apply` resolves them there.
+        // The env suffix uses `_`-separators, so `_auth_token` maps to
+        // `_authToken`. Emitted with the uri-scoped entries so they retain
+        // env's higher precedence over .npmrc.
+        match suffix.to_ascii_lowercase().as_str() {
+            "_authtoken" | "_auth_token" => {
+                uri_scoped.push(("_authToken".to_string(), value.clone()));
+            }
+            "_auth" => uri_scoped.push(("_auth".to_string(), value.clone())),
+            _ => {}
         }
     }
     out.extend(uri_scoped);
@@ -579,6 +595,47 @@ mod tests {
         assert_eq!(
             config.registry_for("@myorg/tool"),
             "https://env.example.com/"
+        );
+    }
+
+    #[test]
+    fn test_scoped_registry_lookup_is_case_insensitive() {
+        // Config lowercases the scope key; a mixed-case package scope must
+        // still resolve to the override (npm scopes are case-insensitive).
+        let config = config_from("@myorg:registry=https://scoped.example.com\n", &[]);
+        assert_eq!(
+            config.registry_for("@MyOrg/pkg"),
+            "https://scoped.example.com/"
+        );
+    }
+
+    #[test]
+    fn test_env_bare_auth_token() {
+        // Bare `_authToken` from the environment (no `//uri` prefix) applies
+        // to the default registry, in both `_authtoken` and `_auth_token`
+        // env spellings.
+        for key in ["npm_config__authToken", "NPM_CONFIG__AUTH_TOKEN"] {
+            let env_vars = env(&[(key, "envtok")]);
+            let config = config_from("registry=https://r.example.com\n", &env_vars);
+            assert_eq!(
+                config.authorization_for("https://r.example.com/"),
+                Some("Bearer envtok".to_string()),
+                "failed for {key}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_env_bare_auth_overrides_npmrc() {
+        // Env auth wins over an .npmrc bare token for the default registry.
+        let env_vars = env(&[("npm_config__authToken", "envtok")]);
+        let config = config_from(
+            "registry=https://r.example.com\n_authToken=filetok\n",
+            &env_vars,
+        );
+        assert_eq!(
+            config.authorization_for("https://r.example.com/"),
+            Some("Bearer envtok".to_string())
         );
     }
 

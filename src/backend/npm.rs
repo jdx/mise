@@ -44,8 +44,6 @@ pub struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
     latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
-    // one packument fetch serves both version listing and dist-tag lookup
-    packument: tokio::sync::OnceCell<Arc<npm_registry::Packument>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -555,18 +553,16 @@ impl NPMBackend {
                     .build(),
             ),
             ba: Arc::new(ba),
-            packument: tokio::sync::OnceCell::new(),
         }
     }
 
-    async fn fetch_packument(&self) -> eyre::Result<&Arc<npm_registry::Packument>> {
-        self.packument
-            .get_or_try_init(|| async {
-                let packument = npm_registry::NPM_REGISTRY_CONFIG
-                    .fetch_packument(&self.tool_name())
-                    .await?;
-                Ok(Arc::new(packument))
-            })
+    /// Fetch the package's full packument from its configured registry.
+    /// Not memoized here: `_list_remote_versions` and `latest_stable_version`
+    /// are each wrapped in their own TTL disk cache by the backend layer, so a
+    /// process-lifetime memo would only shadow those TTLs with stale data.
+    async fn fetch_packument(&self) -> eyre::Result<npm_registry::Packument> {
+        npm_registry::NPM_REGISTRY_CONFIG
+            .fetch_packument(&self.tool_name())
             .await
     }
 
