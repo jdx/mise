@@ -63,10 +63,13 @@ impl Shell for Zsh {
 
             autoload -Uz add-zsh-hook
             _mise_hook() {{
-              eval "$({exe} hook-env{flags} -s zsh)";
+              eval "$({exe} hook-env{flags} -s zsh "$@")";
             }}
             _mise_hook_env_state() {{
-              typeset -p ${{(ok)parameters[(I)MISE_*]}} 2>/dev/null
+              local -a keys=(${{(ok)parameters[(I)MISE_*]}})
+              if (( $#keys > 0 )); then
+                typeset -p "${{keys[@]}}" 2>/dev/null
+              fi
             }}
             _mise_hook_precmd() {{
               if [[ "${{__MISE_ZSH_CHPWD_RAN:-0}}" == "1" ]]; then
@@ -83,11 +86,11 @@ impl Shell for Zsh {
               fi
               unset __MISE_ZSH_ACTIVATE_PATH
               unset __MISE_ZSH_ACTIVATE_ENV
-              eval "$({exe} hook-env{flags} -s zsh --reason precmd)";
+              _mise_hook --reason precmd
             }}
             _mise_hook_chpwd() {{
               export __MISE_ZSH_CHPWD_RAN=1
-              eval "$({exe} hook-env{flags} -s zsh --reason chpwd)";
+              _mise_hook --reason chpwd
             }}
             add-zsh-hook precmd _mise_hook_precmd
             add-zsh-hook chpwd _mise_hook_chpwd
