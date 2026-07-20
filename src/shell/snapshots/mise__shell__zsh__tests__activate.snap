@@ -32,23 +32,43 @@ mise() {
 
 autoload -Uz add-zsh-hook
 _mise_hook() {
-  eval "$(/some/dir/mise hook-env --status -s zsh)";
+  eval "$(/some/dir/mise hook-env --status -s zsh "$@")";
+}
+_mise_hook_env_state() {
+  local -a keys=(${(ok)parameters[(I)MISE_*]})
+  if (( $#keys > 0 )); then
+    typeset -p "${keys[@]}" 2>/dev/null
+  fi
 }
 _mise_hook_precmd() {
   if [[ "${__MISE_ZSH_CHPWD_RAN:-0}" == "1" ]]; then
     export __MISE_ZSH_CHPWD_RAN=0
+    unset __MISE_ZSH_ACTIVATE_PATH
+    unset __MISE_ZSH_ACTIVATE_ENV
     return
   fi
-  eval "$(/some/dir/mise hook-env --status -s zsh --reason precmd)";
+  if [[ "${__MISE_ZSH_PRECMD_RUN:-0}" == "0" &&
+        "$PATH" == "${__MISE_ZSH_ACTIVATE_PATH:-}" &&
+        "$(_mise_hook_env_state)" == "${__MISE_ZSH_ACTIVATE_ENV:-}" ]]; then
+    export __MISE_ZSH_PRECMD_RUN=1
+    unset __MISE_ZSH_ACTIVATE_PATH
+    unset __MISE_ZSH_ACTIVATE_ENV
+    return
+  fi
+  unset __MISE_ZSH_ACTIVATE_PATH
+  unset __MISE_ZSH_ACTIVATE_ENV
+  _mise_hook --reason precmd
 }
 _mise_hook_chpwd() {
   export __MISE_ZSH_CHPWD_RAN=1
-  eval "$(/some/dir/mise hook-env --status -s zsh --reason chpwd)";
+  _mise_hook --reason chpwd
 }
 add-zsh-hook precmd _mise_hook_precmd
 add-zsh-hook chpwd _mise_hook_chpwd
 
 _mise_hook
+export __MISE_ZSH_ACTIVATE_PATH="$PATH"
+export __MISE_ZSH_ACTIVATE_ENV="$(_mise_hook_env_state)"
 if [ -z "${_mise_cmd_not_found:-}" ]; then
     _mise_cmd_not_found=1
     [ -n "$(declare -f command_not_found_handler)" ] && eval "${$(declare -f command_not_found_handler)/command_not_found_handler/_command_not_found_handler}"
