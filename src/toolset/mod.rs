@@ -837,15 +837,23 @@ fn protect_ambiguous_offline_versions(tv: &ToolVersion, needed: &mut HashSet<(St
 /// True when a user-configured (not the built-in default) `minimum_release_age`
 /// cutoff applies to this tool, meaning normal resolution is date-aware and can
 /// pick a different installed version than offline resolution would.
+///
+/// A cutoff pre-resolved by the caller (`BeforeDateSource::Provided`) is not
+/// detected here: `prune` has no `--minimum-release-age` flag, so none reaches
+/// this path. Adding one would need this to take that cutoff into account.
 fn has_explicit_release_age_cutoff(tv: &ToolVersion) -> bool {
-    matches!(
-        crate::install_before::resolve_before_date_for_tool_with_source(
-            tv.ba(),
-            None,
-            tv.request.options().minimum_release_age(),
-        ),
-        Ok(Some((_, crate::install_before::BeforeDateSource::Explicit)))
-    )
+    // A cutoff only changes which version resolution picks when the backend
+    // reports release timestamps; without them both passes see the same
+    // unordered version strings and cannot disagree.
+    crate::install_before::backend_reports_release_timestamps(tv.ba())
+        && matches!(
+            crate::install_before::resolve_before_date_for_tool_with_source(
+                tv.ba(),
+                None,
+                tv.request.options().minimum_release_age(),
+            ),
+            Ok(Some((_, crate::install_before::BeforeDateSource::Explicit)))
+        )
 }
 
 #[cfg(test)]

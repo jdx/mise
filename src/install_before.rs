@@ -149,7 +149,7 @@ fn resolve_before_date_with_excludes(
             Some(before.to_string()),
         )));
     }
-    if !excluded && backend_arg.is_some_and(default_minimum_release_age_applies) {
+    if !excluded && backend_arg.is_some_and(backend_reports_release_timestamps) {
         return Ok(Some((
             parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE)?,
             BeforeDateSource::Default,
@@ -159,7 +159,10 @@ fn resolve_before_date_with_excludes(
     Ok(None)
 }
 
-fn default_minimum_release_age_applies(backend_arg: &BackendArg) -> bool {
+/// Backends that report release timestamps. Only these can have a date-aware
+/// resolution pass disagree with a timestamp-less one, so both the built-in
+/// default cutoff and callers reasoning about that divergence gate on it.
+pub fn backend_reports_release_timestamps(backend_arg: &BackendArg) -> bool {
     matches!(
         backend_arg.backend_type(),
         BackendType::Aqua
