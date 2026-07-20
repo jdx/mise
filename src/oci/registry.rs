@@ -1066,31 +1066,64 @@ pub async fn push_image(
     })
 }
 
-/// Read the platform (architecture/os/variant) out of the image config blob.
+/// Read the platform out of the image config blob.
 fn platform_from_config(
     layout: &ImageLayout,
     config_digest: &str,
 ) -> Result<crate::oci::manifest::Platform> {
     let config: serde_json::Value = serde_json::from_slice(&layout.read_blob(config_digest)?)?;
-    let get = |k: &str| config.get(k).and_then(|v| v.as_str()).map(String::from);
+    platform_from_config_value(&config)
+}
+
+/// Build an index-entry platform from an image config JSON, normalizing
+/// arch/os to the OCI-spec values (`amd64`/`arm64`, `linux`) so index entries
+/// and the host-comparison in `fetch_remote_image` agree, and preserving
+/// `os.version` / `os.features` (relevant for Windows images) rather than
+/// dropping them.
+fn platform_from_config_value(
+    config: &serde_json::Value,
+) -> Result<crate::oci::manifest::Platform> {
+    let get = |k: &str| config.get(k).and_then(|v| v.as_str());
+    let architecture = crate::oci::normalize_arch(
+        get("architecture").ok_or_else(|| eyre::eyre!("image config has no architecture"))?,
+    )
+    .to_string();
+    let os =
+        crate::oci::normalize_os(get("os").ok_or_else(|| eyre::eyre!("image config has no os"))?)
+            .to_string();
     Ok(crate::oci::manifest::Platform {
-        architecture: get("architecture")
-            .ok_or_else(|| eyre::eyre!("image config has no architecture"))?,
-        os: get("os").ok_or_else(|| eyre::eyre!("image config has no os"))?,
-        os_version: None,
-        os_features: vec![],
-        variant: get("variant"),
+        architecture,
+        os,
+        os_version: get("os.version").map(String::from),
+        os_features: config
+            .get("os.features")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        variant: get("variant").map(String::from),
     })
 }
 
-/// Upsert `entry` into an index's manifest list, replacing any existing
-/// entry for the same platform (architecture + os + variant) and preserving
-/// the rest. Entries without platform info are preserved as-is.
+/// Upsert `entry` into an index's manifest list, replacing any existing entry
+/// for the same platform and preserving the rest. Entries without platform
+/// info are preserved as-is.
 fn upsert_platform_manifest(mut entries: Vec<Descriptor>, entry: Descriptor) -> Vec<Descriptor> {
+    // Full platform identity (incl. os.version) so e.g. two Windows platforms
+    // differing only by os.version don't collide.
+    fn platform_key(p: &crate::oci::manifest::Platform) -> (String, String, String, String) {
+        (
+            p.os.clone(),
+            p.architecture.clone(),
+            p.variant.clone().unwrap_or_default(),
+            p.os_version.clone().unwrap_or_default(),
+        )
+    }
     let same_platform = |d: &Descriptor| match (&d.platform, &entry.platform) {
-        (Some(a), Some(b)) => {
-            a.architecture == b.architecture && a.os == b.os && a.variant == b.variant
-        }
+        (Some(a), Some(b)) => platform_key(a) == platform_key(b),
         _ => false,
     };
     entries.retain(|d| !same_platform(d));
@@ -1098,18 +1131,7 @@ fn upsert_platform_manifest(mut entries: Vec<Descriptor>, entry: Descriptor) -> 
     // Deterministic order so re-pushing the same platforms yields the same
     // index bytes (and digest).
     entries.sort_by(|a, b| {
-        let key = |d: &Descriptor| {
-            d.platform
-                .as_ref()
-                .map(|p| {
-                    (
-                        p.os.clone(),
-                        p.architecture.clone(),
-                        p.variant.clone().unwrap_or_default(),
-                    )
-                })
-                .unwrap_or_default()
-        };
+        let key = |d: &Descriptor| d.platform.as_ref().map(platform_key).unwrap_or_default();
         key(a).cmp(&key(b))
     });
     entries
@@ -1523,15 +1545,7 @@ impl Pusher {
         );
         let config_bytes = download_blob(&mut self.session, &config_url, None).await?;
         let config: serde_json::Value = serde_json::from_slice(&config_bytes)?;
-        let get = |k: &str| config.get(k).and_then(|v| v.as_str()).map(String::from);
-        let platform = crate::oci::manifest::Platform {
-            architecture: get("architecture")
-                .ok_or_else(|| eyre::eyre!("existing image config has no architecture"))?,
-            os: get("os").ok_or_else(|| eyre::eyre!("existing image config has no os"))?,
-            os_version: None,
-            os_features: vec![],
-            variant: get("variant"),
-        };
+        let platform = platform_from_config_value(&config)?;
         Ok(Descriptor {
             media_type,
             size: bytes.len() as u64,
@@ -1740,6 +1754,29 @@ mod tests {
         assert!(digests.contains(&"sha256:new-amd64"));
         assert!(digests.contains(&"sha256:arm64"));
         assert!(!digests.contains(&"sha256:old-amd64"));
+    }
+
+    #[test]
+    fn upsert_distinguishes_platforms_by_os_version() {
+        // Two windows entries differing only by os.version must not collide.
+        let win = |ver: &str, digest: &str| Descriptor {
+            media_type: MEDIA_TYPE_OCI_MANIFEST.to_string(),
+            size: 1,
+            digest: digest.to_string(),
+            annotations: Default::default(),
+            platform: Some(crate::oci::manifest::Platform {
+                architecture: "amd64".to_string(),
+                os: "windows".to_string(),
+                os_version: Some(ver.to_string()),
+                os_features: vec![],
+                variant: None,
+            }),
+        };
+        let out = upsert_platform_manifest(
+            vec![win("10.0.20348", "sha256:2022")],
+            win("10.0.17763", "sha256:2019"),
+        );
+        assert_eq!(out.len(), 2);
     }
 
     #[test]
