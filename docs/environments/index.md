@@ -118,7 +118,7 @@ env = { _.file = '/path/to/file.env', "MY_VAR" = "my variable" }
 
 Environment variables typically are resolved before tools—that way you can configure tool installation
 subprocesses with environment variables. This does not apply to variables that configure mise itself,
-such as `MISE_DATA_DIR` or `MISE_INSTALLS_DIR`. mise reads those variables when the process starts, so
+such as `MISE_DATA_DIR` or `MISE_INSTALLS_DIR`. These variables are read when the process starts, so
 set them in the shell or CI environment before invoking mise rather than in `[env]`.
 
 Sometimes you want to access environment variables produced by tools. To do that, turn the value into
