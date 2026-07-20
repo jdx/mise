@@ -752,13 +752,25 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
     let mut session = AuthSession::new(r.clone(), "pull").await?;
 
     let manifest_url = format!("{base_url}/v2/{}/manifests/{}", r.repository, r.tag);
-    let accept = [MEDIA_TYPE_OCI_MANIFEST, MEDIA_TYPE_DOCKER_MANIFEST];
+    // Accept indexes too: a tag maintained with `--update-index` is an image
+    // index, and strict registries (GHCR) return 404/"manifest unknown"
+    // unless the index media types are in the Accept header — which would
+    // otherwise make the index-descent below unreachable there.
+    let index_accept = [
+        MEDIA_TYPE_OCI_INDEX,
+        MEDIA_TYPE_DOCKER_MANIFEST_LIST,
+        MEDIA_TYPE_OCI_MANIFEST,
+        MEDIA_TYPE_DOCKER_MANIFEST,
+    ];
+    // Descending into an index entry resolves a single-platform child, so the
+    // child fetch only needs the manifest types.
+    let manifest_accept = [MEDIA_TYPE_OCI_MANIFEST, MEDIA_TYPE_DOCKER_MANIFEST];
     let resp = session
         .send(|auth| {
             let mut rb = HTTP
                 .reqwest()
                 .get(&manifest_url)
-                .header("Accept", accept.join(", "));
+                .header("Accept", index_accept.join(", "));
             if let Some(a) = auth {
                 rb = rb.header("Authorization", a);
             }
@@ -806,7 +818,7 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
         };
         crate::oci::layout::validate_sha256_digest(&digest)?;
         let child_url = format!("{base_url}/v2/{}/manifests/{digest}", r.repository);
-        let (child, _ct) = fetch_manifest_json(&mut session, &child_url, &accept).await?;
+        let (child, _ct) = fetch_manifest_json(&mut session, &child_url, &manifest_accept).await?;
         body = child;
     }
     let manifest: ImageManifest = match serde_json::from_value(body) {
