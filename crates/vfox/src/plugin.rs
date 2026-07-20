@@ -3,7 +3,8 @@ use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use mlua::{AsChunk, FromLuaMulti, IntoLua, Lua, Table, Value};
+use mlua::chunk::AsChunk;
+use mlua::{FromLuaMulti, IntoLua, Lua, Table, Value};
 use once_cell::sync::OnceCell;
 
 use crate::config::Config;

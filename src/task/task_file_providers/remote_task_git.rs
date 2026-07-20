@@ -5,7 +5,7 @@ use async_trait::async_trait;
 
 use crate::{
     dirs, env,
-    file::display_path,
+    file::{self, display_path},
     git::{self, CloneOptions},
     hash,
     lock_file::LockFile,
@@ -68,6 +68,21 @@ impl GitRepoStructure {
 }
 
 impl RemoteTaskGit {
+    /// Make fetched task files executable while leaving task include directories intact.
+    fn prepare_remote_path(path: &PathBuf) -> Result<()> {
+        let metadata = path.symlink_metadata()?;
+        if metadata.file_type().is_file() {
+            return file::make_executable(path);
+        }
+        if metadata.file_type().is_dir() {
+            return Ok(());
+        }
+        eyre::bail!(
+            "remote task path is not a regular file or directory: {}",
+            display_path(path)
+        )
+    }
+
     fn get_cache_key(&self, repo_structure: &GitRepoStructure) -> String {
         let key = format!(
             "{}{}",
@@ -128,6 +143,7 @@ impl TaskFileProvider for RemoteTaskGit {
             trace!("Cache mode enabled");
             if full_path.exists() {
                 debug!("Using cached file: {:?}", full_path);
+                Self::prepare_remote_path(&full_path)?;
                 return Ok(full_path);
             }
         } else {
@@ -170,6 +186,7 @@ impl TaskFileProvider for RemoteTaskGit {
             }
         }
 
+        Self::prepare_remote_path(&full_path)?;
         Ok(full_path)
     }
 }
@@ -178,6 +195,51 @@ impl TaskFileProvider for RemoteTaskGit {
 mod tests {
 
     use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn test_prepare_remote_path_makes_non_executable_file_executable() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let task_file = temp_dir.path().join("task");
+        fs::write(&task_file, "#!/usr/bin/env bash\necho ok\n").unwrap();
+        fs::set_permissions(&task_file, fs::Permissions::from_mode(0o644)).unwrap();
+
+        RemoteTaskGit::prepare_remote_path(&task_file).unwrap();
+
+        assert!(file::is_executable(&task_file));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_prepare_remote_path_rejects_symlink_without_modifying_target() {
+        use std::fs;
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let target = temp_dir.path().join("target");
+        let task_file = temp_dir.path().join("task");
+        fs::write(&target, "#!/usr/bin/env bash\necho ok\n").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+        symlink(&target, &task_file).unwrap();
+
+        let error = RemoteTaskGit::prepare_remote_path(&task_file).unwrap_err();
+
+        assert!(error.to_string().contains("not a regular file"));
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
+    }
+
+    #[test]
+    fn test_prepare_remote_path_allows_task_include_directory() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        RemoteTaskGit::prepare_remote_path(&temp_dir.path().to_path_buf()).unwrap();
+    }
 
     #[test]
     fn test_valid_parse_ssh() {

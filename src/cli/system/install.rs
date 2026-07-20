@@ -15,8 +15,8 @@ pub(crate) struct BootstrapApplyReport {
 /// Apply system packages from `[bootstrap.packages]`
 ///
 /// Checks which configured packages are missing and installs them with the
-/// system package manager. This may elevate with sudo when not running as
-/// root (see the `system_packages.sudo` setting).
+/// system package manager. Built-in system managers may elevate with sudo when
+/// not running as root (see `system_packages.sudo`); package plugins never do.
 ///
 /// Packages can also be given explicitly in `manager:package` form (e.g.
 /// `apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
@@ -30,8 +30,8 @@ pub struct SystemInstall {
     #[clap(value_name = "PACKAGE")]
     packages: Vec<String>,
 
-    /// Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`
-    #[clap(long, short, value_parser = ["apk", "apt", "brew", "brew-cask", "dnf", "mas", "pacman"])]
+    /// Only install packages for this built-in or plugin manager
+    #[clap(long, short)]
     manager: Option<String>,
 
     /// Print the commands that would run without running them
@@ -224,22 +224,72 @@ pub(crate) fn apply_repos(
     dry_run: bool,
     yes: bool,
 ) -> Result<()> {
+    mutate_repos(
+        repos,
+        dry_run,
+        yes,
+        RepoMutation {
+            prompt_verb: "apply",
+            completed_verb: "applied",
+            report_current_count: true,
+            report_all_current: false,
+        },
+        |status| !status.state.is_current(),
+        system::repos::apply_statuses,
+    )
+}
+
+/// Update `[bootstrap.repos]` entries, including unpinned repos.
+pub(crate) fn update_repos(
+    repos: Vec<system::repos::RepoRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    mutate_repos(
+        repos,
+        dry_run,
+        yes,
+        RepoMutation {
+            prompt_verb: "update",
+            completed_verb: "updated",
+            report_current_count: false,
+            report_all_current: true,
+        },
+        |status| !status.state.is_current() || status.request.git_ref.is_none(),
+        system::repos::update_statuses,
+    )
+}
+
+struct RepoMutation {
+    prompt_verb: &'static str,
+    completed_verb: &'static str,
+    report_current_count: bool,
+    report_all_current: bool,
+}
+
+fn mutate_repos(
+    repos: Vec<system::repos::RepoRequest>,
+    dry_run: bool,
+    yes: bool,
+    mutation: RepoMutation,
+    is_target: impl Fn(&system::repos::RepoStatus) -> bool,
+    mutate: impl FnOnce(&[system::repos::RepoStatus], bool) -> Result<()>,
+) -> Result<()> {
     use crate::system::repos;
     if repos.is_empty() {
         return Ok(());
     }
     let statuses = repos::status(&repos)?;
     repos::preflight_statuses(&statuses)?;
-    let targets: Vec<_> = statuses
-        .iter()
-        .filter(|s| !s.state.is_current())
-        .cloned()
-        .collect();
-    let current = statuses.len() - targets.len();
-    if current > 0 {
+    let targets: Vec<_> = statuses.into_iter().filter(is_target).collect();
+    let current = repos.len() - targets.len();
+    if mutation.report_current_count && current > 0 {
         info!("repos: {current} repo(s) already current");
     }
     if targets.is_empty() {
+        if mutation.report_all_current {
+            info!("repos: all repo(s) already current");
+        }
         return Ok(());
     }
     let list = targets
@@ -247,15 +297,15 @@ pub(crate) fn apply_repos(
         .map(|s| s.request.to_string())
         .collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
-        let msg = format!("repos: apply {}?", list.join(", "));
+        let msg = format!("repos: {} {}?", mutation.prompt_verb, list.join(", "));
         if !crate::ui::prompt::confirm(msg)? {
             info!("repos: skipped");
             return Ok(());
         }
     }
-    repos::apply_statuses(&targets, dry_run)?;
+    mutate(&targets, dry_run)?;
     if !dry_run {
-        info!("repos: applied {}", list.join(", "));
+        info!("repos: {} {}", mutation.completed_verb, list.join(", "));
     }
     Ok(())
 }
@@ -384,7 +434,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise bootstrap packages apply</bold>
-    $ <bold>mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835</bold>
+    $ <bold>mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox mas:497799835</bold>
     $ <bold>mise bootstrap packages apply --dry-run</bold>
     $ <bold>mise bootstrap packages apply --manager apt --yes</bold>
 "#

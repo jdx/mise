@@ -29,7 +29,7 @@ pub static HTTP: Lazy<Client> =
 
 pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
     Client::new(
-        Settings::get().fetch_remote_versions_timeout(),
+        Settings::get().configured_fetch_remote_versions_timeout(),
         ClientKind::Fetch,
     )
     .unwrap()
@@ -42,7 +42,30 @@ pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
 type CachedResult = Arc<OnceCell<Result<String, String>>>;
 static HTTP_CACHE: Lazy<Mutex<HashMap<String, CachedResult>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+/// Origins that returned a hard connection failure during a prefer-offline
+/// process. Keep the original error text so a short-circuited request remains
+/// actionable rather than hiding the reason the circuit opened.
+static UNAVAILABLE_HTTP_HOSTS: Lazy<Mutex<HashMap<String, String>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 type RetryStateHandle = Arc<Mutex<RetryState>>;
+
+#[derive(Debug)]
+struct UnavailableHttpHost {
+    origin: String,
+    cause: String,
+}
+
+impl std::fmt::Display for UnavailableHttpHost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "HTTP host {} is unavailable after an earlier connection failure: {}",
+            self.origin, self.cause
+        )
+    }
+}
+
+impl std::error::Error for UnavailableHttpHost {}
 
 struct RetryState {
     headers: HeaderMap,
@@ -123,6 +146,15 @@ impl Client {
             .user_agent(format!("mise/{v} {shell}").trim())
             .gzip(true)
             .zstd(true)
+    }
+
+    fn request_timeout(&self) -> Duration {
+        match self.kind {
+            ClientKind::Fetch if Settings::get().prefer_offline() => {
+                self.timeout.min(Duration::from_secs(3))
+            }
+            _ => self.timeout,
+        }
     }
 
     pub async fn get_bytes<U: IntoUrl>(&self, url: U) -> Result<impl AsRef<[u8]>> {
@@ -207,7 +239,7 @@ impl Client {
             client: self,
             url: url.into_url().unwrap(),
             extra_headers: HeaderMap::new(),
-            retries: Settings::get().http_retries,
+            retries: Settings::get().http_retries(),
         }
     }
 
@@ -475,7 +507,7 @@ impl Client {
             url,
             headers,
             verb_label,
-            Settings::get().http_retries,
+            Settings::get().http_retries(),
             true,
         )
         .await
@@ -493,7 +525,7 @@ impl Client {
             url,
             headers,
             verb_label,
-            Settings::get().http_retries,
+            Settings::get().http_retries(),
             false,
         )
         .await
@@ -578,7 +610,10 @@ impl Client {
             .await
         {
             Ok(resp) => Ok(resp),
-            Err(err) if url.scheme() == "http" && is_connection_error(&err) => {
+            Err(err)
+                if url.scheme() == "http"
+                    && (is_connection_error(&err) || is_unavailable_http_host_error(&err)) =>
+            {
                 let mut url = url;
                 url.set_scheme("https").unwrap();
                 self.send_once_with_retry_headers(method, url, headers, verb_label, options)
@@ -610,6 +645,17 @@ impl Client {
     ) -> Result<Response> {
         let original_url = url.clone();
         apply_url_replacements(&mut url);
+        let host_key = http_host_key(&url);
+        if Settings::get().prefer_offline()
+            && let Some(host) = &host_key
+            && let Some(cause) = UNAVAILABLE_HTTP_HOSTS.lock().unwrap().get(host).cloned()
+        {
+            return Err(UnavailableHttpHost {
+                origin: host.clone(),
+                cause,
+            }
+            .into());
+        }
         debug!("{} {}", verb_label, &url);
 
         // Apply netrc credentials after URL replacement.
@@ -630,11 +676,25 @@ impl Client {
                 apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
         }
 
+        let request_timeout = self.request_timeout();
         let mut req = self.reqwest.request(method.clone(), url.clone());
+        if matches!(self.kind, ClientKind::Fetch) {
+            req = req.timeout(request_timeout);
+        }
         req = req.headers(final_headers.clone());
         let resp = match req.send().await {
             Ok(resp) => resp,
             Err(err) => {
+                let err = err.without_url();
+                if Settings::get().prefer_offline()
+                    && is_hard_connection_failure(&err)
+                    && let Some(host) = host_key
+                {
+                    UNAVAILABLE_HTTP_HOSTS
+                        .lock()
+                        .unwrap()
+                        .insert(host, err.to_string());
+                }
                 if err.is_timeout() {
                     let (setting, env_var) = match self.kind {
                         ClientKind::Http => ("http_timeout", "MISE_HTTP_TIMEOUT"),
@@ -645,7 +705,7 @@ impl Client {
                     };
                     let hint = format!(
                         "HTTP timed out after {} for {} (change with `{}` or env `{}`).",
-                        format_duration(self.timeout),
+                        format_duration(request_timeout),
                         url,
                         setting,
                         env_var
@@ -700,7 +760,7 @@ impl Client {
                 }
                 Ok(None) => {}
                 Err(err) => {
-                    debug!("failed to refresh GitHub OAuth token after 401: {err:#}");
+                    crate::github::oauth::log_refresh_error(&err);
                 }
             }
         }
@@ -1095,9 +1155,41 @@ fn is_connection_error(err: &Report) -> bool {
     })
 }
 
+fn http_host_key(url: &Url) -> Option<String> {
+    let host = url.host_str()?;
+    let port = url.port_or_known_default()?;
+    Some(format!("{}://{host}:{port}", url.scheme()))
+}
+
+fn is_unavailable_http_host_error(err: &Report) -> bool {
+    err.chain()
+        .any(|err| err.downcast_ref::<UnavailableHttpHost>().is_some())
+}
+
+/// hyper-util exposes DNS failures in the error chain as a `dns error` source,
+/// but reqwest intentionally erases the concrete connector type. Match that
+/// stable connector error label rather than platform-specific getaddrinfo text.
+fn is_dns_error(err: &(dyn std::error::Error + 'static)) -> bool {
+    let mut current = Some(err);
+    while let Some(source) = current {
+        if source.to_string() == "dns error" {
+            return true;
+        }
+        current = source.source();
+    }
+    false
+}
+
+fn is_hard_connection_failure(err: &reqwest::Error) -> bool {
+    is_dns_error(err) || (err.is_connect() && !err.is_timeout())
+}
+
 /// Classifies an error as transient (should retry) vs permanent.
 /// Walks the error chain so wrapped errors (e.g. our timeout hint) still match.
 pub(crate) fn is_transient(err: &Report) -> bool {
+    if is_dns_error(err.as_ref()) {
+        return false;
+    }
     err.chain().any(|e| {
         let Some(reqwest_err) = e.downcast_ref::<reqwest::Error>() else {
             return false;
@@ -1126,7 +1218,7 @@ where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T>>,
 {
-    retry_async_with_retries(verb_label, url, Settings::get().http_retries, f).await
+    retry_async_with_retries(verb_label, url, Settings::get().http_retries(), f).await
 }
 
 pub(crate) async fn retry_async_with_retries<F, Fut, T>(
@@ -1266,12 +1358,44 @@ mod tests {
         crate::config::Settings::reset(Some(settings));
         SettingsGuard { _lock: lock }
     }
+    fn set_test_prefer_offline(http_retries: i64) -> SettingsGuard {
+        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.prefer_offline = Some(true);
+        settings.http_retries = Some(http_retries);
+        crate::config::Settings::reset(Some(settings));
+        SettingsGuard { _lock: lock }
+    }
     fn set_test_offline() -> SettingsGuard {
         let lock = TEST_SETTINGS_LOCK.lock().unwrap();
         let mut settings = crate::config::settings::SettingsPartial::empty();
         settings.offline = Some(true);
         crate::config::Settings::reset(Some(settings));
         SettingsGuard { _lock: lock }
+    }
+
+    struct UnavailableHostsGuard {
+        host_keys: Vec<String>,
+    }
+    impl UnavailableHostsGuard {
+        fn new(host_keys: Vec<String>) -> Self {
+            let mut unavailable = UNAVAILABLE_HTTP_HOSTS.lock().unwrap();
+            for host_key in &host_keys {
+                unavailable.remove(host_key);
+            }
+            drop(unavailable);
+            Self { host_keys }
+        }
+    }
+    impl Drop for UnavailableHostsGuard {
+        fn drop(&mut self) {
+            let mut unavailable = UNAVAILABLE_HTTP_HOSTS
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            for host_key in &self.host_keys {
+                unavailable.remove(host_key);
+            }
+        }
     }
 
     struct GithubOauthSettingsGuard {
@@ -1661,6 +1785,133 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert!(resp.status().is_success());
         // Should have served 3 connections: two 502s + one 200.
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_prefer_offline_disables_http_retries() {
+        let _guard = set_test_prefer_offline(3);
+        let (port, count) = spawn_canned_server(vec![bad_gateway_response(), ok_response()]).await;
+        let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let err = client.get_async(url).await.unwrap_err();
+
+        assert!(format!("{err:?}").contains("502"));
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            Settings::get().fetch_remote_versions_timeout(),
+            Duration::from_secs(3)
+        );
+    }
+
+    #[test]
+    fn test_fetch_client_applies_prefer_offline_timeout_at_request_time() {
+        let client = Client::new(Duration::from_secs(30), ClientKind::Fetch).unwrap();
+        let _guard = set_test_prefer_offline(3);
+
+        assert_eq!(client.request_timeout(), Duration::from_secs(3));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_reqwest_dns_error_is_not_transient_and_opens_circuit() {
+        let _settings_guard = set_test_prefer_offline(3);
+        let timeout = Duration::from_secs(3);
+        let client = Client {
+            reqwest: Client::_new()
+                .no_proxy()
+                .read_timeout(timeout)
+                .connect_timeout(timeout)
+                .build()
+                .unwrap(),
+            timeout,
+            kind: ClientKind::Fetch,
+        };
+        let url: Url = "https://mise-dns-regression.invalid/?token=secret"
+            .parse()
+            .unwrap();
+        let host_key = http_host_key(&url).unwrap();
+        let _hosts_guard = UnavailableHostsGuard::new(vec![host_key.clone()]);
+
+        let err = client.get_async(url).await.unwrap_err();
+
+        assert!(is_dns_error(err.as_ref()), "unexpected error: {err:#}");
+        assert!(!is_transient(&err));
+        assert!(
+            UNAVAILABLE_HTTP_HOSTS
+                .lock()
+                .unwrap()
+                .contains_key(&host_key)
+        );
+        assert!(
+            !UNAVAILABLE_HTTP_HOSTS
+                .lock()
+                .unwrap()
+                .get(&host_key)
+                .unwrap()
+                .contains("token=secret")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_circuit_broken_http_origin_falls_back_to_https() {
+        let _settings_guard = set_test_prefer_offline(3);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let http_url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+        let https_url: Url = format!("https://127.0.0.1:{port}/").parse().unwrap();
+        let http_origin = http_host_key(&http_url).unwrap();
+        let https_origin = http_host_key(&https_url).unwrap();
+        let _hosts_guard = UnavailableHostsGuard::new(vec![http_origin.clone(), https_origin]);
+        UNAVAILABLE_HTTP_HOSTS
+            .lock()
+            .unwrap()
+            .insert(http_origin, "connection refused".to_string());
+
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let accepted_inner = accepted.clone();
+        let server = tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                accepted_inner.fetch_add(1, Ordering::SeqCst);
+                let _ = socket.shutdown().await;
+            }
+        });
+
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let err = client.get_async(http_url).await.unwrap_err();
+        server.await.unwrap();
+
+        assert_eq!(accepted.load(Ordering::SeqCst), 1);
+        assert!(!is_unavailable_http_host_error(&err));
+    }
+
+    #[test]
+    fn test_unavailable_host_error_preserves_original_cause() {
+        let err: Report = UnavailableHttpHost {
+            origin: "https://example.com:443".to_string(),
+            cause: "connection refused".to_string(),
+        }
+        .into();
+
+        assert!(is_unavailable_http_host_error(&err));
+        assert!(err.to_string().contains("connection refused"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_circuit_breaker_is_disabled_without_prefer_offline() {
+        let _settings_guard = set_test_http_retries(0);
+        let (port, count) = spawn_canned_server(vec![ok_response()]).await;
+        let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+        let host_key = http_host_key(&url).unwrap();
+        let _hosts_guard = UnavailableHostsGuard::new(vec![host_key.clone()]);
+        UNAVAILABLE_HTTP_HOSTS
+            .lock()
+            .unwrap()
+            .insert(host_key, "connection refused".to_string());
+
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let resp = client.get_async(url).await.unwrap();
+
+        assert!(resp.status().is_success());
+        assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test(flavor = "current_thread")]

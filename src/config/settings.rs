@@ -476,8 +476,10 @@ impl Settings {
                 CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
             ))
             .env();
+        time!("try_get builder1+env");
 
         let mut settings = sb.load()?;
+        time!("try_get load1");
         if let Some(mut cd) = settings.cd {
             static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
             if cd.is_relative() {
@@ -492,12 +494,16 @@ impl Settings {
                 CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
             ))
             .env();
+        time!("try_get builder2+env");
         for file in Self::all_settings_files() {
             sb = sb.preloaded(file);
         }
+        time!("try_get all_settings_files");
         sb = sb.preloaded(DEFAULT_SETTINGS.clone());
+        time!("try_get default_settings");
 
         settings = sb.load()?;
+        time!("try_get load2");
         if !settings.legacy_version_file {
             settings.idiomatic_version_file = Some(false);
         }
@@ -892,6 +898,15 @@ impl Settings {
     }
 
     pub fn fetch_remote_versions_timeout(&self) -> Duration {
+        let timeout = self.configured_fetch_remote_versions_timeout();
+        if self.prefer_offline() {
+            timeout.min(Duration::from_secs(3))
+        } else {
+            timeout
+        }
+    }
+
+    pub fn configured_fetch_remote_versions_timeout(&self) -> Duration {
         duration::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
     }
 
@@ -914,6 +929,17 @@ impl Settings {
 
     pub fn http_download_timeout(&self) -> Duration {
         duration::parse_duration(&self.http_download_timeout).unwrap()
+    }
+
+    /// Fast-path commands should make at most one network attempt before falling
+    /// back to cached/local behavior. In particular, shims must not multiply a
+    /// stalled resolver timeout by the configured retry count.
+    pub fn http_retries(&self) -> i64 {
+        if self.prefer_offline() {
+            0
+        } else {
+            self.http_retries
+        }
     }
 
     /// Returns true if offline mode is enabled via setting or CLI flag/env var.
@@ -940,6 +966,15 @@ impl Settings {
             .transpose()
             .unwrap()
             .unwrap_or(crate::aqua::aqua_registry_wrapper::DEFAULT_AQUA_REGISTRY_CACHE_TTL)
+    }
+
+    pub fn registry_cache_ttl(&self) -> Duration {
+        self.registry_cache_ttl
+            .as_deref()
+            .map(duration::parse_duration)
+            .transpose()
+            .unwrap()
+            .unwrap_or(duration::HOURLY)
     }
 
     pub fn task_timeout_duration(&self) -> Option<Duration> {

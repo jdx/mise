@@ -87,7 +87,7 @@ fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStat
 
 #[async_trait(?Send)]
 impl SystemPackageManager for DnfManager {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "dnf"
     }
 

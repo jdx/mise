@@ -1,6 +1,6 @@
 [package]
 name = "vfox"
-version = "2026.7.1"
+version = "2026.7.2"
 edition = "2024"
 license = "MIT"
 description = "Interface to vfox plugins"
@@ -32,7 +32,7 @@ homedir = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.15"
 log = "0.4"
-mlua = { version = "0.11", features = [
+mlua = { version = "0.12", features = [
   "async",
   "lua51",
   "macros",

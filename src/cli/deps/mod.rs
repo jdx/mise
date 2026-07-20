@@ -70,6 +70,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise deps install</bold>            # Same as bare `mise deps`
     $ <bold>mise deps install --force</bold>    # Force reinstall even if fresh
     $ <bold>mise deps install --dry-run</bold>  # Show what would run
+    $ <bold>mise deps --monorepo</bold>         # Install deps from explicit monorepo config roots
     $ <bold>mise deps add npm:react</bold>      # Add a dependency
     $ <bold>mise deps add -D npm:vitest</bold>  # Add a dev dependency
     $ <bold>mise deps remove npm:lodash</bold>  # Remove a dependency

@@ -35,6 +35,7 @@ pub enum PluginType {
     Asdf,
     Vfox,
     VfoxBackend,
+    Package,
 }
 
 #[derive(Debug)]
@@ -42,6 +43,7 @@ pub enum PluginEnum {
     Asdf(Arc<AsdfPlugin>),
     Vfox(Arc<VfoxPlugin>),
     VfoxBackend(Arc<VfoxPlugin>),
+    Package(Arc<VfoxPlugin>),
 }
 
 impl PluginEnum {
@@ -50,6 +52,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.name(),
             PluginEnum::Vfox(plugin) => plugin.name(),
             PluginEnum::VfoxBackend(plugin) => plugin.name(),
+            PluginEnum::Package(plugin) => plugin.name(),
         }
     }
 
@@ -58,6 +61,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.path(),
             PluginEnum::Vfox(plugin) => plugin.path(),
             PluginEnum::VfoxBackend(plugin) => plugin.path(),
+            PluginEnum::Package(plugin) => plugin.path(),
         }
     }
 
@@ -66,6 +70,7 @@ impl PluginEnum {
             PluginEnum::Asdf(_) => PluginType::Asdf,
             PluginEnum::Vfox(_) => PluginType::Vfox,
             PluginEnum::VfoxBackend(_) => PluginType::VfoxBackend,
+            PluginEnum::Package(_) => PluginType::Package,
         }
     }
 
@@ -74,6 +79,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.get_remote_url(),
             PluginEnum::Vfox(plugin) => plugin.get_remote_url(),
             PluginEnum::VfoxBackend(plugin) => plugin.get_remote_url(),
+            PluginEnum::Package(plugin) => plugin.get_remote_url(),
         }
     }
 
@@ -82,6 +88,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.set_remote_url(url),
             PluginEnum::Vfox(plugin) => plugin.set_remote_url(url),
             PluginEnum::VfoxBackend(plugin) => plugin.set_remote_url(url),
+            PluginEnum::Package(plugin) => plugin.set_remote_url(url),
         }
     }
 
@@ -90,6 +97,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.current_abbrev_ref(),
             PluginEnum::Vfox(plugin) => plugin.current_abbrev_ref(),
             PluginEnum::VfoxBackend(plugin) => plugin.current_abbrev_ref(),
+            PluginEnum::Package(plugin) => plugin.current_abbrev_ref(),
         }
     }
 
@@ -98,6 +106,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.current_sha_short(),
             PluginEnum::Vfox(plugin) => plugin.current_sha_short(),
             PluginEnum::VfoxBackend(plugin) => plugin.current_sha_short(),
+            PluginEnum::Package(plugin) => plugin.current_sha_short(),
         }
     }
 
@@ -106,6 +115,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.remote_sha(),
             PluginEnum::Vfox(plugin) => plugin.remote_sha(),
             PluginEnum::VfoxBackend(plugin) => plugin.remote_sha(),
+            PluginEnum::Package(plugin) => plugin.remote_sha(),
         }
     }
 
@@ -114,6 +124,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.external_commands(),
             PluginEnum::Vfox(plugin) => plugin.external_commands(),
             PluginEnum::VfoxBackend(plugin) => plugin.external_commands(),
+            PluginEnum::Package(plugin) => plugin.external_commands(),
         }
     }
 
@@ -122,6 +133,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.execute_external_command(command, args),
             PluginEnum::Vfox(plugin) => plugin.execute_external_command(command, args),
             PluginEnum::VfoxBackend(plugin) => plugin.execute_external_command(command, args),
+            PluginEnum::Package(plugin) => plugin.execute_external_command(command, args),
         }
     }
 
@@ -130,6 +142,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.update(pr, gitref).await,
             PluginEnum::Vfox(plugin) => plugin.update(pr, gitref).await,
             PluginEnum::VfoxBackend(plugin) => plugin.update(pr, gitref).await,
+            PluginEnum::Package(plugin) => plugin.update(pr, gitref).await,
         }
     }
 
@@ -138,6 +151,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.uninstall(pr).await,
             PluginEnum::Vfox(plugin) => plugin.uninstall(pr).await,
             PluginEnum::VfoxBackend(plugin) => plugin.uninstall(pr).await,
+            PluginEnum::Package(plugin) => plugin.uninstall(pr).await,
         }
     }
 
@@ -146,6 +160,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.is_installed(),
             PluginEnum::Vfox(plugin) => plugin.is_installed(),
             PluginEnum::VfoxBackend(plugin) => plugin.is_installed(),
+            PluginEnum::Package(plugin) => plugin.is_installed(),
         }
     }
 
@@ -154,6 +169,7 @@ impl PluginEnum {
             PluginEnum::Asdf(plugin) => plugin.is_installed_err(),
             PluginEnum::Vfox(plugin) => plugin.is_installed_err(),
             PluginEnum::VfoxBackend(plugin) => plugin.is_installed_err(),
+            PluginEnum::Package(plugin) => plugin.is_installed_err(),
         }
     }
 
@@ -170,6 +186,9 @@ impl PluginEnum {
             PluginEnum::VfoxBackend(plugin) => {
                 plugin.ensure_installed(config, mpr, force, dry_run).await
             }
+            PluginEnum::Package(plugin) => {
+                plugin.ensure_installed(config, mpr, force, dry_run).await
+            }
         }
     }
 }
@@ -180,6 +199,7 @@ impl PluginType {
             Some("asdf") => Ok(Self::Asdf),
             Some("vfox") => Ok(Self::Vfox),
             Some("vfox-backend") => Ok(Self::VfoxBackend),
+            Some("package") => Ok(Self::Package),
             _ => Err(eyre!("unknown plugin type: {full}")),
         }
     }
@@ -189,6 +209,8 @@ impl PluginType {
             (Self::Vfox, name)
         } else if let Some(name) = key.strip_prefix("vfox-backend:") {
             (Self::VfoxBackend, name)
+        } else if let Some(name) = key.strip_prefix("package:") {
+            (Self::Package, name)
         } else if let Some(name) = key.strip_prefix("asdf:") {
             (Self::Asdf, name)
         } else {
@@ -199,8 +221,13 @@ impl PluginType {
 
     pub fn from_plugin_path(path: &Path) -> Option<Self> {
         if path.join("metadata.lua").exists() {
-            if path.join("hooks").join("backend_install.lua").exists() {
+            let hooks = path.join("hooks");
+            if hooks.join("backend_install.lua").exists() {
                 Some(Self::VfoxBackend)
+            } else if hooks.join("package_install.lua").exists()
+                && hooks.join("package_installed.lua").exists()
+            {
+                Some(Self::Package)
             } else {
                 Some(Self::Vfox)
             }
@@ -219,6 +246,7 @@ impl PluginType {
             PluginType::VfoxBackend => {
                 PluginEnum::VfoxBackend(Arc::new(VfoxPlugin::new(short, path)))
             }
+            PluginType::Package => PluginEnum::Package(Arc::new(VfoxPlugin::new(short, path))),
         }
     }
 }
@@ -238,7 +266,7 @@ pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
 
 pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(
-        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|-nightly|-canary|-experimental|-insider|-edge|snapshot|SNAPSHOT|master)"
+        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|-nightly|-canary|-experimental|-insider|-edge|snapshot|SNAPSHOT|master|\d(?:alpha|beta|rc)\d+$)"
     )
         .unwrap()
 });
@@ -635,6 +663,14 @@ mod tests {
             (PluginType::VfoxBackend, "npm")
         );
         assert_eq!(
+            PluginType::from_plugin_config("package:vscode"),
+            (PluginType::Package, "vscode")
+        );
+        assert_eq!(
+            PluginType::from_full("package:vscode").unwrap(),
+            PluginType::Package
+        );
+        assert_eq!(
             PluginType::from_plugin_config("asdf:node"),
             (PluginType::Asdf, "node")
         );
@@ -672,6 +708,26 @@ mod tests {
             PluginType::from_plugin_path(backend.path()),
             Some(PluginType::VfoxBackend)
         );
+
+        let package = tempfile::tempdir().unwrap();
+        fs::write(package.path().join("metadata.lua"), "").unwrap();
+        file::create_dir_all(package.path().join("hooks")).unwrap();
+        fs::write(package.path().join("hooks/package_install.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(package.path()),
+            Some(PluginType::Vfox)
+        );
+        fs::write(package.path().join("hooks/package_installed.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(package.path()),
+            Some(PluginType::Package)
+        );
+
+        fs::write(package.path().join("hooks/backend_install.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(package.path()),
+            Some(PluginType::VfoxBackend)
+        );
     }
 
     #[test]
@@ -684,6 +740,11 @@ mod tests {
         assert!(VERSION_REGEX.is_match("1.0.0-dev"));
         assert!(VERSION_REGEX.is_match("1.0.0-pre1"));
         assert!(VERSION_REGEX.is_match("1.0.0.pre1"));
+
+        // PHP separator-less pre-release suffixes (GitHub discussion #4720)
+        assert!(VERSION_REGEX.is_match("8.5.9alpha1"));
+        assert!(VERSION_REGEX.is_match("8.5.9beta2"));
+        assert!(VERSION_REGEX.is_match("8.5.9RC1"));
 
         // PEP 440 dot-separated dev versions (GitHub discussion #8784)
         assert!(

@@ -463,7 +463,7 @@ fn extract_version(text: &str) -> Option<String> {
 /// Pick the first available, settings-enabled package manager that has a hint
 /// for `dep`. Mirrors the manager selection [`crate::system`] applies so we
 /// never propose a manager the driver would reject.
-pub fn pick_manager(dep: &SystemDep) -> Option<Arc<dyn SystemPackageManager>> {
+pub async fn pick_manager(dep: &SystemDep) -> Option<Arc<dyn SystemPackageManager>> {
     let enabled = Settings::get().system_packages.managers.clone();
     for m in packages::all_managers() {
         let name = m.name();
@@ -473,7 +473,7 @@ pub fn pick_manager(dep: &SystemDep) -> Option<Arc<dyn SystemPackageManager>> {
         {
             continue;
         }
-        if !m.is_available() {
+        if m.unavailable_reason_async().await.is_some() {
             continue;
         }
         if dep.packages.contains_key(name) {
@@ -486,13 +486,13 @@ pub fn pick_manager(dep: &SystemDep) -> Option<Arc<dyn SystemPackageManager>> {
 /// Group missing deps into per-manager [`PackageRequest`]s for remediation.
 /// Returns `(by_manager, unremediable)` where `unremediable` are deps with no
 /// available manager hint.
-pub fn build_requests(
+pub async fn build_requests(
     missing: &[&SystemDep],
 ) -> (IndexMap<String, Vec<PackageRequest>>, Vec<SystemDep>) {
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
     let mut unremediable = vec![];
     for dep in missing {
-        match pick_manager(dep) {
+        match pick_manager(dep).await {
             Some(m) => {
                 let pkg = dep.packages.get(m.name()).cloned().unwrap_or_default();
                 let requests = by_mgr.entry(m.name().to_string()).or_default();
@@ -512,8 +512,8 @@ pub fn build_requests(
 
 /// Copy-pasteable install hint commands for `missing`, grouped by the manager
 /// that would satisfy each. Used by warn mode.
-pub fn hint_commands(missing: &[&SystemDep]) -> Vec<String> {
-    let (by_mgr, _) = build_requests(missing);
+pub async fn hint_commands(missing: &[&SystemDep]) -> Vec<String> {
+    let (by_mgr, _) = build_requests(missing).await;
     by_mgr
         .into_iter()
         .map(|(mgr, requests)| {

@@ -320,61 +320,61 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [[tools.communique]]
-version = "1.2.0"
+version = "1.2.3"
 backend = "github:jdx/communique"
 
 [tools.communique."platforms.linux-arm64"]
-checksum = "sha256:9f5c60c6cb9ada8c8dc491e2c8882770610a6bc9c937939a8998b4fd722ee078"
-url = "https://github.com/jdx/communique/releases/download/v1.2.0/communique-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/457075829"
+checksum = "sha256:083e1dd1a0c3894118af9b80d9feea11ed7470f7161964719d8073905fc9e4aa"
+url = "https://github.com/jdx/communique/releases/download/v1.2.3/communique-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/477186422"
 provenance = "github-attestations"
 
 [tools.communique."platforms.linux-arm64-musl"]
-checksum = "sha256:516e7668f041b32b7d7f9b266135db05fcbdbcf159a77113495383bb9da6d074"
-url = "https://github.com/jdx/communique/releases/download/v1.2.0/communique-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/457075175"
+checksum = "sha256:bab19453334ca0df1de46e7b33dda2f26abc7bae132aaf5d2ba629462c9c468f"
+url = "https://github.com/jdx/communique/releases/download/v1.2.3/communique-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/477186389"
 provenance = "github-attestations"
 
 [tools.communique."platforms.linux-x64"]
-checksum = "sha256:817f37cc3d243671fb73aaf8bf3fd104a0e2f912c0c51ef02b9afa81de46ffe8"
-url = "https://github.com/jdx/communique/releases/download/v1.2.0/communique-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/457075387"
+checksum = "sha256:180f970282986f27f7fa9ee216e4971e8dec3624869d4222f22f3e2535fccc58"
+url = "https://github.com/jdx/communique/releases/download/v1.2.3/communique-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/477186105"
 provenance = "github-attestations"
 
 [tools.communique."platforms.linux-x64-baseline"]
-checksum = "sha256:817f37cc3d243671fb73aaf8bf3fd104a0e2f912c0c51ef02b9afa81de46ffe8"
-url = "https://github.com/jdx/communique/releases/download/v1.2.0/communique-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/457075387"
+checksum = "sha256:180f970282986f27f7fa9ee216e4971e8dec3624869d4222f22f3e2535fccc58"
+url = "https://github.com/jdx/communique/releases/download/v1.2.3/communique-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/477186105"
 provenance = "github-attestations"
 
 [tools.communique."platforms.linux-x64-musl"]
-checksum = "sha256:952544174fa7cb46a578b5adbba5f7f1f3137853cfc46ab5fcd2e102dc398fad"
-url = "https://github.com/jdx/communique/releases/download/v1.2.0/communique-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/457075280"
+checksum = "sha256:23010d19c9dc0bb09fefc43916b03b7b16f0d07761980bb54166170ce85d9112"
+url = "https://github.com/jdx/communique/releases/download/v1.2.3/communique-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/477186277"
 provenance = "github-attestations"
 
 [tools.communique."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:952544174fa7cb46a578b5adbba5f7f1f3137853cfc46ab5fcd2e102dc398fad"
-url = "https://github.com/jdx/communique/releases/download/v1.2.0/communique-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/457075280"
+checksum = "sha256:23010d19c9dc0bb09fefc43916b03b7b16f0d07761980bb54166170ce85d9112"
+url = "https://github.com/jdx/communique/releases/download/v1.2.3/communique-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/477186277"
 provenance = "github-attestations"
 
 [tools.communique."platforms.macos-arm64"]
-checksum = "sha256:6f59d1e770f1e9a8104f3f2d3a3f04b83e1d0b9a3c9eed3f1be4203e1d3a0d6a"
-url = "https://github.com/jdx/communique/releases/download/v1.2.0/communique-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/457075119"
+checksum = "sha256:668683480d8b8d62de9616c3a2258f802daf6ce3440d2fa6cf1f7d72eecade89"
+url = "https://github.com/jdx/communique/releases/download/v1.2.3/communique-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/477186196"
 provenance = "github-attestations"
 
 [tools.communique."platforms.windows-x64"]
-checksum = "sha256:9ac291a762e34ec32c2f262f5f47b52760c2605a228c103949caaa0272f920b2"
-url = "https://github.com/jdx/communique/releases/download/v1.2.0/communique-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/457077630"
+checksum = "sha256:63f2370f9c6ff97b31f9be266d8860dd65dce0aafb269c492de7cdbb9d29d782"
+url = "https://github.com/jdx/communique/releases/download/v1.2.3/communique-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/477186666"
 provenance = "github-attestations"
 
 [tools.communique."platforms.windows-x64-baseline"]
-checksum = "sha256:9ac291a762e34ec32c2f262f5f47b52760c2605a228c103949caaa0272f920b2"
-url = "https://github.com/jdx/communique/releases/download/v1.2.0/communique-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/457077630"
+checksum = "sha256:63f2370f9c6ff97b31f9be266d8860dd65dce0aafb269c492de7cdbb9d29d782"
+url = "https://github.com/jdx/communique/releases/download/v1.2.3/communique-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/477186666"
 provenance = "github-attestations"
 
 [[tools.fd]]
@@ -836,7 +836,7 @@ url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-windows-amd64.e
 url_api = "https://api.github.com/repos/apple/pkl/releases/assets/382243744"
 
 [[tools.prettier]]
-version = "3.9.4"
+version = "3.9.5"
 backend = "npm:prettier"
 
 [[tools.ripgrep]]

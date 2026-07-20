@@ -74,7 +74,7 @@ impl TasksAdd {
     pub async fn run(self) -> Result<()> {
         if self.file {
             let mut path = Task::task_dir()
-                .await
+                .await?
                 .join(self.task.replace(':', MAIN_SEPARATOR_STR));
             if path.is_dir() {
                 path = path.join("_default");

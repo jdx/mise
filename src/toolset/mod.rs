@@ -33,14 +33,15 @@ use tokio::sync::OnceCell;
 
 pub use install_options::InstallOptions;
 pub use tool_request::ToolRequest;
-pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder, tool_env_vars};
+pub use tool_request_set::{
+    ToolRequestSet, ToolRequestSetBuilder, tool_env_var_name, tool_env_vars, tool_from_env_var_name,
+};
 pub use tool_source::ToolSource;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
 pub use tool_version_options::{
     CoreToolOptions, EPHEMERAL_OPT_KEYS, RawBackendOptions, ResolvedToolOptions, ToolOptionSource,
-    ToolOptions, ToolVersionOptions, parse_tool_options, serialize_tool_options,
-    try_parse_tool_options,
+    ToolOptions, ToolVersionOptions, parse_tool_options, try_parse_tool_options,
 };
 
 mod builder;

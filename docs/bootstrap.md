@@ -15,28 +15,30 @@ preferences, user services, and one-time machine setup.
 
 `mise bootstrap` runs these steps in order:
 
-1. `mise bootstrap packages apply` installs missing
-   [`[bootstrap.packages]`](/bootstrap/packages/).
-2. `mise bootstrap repos apply` clones or updates
+1. `mise bootstrap plugins apply` installs package manager plugins declared in
+   [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html).
+2. Built-in managers install missing [`[bootstrap.packages]`](/bootstrap/packages/).
+3. `mise bootstrap repos apply` clones or updates
    [`[bootstrap.repos]`](/bootstrap/repos.html).
-3. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
-4. `mise bootstrap mise-shell-activate apply` configures shell activation from
+4. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
+5. `mise bootstrap mise-shell-activate apply` configures shell activation from
    [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html).
-5. `mise bootstrap macos defaults apply` writes
+6. `mise bootstrap macos defaults apply` writes
    [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html).
-6. `mise bootstrap macos launchd-agents apply` writes and loads
+7. `mise bootstrap macos launchd-agents apply` writes and loads
    [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html).
-7. `mise bootstrap linux systemd-units apply` converges
+8. `mise bootstrap linux systemd-units apply` converges
    [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)
    by writing unit files, enabling/disabling them, and starting/stopping them
    as configured.
-8. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
-9. `mise install` installs missing `[tools]`.
-10. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
-11. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
+9. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
+10. `mise install` installs missing `[tools]`.
+11. Plugin package managers apply after their host tools are available.
+12. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
+13. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
-`packages`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`,
+`plugins`, `packages`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`,
 `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, and
 `final-hook`. The old shorter names `shell`, `defaults`, `launchd`, and
 `systemd` are still accepted as aliases. The flag can be repeated or
@@ -179,7 +181,7 @@ only want to check one part without installing anything.
 
 | Config                                                         | Use for                                                       |
 | -------------------------------------------------------------- | ------------------------------------------------------------- |
-| [`[bootstrap.packages]`](/bootstrap/packages/)                 | OS packages from apk, apt, dnf, pacman, brew, or mas          |
+| [`[bootstrap.packages]`](/bootstrap/packages/)                 | OS packages from apk, apt, dnf, pacman, brew, flatpak, or mas |
 | [`[bootstrap.repos]`](/bootstrap/repos.html)                   | Git repos cloned before dotfiles are applied                  |
 | [`[dotfiles]`](/dotfiles.html)                                 | Whole-file dotfiles and small managed edits to existing files |
 | [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)     | mise activation snippets in shell startup files               |

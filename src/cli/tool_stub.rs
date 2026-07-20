@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::backend::static_helpers::lookup_platform_key;
 use crate::config::Config;
+use crate::config::env_directive::EnvValue;
 use crate::dirs;
 use crate::file;
 use crate::hash;
@@ -23,7 +24,7 @@ pub struct ToolStubFile {
     pub bin: Option<String>,  // defaults to filename if not specified
     pub tool: Option<String>, // explicit tool name override
     #[serde(default)]
-    pub install_env: indexmap::IndexMap<String, String>,
+    pub install_env: indexmap::IndexMap<String, EnvValue>,
     #[serde(default)]
     pub os: Option<Vec<String>>,
     pub lock: Option<ToolStubLock>,

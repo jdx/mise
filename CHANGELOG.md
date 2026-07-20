@@ -1,5 +1,330 @@
 # Changelog
 
+## [2026.7.10](https://github.com/jdx/mise/compare/v2026.7.8..v2026.7.10) - 2026-07-17
+
+### 🚀 Features
+
+- **(backend)** skip remote discovery for exact versions in more backends by @jdx in [#11070](https://github.com/jdx/mise/pull/11070)
+- **(cargo)** skip remote discovery for exact versions by @Turbo87 in [#11013](https://github.com/jdx/mise/pull/11013)
+- **(task)** skip dependencies with empty templated names by @risu729 in [#11057](https://github.com/jdx/mise/pull/11057)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** ignore macos metadata in cask artifacts by @jdx in [#11063](https://github.com/jdx/mise/pull/11063)
+- **(config)** deprecate env directive value aliases by @risu729 in [#11062](https://github.com/jdx/mise/pull/11062)
+- **(config)** deprecate env.mise directives by @risu729 in [#11053](https://github.com/jdx/mise/pull/11053)
+- **(config)** reject non-string postinstall hooks by @risu729 in [#11061](https://github.com/jdx/mise/pull/11061)
+- **(config)** deprecate experimental monorepo root key by @risu729 in [#11052](https://github.com/jdx/mise/pull/11052)
+- **(hooks)** reject nested hook arrays by @risu729 in [#11051](https://github.com/jdx/mise/pull/11051)
+- **(http)** fail fast when network is unavailable by @jdx in [#11066](https://github.com/jdx/mise/pull/11066)
+- **(schema)** require arrays for deps provider paths by @risu729 in [#11064](https://github.com/jdx/mise/pull/11064)
+- **(task)** prevent setup side effects during dry runs by @risu729 in [#11015](https://github.com/jdx/mise/pull/11015)
+- **(task)** resolve task source files from task directory by @JamBalaya56562 in [#11073](https://github.com/jdx/mise/pull/11073)
+
+### ◀️ Revert
+
+- "chore(ci): tighten required CI guards" by @jdx in [b2d78ad](https://github.com/jdx/mise/commit/b2d78adf46f263acd5e160b96a6443128262f89b)
+
+### 📦 Registry
+
+- replace eza asdf backend with vfox by @jdx in [#11068](https://github.com/jdx/mise/pull/11068)
+
+### Chore
+
+- **(ci)** align macos pgo toolchain by @jdx in [#11071](https://github.com/jdx/mise/pull/11071)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (2)
+
+- [`daveshanley/vacuum`](https://github.com/daveshanley/vacuum)
+- [`openbao/openbao/bao`](https://github.com/openbao/openbao)
+
+## [2026.7.9](https://github.com/jdx/mise/compare/v2026.7.8..v2026.7.9) - 2026-07-16
+
+### 🚀 Features
+
+- **(cargo)** skip remote discovery for exact versions by @Turbo87 in [#11013](https://github.com/jdx/mise/pull/11013)
+- **(task)** skip dependencies with empty templated names by @risu729 in [#11057](https://github.com/jdx/mise/pull/11057)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** ignore macos metadata in cask artifacts by @jdx in [#11063](https://github.com/jdx/mise/pull/11063)
+- **(config)** deprecate env directive value aliases by @risu729 in [#11062](https://github.com/jdx/mise/pull/11062)
+- **(config)** deprecate env.mise directives by @risu729 in [#11053](https://github.com/jdx/mise/pull/11053)
+- **(config)** reject non-string postinstall hooks by @risu729 in [#11061](https://github.com/jdx/mise/pull/11061)
+- **(config)** deprecate experimental monorepo root key by @risu729 in [#11052](https://github.com/jdx/mise/pull/11052)
+- **(hooks)** reject nested hook arrays by @risu729 in [#11051](https://github.com/jdx/mise/pull/11051)
+- **(http)** fail fast when network is unavailable by @jdx in [#11066](https://github.com/jdx/mise/pull/11066)
+- **(schema)** require arrays for deps provider paths by @risu729 in [#11064](https://github.com/jdx/mise/pull/11064)
+- **(task)** prevent setup side effects during dry runs by @risu729 in [#11015](https://github.com/jdx/mise/pull/11015)
+
+### 📦 Registry
+
+- replace eza asdf backend with vfox by @jdx in [#11068](https://github.com/jdx/mise/pull/11068)
+
+### Chore
+
+- **(ci)** align macos pgo toolchain by @jdx in [#11071](https://github.com/jdx/mise/pull/11071)
+
+## [2026.7.8](https://github.com/jdx/mise/compare/v2026.7.7..v2026.7.8) - 2026-07-16
+
+### 🚀 Features
+
+- **(bootstrap)** add repos update and exec commands by @jdx in [#11022](https://github.com/jdx/mise/pull/11022)
+- **(bootstrap)** add package manager plugin support by @jdx in [#11023](https://github.com/jdx/mise/pull/11023)
+- **(bootstrap)** add declarative package plugins by @jdx in [#11024](https://github.com/jdx/mise/pull/11024)
+- **(registry)** add optional floating registries by @jdx in [#10971](https://github.com/jdx/mise/pull/10971)
+
+### 🐛 Bug Fixes
+
+- **(backend)** detect separatorless prerelease versions by @jdx in [#11032](https://github.com/jdx/mise/pull/11032)
+- **(bootstrap)** preserve Homebrew cask metadata by @jdx in [#11012](https://github.com/jdx/mise/pull/11012)
+- **(bootstrap)** compare repo origins transport-agnostically by @jeremy in [#11034](https://github.com/jdx/mise/pull/11034)
+- **(bootstrap)** handle static systemd units in status by @jdx in [#11056](https://github.com/jdx/mise/pull/11056)
+- **(cargo)** restore sparse index version discovery by @Turbo87 in [#11011](https://github.com/jdx/mise/pull/11011)
+- **(go)** resolve direct package module prefixes by @jdx in [#11054](https://github.com/jdx/mise/pull/11054)
+- **(hooks)** deprecate spawned scripts form by @risu729 in [#11043](https://github.com/jdx/mise/pull/11043)
+- **(hooks)** reject unknown hook table fields by @risu729 in [#11047](https://github.com/jdx/mise/pull/11047)
+- **(install)** preview hooks during dry runs by @risu729 in [#11010](https://github.com/jdx/mise/pull/11010)
+- **(install)** treat false install env values as removals by @risu729 in [#11033](https://github.com/jdx/mise/pull/11033)
+- **(launchd)** tolerate bootout EIO for not-loaded agents on macOS by @hsbt in [#10965](https://github.com/jdx/mise/pull/10965)
+- **(lockfile)** preserve platform-specific option variants by @jdx in [#10999](https://github.com/jdx/mise/pull/10999)
+- **(nix)** set TZDIR so timezone tests pass in the sandbox by @coryzibell in [#11019](https://github.com/jdx/mise/pull/11019)
+- **(prune)** preserve runtime symlinks during dry runs by @risu729 in [#11017](https://github.com/jdx/mise/pull/11017)
+- **(schema)** add oci copy entries by @risu729 in [#11009](https://github.com/jdx/mise/pull/11009)
+- **(schema)** add bootstrap shell activation config by @risu729 in [#11004](https://github.com/jdx/mise/pull/11004)
+- **(schema)** allow structured task tool options by @risu729 in [#11021](https://github.com/jdx/mise/pull/11021)
+- **(schema)** require watch file patterns by @risu729 in [#11040](https://github.com/jdx/mise/pull/11040)
+- **(schema)** add missing plugin manifest fields by @risu729 in [#11035](https://github.com/jdx/mise/pull/11035)
+- **(schema)** correct root hook definitions by @risu729 in [#11041](https://github.com/jdx/mise/pull/11041)
+- **(schema)** use integer types for integer settings by @risu729 in [#11037](https://github.com/jdx/mise/pull/11037)
+- **(schema)** add bootstrap hooks configuration by @risu729 in [#11039](https://github.com/jdx/mise/pull/11039)
+- **(schema)** add systemd timer and lifecycle options by @jdx in [#11050](https://github.com/jdx/mise/pull/11050)
+- **(shell)** support hyphenated tool names by @risu729 in [#10961](https://github.com/jdx/mise/pull/10961)
+- **(shell)** guard empty array expansions in bash deactivate under set -u by @jdx in [#11026](https://github.com/jdx/mise/pull/11026)
+- **(shim)** prevent recursion when directory env is filtered by @risu729 in [#10982](https://github.com/jdx/mise/pull/10982)
+- **(task)** omit empty templated dependency args by @jdx in [#11055](https://github.com/jdx/mise/pull/11055)
+- **(task)** inherit output from task templates by @risu729 in [#11059](https://github.com/jdx/mise/pull/11059)
+
+### 🚜 Refactor
+
+- adopt jdx-tar for tar handling by @jdx in [#11028](https://github.com/jdx/mise/pull/11028)
+
+### 📚 Documentation
+
+- **(templates)** clarify exec behavior in dry runs by @risu729 in [#11018](https://github.com/jdx/mise/pull/11018)
+
+### ⚡ Performance
+
+- **(release)** target macOS 12 in tarball builds for chained fixups by @jdx in [#11027](https://github.com/jdx/mise/pull/11027)
+- **(release)** add PGO builds for natively-trainable release targets by @jdx in [#11031](https://github.com/jdx/mise/pull/11031)
+- cut ~2ms of startup by fixing config glob scans and clap double-build by @jdx in [#11025](https://github.com/jdx/mise/pull/11025)
+- cap default tokio worker threads at 16 by @jdx in [#11029](https://github.com/jdx/mise/pull/11029)
+
+### 🧪 Testing
+
+- **(config)** cover settings lookup with --cd by @risu729 in [#10981](https://github.com/jdx/mise/pull/10981)
+
+### 📦 Registry
+
+- add zmx ([github:neurosnap/zmx](https://github.com/neurosnap/zmx)) by @offbyone in [#11006](https://github.com/jdx/mise/pull/11006)
+- switch docker-compose from aqua to github backend by @konono in [#10823](https://github.com/jdx/mise/pull/10823)
+
+### Chore
+
+- **(ci)** restore nightly build by @jdx in [#11030](https://github.com/jdx/mise/pull/11030)
+- **(ci)** tighten required CI guards by @risu729 in [#11038](https://github.com/jdx/mise/pull/11038)
+
+### New Contributors
+
+- @jeremy made their first contribution in [#11034](https://github.com/jdx/mise/pull/11034)
+- @Turbo87 made their first contribution in [#11011](https://github.com/jdx/mise/pull/11011)
+- @coryzibell made their first contribution in [#11019](https://github.com/jdx/mise/pull/11019)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`conceptadev/fvm`](https://github.com/conceptadev/fvm)
+
+#### Updated Packages (2)
+
+- [`ricoberger/grafana-kubernetes-plugin`](https://github.com/ricoberger/grafana-kubernetes-plugin)
+- [`tldr-pages/tlrc`](https://github.com/tldr-pages/tlrc)
+
+## [2026.7.7](https://github.com/jdx/mise/compare/v2026.7.6..v2026.7.7) - 2026-07-15
+
+### 🚀 Features
+
+- **(bootstrap)** support systemd timers by @jdx in [#10984](https://github.com/jdx/mise/pull/10984)
+- **(deps)** add monorepo provider support by @jdx in [#10975](https://github.com/jdx/mise/pull/10975)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** honor explicit false overrides by @risu729 in [#11002](https://github.com/jdx/mise/pull/11002)
+- **(bootstrap)** support cask array position helpers by @casparbreloh in [#10992](https://github.com/jdx/mise/pull/10992)
+- **(cache)** handle concurrent writes during clear by @jdx in [#10993](https://github.com/jdx/mise/pull/10993)
+- **(github)** serialize oauth token refreshes by @jdx in [#10995](https://github.com/jdx/mise/pull/10995)
+- **(github)** skip package assets during autodetection by @risu729 in [#11001](https://github.com/jdx/mise/pull/11001)
+- **(schema)** add launchd calendar intervals by @risu729 in [#11008](https://github.com/jdx/mise/pull/11008)
+- **(status)** respect status.truncate for show_env output by @ytjmt in [#10983](https://github.com/jdx/mise/pull/10983)
+- **(task)** render nested task tool options by @risu729 in [#10960](https://github.com/jdx/mise/pull/10960)
+- **(vfox)** support annotated plugin refs by @junior-ricon in [#10998](https://github.com/jdx/mise/pull/10998)
+
+### 📦️ Dependency Updates
+
+- bump communique to 1.2.3 by @jdx in [#11000](https://github.com/jdx/mise/pull/11000)
+
+### 📦 Registry
+
+- add microsandbox ([aqua:superradcompany/microsandbox](https://github.com/superradcompany/microsandbox)) by @joealden in [#10985](https://github.com/jdx/mise/pull/10985)
+
+### Chore
+
+- **(release)** publish rolling zstd registry archive by @jdx in [#10991](https://github.com/jdx/mise/pull/10991)
+
+### New Contributors
+
+- @junior-ricon made their first contribution in [#10998](https://github.com/jdx/mise/pull/10998)
+- @ytjmt made their first contribution in [#10983](https://github.com/jdx/mise/pull/10983)
+- @casparbreloh made their first contribution in [#10992](https://github.com/jdx/mise/pull/10992)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (3)
+
+- [`kellyjonbrazil/jc`](https://github.com/kellyjonbrazil/jc)
+- [`mikefarah/yq`](https://github.com/mikefarah/yq)
+- [`twpayne/chezmoi`](https://github.com/twpayne/chezmoi)
+
+## [2026.7.6](https://github.com/jdx/mise/compare/v2026.7.5..v2026.7.6) - 2026-07-14
+
+### 🚀 Features
+
+- **(aqua)** support private content and archives by @risu729 in [#10915](https://github.com/jdx/mise/pull/10915)
+- **(bootstrap)** add flatpak package support by @jdx in [#10951](https://github.com/jdx/mise/pull/10951)
+- **(cargo)** disable cargo-quickinstall by default by @risu729 in [#10923](https://github.com/jdx/mise/pull/10923)
+- **(doctor)** report shadowed shims by @risu729 in [#10919](https://github.com/jdx/mise/pull/10919)
+- **(oci)** add reproducible host path copy layers by @jdx in [#10952](https://github.com/jdx/mise/pull/10952)
+- **(sandbox)** add default deny settings by @risu729 in [#10940](https://github.com/jdx/mise/pull/10940)
+- **(task)** **breaking** decouple task output style from verbosity by @JamBalaya56562 in [#10885](https://github.com/jdx/mise/pull/10885)
+- **(task)** render timeout templates by @risu729 in [#10959](https://github.com/jdx/mise/pull/10959)
+
+### 🐛 Bug Fixes
+
+- **(backend)** reinstall rolling versions when outdated by @zelch in [#10827](https://github.com/jdx/mise/pull/10827)
+- **(backend)** align migrated backend resolution by @jdx in [#10969](https://github.com/jdx/mise/pull/10969)
+- **(bootstrap)** preserve symlinks when extracting dmgs by @jdx in [#10949](https://github.com/jdx/mise/pull/10949)
+- **(bootstrap)** support localized brew casks by @jdx in [#10950](https://github.com/jdx/mise/pull/10950)
+- **(cargo)** own cargo-binstall compile fallback by @risu729 in [#10926](https://github.com/jdx/mise/pull/10926)
+- **(config)** warn about unsupported semver ranges by @risu729 in [#10916](https://github.com/jdx/mise/pull/10916)
+- **(config)** let user tool options override registry defaults by @risu729 in [#10924](https://github.com/jdx/mise/pull/10924)
+- **(config)** reload settings with config by @risu729 in [#10945](https://github.com/jdx/mise/pull/10945)
+- **(config)** add tera contrib helpers by @jdx in [#10970](https://github.com/jdx/mise/pull/10970)
+- **(config)** keep installed versions eligible with release age by @jdx in [#10973](https://github.com/jdx/mise/pull/10973)
+- **(copr)** fix x86_64 builds with add nasm/cmake for Fedora and PREBUILT_NASM for RHEL/EPEL by @bestagi in [#10947](https://github.com/jdx/mise/pull/10947)
+- **(copr)** add PIE flag for aws-lc probe by @jdx in [#10974](https://github.com/jdx/mise/pull/10974)
+- **(erlang)** lock source install outcomes by @risu729 in [#10937](https://github.com/jdx/mise/pull/10937)
+- **(file)** ignore malformed pax metadata during sparse detection by @risu729 in [#10978](https://github.com/jdx/mise/pull/10978)
+- **(github)** align SLSA provenance with selected asset by @risu729 in [#10928](https://github.com/jdx/mise/pull/10928)
+- **(github)** treat bin/rename_exe as install-time options by @risu729 in [#10925](https://github.com/jdx/mise/pull/10925)
+- **(http)** bound total download time by @risu729 in [#10920](https://github.com/jdx/mise/pull/10920)
+- **(npm)** isolate version queries from project cwd by @risu729 in [#10927](https://github.com/jdx/mise/pull/10927)
+- **(registry)** normalize backend platform selectors by @risu729 in [#10938](https://github.com/jdx/mise/pull/10938)
+- **(registry)** rename podman banary to podman-remote by @tony-sol in [#10826](https://github.com/jdx/mise/pull/10826)
+- **(s3)** resolve cross-platform lockfile URLs for locked mode by @icholy in [#10873](https://github.com/jdx/mise/pull/10873)
+- **(task)** invalidate auto freshness after failed rerun by @risu729 in [#10953](https://github.com/jdx/mise/pull/10953)
+- **(task)** isolate usage variables per invocation by @risu729 in [#10963](https://github.com/jdx/mise/pull/10963)
+- **(task)** preserve task tool options by @risu729 in [#10958](https://github.com/jdx/mise/pull/10958)
+- **(task)** respect configured directory when editing tasks by @risu729 in [#10955](https://github.com/jdx/mise/pull/10955)
+- **(toolset)** preserve ref selector install identity by @risu729 in [#10942](https://github.com/jdx/mise/pull/10942)
+
+### 📚 Documentation
+
+- **(aqua)** document local custom registries by @risu729 in [#10966](https://github.com/jdx/mise/pull/10966)
+- **(config)** clarify sub version arithmetic by @risu729 in [#10943](https://github.com/jdx/mise/pull/10943)
+
+### ⚡ Performance
+
+- **(aqua)** skip public probes for private releases by @risu729 in [#10914](https://github.com/jdx/mise/pull/10914)
+
+### 🧪 Testing
+
+- **(cargo)** align binstall fallback coverage by @risu729 in [#10980](https://github.com/jdx/mise/pull/10980)
+
+### ◀️ Revert
+
+- prefer aqua for codex by @risu729 in [#10922](https://github.com/jdx/mise/pull/10922)
+
+### 📦️ Dependency Updates
+
+- update rust docker digest to 44637ff by @renovate[bot] in [#10901](https://github.com/jdx/mise/pull/10901)
+- update ghcr.io/jdx/mise:deb docker digest to c5e848b by @renovate[bot] in [#10899](https://github.com/jdx/mise/pull/10899)
+- update ghcr.io/jdx/mise:alpine docker digest to 94d8801 by @renovate[bot] in [#10898](https://github.com/jdx/mise/pull/10898)
+- update rust crate demand to v2.0.3 by @renovate[bot] in [#10903](https://github.com/jdx/mise/pull/10903)
+- update phf to 0.14 by @renovate[bot] in [#10906](https://github.com/jdx/mise/pull/10906)
+- update ubuntu docker tag to resolute-20260627 by @renovate[bot] in [#10905](https://github.com/jdx/mise/pull/10905)
+- update ghcr.io/jdx/mise:rpm docker digest to 4363aec by @renovate[bot] in [#10900](https://github.com/jdx/mise/pull/10900)
+- update rust crate usage-lib to v3.5.4 by @renovate[bot] in [#10904](https://github.com/jdx/mise/pull/10904)
+- update rust crate chacha20poly1305 to 0.11 by @renovate[bot] in [#10907](https://github.com/jdx/mise/pull/10907)
+- update actions/github-script action to v9 by @renovate[bot] in [#10908](https://github.com/jdx/mise/pull/10908)
+- update rust crate rmcp to v2 by @renovate[bot] in [#10909](https://github.com/jdx/mise/pull/10909)
+- update dependency prettier to v3.9.4 by @renovate[bot] in [#10902](https://github.com/jdx/mise/pull/10902)
+
+### 📦 Registry
+
+- add git-town ([aqua:git-town/git-town](https://github.com/git-town/git-town)) by @joealden in [#10935](https://github.com/jdx/mise/pull/10935)
+- add bundler (gem:bundler) by @risu729 in [#10939](https://github.com/jdx/mise/pull/10939)
+
+### Chore
+
+- **(release)** skip ai reviews for release prs by @jdx in [#10891](https://github.com/jdx/mise/pull/10891)
+- **(release)** publish registry artifact by @jdx in [#10972](https://github.com/jdx/mise/pull/10972)
+
+### New Contributors
+
+- @zelch made their first contribution in [#10827](https://github.com/jdx/mise/pull/10827)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (10)
+
+- [`GitTools/GitVersion`](https://github.com/GitTools/GitVersion)
+- [`StanMarek/ghost-complete`](https://github.com/StanMarek/ghost-complete)
+- [`cachix/secretspec`](https://github.com/cachix/secretspec)
+- [`ctxrs/ctx`](https://github.com/ctxrs/ctx)
+- [`nao1215/atago`](https://github.com/nao1215/atago)
+- [`sters/diffnest`](https://github.com/sters/diffnest)
+- [`supernovae-st/nika`](https://github.com/supernovae-st/nika)
+- [`suzuki-shunsuke/langcheck`](https://github.com/suzuki-shunsuke/langcheck)
+- [`tedilabs/tfvault`](https://github.com/tedilabs/tfvault)
+- [`vcsjones/AzureSignTool`](https://github.com/vcsjones/AzureSignTool)
+
+#### Updated Packages (21)
+
+- [`FairwindsOps/polaris`](https://github.com/FairwindsOps/polaris)
+- [`charmbracelet/glow`](https://github.com/charmbracelet/glow)
+- [`charmbracelet/vhs`](https://github.com/charmbracelet/vhs)
+- [`docker/buildx`](https://github.com/docker/buildx)
+- [`docker/compose`](https://github.com/docker/compose)
+- [`gleam-lang/gleam`](https://github.com/gleam-lang/gleam)
+- [`kubernetes-sigs/cri-tools/crictl`](https://github.com/kubernetes-sigs/cri-tools)
+- [`lintnet/lintnet`](https://github.com/lintnet/lintnet)
+- [`moby/buildkit`](https://github.com/moby/buildkit)
+- [`mpyw/suve`](https://github.com/mpyw/suve)
+- [`openziti/zrok`](https://github.com/openziti/zrok)
+- [`ouch-org/ouch`](https://github.com/ouch-org/ouch)
+- [`sharkdp/vivid`](https://github.com/sharkdp/vivid)
+- [`superradcompany/microsandbox`](https://github.com/superradcompany/microsandbox)
+- [`suzuki-shunsuke/asciinema-trim`](https://github.com/suzuki-shunsuke/asciinema-trim)
+- [`suzuki-shunsuke/nllint`](https://github.com/suzuki-shunsuke/nllint)
+- [`taiki-e/cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov)
+- [`thomasschafer/scooter`](https://github.com/thomasschafer/scooter)
+- [`wasilibs/go-yamllint`](https://github.com/wasilibs/go-yamllint)
+- [`watchexec/cargo-watch`](https://github.com/watchexec/cargo-watch)
+- [`watchexec/watchexec`](https://github.com/watchexec/watchexec)
+
 ## [2026.7.5](https://github.com/jdx/mise/compare/v2026.7.4..v2026.7.5) - 2026-07-09
 
 ### 🚀 Features

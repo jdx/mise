@@ -1378,11 +1378,7 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
             if config_dir_is_ignored(dir, include_ignored) {
                 vec![]
             } else {
-                config_filenames
-                    .iter()
-                    .rev()
-                    .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
-                    .collect()
+                config_paths_in_dir_with_filenames(dir, config_filenames)
             }
         })
         .collect::<Vec<_>>();
@@ -3014,6 +3010,7 @@ async fn load_file_tasks(
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
 ) -> Result<Vec<Task>> {
+    let is_global = is_global_config(cf.get_path());
     let includes = cf
         .task_config_includes()?
         .unwrap_or_else(default_task_includes);
@@ -3043,7 +3040,7 @@ async fn load_file_tasks(
                 require_task_include_trust,
             )
             .await?;
-            if is_global_task_include_path(&path) {
+            if is_global || is_global_task_include_path(&path) {
                 mark_tasks_as_global(&mut loaded);
             }
             tasks.extend(loaded);
@@ -3052,17 +3049,20 @@ async fn load_file_tasks(
     Ok(tasks)
 }
 
-pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
+fn task_include_patterns_for_dir(
+    dir: &Path,
+    config_files: &ConfigMap,
+) -> Result<(Vec<String>, PathBuf, bool)> {
     let configs = configs_at_root(dir, config_files);
 
     // Find the highest-precedence config that has explicit task_config.includes
     // and resolve paths relative to that config file's directory
-    let (includes, resolve_dir) = configs
+    Ok(configs
         .iter()
         .find_map(|cf| match cf.task_config_includes() {
             Ok(Some(includes)) => Some(Ok({
                 // Resolve relative paths from the config root, not the config file's directory
-                (includes, cf.config_root())
+                (includes, cf.config_root(), false)
             })),
             Ok(None) => None,
             Err(err) => Some(Err(err)),
@@ -3070,8 +3070,12 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
         .transpose()?
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
-            (default_task_includes(), dir.to_path_buf())
-        });
+            (default_task_includes(), dir.to_path_buf(), true)
+        }))
+}
+
+pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
+    let (includes, resolve_dir, _) = task_include_patterns_for_dir(dir, config_files)?;
 
     Ok(includes
         .into_iter()
@@ -3084,6 +3088,35 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
         })
         .unique()
         .collect::<Vec<_>>())
+}
+
+/// Returns the directory where a new file task should be created.
+///
+/// Existing directories are selected in effective `task_config.includes` order. When the
+/// built-in defaults are in use and none exist yet, the first default path is returned so the
+/// caller can create it. Explicit includes must contain an existing directory because a missing
+/// path cannot be distinguished from a task file.
+pub fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<PathBuf> {
+    let (includes, resolve_dir, uses_defaults) = task_include_patterns_for_dir(dir, config_files)?;
+    let default_create_dir = if uses_defaults {
+        includes
+            .first()
+            .map(|include| resolve_dir.join(file::replace_path(include)))
+    } else {
+        None
+    };
+    if let Some(path) = includes
+        .iter()
+        .filter(|include| !include.starts_with("git::"))
+        .flat_map(|include| expand_task_include(&resolve_dir, include))
+        .find(|path| path.is_dir())
+    {
+        return Ok(path);
+    }
+    if let Some(dir) = default_create_dir {
+        return Ok(dir);
+    }
+    bail!("task includes do not contain an existing directory where a file task can be created")
 }
 
 pub async fn load_tasks_in_dir(

@@ -16,6 +16,9 @@ use crate::hooks::backend_list_versions::BackendListVersionsContext;
 use crate::hooks::env_keys::{EnvKey, EnvKeysContext};
 use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
 use crate::hooks::mise_path::MisePathContext;
+use crate::hooks::package::{
+    PackageActionContext, PackageActionResponse, PackageInstalledContext, PackageInstalledResponse,
+};
 use crate::hooks::parse_legacy_file::ParseLegacyFileResponse;
 use crate::hooks::post_install::PostInstallContext;
 use crate::hooks::pre_install::{PreInstall, PreInstallAttestation, VerifiedAttestation};
@@ -470,6 +473,30 @@ impl Vfox {
             options,
         };
         plugin.backend_exec_env(ctx).await.map(|r| r.env_vars)
+    }
+
+    pub async fn package_installed(
+        &self,
+        sdk: &str,
+        ctx: PackageInstalledContext,
+    ) -> Result<PackageInstalledResponse> {
+        self.get_sdk_with_env(sdk)?.package_installed(ctx).await
+    }
+
+    pub async fn package_install(
+        &self,
+        sdk: &str,
+        ctx: PackageActionContext,
+    ) -> Result<PackageActionResponse> {
+        self.get_sdk_with_env(sdk)?.package_install(ctx).await
+    }
+
+    pub async fn package_upgrade(
+        &self,
+        sdk: &str,
+        ctx: PackageActionContext,
+    ) -> Result<PackageActionResponse> {
+        self.get_sdk_with_env(sdk)?.package_upgrade(ctx).await
     }
 
     pub async fn mise_path<T: serde::Serialize>(

@@ -12,3 +12,16 @@ EOF
 
 assert "mise run b" "rtx-tiny: v1.1.0 args:
 rtx-tiny: v2.1.0 args:"
+
+# Task tool maps must preserve structured options. The needs-dummy installer
+# fails unless its `depends` entry causes dummy to be installed first.
+cat <<EOF >mise.toml
+[tasks.structured-options]
+tools = { needs-dummy = { version = "1.0.0", depends = ["dummy"] }, dummy = "2.0.0" }
+run = "needs-dummy"
+EOF
+
+rm -rf "$MISE_DATA_DIR/installs/dummy"
+rm -rf "$MISE_DATA_DIR/installs/needs-dummy"
+
+assert "MISE_JOBS=1 mise run structured-options" "needs-dummy v1.0.0"

@@ -378,7 +378,7 @@ Optional fields:
 
 - **`version`** — a constraint (`>=3.0`, `>3`, `<=1.2`, `=3.0`, or a bare `3.0` meaning `>=3.0`) for `bin` and `pkgconfig`. mise runs `<bin> --version` / `pkg-config --modversion` and compares. If a version can't be extracted, the dependency is treated as satisfied (presence is enough) rather than blocking the install.
 - **`optional`** — a short reason string. Missing optional dependencies never prompt or fail; they surface as a single informational line, letting users build without features they don't need (e.g. Erlang's `wxWidgets` GUI).
-- **`packages`** — a map of package-manager name (`brew`, `brew-cask`, `apt`, `dnf`, `pacman`, `apk`, `mas`) to the package that provides the capability.
+- **`packages`** — a map of package-manager name (`brew`, `brew-cask`, `apt`, `dnf`, `pacman`, `apk`, `flatpak`, `mas`) to the package that provides the capability.
 
 **Detection is the source of truth.** A check that passes is satisfied no matter how the capability was installed — Homebrew, apt, nix, MacPorts, or from source all pass without ceremony, and mise never asks _how_ it got there. The `packages` map is only consulted to _offer_ installing the missing subset; it is a remediation hint, not a declaration that the tool must come from that package manager.
 

@@ -8,8 +8,8 @@
 Apply system packages from `[bootstrap.packages]`
 
 Checks which configured packages are missing and installs them with the
-system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting).
+system package manager. Built-in system managers may elevate with sudo when
+not running as root (see `system_packages.sudo`); package plugins never do.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
 `apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
@@ -26,17 +26,7 @@ Packages in `manager:package` form; defaults to everything configured in [bootst
 
 ### `-m --manager <MANAGER>`
 
-Only install packages for this manager, e.g. `apk`, `apt`, `brew`, `brew-cask`, or `mas`
-
-**Choices:**
-
-- `apk`
-- `apt`
-- `brew`
-- `brew-cask`
-- `dnf`
-- `mas`
-- `pacman`
+Only install packages for this built-in or plugin manager
 
 ### `-n --dry-run`
 
@@ -54,7 +44,7 @@ Examples:
 
 ```
 mise bootstrap packages apply
-mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox mas:497799835
+mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox mas:497799835
 mise bootstrap packages apply --dry-run
 mise bootstrap packages apply --manager apt --yes
 ```

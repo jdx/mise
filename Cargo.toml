@@ -9,7 +9,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.7.5"
+version = "2026.7.10"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -120,6 +120,7 @@ indexmap = { version = "2", features = ["serde"] }
 clx = "2"
 indoc = "2"
 itertools = "0.15"
+jdx-tar = "1.1.0"
 jiff = "0.2"
 junction = "2"
 log = "0.4"
@@ -185,10 +186,20 @@ strum = { version = "0.28", features = ["derive"] }
 supports-hyperlinks = "3"
 tabled = { version = "0.21", features = ["ansi"] }
 taplo = "0.14"
-tar = "0.4"
 tempfile = "3"
 tera = "2"
 tera1 = { package = "tera", version = "1.20.1" }
+tera-contrib = { version = "0.2", features = [
+  "base64",
+  "date",
+  "filesize_format",
+  "format",
+  "json",
+  "rand",
+  "regex",
+  "slug",
+  "urlencode",
+] }
 terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }

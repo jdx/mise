@@ -341,7 +341,11 @@ impl AssetPicker {
         };
         scored_assets
             .into_iter()
-            .filter(|(score, asset)| *score > 0 && !self.has_arch_mismatch(asset))
+            .filter(|(score, asset)| {
+                *score > 0
+                    && !self.has_arch_mismatch(asset)
+                    && !is_package_or_installer_asset(asset)
+            })
             .min_by(|(score_a, name_a), (score_b, name_b)| {
                 score_b
                     .cmp(score_a)
@@ -644,6 +648,30 @@ impl AssetPicker {
             _ => 0,
         }
     }
+}
+
+/// Package archives and installers are not directly executable and mise does
+/// not extract them. Keep them out of automatic selection while still allowing
+/// an explicit `asset_pattern` or URL to select one for custom installation
+/// logic.
+fn is_package_or_installer_asset(asset: &str) -> bool {
+    let asset = asset.to_lowercase();
+    asset.split('.').any(|extension| {
+        matches!(
+            extension,
+            "apk"
+                | "appx"
+                | "appxbundle"
+                | "deb"
+                | "dmg"
+                | "mpkg"
+                | "msi"
+                | "msix"
+                | "msixbundle"
+                | "pkg"
+                | "rpm"
+        )
+    })
 }
 
 fn asset_matches_preferred_name(asset: &str, preferred_name: &str) -> bool {
@@ -2389,6 +2417,63 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
             picker.pick_best_asset(&["tool.jar".to_string()]).as_deref(),
             Some("tool.jar")
         );
+    }
+
+    #[test]
+    fn test_unsupported_package_assets_not_picked() {
+        // Regression test for https://github.com/jdx/mise/discussions/10987.
+        // The github backend cannot extract .deb/.rpm packages, so treating one
+        // as a raw executable produces a successful but unusable installation.
+        let assets = vec![
+            "quickhook-1.6.2-linux-amd64.deb".to_string(),
+            "quickhook-1.6.2-linux-amd64.rpm".to_string(),
+            "quickhook-1.6.2-linux-amd64.deb.sha256".to_string(),
+            "quickhook-1.6.2-linux-arm64.deb".to_string(),
+            "quickhook-1.6.2-linux-arm64.rpm".to_string(),
+        ];
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("quickhook");
+
+        assert_eq!(picker.pick_best_asset(&assets), None);
+        assert_eq!(picker.with_matching(".deb").pick_best_asset(&assets), None);
+    }
+
+    #[test]
+    fn test_package_and_installer_assets_not_picked() {
+        let cases = [
+            (
+                "linux",
+                "x86_64",
+                vec!["tool-linux-amd64.apk", "tool-linux-amd64.apk.sha256"],
+            ),
+            (
+                "macos",
+                "aarch64",
+                vec![
+                    "tool-macos-arm64.dmg",
+                    "tool-macos-arm64.pkg",
+                    "tool-macos-arm64.mpkg",
+                ],
+            ),
+            (
+                "windows",
+                "x86_64",
+                vec![
+                    "tool-windows-x86_64.msi",
+                    "tool-windows-x86_64.MSI.SHA256",
+                    "tool-windows-x86_64.msix",
+                    "tool-windows-x86_64.msixbundle",
+                    "tool-windows-x86_64.appx",
+                    "tool-windows-x86_64.appxbundle",
+                ],
+            ),
+        ];
+
+        for (os, arch, assets) in cases {
+            let assets = assets.into_iter().map(str::to_string).collect::<Vec<_>>();
+            let picker = AssetPicker::with_libc(os.to_string(), arch.to_string(), None);
+            assert_eq!(picker.pick_best_asset(&assets), None, "failed for {os}");
+        }
     }
 
     #[test]

@@ -171,7 +171,7 @@ In general, [tasks](/tasks/) are a good way to ensure that the mise environment 
 
 ### Hooks and shims
 
-The [hooks](/hooks.html) `cd`, `enter`, `exit`, and `watch_files` only trigger with `mise activate`. However `preinstall` and `postinstall` still work with shims because they don't require shell integration.
+The [hooks](/hooks.html) `cd`, `enter`, and `leave` only trigger with `mise activate`. The separate [`watch_files`](/hooks.html#watch-files-hook) configuration also requires `mise activate`. However `preinstall` and `postinstall` still work with shims because they don't require shell integration.
 
 ### `which`
 

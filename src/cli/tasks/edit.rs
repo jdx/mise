@@ -25,13 +25,12 @@ impl TasksEdit {
         let config = Config::get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        let path = Task::task_dir()
-            .await
-            .join(self.task.replace(':', MAIN_SEPARATOR_STR));
-
         let task = if let Some(task) = config.tasks_with_aliases().await?.get(&self.task).cloned() {
             task
         } else {
+            let path = Task::task_dir()
+                .await?
+                .join(self.task.replace(':', MAIN_SEPARATOR_STR));
             Task::from_path(&config, &path, path.parent().unwrap(), &project_root)
                 .await
                 .or_else(|_| Task::new(&path, path.parent().unwrap(), &project_root))?

@@ -238,7 +238,7 @@ impl HookEnv {
             env_diff.extend(removed_keys);
             if !env_diff.is_empty() {
                 let env_diff = env_diff.into_iter().map(patch_to_status).join(" ");
-                info!("{}", truncate_str(&env_diff, TERM_WIDTH.max(60) - 5, "…"));
+                info!("{}", format_status(&env_diff));
             }
             // Use passed config_paths instead of calling config.path_dirs()
             let old_paths = &PREV_SESSION.config_paths;

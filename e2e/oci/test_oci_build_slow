@@ -125,7 +125,28 @@ assert_contains "tar -tzf ./out-files/blobs/sha256/$files_layer" "root/.config/a
 assert_contains "tar -xOzf ./out-files/blobs/sha256/$files_layer etc/profile.d/project.sh" "PROJECT_READY=1"
 assert_contains "tar -xOzf ./out-files/blobs/sha256/$files_layer root/.config/app/config.toml" "tool=dev"
 
-# --- 10. [bootstrap.packages] participates in OCI builds ---
+# --- 10. --copy and [[oci.copy]] each produce an annotated layer ---
+mkdir -p assets copy-subdir
+echo "from-cli" >copy-subdir/cli-copy.txt
+echo "from-config" >assets/config-copy.txt
+cat >mise.toml <<EOF
+[tools]
+jq = "1.8.1"
+
+[[oci.copy]]
+host = "assets"
+image = "/srv/assets"
+EOF
+assert_succeed "mise --cd copy-subdir oci build -o ../out-copy --from scratch --copy cli-copy.txt:/etc/cli-copy.txt"
+mf_copy="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-copy/index.json)"
+assert "jq -r '[.layers[] | select(.annotations.\"dev.mise.copy\") | .annotations.\"dev.mise.copy\"] | join(\",\")' ./out-copy/blobs/sha256/$mf_copy" "/srv/assets,/etc/cli-copy.txt"
+config_copy_layer="$(jq -r '.layers[] | select(.annotations."dev.mise.copy" == "/srv/assets") | .digest | ltrimstr("sha256:")' ./out-copy/blobs/sha256/"$mf_copy")"
+cli_copy_layer="$(jq -r '.layers[] | select(.annotations."dev.mise.copy" == "/etc/cli-copy.txt") | .digest | ltrimstr("sha256:")' ./out-copy/blobs/sha256/"$mf_copy")"
+assert_contains "tar -tzf ./out-copy/blobs/sha256/$config_copy_layer" "srv/assets/config-copy.txt"
+assert_contains "tar -xOzf ./out-copy/blobs/sha256/$config_copy_layer srv/assets/config-copy.txt" "from-config"
+assert "tar -xOzf ./out-copy/blobs/sha256/$cli_copy_layer etc/cli-copy.txt" "from-cli"
+
+# --- 11. [bootstrap.packages] participates in OCI builds ---
 # scratch has no apt metadata, so this exercises the OCI package path without
 # requiring network access in the e2e test environment.
 cat >mise.toml <<EOF
@@ -134,7 +155,7 @@ cat >mise.toml <<EOF
 EOF
 assert_fail "mise oci build -o ./out-system-packages --from scratch" "requires an apt-based base image"
 
-# --- 11. No project config + no --include-global → clear error ---
+# --- 12. No project config + no --include-global → clear error ---
 # Error message is shared between build/run/push, so it must NOT name a
 # specific subcommand (just "mise oci").
 rm -f mise.toml

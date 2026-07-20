@@ -5,6 +5,7 @@ use std::{fmt::Debug, sync::Arc};
 use async_trait::async_trait;
 use color_eyre::Section;
 use eyre::{bail, eyre};
+use serde_json::Deserializer;
 use url::Url;
 
 mod native_binstall;
@@ -21,6 +22,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::GITHUB_TOKEN;
+use crate::errors::Error;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
@@ -29,6 +31,9 @@ use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 pub struct CargoBackend {
     ba: Arc<BackendArg>,
 }
+
+const CARGO_BINSTALL_NO_FALLBACK_EXIT_CODE: i32 = 94;
+const CARGO_BINSTALL_DEFAULT_DISABLED_STRATEGIES: &[&str] = &["compile"];
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct CargoOptions<'a> {
@@ -114,7 +119,6 @@ enum BinstallStatus {
     Enabled(PathBuf),
     Disabled,
     Unavailable,
-    UnsupportedOptions(Vec<&'static str>),
 }
 
 #[async_trait]
@@ -154,26 +158,24 @@ impl Backend for CargoBackend {
             }]);
         }
 
-        // Use crates.io API which includes created_at timestamps
-        let url = format!(
-            "https://crates.io/api/v1/crates/{}/versions",
-            self.tool_name()
-        );
-        let response: CratesIoVersionsResponse = HTTP_FETCH.json(&url).await?;
+        let response = HTTP_FETCH
+            .get_text(get_crate_url(&self.tool_name())?)
+            .await?;
 
-        let versions = response
-            .versions
-            .into_iter()
-            .filter(|v| !v.yanked)
-            .map(|v| VersionInfo {
-                version: v.num,
-                created_at: Some(v.created_at),
-                ..Default::default()
-            })
-            .rev() // API returns newest first, we want oldest first
-            .collect();
+        parse_crate_versions(&response)
+    }
 
-        Ok(versions)
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> eyre::Result<Option<String>> {
+        if self.git_url().is_some() {
+            return Ok(None);
+        }
+
+        let version = version.strip_prefix('=').unwrap_or(version);
+        Ok(versions::SemVer::new(version).map(|_| version.to_string()))
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
@@ -190,11 +192,86 @@ impl Backend for CargoBackend {
 
         let config = ctx.config.clone();
         let install_arg = format!("{}@{}", self.tool_name(), tv.version);
-        let registry_name = &Settings::get().cargo.registry_name;
 
-        let cmd = CmdLineRunner::new("cargo").arg("install");
-        let mut cmd = if let Some(url) = self.git_url() {
-            let mut cmd = cmd.arg(format!("--git={url}"));
+        let cargo_install_required_options =
+            Self::cargo_install_required_options(&tv.request.options());
+        if self.git_url().is_none() && cargo_install_required_options.is_empty() {
+            match self.binstall_status(&config, Some(&ctx.ts)).await {
+                BinstallStatus::Enabled(cargo_binstall) => {
+                    let mut cmd = CmdLineRunner::new(cargo_binstall).arg("-y");
+                    let disabled_strategies = CARGO_BINSTALL_DEFAULT_DISABLED_STRATEGIES
+                        .iter()
+                        .copied()
+                        .chain(
+                            (!Settings::get().cargo.binstall_quickinstall)
+                                .then_some("quick-install"),
+                        )
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    cmd = cmd.args(["--disable-strategies", &disabled_strategies]);
+                    if let Some(token) = &*GITHUB_TOKEN {
+                        cmd = cmd.env("GITHUB_TOKEN", token)
+                    }
+                    let result = self
+                        .execute_install_command(ctx, &tv, cmd.arg(&install_arg))
+                        .await;
+                    if result.as_ref().is_ok() {
+                        return Ok(tv.clone());
+                    }
+                    if Settings::get().cargo.binstall_only
+                        || !result.as_ref().is_err_and(|err| {
+                            Error::get_exit_status(err)
+                                == Some(CARGO_BINSTALL_NO_FALLBACK_EXIT_CODE)
+                        })
+                    {
+                        result?;
+                    }
+                    info!("cargo-binstall found no prebuilt binary; falling back to cargo install");
+                }
+                BinstallStatus::Disabled if Settings::get().cargo.binstall_only => {
+                    bail!("cargo-binstall is disabled, but cargo.binstall_only is set");
+                }
+                _ if Settings::get().cargo.binstall_only => {
+                    bail!("cargo-binstall is not available, but cargo.binstall_only is set");
+                }
+                BinstallStatus::Unavailable => match Settings::get().cargo.binstall_native {
+                    Some(true) => {
+                        Settings::get().ensure_experimental("cargo.binstall_native")?;
+                        if self
+                            .native_binstall(ctx, &tv, NativeBinstallAction::Install)
+                            .await?
+                        {
+                            return Ok(tv.clone());
+                        }
+                    }
+                    Some(false) => {}
+                    None if native_binstall::rollout_warning_active() => {
+                        self.native_binstall(ctx, &tv, NativeBinstallAction::WarnOnly)
+                            .await?;
+                    }
+                    None => {}
+                },
+                _ => {}
+            }
+        } else if Settings::get().cargo.binstall_only
+            && self.git_url().is_none()
+            && !cargo_install_required_options.is_empty()
+        {
+            let options = format_tool_options(&cargo_install_required_options);
+            bail!(
+                "cargo-binstall cannot honor cargo install-only tool option(s): {options}\n\
+                hint: Remove the option(s), or disable cargo.binstall_only to allow cargo install"
+            );
+        } else if !cargo_install_required_options.is_empty() {
+            let options = format_tool_options(&cargo_install_required_options);
+            info!(
+                "not using cargo-binstall because cargo install-only tool option(s) are specified: {options}"
+            );
+        }
+
+        let mut cmd = CmdLineRunner::new("cargo").arg("install");
+        if let Some(url) = self.git_url() {
+            cmd = cmd.arg(format!("--git={url}"));
             if let Some(rev) = tv.version.strip_prefix("rev:") {
                 cmd = cmd.arg(format!("--rev={rev}"));
             } else if let Some(branch) = tv.version.strip_prefix("branch:") {
@@ -208,99 +285,10 @@ impl Backend for CargoBackend {
       * mise use cargo:eza-community/eza@branch:main"#,
                 ))?;
             }
-            cmd
         } else {
-            match self.binstall_status(&config, Some(&ctx.ts), &tv).await {
-                BinstallStatus::Enabled(cargo_binstall) => {
-                    let mut cmd = CmdLineRunner::new(cargo_binstall).arg("-y");
-                    if !Settings::get().cargo.binstall_quickinstall {
-                        cmd = cmd.args(["--disable-strategies", "quick-install"]);
-                    }
-                    if let Some(token) = &*GITHUB_TOKEN {
-                        cmd = cmd.env("GITHUB_TOKEN", token)
-                    }
-                    cmd.arg(install_arg)
-                }
-                BinstallStatus::UnsupportedOptions(options)
-                    if Settings::get().cargo.binstall_only =>
-                {
-                    let options = format_tool_options(&options);
-                    bail!(
-                        "cargo-binstall cannot honor cargo install-only tool option(s): {options}\n\
-                        hint: Remove the option(s), or disable cargo.binstall_only to allow cargo install"
-                    );
-                }
-                BinstallStatus::Disabled if Settings::get().cargo.binstall_only => {
-                    bail!("cargo-binstall is disabled, but cargo.binstall_only is set");
-                }
-                _ if Settings::get().cargo.binstall_only => {
-                    bail!("cargo-binstall is not available, but cargo.binstall_only is set");
-                }
-                BinstallStatus::Unavailable => {
-                    match Settings::get().cargo.binstall_native {
-                        Some(true) => {
-                            Settings::get().ensure_experimental("cargo.binstall_native")?;
-                            if self
-                                .native_binstall(ctx, &tv, NativeBinstallAction::Install)
-                                .await?
-                            {
-                                return Ok(tv.clone());
-                            }
-                        }
-                        Some(false) => {}
-                        None if native_binstall::rollout_warning_active() => {
-                            self.native_binstall(ctx, &tv, NativeBinstallAction::WarnOnly)
-                                .await?;
-                        }
-                        None => {}
-                    }
-                    cmd.arg(install_arg)
-                }
-                BinstallStatus::UnsupportedOptions(options) => {
-                    let options = format_tool_options(&options);
-                    info!(
-                        "not using cargo-binstall because cargo install-only tool option(s) are specified: {options}"
-                    );
-                    cmd.arg(install_arg)
-                }
-                _ => cmd.arg(install_arg),
-            }
-        };
-
-        let request_options = tv.request.options();
-        let opts = CargoOptions::new(&request_options);
-        if let Some(bin) = opts.bin() {
-            cmd = cmd.arg(format!("--bin={bin}"));
+            cmd = cmd.arg(&install_arg);
         }
-        if opts.locked() {
-            cmd = cmd.arg("--locked");
-        }
-        if let Some(features) = opts.features() {
-            cmd = cmd.arg(format!("--features={features}"));
-        }
-        if opts.default_features_disabled() {
-            cmd = cmd.arg("--no-default-features");
-        }
-        if let Some(c) = opts.crate_arg() {
-            cmd = cmd.arg(c);
-        }
-        if let Some(registry_name) = registry_name {
-            cmd = cmd.arg(format!("--registry={registry_name}"));
-        }
-
-        cmd.arg("--root")
-            .arg(tv.install_path())
-            .with_pr(ctx.pr.as_ref())
-            .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-            .envs(tv.install_env())
-            .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
-            .prepend_path(
-                self.dependency_toolset(&ctx.config)
-                    .await?
-                    .list_paths(&ctx.config)
-                    .await,
-            )?
-            .execute()?;
+        self.execute_install_command(ctx, &tv, cmd).await?;
 
         Ok(tv.clone())
     }
@@ -331,6 +319,48 @@ impl CargoBackend {
         Self { ba: Arc::new(ba) }
     }
 
+    async fn execute_install_command<'a>(
+        &'a self,
+        ctx: &'a InstallContext,
+        tv: &'a ToolVersion,
+        mut cmd: CmdLineRunner<'a>,
+    ) -> Result<()> {
+        let request_options = tv.request.options();
+        let opts = CargoOptions::new(&request_options);
+        if let Some(bin) = opts.bin() {
+            cmd = cmd.arg(format!("--bin={bin}"));
+        }
+        if opts.locked() {
+            cmd = cmd.arg("--locked");
+        }
+        if let Some(features) = opts.features() {
+            cmd = cmd.arg(format!("--features={features}"));
+        }
+        if opts.default_features_disabled() {
+            cmd = cmd.arg("--no-default-features");
+        }
+        if let Some(c) = opts.crate_arg() {
+            cmd = cmd.arg(c);
+        }
+        if let Some(registry_name) = &Settings::get().cargo.registry_name {
+            cmd = cmd.arg(format!("--registry={registry_name}"));
+        }
+
+        cmd.arg("--root")
+            .arg(tv.install_path())
+            .with_pr(ctx.pr.as_ref())
+            .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+            .env_values(tv.install_env())
+            .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
+            .prepend_path(
+                self.dependency_toolset(&ctx.config)
+                    .await?
+                    .list_paths(&ctx.config)
+                    .await,
+            )?
+            .execute()
+    }
+
     fn cargo_install_required_options(opts: &ToolVersionOptions) -> Vec<&'static str> {
         let mut options = vec![];
         if CargoOptions::new(opts)
@@ -348,19 +378,9 @@ impl CargoBackend {
         options
     }
 
-    async fn binstall_status(
-        &self,
-        config: &Arc<Config>,
-        ts: Option<&Toolset>,
-        tv: &ToolVersion,
-    ) -> BinstallStatus {
+    async fn binstall_status(&self, config: &Arc<Config>, ts: Option<&Toolset>) -> BinstallStatus {
         if !Settings::get().cargo.binstall {
             return BinstallStatus::Disabled;
-        }
-        let opts = tv.request.options();
-        let cargo_install_required_options = Self::cargo_install_required_options(&opts);
-        if !cargo_install_required_options.is_empty() {
-            return BinstallStatus::UnsupportedOptions(cargo_install_required_options);
         }
         if let Some(cargo_binstall) = self
             .dependency_path_for_install(config, ts, "cargo-binstall")
@@ -407,16 +427,44 @@ fn format_tool_options(options: &[&'static str]) -> String {
         .join(", ")
 }
 
-#[derive(Debug, serde::Deserialize)]
-struct CratesIoVersionsResponse {
-    versions: Vec<CratesIoVersion>,
+fn get_crate_url(name: &str) -> eyre::Result<Url> {
+    if name.is_empty() || !name.is_ascii() {
+        bail!("invalid Cargo crate name: {name:?}");
+    }
+    let name = name.to_lowercase();
+    let url = match name.len() {
+        1 => format!("https://index.crates.io/1/{name}"),
+        2 => format!("https://index.crates.io/2/{name}"),
+        3 => format!("https://index.crates.io/3/{}/{name}", &name[..1]),
+        _ => format!(
+            "https://index.crates.io/{}/{}/{name}",
+            &name[..2],
+            &name[2..4]
+        ),
+    };
+    Ok(url.parse()?)
+}
+
+fn parse_crate_versions(response: &str) -> eyre::Result<Vec<VersionInfo>> {
+    let mut versions = vec![];
+    for version in Deserializer::from_str(response).into_iter::<CrateVersion>() {
+        let version = version?;
+        if !version.yanked {
+            versions.push(VersionInfo {
+                version: version.vers,
+                created_at: version.pubtime,
+                ..Default::default()
+            });
+        }
+    }
+    Ok(versions)
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct CratesIoVersion {
-    num: String,
+struct CrateVersion {
+    vers: String,
     yanked: bool,
-    created_at: String,
+    pubtime: Option<String>,
 }
 
 #[cfg(test)]
@@ -424,6 +472,60 @@ mod tests {
     use super::*;
     use crate::platform::Platform;
     use crate::toolset::parse_tool_options;
+
+    #[tokio::test]
+    async fn exact_semver_versions_resolve_without_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = CargoBackend::from_arg("cargo:tool".into());
+
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "=1.2.3")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.2.3")
+        );
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "1.2.3")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.2.3")
+        );
+    }
+
+    #[tokio::test]
+    async fn fuzzy_versions_require_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = CargoBackend::from_arg("cargo:tool".into());
+
+        for version in ["latest", "1", "1.2", "^1.2.3", ">=1.2.3"] {
+            assert_eq!(
+                backend
+                    .resolve_exact_version(&config, version)
+                    .await
+                    .unwrap(),
+                None,
+                "{version} should use remote discovery"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn git_versions_keep_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = CargoBackend::from_arg("cargo:owner/repo".into());
+
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "1.2.3")
+                .await
+                .unwrap(),
+            None
+        );
+    }
 
     #[test]
     fn test_lockfile_options_uses_target_platform_bin() {
@@ -537,6 +639,52 @@ mod tests {
         assert_eq!(
             CargoBackend::cargo_install_required_options(&opts),
             vec!["default-features"]
+        );
+    }
+
+    #[test]
+    fn crate_index_url_uses_sparse_index_layout() {
+        let cases = [
+            ("a", "https://index.crates.io/1/a"),
+            ("Ab", "https://index.crates.io/2/ab"),
+            ("Abc", "https://index.crates.io/3/a/abc"),
+            ("Cargo-Deny", "https://index.crates.io/ca/rg/cargo-deny"),
+        ];
+
+        for (name, expected) in cases {
+            assert_eq!(get_crate_url(name).unwrap().as_str(), expected);
+        }
+    }
+
+    #[test]
+    fn crate_index_url_rejects_empty_name() {
+        let error = get_crate_url("").unwrap_err();
+
+        assert_eq!(error.to_string(), "invalid Cargo crate name: \"\"");
+    }
+
+    #[test]
+    fn crate_index_url_rejects_non_ascii_name() {
+        let error = get_crate_url("aébc").unwrap_err();
+
+        assert_eq!(error.to_string(), "invalid Cargo crate name: \"aébc\"");
+    }
+
+    #[test]
+    fn parse_crate_versions_uses_pubtime_and_skips_yanked_versions() {
+        let response = r#"{"vers":"1.0.0","yanked":false,"pubtime":"2025-01-01T00:00:00Z"}
+{"vers":"1.1.0","yanked":true,"pubtime":"2025-02-01T00:00:00Z"}
+{"vers":"1.2.0","yanked":false}"#;
+
+        let versions = parse_crate_versions(response).unwrap();
+        let versions = versions
+            .iter()
+            .map(|version| (version.version.as_str(), version.created_at.as_deref()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            versions,
+            vec![("1.0.0", Some("2025-01-01T00:00:00Z")), ("1.2.0", None),]
         );
     }
 }

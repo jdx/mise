@@ -20,15 +20,25 @@ impl TaskDep {
         &mut self,
         tera: &mut TeraEngine,
         tera_ctx: &tera::Context,
-    ) -> crate::Result<&mut Self> {
+    ) -> crate::Result<bool> {
         if contains_template_syntax(&self.task) {
             self.task = render_str(tera, &self.task, tera_ctx)?;
-        }
-        for a in &mut self.args {
-            if contains_template_syntax(a) {
-                *a = render_str(tera, a, tera_ctx)?;
+            if self.task.trim().is_empty() {
+                return Ok(false);
             }
         }
+        let mut rendered_args = Vec::with_capacity(self.args.len());
+        for a in &self.args {
+            if contains_template_syntax(a) {
+                let rendered = render_str(tera, a, tera_ctx)?;
+                if !rendered.is_empty() {
+                    rendered_args.push(rendered);
+                }
+            } else {
+                rendered_args.push(a.clone());
+            }
+        }
+        self.args = rendered_args;
         // Render env values through Tera
         for v in self.env.values_mut() {
             if contains_template_syntax(v) {
@@ -36,7 +46,7 @@ impl TaskDep {
             }
         }
         self.parse_shell_style_env()?;
-        Ok(self)
+        Ok(true)
     }
 
     pub fn parse_shell_style_env(&mut self) -> crate::Result<&mut Self> {
@@ -330,6 +340,79 @@ mod tests {
         assert_eq!(td.task, "mytask");
         assert_eq!(td.args, vec!["arg1", "arg2"]);
         assert!(td.env.is_empty());
+    }
+
+    #[test]
+    fn test_task_dep_render_omits_empty_templated_args() {
+        let mut td = TaskDep {
+            task: "lint".to_string(),
+            args: vec![
+                "{% if usage.fix %}--fix{% endif %}".to_string(),
+                String::new(),
+            ],
+            env: Default::default(),
+        };
+        let mut tera = TeraEngine::V2(Box::default());
+        let mut ctx = tera::Context::new();
+        ctx.insert("usage", &serde_json::json!({ "fix": false }));
+        td.render(&mut tera, &ctx).unwrap();
+
+        assert_eq!(td.args, vec![""]);
+    }
+
+    #[test]
+    fn test_task_dep_render_keeps_non_empty_templated_args() {
+        let mut td = TaskDep {
+            task: "lint".to_string(),
+            args: vec!["{% if usage.fix %}--fix{% endif %}".to_string()],
+            env: Default::default(),
+        };
+        let mut tera = TeraEngine::V2(Box::default());
+        let mut ctx = tera::Context::new();
+        ctx.insert("usage", &serde_json::json!({ "fix": true }));
+        td.render(&mut tera, &ctx).unwrap();
+
+        assert_eq!(td.args, vec!["--fix"]);
+    }
+
+    #[test]
+    fn test_task_dep_render_skips_empty_templated_task() {
+        let mut td: TaskDep = "{% if false %}lint{% endif %}".parse().unwrap();
+        let mut tera = TeraEngine::V2(Box::default());
+        let ctx = tera::Context::new();
+
+        assert!(!td.render(&mut tera, &ctx).unwrap());
+        assert!(td.task.is_empty());
+    }
+
+    #[test]
+    fn test_task_dep_render_skips_whitespace_only_templated_task() {
+        let mut td: TaskDep = "\n{% if false %}lint{% endif %}\n".parse().unwrap();
+        let mut tera = TeraEngine::V2(Box::default());
+        let ctx = tera::Context::new();
+
+        assert!(!td.render(&mut tera, &ctx).unwrap());
+        assert_eq!(td.task, "\n\n");
+    }
+
+    #[test]
+    fn test_task_dep_render_keeps_non_empty_templated_task() {
+        let mut td: TaskDep = "{% if true %}lint{% endif %}".parse().unwrap();
+        let mut tera = TeraEngine::V2(Box::default());
+        let ctx = tera::Context::new();
+
+        assert!(td.render(&mut tera, &ctx).unwrap());
+        assert_eq!(td.task, "lint");
+    }
+
+    #[test]
+    fn test_task_dep_render_keeps_literal_empty_task() {
+        let mut td: TaskDep = "".parse().unwrap();
+        let mut tera = TeraEngine::V2(Box::default());
+        let ctx = tera::Context::new();
+
+        assert!(td.render(&mut tera, &ctx).unwrap());
+        assert!(td.task.is_empty());
     }
 
     #[test]

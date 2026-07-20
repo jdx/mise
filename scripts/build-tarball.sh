@@ -75,7 +75,25 @@ if [[ $os == "linux" ]] && [[ $arch == "armv7" ]]; then
 	features="$features,aws-lc-rs"
 fi
 
-if [[ $os == "linux" ]]; then
+if [[ $os == "macos" ]]; then
+	# Targeting macOS 12+ makes ld emit chained fixups (LC_DYLD_CHAINED_FIXUPS),
+	# which dyld applies lazily per page instead of eagerly interpreting ~170k
+	# legacy rebase/bind opcodes on every launch. Measurably faster startup for
+	# a binary this large. macOS 11 (EOL since 2023) cannot run these binaries.
+	export MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-12.0}
+fi
+
+if [[ -n "${MISE_PGO:-}" ]]; then
+	# Profile-guided optimization: instrument, train against the hermetic
+	# offline workload in scripts/pgo.bash, rebuild with the profile.
+	# Only valid for targets whose binaries can execute on this machine.
+	build_tool=cargo
+	if [[ $os == "linux" ]]; then
+		build_tool=cross
+	fi
+	MISE_PGO_BUILD_TOOL="$build_tool" MISE_PGO_TARGET="$RUST_TRIPLE" \
+		bash scripts/pgo.bash --no-default-features --features "$features"
+elif [[ $os == "linux" ]]; then
 	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 else
 	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"

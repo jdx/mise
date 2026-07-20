@@ -3,8 +3,9 @@ use crate::config::{Config, Settings};
 use crate::task::Deps;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_helpers::canonicalize_path;
-use crate::toolset::{InstallOptions, ToolSource, Toolset};
+use crate::toolset::{InstallOptions, ToolSource, ToolVersion, Toolset};
 use eyre::Result;
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -23,7 +24,13 @@ impl<'a> TaskToolInstaller<'a> {
     }
 
     /// Collect and install all tools needed by tasks
-    pub async fn install_tools(&self, config: &mut Arc<Config>, tasks: &Deps) -> Result<()> {
+    pub async fn install_tools(
+        &self,
+        config: &mut Arc<Config>,
+        tasks: &Deps,
+        dry_run: bool,
+        previewed_tools: &HashSet<ToolVersion>,
+    ) -> Result<()> {
         let mut all_tools = self.cli_tools.to_vec();
         let mut all_tool_requests = vec![];
         let all_tasks: Vec<_> = tasks.all().collect();
@@ -33,9 +40,7 @@ impl<'a> TaskToolInstaller<'a> {
         // Collect tools from tasks
         for t in &all_tasks {
             // Collect tools from task.tools (task-level tool overrides)
-            for (k, v) in &t.tools {
-                all_tools.push(v.to_tool_spec(k).parse()?);
-            }
+            all_tools.extend(t.tool_args()?);
 
             // Collect tools from monorepo task config files
             if let Some(task_cf) = t.cf(config) {
@@ -55,7 +60,8 @@ impl<'a> TaskToolInstaller<'a> {
         let toolset = self
             .build_toolset(config, all_tools, all_tool_requests)
             .await?;
-        self.install_toolset(config, toolset).await?;
+        self.install_toolset(config, toolset, dry_run, previewed_tools)
+            .await?;
 
         Ok(())
     }
@@ -182,11 +188,23 @@ impl<'a> TaskToolInstaller<'a> {
     }
 
     /// Install missing versions from the toolset
-    async fn install_toolset(&self, config: &mut Arc<Config>, mut ts: Toolset) -> Result<()> {
+    async fn install_toolset(
+        &self,
+        config: &mut Arc<Config>,
+        mut ts: Toolset,
+        dry_run: bool,
+        previewed_tools: &HashSet<ToolVersion>,
+    ) -> Result<()> {
+        if dry_run {
+            for tvl in ts.versions.values_mut() {
+                tvl.versions.retain(|tv| !previewed_tools.contains(tv));
+            }
+        }
         let _ = ts
             .install_missing_versions(
                 config,
                 &InstallOptions {
+                    dry_run,
                     missing_args_only: !Settings::get().task.run_auto_install,
                     skip_auto_install: !Settings::get().task.run_auto_install
                         || !Settings::get().auto_install,

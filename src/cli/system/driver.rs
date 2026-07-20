@@ -78,16 +78,13 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
             debug!("{name}: skipping, excluded by system_packages.managers");
             continue;
         }
-        if !mp.manager.is_available() {
+        if let Some(reason) = mp.manager.unavailable_reason_async().await {
             if d.manager.is_some() || d.explicit {
                 // explicitly requested (via --manager or manager:package
                 // specs) — failing silently would be a lie
-                bail!(
-                    "{name} is not available: {}",
-                    mp.manager.unavailable_reason()
-                );
+                bail!("{name} is not available: {}", reason);
             }
-            debug!("{name}: skipping, {}", mp.manager.unavailable_reason());
+            debug!("{name}: skipping, {reason}");
             continue;
         }
         let statuses = mp.manager.installed(&mp.requests).await?;

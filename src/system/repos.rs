@@ -9,13 +9,15 @@
 //!
 //! Repos are applied only during explicit bootstrap commands. Existing repos
 //! are updated only when the worktree is clean and the configured origin
-//! matches.
+//! matches. Origins are compared transport-agnostically for common network
+//! forms, so an ssh origin matches its https equivalent.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use eyre::{Result, bail, eyre};
 use serde::Deserialize;
+use url::Url;
 
 use crate::file;
 
@@ -127,8 +129,8 @@ pub fn preflight_statuses(statuses: &[RepoStatus]) -> Result<()> {
     Ok(())
 }
 
-pub fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
-    preflight_statuses(statuses)?;
+/// Apply statuses previously validated with [`preflight_statuses`].
+pub(crate) fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
     for status in statuses {
         match &status.state {
             RepoState::Current => {
@@ -138,6 +140,86 @@ pub fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
             RepoState::Differs => update_repo(&status.request, dry_run)?,
             RepoState::Dirty | RepoState::Conflict(_) => unreachable!("preflighted above"),
         }
+    }
+    Ok(())
+}
+
+/// Update statuses previously validated with [`preflight_statuses`].
+pub(crate) fn update_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
+    for status in statuses {
+        match &status.state {
+            RepoState::Missing => clone_repo(&status.request, dry_run)?,
+            RepoState::Differs => update_repo(&status.request, dry_run)?,
+            RepoState::Current if status.request.git_ref.is_none() => {
+                update_unpinned_repo(&status.request, dry_run)?
+            }
+            RepoState::Current => {
+                info!("repos: {} already current", status.request);
+            }
+            RepoState::Dirty | RepoState::Conflict(_) => unreachable!("preflighted above"),
+        }
+    }
+    Ok(())
+}
+
+pub fn exec(
+    requests: &[RepoRequest],
+    command: &[String],
+    dry_run: bool,
+    continue_on_error: bool,
+) -> Result<()> {
+    let Some((program, args)) = command.split_first() else {
+        bail!("repos: command is required");
+    };
+    let statuses = status(requests)?;
+    let mut failures = vec![];
+    for status in statuses {
+        match &status.state {
+            RepoState::Missing => {
+                warn!("repos: {}: missing, skipping", status.request);
+                continue;
+            }
+            RepoState::Conflict(reason) => {
+                warn!("repos: {}: {reason}, skipping", status.request);
+                continue;
+            }
+            RepoState::Current | RepoState::Differs | RepoState::Dirty => {}
+        }
+
+        miseprintln!("repo: {}", status.request);
+        if dry_run {
+            let mut parts = vec!["cd".to_string(), status.request.path.display().to_string()];
+            parts.push("&&".to_string());
+            parts.extend(command.iter().cloned());
+            miseprintln!("{}", shell_words::join(parts));
+            continue;
+        }
+
+        debug!(
+            "$ (cd {} && {})",
+            status.request,
+            shell_words::join(command)
+        );
+        let result = Command::new(program)
+            .args(args)
+            .current_dir(&status.request.path)
+            .status();
+        let failed = match result {
+            Ok(exit) => !exit.success(),
+            Err(err) => {
+                warn!("repos: {}: command failed to start: {err}", status.request);
+                true
+            }
+        };
+        if failed {
+            failures.push(status.request.to_string());
+            if !continue_on_error {
+                bail!("repos: command failed in {}", status.request);
+            }
+        }
+    }
+    if !failures.is_empty() {
+        bail!("repos: command failed in {}", failures.join(", "));
     }
     Ok(())
 }
@@ -284,6 +366,30 @@ fn update_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
     Ok(())
 }
 
+fn update_unpinned_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
+    if !is_clean(&request.path)? {
+        bail!(
+            "repos: {} has local changes; commit, stash, or clean them before bootstrap",
+            request
+        );
+    }
+    let branch = current_ref(&request.path)?;
+    if dry_run {
+        print_git_command(&request.path, &["fetch", "--prune", "--tags", "origin"])?;
+    } else {
+        git_run(&request.path, &["fetch", "--prune", "--tags", "origin"])?;
+    }
+    if branch == "HEAD" {
+        warn!("repos: {} has detached HEAD, skipping", request);
+        return Ok(());
+    }
+    if dry_run {
+        print_git_command(&request.path, &["pull", "--ff-only", "origin", &branch])?;
+        return Ok(());
+    }
+    git_run(&request.path, &["pull", "--ff-only", "origin", &branch])
+}
+
 fn ref_is_current(
     path: &Path,
     git_ref: &str,
@@ -318,7 +424,77 @@ fn origin_matches_config(origin: Option<&str>, config_url: &str) -> bool {
     let Some(origin) = origin else {
         return false;
     };
-    origin == config_url || normalize_remote_url(origin) == normalize_remote_url(config_url)
+    if origin == config_url || normalize_remote_url(origin) == normalize_remote_url(config_url) {
+        return true;
+    }
+    match (repo_identity(origin), repo_identity(config_url)) {
+        (Some(origin), Some(config)) => origin == config,
+        _ => false,
+    }
+}
+
+/// Reduces a network remote URL to a host/path identity so the same repo is
+/// recognized across transports — exactly the forms agreed in #10997:
+/// `git@host:path`, `ssh://git@host/path`, and `https://host/path` compare
+/// equal. Everything else keeps exact matching: `http://` and `git://` stay
+/// distinct so an insecure transport is never silently preserved as
+/// equivalent to a configured https url; ssh forms without a user are not
+/// normalized (git resolves an omitted ssh user to the current login user,
+/// not `git`); URLs carrying a query or fragment, local paths, `file://`
+/// URLs, and unrecognized syntax return `None`. Explicit ports and non-`git`
+/// users stay part of the identity since they can address different
+/// repositories.
+fn repo_identity(url: &str) -> Option<String> {
+    let url = normalize_remote_url(url);
+    if let Some((scheme, _)) = url.split_once("://") {
+        let scheme = scheme.to_ascii_lowercase();
+        if !matches!(scheme.as_str(), "ssh" | "https") {
+            return None;
+        }
+        let url = Url::parse(&url).ok()?;
+        if url.query().is_some() || url.fragment().is_some() {
+            return None;
+        }
+        // https userinfo is credential material, not repository identity — it
+        // must not occupy the same identity slot as an ssh user. ssh needs an
+        // explicit user (an omitted one means the login user, not `git`).
+        match scheme.as_str() {
+            "https" if !url.username().is_empty() || url.password().is_some() => return None,
+            "ssh" if url.username().is_empty() => return None,
+            _ => {}
+        }
+        let host = url.host_str()?.to_string();
+        repo_identity_parts(url.username(), &host, url.port(), url.path())
+    } else if is_scp_like_url(&url) {
+        let (authority, path) = url.split_once(':')?;
+        if authority.contains(['[', ']']) {
+            return None;
+        }
+        // scp-like syntax is always ssh: no user means the login user, so
+        // only explicit-user forms participate in identity comparison.
+        let (user, host) = authority.rsplit_once('@')?;
+        if user.is_empty() {
+            return None;
+        }
+        repo_identity_parts(user, host, None, path)
+    } else {
+        None
+    }
+}
+
+fn repo_identity_parts(user: &str, host: &str, port: Option<u16>, path: &str) -> Option<String> {
+    let path = path.trim_matches('/');
+    if host.is_empty() || path.is_empty() {
+        return None;
+    }
+    // the conventional `git` ssh user is transport metadata on forges
+    let user = match user {
+        "" | "git" => String::new(),
+        user => format!("{user}@"),
+    };
+    let host = host.to_ascii_lowercase();
+    let port = port.map(|port| format!(":{port}")).unwrap_or_default();
+    Some(format!("{user}{host}{port}/{path}"))
 }
 
 fn normalize_remote_url(url: &str) -> String {
@@ -586,6 +762,47 @@ mod tests {
         );
     }
 
+    fn init_repo(path: &Path) {
+        Command::new("git")
+            .args(["init", "-q", "-b", "main"])
+            .arg(path)
+            .status()
+            .unwrap();
+        fs::write(path.join("version.txt"), "v1").unwrap();
+        test_git(path, &["add", "."]);
+        test_git(
+            path,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test User",
+                "commit",
+                "-q",
+                "-m",
+                "v1",
+            ],
+        );
+    }
+
+    fn commit_version(path: &Path, version: &str) {
+        fs::write(path.join("version.txt"), version).unwrap();
+        test_git(path, &["add", "."]);
+        test_git(
+            path,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test User",
+                "commit",
+                "-q",
+                "-m",
+                version,
+            ],
+        );
+    }
+
     #[test]
     fn validates_repo_request() {
         let request = RepoRequest::from_toml(
@@ -669,7 +886,137 @@ mod tests {
     }
 
     #[test]
-    fn apply_statuses_preflights_blocked_repos_before_mutating() {
+    fn origin_urls_match_the_same_repo_across_transports() {
+        let https = "https://github.com/jdx/mise.git";
+        for origin in [
+            "git@github.com:jdx/mise.git",
+            "git@github.com:jdx/mise",
+            "ssh://git@github.com/jdx/mise.git",
+            "ssh://git@github.com/jdx/mise",
+            "https://GitHub.com/jdx/mise.git",
+        ] {
+            assert!(
+                origin_matches_config(Some(origin), https),
+                "{origin} should match {https}"
+            );
+            assert!(
+                origin_matches_config(Some(https), origin),
+                "{https} should match {origin}"
+            );
+        }
+        // the same non-git user on both sides is the same identity
+        assert!(origin_matches_config(
+            Some("alice@example.com:team/repo.git"),
+            "ssh://alice@example.com/team/repo"
+        ));
+        // scp paths compare without their optional leading slash
+        assert!(origin_matches_config(
+            Some("git@example.com:/srv/git/repo.git"),
+            "ssh://git@example.com/srv/git/repo"
+        ));
+        // explicit ports match when they agree
+        assert!(origin_matches_config(
+            Some("ssh://git@example.com:2222/team/repo.git"),
+            "ssh://git@example.com:2222/team/repo"
+        ));
+    }
+
+    #[test]
+    fn origin_urls_conflict_across_hosts_users_ports_and_paths() {
+        let https = "https://github.com/jdx/mise.git";
+        for origin in [
+            "git@gitlab.com:jdx/mise.git",            // different host
+            "git@github-work:jdx/mise.git",           // ssh alias
+            "ssh://git@github.com:2222/jdx/mise.git", // explicit port
+            "git@github.com:jdx/other.git",           // different repo
+            "git@github.com:other/mise.git",          // different owner
+            "alice@github.com:jdx/mise.git",          // non-git ssh user
+            "ssh://alice@github.com/jdx/mise.git",    // non-git ssh user (url form)
+            "ssh://github.com/jdx/mise.git",          // userless ssh = login user, not git
+            "github.com:jdx/mise.git",                // userless scp = login user, not git
+            "https://github.com/jdx/mise?tenant=a",   // query strings are not identity
+            "http://github.com/jdx/mise.git",         // insecure transport is not equivalent
+            "git://github.com/jdx/mise.git",          // insecure transport is not equivalent
+            "https://alice@github.com/jdx/mise.git",  // https userinfo is credentials, not identity
+            "ftp://github.com/jdx/mise.git",          // unrecognized scheme
+        ] {
+            assert!(
+                !origin_matches_config(Some(origin), https),
+                "{origin} should not match {https}"
+            );
+        }
+        assert!(!origin_matches_config(
+            Some("ssh://git@github.com:2222/jdx/mise.git"),
+            "ssh://git@github.com/jdx/mise.git"
+        ));
+        assert!(!origin_matches_config(
+            Some("alice@github.com:jdx/mise.git"),
+            "git@github.com:jdx/mise.git"
+        ));
+        // userless ssh and query-carrying URLs only match themselves exactly
+        assert!(origin_matches_config(
+            Some("ssh://github.com/jdx/mise.git"),
+            "ssh://github.com/jdx/mise.git"
+        ));
+        assert!(!origin_matches_config(
+            Some("ssh://github.com/jdx/mise.git"),
+            "git@github.com:jdx/mise.git"
+        ));
+        assert!(!origin_matches_config(
+            Some("https://github.com/jdx/mise?tenant=a"),
+            "https://github.com/jdx/mise?tenant=b"
+        ));
+        // https userinfo never occupies the ssh-user identity slot
+        assert!(!origin_matches_config(
+            Some("ssh://alice@example.com/team/repo.git"),
+            "https://alice@example.com/team/repo.git"
+        ));
+        // local and file:// forms keep exact matching
+        assert!(!origin_matches_config(
+            Some("/srv/git/mise.git"),
+            "file:///srv/git/mise.git"
+        ));
+        assert!(!origin_matches_config(
+            Some(r"C:\repos\mise"),
+            "https://github.com/jdx/mise"
+        ));
+    }
+
+    #[test]
+    fn status_recognizes_origin_across_transports() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        init_repo(&repo);
+        test_git(
+            &repo,
+            &["remote", "add", "origin", "git@github.com:jdx/mise.git"],
+        );
+
+        let request = RepoRequest {
+            path_raw: repo.display().to_string(),
+            path: repo.clone(),
+            url: "https://github.com/jdx/mise.git".to_string(),
+            git_ref: None,
+        };
+        assert_eq!(status_one(&request).unwrap().state, RepoState::Current);
+
+        test_git(
+            &repo,
+            &[
+                "remote",
+                "set-url",
+                "origin",
+                "git@github.com:other/mise.git",
+            ],
+        );
+        assert_eq!(
+            status_one(&request).unwrap().state,
+            RepoState::Conflict("origin does not match configured url".to_string())
+        );
+    }
+
+    #[test]
+    fn preflight_statuses_blocks_dirty_repos_before_mutation() {
         let tmp = tempfile::tempdir().unwrap();
         let missing_path = tmp.path().join("missing");
         let missing_request = RepoRequest {
@@ -693,10 +1040,65 @@ mod tests {
         };
 
         let err =
-            apply_statuses(&[missing_status(&missing_request), dirty_status], false).unwrap_err();
+            preflight_statuses(&[missing_status(&missing_request), dirty_status]).unwrap_err();
 
         assert!(format!("{err:#}").contains("local changes"));
         assert!(!missing_path.exists());
+    }
+
+    #[test]
+    fn ref_less_update_pulls_current_branch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        let target = tmp.path().join("target");
+        init_repo(&source);
+        let url = format!("file://{}", source.display());
+        test_git(tmp.path(), &["clone", "-q", &url, target.to_str().unwrap()]);
+        commit_version(&source, "v2");
+        let request = RepoRequest {
+            path_raw: target.display().to_string(),
+            path: target.clone(),
+            url,
+            git_ref: None,
+        };
+
+        let statuses = status(&[request]).unwrap();
+        assert_eq!(statuses[0].state, RepoState::Current);
+        update_statuses(&statuses, false).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(target.join("version.txt")).unwrap(),
+            "v2"
+        );
+    }
+
+    #[test]
+    fn ref_less_update_skips_detached_head() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        let target = tmp.path().join("target");
+        init_repo(&source);
+        let url = format!("file://{}", source.display());
+        test_git(tmp.path(), &["clone", "-q", &url, target.to_str().unwrap()]);
+        test_git(&target, &["checkout", "-q", "--detach"]);
+        commit_version(&source, "v2");
+        let request = RepoRequest {
+            path_raw: target.display().to_string(),
+            path: target.clone(),
+            url,
+            git_ref: None,
+        };
+
+        update_statuses(&status(&[request]).unwrap(), false).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(target.join("version.txt")).unwrap(),
+            "v1"
+        );
+        assert_eq!(
+            local_ref_sha(&target, "origin/main").unwrap(),
+            current_sha(&source).unwrap()
+        );
     }
 
     #[test]
@@ -735,6 +1137,40 @@ mod tests {
         let err = update_repo(&request, false).unwrap_err();
 
         assert!(format!("{err:#}").contains("local changes"));
+    }
+
+    #[test]
+    fn update_unpinned_repo_rechecks_clean_worktree_before_mutating() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        let target = tmp.path().join("target");
+        init_repo(&source);
+        let url = format!("file://{}", source.display());
+        test_git(tmp.path(), &["clone", "-q", &url, target.to_str().unwrap()]);
+        let request = RepoRequest {
+            path_raw: target.display().to_string(),
+            path: target.clone(),
+            url,
+            git_ref: None,
+        };
+        let statuses = status(&[request]).unwrap();
+        let original_origin_sha = local_ref_sha(&target, "origin/main").unwrap();
+        commit_version(&source, "v2");
+        fs::write(target.join("local.txt"), "local").unwrap();
+
+        let err = update_unpinned_repo(&statuses[0].request, false).unwrap_err();
+
+        assert!(format!("{err:#}").contains("local changes"));
+        assert_eq!(
+            local_ref_sha(&target, "origin/main").unwrap(),
+            original_origin_sha
+        );
+    }
+
+    #[test]
+    fn exec_rejects_an_empty_command() {
+        let err = exec(&[], &[], false, false).unwrap_err();
+        assert!(format!("{err:#}").contains("command is required"));
     }
 
     #[test]

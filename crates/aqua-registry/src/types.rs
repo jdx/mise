@@ -60,8 +60,8 @@ pub struct AquaPackage {
     pub url: String,
     pub description: Option<String>,
     pub format: String,
-    pub rosetta2: bool,
-    pub windows_arm_emulation: bool,
+    pub rosetta2: Option<bool>,
+    pub windows_arm_emulation: Option<bool>,
     pub complete_windows_ext: Option<bool>,
     pub windows_ext: String,
     pub append_ext: Option<bool>,
@@ -87,7 +87,7 @@ pub struct AquaPackage {
     version_constraint: String,
     #[rkyv(omit_bounds)]
     pub version_overrides: Vec<AquaPackage>,
-    pub no_asset: bool,
+    pub no_asset: Option<bool>,
     pub private: bool,
     pub error_message: Option<String>,
     pub path: Option<String>,
@@ -382,8 +382,8 @@ impl Default for AquaPackage {
             url: String::new(),
             description: None,
             format: String::new(),
-            rosetta2: false,
-            windows_arm_emulation: false,
+            rosetta2: None,
+            windows_arm_emulation: None,
             complete_windows_ext: None,
             windows_ext: String::new(),
             append_ext: None,
@@ -404,7 +404,7 @@ impl Default for AquaPackage {
             overrides: Vec::new(),
             version_constraint: String::new(),
             version_overrides: Vec::new(),
-            no_asset: false,
+            no_asset: None,
             private: false,
             error_message: None,
             path: None,
@@ -712,8 +712,8 @@ impl AquaPackage {
     }
 
     fn actual_arch<'a>(&self, os: &str, arch: &'a str) -> &'a str {
-        if (os == "darwin" && arch == "arm64" && self.rosetta2)
-            || (os == "windows" && arch == "arm64" && self.windows_arm_emulation)
+        if (os == "darwin" && arch == "arm64" && self.rosetta2.unwrap_or(false))
+            || (os == "windows" && arch == "arm64" && self.windows_arm_emulation.unwrap_or(false))
         {
             "amd64"
         } else {
@@ -994,11 +994,11 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     if !avo.format.is_empty() {
         orig.format = avo.format.clone();
     }
-    if avo.rosetta2 {
-        orig.rosetta2 = true;
+    if avo.rosetta2.is_some() {
+        orig.rosetta2 = avo.rosetta2;
     }
-    if avo.windows_arm_emulation {
-        orig.windows_arm_emulation = true;
+    if avo.windows_arm_emulation.is_some() {
+        orig.windows_arm_emulation = avo.windows_arm_emulation;
     }
     if avo.complete_windows_ext.is_some() {
         orig.complete_windows_ext = avo.complete_windows_ext;
@@ -1084,8 +1084,8 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
         }
     }
 
-    if avo.no_asset {
-        orig.no_asset = true;
+    if avo.no_asset.is_some() {
+        orig.no_asset = avo.no_asset;
     }
     if let Some(error_message) = avo.error_message.clone() {
         orig.error_message = Some(error_message);
@@ -1520,6 +1520,112 @@ packages:
         .with_version(&["1.0.0"], "linux", "amd64");
 
         assert!(pkg.private);
+    }
+
+    #[test]
+    fn test_emulation_flags_can_be_disabled_by_version_override() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - asset: tool-{{.OS}}-{{.Arch}}
+    rosetta2: true
+    windows_arm_emulation: true
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: false
+        windows_arm_emulation: false
+"#,
+        )
+        .with_version(&["1.0.0"], "darwin", "arm64");
+
+        assert_eq!(pkg.rosetta2, Some(false));
+        assert_eq!(pkg.windows_arm_emulation, Some(false));
+        assert_eq!(
+            pkg.asset("1.0.0", "darwin", "arm64").unwrap(),
+            "tool-darwin-arm64"
+        );
+        assert_eq!(
+            pkg.asset("1.0.0", "windows", "arm64").unwrap(),
+            "tool-windows-arm64.exe"
+        );
+    }
+
+    #[test]
+    fn test_emulation_flags_can_be_disabled_by_platform_override() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - asset: tool-{{.OS}}-{{.Arch}}
+    rosetta2: true
+    overrides:
+      - goos: darwin
+        rosetta2: false
+"#,
+        )
+        .with_version(&["1.0.0"], "darwin", "arm64");
+
+        assert_eq!(pkg.rosetta2, Some(false));
+        assert_eq!(
+            pkg.asset("1.0.0", "darwin", "arm64").unwrap(),
+            "tool-darwin-arm64"
+        );
+    }
+
+    #[test]
+    fn test_no_asset_can_be_disabled_by_version_override() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - no_asset: true
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        no_asset: false
+"#,
+        )
+        .with_version(&["1.0.0"], "linux", "amd64");
+
+        assert_eq!(pkg.no_asset, Some(false));
+    }
+
+    #[test]
+    fn test_omitted_emulation_flags_preserve_base_values() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - asset: tool-{{.OS}}-{{.Arch}}
+    rosetta2: true
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        format: raw
+"#,
+        )
+        .with_version(&["1.0.0"], "darwin", "arm64");
+
+        assert_eq!(pkg.rosetta2, Some(true));
+        assert_eq!(
+            pkg.asset("1.0.0", "darwin", "arm64").unwrap(),
+            "tool-darwin-amd64"
+        );
+    }
+
+    #[test]
+    fn test_omitted_no_asset_preserves_base_value() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - no_asset: true
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        format: raw
+"#,
+        )
+        .with_version(&["1.0.0"], "linux", "amd64");
+
+        assert_eq!(pkg.no_asset, Some(true));
     }
 
     #[test]

@@ -74,6 +74,18 @@ impl Backend for GemBackend {
         Ok(versions)
     }
 
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> eyre::Result<Option<String>> {
+        // RubyGems allows non-semver versions (4-part like rails 5.0.0.1,
+        // dotted prereleases like 1.2.3.rc1) — those keep using remote
+        // discovery. A full semver request is exact; `gem install --version`
+        // fails when it does not exist upstream.
+        Ok(versions::SemVer::new(version).map(|_| version.to_string()))
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         // Check if gem is available
         self.warn_if_dependency_missing(
@@ -94,7 +106,7 @@ impl Backend for GemBackend {
             .arg(tv.install_path().join("libexec"))
             .with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
-            .envs(tv.install_env())
+            .env_values(tv.install_env())
             .execute()?;
 
         // We install the gem to {install_path}/libexec and create a wrapper script for each executable
@@ -471,6 +483,40 @@ fn extract_minor_version(version: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn exact_semver_versions_resolve_without_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = GemBackend::from_arg("gem:rubocop".into());
+
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "1.69.0")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.69.0")
+        );
+    }
+
+    #[tokio::test]
+    async fn non_semver_versions_require_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = GemBackend::from_arg("gem:rails".into());
+
+        // 4-part and dotted-prerelease RubyGems versions are not semver and
+        // must keep resolving against the remote version list.
+        for version in ["latest", "5", "5.0", "5.0.0.1", "1.2.3.rc1"] {
+            assert_eq!(
+                backend
+                    .resolve_exact_version(&config, version)
+                    .await
+                    .unwrap(),
+                None,
+                "{version} should use remote discovery"
+            );
+        }
+    }
 
     #[test]
     fn test_extract_minor_version() {

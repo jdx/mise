@@ -192,7 +192,7 @@ impl BinaryArtifact {
 
 #[async_trait(?Send)]
 impl SystemPackageManager for BrewCaskManager {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "brew-cask"
     }
 
@@ -384,7 +384,7 @@ async fn execute_lifecycle_hook(
     if !has_lifecycle_hook(cask, hook) {
         return Ok(());
     }
-    let ruby = source::ruby_bin().await?;
+    let ruby = cask_ruby_bin().await?;
     let cask_rb = fetch_cask_rb(cask, pr).await?;
     let shim_path = crate::dirs::CACHE
         .join("system-brew")
@@ -414,6 +414,26 @@ async fn execute_lifecycle_hook(
         .execute_async()
         .await
         .wrap_err_with(|| format!("brew-cask:{}: failed to run {hook}", cask.token))
+}
+
+async fn cask_ruby_bin() -> Result<PathBuf> {
+    if let Some(brew) = file::which("brew")
+        && let Ok(output) = tokio::process::Command::new(brew)
+            .args(["ruby", "-e", "print RbConfig.ruby"])
+            .output()
+            .await
+        && output.status.success()
+        && let Ok(path) = String::from_utf8(output.stdout)
+    {
+        let path = PathBuf::from(path.trim());
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+    if let Some(ruby) = file::which("ruby") {
+        return Ok(ruby);
+    }
+    source::ruby_bin().await
 }
 
 fn ensure_cask_shim(path: &Path) -> Result<()> {
@@ -1028,6 +1048,7 @@ fn find_artifact(root: &Path, name: &str) -> Option<PathBuf> {
     let name_path = Path::new(name);
     WalkDir::new(root)
         .into_iter()
+        .filter_entry(|entry| entry.file_name() != "__MACOSX")
         .filter_map(|entry| entry.ok())
         .find(|entry| {
             entry
@@ -1098,11 +1119,12 @@ fn installed_version(token: &str) -> Option<String> {
     let versions = entries
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
             entry
                 .file_type()
                 .ok()
-                .filter(|ft| ft.is_dir())
-                .and_then(|_| entry.file_name().into_string().ok())
+                .filter(|ft| ft.is_dir() && name != ".metadata" && !name.starts_with(".mise-tmp-"))
+                .map(|_| name)
         })
         .collect::<Vec<_>>();
     match versions.as_slice() {
@@ -1307,8 +1329,10 @@ fn remove_stale_versions(token_dir: &Path, current_version: &str) -> Result<()> 
         return Ok(());
     };
     for entry in entries.filter_map(|entry| entry.ok()) {
+        let name = entry.file_name();
         if entry.file_type().is_ok_and(|ft| ft.is_dir())
-            && entry.file_name().to_str() != Some(current_version)
+            && name.to_str() != Some(current_version)
+            && name != ".metadata"
         {
             file::remove_all(entry.path())?;
         }
@@ -1387,6 +1411,26 @@ mod tests {
         }
     }
 
+    fn run_cask_shim(
+        ruby: &Path,
+        shim: &Path,
+        cask: &Path,
+        staged_path: &Path,
+        version: &str,
+    ) -> std::io::Result<std::process::Output> {
+        std::process::Command::new(ruby)
+            .arg(shim)
+            .env("LANG", "zz_ZZ.UTF-8")
+            .env("MISE_BREW_CASK_FILE", cask)
+            .env("MISE_BREW_CASK_TOKEN", "example")
+            .env("MISE_BREW_CASK_VERSION", version)
+            .env("MISE_BREW_CASK_STAGED_PATH", staged_path)
+            .env("MISE_BREW_CASK_APPDIR", staged_path)
+            .env("MISE_BREW_PREFIX", staged_path)
+            .env("MISE_BREW_CASK_HOOK", "preflight")
+            .output()
+    }
+
     fn test_cask(token: &str, version: &str) -> Cask {
         Cask {
             token: token.to_string(),
@@ -1413,6 +1457,111 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn cask_shim_supports_language_and_system_conditionals() -> Result<()> {
+        let Some(ruby) = file::which("ruby") else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("cask_shim.rb");
+        let cask = tmp.path().join("example.rb");
+        let result = tmp.path().join("result");
+        file::write(&shim, CASK_SHIM_RB)?;
+        file::write(
+            &cask,
+            r##"cask "example" do
+  version "1.0.0"
+  language "fr" do
+    "fr"
+  end
+  language "en", default: true do
+    "en-US"
+  end
+  suffix = on_system_conditional linux: "-linux", macos: "-macos"
+  preflight do
+    File.write staged_path/"result", "#{language}#{suffix}"
+  end
+end
+"##,
+        )?;
+
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path(), "1.0.0")?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let suffix = if cfg!(target_os = "macos") {
+            "-macos"
+        } else {
+            "-linux"
+        };
+        assert_eq!(file::read_to_string(result)?, format!("en-US{suffix}"));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn cask_shim_supports_csv_version_array_helpers() -> Result<()> {
+        let Some(ruby) = file::which("ruby") else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("cask_shim.rb");
+        let cask = tmp.path().join("example.rb");
+        let result = tmp.path().join("result");
+        file::write(&shim, CASK_SHIM_RB)?;
+        file::write(
+            &cask,
+            r#"cask "example" do
+  version "2.2.1,20628"
+  url "https://example.com/OrbStack_v#{version.csv.first}_#{version.csv.second}.dmg"
+  preflight do
+    File.write staged_path/"result", version.csv.second
+  end
+end
+"#,
+        )?;
+
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path(), "2.2.1,20628")?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(file::read_to_string(result)?, "20628");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn cask_shim_reports_missing_system_conditional() -> Result<()> {
+        let Some(ruby) = file::which("ruby") else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("cask_shim.rb");
+        let cask = tmp.path().join("example.rb");
+        let (conditional, platform) = if cfg!(target_os = "macos") {
+            ("linux: \"-linux\"", "macos")
+        } else {
+            ("macos: \"-macos\"", "linux")
+        };
+        file::write(&shim, CASK_SHIM_RB)?;
+        file::write(
+            &cask,
+            format!("cask \"example\" do\n  on_system_conditional {conditional}\nend\n"),
+        )?;
+
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path(), "1.0.0")?;
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains(&format!(
+            "Error: cask uses `on_system_conditional without {platform}`"
+        )));
+        Ok(())
+    }
+
+    #[test]
     fn detects_suffixless_zip_archives() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let archive = tmp.path().join("stable");
@@ -1435,6 +1584,21 @@ mod tests {
             cask_extraction_format(&archive, "claude-1.0.0-claude")?,
             ExtractionFormat::Raw
         );
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_lookup_ignores_macos_metadata_directories() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let metadata_app = tmp.path().join("__MACOSX/Pearcleaner.app");
+        file::create_dir_all(&metadata_app)?;
+
+        assert_eq!(find_app(tmp.path(), "Pearcleaner.app"), None);
+
+        let app = tmp.path().join("Pearcleaner.app");
+        file::create_dir_all(&app)?;
+
+        assert_eq!(find_app(tmp.path(), "Pearcleaner.app"), Some(app));
         Ok(())
     }
 
@@ -2276,18 +2440,39 @@ mod tests {
     }
 
     #[test]
-    fn remove_stale_versions_keeps_current_version() -> Result<()> {
+    fn installed_version_ignores_homebrew_metadata() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("actual-token");
+        file::create_dir_all(token_dir.join("2.0.0"))?;
+        file::create_dir_all(token_dir.join(".metadata/2.0.0/timestamp/Casks"))?;
+        file::create_dir_all(token_dir.join(".mise-tmp-interrupted"))?;
+
+        assert_eq!(installed_version("actual-token"), Some("2.0.0".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn remove_stale_versions_keeps_current_version_and_homebrew_metadata() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let token_dir = caskroom_token_dir("actual-token");
         file::create_dir_all(token_dir.join("1.0.0"))?;
         file::create_dir_all(token_dir.join("2.0.0"))?;
+        let metadata = token_dir.join(".metadata/2.0.0/timestamp/Casks");
+        file::create_dir_all(&metadata)?;
+        crate::file::write(metadata.join("actual-token.json"), "metadata")?;
 
         remove_stale_versions(&token_dir, "2.0.0")?;
 
         assert!(!token_dir.join("1.0.0").exists());
         assert!(token_dir.join("2.0.0").exists());
+        assert_eq!(
+            crate::file::read_to_string(metadata.join("actual-token.json"))?,
+            "metadata"
+        );
         Ok(())
     }
 }

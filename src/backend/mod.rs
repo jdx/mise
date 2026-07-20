@@ -990,6 +990,12 @@ mod tests {
         });
         assert!(rc.prerelease);
 
+        let php_rc = mark_prerelease(VersionInfo {
+            version: "8.5.9RC1".into(),
+            ..Default::default()
+        });
+        assert!(php_rc.prerelease);
+
         let already_flagged = mark_prerelease(VersionInfo {
             version: "2.0.0".into(),
             prerelease: true,
@@ -1519,9 +1525,10 @@ pub trait Backend: Debug + Send + Sync {
 
     /// Backend-specific fast path for exact version requests.
     ///
-    /// Return `Ok(None)` when the backend cannot cheaply prove that `version`
-    /// is an exact upstream version. Callers must still fall back to normal
-    /// prefix/latest resolution in that case.
+    /// Return the normalized version when the backend can cheaply prove that
+    /// `version` exists upstream or can defer authoritative validation to its
+    /// installer. Return `Ok(None)` to fall back to normal prefix/latest
+    /// resolution.
     async fn resolve_exact_version(
         &self,
         _config: &Arc<Config>,
@@ -2299,7 +2306,18 @@ pub trait Backend: Debug + Send + Sync {
                 env_vars.entry(k).or_insert(v);
             }
         }
-        env_vars.extend(tv.request.options().core.install_env);
+        let mut install_env_removals = Vec::new();
+        for (key, value) in tv.install_env() {
+            match value.into_string() {
+                Some(value) => {
+                    env_vars.insert(key, value);
+                }
+                None => {
+                    env_vars.remove(&key);
+                    install_env_removals.push(key);
+                }
+            }
+        }
 
         // Surface `tools = true` `[env]` *value* directives (e.g. `CLOUDSDK_PYTHON =
         // "{{ tools.python.path }}/bin/python3"`) for the tool-level `postinstall`
@@ -2382,10 +2400,13 @@ pub trait Backend: Debug + Send + Sync {
             .env(&*env::PATH_KEY, path_env.join())
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
-            .env("MISE_TOOL_VERSION", tv.version.clone())
+            .env(env::MISE_TOOL_VERSION_ENV_VAR, tv.version.clone())
             .with_pr(ctx.pr.as_ref())
             .cmd_body_args(shell_args, &rendered_script)
             .envs(env_vars);
+        for key in install_env_removals {
+            runner = runner.env_remove(key);
+        }
 
         // Set MISE_CONFIG_ROOT and MISE_PROJECT_ROOT from the tool's source config file
         if let Some(source_path) = tv.request.source().path() {

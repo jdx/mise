@@ -11,7 +11,7 @@ function PLUGIN:EnvKeys(ctx)
     -- Structure is: install_path/cmdline-tools/VERSION/bin
     local bin_path = file.join_path(install_path, "cmdline-tools", version, "bin")
 
-    return {
+    local env_vars = {
         {
             key = "PATH",
             value = bin_path,
@@ -25,4 +25,18 @@ function PLUGIN:EnvKeys(ctx)
             value = install_path,
         },
     }
+
+    -- Add tools installed with sdkmanager to PATH, if they exist
+    local optional_bin_paths = { "platform-tools", "emulator" }
+    for _, relative_optional_bin_path in ipairs(optional_bin_paths) do
+        local optional_bin_path = file.join_path(install_path, relative_optional_bin_path)
+        if file.exists(optional_bin_path) then
+            table.insert(env_vars, {
+                key = "PATH",
+                value = optional_bin_path,
+            })
+        end
+    end
+
+    return env_vars
 end

@@ -1,17 +1,45 @@
 #!/usr/bin/env bash
 
 echo "tasks.mylocal = { run = 'echo mylocal' }" >mise.toml
-echo "tasks.myglobal = { run = 'echo myglobal' }" >~/.config/mise/config.toml
+cat >~/.config/mise/config.toml <<'TOML'
+tasks.myglobal = { run = 'echo myglobal' }
+
+[task_config]
+includes = [".config/mise/tasks", "dotfiles/tasks"]
+TOML
 mkdir -p ~/.config/mise/tasks
 cat <<'EOF' >~/.config/mise/tasks/myglobalfile
 #!/usr/bin/env bash
 echo myglobalfile
 EOF
 chmod +x ~/.config/mise/tasks/myglobalfile
+mkdir -p ~/dotfiles/tasks
+cat <<'EOF' >~/dotfiles/tasks/customglobalfile
+#!/usr/bin/env bash
+echo "PROJECT_ROOT=$MISE_PROJECT_ROOT"
+EOF
+chmod +x ~/dotfiles/tasks/customglobalfile
+mkdir -p "$PWD/system-config" "$PWD/system-tasks"
+cat >"$PWD/system-config/config.toml" <<EOF
+[task_config]
+includes = ["$PWD/system-tasks"]
+EOF
+cat <<'EOF' >"$PWD/system-tasks/systemglobalfile"
+#!/usr/bin/env bash
+echo "PROJECT_ROOT=$MISE_PROJECT_ROOT"
+EOF
+chmod +x "$PWD/system-tasks/systemglobalfile"
+export MISE_SYSTEM_CONFIG_FILE="$PWD/system-config/config.toml"
 
-assert "mise tasks" "myglobal
+assert "mise tasks" "customglobalfile
+myglobal
 myglobalfile
-mylocal"
+mylocal
+systemglobalfile"
 assert "mise tasks --local" "mylocal"
-assert "mise tasks --global" "myglobal
-myglobalfile"
+assert "mise tasks --global" "customglobalfile
+myglobal
+myglobalfile
+systemglobalfile"
+assert "mise run customglobalfile" "PROJECT_ROOT=$PWD"
+assert "mise run systemglobalfile" "PROJECT_ROOT=$PWD"

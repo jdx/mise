@@ -256,6 +256,9 @@ impl BackendArg {
                             "vfox-backend plugin '{plugin_name}' exists but '{tool_name}' is not available or the plugin is not properly installed"
                         );
                     }
+                    PluginType::Package => {
+                        bail!("package plugin '{plugin_name}' is not a tool backend");
+                    }
                 }
             } else {
                 // Plugin doesn't exist
@@ -323,29 +326,25 @@ impl BackendArg {
                     PluginType::Vfox => BackendType::Vfox,
                     PluginType::VfoxBackend => BackendType::VfoxBackend(plugin_name.to_string()),
                     PluginType::Asdf => BackendType::Asdf,
+                    PluginType::Package => BackendType::Unknown,
                 };
             }
         }
 
-        if self.resolution.explicit {
-            let full = self.full();
-            if let Some((backend, _)) = full.split_once(':')
-                && let Ok(backend_type) = backend.parse()
-            {
-                return backend_type;
-            }
-        }
-
-        // Only check install state for non-plugin:tool format entries
-        if !self.short.contains(':')
-            && let Ok(Some(backend_type)) = install_state::backend_type(&self.short)
+        // Derive the backend type from the same resolved identifier used by
+        // `tool_name()`. For non-explicit tools, `full()` may intentionally
+        // prefer the current registry backend over stale install metadata.
+        let full = self.full();
+        if let Some((backend, _)) = full.split_once(':')
+            && let Ok(backend_type) = backend.parse()
         {
             return backend_type;
         }
 
-        let full = self.full();
-        if let Some((backend, _)) = full.split_once(':')
-            && let Ok(backend_type) = backend.parse()
+        // Legacy install state may have a backend type without a full
+        // identifier. Keep it as a fallback when `full()` was inconclusive.
+        if !self.short.contains(':')
+            && let Ok(Some(backend_type)) = install_state::backend_type(&self.short)
         {
             return backend_type;
         }
@@ -354,6 +353,7 @@ impl BackendArg {
                 PluginType::Vfox => BackendType::Vfox,
                 PluginType::VfoxBackend => BackendType::VfoxBackend(self.short.to_string()),
                 PluginType::Asdf => BackendType::Asdf,
+                PluginType::Package => BackendType::Unknown,
             };
         }
         BackendType::Unknown
@@ -381,6 +381,7 @@ impl BackendArg {
                     PluginType::Asdf => format!("asdf:{url}"),
                     PluginType::Vfox => format!("vfox:{short}"),
                     PluginType::VfoxBackend => short.to_string(),
+                    PluginType::Package => short.to_string(),
                 };
             }
 
@@ -429,6 +430,7 @@ impl BackendArg {
                     // because the plugin itself is the backend specification
                     PluginType::Vfox => short.to_string(),
                     PluginType::VfoxBackend => short.to_string(),
+                    PluginType::Package => short.to_string(),
                 }
             } else if plugin_name.starts_with("asdf-") {
                 // Handle asdf plugin:tool format even if not installed
@@ -441,6 +443,7 @@ impl BackendArg {
                 PluginType::Asdf => format!("asdf:{short}"),
                 PluginType::Vfox => format!("vfox:{short}"),
                 PluginType::VfoxBackend => short.to_string(),
+                PluginType::Package => short.to_string(),
             }
         } else if let Some(full) = REGISTRY
             .get(short)
@@ -587,6 +590,7 @@ impl BackendArg {
                     PluginType::Asdf => format!("asdf:{short}"),
                     PluginType::Vfox => format!("vfox:{short}"),
                     PluginType::VfoxBackend => short.to_string(),
+                    PluginType::Package => short.to_string(),
                 }
             } else {
                 self.full()
@@ -865,14 +869,20 @@ mod tests {
     async fn test_parse_backend_opts_core_fields() {
         let _config = Config::get().await.unwrap();
         let ba: BackendArg =
-            "pipx:ruff[depends=python,os=linux,install_env.PIPX_HOME=/tmp/pipx]".into();
+            "pipx:ruff[depends=python,os=linux,install_env.PIPX_HOME=/tmp/pipx,install_env.REMOVE=false]".into();
         let opts = ba.opts();
 
         assert_eq!(opts.depends, Some(vec!["python".to_string()]));
         assert_eq!(opts.os, Some(vec!["linux".to_string()]));
         assert_eq!(
-            opts.install_env.get("PIPX_HOME").map(String::as_str),
-            Some("/tmp/pipx")
+            opts.install_env.get("PIPX_HOME"),
+            Some(&crate::config::env_directive::EnvValue::String(
+                "/tmp/pipx".to_string()
+            ))
+        );
+        assert_eq!(
+            opts.install_env.get("REMOVE"),
+            Some(&crate::config::env_directive::EnvValue::Boolean(false))
         );
         assert!(!opts.opts.contains_key("depends"));
         assert!(!opts.opts.contains_key("os"));

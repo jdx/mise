@@ -26,6 +26,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as TokioBufReader};
 use tokio::process::Command;
 
 use crate::config::Settings;
+use crate::config::env_directive::EnvValue;
 use crate::env;
 use crate::env::PATH_KEY;
 use crate::errors::Error::ScriptFailed;
@@ -447,6 +448,20 @@ impl<'a> CmdLineRunner<'a> {
         V: AsRef<OsStr>,
     {
         self.cmd.envs(vars);
+        self
+    }
+
+    pub fn env_values<I, K>(mut self, vars: I) -> Self
+    where
+        I: IntoIterator<Item = (K, EnvValue)>,
+        K: AsRef<OsStr>,
+    {
+        for (key, value) in vars {
+            match value.into_string() {
+                Some(value) => self.cmd.env(key, value),
+                None => self.cmd.env_remove(key),
+            };
+        }
         self
     }
 
@@ -1168,9 +1183,10 @@ impl<'a> CmdLineRunner<'a> {
                 new_cmd.env_clear();
             }
             for (k, v) in self.cmd.as_std().get_envs() {
-                if let Some(v) = v {
-                    new_cmd.env(k, v);
-                }
+                match v {
+                    Some(v) => new_cmd.env(k, v),
+                    None => new_cmd.env_remove(k),
+                };
             }
             self.cmd = new_cmd;
         }
@@ -1492,6 +1508,58 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("exited with non-zero status"));
         assert_eq!(stderr.lock().unwrap().as_slice(), ["err"]);
+    }
+
+    #[test]
+    fn test_env_values_treats_false_as_removal() {
+        use std::ffi::OsStr;
+
+        let runner = super::CmdLineRunner::new("true")
+            .env("REMOVE", "inherited")
+            .env_values([
+                (
+                    "KEEP",
+                    crate::config::env_directive::EnvValue::from("value"),
+                ),
+                (
+                    "REMOVE",
+                    crate::config::env_directive::EnvValue::from(false),
+                ),
+            ]);
+
+        let env = runner.cmd.as_std().get_envs().collect::<Vec<_>>();
+        assert!(env.iter().any(|(key, value)| {
+            *key == OsStr::new("KEEP") && value == &Some(OsStr::new("value"))
+        }));
+        assert!(
+            env.iter()
+                .any(|(key, value)| *key == OsStr::new("REMOVE") && value.is_none())
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_macos_sandbox_preserves_env_removals() {
+        use std::ffi::OsStr;
+
+        let mut runner = super::CmdLineRunner::new("true")
+            .env("KEEP", "value")
+            .env_remove("DROP")
+            .with_sandbox(crate::sandbox::SandboxConfig {
+                deny_read: true,
+                ..Default::default()
+            });
+
+        runner.apply_sandbox().await.unwrap();
+
+        let env = runner.cmd.as_std().get_envs().collect::<Vec<_>>();
+        assert!(env.iter().any(|(key, value)| {
+            *key == OsStr::new("KEEP") && value == &Some(OsStr::new("value"))
+        }));
+        assert!(
+            env.iter()
+                .any(|(key, value)| *key == OsStr::new("DROP") && value.is_none())
+        );
     }
 
     #[test]

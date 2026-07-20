@@ -4211,7 +4211,7 @@ fn versioned_package_from_tag(
 }
 
 fn package_has_asset(pkg: &AquaPackage) -> bool {
-    !pkg.no_asset && pkg.error_message.is_none()
+    !pkg.no_asset.unwrap_or(false) && pkg.error_message.is_none()
 }
 
 /// Get tags with optional created_at timestamps and a pre-release flag.
@@ -4239,7 +4239,7 @@ async fn get_tags_with_created_at(
 }
 
 fn validate(pkg: &AquaPackage) -> Result<()> {
-    if pkg.no_asset {
+    if pkg.no_asset.unwrap_or(false) {
         bail!("no asset released");
     }
     if let Some(message) = &pkg.error_message {
@@ -4533,10 +4533,12 @@ version_overrides:
         let mut pkg = AquaPackage::default();
         assert!(package_has_asset(&pkg));
 
-        pkg.no_asset = true;
+        pkg.no_asset = Some(true);
         assert!(!package_has_asset(&pkg));
 
-        pkg.no_asset = false;
+        pkg.no_asset = Some(false);
+        assert!(package_has_asset(&pkg));
+
         pkg.error_message = Some("unsupported version".to_string());
         assert!(!package_has_asset(&pkg));
     }

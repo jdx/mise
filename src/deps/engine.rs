@@ -17,6 +17,76 @@ use crate::ui::style;
 type StepOutput = (DepsStepResult, Vec<PathBuf>);
 type JobOutput = Result<(String, DepsStepResult, Vec<PathBuf>), (String, eyre::Report)>;
 
+#[derive(Debug)]
+struct ScopedDepsProvider {
+    inner: Box<dyn DepsProvider>,
+    id: String,
+    depends: Vec<String>,
+}
+
+impl ScopedDepsProvider {
+    fn new(inner: Box<dyn DepsProvider>, id: String, scope: &str) -> Self {
+        let depends = inner
+            .depends()
+            .into_iter()
+            .map(|dep| {
+                if dep.starts_with("//") {
+                    dep
+                } else {
+                    format!("{scope}:{dep}")
+                }
+            })
+            .collect();
+        Self { inner, id, depends }
+    }
+}
+
+impl DepsProvider for ScopedDepsProvider {
+    fn base(&self) -> &super::providers::ProviderBase {
+        self.inner.base()
+    }
+
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn sources(&self) -> Vec<PathBuf> {
+        self.inner.sources()
+    }
+
+    fn outputs(&self) -> Vec<PathBuf> {
+        self.inner.outputs()
+    }
+
+    fn optional_outputs(&self) -> Vec<PathBuf> {
+        self.inner.optional_outputs()
+    }
+
+    fn install_command(&self) -> Result<super::DepsCommand> {
+        self.inner.install_command()
+    }
+
+    fn is_applicable(&self) -> bool {
+        self.inner.is_applicable()
+    }
+
+    fn is_auto(&self) -> bool {
+        self.inner.is_auto()
+    }
+
+    fn depends(&self) -> Vec<String> {
+        self.depends.clone()
+    }
+
+    fn add_command(&self, packages: &[&str], dev: bool) -> Result<super::DepsCommand> {
+        self.inner.add_command(packages, dev)
+    }
+
+    fn remove_command(&self, packages: &[&str]) -> Result<super::DepsCommand> {
+        self.inner.remove_command(packages)
+    }
+}
+
 use super::deps_ordering::DepsOrdering;
 use super::providers::{
     AubeDepsProvider, BunDepsProvider, BundlerDepsProvider, ComposerDepsProvider,
@@ -94,6 +164,89 @@ impl DepsEngine {
     pub fn new(config: &Config) -> Result<Self> {
         let providers = Self::discover_providers(config)?;
         // Only require experimental when deps is actually configured
+        if !providers.is_empty() {
+            Settings::get().ensure_experimental("deps")?;
+        }
+        Ok(Self { providers })
+    }
+
+    /// Create an engine containing providers from every explicit monorepo config root.
+    ///
+    /// Provider IDs are qualified with their config root (for example,
+    /// `//apps/api:uv`) so the same provider name can be used in multiple roots.
+    pub fn new_monorepo(
+        config: &Config,
+        config_files: impl IntoIterator<Item = Arc<dyn ConfigFile>>,
+    ) -> Result<Self> {
+        let monorepo_root = config
+            .monorepo_root()
+            .ok_or_else(|| eyre::eyre!("no config file in scope sets monorepo_root = true"))?;
+        let mut providers: Vec<Box<dyn DepsProvider>> = vec![];
+        let mut seen_ids = HashSet::new();
+        let config_files: Vec<_> = config_files.into_iter().collect();
+        let mut disabled_by_root: HashMap<PathBuf, HashSet<String>> = HashMap::new();
+
+        // Layered config files share one provider namespace at each config root.
+        // Collect disables first so their behavior does not depend on file order.
+        for cf in &config_files {
+            let Some(config_project_root) = cf.project_root() else {
+                continue;
+            };
+            if !config_project_root.starts_with(&monorepo_root) {
+                continue;
+            }
+            if let Some(deps_config) = cf.deps_config() {
+                disabled_by_root
+                    .entry(cf.config_root())
+                    .or_default()
+                    .extend(deps_config.disable.iter().cloned());
+            }
+        }
+
+        for cf in config_files {
+            let Some(config_project_root) = cf.project_root() else {
+                continue;
+            };
+            if !config_project_root.starts_with(&monorepo_root) {
+                continue;
+            }
+            let Some(deps_config) = cf.deps_config() else {
+                continue;
+            };
+
+            let config_root = cf.config_root();
+            let relative_root = config_root
+                .strip_prefix(&monorepo_root)
+                .unwrap_or(&config_root)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let scope = if relative_root.is_empty() {
+                "//".to_string()
+            } else {
+                format!("//{relative_root}")
+            };
+
+            for (id, provider_config) in &deps_config.providers {
+                if disabled_by_root
+                    .get(&config_root)
+                    .is_some_and(|disabled| disabled.contains(id))
+                {
+                    continue;
+                }
+
+                let scoped_id = format!("{scope}:{id}");
+                if let Some(provider) =
+                    Self::build_provider(id, &config_root, provider_config.clone())
+                    && provider.is_applicable()
+                    && seen_ids.insert(scoped_id.clone())
+                {
+                    providers.push(Box::new(ScopedDepsProvider::new(
+                        provider, scoped_id, &scope,
+                    )));
+                }
+            }
+        }
+
         if !providers.is_empty() {
             Settings::get().ensure_experimental("deps")?;
         }

@@ -33,6 +33,13 @@ Only check if deps install is needed, don't run commands
 
 Show what deps providers are available
 
+### `--monorepo`
+
+Install dependencies from every [monorepo].config_roots config root
+
+Requires monorepo_root = true plus explicit [monorepo].config_roots in
+the monorepo root config. Providers are named like //apps/api:uv.
+
 ### `--only… <ONLY>`
 
 Run specific deps rule(s) only

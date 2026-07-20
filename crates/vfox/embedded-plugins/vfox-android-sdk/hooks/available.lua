@@ -3,9 +3,8 @@
 --- @return table Descriptions of available versions and accompanying tool descriptions
 function PLUGIN:Available(ctx)
     local http = require("http")
-    local env = require("env")
 
-    local base_url = env.ANDROID_SDK_MIRROR_URL or "https://dl.google.com/android/repository"
+    local base_url = os.getenv("ANDROID_SDK_MIRROR_URL") or "https://dl.google.com/android/repository"
     local metadata_url = base_url .. "/repository2-3.xml"
 
     local resp = http.get({ url = metadata_url })
@@ -30,9 +29,21 @@ function PLUGIN:Available(ctx)
         end
     end
 
-    -- Sort versions (simple string sort, works for numeric versions)
+    -- Android command-line tool versions are numeric and must be newest first.
+    -- vfox uses the first available version to resolve an unspecified version.
     table.sort(versions, function(a, b)
-        return a.version < b.version
+        local a_number = tonumber(a.version)
+        local b_number = tonumber(b.version)
+
+        if a_number and b_number then
+            return a_number > b_number
+        elseif a_number then
+            return true
+        elseif b_number then
+            return false
+        end
+
+        return a.version > b.version
     end)
 
     return versions

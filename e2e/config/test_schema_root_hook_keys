@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+TOMBI_VERSION="0.9.22"
+
+mise use -g tombi@$TOMBI_VERSION
+
+SCHEMA_PATH="$ROOT/schema/mise.json"
+TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
+TOMBI_LINT_ALLOW_WARNINGS="$TOMBI lint --offline --no-cache --quiet"
+TOMBI_LINT="$TOMBI lint --offline --no-cache --error-on-warnings --quiet"
+assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
+
+cat >"$HOME/tombi.toml" <<EOF
+toml-version = "v1.0.0"
+
+[schema]
+enabled = true
+strict = true
+
+[[schemas]]
+path = "file://$SCHEMA_PATH"
+include = ["mise-hooks.toml", "mise-deprecated-current-script.toml", "mise-deprecated-current-scripts.toml", "mise-deprecated-install-script.toml", "mise-deprecated-install-scripts.toml", "mise-bad-hooks.toml"]
+EOF
+
+cat >"$HOME/workdir/mise-hooks.toml" <<'TOML'
+[hooks]
+enter = { script = "echo enter", shell = "bash" }
+leave = { scripts = ["echo leave"], shell = "zsh" }
+cd = [{ task = "change-directory" }, { run = "echo cd", shell = "bash -c" }]
+preinstall = { run = "echo preinstall" }
+postinstall = [{ run = "echo postinstall" }, { task = "after-install" }]
+TOML
+
+cat >"$HOME/workdir/mise-deprecated-current-script.toml" <<'TOML'
+[hooks]
+enter = { script = "echo enter" }
+TOML
+
+cat >"$HOME/workdir/mise-deprecated-current-scripts.toml" <<'TOML'
+[hooks]
+leave = { scripts = ["echo leave"] }
+TOML
+
+cat >"$HOME/workdir/mise-deprecated-install-script.toml" <<'TOML'
+[hooks]
+preinstall = { script = "echo preinstall", shell = "bash" }
+TOML
+
+cat >"$HOME/workdir/mise-deprecated-install-scripts.toml" <<'TOML'
+[hooks]
+postinstall = { scripts = ["echo postinstall"] }
+TOML
+
+cat >"$HOME/workdir/mise-bad-hooks.toml" <<'TOML'
+[hooks]
+unknown = "echo unknown"
+TOML
+
+cd "$HOME/workdir"
+assert_succeed "$TOMBI_LINT mise-hooks.toml"
+assert_succeed "$TOMBI_LINT_ALLOW_WARNINGS mise-deprecated-current-script.toml"
+assert_succeed "$TOMBI_LINT_ALLOW_WARNINGS mise-deprecated-current-scripts.toml"
+assert_succeed "$TOMBI_LINT_ALLOW_WARNINGS mise-deprecated-install-script.toml"
+assert_succeed "$TOMBI_LINT_ALLOW_WARNINGS mise-deprecated-install-scripts.toml"
+assert_fail "$TOMBI_LINT mise-deprecated-current-script.toml"
+assert_fail "$TOMBI_LINT mise-deprecated-current-scripts.toml"
+assert_fail "$TOMBI_LINT mise-deprecated-install-script.toml"
+assert_fail "$TOMBI_LINT mise-deprecated-install-scripts.toml"
+assert_fail "$TOMBI_LINT mise-bad-hooks.toml"

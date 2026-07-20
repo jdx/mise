@@ -3,22 +3,26 @@ use crate::env_diff::EnvMap;
 use crate::exit::exit;
 use crate::shell::ShellType;
 use crate::task::Task;
-use crate::tera::{contains_template_syntax, get_tera_v2, render_str_v2};
+use crate::tera::{TeraEngine, contains_template_syntax, get_tera, render_str};
 use eyre::{Context, Result};
 use heck::ToSnakeCase;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use serde::de::DeserializeOwned;
+use serde_json::{Value as JsonValue, json};
 use std::collections::{HashMap, HashSet};
 use std::iter::once;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 type TeraSpecParsingResult = (
-    tera::Tera,
+    TeraEngine,
     Arc<Mutex<HashMap<String, usize>>>,
     Arc<Mutex<Vec<usage::SpecArg>>>,
     Arc<Mutex<Vec<usage::SpecFlag>>>,
 );
+
+type TaskTemplateResult = std::result::Result<JsonValue, String>;
 
 pub struct TaskScriptParser {
     dir: Option<PathBuf>,
@@ -39,8 +43,8 @@ impl TaskScriptParser {
         self
     }
 
-    fn get_tera(&self) -> tera::Tera {
-        get_tera_v2(self.dir.as_deref())
+    fn get_tera(&self) -> TeraEngine {
+        get_tera(self.dir.as_deref())
     }
 
     /// Inject extra vars (from monorepo task config hierarchy) into the tera context
@@ -60,11 +64,11 @@ impl TaskScriptParser {
     }
 
     fn render_script_with_context(
-        tera: &mut tera::Tera,
+        tera: &mut TeraEngine,
         script: &str,
         ctx: &tera::Context,
     ) -> Result<String> {
-        render_str_v2(tera, script.trim(), ctx)
+        render_str(tera, script.trim(), ctx)
             .map_err(Self::task_script_tera_error)
             .with_context(|| format!("Failed to render task script: {}", script))
     }
@@ -79,11 +83,11 @@ impl TaskScriptParser {
     }
 
     fn render_usage_with_context(
-        tera: &mut tera::Tera,
+        tera: &mut TeraEngine,
         usage: &str,
         ctx: &tera::Context,
     ) -> Result<String> {
-        render_str_v2(tera, usage.trim(), ctx)
+        render_str(tera, usage.trim(), ctx)
             .with_context(|| format!("Failed to render task usage: {}", usage))
     }
 
@@ -107,59 +111,103 @@ impl TaskScriptParser {
         );
     }
 
-    fn opt_string_kwarg(
-        args: &tera::Kwargs,
-        param_name: &'static str,
-    ) -> tera::TeraResult<Option<String>> {
-        Ok(args.get::<&str>(param_name)?.map(str::to_string))
+    fn template_arg<T: DeserializeOwned>(
+        args: &HashMap<String, JsonValue>,
+        name: &str,
+    ) -> std::result::Result<Option<T>, String> {
+        args.get(name)
+            .cloned()
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(|e| format!("invalid `{name}` argument: {e}"))
     }
 
-    fn string_kwarg(args: &tera::Kwargs, param_name: &'static str) -> tera::TeraResult<String> {
-        Self::opt_string_kwarg(args, param_name)?.ok_or_else(|| {
-            tera::Error::message(format!("missing required '{param_name}' parameter"))
-        })
+    fn string_arg(
+        args: &HashMap<String, JsonValue>,
+        name: &str,
+    ) -> std::result::Result<String, String> {
+        Self::template_arg(args, name)?
+            .ok_or_else(|| format!("missing required '{name}' parameter"))
     }
 
-    fn lock_error(e: impl std::fmt::Display) -> tera::Error {
-        tera::Error::message(format!("failed to lock: {}", e))
+    fn lock_error(e: impl std::fmt::Display) -> String {
+        format!("failed to lock: {e}")
     }
 
-    fn register_task_source_files_function(tera: &mut tera::Tera, task: &Task) {
-        tera.register_function("task_source_files", {
-            let glob_patterns = Arc::new(
-                crate::task::task_source_checker::source_glob_patterns(&task.sources),
-            );
-            // Anchor the matcher at the process cwd. `is_source` handles
+    fn register_template_function<F>(tera: &mut TeraEngine, name: &'static str, f: F)
+    where
+        F: Fn(&HashMap<String, JsonValue>) -> TaskTemplateResult + Send + Sync + 'static,
+    {
+        let f = Arc::new(f);
+        match tera {
+            TeraEngine::V2(tera) => {
+                let f = f.clone();
+                tera.register_function(name, move |args: tera::Kwargs, _: &tera::State| {
+                    let args = args.deserialize::<HashMap<String, JsonValue>>()?;
+                    let value = f(&args).map_err(tera::Error::message)?;
+                    tera::Value::try_from_serializable(&value)
+                });
+            }
+            TeraEngine::V1(tera) => {
+                tera.register_function(name, move |args: &HashMap<String, JsonValue>| {
+                    f(args).map_err(tera1::Error::msg)
+                });
+            }
+        }
+    }
+
+    fn register_task_source_files_function(&self, tera: &mut TeraEngine, task: &Task) {
+        Self::register_template_function(tera, "task_source_files", {
+            let glob_patterns = Arc::new(crate::task::task_source_checker::source_glob_patterns(
+                &task.sources,
+            ));
+            // Anchor the matcher at the task directory. `is_source` handles
             // absolute paths outside this root by trusting the glob result,
-            // so absolute outside-cwd patterns (e.g. workspace-root paths)
+            // so absolute outside-root patterns (e.g. workspace-root paths)
             // still flow through.
-            let cwd = crate::dirs::CWD
+            let root = self
+                .dir
                 .clone()
+                .or_else(|| crate::dirs::CWD.clone())
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
             let matcher = Arc::new(crate::task::task_source_checker::build_source_matcher(
-                &cwd,
+                &root,
                 &task.sources,
             ));
 
-            move |_: tera::Kwargs, _: &tera::State| -> tera::TeraResult<tera::Value> {
+            move |_| -> TaskTemplateResult {
                 if glob_patterns.is_empty() {
-                    trace!("tera::render::resolve_task_sources `task_source_files` called in task with empty sources array");
-                    return Ok(tera::Value::from(Vec::<tera::Value>::new()));
+                    trace!(
+                        "tera::render::resolve_task_sources `task_source_files` called in task with empty sources array"
+                    );
+                    return Ok(json!([]));
                 };
 
                 let mut resolved = Vec::with_capacity(glob_patterns.len());
+                let escaped_root = glob::Pattern::escape(root.to_string_lossy().as_ref());
 
                 for pattern in glob_patterns.iter() {
                     if contains_template_syntax(pattern) {
                         trace!(
                             "tera::render::resolve_task_sources including tera template string in resolved task sources: {pattern}"
                         );
-                        resolved.push(tera::Value::from(pattern.clone()));
+                        resolved.push(pattern.clone());
                         continue;
                     }
 
+                    let pattern_path = Path::new(pattern);
+                    let is_relative = pattern_path.is_relative();
+                    let rooted_pattern = if is_relative {
+                        Path::new(&escaped_root)
+                            .join(pattern_path)
+                            .to_string_lossy()
+                            .to_string()
+                    } else {
+                        pattern.clone()
+                    };
+
                     match glob::glob_with(
-                        pattern,
+                        &rooted_pattern,
                         glob::MatchOptions {
                             case_sensitive: false,
                             require_literal_separator: false,
@@ -170,7 +218,7 @@ impl TaskScriptParser {
                             warn!(
                                 "tera::render::resolve_task_sources including '{pattern}' in resolved task sources, ignoring glob parsing error: {error:#?}"
                             );
-                            resolved.push(tera::Value::from(pattern.clone()));
+                            resolved.push(pattern.clone());
                         }
                         Ok(expanded) => {
                             let mut source_found = false;
@@ -189,11 +237,16 @@ impl TaskScriptParser {
                                             );
                                             continue;
                                         }
-                                        let source = path.display();
+                                        let source = if is_relative {
+                                            path.strip_prefix(&root).unwrap_or(&path)
+                                        } else {
+                                            &path
+                                        };
+                                        let source = source.display();
                                         trace!(
                                             "tera::render::resolve_task_sources resolved source from pattern '{pattern}': {source}"
                                         );
-                                        resolved.push(tera::Value::from(source.to_string()));
+                                        resolved.push(source.to_string());
                                     }
                                     Err(error) => {
                                         let source = error.path().display();
@@ -214,7 +267,7 @@ impl TaskScriptParser {
                     }
                 }
 
-                Ok(tera::Value::from(resolved))
+                Ok(json!(resolved))
             }
         });
     }
@@ -225,53 +278,47 @@ impl TaskScriptParser {
         let input_args = Arc::new(Mutex::new(vec![]));
         let input_flags = Arc::new(Mutex::new(vec![]));
         // override throw function to do nothing
-        tera.register_function("throw", {
-            move |_: tera::Kwargs, _: &tera::State| -> tera::TeraResult<tera::Value> {
-                Ok(tera::Value::none())
-            }
-        });
+        Self::register_template_function(&mut tera, "throw", move |_| Ok(JsonValue::Null));
         // render args, options, and flags as null
         // these functions are only used to collect the spec
-        tera.register_function("arg", {
+        Self::register_template_function(&mut tera, "arg", {
             let input_args = input_args.clone();
             let arg_order = arg_order.clone();
-            move |args: tera::Kwargs, _: &tera::State| -> tera::TeraResult<tera::Value> {
-                let i = args
-                    .get::<i64>("i")?
+            move |args| {
+                let i = Self::template_arg::<i64>(args, "i")?
                     .unwrap_or(input_args.lock().map_err(Self::lock_error)?.len() as i64)
                     as usize;
 
-                let required = args.get::<bool>("required")?.unwrap_or(true);
-                let var = args.get::<bool>("var")?.unwrap_or(false);
-                let name = Self::opt_string_kwarg(&args, "name")?.unwrap_or(i.to_string());
+                let required = Self::template_arg::<bool>(args, "required")?.unwrap_or(true);
+                let var = Self::template_arg::<bool>(args, "var")?.unwrap_or(false);
+                let name = Self::template_arg::<String>(args, "name")?.unwrap_or(i.to_string());
 
                 let mut arg_order = arg_order.lock().map_err(Self::lock_error)?;
 
                 if arg_order.contains_key(&name) {
                     trace!("already seen {name}");
-                    return Ok(tera::Value::from(""));
+                    return Ok(json!(""));
                 }
                 arg_order.insert(name.clone(), i);
 
-                let usage = Self::opt_string_kwarg(&args, "usage")?.unwrap_or_default();
-                let help = Self::opt_string_kwarg(&args, "help")?;
-                let help_long = Self::opt_string_kwarg(&args, "help_long")?;
-                let help_md = Self::opt_string_kwarg(&args, "help_md")?;
+                let usage = Self::template_arg::<String>(args, "usage")?.unwrap_or_default();
+                let help = Self::template_arg::<String>(args, "help")?;
+                let help_long = Self::template_arg::<String>(args, "help_long")?;
+                let help_md = Self::template_arg::<String>(args, "help_md")?;
 
-                let var_min = args.get::<i64>("var_min")?.map(|v| v as usize);
-                let var_max = args.get::<i64>("var_max")?.map(|v| v as usize);
+                let var_min = Self::template_arg::<i64>(args, "var_min")?.map(|v| v as usize);
+                let var_max = Self::template_arg::<i64>(args, "var_max")?.map(|v| v as usize);
 
-                let hide = args.get::<bool>("hide")?.unwrap_or(false);
+                let hide = Self::template_arg::<bool>(args, "hide")?.unwrap_or(false);
 
-                let default = Self::opt_string_kwarg(&args, "default")?
+                let default = Self::template_arg::<String>(args, "default")?
                     .map(|s| vec![s])
                     .unwrap_or_default();
 
-                let choices = args
-                    .get::<Vec<String>>("choices")?
+                let choices = Self::template_arg::<Vec<String>>(args, "choices")?
                     .map(|choices| usage::SpecChoices { choices });
 
-                let env = Self::opt_string_kwarg(&args, "env")?;
+                let env = Self::template_arg::<String>(args, "env")?;
 
                 let help_first_line = match &help {
                     Some(h) => {
@@ -304,52 +351,51 @@ impl TaskScriptParser {
                 arg.usage = arg.usage();
 
                 input_args.lock().map_err(Self::lock_error)?.push(arg);
-                Ok(tera::Value::from(""))
+                Ok(json!(""))
             }
         });
 
-        tera.register_function("option", {
+        Self::register_template_function(&mut tera, "option", {
             let input_flags = input_flags.clone();
-            move |args: tera::Kwargs, _: &tera::State| -> tera::TeraResult<tera::Value> {
-                let name = Self::string_kwarg(&args, "name")?;
+            move |args| {
+                let name = Self::string_arg(args, "name")?;
 
-                let short = Self::opt_string_kwarg(&args, "short")?
+                let short = Self::template_arg::<String>(args, "short")?
                     .map(|s| s.chars().collect())
                     .unwrap_or_default();
 
-                let long = match Self::opt_string_kwarg(&args, "long")? {
+                let long = match Self::template_arg::<String>(args, "long")? {
                     Some(l) => l.split_whitespace().map(|s| s.to_string()).collect(),
                     None => vec![name.clone()],
                 };
 
-                let default = Self::opt_string_kwarg(&args, "default")?
+                let default = Self::template_arg::<String>(args, "default")?
                     .map(|s| vec![s])
                     .unwrap_or_default();
 
-                let var = args.get::<bool>("var")?.unwrap_or(false);
+                let var = Self::template_arg::<bool>(args, "var")?.unwrap_or(false);
 
-                let deprecated = Self::opt_string_kwarg(&args, "deprecated")?;
-                let help = Self::opt_string_kwarg(&args, "help")?;
-                let help_long = Self::opt_string_kwarg(&args, "help_long")?;
-                let help_md = Self::opt_string_kwarg(&args, "help_md")?;
+                let deprecated = Self::template_arg::<String>(args, "deprecated")?;
+                let help = Self::template_arg::<String>(args, "help")?;
+                let help_long = Self::template_arg::<String>(args, "help_long")?;
+                let help_md = Self::template_arg::<String>(args, "help_md")?;
 
-                let hide = args.get::<bool>("hide")?.unwrap_or(false);
+                let hide = Self::template_arg::<bool>(args, "hide")?.unwrap_or(false);
 
-                let global = args.get::<bool>("global")?.unwrap_or(false);
+                let global = Self::template_arg::<bool>(args, "global")?.unwrap_or(false);
 
-                let count = args.get::<bool>("count")?.unwrap_or(false);
+                let count = Self::template_arg::<bool>(args, "count")?.unwrap_or(false);
 
-                let usage = Self::opt_string_kwarg(&args, "usage")?.unwrap_or_default();
+                let usage = Self::template_arg::<String>(args, "usage")?.unwrap_or_default();
 
-                let required = args.get::<bool>("required")?.unwrap_or(false);
+                let required = Self::template_arg::<bool>(args, "required")?.unwrap_or(false);
 
-                let negate = Self::opt_string_kwarg(&args, "negate")?;
+                let negate = Self::template_arg::<String>(args, "negate")?;
 
-                let choices = args
-                    .get::<Vec<String>>("choices")?
+                let choices = Self::template_arg::<Vec<String>>(args, "choices")?
                     .map(|choices| usage::SpecChoices { choices });
 
-                let env = Self::opt_string_kwarg(&args, "env")?;
+                let env = Self::template_arg::<String>(args, "env")?;
 
                 let help_first_line = match &help {
                     Some(h) => {
@@ -394,52 +440,51 @@ impl TaskScriptParser {
 
                 input_flags.lock().map_err(Self::lock_error)?.push(flag);
 
-                Ok(tera::Value::from(""))
+                Ok(json!(""))
             }
         });
 
-        tera.register_function("flag", {
+        Self::register_template_function(&mut tera, "flag", {
             let input_flags = input_flags.clone();
-            move |args: tera::Kwargs, _: &tera::State| -> tera::TeraResult<tera::Value> {
-                let name = Self::string_kwarg(&args, "name")?;
+            move |args| {
+                let name = Self::string_arg(args, "name")?;
 
-                let short = Self::opt_string_kwarg(&args, "short")?
+                let short = Self::template_arg::<String>(args, "short")?
                     .map(|s| s.chars().collect())
                     .unwrap_or_default();
 
-                let long = match Self::opt_string_kwarg(&args, "long")? {
+                let long = match Self::template_arg::<String>(args, "long")? {
                     Some(l) => l.split_whitespace().map(|s| s.to_string()).collect(),
                     None => vec![name.clone()],
                 };
 
-                let default = Self::opt_string_kwarg(&args, "default")?
+                let default = Self::template_arg::<String>(args, "default")?
                     .map(|s| vec![s])
                     .unwrap_or_default();
 
-                let var = args.get::<bool>("var")?.unwrap_or(false);
+                let var = Self::template_arg::<bool>(args, "var")?.unwrap_or(false);
 
-                let deprecated = Self::opt_string_kwarg(&args, "deprecated")?;
-                let help = Self::opt_string_kwarg(&args, "help")?;
-                let help_long = Self::opt_string_kwarg(&args, "help_long")?;
-                let help_md = Self::opt_string_kwarg(&args, "help_md")?;
+                let deprecated = Self::template_arg::<String>(args, "deprecated")?;
+                let help = Self::template_arg::<String>(args, "help")?;
+                let help_long = Self::template_arg::<String>(args, "help_long")?;
+                let help_md = Self::template_arg::<String>(args, "help_md")?;
 
-                let hide = args.get::<bool>("hide")?.unwrap_or(false);
+                let hide = Self::template_arg::<bool>(args, "hide")?.unwrap_or(false);
 
-                let global = args.get::<bool>("global")?.unwrap_or(false);
+                let global = Self::template_arg::<bool>(args, "global")?.unwrap_or(false);
 
-                let count = args.get::<bool>("count")?.unwrap_or(false);
+                let count = Self::template_arg::<bool>(args, "count")?.unwrap_or(false);
 
-                let usage = Self::opt_string_kwarg(&args, "usage")?.unwrap_or_default();
+                let usage = Self::template_arg::<String>(args, "usage")?.unwrap_or_default();
 
-                let required = args.get::<bool>("required")?.unwrap_or(false);
+                let required = Self::template_arg::<bool>(args, "required")?.unwrap_or(false);
 
-                let negate = Self::opt_string_kwarg(&args, "negate")?;
+                let negate = Self::template_arg::<String>(args, "negate")?;
 
-                let choices = args
-                    .get::<Vec<String>>("choices")?
+                let choices = Self::template_arg::<Vec<String>>(args, "choices")?
                     .map(|choices| usage::SpecChoices { choices });
 
-                let env = Self::opt_string_kwarg(&args, "env")?;
+                let env = Self::template_arg::<String>(args, "env")?;
 
                 let help_first_line = match &help {
                     Some(h) => {
@@ -492,11 +537,11 @@ impl TaskScriptParser {
 
                 input_flags.lock().map_err(Self::lock_error)?.push(flag);
 
-                Ok(tera::Value::from(""))
+                Ok(json!(""))
             }
         });
 
-        Self::register_task_source_files_function(&mut tera, task);
+        self.register_task_source_files_function(&mut tera, task);
 
         (tera, arg_order, input_args, input_flags)
     }
@@ -518,7 +563,7 @@ impl TaskScriptParser {
         }
 
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
-        let mut tera_ctx = task.tera_ctx(config).await?;
+        let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
         // First render the usage field to collect the spec
         let rendered_usage = if usage_has_template {
             Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?
@@ -590,7 +635,7 @@ impl TaskScriptParser {
         }
 
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
-        let mut tera_ctx = task.tera_ctx(config).await?;
+        let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
         self.inject_extra_vars(&mut tera_ctx);
         tera_ctx.insert("env", &env);
         // First render the usage field to collect the spec and build a default
@@ -697,27 +742,26 @@ impl TaskScriptParser {
                 }
             };
             let mut tera = self.get_tera();
-            Self::register_task_source_files_function(&mut tera, task);
-            tera.register_function("arg", {
+            self.register_task_source_files_function(&mut tera, task);
+            Self::register_template_function(&mut tera, "arg", {
                 {
                     let usage_args = m.args.clone();
-                    move |args: tera::Kwargs, _: &tera::State| -> tera::TeraResult<tera::Value> {
+                    move |args| {
                         let seen_args = Arc::new(Mutex::new(HashSet::new()));
                         {
                             let mut seen_args = seen_args.lock().unwrap();
-                            let i = args
-                                .get::<i64>("i")?
+                            let i = Self::template_arg::<i64>(args, "i")?
                                 .map(|i| i as usize)
                                 .unwrap_or_else(|| seen_args.len());
-                            let name =
-                                Self::opt_string_kwarg(&args, "name")?.unwrap_or(i.to_string());
+                            let name = Self::template_arg::<String>(args, "name")?
+                                .unwrap_or(i.to_string());
                             seen_args.insert(name.clone());
-                            Ok(tera::Value::from(
+                            Ok(json!(
                                 usage_args
                                     .iter()
                                     .find(|(arg, _)| arg.name == name)
                                     .map(|(_, value)| escape(value))
-                                    .unwrap_or("".to_string()),
+                                    .unwrap_or("".to_string())
                             ))
                         }
                     }
@@ -726,21 +770,21 @@ impl TaskScriptParser {
             let flag_func = {
                 |default_value: String| {
                     let usage_flags = m.flags.clone();
-                    move |args: tera::Kwargs, _: &tera::State| -> tera::TeraResult<tera::Value> {
-                        let name = Self::string_kwarg(&args, "name")?;
-                        Ok(tera::Value::from(
+                    move |args: &HashMap<String, JsonValue>| {
+                        let name = Self::string_arg(args, "name")?;
+                        Ok(json!(
                             usage_flags
                                 .iter()
                                 .find(|(flag, _)| flag.name == name)
                                 .map(|(_, value)| escape(value))
-                                .unwrap_or(default_value.clone()),
+                                .unwrap_or(default_value.clone())
                         ))
                     }
                 }
             };
-            tera.register_function("option", flag_func("".to_string()));
-            tera.register_function("flag", flag_func(false.to_string()));
-            let mut tera_ctx = task.tera_ctx(config).await?;
+            Self::register_template_function(&mut tera, "option", flag_func("".to_string()));
+            Self::register_template_function(&mut tera, "flag", flag_func(false.to_string()));
+            let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
             self.inject_extra_vars(&mut tera_ctx);
             tera_ctx.insert("env", &env);
             let mut usage_map = Self::make_usage_ctx_from_spec_defaults(spec);
@@ -897,6 +941,26 @@ fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+
+    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct TeraV1Guard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl TeraV1Guard {
+        fn new() -> Self {
+            let lock = TEST_SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            Settings::override_with(|settings| settings.tera_v1 = Some(true));
+            Self { _lock: lock }
+        }
+    }
+
+    impl Drop for TeraV1Guard {
+        fn drop(&mut self) {
+            Settings::reset(None);
+        }
+    }
 
     #[tokio::test]
     async fn test_task_parse_arg() {
@@ -1160,6 +1224,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_task_template_tera_contrib_helpers() {
+        let config = Config::get().await.unwrap();
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+        let scripts = vec!["echo {{ now() | date(format='%Y') }}".to_string()];
+        let (parsed_scripts, _) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        let year = parsed_scripts[0].strip_prefix("echo ").unwrap();
+        assert_eq!(year.len(), 4);
+        assert!(year.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    #[tokio::test]
+    async fn test_task_template_uses_tera_v1_when_enabled() {
+        let config = Config::get().await.unwrap();
+        let _guard = TeraV1Guard::new();
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+        let scripts = vec![
+            "{% macro greet(name) %}hi {{ name }}{% endmacro %}echo {{ self::greet(name=arg(name='name', default='mise')) }} {{ now(timestamp=true) }}"
+                .to_string(),
+        ];
+        let (_, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(&config, &task, &scripts, &Default::default(), &[], &spec)
+            .await
+            .unwrap();
+        let (greeting, timestamp) = parsed_scripts[0].rsplit_once(' ').unwrap();
+        assert_eq!(greeting, "echo hi mise");
+        assert!(timestamp.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    #[tokio::test]
     async fn test_task_parse_task_source_files() {
         let cases: &[(&[&str], &str, &str)] = &[
             (&[], "echo {{ task_source_files() }}", "echo []"),
@@ -1238,6 +1340,28 @@ mod tests {
 
             assert_eq!(parsed, vec![expected]);
         }
+    }
+
+    #[tokio::test]
+    async fn test_task_source_files_resolves_relative_to_parser_dir() {
+        let config = Config::get().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("project[1]");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("input.txt"), "test").unwrap();
+        let task = Task {
+            sources: vec!["*.txt".to_string()],
+            ..Default::default()
+        };
+        let parser = TaskScriptParser::new(Some(root));
+        let scripts = vec!["echo {{ task_source_files() | first }}".to_string()];
+
+        let (parsed, _) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+
+        assert_eq!(parsed, vec!["echo input.txt"]);
     }
 
     #[tokio::test]

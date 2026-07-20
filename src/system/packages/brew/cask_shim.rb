@@ -12,6 +12,24 @@ require "fileutils"
 require "pathname"
 require "rbconfig"
 
+class Array
+  def second
+    self[1]
+  end
+
+  def third
+    self[2]
+  end
+
+  def fourth
+    self[3]
+  end
+
+  def fifth
+    self[4]
+  end
+end
+
 MISE_BREW_CASK_FILE = Pathname.new(ENV.fetch("MISE_BREW_CASK_FILE"))
 MISE_BREW_CASK_TOKEN = ENV.fetch("MISE_BREW_CASK_TOKEN")
 MISE_BREW_CASK_VERSION = ENV.fetch("MISE_BREW_CASK_VERSION")
@@ -187,6 +205,8 @@ class CaskContext
     @version = Version.new(MISE_BREW_CASK_VERSION)
     @hooks = {}
     @arch = Hardware::CPU.arch.to_s
+    @languages = {}
+    @default_language = nil
   end
 
   def run_hook(name)
@@ -209,6 +229,26 @@ class CaskContext
   def version(value = nil)
     @version = Version.new(value) unless value.nil?
     @version
+  end
+
+  def language(code = nil, default: false, &block)
+    if code
+      @languages[code.to_s] = instance_eval(&block)
+      @default_language = code.to_s if default
+      return
+    end
+
+    # The API metadata and downloaded artifact use the cask's default language,
+    # so lifecycle evaluation must select the same variant.
+    @languages[@default_language] || @languages.values.first
+  end
+
+  def on_system_conditional(values)
+    key = OS.mac? ? :macos : :linux
+    return values[key] if values.key?(key)
+    return values[key.to_s] if values.key?(key.to_s)
+
+    shim_unsupported!("on_system_conditional without #{key}")
   end
 
   def sha256(*) nil end

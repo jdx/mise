@@ -131,7 +131,9 @@ impl TasksLs {
         let mut tasks = tasks;
         // always pass no_cache=false as the command doesn't take no-cache argument
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
-        TaskFetcher::new(false).fetch_tasks(&mut tasks).await?;
+        TaskFetcher::new(false)
+            .fetch_tasks(&config, &mut tasks)
+            .await?;
 
         // Warn about non-executable files only when there are truly no tasks at all
         // (not just filtered out by --hidden/--local/--global)

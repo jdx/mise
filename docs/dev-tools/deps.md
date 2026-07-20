@@ -73,6 +73,49 @@ mise includes built-in providers for common package managers:
 
 Built-in providers are only active when explicitly configured in `mise.toml` and their lockfile exists.
 
+## Monorepos
+
+By default, `mise deps` only runs providers from the current config root. To run
+providers from every explicitly configured monorepo root, use `--monorepo`:
+
+```toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["apps/*", "packages/*"]
+```
+
+```bash
+mise deps --monorepo
+```
+
+This requires explicit [`[monorepo].config_roots`](/tasks/monorepo.html#explicit-config-roots);
+mise does not search arbitrary subdirectories for dependency providers.
+Providers in the monorepo root config are also included because that config is
+part of every selected config root's hierarchy, matching the behavior of
+`mise install --monorepo`.
+
+Monorepo provider IDs include their config root so the same provider can appear
+in multiple projects. For example, two uv providers are named `//apps/api:uv`
+and `//apps/worker:uv`. Use the qualified name with `--only`, `--skip`, or the
+positional provider argument:
+
+```bash
+mise deps --monorepo --only //apps/api:uv
+mise deps install //apps/worker:uv --monorepo
+```
+
+Provider dependencies without a `//` prefix are resolved within the same config
+root. A provider in `apps/api` with `depends = ["uv"]` therefore depends on
+`//apps/api:uv`.
+
+For a single nested project, the `dir` option remains a simpler alternative:
+
+```toml
+[deps.uv]
+dir = "apps/api"
+```
+
 ## Adding and Removing Packages
 
 The `mise deps add` and `mise deps remove` commands let you manage individual packages
@@ -117,7 +160,7 @@ run = "npx prisma generate"
 | `outputs`     | string[] | Files/directories that must exist for the provider to be considered fresh |
 | `run`         | string   | Command to run when stale                                                 |
 | `env`         | table    | Environment variables to set                                              |
-| `dir`         | string   | Working directory for the command                                         |
+| `dir`         | string   | Base directory for sources, outputs, and the command                      |
 | `description` | string   | Description shown in output                                               |
 | `depends`     | string[] | Other provider names that must complete before this one runs              |
 | `timeout`     | string   | Timeout for the run command, e.g., `"30s"`, `"5m"` (default: no timeout)  |

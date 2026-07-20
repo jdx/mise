@@ -13,12 +13,12 @@ use indexmap::{IndexMap, IndexSet};
 use crate::backend::backend_type::BackendType;
 use crate::config::{Config, Settings};
 use crate::file;
-use crate::oci::OciConfig;
 use crate::oci::layer::{self, LayerBlob, LayerOwner};
 use crate::oci::layout::ImageLayout;
 use crate::oci::manifest::{self, Descriptor, ImageConfig, ImageManifest, Platform, RootFs};
 use crate::oci::packages;
 use crate::oci::registry;
+use crate::oci::{OciConfig, OciCopy};
 use crate::system::ManagerPackages;
 use crate::system::files::{FileMode, FileRequest};
 use crate::toolset::{ToolVersion, Toolset};
@@ -38,6 +38,8 @@ pub struct BuildOptions {
     pub owner: Option<LayerOwner>,
     /// Embed the current mise binary at /usr/local/bin/mise.
     pub include_mise: bool,
+    /// CLI-provided host paths copied after config-provided entries.
+    pub copy: Vec<OciCopy>,
 }
 
 pub struct Builder {
@@ -115,6 +117,7 @@ impl Builder {
         }
 
         let owner = resolve_layer_owner(self.opts.owner, &self.oci);
+        let copies: Vec<&OciCopy> = self.oci.copy.iter().chain(&self.opts.copy).collect();
 
         // --- 1. Base image (optional) ---
         let from_ref = self
@@ -238,7 +241,29 @@ impl Builder {
             tool_layers.push((tv.ba().short.clone(), tv.version.clone(), blob));
         }
 
-        // --- 5. mise binary layer (optional) ---
+        // --- 5. Arbitrary host-path layers ---
+        let mut copy_layers: Vec<(&OciCopy, LayerBlob)> = Vec::new();
+        for copy in copies {
+            copy.validate().map_err(eyre::Report::msg)?;
+            warn!(
+                "mise oci build: copying host path {} into the image at {} — review its \
+                 contents for secrets or credentials before sharing the image",
+                copy.host.display(),
+                copy.image
+            );
+            let blob = layer::build_layer_from_path(&copy.host, &copy.image, owner).wrap_err_with(
+                || {
+                    format!(
+                        "copying host path {} to {}",
+                        copy.host.display(),
+                        copy.image
+                    )
+                },
+            )?;
+            copy_layers.push((copy, blob));
+        }
+
+        // --- 6. mise binary layer (optional) ---
         let mut mise_layer: Option<LayerBlob> = None;
         if self.opts.include_mise {
             // OCI images are linux-targeted in v1 (we normalize `os` to
@@ -333,6 +358,20 @@ impl Builder {
                 digest: blob.digest.clone(),
                 size: blob.size,
             });
+        }
+
+        for (copy, blob) in &copy_layers {
+            layout.write_blob_with_digest(&blob.digest, &blob.bytes)?;
+            let mut annotations = IndexMap::new();
+            annotations.insert("dev.mise.copy".to_string(), copy.image.clone());
+            manifest_layers.push(Descriptor {
+                media_type: manifest::MEDIA_TYPE_OCI_LAYER_GZIP.to_string(),
+                size: blob.size,
+                digest: blob.digest.clone(),
+                annotations,
+                platform: None,
+            });
+            all_diff_ids.push(blob.diff_id.clone());
         }
 
         if let Some(blob) = &dotfiles_layer {

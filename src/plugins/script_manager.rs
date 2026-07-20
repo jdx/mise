@@ -116,6 +116,29 @@ impl ScriptManager {
         self
     }
 
+    pub fn without_env<K>(mut self, key: K) -> Self
+    where
+        K: Into<OsString>,
+    {
+        let key = key.into();
+        #[cfg(windows)]
+        if let Some(existing) = self
+            .env
+            .keys()
+            .find(|existing| {
+                existing
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case(&key.to_string_lossy())
+            })
+            .cloned()
+        {
+            self.env.remove(&existing);
+        }
+        #[cfg(not(windows))]
+        self.env.remove(&key);
+        self
+    }
+
     pub fn prepend_path(&mut self, path: PathBuf) {
         let k: OsString = PATH_KEY.to_string().into();
         let mut paths = env::split_paths(&self.env[&k]).collect::<Vec<_>>();

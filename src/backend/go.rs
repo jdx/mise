@@ -97,13 +97,22 @@ impl Backend for GoBackend {
                     return Ok(versions);
                 }
 
-                // Fall back to `go list -m -versions` for GOPROXY=direct
-                match self.fetch_go_module_versions(config, &tool_name).await {
-                    Ok(Some(versions)) if !versions.is_empty() => return Ok(versions),
-                    Ok(_) => {}
-                    Err(err) => {
-                        warn!("failed to list Go module versions for {tool_name}: {err:#}");
+                // Fall back to `go list -m -versions` for GOPROXY=direct. Package
+                // paths are not necessarily module paths, so walk their prefixes
+                // just as the proxy resolver does.
+                let mut resolution_error = None;
+                for mod_path in module_path_candidates(&tool_name) {
+                    match self.fetch_go_module_versions(config, &mod_path).await {
+                        Ok(Some(versions)) if !versions.is_empty() => return Ok(versions),
+                        Ok(_) => {}
+                        Err(err) => {
+                            debug!("failed to resolve Go module candidate {mod_path}: {err:#}");
+                            resolution_error.get_or_insert(err);
+                        }
                     }
+                }
+                if let Some(err) = resolution_error {
+                    warn!("failed to resolve Go module path for {tool_name}: {err:#}");
                 }
 
                 Ok(vec![])
@@ -111,6 +120,18 @@ impl Backend for GoBackend {
             Settings::get().fetch_remote_versions_timeout(),
         )
         .await
+    }
+
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> eyre::Result<Option<String>> {
+        // Go module versions are strict semver, so a full semver request is
+        // exact. `go install mod@vX.Y.Z` validates the version against the
+        // module proxy and fails when it does not exist.
+        let version = version.strip_prefix('v').unwrap_or(version);
+        Ok(versions::SemVer::new(version).map(|_| version.to_string()))
     }
 
     async fn install_version_(
@@ -144,7 +165,7 @@ impl Backend for GoBackend {
             cmd.arg(format!("{}@{v}", self.tool_name()))
                 .with_pr(ctx.pr.as_ref())
                 .envs(self.dependency_env(&ctx.config).await?)
-                .envs(tv.install_env())
+                .env_values(tv.install_env())
                 .env("GOBIN", tv.install_path().join("bin"))
                 .execute()
         };
@@ -203,11 +224,7 @@ impl GoBackend {
             return Ok(None);
         }
 
-        let parts: Vec<&str> = tool_name.split('/').collect();
-        let candidates: Vec<String> = (1..=parts.len())
-            .rev()
-            .map(|i| parts[..i].join("/"))
-            .collect();
+        let candidates = module_path_candidates(tool_name);
 
         let mut join_set = tokio::task::JoinSet::new();
         for (idx, path) in candidates.iter().enumerate() {
@@ -403,6 +420,14 @@ impl GoBackend {
             })
             .collect()
     }
+}
+
+fn module_path_candidates(tool_name: &str) -> Vec<String> {
+    let parts: Vec<&str> = tool_name.split('/').collect();
+    (1..=parts.len())
+        .rev()
+        .map(|i| parts[..i].join("/"))
+        .collect()
 }
 
 enum ProxyListResult {
@@ -629,6 +654,47 @@ mod tests {
     use super::*;
     use crate::toolset::ToolVersionOptions;
 
+    #[tokio::test]
+    async fn exact_semver_versions_resolve_without_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = GoBackend::from_arg("go:github.com/example/tool".into());
+
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "1.2.3")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.2.3")
+        );
+        // "v" prefixes are normalized away, matching how versions are listed.
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "v1.2.3")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.2.3")
+        );
+    }
+
+    #[tokio::test]
+    async fn fuzzy_versions_require_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = GoBackend::from_arg("go:github.com/example/tool".into());
+
+        for version in ["latest", "1", "1.2", "^1.2.3", "main"] {
+            assert_eq!(
+                backend
+                    .resolve_exact_version(&config, version)
+                    .await
+                    .unwrap(),
+                None,
+                "{version} should use remote discovery"
+            );
+        }
+    }
+
     #[test]
     fn go_options_reads_tags() {
         let mut opts = ToolVersionOptions::default();
@@ -691,6 +757,20 @@ mod tests {
         let info: GoModuleVersionMetadata = serde_json::from_str(raw).unwrap();
         assert_eq!(info.version, "v1.2.3");
         assert_eq!(info.time, Some("2026-04-08T12:56:30Z".to_string()));
+    }
+
+    #[test]
+    fn module_candidates_are_deepest_first() {
+        assert_eq!(
+            module_path_candidates("github.com/example/tool/cmd/tool"),
+            vec![
+                "github.com/example/tool/cmd/tool",
+                "github.com/example/tool/cmd",
+                "github.com/example/tool",
+                "github.com/example",
+                "github.com",
+            ]
+        );
     }
 
     #[test]

@@ -2,3 +2,11 @@
 
 [exec-env]
 cache-key = ["{{'1234'}}"]
+
+[list-idiomatic-filenames]
+data = "test-idiomatic-filenames"
+
+[package-manager]
+requires = ["helm", "kubectl"]
+supports-version-pins = true
+os = ["macos", "linux"]

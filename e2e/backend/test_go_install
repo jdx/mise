@@ -38,6 +38,12 @@ assert_matches \
   "GOPROXY=direct mise install --dry-run 'go:github.com/jdx/go-example/deep/cmd/tool/v2@latest' 2>&1" \
   'go:github.com/jdx/go-example/deep/cmd/tool/v2@2\.0\.0-[0-9]{14}-[0-9a-f]+'
 
+# Package in a subdirectory of an untagged root module; direct mode must walk
+# parent paths to resolve the module's pseudo-version.
+assert_matches \
+  "GOPROXY=direct mise install --dry-run 'go:github.com/noperator/sol/cmd/sol@latest' 2>&1" \
+  'go:github.com/noperator/sol/cmd/sol@0\.0\.0-[0-9]{14}-[0-9a-f]+'
+
 # Required to properly cleanup as go installs read-only sources
 if [ -d ~/go ]; then
   chmod -R +w ~/go
