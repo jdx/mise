@@ -82,6 +82,11 @@ latest -> ./20.15.0
 
 You can set the `MISE_INSTALLS_DIR` environment variable to override this location.
 
+`MISE_INSTALLS_DIR` is read when mise starts. Set it in the environment before invoking mise and keep
+it set for later mise and shim invocations. Do not set it in the `[env]` section of `mise.toml`: `[env]`
+describes the environment mise exports, after mise has already selected its installation directory.
+Setting it there can make an install use one directory while later commands and shims look in another.
+
 ### `~/.local/share/mise/shims`
 
 This is where mise places shims. Generally these are used for IDE integration or if `mise activate`
