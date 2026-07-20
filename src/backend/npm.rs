@@ -44,8 +44,6 @@ pub struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
     latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
-    // one packument fetch serves both version listing and dist-tag lookup
-    packument: tokio::sync::OnceCell<Arc<npm_registry::Packument>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -322,21 +320,9 @@ impl Backend for NPMBackend {
         }
         // Query the registry directly over HTTP so node/npm are not required
         // for version metadata. User .npmrc and NPM_CONFIG_* registry/auth
-        // settings still apply via NPM_REGISTRY_CONFIG.
+        // settings still apply via aube-registry's config loader.
         timeout::run_with_timeout_async(
-            async || {
-                let packument = self.fetch_packument().await?;
-                Ok(packument
-                    .versions_with_time()
-                    .into_iter()
-                    .map(|(version, created_at)| VersionInfo {
-                        version: version.to_string(),
-                        created_at: created_at.map(|s| s.to_string()),
-                        prerelease: is_semver_prerelease(version),
-                        ..Default::default()
-                    })
-                    .collect())
-            },
+            async || npm_registry::list_versions(&self.tool_name()).await,
             Settings::get().fetch_remote_versions_timeout(),
         )
         .await
@@ -356,7 +342,7 @@ impl Backend for NPMBackend {
                         if Settings::get().npm.use_npm_view {
                             return this.latest_dist_tag_npm_view(config).await;
                         }
-                        Ok(this.fetch_packument().await?.latest_dist_tag())
+                        npm_registry::latest_dist_tag(&this.tool_name()).await
                     })
                     .await
             },
@@ -555,19 +541,7 @@ impl NPMBackend {
                     .build(),
             ),
             ba: Arc::new(ba),
-            packument: tokio::sync::OnceCell::new(),
         }
-    }
-
-    async fn fetch_packument(&self) -> eyre::Result<&Arc<npm_registry::Packument>> {
-        self.packument
-            .get_or_try_init(|| async {
-                let packument = npm_registry::NPM_REGISTRY_CONFIG
-                    .fetch_packument(&self.tool_name())
-                    .await?;
-                Ok(Arc::new(packument))
-            })
-            .await
     }
 
     /// Legacy `npm view` version listing, kept behind `npm.use_npm_view` for
@@ -1056,7 +1030,7 @@ impl NPMBackend {
 /// Stricter than the generic `VERSION_REGEX` channel-tag list — for npm it
 /// catches any pre-release tag the maintainer chooses, not just the well-known
 /// names mise happens to recognize.
-fn is_semver_prerelease(version: &str) -> bool {
+pub(crate) fn is_semver_prerelease(version: &str) -> bool {
     let core_and_pre = version.split_once('+').map_or(version, |(v, _)| v);
     core_and_pre.contains('-')
 }

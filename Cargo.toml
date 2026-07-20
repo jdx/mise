@@ -65,6 +65,9 @@ opt-level = 3
 [dependencies]
 age = { version = "0.11", features = ["ssh"] }
 aho-corasick = "1"
+aube-registry = { version = "1.30", default-features = false, features = [
+  "rustls",
+] }
 async-backtrace = "0.2"
 async-trait = "0.1"
 aws-config = { version = "1.5", default-features = false, features = [
