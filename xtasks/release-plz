@@ -17,8 +17,20 @@ git config user.email release@mise.jdx.dev
 latest_tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1 || true)"
 if [[ -n $latest_tag ]]; then
 	if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$latest_tag" --silent 2>/dev/null; then
-		echo "Tag $latest_tag has no GitHub Release — triggering release workflow"
-		gh workflow run release.yml --ref "$latest_tag"
+		# Don't stack dispatches. release-plz runs on every push to main, so without
+		# this guard each merge re-triggers release.yml for the same tag. That trips
+		# the workflow's `release-<ref>` concurrency group, which cancels the still
+		# -pending prior attempt — so during a busy merge window no run ever survives
+		# long enough to finish and the release can never publish (a self-perpetuating
+		# loop, since a missing release keeps re-arming this very check). Only
+		# re-trigger when nothing is already queued or in progress for this tag.
+		active_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release.yml --branch "$latest_tag" --limit 30 --json status --jq '[.[] | select(.status != "completed")] | length' 2>/dev/null || echo 0)"
+		if [[ ${active_runs:-0} -gt 0 ]]; then
+			echo "Release workflow already active for $latest_tag ($active_runs queued/running) — not re-triggering"
+		else
+			echo "Tag $latest_tag has no GitHub Release — triggering release workflow"
+			gh workflow run release.yml --ref "$latest_tag"
+		fi
 	fi
 fi
 
