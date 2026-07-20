@@ -1104,7 +1104,7 @@ fn display_github_rate_limit(resp: &Response) {
     }
 }
 
-fn default_backoff_strategy(retries: i64) -> impl Iterator<Item = Duration> {
+pub(crate) fn default_backoff_strategy(retries: i64) -> impl Iterator<Item = Duration> {
     // Hand-rolled schedule (with jitter): ~200ms / ~1s / ~4s / ~15s, then 15s
     // for every retry beyond the schedule. The trailing repeat matters because
     // `MISE_HTTP_RETRIES` can be set arbitrarily high — a fixed-length array
