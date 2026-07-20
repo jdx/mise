@@ -43,8 +43,13 @@ on_boot_sec = "2min"
 on_unit_inactive_sec = "5min"
 randomized_delay_sec = "30s"
 persistent = true
-unit = "dev.mise.healthcheck.service"
+unit = "healthcheck"
 ```
+
+A bare `unit` value (no unit-type suffix) is resolved to the mise-owned service
+`dev.mise.<unit>.service` — so `unit = "healthcheck"` targets the `healthcheck`
+service entry above. To point a timer at an unmanaged unit, give the fully
+qualified name (e.g. `unit = "nginx.service"`), which is written verbatim.
 
 A timer must set at least one of `on_boot_sec`, `on_unit_active_sec`,
 `on_unit_inactive_sec`, or `on_calendar`. Service-only keys such as

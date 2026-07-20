@@ -538,7 +538,33 @@ fn render_timer(request: &SystemdRequest, out: &mut String) {
         out.push_str(&format!("Persistent={}\n", yes_no(persistent)));
     }
     if let Some(unit) = &request.timer_unit {
-        out.push_str(&format!("Unit={unit}\n"));
+        out.push_str(&format!("Unit={}\n", resolve_timer_unit(unit)));
+    }
+}
+
+/// systemd unit-type suffixes. A `unit` value ending in one of these is treated
+/// as a fully-qualified unit name and written verbatim (e.g. pointing a timer at
+/// a foreign unit). A bare name is resolved to the `dev.mise.<name>.service` unit
+/// mise writes for the same-named service entry.
+const UNIT_SUFFIXES: &[&str] = &[
+    ".service",
+    ".socket",
+    ".device",
+    ".mount",
+    ".automount",
+    ".swap",
+    ".target",
+    ".path",
+    ".timer",
+    ".slice",
+    ".scope",
+];
+
+fn resolve_timer_unit(unit: &str) -> String {
+    if UNIT_SUFFIXES.iter().any(|suffix| unit.ends_with(suffix)) {
+        unit.to_string()
+    } else {
+        format!("dev.mise.{unit}.service")
     }
 }
 
@@ -876,6 +902,36 @@ mod tests {
             render_unit(&request),
             "[Unit]\n\n[Timer]\nOnBootSec=2min\nOnUnitInactiveSec=5min\nRandomizedDelaySec=30s\nAccuracySec=1s\nPersistent=yes\nUnit=dev.mise.healthcheck.service\n\n[Install]\nWantedBy=timers.target\n"
         );
+    }
+
+    #[test]
+    fn test_resolve_timer_unit() {
+        // bare name resolves to the mise-owned service unit
+        assert_eq!(
+            resolve_timer_unit("dotfiles-maintain"),
+            "dev.mise.dotfiles-maintain.service"
+        );
+        // already-qualified names are written verbatim
+        assert_eq!(
+            resolve_timer_unit("dev.mise.dotfiles-maintain.service"),
+            "dev.mise.dotfiles-maintain.service"
+        );
+        assert_eq!(resolve_timer_unit("nginx.service"), "nginx.service");
+        assert_eq!(resolve_timer_unit("foo.target"), "foo.target");
+    }
+
+    #[test]
+    fn test_render_timer_bare_unit() {
+        let request = SystemdRequest::from_toml(
+            "dotfiles-maintain-timer".to_string(),
+            SystemdTomlConfig {
+                on_calendar: Some("daily".to_string()),
+                unit: Some("dotfiles-maintain".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(render_unit(&request).contains("Unit=dev.mise.dotfiles-maintain.service\n"));
     }
 
     #[test]
