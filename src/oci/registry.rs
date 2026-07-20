@@ -152,64 +152,120 @@ fn parse_auth_challenge(www_auth: &str) -> Option<AuthChallenge> {
     realm.map(|realm| AuthChallenge::Bearer { realm, service })
 }
 
-/// Determine the `Authorization` header to use against a registry, by probing
-/// `GET /v2/` and answering its challenge.
-///
-///  - 200 → no auth needed (`None`)
-///  - 401 + `Bearer` challenge → token fetch (anonymous or with credentials)
-///  - 401 + `Basic` challenge → credentials passed through as Basic
-///
-/// `actions` is the scope verb list (`"pull"` or `"pull,push"`).
-async fn authorization_for(
-    r: &Reference,
-    actions: &str,
-    credential: Option<&Credential>,
-) -> Result<Option<String>> {
-    let probe_url = format!("{}/v2/", r.registry_url());
-    let resp = HTTP
-        .get_async_with_headers_allow_error_status(&probe_url, &HeaderMap::new())
-        .await
-        .wrap_err_with(|| format!("probing {probe_url}"))?;
-    if resp.status().is_success() {
-        return Ok(None);
-    }
-    if resp.status() != StatusCode::UNAUTHORIZED {
-        bail!(
-            "unexpected status {} probing {probe_url}",
-            resp.status().as_u16()
-        );
-    }
-    let www_auth = resp
-        .headers()
-        .get("www-authenticate")
+/// Read a response header as an owned `String` (empty when absent / non-ASCII).
+fn header_str(resp: &reqwest::Response, name: &str) -> String {
+    resp.headers()
+        .get(name)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
-        .to_string();
-    match parse_auth_challenge(&www_auth) {
-        Some(AuthChallenge::Bearer { realm, service }) => {
-            let token = fetch_bearer_token(
-                &realm,
-                service.as_deref(),
-                &r.repository,
-                actions,
-                credential,
-            )
-            .await?;
-            Ok(token.map(|t| format!("Bearer {t}")))
+        .to_string()
+}
+
+/// Tracks the `Authorization` header for a sequence of requests to one
+/// registry repository, (re)negotiating it from a `WWW-Authenticate`
+/// challenge as needed.
+///
+/// Auth is challenge-driven rather than assumed from the `/v2/` probe: some
+/// registries answer `200` on `GET /v2/` yet still challenge the actual
+/// manifest / blob / upload requests (e.g. anonymous read but authenticated
+/// push, or per-repository policies). The probe is only an upfront
+/// optimization so the first real request usually already carries a token;
+/// callers must still retry once when an operation returns `401`, feeding the
+/// operation's own challenge back into [`AuthSession::answer_challenge`].
+struct AuthSession {
+    reference: Reference,
+    credential: Option<Credential>,
+    /// Scope verb list for token requests (`"pull"` or `"pull,push"`).
+    actions: &'static str,
+    authorization: Option<String>,
+}
+
+impl AuthSession {
+    async fn new(reference: Reference, actions: &'static str) -> Result<Self> {
+        let credential = crate::oci::auth::resolve_credential(&reference.registry)?;
+        let mut session = Self {
+            reference,
+            credential,
+            actions,
+            authorization: None,
+        };
+        session.probe().await?;
+        Ok(session)
+    }
+
+    fn header(&self) -> Option<&str> {
+        self.authorization.as_deref()
+    }
+
+    fn has_credential(&self) -> bool {
+        self.credential.is_some()
+    }
+
+    /// Best-effort upfront probe of `GET /v2/`. A `401` gets answered now so
+    /// the first real request carries a token; a `200` (or a challenge we
+    /// can't satisfy yet) simply leaves us anonymous until an operation's own
+    /// `401` re-triggers negotiation.
+    async fn probe(&mut self) -> Result<()> {
+        let url = format!("{}/v2/", self.reference.registry_url());
+        let resp = HTTP
+            .get_async_with_headers_allow_error_status(&url, &HeaderMap::new())
+            .await
+            .wrap_err_with(|| format!("probing {url}"))?;
+        if resp.status() == StatusCode::UNAUTHORIZED {
+            let www_auth = header_str(&resp, "www-authenticate");
+            self.answer_challenge(&www_auth).await?;
         }
-        Some(AuthChallenge::Basic) => match credential {
-            Some(c) => Ok(Some(c.basic_auth_header())),
-            None => bail!(
-                "registry {} requires Basic auth but no credentials were found; \
-                 run `docker login {}` (or `podman login`) first",
-                r.registry,
-                r.registry
-            ),
-        },
-        None => bail!(
-            "registry {} returned an unsupported auth challenge: {www_auth:?}",
-            r.registry
-        ),
+        Ok(())
+    }
+
+    /// Negotiate authorization from a `WWW-Authenticate` challenge string,
+    /// storing the resulting header. Returns whether a usable `Authorization`
+    /// header was obtained (a Basic challenge with no credentials yields
+    /// `false` so the caller can surface an actionable message).
+    async fn answer_challenge(&mut self, www_auth: &str) -> Result<bool> {
+        match parse_auth_challenge(www_auth) {
+            Some(AuthChallenge::Bearer { realm, service }) => {
+                let token = fetch_bearer_token(
+                    &realm,
+                    service.as_deref(),
+                    &self.reference.repository,
+                    self.actions,
+                    self.credential.as_ref(),
+                )
+                .await?;
+                self.authorization = token.map(|t| format!("Bearer {t}"));
+                Ok(self.authorization.is_some())
+            }
+            Some(AuthChallenge::Basic) => match &self.credential {
+                Some(c) => {
+                    self.authorization = Some(c.basic_auth_header());
+                    Ok(true)
+                }
+                None => Ok(false),
+            },
+            // No / unrecognized challenge — stay with whatever we have.
+            None => Ok(false),
+        }
+    }
+
+    /// Send a request and, if it returns `401`, answer the response's own
+    /// challenge and retry once with refreshed authorization. `build` is
+    /// called with the current `Authorization` header (if any) and must
+    /// produce a complete request — it may be invoked twice, so it reopens
+    /// any streamed body itself.
+    async fn send<F>(&mut self, build: F) -> Result<reqwest::Response>
+    where
+        F: Fn(Option<&str>) -> reqwest::RequestBuilder,
+    {
+        let resp = build(self.header()).send().await?;
+        if resp.status() != StatusCode::UNAUTHORIZED {
+            return Ok(resp);
+        }
+        let www_auth = header_str(&resp, "www-authenticate");
+        if self.answer_challenge(&www_auth).await? {
+            return Ok(build(self.header()).send().await?);
+        }
+        Ok(resp)
     }
 }
 
@@ -290,16 +346,49 @@ fn auth_headers(authorization: Option<&str>, accept: &[&str]) -> Result<HeaderMa
     Ok(headers)
 }
 
-async fn get_with_token<T: serde::de::DeserializeOwned>(
+/// Fetch a manifest (or index) as JSON, retrying once on `401` with a
+/// negotiated token. Returns the parsed body and the response `Content-Type`
+/// (the caller uses it to distinguish a single manifest from an index).
+async fn fetch_manifest_json(
+    session: &mut AuthSession,
     url: &str,
-    authorization: Option<&str>,
     accept: &[&str],
-) -> Result<(T, HeaderMap)> {
-    let headers = auth_headers(authorization, accept)?;
-    let (body, h) = HTTP
-        .json_headers_with_headers::<T, _>(url, &headers)
-        .await?;
-    Ok((body, h))
+) -> Result<(serde_json::Value, String)> {
+    let accept_hdr = accept.join(", ");
+    let resp = session
+        .send(|auth| {
+            let mut rb = HTTP.reqwest().get(url).header("Accept", &accept_hdr);
+            if let Some(a) = auth {
+                rb = rb.header("Authorization", a);
+            }
+            rb
+        })
+        .await
+        .wrap_err_with(|| format!("fetching {url}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let hint = if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+            if session.has_credential() {
+                " — the stored credentials were rejected or lack access to this image"
+            } else {
+                " — the image may be private; run `docker login` (or `podman login`) for this registry"
+            }
+        } else {
+            ""
+        };
+        let body = resp.text().await.unwrap_or_default();
+        bail!(
+            "fetching {url} failed: {}{hint}\n{}",
+            status.as_u16(),
+            body.trim()
+        );
+    }
+    let content_type = header_str(&resp, "content-type");
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .wrap_err_with(|| format!("parsing JSON response from {url}"))?;
+    Ok((body, content_type))
 }
 
 async fn get_bytes_with_token(
@@ -340,28 +429,21 @@ pub async fn pull_base_image(
         MEDIA_TYPE_DOCKER_MANIFEST_LIST,
     ];
 
-    // Use stored credentials when the user has them (private base images);
-    // fall back to anonymous tokens otherwise.
-    let credential = crate::oci::auth::resolve_credential(&r.registry)?;
-    let token = authorization_for(&r, "pull", credential.as_ref()).await?;
+    // Negotiate auth (stored credentials for private images, anonymous
+    // tokens otherwise). Auth is challenge-driven per request, so a registry
+    // that answers 200 on /v2/ but guards the manifest still works.
+    let mut session = AuthSession::new(r.clone(), "pull").await?;
 
     // Try OCI/Docker manifest or an index (multi-arch).
-    let (body, headers) =
-        get_with_token::<serde_json::Value>(&manifest_url, token.as_deref(), &accept)
-            .await
-            .wrap_err_with(|| format!("fetching manifest for {reference}"))?;
-
-    let content_type = headers
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let (body, content_type) = fetch_manifest_json(&mut session, &manifest_url, &accept)
+        .await
+        .wrap_err_with(|| format!("fetching manifest for {reference}"))?;
 
     let manifest = resolve_manifest(
         body,
         &r,
         base_url.as_str(),
-        token.as_deref(),
+        &mut session,
         desired_platform,
         &content_type,
     )
@@ -381,7 +463,7 @@ pub async fn pull_base_image(
         "{base_url}/v2/{}/blobs/{}",
         r.repository, manifest.config.digest
     );
-    let config_bytes = get_bytes_with_token(&config_url, token.as_deref(), &[]).await?;
+    let config_bytes = get_bytes_with_token(&config_url, session.header(), &[]).await?;
     // Preserve the byte-level digest by writing under the exact digest name.
     layout.write_blob_with_digest(&manifest.config.digest, &config_bytes)?;
 
@@ -391,7 +473,7 @@ pub async fn pull_base_image(
         if blob_path.exists() {
             continue;
         }
-        let bytes = get_bytes_with_token(&layer_url, token.as_deref(), &[]).await?;
+        let bytes = get_bytes_with_token(&layer_url, session.header(), &[]).await?;
         layout.write_blob_with_digest(&layer.digest, &bytes)?;
     }
 
@@ -421,7 +503,7 @@ async fn resolve_manifest(
     body: serde_json::Value,
     r: &Reference,
     base_url: &str,
-    token: Option<&str>,
+    session: &mut AuthSession,
     desired_platform: Option<(&str, &str)>,
     content_type: &str,
 ) -> Result<ImageManifest> {
@@ -471,7 +553,7 @@ async fn resolve_manifest(
             .ok_or_else(|| eyre::eyre!("manifest entry missing digest"))?;
         let manifest_url = format!("{base_url}/v2/{}/manifests/{digest}", r.repository);
         let accept = [MEDIA_TYPE_OCI_MANIFEST, MEDIA_TYPE_DOCKER_MANIFEST];
-        let (body, _h) = get_with_token::<serde_json::Value>(&manifest_url, token, &accept).await?;
+        let (body, _content_type) = fetch_manifest_json(session, &manifest_url, &accept).await?;
         return parse_single_manifest(body);
     }
 
@@ -526,8 +608,10 @@ pub async fn push_image(image_dir: &Path, reference: &str) -> Result<PushSummary
     let manifest: ImageManifest =
         serde_json::from_slice(&manifest_bytes).wrap_err("parsing image manifest blob")?;
 
-    let credential = crate::oci::auth::resolve_credential(&r.registry)?;
-    if credential.is_none() {
+    // Negotiate auth once up front; individual requests still re-negotiate on
+    // a 401 (a registry may 200 on /v2/ yet challenge the push operations).
+    let session = AuthSession::new(r.clone(), "pull,push").await?;
+    if !session.has_credential() {
         // Not fatal — local registries accept anonymous pushes — but worth
         // surfacing before a 401 does.
         warn!(
@@ -536,11 +620,10 @@ pub async fn push_image(image_dir: &Path, reference: &str) -> Result<PushSummary
             r.registry, r.registry
         );
     }
-    let authorization = authorization_for(&r, "pull,push", credential.as_ref()).await?;
-    let pusher = Pusher {
+    let mut pusher = Pusher {
         base_url: r.registry_url(),
         repository: r.repository.clone(),
-        authorization,
+        session,
     };
 
     // Config + layers, deduped (identical layers can legitimately repeat).
@@ -589,40 +672,47 @@ pub async fn push_image(image_dir: &Path, reference: &str) -> Result<PushSummary
 struct Pusher {
     base_url: String,
     repository: String,
-    authorization: Option<String>,
+    session: AuthSession,
 }
 
 impl Pusher {
-    fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        match &self.authorization {
-            Some(a) => req.header("Authorization", a),
-            None => req,
-        }
-    }
-
-    async fn blob_exists(&self, digest: &str) -> Result<bool> {
+    /// Returns true only when the registry confirms the blob is present
+    /// (`200`). Any other response — `404`, an auth status, or an oddity like
+    /// `405 Method Not Allowed` from a proxy that doesn't implement blob
+    /// HEAD — is treated as "not present", so the upload proceeds and any
+    /// genuine problem surfaces there with a clearer message.
+    async fn blob_exists(&mut self, digest: &str) -> Result<bool> {
         let url = format!("{}/v2/{}/blobs/{digest}", self.base_url, self.repository);
         let resp = self
-            .apply_auth(HTTP.reqwest().head(&url))
-            .send()
+            .session
+            .send(|auth| {
+                let mut rb = HTTP.reqwest().head(&url);
+                if let Some(a) = auth {
+                    rb = rb.header("Authorization", a);
+                }
+                rb
+            })
             .await
             .wrap_err_with(|| format!("HEAD {url}"))?;
-        match resp.status() {
-            StatusCode::OK => Ok(true),
-            // Treat auth failures on HEAD as "not there" — the subsequent
-            // upload will surface a clearer 401/403 with context.
-            StatusCode::NOT_FOUND | StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Ok(false),
-            s => bail!("unexpected status {s} from HEAD {url}"),
-        }
+        Ok(resp.status() == StatusCode::OK)
     }
 
-    async fn upload_blob(&self, path: &Path, digest: &str, size: u64) -> Result<()> {
+    async fn upload_blob(&mut self, path: &Path, digest: &str, size: u64) -> Result<()> {
+        let had_credential = self.session.has_credential();
         // 1. Open an upload session.
         let start_url = format!("{}/v2/{}/blobs/uploads/", self.base_url, self.repository);
         let resp = self
-            .apply_auth(HTTP.reqwest().post(&start_url))
-            .header("Content-Length", "0")
-            .send()
+            .session
+            .send(|auth| {
+                let mut rb = HTTP
+                    .reqwest()
+                    .post(&start_url)
+                    .header("Content-Length", "0");
+                if let Some(a) = auth {
+                    rb = rb.header("Authorization", a);
+                }
+                rb
+            })
             .await
             .wrap_err_with(|| format!("POST {start_url}"))?;
         let status = resp.status();
@@ -631,7 +721,7 @@ impl Pusher {
                 "starting blob upload failed: {} {}{}",
                 status.as_u16(),
                 start_url,
-                push_auth_hint(status, self.authorization.is_some()),
+                push_auth_hint(status, had_credential),
             );
         }
         let location = resp
@@ -645,18 +735,33 @@ impl Pusher {
         } else {
             url::Url::parse(&format!("{}{}", self.base_url, location))?
         };
-        // 2. Monolithic PUT with ?digest=…
+        // 2. Monolithic PUT with ?digest=… . The upload session was just
+        // authorized, so the PUT reuses that token; reopen the file on each
+        // attempt in case the challenge retry fires.
         upload_url.query_pairs_mut().append_pair("digest", digest);
-        let file = tokio::fs::File::open(path)
-            .await
-            .wrap_err_with(|| format!("opening blob {}", path.display()))?;
-        let body = reqwest::Body::wrap_stream(tokio_util::io::ReaderStream::new(file));
+        let upload_url = upload_url.to_string();
+        let path = path.to_path_buf();
         let resp = self
-            .apply_auth(HTTP.reqwest().put(upload_url.as_str()))
-            .header("Content-Type", "application/octet-stream")
-            .header("Content-Length", size)
-            .body(body)
-            .send()
+            .session
+            .send(|auth| {
+                let file = match std::fs::File::open(&path) {
+                    Ok(f) => tokio::fs::File::from_std(f),
+                    // Defer the error to send(): return a request that will
+                    // fail loudly rather than silently uploading nothing.
+                    Err(_) => return HTTP.reqwest().put(&upload_url).body(Vec::new()),
+                };
+                let body = reqwest::Body::wrap_stream(tokio_util::io::ReaderStream::new(file));
+                let mut rb = HTTP
+                    .reqwest()
+                    .put(&upload_url)
+                    .header("Content-Type", "application/octet-stream")
+                    .header("Content-Length", size)
+                    .body(body);
+                if let Some(a) = auth {
+                    rb = rb.header("Authorization", a);
+                }
+                rb
+            })
             .await
             .wrap_err("PUT blob upload")?;
         let status = resp.status();
@@ -665,20 +770,30 @@ impl Pusher {
             bail!(
                 "blob upload failed: {}{}\n{}",
                 status.as_u16(),
-                push_auth_hint(status, self.authorization.is_some()),
+                push_auth_hint(status, had_credential),
                 body.trim(),
             );
         }
         Ok(())
     }
 
-    async fn put_manifest(&self, tag: &str, media_type: &str, bytes: &[u8]) -> Result<()> {
+    async fn put_manifest(&mut self, tag: &str, media_type: &str, bytes: &[u8]) -> Result<()> {
+        let had_credential = self.session.has_credential();
         let url = format!("{}/v2/{}/manifests/{tag}", self.base_url, self.repository);
+        let body = bytes.to_vec();
         let resp = self
-            .apply_auth(HTTP.reqwest().put(&url))
-            .header("Content-Type", media_type)
-            .body(bytes.to_vec())
-            .send()
+            .session
+            .send(|auth| {
+                let mut rb = HTTP
+                    .reqwest()
+                    .put(&url)
+                    .header("Content-Type", media_type)
+                    .body(body.clone());
+                if let Some(a) = auth {
+                    rb = rb.header("Authorization", a);
+                }
+                rb
+            })
             .await
             .wrap_err_with(|| format!("PUT {url}"))?;
         let status = resp.status();
@@ -687,7 +802,7 @@ impl Pusher {
             bail!(
                 "manifest push failed: {} {url}{}\n{}",
                 status.as_u16(),
-                push_auth_hint(status, self.authorization.is_some()),
+                push_auth_hint(status, had_credential),
                 body.trim(),
             );
         }
@@ -695,9 +810,9 @@ impl Pusher {
     }
 }
 
-fn push_auth_hint(status: StatusCode, had_authorization: bool) -> &'static str {
+fn push_auth_hint(status: StatusCode, had_credential: bool) -> &'static str {
     match status {
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN if !had_authorization => {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN if !had_credential => {
             " — no credentials were found; run `docker login` (or `podman login`) for this registry"
         }
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
