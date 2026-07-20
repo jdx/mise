@@ -13612,7 +13612,6 @@ packages:
     description: Claude Code is an agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster by executing routine tasks, explaining complex code, and handling git workflows - all through natural language commands
     files:
       - name: claude
-    version_source: github_tag
     version_constraint: "false"
     version_overrides:
       - version_constraint: Version == "v2.1.88"
@@ -55788,6 +55787,34 @@ packages:
           - linux
           - darwin
   - type: github_release
+    repo_owner: kbrdn1
+    repo_name: gwm-cli
+    description: git worktree manager — Rust CLI + ratatui TUI, native libgit2, per-repo bootstrap via .gwm.toml
+    files:
+      - name: gwm
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: gwm-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: gwm
+            src: "{{.AssetWithoutExt}}/gwm"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: kcl-lang
     repo_name: cli
     description: The KCL Command Line Interface (CLI)
@@ -74768,6 +74795,22 @@ packages:
       asset: pscale_{{trimV .Version}}_checksums.txt
       algorithm: sha256
   - type: github_release
+    repo_owner: planetscale
+    repo_name: ghcommit
+    description: Use GitHub's GraphQL API to commit files to a GitHub repository
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: ghcommit_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: plexsystems
     repo_name: sinker
     description: A tool to sync images from one container registry to another
@@ -83599,12 +83642,20 @@ packages:
         supported_envs:
           - linux
           - darwin
+      - version_constraint: semver("<= 5.42.2.0")
+        asset: perl-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: "true"
         asset: perl-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         supported_envs:
           - linux
           - darwin
+        github_artifact_attestations:
+          signer_workflow: skaji/relocatable-perl/\.github/workflows/ci\.yml
   - type: github_release
     repo_owner: skanehira
     repo_name: ghost
@@ -89705,6 +89756,9 @@ packages:
               - https://github.com/suzuki-shunsuke/tfrstate/releases/download/{{.Version}}/tfrstate_{{trimV .Version}}_checksums.txt.sig
               - --certificate
               - https://github.com/suzuki-shunsuke/tfrstate/releases/download/{{.Version}}/tfrstate_{{trimV .Version}}_checksums.txt.pem
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
         overrides:
           - goos: windows
             format: zip
