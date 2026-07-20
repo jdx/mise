@@ -48,14 +48,6 @@ jobs:
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
-      - run: mise --cd crates/vfox install
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6 # zizmor: ignore[cache-poisoning] cache key is scoped by mise.toml hash; tool installs only
-        with:
-          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-vfox-${{ hashFiles('crates/vfox/mise.toml') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-vfox-
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
       - run: mise --cd crates/vfox run build
       - run: mise --cd crates/vfox run lint
       - run: mise --cd crates/vfox run test
