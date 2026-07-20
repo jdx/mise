@@ -62,7 +62,7 @@ dummy = "1"
 EOF
 assert_fail "MISE_SAFE=1 mise latest dummy" "executing asdf plugin scripts is disabled in safe mode (MISE_SAFE=1)"
 # without safe mode the same command works
-assert "mise latest dummy@1" "1.1.0"
+assert "mise latest dummy" "2.0.0"
 
 echo "=== plugin installation is refused ==="
 assert_fail "MISE_SAFE=1 mise plugins install tiny https://github.com/jdx/vfox-tiny" "installing plugins is disabled in safe mode (MISE_SAFE=1)"

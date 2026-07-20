@@ -1097,8 +1097,7 @@ impl Settings {
     pub fn ensure_not_safe(operation: &str) -> Result<()> {
         if Settings::get().safe {
             bail!(
-                "{operation} is disabled in safe mode (MISE_SAFE=1)
-                 See https://mise.en.dev/configuration/settings.html#safe"
+                "{operation} is disabled in safe mode (MISE_SAFE=1)\nSee https://mise.en.dev/configuration/settings.html#safe"
             );
         }
         Ok(())

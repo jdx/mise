@@ -360,6 +360,11 @@ pub async fn run_one_hook_with_context(
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
         return;
     }
+    // Hooks are suppressed rather than refused in safe mode (matching
+    // --no-hooks semantics) because they fire ambiently from commands like
+    // `mise env`/`hook-env` that safe-mode automation still needs to run —
+    // erroring here would break every resolution command instead of blocking
+    // just the hook.
     if Settings::get().safe {
         debug!("skipping hooks: safe mode (MISE_SAFE=1)");
         return;

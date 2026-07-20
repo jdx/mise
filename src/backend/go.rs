@@ -100,6 +100,13 @@ impl Backend for GoBackend {
                 // Fall back to `go list -m -versions` for GOPROXY=direct. Package
                 // paths are not necessarily module paths, so walk their prefixes
                 // just as the proxy resolver does.
+                // Check safe mode here rather than only inside
+                // fetch_go_module_versions: the loop below swallows per-candidate
+                // errors, and a safe-mode refusal must fail loudly instead of
+                // degrading to an empty version list.
+                Settings::ensure_not_safe(
+                    "go version listing via `go list` (GOPROXY=direct fallback)",
+                )?;
                 let mut resolution_error = None;
                 for mod_path in module_path_candidates(&tool_name) {
                     match self.fetch_go_module_versions(config, &mod_path).await {
