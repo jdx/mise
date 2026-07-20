@@ -1144,7 +1144,7 @@ optional = true
 type = "Bool"
 
 [gpg_verify]
-description = "Use gpg to verify all tool signatures."
+description = "Verify OpenPGP signatures for all tools (built-in, no external gpg required). Set to false to disable."
 env = "MISE_GPG_VERIFY"
 optional = true
 type = "Bool"
@@ -1666,7 +1666,7 @@ optional = true
 type = "String"
 
 [node.gpg_verify]
-description = "Use gpg to verify node tool signatures."
+description = "Verify OpenPGP signatures for node (built-in, no external gpg required). Set to false to disable."
 env = "MISE_NODE_GPG_VERIFY"
 optional = true
 type = "Bool"
@@ -2504,7 +2504,7 @@ env = "MISE_STATUS_MESSAGE_TRUNCATE"
 type = "Bool"
 
 [swift.gpg_verify]
-description = "Use gpg to verify swift tool signatures."
+description = "Verify OpenPGP signatures for swift (built-in, no external gpg required). Set to false to disable."
 env = "MISE_SWIFT_GPG_VERIFY"
 optional = true
 type = "Bool"

@@ -5,15 +5,10 @@ different coverage depending on the backend and the metadata available from upst
 
 ## Software verification
 
-mise provides native software verification for aqua tools without requiring external dependencies.
+mise provides native software verification without requiring external dependencies.
 For aqua tools, Cosign/Minisign signatures, SLSA provenance, and GitHub artifact attestations are
-verified automatically using mise's built-in implementation.
-
-For other verification needs, such as GPG, you can install additional tools:
-
-```sh
-brew install gpg
-```
+verified automatically using mise's built-in implementation. OpenPGP signature verification for
+Node.js and Swift downloads is likewise built in and requires no external `gpg` binary.
 
 To configure aqua verification, which is enabled by default:
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Test that monorepo tasks inherit tools from parent mise.toml files
 export MISE_EXPERIMENTAL=1
-export MISE_NODE_VERIFY=0 # Skip GPG verification to avoid keyboxd issues
+export MISE_NODE_VERIFY=0 # skip checksum/signature verification; this test only needs node installed
 
 # Create monorepo root config with shared tools
 cat <<EOF >mise.toml
