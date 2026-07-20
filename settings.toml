@@ -2316,11 +2316,11 @@ When enabled, mise refuses (with an error, never a silent fallback) to:
 - execute asdf plugin scripts
 - install plugins (already-installed and embedded vfox plugins still work — their
   code was chosen by the operator, not the repository)
-- shell out to `npm` or `go` for version listing (HTTP-based listing still works)
 
-Operations that only need HTTP metadata — resolving versions for core, aqua,
-github, gitlab, http, cargo, pipx, gem, and dotnet backends, refreshing
-`mise.lock`, listing installed tools — work normally.
+Version resolution still works for every HTTP-based backend (core, aqua, github,
+gitlab, http, cargo, pipx, gem, dotnet, npm) as well as `go` (which runs with
+`GOTOOLCHAIN=local` so a project `go.mod` cannot trigger a toolchain download).
+Refreshing `mise.lock` and listing installed tools work normally.
 """
 env = "MISE_SAFE"
 global_only = true
