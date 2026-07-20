@@ -25,3 +25,11 @@ rm -rf "$MISE_DATA_DIR/installs/dummy"
 rm -rf "$MISE_DATA_DIR/installs/needs-dummy"
 
 assert "MISE_JOBS=1 mise run structured-options" "needs-dummy v1.0.0"
+
+cat <<EOF >mise.toml
+[tasks.selector]
+tools = { tiny = { prefix = "1" } }
+run = "rtx-tiny"
+EOF
+
+assert "mise run selector" "rtx-tiny: v1.1.0 args:"

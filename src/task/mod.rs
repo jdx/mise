@@ -1,5 +1,5 @@
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::config_file::mise_toml::{EnvList, deserialize_vars};
+use crate::config::config_file::mise_toml::{EnvList, ParsedToolMap, deserialize_vars};
 use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
@@ -81,18 +81,78 @@ use task_sources::{RawOutputTemplates, TaskOutputs};
 /// Represents a tool value in task-level tools field.
 /// Supports both string syntax (e.g., "1.0.0") and object syntax
 /// (e.g., { version = "1.0.0", targets = ["x86_64"] })
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum TaskToolValue {
     String(String),
     Map(TaskToolValueMap),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+impl<'de> Deserialize<'de> for TaskToolValue {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct TaskToolValueVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for TaskToolValueVisitor {
+            type Value = TaskToolValue;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a task tool definition as a string or table")
+            }
+
+            fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(TaskToolValue::String(value.to_string()))
+            }
+
+            fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(TaskToolValue::String(value))
+            }
+
+            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                let parsed =
+                    ParsedToolMap::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(TaskToolValue::Map(parsed.into()))
+            }
+        }
+
+        deserializer.deserialize_any(TaskToolValueVisitor)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TaskToolValueMap {
     pub version: String,
     #[serde(flatten)]
     pub opts: IndexMap<String, toml::Value>,
+}
+
+impl From<ParsedToolMap> for TaskToolValueMap {
+    fn from(parsed: ParsedToolMap) -> Self {
+        Self {
+            version: parsed.request,
+            opts: parsed.options,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TaskToolValueMap {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(ParsedToolMap::deserialize(deserializer)?.into())
+    }
 }
 
 impl TaskToolValue {
@@ -901,31 +961,14 @@ impl Task {
             .parse_table("tools")
             .map(|t| {
                 t.into_iter()
-                    .filter_map(|(k, v)| {
-                        if let toml::Value::String(s) = &v {
-                            Some((k, TaskToolValue::String(s.clone())))
-                        } else if let toml::Value::Table(table) = &v {
-                            if let Some(toml::Value::String(version)) = table.get("version") {
-                                let mut opts = IndexMap::new();
-                                for (ok, ov) in table.iter().filter(|(ok, _)| *ok != "version") {
-                                    opts.insert(ok.clone(), ov.clone());
-                                }
-                                Some((
-                                    k,
-                                    TaskToolValue::Map(TaskToolValueMap {
-                                        version: version.clone(),
-                                        opts,
-                                    }),
-                                ))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
+                    .map(|(tool, value)| {
+                        TaskToolValue::deserialize(value)
+                            .map(|value| (tool.clone(), value))
+                            .map_err(|err| eyre!("failed to parse task tool `{tool}`: {err}"))
                     })
-                    .collect()
+                    .collect::<Result<IndexMap<_, _>>>()
             })
+            .transpose()?
             .unwrap_or_default();
 
         let mut unparsed = p.unparsed_keys();
@@ -2764,6 +2807,7 @@ mod tests {
 
     use crate::task::{RunEntry, Task};
     use crate::{config::Config, dirs};
+    use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
 
     #[cfg(unix)]
@@ -3845,7 +3889,7 @@ echo "hello world"
 #MISE quiet=true
 #MISE silent=true
 #MISE output="prefix"
-#MISE tools={node="20", python="3.11"}
+#MISE tools={node={prefix="20"}, python="3.11"}
 #MISE confirm="Are you sure?"
 echo "test"
 "#;
@@ -3873,6 +3917,13 @@ echo "test"
         assert_eq!(task.output, Some(TaskOutput::Prefix));
         assert!(!task.tools.is_empty());
         assert_eq!(
+            task.tools.get("node"),
+            Some(&super::TaskToolValue::Map(super::TaskToolValueMap {
+                version: "prefix:20".to_string(),
+                opts: IndexMap::new(),
+            }))
+        );
+        assert_eq!(
             task.confirm,
             Some(TaskConfirm::Message("Are you sure?".to_string()))
         );
@@ -3896,6 +3947,35 @@ echo "test"
             parsed_fields.len(),
             script_lines,
             parsed_fields
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_file_task_reports_tool_selector_errors() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let task_file = tasks_dir.join("invalid-tools");
+        fs::write(
+            &task_file,
+            "#!/usr/bin/env bash\n#MISE tools={node={version=\"20\", prefix=\"20\"}}\n",
+        )
+        .unwrap();
+        fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = Config::get().await.unwrap();
+        let err = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains(
+                "failed to parse task tool `node`: tool definition cannot specify both `version` and `prefix`"
+            ),
+            "{err}"
         );
     }
 
@@ -4102,6 +4182,70 @@ echo "test"
         );
         assert_eq!(options.os, Some(vec!["linux".to_string()]));
         assert_eq!(options.depends, Some(vec!["node".to_string()]));
+    }
+
+    #[test]
+    fn test_task_tool_map_selectors() {
+        use serde::Deserialize;
+
+        use super::TaskToolValue;
+
+        #[derive(Deserialize)]
+        struct TaskTools {
+            tools: IndexMap<String, TaskToolValue>,
+        }
+
+        let parsed: TaskTools = toml::from_str(
+            r#"
+            [tools]
+            node = { version = "20", backend_options = { nested = [1, true] } }
+            go = { prefix = "1.22" }
+            python = { ref = "main" }
+            shellcheck = { path = "/opt/shellcheck" }
+            "#,
+        )
+        .unwrap();
+
+        for (tool, expected) in [
+            ("node", "20"),
+            ("go", "prefix:1.22"),
+            ("python", "ref:main"),
+            ("shellcheck", "path:/opt/shellcheck"),
+        ] {
+            let TaskToolValue::Map(value) = &parsed.tools[tool] else {
+                panic!("expected mapped task tool for {tool}");
+            };
+            assert_eq!(value.version, expected);
+        }
+
+        let TaskToolValue::Map(node) = &parsed.tools["node"] else {
+            panic!("expected mapped node task tool");
+        };
+        assert_eq!(
+            node.opts["backend_options"]["nested"].as_array(),
+            Some(&vec![toml::Value::Integer(1), toml::Value::Boolean(true)])
+        );
+
+        for (invalid, expected) in [
+            (
+                "[tools]\nnode = { version = \"20\", prefix = \"20\" }\n",
+                "tool definition cannot specify both `version` and `prefix`",
+            ),
+            (
+                "[tools]\nnode = { os = \"linux\" }\n",
+                "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
+            ),
+            (
+                "[tools]\nnode = { prefix = 20 }\n",
+                "tool selector `prefix` must be a string",
+            ),
+        ] {
+            let err = match toml::from_str::<TaskTools>(invalid) {
+                Ok(_) => panic!("expected task tool selector validation to fail"),
+                Err(err) => err,
+            };
+            assert!(err.to_string().contains(expected), "{err}");
+        }
     }
 
     #[tokio::test]

@@ -2339,11 +2339,36 @@
           "description": "version of the tool to install",
           "type": "string"
         },
+        "path": {
+          "description": "path to a custom compiled version",
+          "type": "string"
+        },
+        "prefix": {
+          "description": "version prefix to resolve",
+          "type": "string"
+        },
+        "ref": {
+          "description": "version control reference to compile",
+          "type": "string"
+        },
         "os": {
           "$ref": "#/$defs/os_filter"
         }
       },
-      "required": ["version"],
+      "oneOf": [
+        {
+          "required": ["version"]
+        },
+        {
+          "required": ["path"]
+        },
+        {
+          "required": ["prefix"]
+        },
+        {
+          "required": ["ref"]
+        }
+      ],
       "type": "object"
     },
     "hook_run_string": {
