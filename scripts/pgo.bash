@@ -83,6 +83,21 @@ if [ "$PGO_BUILD_TOOL" = "cross" ]; then
 	export CROSS_CONTAINER_OPTS="${CROSS_CONTAINER_OPTS:-} -v $PGO_DATA_DIR:$PGO_DATA_DIR:rw"
 fi
 
+# Keep PGO Rust-only on macOS. The cc crate mirrors -Cprofile-generate /
+# -Cprofile-use from RUSTFLAGS into the C compiler command line
+# (-fprofile-generate / -fprofile-use), so vendored C code (openssl, lua)
+# gets instrumented by Apple clang — whose profile-runtime format follows
+# Xcode's LLVM, not rustc's. When those disagree (Xcode 16 = raw version 8,
+# rustc 1.97 = 10), the instrumented binary aborts every profile write with
+#   LLVM Profile Error: Runtime and instrumentation version mismatch
+# and training produces zero .profraw files. C-side profiles couldn't be
+# consumed by a mismatched clang in phase 3b anyway. cc appends environment
+# flags after rustc-inherited ones, so these -fno- overrides win.
+if [ "$(uname -s)" = "Darwin" ]; then
+	export CFLAGS="${CFLAGS:-} -fno-profile-generate -fno-profile-use"
+	export CXXFLAGS="${CXXFLAGS:-} -fno-profile-generate -fno-profile-use"
+fi
+
 # ---------- Phase 1: instrumented build ----------
 echo ">>> [1/3] Building instrumented binary ($PGO_BUILD_TOOL, profile=$PGO_PROFILE${PGO_TARGET:+, target=$PGO_TARGET})"
 # shellcheck disable=SC2086 # intentional word-splitting on $target_arg
