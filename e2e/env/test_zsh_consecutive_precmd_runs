@@ -2,9 +2,11 @@
 # shellcheck disable=SC1071
 set -eu
 
-# Verify that zsh does not fall into an every-other-prompt pattern after the
-# first precmd run. Two consecutive precmd runs without a directory change
-# should both run hook-env normally.
+# Verify that zsh skips the first precmd hook when PATH is unchanged, runs later
+# prompts normally, and retains the first-prompt refresh when PATH or MISE_*
+# variables change.
+
+export MISE_TIMINGS=1
 
 eval "$(mise activate zsh --status)"
 
@@ -18,10 +20,22 @@ if [[ ${__MISE_ZSH_CHPWD_RAN:-unset} != "0" ]]; then
   exit 1
 fi
 
-_mise_hook_precmd >/dev/null 2>&1
+first_output="$(mktemp)"
+second_output="$(mktemp)"
+changed_path_output="$(mktemp)"
+changed_env_output="$(mktemp)"
+trap 'rm -f "$first_output" "$second_output" "$changed_path_output" "$changed_env_output"' EXIT
+
+_mise_hook_precmd >"$first_output" 2>&1
 
 if [[ ${__MISE_ZSH_PRECMD_RUN:-unset} != "1" ]]; then
-  echo "expected first precmd to run hook-env and set __MISE_ZSH_PRECMD_RUN=1"
+  echo "expected first precmd to set __MISE_ZSH_PRECMD_RUN=1"
+  exit 1
+fi
+
+if [[ -s $first_output ]]; then
+  echo "expected unchanged first precmd to skip hook-env"
+  cat "$first_output"
   exit 1
 fi
 
@@ -30,14 +44,45 @@ if [[ ${__MISE_ZSH_CHPWD_RAN:-unset} != "0" ]]; then
   exit 1
 fi
 
-_mise_hook_precmd >/dev/null 2>&1
+_mise_hook_precmd >"$second_output" 2>&1
 
 if [[ ${__MISE_ZSH_PRECMD_RUN:-unset} != "1" ]]; then
   echo "expected second consecutive precmd to run normally"
   exit 1
 fi
 
+if ! grep -q '\[TIME\]' "$second_output"; then
+  echo "expected second consecutive precmd to run hook-env"
+  cat "$second_output"
+  exit 1
+fi
+
 if [[ ${__MISE_ZSH_CHPWD_RAN:-unset} != "0" ]]; then
   echo "expected no chpwd skip flag after the second precmd"
+  exit 1
+fi
+
+eval "$(mise activate zsh --status)"
+export PATH="/path-added-after-activation:$PATH"
+_mise_hook_precmd >"$changed_path_output" 2>&1
+
+if ! grep -q '\[TIME\]' "$changed_path_output"; then
+  echo "expected first precmd to run hook-env after PATH changed"
+  cat "$changed_path_output"
+  exit 1
+fi
+
+if [[ ${__MISE_ZSH_PRECMD_RUN:-unset} != "1" ]]; then
+  echo "expected PATH-changing first precmd to set __MISE_ZSH_PRECMD_RUN=1"
+  exit 1
+fi
+
+eval "$(mise activate zsh --status)"
+export MISE_TEST_CHANGED_AFTER_ACTIVATION=1
+_mise_hook_precmd >"$changed_env_output" 2>&1
+
+if ! grep -q '\[TIME\]' "$changed_env_output"; then
+  echo "expected first precmd to run hook-env after MISE environment changed"
+  cat "$changed_env_output"
   exit 1
 fi

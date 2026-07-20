@@ -65,11 +65,24 @@ impl Shell for Zsh {
             _mise_hook() {{
               eval "$({exe} hook-env{flags} -s zsh)";
             }}
+            _mise_hook_env_state() {{
+              typeset -p ${{(ok)parameters[(I)MISE_*]}} 2>/dev/null
+            }}
             _mise_hook_precmd() {{
               if [[ "${{__MISE_ZSH_CHPWD_RAN:-0}}" == "1" ]]; then
                 export __MISE_ZSH_CHPWD_RAN=0
                 return
               fi
+              if [[ "${{__MISE_ZSH_PRECMD_RUN:-0}}" == "0" &&
+                    "$PATH" == "${{__MISE_ZSH_ACTIVATE_PATH:-}}" &&
+                    "$(_mise_hook_env_state)" == "${{__MISE_ZSH_ACTIVATE_ENV:-}}" ]]; then
+                export __MISE_ZSH_PRECMD_RUN=1
+                unset __MISE_ZSH_ACTIVATE_PATH
+                unset __MISE_ZSH_ACTIVATE_ENV
+                return
+              fi
+              unset __MISE_ZSH_ACTIVATE_PATH
+              unset __MISE_ZSH_ACTIVATE_ENV
               eval "$({exe} hook-env{flags} -s zsh --reason precmd)";
             }}
             _mise_hook_chpwd() {{
@@ -80,6 +93,8 @@ impl Shell for Zsh {
             add-zsh-hook chpwd _mise_hook_chpwd
 
             _mise_hook
+            export __MISE_ZSH_ACTIVATE_PATH="$PATH"
+            export __MISE_ZSH_ACTIVATE_ENV="$(_mise_hook_env_state)"
             "#});
         }
         if Settings::get().not_found_auto_install {
@@ -114,12 +129,15 @@ impl Shell for Zsh {
         (( $+functions[_mise_hook_precmd] )) && unset -f _mise_hook_precmd
         (( $+functions[_mise_hook_chpwd] )) && unset -f _mise_hook_chpwd
         (( $+functions[_mise_hook] )) && unset -f _mise_hook
+        (( $+functions[_mise_hook_env_state] )) && unset -f _mise_hook_env_state
         (( $+functions[mise] )) && unset -f mise
         unset MISE_SHELL
         unset __MISE_DIFF
         unset __MISE_SESSION
         unset __MISE_ZSH_PRECMD_RUN
         unset __MISE_ZSH_CHPWD_RAN
+        unset __MISE_ZSH_ACTIVATE_PATH
+        unset __MISE_ZSH_ACTIVATE_ENV
         "#}
     }
 
