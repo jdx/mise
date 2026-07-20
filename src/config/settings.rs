@@ -1089,6 +1089,20 @@ impl Settings {
                     .take_while(|a| *a != "--")
                     .any(|a| a == "--no-hooks")
     }
+
+    /// Errors when safe mode (`MISE_SAFE=1`) is enabled. Call this before any
+    /// operation that would execute code controlled by project configuration.
+    /// Safe mode is a security boundary: blocked operations must fail loudly,
+    /// never silently fall back to something that executes.
+    pub fn ensure_not_safe(operation: &str) -> Result<()> {
+        if Settings::get().safe {
+            bail!(
+                "{operation} is disabled in safe mode (MISE_SAFE=1)
+                 See https://mise.en.dev/configuration/settings.html#safe"
+            );
+        }
+        Ok(())
+    }
 }
 
 impl Display for Settings {

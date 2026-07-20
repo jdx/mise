@@ -369,6 +369,7 @@ impl Plugin for VfoxPlugin {
     }
 
     async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
+        Settings::ensure_not_safe("installing plugins")?;
         let repository = self.get_repo_url(config)?;
         let source = PluginSource::parse(repository.as_str());
         debug!("vfox_plugin[{}]:install {:?}", self.name, repository);

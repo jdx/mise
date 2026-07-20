@@ -19,6 +19,7 @@ impl EnvResults {
         env_vars: &EnvMap,
         input: String,
     ) -> Result<IndexMap<PathBuf, IndexMap<String, String>>> {
+        crate::config::Settings::ensure_not_safe("sourcing scripts via `_.source`")?;
         let mut out = IndexMap::new();
         let s = r.parse_template(ctx, tera, source, exec_env, &input)?;
         let orig_path = env_vars.get(&*env::PATH_KEY).cloned().unwrap_or_default();

@@ -293,6 +293,9 @@ impl GoBackend {
         config: &Arc<Config>,
         mod_path: &str,
     ) -> eyre::Result<Option<Vec<VersionInfo>>> {
+        // The GOPROXY HTTP path has already been tried by the caller; this
+        // fallback shells out to `go list`, which safe mode does not allow.
+        Settings::ensure_not_safe("go version listing via `go list` (GOPROXY=direct fallback)")?;
         let cache = self
             .module_versions_cache
             .entry(mod_path.to_string())

@@ -1597,6 +1597,11 @@
             }
           }
         },
+        "safe": {
+          "default": false,
+          "description": "Prevent project configuration from executing code during config loading and version resolution.",
+          "type": "boolean"
+        },
         "sandbox": {
           "type": "object",
           "unevaluatedProperties": false,

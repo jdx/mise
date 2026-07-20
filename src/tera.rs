@@ -1181,17 +1181,48 @@ fn tera1_path_filter(
 pub(crate) fn get_tera_v2(dir: Option<&Path>) -> Tera {
     let mut tera = TERA.clone();
     let dir = dir.map(PathBuf::from);
-    tera.register_function("exec", tera_exec(dir.clone(), env::PRISTINE_ENV.clone()));
-    tera.register_function("read_file", tera_read_file(dir));
+    if Settings::get().safe {
+        tera.register_function("exec", safe_disabled_fn("exec"));
+        tera.register_function("read_file", safe_disabled_fn("read_file"));
+    } else {
+        tera.register_function("exec", tera_exec(dir.clone(), env::PRISTINE_ENV.clone()));
+        tera.register_function("read_file", tera_read_file(dir));
+    }
     tera
 }
 
 fn get_tera_v1(dir: Option<&Path>) -> tera1::Tera {
     let mut tera = TERA1.clone();
     let dir = dir.map(PathBuf::from);
-    tera.register_function("exec", tera1_exec(dir.clone(), env::PRISTINE_ENV.clone()));
-    tera.register_function("read_file", tera1_read_file(dir));
+    if Settings::get().safe {
+        tera.register_function("exec", safe_disabled_fn_v1("exec"));
+        tera.register_function("read_file", safe_disabled_fn_v1("read_file"));
+    } else {
+        tera.register_function("exec", tera1_exec(dir.clone(), env::PRISTINE_ENV.clone()));
+        tera.register_function("read_file", tera1_read_file(dir));
+    }
     tera
+}
+
+/// Replacement for template functions that must not run in safe mode. Kept
+/// registered (rather than absent) so templates fail with a safe-mode error
+/// instead of a confusing "function not found".
+fn safe_disabled_fn(name: &'static str) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
+    move |_args: Kwargs, _: &State| -> TeraResult<Value> {
+        Err(tera_err(format!(
+            "{name}() is disabled in safe mode (MISE_SAFE=1)"
+        )))
+    }
+}
+
+fn safe_disabled_fn_v1(
+    name: &'static str,
+) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |_args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        Err(tera1_err(format!(
+            "{name}() is disabled in safe mode (MISE_SAFE=1)"
+        )))
+    }
 }
 
 /// Returns a Tera instance for use during early initialization (miserc loading).

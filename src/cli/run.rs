@@ -239,6 +239,8 @@ impl Run {
             return Ok(());
         }
 
+        Settings::ensure_not_safe("running tasks")?;
+
         // Unescape task args early so we can check for help flags
         self.args = unescape_task_args(&self.args);
         self.args_last = unescape_task_args(&self.args_last);
