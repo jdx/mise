@@ -794,20 +794,26 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
     // descend into the entry for the build platform so its layers remain
     // reusable.
     if body.get("manifests").map(|m| m.is_array()).unwrap_or(false) {
-        let arch = crate::oci::normalize_arch(std::env::consts::ARCH);
-        let os = crate::oci::normalize_os(std::env::consts::OS);
+        // Match the same canonical identity `upsert_platform_manifest` uses,
+        // so descent and upsert agree on which entry represents this host's
+        // platform (arch/os normalized, arm64 variant filled). The host has
+        // no variant / os.version.
+        let host =
+            platform_identity_parts(std::env::consts::ARCH, std::env::consts::OS, None, None);
         let digest = body
             .get("manifests")
             .and_then(|m| m.as_array())
             .and_then(|entries| {
                 entries.iter().find(|e| {
                     let p = e.get("platform");
-                    let get = |k: &str| {
-                        p.and_then(|p| p.get(k))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                    };
-                    get("architecture") == arch && get("os") == os
+                    let get = |k: &str| p.and_then(|p| p.get(k)).and_then(|v| v.as_str());
+                    let ident = platform_identity_parts(
+                        get("architecture").unwrap_or(""),
+                        get("os").unwrap_or(""),
+                        get("variant"),
+                        get("os.version"),
+                    );
+                    ident == host
                 })
             })
             .and_then(|e| e.get("digest"))
@@ -1112,29 +1118,61 @@ fn platform_from_config_value(
 /// for the same platform and preserving the rest. Entries without platform
 /// info are preserved as-is.
 fn upsert_platform_manifest(mut entries: Vec<Descriptor>, entry: Descriptor) -> Vec<Descriptor> {
-    // Full platform identity (incl. os.version) so e.g. two Windows platforms
-    // differing only by os.version don't collide.
-    fn platform_key(p: &crate::oci::manifest::Platform) -> (String, String, String, String) {
-        (
-            p.os.clone(),
-            p.architecture.clone(),
-            p.variant.clone().unwrap_or_default(),
-            p.os_version.clone().unwrap_or_default(),
-        )
-    }
-    let same_platform = |d: &Descriptor| match (&d.platform, &entry.platform) {
-        (Some(a), Some(b)) => platform_key(a) == platform_key(b),
-        _ => false,
+    let key = |d: &Descriptor| {
+        d.platform
+            .as_ref()
+            .map(platform_identity)
+            .unwrap_or_default()
     };
-    entries.retain(|d| !same_platform(d));
+    let entry_key = key(&entry);
+    entries.retain(|d| key(d) != entry_key);
     entries.push(entry);
     // Deterministic order so re-pushing the same platforms yields the same
     // index bytes (and digest).
-    entries.sort_by(|a, b| {
-        let key = |d: &Descriptor| d.platform.as_ref().map(platform_key).unwrap_or_default();
-        key(a).cmp(&key(b))
-    });
+    entries.sort_by(|a, b| key(a).cmp(&key(b)));
     entries
+}
+
+/// Canonical identity used to match/dedupe platforms across index entries,
+/// consistent between `upsert_platform_manifest` and the index-descent in
+/// [`fetch_remote_image`]. Normalizes arch/os to OCI-spec values and fills the
+/// implied CPU variant (`arm64` → `v8`) so entries written by different tools
+/// compare equal — mise writes no variant, buildx writes `arm64/v8`, and both
+/// name the same platform. `os.version` stays in the identity so
+/// otherwise-identical Windows platforms don't collide.
+///
+/// Returned as `(os, architecture, variant, os_version)` so the derived
+/// ordering groups by OS then arch.
+fn platform_identity(p: &crate::oci::manifest::Platform) -> (String, String, String, String) {
+    platform_identity_parts(
+        &p.architecture,
+        &p.os,
+        p.variant.as_deref(),
+        p.os_version.as_deref(),
+    )
+}
+
+fn platform_identity_parts(
+    architecture: &str,
+    os: &str,
+    variant: Option<&str>,
+    os_version: Option<&str>,
+) -> (String, String, String, String) {
+    let arch = crate::oci::normalize_arch(architecture);
+    let os = crate::oci::normalize_os(os);
+    let variant = match (arch, variant) {
+        // arm64's canonical variant is v8; a missing/empty variant means the
+        // same platform (containerd's normalization).
+        ("arm64", None | Some("") | Some("v8")) => "v8",
+        (_, Some(v)) => v,
+        (_, None) => "",
+    };
+    (
+        os.to_string(),
+        arch.to_string(),
+        variant.to_string(),
+        os_version.unwrap_or("").to_string(),
+    )
 }
 
 /// Progress label for a blob: the tool name when the descriptor carries the
@@ -1777,6 +1815,44 @@ mod tests {
             win("10.0.17763", "sha256:2019"),
         );
         assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn upsert_treats_arm64_no_variant_as_v8() {
+        // mise writes arm64 with no variant; buildx writes arm64/v8. Pushing
+        // the former must replace the latter, not add a duplicate.
+        let with_variant = Descriptor {
+            media_type: MEDIA_TYPE_OCI_MANIFEST.to_string(),
+            size: 1,
+            digest: "sha256:buildx-arm64v8".to_string(),
+            annotations: Default::default(),
+            platform: Some(crate::oci::manifest::Platform {
+                architecture: "arm64".to_string(),
+                os: "linux".to_string(),
+                os_version: None,
+                os_features: vec![],
+                variant: Some("v8".to_string()),
+            }),
+        };
+        let out = upsert_platform_manifest(
+            vec![with_variant],
+            platform_entry("arm64", "linux", "sha256:mise-arm64"),
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].digest, "sha256:mise-arm64");
+    }
+
+    #[test]
+    fn platform_identity_normalizes_arch() {
+        // A config using the Rust-style arch name matches the normalized host.
+        assert_eq!(
+            platform_identity_parts("x86_64", "linux", None, None),
+            platform_identity_parts("amd64", "linux", None, None)
+        );
+        assert_eq!(
+            platform_identity_parts("aarch64", "linux", None, None),
+            platform_identity_parts("arm64", "linux", Some("v8"), None)
+        );
     }
 
     #[test]
