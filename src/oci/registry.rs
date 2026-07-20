@@ -1,18 +1,26 @@
-//! Anonymous OCI Distribution Spec v2 client for pulling base images.
+//! OCI Distribution Spec v2 client.
 //!
-//! Supports Docker Hub / GHCR / quay.io style references and anonymous token
-//! auth (no login flow). Used by `mise oci build --from <ref>` to stream a
-//! base image's layers into the output layout byte-for-byte so digests match.
+//! Pull side: used by `mise oci build --from <ref>` to stream a base image's
+//! layers into the output layout byte-for-byte so digests match.
+//!
+//! Push side: used by `mise oci push` to upload an OCI image layout directly
+//! — no skopeo/crane required. Credentials come from the same sources docker
+//! and podman use (see `crate::oci::auth`); anonymous access is used when no
+//! credentials are found (e.g. a local `registry:2`).
 
-use eyre::{Context, Result};
+use std::path::Path;
+
+use eyre::{Context, Result, bail};
+use reqwest::StatusCode;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::Deserialize;
 
 use crate::http::HTTP;
+use crate::oci::auth::Credential;
 use crate::oci::layout::ImageLayout;
 use crate::oci::manifest::{
-    Descriptor, ImageManifest, MEDIA_TYPE_DOCKER_MANIFEST, MEDIA_TYPE_DOCKER_MANIFEST_LIST,
-    MEDIA_TYPE_OCI_INDEX, MEDIA_TYPE_OCI_MANIFEST,
+    Descriptor, ImageIndex, ImageManifest, MEDIA_TYPE_DOCKER_MANIFEST,
+    MEDIA_TYPE_DOCKER_MANIFEST_LIST, MEDIA_TYPE_OCI_INDEX, MEDIA_TYPE_OCI_MANIFEST,
 };
 
 /// A parsed registry reference.
@@ -80,8 +88,31 @@ impl Reference {
         } else {
             &self.registry
         };
-        format!("https://{host}")
+        // Loopback registries (localhost:5000 etc.) serve plain HTTP — the
+        // same insecure-by-default convention docker applies to 127.0.0.0/8.
+        let scheme = if is_loopback_registry(host) {
+            "http"
+        } else {
+            "https"
+        };
+        format!("{scheme}://{host}")
     }
+}
+
+/// True when `registry` (a `host[:port]` / `[v6]:port` string) points at a
+/// loopback address, in which case the distribution API is spoken over
+/// plain HTTP.
+fn is_loopback_registry(registry: &str) -> bool {
+    let host = if let Some(rest) = registry.strip_prefix('[') {
+        rest.split(']').next().unwrap_or(rest)
+    } else {
+        registry.rsplit_once(':').map_or(registry, |(h, _)| h)
+    };
+    host == "localhost"
+        || host
+            .parse::<std::net::IpAddr>()
+            .map(|ip| ip.is_loopback())
+            .unwrap_or(false)
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,14 +121,27 @@ struct TokenResponse {
     access_token: Option<String>,
 }
 
-/// Fetch an anonymous bearer token from a registry's auth endpoint if needed.
-/// Many public images require a token even for anonymous pulls (Docker Hub
-/// especially).
-async fn fetch_anonymous_token(www_auth: &str, repository: &str) -> Result<Option<String>> {
+/// A parsed `WWW-Authenticate` challenge.
+enum AuthChallenge {
+    Bearer {
+        realm: String,
+        service: Option<String>,
+    },
+    Basic,
+}
+
+fn parse_auth_challenge(www_auth: &str) -> Option<AuthChallenge> {
+    let lower = www_auth.trim_start().to_ascii_lowercase();
+    if lower.starts_with("basic") {
+        return Some(AuthChallenge::Basic);
+    }
+    if !lower.starts_with("bearer") {
+        return None;
+    }
     // WWW-Authenticate: Bearer realm="https://auth.docker.io/token",service="registry.docker.io"
     let mut realm: Option<String> = None;
     let mut service: Option<String> = None;
-    for part in www_auth.trim_start_matches("Bearer ").split(',') {
+    for part in www_auth.trim_start()[6..].split(',') {
         let part = part.trim();
         if let Some(rest) = part.strip_prefix("realm=") {
             realm = Some(rest.trim_matches('"').to_string());
@@ -105,52 +149,165 @@ async fn fetch_anonymous_token(www_auth: &str, repository: &str) -> Result<Optio
             service = Some(rest.trim_matches('"').to_string());
         }
     }
-    let Some(realm) = realm else { return Ok(None) };
-    let scope = format!("repository:{repository}:pull");
-    let mut url = url::Url::parse(&realm)?;
+    realm.map(|realm| AuthChallenge::Bearer { realm, service })
+}
+
+/// Determine the `Authorization` header to use against a registry, by probing
+/// `GET /v2/` and answering its challenge.
+///
+///  - 200 → no auth needed (`None`)
+///  - 401 + `Bearer` challenge → token fetch (anonymous or with credentials)
+///  - 401 + `Basic` challenge → credentials passed through as Basic
+///
+/// `actions` is the scope verb list (`"pull"` or `"pull,push"`).
+async fn authorization_for(
+    r: &Reference,
+    actions: &str,
+    credential: Option<&Credential>,
+) -> Result<Option<String>> {
+    let probe_url = format!("{}/v2/", r.registry_url());
+    let resp = HTTP
+        .get_async_with_headers_allow_error_status(&probe_url, &HeaderMap::new())
+        .await
+        .wrap_err_with(|| format!("probing {probe_url}"))?;
+    if resp.status().is_success() {
+        return Ok(None);
+    }
+    if resp.status() != StatusCode::UNAUTHORIZED {
+        bail!(
+            "unexpected status {} probing {probe_url}",
+            resp.status().as_u16()
+        );
+    }
+    let www_auth = resp
+        .headers()
+        .get("www-authenticate")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    match parse_auth_challenge(&www_auth) {
+        Some(AuthChallenge::Bearer { realm, service }) => {
+            let token = fetch_bearer_token(
+                &realm,
+                service.as_deref(),
+                &r.repository,
+                actions,
+                credential,
+            )
+            .await?;
+            Ok(token.map(|t| format!("Bearer {t}")))
+        }
+        Some(AuthChallenge::Basic) => match credential {
+            Some(c) => Ok(Some(c.basic_auth_header())),
+            None => bail!(
+                "registry {} requires Basic auth but no credentials were found; \
+                 run `docker login {}` (or `podman login`) first",
+                r.registry,
+                r.registry
+            ),
+        },
+        None => bail!(
+            "registry {} returned an unsupported auth challenge: {www_auth:?}",
+            r.registry
+        ),
+    }
+}
+
+/// Fetch a bearer token from a registry's token endpoint. Anonymous when
+/// `credential` is `None` (public pulls); authenticated via Basic auth on the
+/// token request otherwise. Docker Hub identity tokens (from Docker Desktop
+/// logins) use the OAuth2 refresh-token POST flow instead.
+async fn fetch_bearer_token(
+    realm: &str,
+    service: Option<&str>,
+    repository: &str,
+    actions: &str,
+    credential: Option<&Credential>,
+) -> Result<Option<String>> {
+    let scope = format!("repository:{repository}:{actions}");
+
+    if let Some(c) = credential
+        && c.username == "<token>"
+    {
+        // OAuth2 identity-token flow.
+        let mut form = vec![
+            ("grant_type", "refresh_token"),
+            ("refresh_token", c.secret.as_str()),
+            ("client_id", "mise"),
+            ("scope", scope.as_str()),
+        ];
+        if let Some(s) = service {
+            form.push(("service", s));
+        }
+        let resp = HTTP
+            .reqwest()
+            .post(realm)
+            .form(&form)
+            .send()
+            .await
+            .wrap_err_with(|| format!("fetching OAuth2 token from {realm}"))?
+            .error_for_status()?;
+        let resp: TokenResponse = resp.json().await?;
+        return Ok(resp.access_token.or(resp.token));
+    }
+
+    let mut url = url::Url::parse(realm)?;
     {
         let mut q = url.query_pairs_mut();
         if let Some(s) = service {
-            q.append_pair("service", &s);
+            q.append_pair("service", s);
         }
         q.append_pair("scope", &scope);
     }
-    let resp: TokenResponse = HTTP.json(url.as_str()).await?;
+    let mut headers = HeaderMap::new();
+    if let Some(c) = credential {
+        headers.insert(
+            "Authorization",
+            HeaderValue::from_str(&c.basic_auth_header())?,
+        );
+    }
+    let resp: TokenResponse = HTTP
+        .json_with_headers(url.as_str(), &headers)
+        .await
+        .wrap_err_with(|| match credential {
+            Some(c) => format!(
+                "fetching token from {realm} as {} (are the stored credentials still valid?)",
+                c.username
+            ),
+            None => format!("fetching anonymous token from {realm}"),
+        })?;
     Ok(resp.token.or(resp.access_token))
 }
 
-async fn get_with_token<T: serde::de::DeserializeOwned>(
-    url: &str,
-    token: Option<&str>,
-    accept: &[&str],
-) -> Result<(T, HeaderMap)> {
+fn auth_headers(authorization: Option<&str>, accept: &[&str]) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
-    if let Some(t) = token {
-        headers.insert(
-            "Authorization",
-            HeaderValue::from_str(&format!("Bearer {t}"))?,
-        );
+    if let Some(a) = authorization {
+        headers.insert("Authorization", HeaderValue::from_str(a)?);
     }
     if !accept.is_empty() {
         headers.insert("Accept", HeaderValue::from_str(&accept.join(", "))?);
     }
+    Ok(headers)
+}
+
+async fn get_with_token<T: serde::de::DeserializeOwned>(
+    url: &str,
+    authorization: Option<&str>,
+    accept: &[&str],
+) -> Result<(T, HeaderMap)> {
+    let headers = auth_headers(authorization, accept)?;
     let (body, h) = HTTP
         .json_headers_with_headers::<T, _>(url, &headers)
         .await?;
     Ok((body, h))
 }
 
-async fn get_bytes_with_token(url: &str, token: Option<&str>, accept: &[&str]) -> Result<Vec<u8>> {
-    let mut headers = HeaderMap::new();
-    if let Some(t) = token {
-        headers.insert(
-            "Authorization",
-            HeaderValue::from_str(&format!("Bearer {t}"))?,
-        );
-    }
-    if !accept.is_empty() {
-        headers.insert("Accept", HeaderValue::from_str(&accept.join(", "))?);
-    }
+async fn get_bytes_with_token(
+    url: &str,
+    authorization: Option<&str>,
+    accept: &[&str],
+) -> Result<Vec<u8>> {
+    let headers = auth_headers(authorization, accept)?;
     let bytes = HTTP.get_bytes_with_headers(url, &headers).await?;
     Ok(bytes.as_ref().to_vec())
 }
@@ -183,7 +340,10 @@ pub async fn pull_base_image(
         MEDIA_TYPE_DOCKER_MANIFEST_LIST,
     ];
 
-    let token = fetch_token_if_needed(&manifest_url, &r.repository).await?;
+    // Use stored credentials when the user has them (private base images);
+    // fall back to anonymous tokens otherwise.
+    let credential = crate::oci::auth::resolve_credential(&r.registry)?;
+    let token = authorization_for(&r, "pull", credential.as_ref()).await?;
 
     // Try OCI/Docker manifest or an index (multi-arch).
     let (body, headers) =
@@ -255,26 +415,6 @@ pub async fn pull_base_image(
     })
 }
 
-/// Fetch an anonymous bearer token for registries that require one. We skip
-/// the HEAD probe because the shared HTTP client errors on 401 (hiding the
-/// www-authenticate header); instead we just check the host and use the
-/// known-good anonymous realm. Private images and registries beyond this set
-/// are explicit follow-ups (see `--from` docs).
-async fn fetch_token_if_needed(manifest_url: &str, repository: &str) -> Result<Option<String>> {
-    let realm = if manifest_url.contains("registry-1.docker.io") {
-        "Bearer realm=\"https://auth.docker.io/token\",service=\"registry.docker.io\""
-    } else if manifest_url.contains("ghcr.io") {
-        "Bearer realm=\"https://ghcr.io/token\",service=\"ghcr.io\""
-    } else if manifest_url.contains("quay.io") {
-        // quay.io publishes an anonymous token endpoint; many public repos
-        // require it even for unauthenticated pulls.
-        "Bearer realm=\"https://quay.io/v2/auth\",service=\"quay.io\""
-    } else {
-        return Ok(None);
-    };
-    fetch_anonymous_token(realm, repository).await
-}
-
 /// Given a manifest body (possibly an index with multiple architectures),
 /// resolve to a concrete single-image manifest and return its parsed form.
 async fn resolve_manifest(
@@ -344,6 +484,230 @@ fn parse_single_manifest(body: serde_json::Value) -> Result<ImageManifest> {
     Ok(manifest)
 }
 
+// ---------------------------------------------------------------------------
+// Push
+// ---------------------------------------------------------------------------
+
+/// Summary of a completed push, for CLI reporting.
+pub struct PushSummary {
+    pub manifest_digest: String,
+    pub uploaded: usize,
+    pub skipped: usize,
+}
+
+/// Push an OCI image layout directory to a registry reference.
+///
+/// Uploads only blobs the registry doesn't already have (HEAD check per
+/// blob), then PUTs the manifest under the reference's tag (or digest).
+pub async fn push_image(image_dir: &Path, reference: &str) -> Result<PushSummary> {
+    eyre::ensure!(
+        !crate::config::Settings::get().offline(),
+        "offline mode is enabled"
+    );
+    let r = Reference::parse(reference)?;
+    let layout = ImageLayout {
+        root: image_dir.to_path_buf(),
+    };
+
+    // Resolve the layout's single manifest. `mise oci build` always writes
+    // exactly one manifest into index.json.
+    let index_bytes = crate::file::read(image_dir.join("index.json"))?;
+    let index: ImageIndex = serde_json::from_slice(&index_bytes).wrap_err("parsing index.json")?;
+    let manifest_desc = match index.manifests.as_slice() {
+        [one] => one,
+        [] => bail!("{}: index.json lists no manifests", image_dir.display()),
+        many => bail!(
+            "{}: index.json lists {} manifests; multi-manifest layouts are not supported",
+            image_dir.display(),
+            many.len()
+        ),
+    };
+    let manifest_bytes = layout.read_blob(&manifest_desc.digest)?;
+    let manifest: ImageManifest =
+        serde_json::from_slice(&manifest_bytes).wrap_err("parsing image manifest blob")?;
+
+    let credential = crate::oci::auth::resolve_credential(&r.registry)?;
+    if credential.is_none() {
+        // Not fatal — local registries accept anonymous pushes — but worth
+        // surfacing before a 401 does.
+        warn!(
+            "no registry credentials found for {} — pushing anonymously. \
+             Run `docker login {}` (or `podman login`) if the push is rejected.",
+            r.registry, r.registry
+        );
+    }
+    let authorization = authorization_for(&r, "pull,push", credential.as_ref()).await?;
+    let pusher = Pusher {
+        base_url: r.registry_url(),
+        repository: r.repository.clone(),
+        authorization,
+    };
+
+    // Config + layers, deduped (identical layers can legitimately repeat).
+    let mut blobs: Vec<&Descriptor> = vec![&manifest.config];
+    let mut seen = std::collections::HashSet::new();
+    seen.insert(manifest.config.digest.as_str());
+    for layer in &manifest.layers {
+        if seen.insert(layer.digest.as_str()) {
+            blobs.push(layer);
+        }
+    }
+
+    let mut uploaded = 0;
+    let mut skipped = 0;
+    for desc in blobs {
+        crate::oci::layout::validate_sha256_digest(&desc.digest)?;
+        if pusher.blob_exists(&desc.digest).await? {
+            debug!("blob {} already present, skipping", desc.digest);
+            skipped += 1;
+            continue;
+        }
+        info!(
+            "uploading {} ({:.1} MiB)",
+            desc.digest,
+            desc.size as f64 / (1024.0 * 1024.0)
+        );
+        pusher
+            .upload_blob(&layout.blob_path(&desc.digest), &desc.digest, desc.size)
+            .await
+            .wrap_err_with(|| format!("uploading blob {}", desc.digest))?;
+        uploaded += 1;
+    }
+
+    pusher
+        .put_manifest(&r.tag, &manifest_desc.media_type, &manifest_bytes)
+        .await
+        .wrap_err_with(|| format!("pushing manifest to {reference}"))?;
+
+    Ok(PushSummary {
+        manifest_digest: manifest_desc.digest.clone(),
+        uploaded,
+        skipped,
+    })
+}
+
+struct Pusher {
+    base_url: String,
+    repository: String,
+    authorization: Option<String>,
+}
+
+impl Pusher {
+    fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match &self.authorization {
+            Some(a) => req.header("Authorization", a),
+            None => req,
+        }
+    }
+
+    async fn blob_exists(&self, digest: &str) -> Result<bool> {
+        let url = format!("{}/v2/{}/blobs/{digest}", self.base_url, self.repository);
+        let resp = self
+            .apply_auth(HTTP.reqwest().head(&url))
+            .send()
+            .await
+            .wrap_err_with(|| format!("HEAD {url}"))?;
+        match resp.status() {
+            StatusCode::OK => Ok(true),
+            // Treat auth failures on HEAD as "not there" — the subsequent
+            // upload will surface a clearer 401/403 with context.
+            StatusCode::NOT_FOUND | StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Ok(false),
+            s => bail!("unexpected status {s} from HEAD {url}"),
+        }
+    }
+
+    async fn upload_blob(&self, path: &Path, digest: &str, size: u64) -> Result<()> {
+        // 1. Open an upload session.
+        let start_url = format!("{}/v2/{}/blobs/uploads/", self.base_url, self.repository);
+        let resp = self
+            .apply_auth(HTTP.reqwest().post(&start_url))
+            .header("Content-Length", "0")
+            .send()
+            .await
+            .wrap_err_with(|| format!("POST {start_url}"))?;
+        let status = resp.status();
+        if status != StatusCode::ACCEPTED {
+            bail!(
+                "starting blob upload failed: {} {}{}",
+                status.as_u16(),
+                start_url,
+                push_auth_hint(status, self.authorization.is_some()),
+            );
+        }
+        let location = resp
+            .headers()
+            .get("location")
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| eyre::eyre!("registry returned no Location for blob upload"))?;
+        let mut upload_url = if location.starts_with("http://") || location.starts_with("https://")
+        {
+            url::Url::parse(location)?
+        } else {
+            url::Url::parse(&format!("{}{}", self.base_url, location))?
+        };
+        // 2. Monolithic PUT with ?digest=…
+        upload_url.query_pairs_mut().append_pair("digest", digest);
+        let file = tokio::fs::File::open(path)
+            .await
+            .wrap_err_with(|| format!("opening blob {}", path.display()))?;
+        let body = reqwest::Body::wrap_stream(tokio_util::io::ReaderStream::new(file));
+        let resp = self
+            .apply_auth(HTTP.reqwest().put(upload_url.as_str()))
+            .header("Content-Type", "application/octet-stream")
+            .header("Content-Length", size)
+            .body(body)
+            .send()
+            .await
+            .wrap_err("PUT blob upload")?;
+        let status = resp.status();
+        if status != StatusCode::CREATED && status != StatusCode::ACCEPTED {
+            let body = resp.text().await.unwrap_or_default();
+            bail!(
+                "blob upload failed: {}{}\n{}",
+                status.as_u16(),
+                push_auth_hint(status, self.authorization.is_some()),
+                body.trim(),
+            );
+        }
+        Ok(())
+    }
+
+    async fn put_manifest(&self, tag: &str, media_type: &str, bytes: &[u8]) -> Result<()> {
+        let url = format!("{}/v2/{}/manifests/{tag}", self.base_url, self.repository);
+        let resp = self
+            .apply_auth(HTTP.reqwest().put(&url))
+            .header("Content-Type", media_type)
+            .body(bytes.to_vec())
+            .send()
+            .await
+            .wrap_err_with(|| format!("PUT {url}"))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            bail!(
+                "manifest push failed: {} {url}{}\n{}",
+                status.as_u16(),
+                push_auth_hint(status, self.authorization.is_some()),
+                body.trim(),
+            );
+        }
+        Ok(())
+    }
+}
+
+fn push_auth_hint(status: StatusCode, had_authorization: bool) -> &'static str {
+    match status {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN if !had_authorization => {
+            " — no credentials were found; run `docker login` (or `podman login`) for this registry"
+        }
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+            " — the stored credentials were rejected or lack push permission \
+             (for ghcr.io, the token needs the `write:packages` scope)"
+        }
+        _ => "",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,6 +742,53 @@ mod tests {
         assert_eq!(r.registry, "docker.io");
         assert_eq!(r.repository, "library/ubuntu");
         assert_eq!(r.tag, digest);
+    }
+
+    #[test]
+    fn loopback_registries_use_http() {
+        assert!(is_loopback_registry("localhost:5000"));
+        assert!(is_loopback_registry("127.0.0.1:5000"));
+        assert!(is_loopback_registry("[::1]:5000"));
+        assert!(!is_loopback_registry("ghcr.io"));
+        assert!(!is_loopback_registry("registry.example.com:5000"));
+        assert_eq!(
+            Reference::parse("localhost:5000/me/dev:v1")
+                .unwrap()
+                .registry_url(),
+            "http://localhost:5000"
+        );
+        assert_eq!(
+            Reference::parse("ghcr.io/me/dev:v1")
+                .unwrap()
+                .registry_url(),
+            "https://ghcr.io"
+        );
+    }
+
+    #[test]
+    fn parses_bearer_challenge() {
+        let www = r#"Bearer realm="https://auth.docker.io/token",service="registry.docker.io""#;
+        match parse_auth_challenge(www) {
+            Some(AuthChallenge::Bearer { realm, service }) => {
+                assert_eq!(realm, "https://auth.docker.io/token");
+                assert_eq!(service.as_deref(), Some("registry.docker.io"));
+            }
+            _ => panic!("expected bearer challenge"),
+        }
+    }
+
+    #[test]
+    fn parses_basic_challenge() {
+        assert!(matches!(
+            parse_auth_challenge(r#"Basic realm="registry""#),
+            Some(AuthChallenge::Basic)
+        ));
+    }
+
+    #[test]
+    fn bearer_challenge_without_realm_is_none() {
+        assert!(parse_auth_challenge("Bearer service=\"x\"").is_none());
+        assert!(parse_auth_challenge("Negotiate").is_none());
     }
 
     #[test]

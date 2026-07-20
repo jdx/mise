@@ -67,7 +67,7 @@ Inspect the result with skopeo:
 $ skopeo inspect oci:./mise-oci
 
 Push to a registry:
-$ skopeo copy oci:./mise-oci docker://ghcr.io/me/dev:latest
+$ mise oci push --image-dir ./mise-oci ghcr.io/me/dev:latest
 ```
 
 Notes:

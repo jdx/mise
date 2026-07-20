@@ -82,7 +82,6 @@ impl ImageLayout {
         self.root.join("blobs/sha256").join(hex)
     }
 
-    #[allow(dead_code)]
     pub fn read_blob(&self, digest: &str) -> Result<Vec<u8>> {
         let path = self.blob_path(digest);
         std::fs::read(&path).wrap_err_with(|| format!("reading blob {}", path.display()))
