@@ -3498,7 +3498,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b305d85504de270ad3525d726a6b69cc59ee7b2269b014387651107ab9f0755b"
 dependencies = [
  "bstr",
- "hashbrown 0.17.1",
+ "hashbrown 0.15.5",
 ]
 
 [[package]]
@@ -6732,9 +6732,9 @@ dependencies = [
 
 [[package]]
 name = "rattler"
-version = "0.46.0"
+version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67961cc1ccb170208f10169542752dbe730353a874a13cb0749c13b960d72d5b"
+checksum = "3e3120ba76d85c4750f21d2ee72245a358eed7a66c076f3a67c72383595e46ba"
 dependencies = [
  "anyhow",
  "astral-reqwest-middleware",
@@ -6779,9 +6779,9 @@ dependencies = [
 
 [[package]]
 name = "rattler_cache"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24205a6af611e71f346e5e170c32f00ce1a9b49077f699f18d8404e711dc2209"
+checksum = "d2be7994388cfd959c35e7e31eeb0a206b0b389f426511f08d004bf7ba103897"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6813,9 +6813,9 @@ dependencies = [
 
 [[package]]
 name = "rattler_conda_types"
-version = "0.47.2"
+version = "0.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "385575f3cfb4b9ce40c13d90b37964c80d8b527b62514118e4783ae0717b3ebd"
+checksum = "017a8ae50486c176ed5dcd2b2118883e1eb89abcacb6fdb434b6f5cb5aa2fdf7"
 dependencies = [
  "ahash",
  "core-foundation 0.10.1",
@@ -6885,9 +6885,9 @@ dependencies = [
 
 [[package]]
 name = "rattler_menuinst"
-version = "0.2.68"
+version = "0.2.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "957dbd0e8fb9ed66dce0bd6922914fb8bf795a4334d92e2190f34314a0b1f170"
+checksum = "b832bfe293a9f7912e9ecb5fefdfaf0e5858420a238b8efe10533982a3b7bb75"
 dependencies = [
  "configparser",
  "dirs",
@@ -6916,9 +6916,9 @@ dependencies = [
 
 [[package]]
 name = "rattler_networking"
-version = "0.30.0"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5014e4f5aedcbe01a83a5be0e8669b305adc82cc10985fc83f51c5fe07e0d198"
+checksum = "5a976a1ab13c2a706bd09ae5376358b2cc062d815a06089a8127ce59fbdce0c9"
 dependencies = [
  "ambient-id",
  "anyhow",
@@ -6944,9 +6944,9 @@ dependencies = [
 
 [[package]]
 name = "rattler_package_streaming"
-version = "0.26.6"
+version = "0.26.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b4440ad7368a66ddd370a8160d8fb2a4d0a825b7a050f9c421dac350b37bed2"
+checksum = "66c4eab28b2bb0132d281612f23192d2335356b20ea538fa40dfd0dd5ddc7c65"
 dependencies = [
  "astral-reqwest-middleware",
  "astral-tokio-tar",
@@ -7008,9 +7008,9 @@ dependencies = [
 
 [[package]]
 name = "rattler_repodata_gateway"
-version = "0.29.7"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbd05b4c6fbad5fae62d1d67c22c2bb411a7d21a026aeb079893df1d6d157a61"
+checksum = "5660f0974ffeef30389d01b5b8a390ca064dad75999d625305a8b07db3d21cbb"
 dependencies = [
  "ahash",
  "anyhow",
@@ -7071,9 +7071,9 @@ dependencies = [
 
 [[package]]
 name = "rattler_shell"
-version = "0.27.8"
+version = "0.27.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9794276d154c19579fe7982ab2c1e9a960f0d51e5e56cd8d9fafe36373a71dd3"
+checksum = "c10583e7532955b7cd4579ddd457e91b648bf4a1232c4192384c61a08b8ff03c"
 dependencies = [
  "anyhow",
  "enum_dispatch",
@@ -7092,9 +7092,9 @@ dependencies = [
 
 [[package]]
 name = "rattler_solve"
-version = "7.2.0"
+version = "7.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a9bbdbf299cc4f9b363bd54a4e315be7e96c7645f0a75df5853405d0189ead6"
+checksum = "fb5972bed20c404d943da0ed351bbd97cd91b01086620bc68563e9dfe173c198"
 dependencies = [
  "futures",
  "hex",
@@ -7110,9 +7110,9 @@ dependencies = [
 
 [[package]]
 name = "rattler_virtual_packages"
-version = "3.0.2"
+version = "3.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "312c7e886ca90e83d562cadfb3d88af9dcef42f7c2489dae569df84c4bd07890"
+checksum = "c8ff8fc437511c1ade556cc9753c99f64d4d6097fa82e6ab3008ca935abd8a48"
 dependencies = [
  "archspec",
  "libloading 0.9.0",
