@@ -415,11 +415,12 @@ impl Backend for JavaPlugin {
                         .is_some_and(|image_type| image_type == "jdk"),
                 };
                 let features = 10 - m.features.as_ref().map_or(0, |f| f.len());
-                let version = Versioning::new(v);
+                let version = Versioning::new(&m.version);
                 // Extract build suffix after a '+', '.' if present. If not present, treat as 0.
-                let build_num = v
+                let build_num = m
+                    .version
                     .rsplit_once('+')
-                    .or_else(|| v.rsplit_once('.'))
+                    .or_else(|| m.version.rsplit_once('.'))
                     .and_then(|(_, tail)| {
                         // take leading digits of tail
                         let digits: String =
@@ -431,8 +432,12 @@ impl Backend for JavaPlugin {
                         }
                     })
                     .unwrap_or(0u64);
+                // Prefer base vendors (no dashes) over specialized variants like
+                // "liberica-nik". Fewer dashes → more canonical → sorts later.
+                let vendor_dashes = -(vendor.chars().filter(|c| *c == '-').count() as i32);
                 (
                     is_shorthand,
+                    vendor_dashes,
                     vendor,
                     is_jdk,
                     features,
