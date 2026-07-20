@@ -151,6 +151,10 @@ Build (or reuse) an image and push it to a registry with mise's
 built-in registry client — no skopeo, crane, or docker daemon
 required. Only blobs the registry doesn't already have are uploaded,
 so repeat pushes of a mostly-unchanged toolset transfer very little.
+When the base image lives on the destination registry, its blobs are
+cross-repository mounted instead of re-uploaded (no bytes transferred).
+Large layers upload in chunks with progress bars, and transient network
+failures are retried with backoff (`http_retries` controls attempts).
 
 ```sh
 mise oci push [--image-dir DIR]

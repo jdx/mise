@@ -423,12 +423,22 @@ impl Builder {
         };
 
         // --- 9. Manifest ---
+        // Record the base image (standard annotation) so `mise oci push` can
+        // attempt cross-repository blob mounts when the base lives on the
+        // destination registry.
+        let mut manifest_annotations: IndexMap<String, String> = Default::default();
+        if let Some(ref_) = &from_ref {
+            manifest_annotations.insert(
+                crate::oci::registry::ANNOTATION_BASE_NAME.to_string(),
+                ref_.clone(),
+            );
+        }
         let image_manifest = ImageManifest {
             schema_version: 2,
             media_type: manifest::MEDIA_TYPE_OCI_MANIFEST.to_string(),
             config: config_descriptor,
             layers: manifest_layers,
-            annotations: Default::default(),
+            annotations: manifest_annotations,
         };
         let (manifest_digest, manifest_size) = layout.write_manifest(&image_manifest)?;
 

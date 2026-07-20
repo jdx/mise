@@ -102,8 +102,13 @@ impl Push {
             };
 
         let summary = registry::push_image(&image_dir, &self.reference).await?;
+        let mounted = if summary.mounted > 0 {
+            format!(", {} mounted from base repo", summary.mounted)
+        } else {
+            String::new()
+        };
         miseprintln!(
-            "pushed {} to {} ({} blob(s) uploaded, {} already present)",
+            "pushed {} to {} ({} blob(s) uploaded, {} already present{mounted})",
             summary.manifest_digest,
             self.reference,
             summary.uploaded,
