@@ -214,6 +214,21 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_env_requires_table() {
+        let table = toml::from_str(r#"env = [{ FOO = "bar" }]"#).unwrap();
+        assert!(TomlParser::new(&table).parse_env("env").is_err());
+
+        let table = toml::from_str(
+            r#"
+            [env]
+            _.source = ["./first.sh", "./second.sh"]
+            "#,
+        )
+        .unwrap();
+        assert!(TomlParser::new(&table).parse_env("env").is_ok());
+    }
+
+    #[test]
     fn test_parse_table() {
         let toml = r#"table = {foo = "bar", baz = "qux", num = 123}"#;
         let table = toml::from_str(toml).unwrap();

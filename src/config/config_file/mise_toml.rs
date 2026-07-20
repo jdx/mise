@@ -210,7 +210,7 @@ pub struct MiseToml {
     env_file: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     dotenv: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_root_env")]
     env: EnvList,
     #[serde(default, deserialize_with = "deserialize_arr")]
     env_path: Vec<String>,
@@ -1576,18 +1576,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
         impl<'de> Visitor<'de> for EnvManVisitor {
             type Value = EnvList;
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("env table or array of env tables")
-            }
-
-            fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
-            where
-                S: de::SeqAccess<'de>,
-            {
-                let mut env = vec![];
-                while let Some(list) = seq.next_element::<EnvList>()? {
-                    env.extend(list.0);
-                }
-                Ok(EnvList(env))
+                formatter.write_str("environment variable table")
             }
 
             fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
@@ -1982,7 +1971,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
             }
         }
 
-        deserializer.deserialize_any(EnvManVisitor)
+        deserializer.deserialize_map(EnvManVisitor)
     }
 }
 
@@ -2002,6 +1991,41 @@ where
         return Err(de::Error::custom("`vars.mise` is not supported"));
     }
     EnvList::deserialize(value).map_err(de::Error::custom)
+}
+
+fn deserialize_root_env<'de, D>(deserializer: D) -> std::result::Result<EnvList, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    struct RootEnvVisitor;
+
+    impl<'de> Visitor<'de> for RootEnvVisitor {
+        type Value = EnvList;
+
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+            formatter.write_str("env table or flat array of env tables")
+        }
+
+        fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            EnvList::deserialize(de::value::MapAccessDeserializer::new(map))
+        }
+
+        fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
+        where
+            S: de::SeqAccess<'de>,
+        {
+            let mut env = vec![];
+            while let Some(list) = seq.next_element::<EnvList>()? {
+                env.extend(list.0);
+            }
+            Ok(EnvList(env))
+        }
+    }
+
+    deserializer.deserialize_any(RootEnvVisitor)
 }
 
 impl<'de> de::Deserialize<'de> for MiseTomlToolList {
@@ -2851,6 +2875,61 @@ mod tests {
         bar2=qux
         quux
         ");
+    }
+
+    #[test]
+    fn test_env_and_vars_array_boundaries() {
+        assert!(toml::from_str::<MiseToml>(r#"env = [{ FOO = "one" }, { BAR = "two" }]"#).is_ok());
+        assert!(toml::from_str::<MiseToml>("env = []").is_ok());
+        assert!(
+            toml::from_str::<MiseToml>(
+                r#"
+                [env]
+                _.source = ["./first.sh", "./second.sh"]
+
+                [vars]
+                _.file = ["./first.env", "./second.env"]
+                "#,
+            )
+            .is_ok()
+        );
+
+        for invalid in [
+            r#"env = [[{ FOO = "bar" }]]"#,
+            r#"env = [{ FOO = "bar" }, [{ BAR = "baz" }]]"#,
+            r#"vars = []"#,
+            r#"vars = [{ FOO = "bar" }]"#,
+            r#"vars = [[{ FOO = "bar" }]]"#,
+        ] {
+            assert!(
+                toml::from_str::<MiseToml>(invalid).is_err(),
+                "expected config to be rejected: {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_task_env_and_vars_arrays_invalid() {
+        for field in ["env", "vars"] {
+            let config = formatdoc! {r#"
+                [tasks.example]
+                run = "echo ok"
+                {field} = [{{ FOO = "bar" }}]
+            "#};
+            assert!(
+                toml::from_str::<MiseToml>(&config).is_err(),
+                "expected task {field} array to be rejected"
+            );
+
+            let config = formatdoc! {r#"
+                [task_templates.example]
+                {field} = [{{ FOO = "bar" }}]
+            "#};
+            assert!(
+                toml::from_str::<MiseToml>(&config).is_err(),
+                "expected task template {field} array to be rejected"
+            );
+        }
     }
 
     #[tokio::test]
