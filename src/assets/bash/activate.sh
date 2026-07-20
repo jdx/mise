@@ -44,6 +44,11 @@ if [ "$__MISE_HOOK_ENABLED" = "1" ]; then
 		local previous_exit_status=$?
 		if [[ ${__MISE_BASH_CHPWD_RAN:-0} == "1" ]]; then
 			__MISE_BASH_CHPWD_RAN=0
+			unset __MISE_BASH_SKIP_FIRST_PROMPT
+			return $previous_exit_status
+		fi
+		if [[ ${__MISE_BASH_SKIP_FIRST_PROMPT:-0} == "1" ]]; then
+			unset __MISE_BASH_SKIP_FIRST_PROMPT
 			return $previous_exit_status
 		fi
 		eval "$(mise hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} -s bash --reason precmd)"
@@ -75,3 +80,6 @@ if [ "$__MISE_HOOK_ENABLED" = "1" ]; then
 fi
 
 _mise_hook
+if [ "$__MISE_HOOK_ENABLED" = "1" ]; then
+	__MISE_BASH_SKIP_FIRST_PROMPT=1
+fi
