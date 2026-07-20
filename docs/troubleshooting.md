@@ -205,6 +205,10 @@ mise honors an **explicit** bash path as-is. If you set `shell` (in a task) or
 `MISE_BASH_PATH` override and the Git Bash / MSYS2 auto-detection apply only
 when the shell is the bare name `bash`.
 
+The same resolution (auto-detection, `MISE_BASH_PATH`, never the WSL launcher)
+also applies to the bash mise spawns to source
+[`[env] _.source`](/environments/#env-source) scripts.
+
 If your shell path contains spaces (e.g. `C:\Program Files\Git\bin\bash.exe`),
 wrap the program in double quotes so the space is not treated as an argument
 separator. On Windows, backslashes are treated literally, so they need no

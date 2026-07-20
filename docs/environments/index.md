@@ -458,6 +458,15 @@ The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/discuss
 for a potential alternative that would work with binaries or other script languages.
 :::
 
+::: info Windows
+On Windows, sourcing requires a real POSIX bash such as [Git for Windows](https://gitforwindows.org/)
+or MSYS2. mise auto-detects it the same way it does for bash tasks (common install
+locations are probed even when bash is not on `PATH`; set `MISE_BASH_PATH` to point at a
+specific bash; the WSL launcher at `C:\Windows\System32\bash.exe` is never auto-selected
+since WSL cannot read Windows script paths). `PATH` entries the script prepends (in
+`/c/...` or `/cygdrive/c/...` form) are converted back to Windows form.
+:::
+
 The `env._.source` directive supports:
 
 - A single source as a string or an object
