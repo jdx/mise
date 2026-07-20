@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
-      - uses: namespacelabs/nscloud-cache-action@58bf6e08898e88803c098e2b522668541cd3b2e3 # v1
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
             ~/.cargo/registry
