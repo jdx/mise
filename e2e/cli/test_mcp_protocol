@@ -29,7 +29,17 @@ quiet = true
 run = "echo 'Linting code'"
 description = "Run linters"
 usage = "lint [files...]"
+
+[tasks.mcp-overlay]
+description = "A file task with TOML metadata"
 EOF
+
+mkdir -p .mise/tasks
+cat >.mise/tasks/mcp-overlay <<'EOF'
+#!/usr/bin/env bash
+echo "MCP overlay task"
+EOF
+chmod +x .mise/tasks/mcp-overlay
 
 echo "Testing MCP server startup and error handling..."
 
@@ -141,6 +151,27 @@ def test_tools_list(proc):
     return 0
 
 
+def test_tasks_resource(proc):
+    send(proc, {
+        "jsonrpc": "2.0", "id": 7,
+        "method": "resources/read",
+        "params": {"uri": "mise://tasks"},
+    })
+    resp = recv(proc)
+    if not resp or "result" not in resp:
+        print(f"ERROR: Bad resources/read response: {resp}")
+        return 1
+
+    tasks = json.loads(resp["result"]["contents"][0]["text"])
+    task = next(t for t in tasks if t["name"] == "mcp-overlay")
+    assert task["source"].endswith("/.mise/tasks/mcp-overlay"), task
+    assert len(task["config_sources"]) == 2, task
+    assert task["config_sources"][0].endswith("/.mise/tasks/mcp-overlay"), task
+    assert task["config_sources"][1].endswith("/mise.toml"), task
+    print("✓ mise://tasks reports all task definition sources")
+    return 0
+
+
 def test_run_task_success(proc):
     send(proc, {
         "jsonrpc": "2.0", "id": 3,
@@ -246,6 +277,7 @@ def main():
         tests = [
             ("initialize", test_initialize),
             ("tools/list", test_tools_list),
+            ("tasks resource", test_tasks_resource),
             ("run_task success", test_run_task_success),
             ("run_task with args", test_run_task_with_args),
             ("run_task unknown task", test_run_task_unknown),

@@ -33,6 +33,7 @@ $ mise tasks info test --json
   "aliases": "t",
   "description": "Test the application",
   "source": "~/src/myproj/mise.toml",
+  "config_sources": ["~/src/myproj/mise.toml"],
   "depends": [],
   "env": {},
   "dir": null,

@@ -221,18 +221,21 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
         let matcher = build_source_matcher(&root, &task.sources);
         let glob_patterns = source_glob_patterns(&task.sources);
         let mut source_metadatas = get_file_metadatas(&root, &glob_patterns, &matcher)?;
-        // Always include the task's own config file as a source, regardless of
-        // any excludes — a stray `!mise.toml` must not silently disable invalidation.
-        let config_path = if task.config_source.is_absolute() {
-            task.config_source.clone()
-        } else {
-            root.join(&task.config_source)
-        };
-        if let Ok(meta) = config_path.metadata()
-            && meta.is_file()
-            && !source_metadatas.iter().any(|(p, _)| p == &config_path)
-        {
-            source_metadatas.push((config_path, meta));
+        // Always include every file that contributed to the task definition,
+        // regardless of excludes — a stray `!mise.toml` must not silently
+        // disable invalidation.
+        for config_source in task.config_sources() {
+            let config_path = if config_source.is_absolute() {
+                config_source.to_path_buf()
+            } else {
+                root.join(config_source)
+            };
+            if let Ok(meta) = config_path.metadata()
+                && meta.is_file()
+                && !source_metadatas.iter().any(|(p, _)| p == &config_path)
+            {
+                source_metadatas.push((config_path, meta));
+            }
         }
 
         // Check if sources resolved to no files (likely a config mistake)
@@ -358,7 +361,7 @@ pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
 fn task_state_key(task: &Task, root: &Path) -> String {
     let mut hasher = DefaultHasher::new();
     task.hash(&mut hasher);
-    task.config_source.hash(&mut hasher);
+    task.config_sources().hash(&mut hasher);
     root.hash(&mut hasher);
     format!("{:x}", hasher.finish())
 }
@@ -561,6 +564,22 @@ mod tests {
         let sources: Vec<String> = sources.iter().map(|s| s.to_string()).collect();
         let matcher = build_source_matcher(Path::new("."), &sources);
         is_source(&matcher, Path::new(path))
+    }
+
+    #[test]
+    fn task_state_key_includes_all_definition_sources() {
+        let root = Path::new("/project");
+        let mut task = Task {
+            name: "build".to_string(),
+            config_source: PathBuf::from(".mise/tasks/build"),
+            ..Default::default()
+        };
+        let primary_key = task_state_key(&task, root);
+
+        task.additional_config_sources
+            .push(PathBuf::from("mise.toml"));
+
+        assert_ne!(primary_key, task_state_key(&task, root));
     }
 
     #[test]

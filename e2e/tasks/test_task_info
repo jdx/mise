@@ -26,6 +26,9 @@ assert_json "mise tasks info lint --json" "$(
   "aliases": [],
   "description": "",
   "source": "$(pwd)/mise.toml",
+  "config_sources": [
+    "$(pwd)/mise.toml"
+  ],
   "depends": [
     [
       "build",

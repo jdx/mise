@@ -68,7 +68,7 @@ impl TaskOutputs {
     fn auto_path(&self, task: &Task, root: &Path) -> String {
         let mut hasher = DefaultHasher::new();
         task.hash(&mut hasher);
-        task.config_source.hash(&mut hasher);
+        task.config_sources().hash(&mut hasher);
         root.hash(&mut hasher);
         let hash = format!("{:x}", hasher.finish());
         dirs::STATE

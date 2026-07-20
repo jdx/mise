@@ -312,6 +312,11 @@ impl ServerHandler for MiseServer {
                         "description": task.description.clone(),
                         "aliases": task.aliases,
                         "source": task.config_source.to_string_lossy(),
+                        "config_sources": task
+                            .config_sources()
+                            .iter()
+                            .map(|source| source.to_string_lossy())
+                            .collect::<Vec<_>>(),
                         "depends": task.depends.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
                         "depends_post": task.depends_post.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
                         "wait_for": task.wait_for.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
