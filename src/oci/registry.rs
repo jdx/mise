@@ -731,6 +731,91 @@ fn parse_single_manifest(body: serde_json::Value) -> Result<ImageManifest> {
     Ok(manifest)
 }
 
+/// A remote image's manifest paired with its config's `rootfs.diff_ids`
+/// (index-aligned with `manifest.layers`). Used as the layer-reuse cache for
+/// `mise oci push`.
+#[derive(Debug, Clone)]
+pub struct RemoteImage {
+    pub manifest: ImageManifest,
+    pub diff_ids: Vec<String>,
+}
+
+/// Fetch the manifest + config diff_ids of `reference` for layer reuse.
+///
+/// Returns `Ok(None)` when the reference doesn't exist yet (the first push)
+/// or points at an image index rather than a single manifest. Other errors
+/// propagate — the caller treats them as a cache miss with a warning, since
+/// a broken cache lookup should never fail a push.
+pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> {
+    let r = Reference::parse(reference)?;
+    let base_url = r.registry_url();
+    let mut session = AuthSession::new(r.clone(), "pull").await?;
+
+    let manifest_url = format!("{base_url}/v2/{}/manifests/{}", r.repository, r.tag);
+    let accept = [MEDIA_TYPE_OCI_MANIFEST, MEDIA_TYPE_DOCKER_MANIFEST];
+    let resp = session
+        .send(|auth| {
+            let mut rb = HTTP
+                .reqwest()
+                .get(&manifest_url)
+                .header("Accept", accept.join(", "));
+            if let Some(a) = auth {
+                rb = rb.header("Authorization", a);
+            }
+            rb
+        })
+        .await
+        .wrap_err_with(|| format!("fetching {manifest_url}"))?;
+    match resp.status() {
+        StatusCode::OK => {}
+        // No previous image under this ref (404), or the ref exists but the
+        // registry won't serve it as a single manifest with our Accept
+        // headers — both are just "no cache".
+        StatusCode::NOT_FOUND => return Ok(None),
+        // An auth failure here (private repo we can't read) is also a cache
+        // miss rather than a push-stopping error.
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => return Ok(None),
+        s => bail!("fetching {manifest_url} failed: {}", s.as_u16()),
+    }
+    let body: serde_json::Value = resp.json().await?;
+    // An index (multi-arch) can't be used as a single-image cache.
+    if body.get("manifests").map(|m| m.is_array()).unwrap_or(false) {
+        return Ok(None);
+    }
+    let manifest: ImageManifest = match serde_json::from_value(body) {
+        Ok(m) => m,
+        Err(_) => return Ok(None),
+    };
+
+    // Same guards as pull_base_image: digests become path/URL components.
+    crate::oci::layout::validate_sha256_digest(&manifest.config.digest)?;
+    for layer in &manifest.layers {
+        crate::oci::layout::validate_sha256_digest(&layer.digest)?;
+    }
+
+    let config_url = format!(
+        "{base_url}/v2/{}/blobs/{}",
+        r.repository, manifest.config.digest
+    );
+    let config_bytes = download_blob(&mut session, &config_url, None).await?;
+    let config: serde_json::Value = serde_json::from_slice(&config_bytes)?;
+    let diff_ids: Vec<String> = config
+        .get("rootfs")
+        .and_then(|r| r.get("diff_ids"))
+        .and_then(|d| d.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    if diff_ids.len() != manifest.layers.len() {
+        // Malformed remote image — don't reuse anything from it.
+        return Ok(None);
+    }
+    Ok(Some(RemoteImage { manifest, diff_ids }))
+}
+
 // ---------------------------------------------------------------------------
 // Push
 // ---------------------------------------------------------------------------
