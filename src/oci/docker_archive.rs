@@ -52,6 +52,14 @@ pub fn load_into_docker(image_dir: &Path, tag: &str) -> Result<()> {
         serde_json::from_slice(&manifest_bytes).wrap_err("parsing image manifest blob")?;
     let config_bytes = layout.read_blob(&manifest.config.digest)?;
 
+    // Validate every layer digest before it's used as a path component in
+    // `write_docker_archive` (which reads via `blob_path`, bypassing the
+    // check `read_blob` performs) — a crafted `--image-dir` layout could
+    // otherwise escape the blobs directory with `sha256:../…`.
+    for layer in &manifest.layers {
+        crate::oci::layout::validate_sha256_digest(&layer.digest)?;
+    }
+
     let mut child = Command::new("docker")
         .args(["load", "--quiet"])
         .stdin(Stdio::piped())

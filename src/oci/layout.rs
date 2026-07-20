@@ -83,6 +83,10 @@ impl ImageLayout {
     }
 
     pub fn read_blob(&self, digest: &str) -> Result<Vec<u8>> {
+        // Validate before turning the digest into a path component — a crafted
+        // layout (`mise oci push/run --image-dir <untrusted>`) could otherwise
+        // use `sha256:../../etc/passwd` to read outside the blobs directory.
+        validate_sha256_digest(digest)?;
         let path = self.blob_path(digest);
         std::fs::read(&path).wrap_err_with(|| format!("reading blob {}", path.display()))
     }
@@ -161,5 +165,13 @@ mod tests {
     fn accepts_valid_digest() {
         let d = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
         assert!(validate_sha256_digest(d).is_ok());
+    }
+
+    #[test]
+    fn read_blob_rejects_traversal_digest() {
+        // A crafted layout must not be able to read outside blobs/sha256.
+        let tmp = tempfile::tempdir().unwrap();
+        let layout = ImageLayout::init(tmp.path()).unwrap();
+        assert!(layout.read_blob("sha256:../../../../etc/passwd").is_err());
     }
 }
