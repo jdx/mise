@@ -1914,21 +1914,6 @@ If not specified, all platforms already in lockfile will be updated
 """# var=#true {
         arg <PLATFORM>
     }
-    flag --local help=#"""
-Update mise.local.lock instead of mise.lock
-Use for tools defined in .local.toml configs
-"""#
-    flag --minimum-release-age help="Only lock versions released before this age or date" {
-        long_help #"""
-Only lock versions released before this age or date
-
-Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-This only affects fuzzy version matches like "20" or "latest".
-Explicitly pinned versions like "22.5.0" are not filtered.
-Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
-"""#
-        arg <MINIMUM_RELEASE_AGE>
-    }
     flag --bump help="Re-resolve fuzzy version selectors against the latest available versions" {
         long_help #"""
 Re-resolve fuzzy version selectors against the latest available versions
@@ -1950,6 +1935,21 @@ name, backend, lockfile, old_versions, new_versions.
 Suppresses the human-readable output. Combine with `--dry-run` to
 detect available updates without writing the lockfile.
 """#
+    }
+    flag --local help=#"""
+Update mise.local.lock instead of mise.lock
+Use for tools defined in .local.toml configs
+"""#
+    flag --minimum-release-age help="Only lock versions released before this age or date" {
+        long_help #"""
+Only lock versions released before this age or date
+
+Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+This only affects fuzzy version matches like "20" or "latest".
+Explicitly pinned versions like "22.5.0" are not filtered.
+Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
+"""#
+        arg <MINIMUM_RELEASE_AGE>
     }
     arg "[TOOL]…" help=#"""
 Tool(s) to update in lockfile

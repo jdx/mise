@@ -57,25 +57,6 @@ pub struct Lock {
     #[clap(long, short, value_delimiter = ',', verbatim_doc_comment)]
     pub platform: Vec<String>,
 
-    /// Update mise.local.lock instead of mise.lock
-    /// Use for tools defined in .local.toml configs
-    #[clap(long, verbatim_doc_comment)]
-    pub local: bool,
-
-    /// Only lock versions released before this age or date
-    ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    /// This only affects fuzzy version matches like "20" or "latest".
-    /// Explicitly pinned versions like "22.5.0" are not filtered.
-    /// Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
-    #[clap(
-        long,
-        alias = "before",
-        value_name = "MINIMUM_RELEASE_AGE",
-        verbatim_doc_comment
-    )]
-    pub minimum_release_age: Option<String>,
-
     /// Re-resolve fuzzy version selectors against the latest available versions
     ///
     /// By default, `mise lock` refreshes metadata for the currently locked versions.
@@ -95,6 +76,25 @@ pub struct Lock {
     /// detect available updates without writing the lockfile.
     #[clap(long, verbatim_doc_comment)]
     pub json: bool,
+
+    /// Update mise.local.lock instead of mise.lock
+    /// Use for tools defined in .local.toml configs
+    #[clap(long, verbatim_doc_comment)]
+    pub local: bool,
+
+    /// Only lock versions released before this age or date
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    /// This only affects fuzzy version matches like "20" or "latest".
+    /// Explicitly pinned versions like "22.5.0" are not filtered.
+    /// Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
+    #[clap(
+        long,
+        alias = "before",
+        value_name = "MINIMUM_RELEASE_AGE",
+        verbatim_doc_comment
+    )]
+    pub minimum_release_age: Option<String>,
 }
 
 /// A lockfile version change reported by `--json`
