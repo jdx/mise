@@ -1059,7 +1059,7 @@
           "deprecated": true
         },
         "gpg_verify": {
-          "description": "Use gpg to verify all tool signatures.",
+          "description": "Verify OpenPGP signatures for all tools (built-in, no external gpg required). Set to false to disable.",
           "type": "boolean"
         },
         "hook_env": {
@@ -1259,7 +1259,7 @@
               "type": "string"
             },
             "gpg_verify": {
-              "description": "Use gpg to verify node tool signatures.",
+              "description": "Verify OpenPGP signatures for node (built-in, no external gpg required). Set to false to disable.",
               "type": "boolean"
             },
             "make": {
@@ -1710,7 +1710,7 @@
           "unevaluatedProperties": false,
           "properties": {
             "gpg_verify": {
-              "description": "Use gpg to verify swift tool signatures.",
+              "description": "Verify OpenPGP signatures for swift (built-in, no external gpg required). Set to false to disable.",
               "type": "boolean"
             },
             "platform": {

@@ -126,33 +126,16 @@ impl SwiftPlugin {
         tv: &ToolVersion,
         tarball_path: &Path,
     ) -> Result<()> {
-        if file::which_non_pristine("gpg").is_none() && Settings::get().swift.gpg_verify.is_none() {
-            ctx.pr
-                .println("gpg not found, skipping verification".to_string());
-            return Ok(());
-        }
-        gpg::add_keys_swift(ctx)?;
         let sig_path = PathBuf::from(format!("{}.sig", tarball_path.to_string_lossy()));
         HTTP.download_file(format!("{}.sig", url(tv)), &sig_path, Some(ctx.pr.as_ref()))
             .await?;
-        self.gpg(ctx)
-            .arg("--quiet")
-            .arg("--trust-model")
-            .arg("always")
-            .arg("--verify")
-            .arg(&sig_path)
-            .arg(tarball_path)
-            .env_values(tv.install_env())
-            .execute()?;
+        let signature = file::read(&sig_path)?;
+        gpg::verify_swift(tarball_path, &signature)?;
         Ok(())
     }
 
     fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         self.test_swift(ctx, tv)
-    }
-
-    fn gpg<'a>(&self, ctx: &'a InstallContext) -> CmdLineRunner<'a> {
-        CmdLineRunner::new("gpg").with_pr(ctx.pr.as_ref())
     }
 }
 
@@ -227,7 +210,7 @@ impl Backend for SwiftPlugin {
             algorithm: Some("sha256".to_string()),
         }];
 
-        // GPG verification is available on Linux when gpg is installed
+        // GPG verification is available on Linux (built-in, no external gpg required)
         if cfg!(target_os = "linux") && Settings::get().swift.gpg_verify != Some(false) {
             features.push(SecurityFeature::Gpg);
         }

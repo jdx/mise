@@ -339,15 +339,11 @@ impl NodePlugin {
     async fn verify_with_gpg(
         &self,
         ctx: &InstallContext,
-        tv: &ToolVersion,
+        _tv: &ToolVersion,
         shasums_file: &Path,
         v: &str,
         tarball_name: &str,
     ) -> Result<()> {
-        if file::which_non_pristine("gpg").is_none() && Settings::get().node.gpg_verify.is_none() {
-            warn!("gpg not found, skipping verification");
-            return Ok(());
-        }
         let sig_file = shasums_file.with_extension("asc");
         let sig_url = format!("{}.sig", self.shasums_url(v, tarball_name)?);
         if let Err(e) = HTTP
@@ -360,17 +356,9 @@ impl NodePlugin {
             }
             return Err(e);
         }
-        gpg::add_keys_node(ctx)?;
-        CmdLineRunner::new("gpg")
-            .arg("--quiet")
-            .arg("--trust-model")
-            .arg("always")
-            .arg("--verify")
-            .arg(sig_file)
-            .arg(shasums_file)
-            .with_pr(ctx.pr.as_ref())
-            .env_values(tv.install_env())
-            .execute()?;
+        let shasums = file::read(shasums_file)?;
+        let signature = file::read(&sig_file)?;
+        gpg::verify_node(&shasums, &signature)?;
         Ok(())
     }
 
@@ -581,7 +569,7 @@ impl Backend for NodePlugin {
             algorithm: Some("sha256".to_string()),
         }];
 
-        // GPG verification is available for Node.js v20+ when gpg is installed
+        // GPG verification is available for Node.js v20+ (built-in, no external gpg required)
         if Settings::get().node.gpg_verify != Some(false) {
             features.push(SecurityFeature::Gpg);
         }
