@@ -6,7 +6,9 @@
 //! exactly one content-addressable blob. See `builder.rs` for how this is
 //! orchestrated.
 
+pub mod auth;
 pub mod builder;
+pub mod docker_archive;
 pub mod layer;
 pub mod layout;
 pub mod manifest;

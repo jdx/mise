@@ -13,12 +13,12 @@ use crate::oci::{BuildOptions, LayerOwner};
 /// [experimental] Build an OCI image from the current mise.toml and run a command in it
 ///
 /// Equivalent to `mise oci build` followed by `docker run` / `podman run`.
-/// The built image is loaded into the local container engine (podman is
-/// preferred; docker works via skopeo) and the given command is executed
-/// inside it with stdin/stdout/stderr inherited.
+/// The built image is loaded into the local container engine (podman pulls
+/// the OCI layout natively; docker receives it via `docker load`) and the
+/// given command is executed inside it with stdin/stdout/stderr inherited.
 ///
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) and
-/// one of: `podman`, `docker+skopeo`.
+/// one of: `podman`, `docker`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Run {
@@ -148,7 +148,7 @@ impl Run {
 
         // 4. Load into the engine. Returns the image reference to actually
         // pass to `podman run` / `docker run` (podman uses an image ID;
-        // docker uses the tag skopeo copied under).
+        // docker uses the tag the archive was loaded under).
         let image_ref = load_image(engine, &image_dir)?;
 
         // 5. docker/podman run <flags> <image-ref> <cmd...>
@@ -229,25 +229,15 @@ fn select_engine(requested: Engine) -> Result<Engine> {
             if file::which("docker").is_none() {
                 bail!("--engine docker requested but `docker` was not found on PATH");
             }
-            if file::which("skopeo").is_none() {
-                bail!(
-                    "--engine docker requires `skopeo` (to load the OCI layout into the \
-                     docker daemon). Install skopeo or use `--engine podman`."
-                );
-            }
             Ok(Engine::Docker)
         }
         Engine::Auto => {
             if file::which("podman").is_some() {
                 Ok(Engine::Podman)
-            } else if file::which("docker").is_some() && file::which("skopeo").is_some() {
+            } else if file::which("docker").is_some() {
                 Ok(Engine::Docker)
             } else {
-                bail!(
-                    "no supported container engine found. Install one of:\n  \
-                       - podman (native OCI-layout support)\n  \
-                       - docker + skopeo (to load the OCI layout into the docker daemon)"
-                )
+                bail!("no supported container engine found. Install podman or docker.")
             }
         }
     }
@@ -292,11 +282,11 @@ fn load_image(engine: Engine, image_dir: &Path) -> Result<String> {
             Ok(id)
         }
         Engine::Docker => {
-            // skopeo is the portable way to get an OCI layout into a docker
-            // daemon. Pick a per-invocation tag so concurrent `mise oci run`
-            // calls don't clobber each other — a shared `mise-oci:run` tag
-            // would otherwise race: the second skopeo copy would overwrite
-            // the first image before the first container started.
+            // Stream the layout into `docker load` as a docker-archive. Pick
+            // a per-invocation tag so concurrent `mise oci run` calls don't
+            // clobber each other — a shared `mise-oci:run` tag would
+            // otherwise race: the second load would overwrite the first
+            // image before the first container started.
             let tag = format!(
                 "mise-oci:run-{}-{}",
                 std::process::id(),
@@ -305,18 +295,7 @@ fn load_image(engine: Engine, image_dir: &Path) -> Result<String> {
                     .map(|d| d.as_nanos())
                     .unwrap_or(0)
             );
-            let src = format!("oci:{}", image_dir.display());
-            let dst = format!("docker-daemon:{tag}");
-            let status = Command::new("skopeo")
-                .args(["copy", &src, &dst])
-                .status()
-                .wrap_err("running `skopeo copy`")?;
-            if !status.success() {
-                bail!(
-                    "skopeo copy failed ({status:?}). Ensure the docker daemon is running and \
-                     your user has access to the socket."
-                );
-            }
+            crate::oci::docker_archive::load_into_docker(image_dir, &tag)?;
             Ok(tag)
         }
         Engine::Auto => unreachable!(),
@@ -338,7 +317,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 <bold><underline>Engines:</underline></bold>
 
-    Prefers <bold>podman</bold> (loads OCI layouts natively). Falls back to
-    <bold>docker + skopeo</bold>. Pass <bold>--engine podman</bold> or <bold>--engine docker</bold> to override.
+    Prefers <bold>podman</bold> (loads OCI layouts natively). Falls back to <bold>docker</bold>
+    (loaded via <bold>docker load</bold>). Pass <bold>--engine podman</bold> or <bold>--engine docker</bold> to override.
 "#
 );

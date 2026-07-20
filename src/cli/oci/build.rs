@@ -108,7 +108,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>skopeo inspect oci:./mise-oci</bold>
 
     Push to a registry:
-    $ <bold>skopeo copy oci:./mise-oci docker://ghcr.io/me/dev:latest</bold>
+    $ <bold>mise oci push --image-dir ./mise-oci ghcr.io/me/dev:latest</bold>
 
 <bold><underline>Notes:</underline></bold>
 

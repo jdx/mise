@@ -7,12 +7,12 @@
 [experimental] Build an OCI image from the current mise.toml and run a command in it
 
 Equivalent to `mise oci build` followed by `docker run` / `podman run`.
-The built image is loaded into the local container engine (podman is
-preferred; docker works via skopeo) and the given command is executed
-inside it with stdin/stdout/stderr inherited.
+The built image is loaded into the local container engine (podman pulls
+the OCI layout natively; docker receives it via `docker load`) and the
+given command is executed inside it with stdin/stdout/stderr inherited.
 
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) and
-one of: `podman`, `docker+skopeo`.
+one of: `podman`, `docker`.
 
 ## Arguments
 
@@ -107,6 +107,6 @@ $ mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.
 Engines:
 
 ```
-Prefers podman (loads OCI layouts natively). Falls back to
-docker + skopeo. Pass --engine podman or --engine docker to override.
+Prefers podman (loads OCI layouts natively). Falls back to docker
+(loaded via docker load). Pass --engine podman or --engine docker to override.
 ```

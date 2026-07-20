@@ -6,12 +6,16 @@
 
 [experimental] Build an OCI image and push it to a registry
 
-Requires `skopeo` (or `crane`) on PATH. If `--image-dir` is not passed,
-builds fresh from the current mise.toml first, then shells out to
-`skopeo copy oci:<dir> docker://<ref>` (or `crane push <dir> <ref>`).
-Authentication is handled by the underlying tool — configure it the same
-way you would for a plain `skopeo` / `crane` push (e.g. `docker login`,
-`REGISTRY_AUTH_FILE`, `~/.config/containers/auth.json`).
+Pushes with mise's built-in registry client — no skopeo/crane/docker
+required. If `--image-dir` is not passed, builds fresh from the current
+mise.toml first. Only blobs the registry doesn't already have are
+uploaded, so repeat pushes of mostly-unchanged toolsets are cheap.
+
+Credentials are read from the same places docker and podman use:
+`$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`,
+`~/.config/containers/auth.json`, and `~/.docker/config.json`
+(including credential helpers) — so `docker login` / `podman login`
+is all the setup needed.
 
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
@@ -51,18 +55,6 @@ UID[:GID] to assign to every tar entry when building (conflicts with --image-dir
 
 Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 
-### `--tool <TOOL>`
-
-Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`
-
-**Choices:**
-
-- `auto`
-- `skopeo`
-- `crane`
-
-**Default:** `auto`
-
 Examples:
 
 ```
@@ -72,16 +64,15 @@ $ mise oci push ghcr.io/me/devenv:latest
 Push an image built earlier:
 $ mise oci build -o ./img
 $ mise oci push --image-dir ./img ghcr.io/me/devenv:v1
-
-Force a specific push tool:
-$ mise oci push --tool crane ghcr.io/me/devenv:latest
 ```
 
 Auth:
 
 ```
-mise shells out to skopeo (preferred) or crane; configure registry
-credentials the usual way — `docker login`, `REGISTRY_AUTH_FILE`,
-or `~/.config/containers/auth.json` for skopeo; `crane auth login`
-for crane.
+Credentials are resolved the same way docker/podman resolve them:
+$REGISTRY_AUTH_FILE, $XDG_RUNTIME_DIR/containers/auth.json,
+~/.config/containers/auth.json, then ~/.docker/config.json
+(inline auths and credential helpers). Log in with either:
+$ docker login ghcr.io
+$ podman login ghcr.io
 ```

@@ -2163,7 +2163,7 @@ Examples:
     $ skopeo inspect oci:./mise-oci
 
     Push to a registry:
-    $ skopeo copy oci:./mise-oci docker://ghcr.io/me/dev:latest
+    $ mise oci push --image-dir ./mise-oci ghcr.io/me/dev:latest
 
 Notes:
 
@@ -2213,12 +2213,16 @@ Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it
         long_help #"""
 [experimental] Build an OCI image and push it to a registry
 
-Requires `skopeo` (or `crane`) on PATH. If `--image-dir` is not passed,
-builds fresh from the current mise.toml first, then shells out to
-`skopeo copy oci:<dir> docker://<ref>` (or `crane push <dir> <ref>`).
-Authentication is handled by the underlying tool — configure it the same
-way you would for a plain `skopeo` / `crane` push (e.g. `docker login`,
-`REGISTRY_AUTH_FILE`, `~/.config/containers/auth.json`).
+Pushes with mise's built-in registry client — no skopeo/crane/docker
+required. If `--image-dir` is not passed, builds fresh from the current
+mise.toml first. Only blobs the registry doesn't already have are
+uploaded, so repeat pushes of mostly-unchanged toolsets are cheap.
+
+Credentials are read from the same places docker and podman use:
+`$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`,
+`~/.config/containers/auth.json`, and `~/.docker/config.json`
+(including credential helpers) — so `docker login` / `podman login`
+is all the setup needed.
 
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 """#
@@ -2232,15 +2236,14 @@ Examples:
     $ mise oci build -o ./img
     $ mise oci push --image-dir ./img ghcr.io/me/devenv:v1
 
-    Force a specific push tool:
-    $ mise oci push --tool crane ghcr.io/me/devenv:latest
-
 Auth:
 
-    mise shells out to skopeo (preferred) or crane; configure registry
-    credentials the usual way — `docker login`, `REGISTRY_AUTH_FILE`,
-    or `~/.config/containers/auth.json` for skopeo; `crane auth login`
-    for crane.
+    Credentials are resolved the same way docker/podman resolve them:
+    $REGISTRY_AUTH_FILE, $XDG_RUNTIME_DIR/containers/auth.json,
+    ~/.config/containers/auth.json, then ~/.docker/config.json
+    (inline auths and credential helpers). Log in with either:
+    $ docker login ghcr.io
+    $ podman login ghcr.io
 
 """#
         flag --from help="Base image for the build (ignored with --image-dir)" {
@@ -2268,11 +2271,6 @@ Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it
 """#
             arg "<UID[:GID]>"
         }
-        flag --tool help="Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`" default=auto {
-            arg <TOOL> {
-                choices auto skopeo crane
-            }
-        }
         arg <REF> help="Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)"
     }
     cmd run help="[experimental] Build an OCI image from the current mise.toml and run a command in it" {
@@ -2280,12 +2278,12 @@ Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it
 [experimental] Build an OCI image from the current mise.toml and run a command in it
 
 Equivalent to `mise oci build` followed by `docker run` / `podman run`.
-The built image is loaded into the local container engine (podman is
-preferred; docker works via skopeo) and the given command is executed
-inside it with stdin/stdout/stderr inherited.
+The built image is loaded into the local container engine (podman pulls
+the OCI layout natively; docker receives it via `docker load`) and the
+given command is executed inside it with stdin/stdout/stderr inherited.
 
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) and
-one of: `podman`, `docker+skopeo`.
+one of: `podman`, `docker`.
 """#
         after_long_help #"""
 Examples:
@@ -2302,8 +2300,8 @@ Examples:
 
 Engines:
 
-    Prefers podman (loads OCI layouts natively). Falls back to
-    docker + skopeo. Pass --engine podman or --engine docker to override.
+    Prefers podman (loads OCI layouts natively). Falls back to docker
+    (loaded via docker load). Pass --engine podman or --engine docker to override.
 
 """#
         flag --engine help="Container engine to use (`auto`, `podman`, or `docker`)" default=auto {

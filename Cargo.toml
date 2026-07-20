@@ -157,6 +157,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   "charset",
   "http2",
   "socks",
+  "stream",
   "system-proxy",
 ] }
 rmcp = { version = "2.0", features = ["server", "transport-io", "schemars"] }
@@ -203,6 +204,7 @@ tera-contrib = { version = "0.2", features = [
 terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
 toml = { version = "1.0", features = ["parse", "preserve_order"] }
 toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.9", default-features = false }
