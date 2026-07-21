@@ -12,7 +12,7 @@ use crate::cli::exec::Exec;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
-use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
+use crate::toolset::{ResolveOptions, ToolVersion, Toolset, ToolsetBuilder};
 use crate::{backend, dirs, env, fake_asdf, file};
 use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
@@ -52,7 +52,7 @@ pub async fn handle_shim() -> Result<()> {
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
     trace!("shim[{bin_name}] args: {}", args.join(" "));
-    args[0] = which_shim(&mut config, &env::MISE_BIN_NAME)
+    args[0] = which_shim(&mut config, &env::MISE_BIN_NAME, &args)
         .await?
         .to_string_lossy()
         .to_string();
@@ -98,8 +98,20 @@ fn invoked_shim_path() -> PathBuf {
         .unwrap_or(argv0)
 }
 
-async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf> {
-    let mut ts = ToolsetBuilder::new().build(config).await?;
+async fn which_shim(config: &mut Arc<Config>, bin_name: &str, args: &[String]) -> Result<PathBuf> {
+    // Shell completion invokes `usage complete-word` through the `usage` shim.
+    // It should use the installed CLI or fail locally, never resolve a floating
+    // tool version through the network while the user is pressing tab.
+    let resolve_options = (bin_name == "usage"
+        && args.get(1).is_some_and(|arg| arg == "complete-word"))
+    .then_some(ResolveOptions {
+        offline: true,
+        ..Default::default()
+    });
+    let mut ts = ToolsetBuilder::new()
+        .with_resolve_options(resolve_options.unwrap_or_default())
+        .build(config)
+        .await?;
     if let Some((p, tv)) = ts.which(config, bin_name).await
         && let Some(bin) = p.which(config, &tv, bin_name).await?
     {
