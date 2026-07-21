@@ -167,6 +167,30 @@ If you don't get any autocomplete suggestions, use the `-v` (verbose) flag to se
 For example, if you use `mise run build -v` and have an invalid `usage` spec, you will see an error message such as `DEBUG failed to parse task file with usage`
 :::
 
+### Environment variable backing
+
+Arguments and flags can be backed by environment variables with `env="..."`.
+The precedence order is CLI argument, environment variable, then default value:
+
+```bash [.mise/tasks/deploy]
+#!/usr/bin/env bash
+#MISE description="Deploy application"
+#USAGE arg "[environment]" env="DEPLOY_ENV" default="development"
+#USAGE flag "--region <region>" env="AWS_REGION" default="us-east-1"
+
+echo "Deploying to ${usage_environment} in ${usage_region}"
+```
+
+This lets the same file task work with either explicit arguments or the
+environment of the calling shell:
+
+```shell
+DEPLOY_ENV=staging AWS_REGION=us-west-2 mise run deploy
+```
+
+See [Environment Variable Backing](https://mise.jdx.dev/tasks/task-arguments.html#environment-variable-backing)
+for more details.
+
 ### Example of a NodeJS file task with arguments
 
 Here is how you can use [usage](https://usage.jdx.dev/cli/scripts#usage-scripts) to parse arguments in a Node.js script:
