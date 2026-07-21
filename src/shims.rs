@@ -101,15 +101,24 @@ fn invoked_shim_path() -> PathBuf {
 async fn which_shim(config: &mut Arc<Config>, bin_name: &str, args: &[String]) -> Result<PathBuf> {
     // Shell completion invokes `usage complete-word` through the `usage` shim.
     // It should use the installed CLI or fail locally, never resolve a floating
-    // tool version through the network while the user is pressing tab.
-    let resolve_options = (bin_name == "usage"
-        && args.get(1).is_some_and(|arg| arg == "complete-word"))
-    .then_some(ResolveOptions {
-        offline: true,
-        ..Default::default()
-    });
+    // tool version or auto-install over the network while the user is pressing
+    // tab. On Windows the shim is invoked as `usage.exe`, so strip the platform
+    // executable suffix before comparing.
+    let bin_stem = bin_name
+        .strip_suffix(std::env::consts::EXE_SUFFIX)
+        .unwrap_or(bin_name);
+    let completion_offline =
+        bin_stem == "usage" && args.get(1).is_some_and(|arg| arg == "complete-word");
+    let resolve_options = if completion_offline {
+        ResolveOptions {
+            offline: true,
+            ..Default::default()
+        }
+    } else {
+        ResolveOptions::default()
+    };
     let mut ts = ToolsetBuilder::new()
-        .with_resolve_options(resolve_options.unwrap_or_default())
+        .with_resolve_options(resolve_options)
         .build(config)
         .await?;
     if let Some((p, tv)) = ts.which(config, bin_name).await
@@ -121,7 +130,9 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str, args: &[String]) -
         );
         return Ok(bin);
     }
-    if Settings::get().not_found_auto_install {
+    // Auto-installing here would download a tool over the network; skip it for
+    // offline completion so `usage complete-word` fails locally instead.
+    if !completion_offline && Settings::get().not_found_auto_install {
         for tv in ts
             .install_missing_bin(config, bin_name)
             .await?
