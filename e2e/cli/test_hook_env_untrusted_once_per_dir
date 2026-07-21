@@ -6,7 +6,7 @@ unset CI GITHUB_ACTIONS GITHUB_ACTION
 
 contains_trust_warning() {
   local file="$1"
-  grep -Eq 'Config file(\(s\)|s)? in' "$file" && grep -q "are not trusted" "$file"
+  grep -q "not trusted" "$file"
 }
 
 run_hook_env() {
@@ -42,7 +42,9 @@ left_stderr="$(mktemp)"
 reentered_stdout="$(mktemp)"
 reentered_stderr="$(mktemp)"
 explicit_stderr="$(mktemp)"
-trap 'rm -f "$parent_stdout" "$parent_stderr" "$first_stdout" "$first_stderr" "$second_stdout" "$second_stderr" "$changed_stdout" "$changed_stderr" "$left_stdout" "$left_stderr" "$reentered_stdout" "$reentered_stderr" "$explicit_stderr"' EXIT
+quiet_stdout="$(mktemp)"
+quiet_stderr="$(mktemp)"
+trap 'rm -f "$parent_stdout" "$parent_stderr" "$first_stdout" "$first_stderr" "$second_stdout" "$second_stderr" "$changed_stdout" "$changed_stderr" "$left_stdout" "$left_stderr" "$reentered_stdout" "$reentered_stderr" "$explicit_stderr" "$quiet_stdout" "$quiet_stderr"' EXIT
 
 run_hook_env "$parent_stdout" "$parent_stderr"
 if contains_trust_warning "$parent_stderr"; then
@@ -56,6 +58,11 @@ cd project
 run_hook_env "$first_stdout" "$first_stderr"
 if ! contains_trust_warning "$first_stderr"; then
   echo "expected first hook-env to report untrusted config"
+  cat "$first_stderr"
+  exit 1
+fi
+if grep -q "ERROR" "$first_stderr"; then
+  echo "expected hook-env untrusted config warning to be a warning, not an error"
   cat "$first_stderr"
   exit 1
 fi
@@ -92,6 +99,26 @@ if ! contains_trust_warning "$reentered_stderr"; then
   cat "$reentered_stderr"
   exit 1
 fi
+
+# An untrusted config must not be able to silence its own trust warning via
+# [settings] quiet/log_level, since settings are applied before the trust check.
+cd ..
+mkdir -p quiet-project
+cat >quiet-project/.mise.toml <<'EOF'
+[settings]
+quiet = true
+
+[env]
+FOO = "bar"
+EOF
+cd quiet-project
+run_hook_env "$quiet_stdout" "$quiet_stderr"
+if ! contains_trust_warning "$quiet_stderr"; then
+  echo "expected hook-env to warn about untrusted config even with quiet=true"
+  cat "$quiet_stderr"
+  exit 1
+fi
+cd ../project
 
 MISE_YES=0 mise run make 2>"$explicit_stderr" >/dev/null && {
   echo "expected mise run to fail on untrusted config"

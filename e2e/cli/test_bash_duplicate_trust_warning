@@ -21,7 +21,7 @@ unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
 
 contains_trust_warning() {
   local file="$1"
-  grep -q "Config files in" "$file" && grep -q "are not trusted" "$file"
+  grep -q "not trusted" "$file"
 }
 
 contains_mise_prompt_hook() {
