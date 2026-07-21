@@ -573,7 +573,7 @@ fn ditto(from: &Path, to: &Path) -> Result<()> {
 }
 
 fn install_pkg(stage: &Path, pkg: &PkgArtifact) -> Result<()> {
-    let source = find_artifact(stage, &pkg.source)
+    let source = find_file_artifact(stage, &pkg.source)
         .ok_or_else(|| eyre!("brew-cask: pkg artifact '{}' was not found", pkg.source))?;
     let args = vec![
         "-pkg".to_string(),
@@ -1046,27 +1046,16 @@ fn collect_uninstall_pkg_ids(value: &Value, pkg_ids: &mut Vec<String>) {
 }
 
 fn find_app(root: &Path, name: &str) -> Option<PathBuf> {
-    // `.app` bundles are directories; keep the type predicate inside the walk so a
-    // same-named file cannot shadow a later directory match.
+    // Directory predicate inside the walk so a same-named file cannot shadow.
     find_artifact_matching(root, name, |path| path.is_dir())
-}
-
-fn find_artifact(root: &Path, name: &str) -> Option<PathBuf> {
-    find_artifact_matching(root, name, |_| true)
 }
 
 fn find_file_artifact(root: &Path, name: &str) -> Option<PathBuf> {
     find_artifact_matching(root, name, |path| path.is_file())
 }
 
-/// Locate `name` under `root`, preferring exact path suffix match then ASCII
-/// case-insensitive suffix match (Homebrew/macOS APFS: cask may declare
-/// `yaak.app` while the DMG ships `Yaak.app`).
-///
-/// Exact match always wins when present. Case-insensitive fallback only runs
-/// when no exact match exists among entries satisfying `pred`. On case-sensitive
-/// volumes with multiple case variants and no exact hit, WalkDir order decides
-/// which fallback wins (pathological; rare for real casks).
+/// Exact path suffix match first, then ASCII case-insensitive suffix (e.g. cask
+/// `yaak.app` vs DMG `Yaak.app`). `pred` runs only after a name hit.
 fn find_artifact_matching(
     root: &Path,
     name: &str,
