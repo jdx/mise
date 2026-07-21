@@ -253,32 +253,42 @@ impl Backend for NPMBackend {
         // tools (and any lifecycle scripts) need a runtime. Explicit non-aube
         // package managers — or `npm.shell_out` — need their CLI on PATH.
         let settings = Settings::get();
-        let package_manager = settings.npm.package_manager;
+        let shell_out = settings.npm.shell_out;
         let tool_name = self.tool_name();
 
-        // `npm.shell_out` routes both metadata and install through the npm CLI.
-        if settings.npm.shell_out {
-            return Ok(vec!["node", "npm"]);
-        }
+        // Resolve the effective installer the same way `package_manager_for_install`
+        // does: `auto` is the embedded aube, or npm under `shell_out`; an explicit
+        // choice is always honored.
+        let installer = match settings.npm.package_manager {
+            NpmPackageManager::Auto if shell_out => NpmPackageManager::Npm,
+            NpmPackageManager::Auto => NpmPackageManager::Aube,
+            package_manager => package_manager,
+        };
 
         // Avoid a circular dependency when installing the configured external
         // package manager itself (e.g. npm:bun with package_manager=bun):
-        // bootstrap that install through npm. Embedded aube (Auto/Aube) has no
-        // such cycle — it installs any package, including bun/pnpm/npm.
-        if tool_name == package_manager.to_string()
-            && !matches!(
-                package_manager,
-                NpmPackageManager::Auto | NpmPackageManager::Aube
-            )
+        // bootstrap that install through npm. Embedded aube has no such cycle —
+        // it installs any package, including bun/pnpm/npm.
+        if tool_name == installer.to_string()
+            && !matches!(installer, NpmPackageManager::Auto | NpmPackageManager::Aube)
         {
             return Ok(vec!["node", "npm"]);
         }
 
         let mut deps = vec!["node"];
-        match package_manager {
+        // `shell_out` routes metadata through `npm view`, which needs npm even
+        // when an explicit non-npm installer does the install.
+        if shell_out {
+            deps.push("npm");
+        }
+        match installer {
             // Embedded aube — no external package-manager binary required.
             NpmPackageManager::Auto | NpmPackageManager::Aube => {}
-            NpmPackageManager::Npm => deps.push("npm"),
+            NpmPackageManager::Npm => {
+                if !deps.contains(&"npm") {
+                    deps.push("npm");
+                }
+            }
             NpmPackageManager::Bun => deps.push("bun"),
             NpmPackageManager::Pnpm => deps.push("pnpm"),
         }
@@ -831,13 +841,13 @@ impl NPMBackend {
         _ts: Option<&Toolset>,
     ) -> NpmPackageManager {
         let settings = Settings::get();
-        // `shell_out` opts out of the embedded package manager entirely.
-        if settings.npm.shell_out {
-            return NpmPackageManager::Npm;
-        }
         match settings.npm.package_manager {
-            // aube is embedded, so `auto` always resolves to it — no need to
-            // probe for an `aube` binary on PATH.
+            // aube is embedded, so `auto` normally resolves to it — no need to
+            // probe for an `aube` binary on PATH. `shell_out` opts the default
+            // path out of embedding, into the npm CLI. An explicit
+            // `package_manager` (including `aube`) is always honored, matching
+            // the `npm.shell_out` docs.
+            NpmPackageManager::Auto if settings.npm.shell_out => NpmPackageManager::Npm,
             NpmPackageManager::Auto => NpmPackageManager::Aube,
             package_manager => package_manager,
         }

@@ -15,19 +15,39 @@
 use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
 
+use aube_registry::NetworkMode;
 use aube_registry::client::RegistryClient;
 use aube_registry::config::NpmConfig;
 use eyre::Result;
 
 use crate::backend::VersionInfo;
 use crate::backend::npm::is_semver_prerelease;
+use crate::config::Settings;
 
 /// Process-wide npm registry client. Registry URLs, scoped registries, and
 /// auth are read once from the environment and the user's `~/.npmrc`; the
 /// neutral project dir keeps a cwd `.npmrc` out of mise-owned queries.
+///
+/// The network mode honors mise's offline flags so metadata queries don't hit
+/// the network when the user asked for offline — `offline()` fails on a cold
+/// cache, `prefer_offline()` serves the cache and only falls back to the
+/// network on a miss. (Offline state is set from the CLI/env at startup, so
+/// resolving it once at client construction is sufficient.)
 static CLIENT: Lazy<RegistryClient> = Lazy::new(|| {
     let config = NpmConfig::load(&meta_dir());
-    RegistryClient::from_config(config)
+    let settings = Settings::get();
+    let mode = if settings.offline() {
+        NetworkMode::Offline
+    } else if settings.prefer_offline() {
+        NetworkMode::PreferOffline
+    } else {
+        NetworkMode::Online
+    };
+    // Create the on-disk packument cache dir once here (client init runs at
+    // most once per process) rather than on every async fetch — keeps the
+    // blocking mkdir + its sync lock off the Tokio worker in the hot path.
+    let _ = crate::file::create_dir_all(meta_dir());
+    RegistryClient::from_config(config).with_network_mode(mode)
 });
 
 /// Neutral mise-owned directory used both as the client's "project dir" (so
@@ -41,10 +61,8 @@ fn meta_dir() -> PathBuf {
 /// on-disk cache. The full (non-corgi) route is used so the `time` map is
 /// present for release-date / `minimum_release_age` filtering.
 async fn fetch_packument(name: &str) -> Result<aube_registry::Packument> {
-    let cache_dir = meta_dir();
-    crate::file::create_dir_all(&cache_dir)?;
     Ok(CLIENT
-        .fetch_packument_with_time_cached(name, &cache_dir)
+        .fetch_packument_with_time_cached(name, &meta_dir())
         .await?)
 }
 
