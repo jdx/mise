@@ -190,3 +190,18 @@ assert_succeed "mise bootstrap --yes --only tools"
 assert_directory_not_exists "$HOME/src/only-skipped"
 assert_fail "test -f pre_repo_hook"
 assert_fail "test -f post_repo_hook"
+
+# relative keys resolve against the declaring config's project root
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"vendor/checkout" = { url = "$SRC_URL", ref = "main" }
+EOF
+assert_contains "mise bootstrap repos status" "missing"
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat vendor/checkout/version.txt" "v5"
+assert_contains "mise bootstrap repos status" "current"
+
+# resolution is project-root-relative, not cwd-relative
+mkdir -p nested
+assert_succeed "cd nested && mise bootstrap repos status --missing"
+assert_directory_not_exists "$PWD/nested/vendor"

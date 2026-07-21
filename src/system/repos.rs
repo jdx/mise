@@ -12,7 +12,7 @@
 //! matches. Origins are compared transport-agnostically for common network
 //! forms, so an ssh origin matches its https equivalent.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use eyre::{Result, bail, eyre};
@@ -72,11 +72,45 @@ pub struct RepoStatus {
 }
 
 impl RepoRequest {
-    pub fn from_toml(path_raw: String, config: RepoTomlConfig) -> Result<Self> {
-        let path = file::replace_path(&path_raw);
-        if path.is_relative() {
-            bail!("path must be absolute or start with ~/");
+    pub fn from_toml(
+        path_raw: String,
+        config: RepoTomlConfig,
+        project_root: Option<&Path>,
+    ) -> Result<Self> {
+        if path_raw.starts_with('~') && !path_raw.starts_with("~/") {
+            bail!(
+                "repo path `{path_raw}` cannot start with `~`; use `~/` for a home-relative path"
+            );
         }
+        let path = file::replace_path(&path_raw);
+        let path = if path.is_absolute() {
+            path
+        } else {
+            let Some(root) = project_root else {
+                bail!(
+                    "relative repo paths are only allowed in a project config; use an absolute path or a `~/` path"
+                );
+            };
+            if path.components().any(|component| {
+                matches!(
+                    component,
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                )
+            }) {
+                bail!(
+                    "relative repo path `{path_raw}` must stay within the project root (no `..` or absolute segments)"
+                );
+            }
+            if !path
+                .components()
+                .any(|component| matches!(component, Component::Normal(_)))
+            {
+                bail!(
+                    "relative repo path `{path_raw}` must name a directory inside the project root"
+                );
+            }
+            root.join(&path)
+        };
         let Some(url) = config.url.map(|s| s.trim().to_string()) else {
             bail!("must set `url`");
         };
@@ -811,19 +845,20 @@ mod tests {
                 url: Some(" https://example.com/dotfiles.git ".to_string()),
                 git_ref: Some(" main ".to_string()),
             },
+            None,
         )
         .unwrap();
         assert!(request.path.is_absolute());
         assert_eq!(request.url, "https://example.com/dotfiles.git");
         assert_eq!(request.git_ref.as_deref(), Some("main"));
-        assert!(RepoRequest::from_toml("relative".to_string(), Default::default()).is_err());
         assert!(
             RepoRequest::from_toml(
                 "~/src/empty".to_string(),
                 RepoTomlConfig {
                     url: Some("".to_string()),
                     git_ref: None
-                }
+                },
+                None
             )
             .is_err()
         );
@@ -833,7 +868,8 @@ mod tests {
                 RepoTomlConfig {
                     url: Some("--upload-pack=sh".to_string()),
                     git_ref: None
-                }
+                },
+                None
             )
             .is_err()
         );
@@ -843,9 +879,69 @@ mod tests {
                 RepoTomlConfig {
                     url: Some("https://example.com/repo.git".to_string()),
                     git_ref: Some("--detach".to_string())
-                }
+                },
+                None
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn resolves_relative_repo_paths() {
+        let root = Path::new("/home/u/proj");
+        let config = || RepoTomlConfig {
+            url: Some("https://example.com/tool.git".to_string()),
+            git_ref: None,
+        };
+
+        let request = RepoRequest::from_toml("vendor/tool".to_string(), config(), Some(root))
+            .expect("relative path with a project root should resolve");
+        assert_eq!(request.path, Path::new("/home/u/proj/vendor/tool"));
+        assert_eq!(request.path_raw, "vendor/tool");
+
+        assert!(
+            RepoRequest::from_toml("vendor/tool".to_string(), config(), None).is_err(),
+            "relative path without a project root should error"
+        );
+        assert!(
+            RepoRequest::from_toml("../evil".to_string(), config(), Some(root)).is_err(),
+            "relative path escaping the project root should error"
+        );
+        assert!(
+            RepoRequest::from_toml("".to_string(), config(), Some(root)).is_err(),
+            "empty path resolving to the project root itself should error"
+        );
+        assert!(
+            RepoRequest::from_toml(".".to_string(), config(), Some(root)).is_err(),
+            "`.` path resolving to the project root itself should error"
+        );
+        assert!(
+            RepoRequest::from_toml("~".to_string(), config(), Some(root)).is_err(),
+            "bare `~` should error instead of becoming a literal `~` directory"
+        );
+        assert!(
+            RepoRequest::from_toml("~user/x".to_string(), config(), Some(root)).is_err(),
+            "`~user/...` should error instead of becoming a literal `~user` directory"
+        );
+
+        #[cfg(unix)]
+        {
+            let request =
+                RepoRequest::from_toml("/abs/elsewhere".to_string(), config(), Some(root))
+                    .expect("absolute path should be accepted");
+            assert_eq!(
+                request.path,
+                Path::new("/abs/elsewhere"),
+                "absolute path should be used verbatim, not joined under the project root"
+            );
+        }
+
+        let request = RepoRequest::from_toml("~/src/dotfiles".to_string(), config(), Some(root))
+            .expect("~/ path should be accepted");
+        assert!(request.path.is_absolute());
+        assert!(
+            !request.path.starts_with(root),
+            "~/ path should expand to home, not be joined under the project root"
         );
     }
 

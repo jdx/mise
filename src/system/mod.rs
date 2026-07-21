@@ -477,7 +477,7 @@ pub fn repos_from_config(config: &Config) -> Vec<RepoRequest> {
     for cf in config.config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (path_raw, repo) in sys.repos {
-                match RepoRequest::from_toml(path_raw.clone(), repo) {
+                match RepoRequest::from_toml(path_raw.clone(), repo, cf.project_root().as_deref()) {
                     Ok(request) => {
                         merged.insert(request.path.clone(), request);
                     }
@@ -1485,13 +1485,24 @@ mod tests {
                 url: Some("https://github.com/jdx/dotfiles.git".to_string()),
                 git_ref: Some("main".to_string()),
             },
+            None,
         )
         .unwrap();
         assert!(request.path.is_absolute());
         assert_eq!(request.path_raw, "~/src/dotfiles");
         assert_eq!(request.url, "https://github.com/jdx/dotfiles.git");
         assert_eq!(request.git_ref.as_deref(), Some("main"));
-        assert!(repos::RepoRequest::from_toml("relative".to_string(), Default::default()).is_err());
+        assert!(
+            repos::RepoRequest::from_toml(
+                "relative".to_string(),
+                repos::RepoTomlConfig {
+                    url: Some("https://github.com/jdx/dotfiles.git".to_string()),
+                    git_ref: None,
+                },
+                None,
+            )
+            .is_err()
+        );
     }
 
     #[test]
