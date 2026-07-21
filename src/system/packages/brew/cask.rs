@@ -590,8 +590,7 @@ fn stage_font(stage: &Path, caskroom: &Path, font: &FontArtifact) -> Result<()> 
     if let Some(parent) = caskroom_font.parent() {
         file::create_dir_all(parent)?;
     }
-    let source = find_artifact(stage, &font.source)
-        .filter(|path| path.is_file())
+    let source = find_file_artifact(stage, &font.source)
         .ok_or_else(|| eyre!("brew-cask: font artifact '{}' was not found", font.source))?;
     ditto(&source, &caskroom_font)?;
     Ok(())
@@ -794,9 +793,8 @@ fn find_binary_source(
     {
         return Ok(source);
     }
-    find_artifact(caskroom, &binary.source)
-        .or_else(|| find_artifact(stage, &binary.source))
-        .filter(|path| path.is_file())
+    find_file_artifact(caskroom, &binary.source)
+        .or_else(|| find_file_artifact(stage, &binary.source))
         .ok_or_else(|| {
             eyre!(
                 "brew-cask: binary artifact '{}' was not found",
@@ -1048,41 +1046,54 @@ fn collect_uninstall_pkg_ids(value: &Value, pkg_ids: &mut Vec<String>) {
 }
 
 fn find_app(root: &Path, name: &str) -> Option<PathBuf> {
-    find_artifact(root, name).filter(|path| path.is_dir())
+    // `.app` bundles are directories; keep the type predicate inside the walk so a
+    // same-named file cannot shadow a later directory match.
+    find_artifact_matching(root, name, |path| path.is_dir())
 }
 
 fn find_artifact(root: &Path, name: &str) -> Option<PathBuf> {
+    find_artifact_matching(root, name, |_| true)
+}
+
+fn find_file_artifact(root: &Path, name: &str) -> Option<PathBuf> {
+    find_artifact_matching(root, name, |path| path.is_file())
+}
+
+/// Locate `name` under `root`, preferring exact path suffix match then ASCII
+/// case-insensitive suffix match (Homebrew/macOS APFS: cask may declare
+/// `yaak.app` while the DMG ships `Yaak.app`).
+///
+/// Exact match always wins when present. Case-insensitive fallback only runs
+/// when no exact match exists among entries satisfying `pred`. On case-sensitive
+/// volumes with multiple case variants and no exact hit, WalkDir order decides
+/// which fallback wins (pathological; rare for real casks).
+fn find_artifact_matching(
+    root: &Path,
+    name: &str,
+    pred: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
     let name_path = Path::new(name);
-    // Prefer exact path match (preserves Homebrew's declared casing).
-    if let Some(path) = WalkDir::new(root)
+    let mut case_insensitive = None;
+    for entry in WalkDir::new(root)
         .into_iter()
         .filter_entry(|entry| entry.file_name() != "__MACOSX")
         .filter_map(|entry| entry.ok())
-        .find(|entry| {
-            entry
-                .path()
-                .strip_prefix(root)
-                .is_ok_and(|relative| relative.ends_with(name_path))
-        })
-        .map(|entry| entry.into_path())
     {
-        return Some(path);
+        let path = entry.path();
+        if !pred(path) {
+            continue;
+        }
+        let Ok(relative) = path.strip_prefix(root) else {
+            continue;
+        };
+        if relative.ends_with(name_path) {
+            return Some(entry.into_path());
+        }
+        if case_insensitive.is_none() && path_ends_with_ignore_ascii_case(relative, name_path) {
+            case_insensitive = Some(entry.into_path());
+        }
     }
-    // macOS APFS is usually case-insensitive; Homebrew succeeds when the
-    // cask declares `app "yaak.app"` but the DMG ships `Yaak.app`.
-    // Match case-insensitively only as a fallback so we do not change
-    // case-sensitive filesystems' exact-match preference.
-    WalkDir::new(root)
-        .into_iter()
-        .filter_entry(|entry| entry.file_name() != "__MACOSX")
-        .filter_map(|entry| entry.ok())
-        .find(|entry| {
-            entry
-                .path()
-                .strip_prefix(root)
-                .is_ok_and(|relative| path_ends_with_ignore_ascii_case(relative, name_path))
-        })
-        .map(|entry| entry.into_path())
+    case_insensitive
 }
 
 /// True when `path`'s trailing components match `suffix` with ASCII
@@ -1097,9 +1108,10 @@ fn path_ends_with_ignore_ascii_case(path: &Path, suffix: &Path) -> bool {
         .iter()
         .zip(suffix.iter())
         .all(|(a, b)| match (a, b) {
-            (std::path::Component::Normal(a), std::path::Component::Normal(b)) => a
-                .to_string_lossy()
-                .eq_ignore_ascii_case(&b.to_string_lossy()),
+            (Component::Normal(a), Component::Normal(b)) => match (a.to_str(), b.to_str()) {
+                (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+                _ => *a == *b,
+            },
             _ => a == b,
         })
 }
@@ -1663,6 +1675,53 @@ end
     }
 
     #[test]
+    fn artifact_lookup_skips_macos_metadata_for_case_insensitive_match() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        file::create_dir_all(tmp.path().join("__MACOSX/Yaak.app"))?;
+        let app = tmp.path().join("Yaak.app");
+        file::create_dir_all(&app)?;
+
+        assert_eq!(find_app(tmp.path(), "yaak.app"), Some(app));
+        Ok(())
+    }
+
+    #[test]
+    fn find_app_ignores_file_that_matches_app_name() -> Result<()> {
+        // A same-named regular file must not shadow a later .app directory.
+        let tmp = tempfile::tempdir()?;
+        std::fs::write(tmp.path().join("yaak.app"), b"not a bundle")?;
+        let app = tmp.path().join("nested/Yaak.app");
+        file::create_dir_all(&app)?;
+
+        assert_eq!(find_app(tmp.path(), "yaak.app"), Some(app));
+        Ok(())
+    }
+
+    #[test]
+    fn path_ends_with_ignore_ascii_case_matches_components() {
+        assert!(path_ends_with_ignore_ascii_case(
+            Path::new("payload/Yaak.app"),
+            Path::new("yaak.app")
+        ));
+        assert!(path_ends_with_ignore_ascii_case(
+            Path::new("Yaak.app"),
+            Path::new("yaak.app")
+        ));
+        assert!(!path_ends_with_ignore_ascii_case(
+            Path::new("Yaak.app"),
+            Path::new("Other.app")
+        ));
+        assert!(!path_ends_with_ignore_ascii_case(
+            Path::new("Yaak.app"),
+            Path::new("")
+        ));
+        assert!(!path_ends_with_ignore_ascii_case(
+            Path::new("Yaak.app"),
+            Path::new("/Yaak.app")
+        ));
+    }
+
+    #[test]
     fn maps_preflight_generated_wrapper_from_extract_stage() -> Result<()> {
         // VLC: preflight writes `#{staged_path}/vlc.wrapper.sh` while preflight
         // staged_path is the extract stage, not the temp Caskroom. API binary
@@ -1687,6 +1746,33 @@ end
         assert_eq!(
             find_binary_source(&stage, &tmp_caskroom, &cask, &binary)?,
             wrapper
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn prefers_temp_caskroom_wrapper_over_extract_stage() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let cask = test_cask("vlc", "3.0.23");
+        let stage = tmp.path().join("extract");
+        let tmp_caskroom = tmp.path().join("tmp-caskroom");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(&tmp_caskroom)?;
+        std::fs::write(stage.join("vlc.wrapper.sh"), "#!/bin/sh\necho stage\n")?;
+        let preferred = tmp_caskroom.join("vlc.wrapper.sh");
+        std::fs::write(&preferred, "#!/bin/sh\necho caskroom\n")?;
+
+        let binary = BinaryArtifact {
+            source: "$HOMEBREW_PREFIX/Caskroom/vlc/3.0.23/vlc.wrapper.sh".to_string(),
+            target: Some("vlc".to_string()),
+        };
+
+        assert_eq!(
+            find_binary_source(&stage, &tmp_caskroom, &cask, &binary)?,
+            preferred
         );
         Ok(())
     }
