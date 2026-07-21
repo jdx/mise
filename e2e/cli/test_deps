@@ -553,6 +553,11 @@ EOF
 
 touch subapp/input.txt
 
+# Task-discovered providers must not bypass the deps experimental gate
+unset MISE_EXPERIMENTAL
+assert_fail "mise run //subapp:check" "deps is experimental"
+export MISE_EXPERIMENTAL=1
+
 # Run the task from root using monorepo syntax
 assert_contains "mise run //subapp:check" "SUBAPP_PREPARE_OK"
 

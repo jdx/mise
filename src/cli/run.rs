@@ -413,7 +413,7 @@ impl Run {
             let mut engine = DepsEngine::new(&config)?;
 
             if !subdir_configs.is_empty() {
-                engine.add_config_files(subdir_configs);
+                engine.add_config_files(subdir_configs)?;
             }
 
             let result = engine

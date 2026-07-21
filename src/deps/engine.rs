@@ -385,7 +385,7 @@ impl DepsEngine {
     pub fn add_config_files(
         &mut self,
         config_files: impl IntoIterator<Item = Arc<dyn ConfigFile>>,
-    ) {
+    ) -> Result<()> {
         let mut seen_ids: HashSet<String> =
             self.providers.iter().map(|p| p.id().to_string()).collect();
         let mut disabled: Vec<String> = vec![];
@@ -416,6 +416,12 @@ impl DepsEngine {
             self.providers
                 .retain(|p| !disabled.contains(&p.id().to_string()));
         }
+
+        if !self.providers.is_empty() {
+            Settings::get().ensure_experimental("deps")?;
+        }
+
+        Ok(())
     }
 
     /// List all discovered providers
