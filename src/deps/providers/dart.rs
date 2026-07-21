@@ -4,7 +4,7 @@ use eyre::Result;
 use path_absolutize::Absolutize;
 
 use crate::deps::rule::DepsProviderConfig;
-use crate::deps::{DepsCommand, DepsProvider};
+use crate::deps::{DepsCommand, DepsProvider, DepsProviderApplicability};
 
 use super::ProviderBase;
 
@@ -68,8 +68,11 @@ impl DepsProvider for DartDepsProvider {
         })
     }
 
-    fn is_applicable(&self) -> bool {
-        self.base.config_root().join("pubspec.yaml").exists()
+    fn applicability(&self) -> DepsProviderApplicability {
+        DepsProviderApplicability::require_file(
+            &self.base.config_root().join("pubspec.yaml"),
+            "pubspec.yaml",
+        )
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {

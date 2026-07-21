@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use eyre::Result;
 
 use crate::deps::rule::DepsProviderConfig;
-use crate::deps::{DepsCommand, DepsProvider};
+use crate::deps::{DepsCommand, DepsProvider, DepsProviderApplicability};
 
 use super::ProviderBase;
 
@@ -65,7 +65,10 @@ impl DepsProvider for PipDepsProvider {
         })
     }
 
-    fn is_applicable(&self) -> bool {
-        self.base.config_root().join("requirements.txt").exists()
+    fn applicability(&self) -> DepsProviderApplicability {
+        DepsProviderApplicability::require_file(
+            &self.base.config_root().join("requirements.txt"),
+            "requirements.txt",
+        )
     }
 }

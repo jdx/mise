@@ -1,7 +1,7 @@
 use eyre::{Result, bail};
 
 use crate::config::Config;
-use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
+use crate::deps::{DepsEngine, DepsOptions, DepsProviderApplicability, DepsStepResult};
 use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 
 /// Install all project dependencies
@@ -167,7 +167,7 @@ impl DepsInstall {
             bail!("Provider '{provider_id}' not found.\n\nAvailable providers:\n{available}");
         };
 
-        let freshness = engine.check_provider_freshness(provider)?;
+        let applicability = provider.applicability();
 
         // Header
         miseprintln!("Provider: {}", provider.id());
@@ -209,6 +209,12 @@ impl DepsInstall {
 
         // Verdict
         miseprintln!("");
+        if let DepsProviderApplicability::Inactive(reason) = applicability {
+            miseprintln!("Status: inactive ({reason})");
+            bail!("provider '{}' is inactive: {reason}", provider.id());
+        }
+
+        let freshness = engine.check_provider_freshness(provider)?;
         if freshness.is_fresh() {
             miseprintln!("Status: fresh ({})", freshness.reason());
         } else {
@@ -247,6 +253,14 @@ impl DepsInstall {
                 .join(", ");
 
             miseprintln!("  {}", provider.id());
+            match provider.applicability() {
+                DepsProviderApplicability::Applicable => {
+                    miseprintln!("    status: active");
+                }
+                DepsProviderApplicability::Inactive(reason) => {
+                    miseprintln!("    status: inactive ({reason})");
+                }
+            }
             miseprintln!("    sources: {}", sources);
             miseprintln!("    outputs: {}", outputs);
         }

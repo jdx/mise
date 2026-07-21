@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use eyre::Result;
 
 use crate::deps::rule::DepsProviderConfig;
-use crate::deps::{DepsCommand, DepsProvider};
+use crate::deps::{DepsCommand, DepsProvider, DepsProviderApplicability};
 
 use super::ProviderBase;
 
@@ -62,7 +62,10 @@ impl DepsProvider for BundlerDepsProvider {
         })
     }
 
-    fn is_applicable(&self) -> bool {
-        self.base.config_root().join("Gemfile.lock").exists()
+    fn applicability(&self) -> DepsProviderApplicability {
+        DepsProviderApplicability::require_file(
+            &self.base.config_root().join("Gemfile.lock"),
+            "Gemfile.lock",
+        )
     }
 }

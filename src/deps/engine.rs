@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use eyre::Result;
+use eyre::{Result, bail};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
@@ -85,8 +85,8 @@ impl DepsProvider for ScopedDepsProvider {
         self.inner.install_command()
     }
 
-    fn is_applicable(&self) -> bool {
-        self.inner.is_applicable()
+    fn applicability(&self) -> super::DepsProviderApplicability {
+        self.inner.applicability()
     }
 
     fn is_auto(&self) -> bool {
@@ -115,7 +115,7 @@ use super::providers::{
 };
 use super::rule::BUILTIN_PROVIDERS;
 use super::state::{self, DepsState};
-use super::{DepsProvider, FreshnessResult};
+use super::{DepsProvider, DepsProviderApplicability, FreshnessResult};
 
 /// Options for running deps steps
 #[derive(Debug, Default)]
@@ -179,7 +179,7 @@ pub struct DepsEngine {
 }
 
 impl DepsEngine {
-    /// Create a new DepsEngine, discovering all applicable providers
+    /// Create a new DepsEngine, discovering all configured providers.
     pub fn new(config: &Config) -> Result<Self> {
         let providers = Self::discover_providers(config)?;
         // Only require experimental when deps is actually configured
@@ -210,7 +210,7 @@ impl DepsEngine {
             .monorepo_root()
             .ok_or_else(|| eyre::eyre!("no config file in scope sets monorepo_root = true"))?;
         let mut scoped_providers: Vec<(Box<dyn DepsProvider>, String, String)> = vec![];
-        let mut seen_ids = HashSet::new();
+        let mut provider_indices: HashMap<String, usize> = HashMap::new();
         let config_files: Vec<_> = config_files.into_iter().collect();
         let mut disabled_by_root: HashMap<PathBuf, HashSet<String>> = HashMap::new();
 
@@ -258,14 +258,29 @@ impl DepsEngine {
                 let scoped_id = format!("{scope}:{id}");
                 if let Some(provider) =
                     Self::build_provider(id, &config_root, provider_config.clone())
-                    && provider.is_applicable()
-                    && seen_ids.insert(scoped_id.clone())
                 {
-                    scoped_providers.push((provider, scoped_id, scope.clone()));
+                    if let Some(index) = provider_indices.get(&scoped_id).copied() {
+                        // Before inactive providers were retained, layered
+                        // discovery selected the first applicable definition.
+                        // Preserve that precedence while retaining the
+                        // highest-precedence inactive definition only when no
+                        // applicable definition exists.
+                        if !scoped_providers[index].0.is_applicable() && provider.is_applicable() {
+                            scoped_providers[index] = (provider, scoped_id, scope.clone());
+                        }
+                    } else {
+                        provider_indices.insert(scoped_id.clone(), scoped_providers.len());
+                        scoped_providers.push((provider, scoped_id, scope.clone()));
+                    }
                 }
             }
         }
 
+        let applicable_ids = scoped_providers
+            .iter()
+            .filter(|(provider, _, _)| provider.is_applicable())
+            .map(|(_, scoped_id, _)| scoped_id.clone())
+            .collect();
         let providers: Vec<Box<dyn DepsProvider>> = scoped_providers
             .into_iter()
             .map(|(provider, scoped_id, scope)| {
@@ -273,7 +288,7 @@ impl DepsEngine {
                     provider,
                     scoped_id,
                     &scope,
-                    &seen_ids,
+                    &applicable_ids,
                     fallback_ids,
                     qualified_fallback_ids,
                 )) as Box<dyn DepsProvider>
@@ -294,6 +309,7 @@ impl DepsEngine {
         let mut providers = Self::discover_providers(config)?;
         let fallback_ids = providers
             .iter()
+            .filter(|provider| provider.is_applicable())
             .map(|provider| provider.id().to_string())
             .collect();
         let monorepo_root = config
@@ -307,6 +323,7 @@ impl DepsEngine {
                 Some(
                     providers
                         .iter()
+                        .filter(|provider| provider.is_applicable())
                         .filter(|provider| provider.base().project_root.as_path() == project_root)
                         .map(|provider| {
                             (
@@ -331,7 +348,7 @@ impl DepsEngine {
         Ok(Self { providers })
     }
 
-    /// Discover all applicable deps providers for the current project
+    /// Discover all configured deps providers for the current project.
     ///
     /// Each config file's deps providers are scoped to that config file's directory.
     /// For example, a `[deps.pnpm]` defined in the root `mise.toml` only applies when
@@ -376,7 +393,6 @@ impl DepsEngine {
 
                 if let Some(provider) =
                     Self::build_provider(id, &config_root, provider_config.clone())
-                    && provider.is_applicable()
                 {
                     providers.push(provider);
                 }
@@ -455,7 +471,7 @@ impl DepsEngine {
         }
     }
 
-    /// List all discovered providers
+    /// List all discovered providers, including inactive providers.
     pub fn list_providers(&self) -> Vec<&dyn DepsProvider> {
         self.providers.iter().map(|p| p.as_ref()).collect()
     }
@@ -479,6 +495,7 @@ impl DepsEngine {
         self.providers
             .iter()
             .filter(|p| p.is_auto())
+            .filter(|p| p.is_applicable())
             .filter_map(|p| {
                 let result = self.check_freshness(p.as_ref());
                 match result {
@@ -493,6 +510,21 @@ impl DepsEngine {
     pub async fn run(&self, opts: DepsOptions) -> Result<DepsResult> {
         let mut results = vec![];
 
+        if let Some(only) = &opts.only {
+            for id in only {
+                if opts.skip.contains(id) {
+                    continue;
+                }
+                let Some(provider) = self.providers.iter().find(|provider| provider.id() == id)
+                else {
+                    continue;
+                };
+                if let DepsProviderApplicability::Inactive(reason) = provider.applicability() {
+                    bail!("provider '{}' is inactive: {reason}", provider.id());
+                }
+            }
+        }
+
         // Collect providers that need to run
         let mut to_run: Vec<DepsJob> = vec![];
         // Track IDs of providers that are fresh/skipped (treated as already satisfied for deps)
@@ -500,6 +532,13 @@ impl DepsEngine {
 
         for provider in &self.providers {
             let id = provider.id().to_string();
+
+            if !provider.is_applicable() {
+                trace!("deps step {} is inactive, skipping", id);
+                results.push(DepsStepResult::Skipped(id.clone()));
+                satisfied_ids.insert(id);
+                continue;
+            }
 
             // Check auto_only filter
             if opts.auto_only && !provider.is_auto() {
@@ -868,6 +907,13 @@ impl DepsEngine {
     /// Uses blake3 content hashing with persistent state. On first run (no
     /// stored hashes), the provider is always considered stale.
     pub fn check_freshness(&self, provider: &dyn DepsProvider) -> Result<FreshnessResult> {
+        if let DepsProviderApplicability::Inactive(reason) = provider.applicability() {
+            return Err(eyre::eyre!(
+                "deps provider '{}' is inactive: {reason}",
+                provider.id()
+            ));
+        }
+
         let sources = provider.sources();
         let outputs = provider.outputs();
         let optional_outputs = provider.optional_outputs();

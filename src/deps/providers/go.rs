@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use eyre::Result;
 
 use crate::deps::rule::DepsProviderConfig;
-use crate::deps::{DepsCommand, DepsProvider};
+use crate::deps::{DepsCommand, DepsProvider, DepsProviderApplicability};
 
 use super::ProviderBase;
 
@@ -78,8 +78,8 @@ impl DepsProvider for GoDepsProvider {
         })
     }
 
-    fn is_applicable(&self) -> bool {
+    fn applicability(&self) -> DepsProviderApplicability {
         // Check for go.mod (the source/lockfile), not go.sum (which may be an output)
-        self.base.config_root().join("go.mod").exists()
+        DepsProviderApplicability::require_file(&self.base.config_root().join("go.mod"), "go.mod")
     }
 }
