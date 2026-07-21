@@ -31,7 +31,7 @@ run_hooks_to_file() {
 
 contains_trust_warning() {
   local file="$1"
-  grep -Eq 'Config file(\(s\)|s)? in' "$file" && grep -q "are not trusted" "$file"
+  grep -q "not trusted" "$file"
 }
 
 contains_mise_precmd_hook() {
