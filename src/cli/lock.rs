@@ -178,6 +178,14 @@ impl Lock {
                     &lock_resolve_options,
                 )
                 .await?;
+            let (configured_tools, configured_backends) = self
+                .configured_tool_selectors_for_target(
+                    &config,
+                    &tools,
+                    lockfile_path,
+                    config_paths,
+                    effective_config_files,
+                );
 
             if tools.is_empty() {
                 // `tools` can be empty either because config has no tools, or because a filter excludes all.
@@ -191,7 +199,11 @@ impl Lock {
                             lockfile_path,
                         ));
                     }
-                    let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools);
+                    let stale_tools = self.stale_entries_if_pruned(
+                        &lockfile,
+                        &configured_tools,
+                        &configured_backends,
+                    );
                     self.show_stale_prune_message(lockfile_path, &stale_tools, true)?;
                     if !stale_tools.is_empty() {
                         has_lock_targets = true;
@@ -208,7 +220,11 @@ impl Lock {
                             lockfile_path,
                         ));
                     }
-                    let pruned_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
+                    let pruned_tools = self.prune_stale_entries_if_needed(
+                        &mut lockfile,
+                        &configured_tools,
+                        &configured_backends,
+                    );
                     if !pruned_tools.is_empty() {
                         lockfile.write(lockfile_path)?;
                         self.show_stale_prune_message(lockfile_path, &pruned_tools, false)?;
@@ -257,7 +273,11 @@ impl Lock {
                     ));
                 }
                 if self.is_unfiltered_lock_run() {
-                    let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools);
+                    let stale_tools = self.stale_entries_if_pruned(
+                        &lockfile,
+                        &configured_tools,
+                        &configured_backends,
+                    );
                     self.show_stale_prune_message(lockfile_path, &stale_tools, true)?;
                 }
                 let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
@@ -273,7 +293,11 @@ impl Lock {
             if self.json {
                 all_changes.extend(self.compute_version_changes(&lockfile, &tools, lockfile_path));
             }
-            let stale_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
+            let stale_tools = self.prune_stale_entries_if_needed(
+                &mut lockfile,
+                &configured_tools,
+                &configured_backends,
+            );
             self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
 
             // Compute stale versions BEFORE process_tools so provenance checks can
@@ -441,16 +465,16 @@ impl Lock {
     fn prune_stale_entries_if_needed(
         &self,
         lockfile: &mut Lockfile,
-        tools: &[(crate::cli::args::BackendArg, crate::toolset::ToolVersion)],
+        configured_tools: &BTreeSet<String>,
+        configured_backends: &BTreeSet<String>,
     ) -> BTreeSet<String> {
         if !self.is_unfiltered_lock_run() {
             return BTreeSet::new();
         }
-        let (configured_tools, configured_backends) = self.configured_tool_selectors(tools);
         let stale_tools =
-            self.stale_entries_for_selectors(lockfile, &configured_tools, &configured_backends);
+            self.stale_entries_for_selectors(lockfile, configured_tools, configured_backends);
         if !stale_tools.is_empty() {
-            lockfile.retain_tools_by_short_or_backend(&configured_tools, &configured_backends);
+            lockfile.retain_tools_by_short_or_backend(configured_tools, configured_backends);
         }
         stale_tools
     }
@@ -471,13 +495,13 @@ impl Lock {
     fn stale_entries_if_pruned(
         &self,
         lockfile: &Lockfile,
-        tools: &[(crate::cli::args::BackendArg, crate::toolset::ToolVersion)],
+        configured_tools: &BTreeSet<String>,
+        configured_backends: &BTreeSet<String>,
     ) -> BTreeSet<String> {
         if !self.is_unfiltered_lock_run() {
             return BTreeSet::new();
         }
-        let (configured_tools, configured_backends) = self.configured_tool_selectors(tools);
-        self.stale_entries_for_selectors(lockfile, &configured_tools, &configured_backends)
+        self.stale_entries_for_selectors(lockfile, configured_tools, configured_backends)
     }
 
     fn stale_versions_if_pruned(
@@ -543,6 +567,41 @@ impl Lock {
         let configured_tools: BTreeSet<String> =
             tools.iter().map(|(ba, _)| ba.short.clone()).collect();
         let configured_backends: BTreeSet<String> = tools.iter().map(|(ba, _)| ba.full()).collect();
+        (configured_tools, configured_backends)
+    }
+
+    fn configured_tool_selectors_for_target(
+        &self,
+        config: &Config,
+        tools: &[LockTool],
+        target_lockfile_path: &Path,
+        config_paths: &[PathBuf],
+        effective_config_files: &ConfigMap,
+    ) -> (BTreeSet<String>, BTreeSet<String>) {
+        let (mut configured_tools, mut configured_backends) = self.configured_tool_selectors(tools);
+        let config_paths: BTreeSet<&PathBuf> = config_paths.iter().collect();
+
+        for (path, cf) in effective_config_files {
+            let source = cf.source();
+            let source_lockfile_matches = lockfile::lockfile_path_for_tool_source(config, &source)
+                .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path);
+            if !(config_paths.contains(path)
+                || source.is_idiomatic_version_file() && source_lockfile_matches)
+            {
+                continue;
+            }
+            let Ok(trs) = cf.to_tool_request_set() else {
+                continue;
+            };
+            for (ba, _, _) in trs.iter() {
+                // Pruning answers whether the tool is still declared, not whether its
+                // backend can resolve on this machine. In particular, OS-restricted
+                // tools may be intentionally unavailable on the current platform.
+                configured_tools.insert(ba.short.clone());
+                configured_backends.insert(ba.full());
+            }
+        }
+
         (configured_tools, configured_backends)
     }
 
@@ -1105,7 +1164,11 @@ mod tests {
     fn test_prune_stale_entries_with_empty_tools_prunes_all_entries() {
         let cmd = lock_cmd(&[]);
         let mut lockfile = lockfile_with_dummy();
-        let pruned = cmd.prune_stale_entries_if_needed(&mut lockfile, &[]);
+        let pruned = cmd.prune_stale_entries_if_needed(
+            &mut lockfile,
+            &std::collections::BTreeSet::new(),
+            &std::collections::BTreeSet::new(),
+        );
         assert_eq!(
             pruned,
             std::collections::BTreeSet::from(["dummy".to_string()])
@@ -1117,7 +1180,11 @@ mod tests {
     fn test_prune_stale_entries_with_filter_keeps_existing_entries() {
         let cmd = lock_cmd(&["tiny"]);
         let mut lockfile = lockfile_with_dummy();
-        let pruned = cmd.prune_stale_entries_if_needed(&mut lockfile, &[]);
+        let pruned = cmd.prune_stale_entries_if_needed(
+            &mut lockfile,
+            &std::collections::BTreeSet::new(),
+            &std::collections::BTreeSet::new(),
+        );
         assert!(pruned.is_empty());
         assert_eq!(
             lockfile.all_platform_keys(),
@@ -1130,8 +1197,13 @@ mod tests {
         let cmd = lock_cmd(&[]);
         let mut lockfile = lockfile_with_legacy_aqua_jq();
         let tools = vec![configured_tool("aqua:jqlang/jq", "1.7.1")];
+        let (configured_tools, configured_backends) = cmd.configured_tool_selectors(&tools);
 
-        let pruned = cmd.prune_stale_entries_if_needed(&mut lockfile, &tools);
+        let pruned = cmd.prune_stale_entries_if_needed(
+            &mut lockfile,
+            &configured_tools,
+            &configured_backends,
+        );
         assert!(pruned.is_empty());
 
         assert_eq!(
