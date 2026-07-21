@@ -779,8 +779,8 @@ fn find_binary_source(
     // Homebrew API often records preflight/postflight wrappers as
     // `$HOMEBREW_PREFIX/Caskroom/<token>/<version>/<name>`. Map that final
     // path onto:
-    //   1) temp caskroom (postflight, or preflight if staged there)
-    //   2) extract stage (preflight runs with staged_path = stage; e.g. VLC)
+    //   1) temp caskroom (postflight runs with staged_path = temp caskroom)
+    //   2) extract stage (preflight runs with staged_path = extract stage; e.g. VLC)
     for root in [caskroom, stage] {
         if let Some(source) = generated_caskroom_artifact(root, cask, &binary.source)
             && source.is_file()
@@ -810,7 +810,7 @@ fn absolute_binary_source(source: &str) -> Option<PathBuf> {
     source.is_absolute().then_some(source)
 }
 
-fn generated_caskroom_artifact(caskroom: &Path, cask: &Cask, source: &str) -> Option<PathBuf> {
+fn generated_caskroom_artifact(root: &Path, cask: &Cask, source: &str) -> Option<PathBuf> {
     let prefix = prefix::prefix();
     let source = source.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy());
     let source = PathBuf::from(source);
@@ -822,7 +822,7 @@ fn generated_caskroom_artifact(caskroom: &Path, cask: &Cask, source: &str) -> Op
     {
         return None;
     }
-    Some(caskroom.join(relative))
+    Some(root.join(relative))
 }
 
 fn cask_appdir(apps: &[AppArtifact]) -> Result<PathBuf> {
