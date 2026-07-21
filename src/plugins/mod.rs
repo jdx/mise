@@ -266,7 +266,7 @@ pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
 
 pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(
-        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|-nightly|-canary|-experimental|-insider|-edge|snapshot|SNAPSHOT|master|\d(?:alpha|beta|rc)\d+$)"
+        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|-nightly|-canary|-experimental|-insider|-edge|snapshot|SNAPSHOT|master|\d(?:alpha|beta|rc)\d*\b)"
     )
         .unwrap()
 });
@@ -745,6 +745,8 @@ mod tests {
         assert!(VERSION_REGEX.is_match("8.5.9alpha1"));
         assert!(VERSION_REGEX.is_match("8.5.9beta2"));
         assert!(VERSION_REGEX.is_match("8.5.9RC1"));
+        assert!(VERSION_REGEX.is_match("4.0.1RC"));
+        assert!(VERSION_REGEX.is_match("8.3.1RC1-clean"));
 
         // PEP 440 dot-separated dev versions (GitHub discussion #8784)
         assert!(
@@ -784,6 +786,8 @@ mod tests {
         assert!(!VERSION_REGEX.is_match("1.0.0"));
         assert!(!VERSION_REGEX.is_match("2026.3.3"));
         assert!(!VERSION_REGEX.is_match("22.6.0"));
+        assert!(!VERSION_REGEX.is_match("4.0.1pl1"));
+        assert!(!VERSION_REGEX.is_match("4.0.4REL"));
 
         // PEP 440 separator-less suffixes (`3.12.0a1`, `1.2.3c1`) live in
         // PEP440_PRERELEASE_REGEX, not the general regex — see that test below.
