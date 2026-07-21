@@ -75,6 +75,56 @@ impl DepsState {
     pub fn set_seen_outputs(&mut self, provider_id: &str, outputs: Vec<String>) {
         self.seen_outputs.insert(provider_id.to_string(), outputs);
     }
+
+    /// Copy state from the old scoped provider key to its stable key.
+    ///
+    /// `current_id` identifies the exact legacy key for scoped providers. Plain
+    /// providers can still migrate when exactly one qualified key matches in
+    /// this project-root state file.
+    pub fn migrate_provider_id(&mut self, state_id: &str, current_id: &str) -> bool {
+        let legacy_id = if current_id != state_id
+            && (self.providers.contains_key(current_id)
+                || self.seen_outputs.contains_key(current_id))
+        {
+            Some(current_id.to_string())
+        } else {
+            self.unique_qualified_id(state_id)
+        };
+        let Some(legacy_id) = legacy_id else {
+            return false;
+        };
+
+        let mut changed = false;
+        if !self.providers.contains_key(state_id)
+            && let Some(hashes) = self.providers.get(&legacy_id).cloned()
+        {
+            self.providers.insert(state_id.to_string(), hashes);
+            changed = true;
+        }
+        if !self.seen_outputs.contains_key(state_id)
+            && let Some(outputs) = self.seen_outputs.get(&legacy_id).cloned()
+        {
+            self.seen_outputs.insert(state_id.to_string(), outputs);
+            changed = true;
+        }
+        changed
+    }
+
+    fn unique_qualified_id(&self, state_id: &str) -> Option<String> {
+        let suffix = format!(":{state_id}");
+        let mut matched: Option<&str> = None;
+        for id in self.providers.keys().chain(self.seen_outputs.keys()) {
+            if !id.starts_with("//") || !id.ends_with(&suffix) {
+                continue;
+            }
+            match matched {
+                None => matched = Some(id),
+                Some(existing) if existing == id => {}
+                Some(_) => return None,
+            }
+        }
+        matched.map(str::to_string)
+    }
 }
 
 /// Stringify a path relative to the project root using the same convention as
@@ -143,4 +193,49 @@ fn state_path(project_root: &Path) -> PathBuf {
     dirs::STATE
         .join("deps")
         .join(format!("{}.toml", hash_to_str(&project_root)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrates_scoped_provider_state_to_stable_id() {
+        let hashes = BTreeMap::from([("input.txt".to_string(), "hash".to_string())]);
+        let mut state = DepsState {
+            providers: BTreeMap::from([("//packages/a:setup".to_string(), hashes.clone())]),
+            seen_outputs: BTreeMap::from([(
+                "//packages/a:setup".to_string(),
+                vec!["output.txt".to_string()],
+            )]),
+        };
+
+        assert!(state.migrate_provider_id("setup", "//packages/a:setup"));
+        assert_eq!(state.get_hashes("setup"), Some(&hashes));
+        assert_eq!(
+            state.get_seen_outputs("setup"),
+            Some(&vec!["output.txt".to_string()])
+        );
+    }
+
+    #[test]
+    fn plain_provider_migrates_only_a_unique_qualified_id() {
+        let hashes = BTreeMap::from([("input.txt".to_string(), "hash".to_string())]);
+        let mut state = DepsState {
+            providers: BTreeMap::from([("//packages/a:setup".to_string(), hashes.clone())]),
+            seen_outputs: BTreeMap::new(),
+        };
+
+        assert!(state.migrate_provider_id("setup", "setup"));
+        assert_eq!(state.get_hashes("setup"), Some(&hashes));
+
+        state
+            .providers
+            .insert("//other/a:build".to_string(), hashes);
+        state
+            .providers
+            .insert("//packages/a:build".to_string(), BTreeMap::new());
+        assert!(!state.migrate_provider_id("build", "build"));
+        assert_eq!(state.get_hashes("build"), None);
+    }
 }

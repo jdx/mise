@@ -845,6 +845,23 @@ assert "test -f deps-monorepo/root-output.txt"
 assert "test -f deps-monorepo/packages/a/built.txt"
 assert "test -f deps-monorepo/packages/b/built.txt"
 
+# Scoped and plain invocation share freshness state for the same provider root.
+# First verify state written by monorepo mode is visible to plain mode.
+assert_contains "cd deps-monorepo/packages/a && mise deps --only setup 2>&1" "up to date"
+
+# Then verify state written by plain mode is visible to monorepo mode.
+cat >>deps-monorepo/packages/a/mise.toml <<'EOF'
+
+[deps.state]
+sources = ["state-input.txt"]
+outputs = ["state-output.txt"]
+run = "echo run >> state-runs.txt && cp state-input.txt state-output.txt"
+EOF
+echo a >deps-monorepo/packages/a/state-input.txt
+assert "cd deps-monorepo/packages/a && mise deps --only state"
+assert_contains "cd deps-monorepo && mise deps --monorepo --only //packages/a:state 2>&1" "up to date"
+assert "test \"$(wc -l <deps-monorepo/packages/a/state-runs.txt)\" -eq 1"
+
 # Qualified names can target one provider when names repeat across config roots.
 rm -f deps-monorepo/root-output.txt \
   deps-monorepo/packages/a/output.txt \

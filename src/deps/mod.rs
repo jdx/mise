@@ -114,6 +114,16 @@ pub trait DepsProvider: Debug + Send + Sync {
         &self.base().id
     }
 
+    /// Stable identifier used for persistent freshness state.
+    ///
+    /// This may differ from [`Self::id`] when a provider is wrapped with a
+    /// scope for display, selection, and dependency ordering. State files are
+    /// already isolated by project root, so the provider's unscoped identity
+    /// should be used consistently across invocation modes.
+    fn state_id(&self) -> &str {
+        self.id()
+    }
+
     /// Returns the source files to check for freshness (lock files, config files)
     fn sources(&self) -> Vec<PathBuf>;
 

@@ -69,6 +69,10 @@ impl DepsProvider for ScopedDepsProvider {
         &self.id
     }
 
+    fn state_id(&self) -> &str {
+        self.inner.state_id()
+    }
+
     fn sources(&self) -> Vec<PathBuf> {
         self.inner.sources()
     }
@@ -603,8 +607,8 @@ impl DepsEngine {
                             .map(|p| state::relative_str(p, project_root))
                             .collect();
                         let mut st = DepsState::load(project_root);
-                        st.set_hashes(id, hashes);
-                        st.set_seen_outputs(id, seen);
+                        st.set_hashes(provider.state_id(), hashes);
+                        st.set_seen_outputs(provider.state_id(), seen);
                         if let Err(e) = st.save(project_root) {
                             warn!("failed to save deps state: {e}");
                         }
@@ -872,8 +876,13 @@ impl DepsEngine {
         let optional_outputs = provider.optional_outputs();
 
         let project_root = &provider.base().project_root;
-        let st = DepsState::load(project_root);
-        let provider_id = provider.id();
+        let mut st = DepsState::load(project_root);
+        let state_id = provider.state_id();
+        if st.migrate_provider_id(state_id, provider.id())
+            && let Err(e) = st.save(project_root)
+        {
+            warn!("failed to migrate deps state: {e}");
+        }
 
         // Session-stale check applies to any output that currently exists,
         // regardless of whether it was required or optional.
@@ -896,7 +905,7 @@ impl DepsEngine {
         // last successful run (recorded in state). This catches deletion
         // (e.g. `rm -rf .venv` after `uv sync`) without forcing a re-run for
         // providers whose canonical output is intentionally absent.
-        if let Some(seen) = st.get_seen_outputs(provider_id) {
+        if let Some(seen) = st.get_seen_outputs(state_id) {
             for output in &optional_outputs {
                 let rel = state::relative_str(output, project_root);
                 if seen.iter().any(|p| p == &rel) && !output.exists() {
@@ -919,7 +928,7 @@ impl DepsEngine {
 
         let current_hashes = state::hash_sources(&sources, project_root)?;
 
-        match st.get_hashes(provider_id) {
+        match st.get_hashes(state_id) {
             Some(stored_hashes) => {
                 // Check for changed files
                 for (path, hash) in &current_hashes {
