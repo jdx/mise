@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use std::{
     collections::{BTreeSet, HashSet},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
 use super::{TOML_CONFIG_FILENAMES, load_config_paths};
@@ -231,6 +231,12 @@ impl serde::Serialize for PythonUvVenvAuto {
 pub type SettingsPartial = <Settings as Config>::Layer;
 
 static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
+/// Caches the resolved `safe` value from the most recent settings load so
+/// `safe_mode()` answers correctly during the config parse pass that runs before
+/// settings are (re)loaded — e.g. after `Config::reset()`. This captures `safe`
+/// set via global config, which the `MISE_SAFE` env-var fallback cannot see.
+/// 0 = false, 1 = true, 2 = never loaded (fall back to the env var).
+static LAST_SAFE: AtomicU8 = AtomicU8::new(2);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
@@ -582,6 +588,7 @@ impl Settings {
             settings.experimental = true;
         }
         let settings = Arc::new(settings);
+        LAST_SAFE.store(u8::from(settings.safe), Ordering::Relaxed);
         *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
         time!("try_get done");
         trace!("Settings: {:#?}", settings);
@@ -769,8 +776,15 @@ impl Settings {
     }
 
     fn all_settings_files() -> Vec<SettingsPartial> {
+        // In safe mode, ignore `[settings]` from project (non-global) config so
+        // an untrusted repo cannot change mise's behavior during resolution
+        // (e.g. disable verification, redirect a backend/registry). Global and
+        // system config is operator-owned and still applies. A specific setting
+        // could be allowlisted here later if it is safe and necessary.
+        let safe_mode = Settings::safe_mode();
         load_config_paths(&TOML_CONFIG_FILENAMES, false)
             .into_iter()
+            .filter(|p| !safe_mode || crate::config::is_global_config(p))
             .map(|p| Self::parse_settings_file(&p))
             .filter_map(|cfg| match cfg {
                 Ok(cfg) => Some(cfg),
@@ -1090,12 +1104,35 @@ impl Settings {
                     .any(|a| a == "--no-hooks")
     }
 
+    /// Whether safe mode (`MISE_SAFE=1` or the `safe` setting) is active.
+    ///
+    /// Safe to call during the config parse pass: it reads the loaded setting
+    /// when settings are available, otherwise falls back to the `MISE_SAFE`
+    /// environment variable. This avoids triggering a recursive settings load
+    /// from `trust_check` (which runs while config files are being parsed,
+    /// before settings are loaded, e.g. after `Config::reset`). `safe` is
+    /// global-only, so it can only come from the environment or global config;
+    /// the env fallback covers the common `MISE_SAFE=1` case in that window.
+    pub fn safe_mode() -> bool {
+        if is_loaded() {
+            return Settings::get().safe;
+        }
+        // Settings not loaded (e.g. the config parse pass after Config::reset).
+        // Use the value cached from the last full load, which captures `safe`
+        // set via global config; before any load, fall back to the env var.
+        match LAST_SAFE.load(Ordering::Relaxed) {
+            0 => false,
+            1 => true,
+            _ => crate::env::var_is_true("MISE_SAFE"),
+        }
+    }
+
     /// Errors when safe mode (`MISE_SAFE=1`) is enabled. Call this before any
     /// operation that would execute code controlled by project configuration.
     /// Safe mode is a security boundary: blocked operations must fail loudly,
     /// never silently fall back to something that executes.
     pub fn ensure_not_safe(operation: &str) -> Result<()> {
-        if Settings::get().safe {
+        if Settings::safe_mode() {
             bail!(
                 "{operation} is disabled in safe mode (MISE_SAFE=1)\nSee https://mise.en.dev/configuration/settings.html#safe"
             );

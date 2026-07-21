@@ -2310,12 +2310,18 @@ resolve tool versions from configs the operator did not author.
 When enabled, mise refuses (with an error, never a silent fallback) to:
 
 - run `exec()` or `read_file()` in config templates
-- source shell scripts via the `_.source` env directive
 - run hooks
 - run tasks
 - execute asdf plugin scripts
 - install plugins (already-installed and embedded vfox plugins still work — their
   code was chosen by the operator, not the repository)
+
+It also ignores environment and shell configuration from project (non-global) config —
+`[env]` values, `_.path`, `_.file`, and `[shell_alias]` entries — since those would be
+applied to the host environment (env vars and aliases are emitted through `hook-env`) and
+to subprocesses mise spawns during resolution, an indirect code-execution vector.
+Global/system config is operator-owned and still applies. `_.source` runs a shell script
+(code execution rather than env injection), so it is ignored regardless of source.
 
 Version resolution still works for every HTTP-based backend (core, aqua, github,
 gitlab, http, cargo, pipx, gem, dotnet, npm) as well as `go` (which runs with

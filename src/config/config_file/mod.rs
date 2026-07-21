@@ -318,6 +318,13 @@ pub fn is_path_trusted(path: &Path) -> bool {
 }
 
 pub fn trust_check(path: &Path) -> eyre::Result<()> {
+    // In safe mode, config is inert (no code execution, no env injection — see
+    // MISE_SAFE / the `safe` setting), so loading an untrusted config is
+    // harmless and no trust is required. `safe` is global-only, so a project
+    // config cannot disable it for itself.
+    if Settings::safe_mode() {
+        return Ok(());
+    }
     static MUTEX: Mutex<()> = Mutex::new(());
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple checks at once so we don't prompt multiple times for the same path
     let config_root = config_trust_root(path);

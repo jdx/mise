@@ -450,6 +450,9 @@ pub fn compute_settings_hash() -> String {
     // Add settings that affect env computation
     hasher.update(settings.experimental.to_string().as_bytes());
     hasher.update(settings.all_compile.to_string().as_bytes());
+    // Safe mode drops project [env]/_.path directives, so a cache entry built
+    // with a different `safe` value must not be reused.
+    hasher.update(settings.safe.to_string().as_bytes());
 
     // Add any other relevant settings
     if let Some(env_file) = &settings.env_file {

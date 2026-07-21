@@ -717,7 +717,11 @@ impl Config {
             // to parse for trusted files. Untrusted non-MiseToml files (like
             // .tool-versions) don't need trust and will parse fine regardless.
             let trust_root = config_file::config_trust_root(&path);
-            if !config_file::is_trusted(&trust_root)
+            // In safe mode, config is inert and trust is not required, so don't
+            // skip untrusted tracked configs — load them like trusted ones.
+            let safe_mode = Settings::safe_mode();
+            if !safe_mode
+                && !config_file::is_trusted(&trust_root)
                 && !config_file::is_trusted(&path)
                 // safe mise.toml files load without a trust marker, so a missing
                 // marker doesn't mean they should be skipped here
@@ -2008,9 +2012,19 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
 fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {
     let mut shell_aliases: EnvWithSources = EnvWithSources::new();
 
+    // In safe mode, shell aliases from project (non-global) config are ignored.
+    // They are emitted through `hook-env` into the interactive shell, so an
+    // untrusted config could otherwise redefine commands (e.g. `ls`, `git`) —
+    // a code-execution vector now that safe mode loads untrusted config without
+    // a trust prompt. Global/system config is operator-owned and still applies.
+    let safe_mode = Settings::safe_mode();
+
     // Iterate in reverse order (global -> local) so child directories override parent configs
     for config_file in config_files.values().rev() {
         let path = config_file.get_path().to_path_buf();
+        if safe_mode && !is_global_config(&path) {
+            continue;
+        }
         for (name, cmd) in config_file.shell_aliases()? {
             shell_aliases.insert(name, (cmd, path.clone()));
         }

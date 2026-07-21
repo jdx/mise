@@ -368,13 +368,33 @@ impl EnvResults {
             }
         };
         let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
-        let last_python_venv = input.iter().rev().find_map(|(d, _)| match d {
-            EnvDirective::PythonVenv { .. } => Some(d),
+        let safe_mode = Settings::safe_mode();
+        // In safe mode, environment directives from project (non-global) config are
+        // ignored — they would otherwise be applied to the host environment and to
+        // subprocesses mise spawns during resolution (e.g. `go list`, vfox hooks),
+        // an indirect code-execution vector (PATH, LD_PRELOAD, DYLD_INSERT_LIBRARIES,
+        // NODE_OPTIONS, ...) that safe mode is meant to close. Global/system config
+        // is operator-owned and still applies, mirroring the trust model. `_.source`
+        // runs a shell script (code execution rather than env injection), so it is
+        // ignored regardless of source, including operator-owned global config.
+        let dropped_in_safe_mode = |directive: &EnvDirective, source: &Path| -> bool {
+            safe_mode
+                && (!crate::config::is_global_config(source)
+                    || matches!(directive, EnvDirective::Source(..)))
+        };
+        // Choose the last venv among directives that survive the safe-mode filter,
+        // so a dropped project venv can't cause an operator's global venv to be
+        // skipped as "not the last one".
+        let last_python_venv = input.iter().rev().find_map(|(d, source)| match d {
+            EnvDirective::PythonVenv { .. } if !dropped_in_safe_mode(d, source) => Some(d),
             _ => None,
         });
         let filtered_input = input
             .iter()
             .fold(Vec::new(), |mut acc, (directive, source)| {
+                if dropped_in_safe_mode(directive, source) {
+                    return acc;
+                }
                 // Filter directives based on tools setting
                 let should_include = match &resolve_opts.tools {
                     ToolsFilter::ToolsOnly => directive.options().tools,

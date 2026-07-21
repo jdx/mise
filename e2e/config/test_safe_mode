@@ -1,44 +1,58 @@
 #!/usr/bin/env bash
 
 # Test MISE_SAFE=1 (safe mode): a hard boundary against repo-controlled code
-# execution. Config templates using exec()/read_file(), `_.source` directives,
-# hooks, tasks, asdf plugin scripts, and plugin installation are refused with
-# an error. Plain templates, HTTP-backed version resolution, and embedded vfox
+# execution. In safe mode, project (non-global) config `[env]`, `_.path`, and
+# `_.source` are ignored entirely — they would otherwise be applied to the host
+# environment and to subprocesses mise spawns, an indirect code-execution
+# vector (PATH, LD_PRELOAD, ...). Hooks, tasks, asdf plugin scripts, and plugin
+# installation are refused. HTTP-backed version resolution and embedded vfox
 # plugins keep working.
 
 export MISE_LOCKFILE=1
 
-echo "=== template exec() is refused ==="
+echo "=== project [env] (incl. exec/LD_PRELOAD/_.path) is ignored in safe mode ==="
 cat <<'EOF' >mise.toml
 [env]
-FOO = "{{ exec(command='echo pwned') }}"
+PLAIN = "value"
+EVIL = "pwned"
+LD_PRELOAD = "/tmp/evil.so"
+FROM_EXEC = "{{ exec(command='echo pwned') }}"
+_.path = ["/tmp/evilbin"]
 EOF
-assert_fail "MISE_SAFE=1 mise env" "exec() is disabled in safe mode (MISE_SAFE=1)"
-# without safe mode it still works
-assert_contains "mise env" "export FOO=pwned"
+# without safe mode, project env is applied (exec evaluated)
+assert_contains "mise env" "export PLAIN=value"
+assert_contains "mise env" "export FROM_EXEC=pwned"
+assert_contains "mise env" "/tmp/evilbin"
+# in safe mode the whole project [env] block is inert: nothing set, no exec, no error
+assert_not_contains "MISE_SAFE=1 mise env" "PLAIN"
+assert_not_contains "MISE_SAFE=1 mise env" "EVIL"
+assert_not_contains "MISE_SAFE=1 mise env" "LD_PRELOAD"
+assert_not_contains "MISE_SAFE=1 mise env" "FROM_EXEC"
+assert_not_contains "MISE_SAFE=1 mise env" "/tmp/evilbin"
 
-echo "=== template read_file() is refused ==="
-echo "secret" >data.txt
-cat <<'EOF' >mise.toml
-[env]
-FOO = "{{ read_file(file='data.txt') }}"
-EOF
-assert_fail "MISE_SAFE=1 mise env" "read_file() is disabled in safe mode (MISE_SAFE=1)"
-
-echo "=== plain templates still render ==="
-cat <<'EOF' >mise.toml
-[env]
-BAR = "{{ config_root }}"
-EOF
-assert_contains "MISE_SAFE=1 mise env" "export BAR="
-
-echo "=== _.source is refused ==="
+echo "=== _.source is ignored in safe mode (inert, not executed) ==="
 echo 'export BAZ=frombash' >env.sh
 cat <<'EOF' >mise.toml
 [env]
 _.source = "env.sh"
 EOF
-assert_fail "MISE_SAFE=1 mise env" "sourcing scripts via"
+assert_contains "mise env" "export BAZ=frombash"
+assert_not_contains "MISE_SAFE=1 mise env" "BAZ"
+
+# _.source is code execution, so even operator-owned global config is inert
+# (it must not error, unlike a plain refused directive).
+mkdir -p .config/mise
+echo 'export GLOBAL_SOURCED=yes' >global-env.sh
+cat <<EOF >".config/mise/config.toml"
+[env]
+GLOBAL_KEPT = "yes"
+_.source = "$PWD/global-env.sh"
+EOF
+rm -f mise.toml
+# global [env] applies in safe mode, but global _.source is inert and does not error
+assert_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/.config/mise/config.toml MISE_SAFE=1 mise env" "GLOBAL_KEPT"
+assert_not_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/.config/mise/config.toml MISE_SAFE=1 mise env" "GLOBAL_SOURCED"
+rm -rf .config global-env.sh
 
 echo "=== tasks are refused ==="
 cat <<'EOF' >mise.toml
@@ -55,6 +69,23 @@ enter = "echo HOOK_RAN"
 EOF
 assert_not_contains "MISE_SAFE=1 mise hook-env -s bash" "HOOK_RAN"
 
+echo "=== project shell aliases are dropped in safe mode ==="
+cat <<'EOF' >mise.toml
+[shell_alias]
+evilalias = "rm -rf ~"
+EOF
+# emitted through hook-env normally, dropped in safe mode
+assert_contains "mise hook-env -s bash" "evilalias"
+assert_not_contains "MISE_SAFE=1 mise hook-env -s bash" "evilalias"
+
+echo "=== project [settings] are ignored in safe mode ==="
+cat <<'EOF' >mise.toml
+[settings]
+jobs = 7
+EOF
+assert "mise settings get jobs" "7"
+assert_not_contains "MISE_SAFE=1 mise settings get jobs" "7"
+
 echo "=== asdf plugin scripts are refused ==="
 cat <<'EOF' >mise.toml
 [tools]
@@ -66,3 +97,9 @@ assert "mise latest dummy" "2.0.0"
 
 echo "=== plugin installation is refused ==="
 assert_fail "MISE_SAFE=1 mise plugins install tiny https://github.com/jdx/vfox-tiny" "installing plugins is disabled in safe mode (MISE_SAFE=1)"
+
+# Note: safe mode also skips the trust requirement (trust_check returns Ok when
+# `safe` is set). That isn't exercised here because the e2e harness auto-trusts
+# the workdir (MISE_TRUSTED_CONFIG_PATHS) and applies CI-implicit trust, so a
+# genuinely untrusted config can't be simulated reliably; see the unit-level
+# behavior and PR notes.
