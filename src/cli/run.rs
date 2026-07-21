@@ -360,6 +360,18 @@ impl Run {
             .filter_map(|task| task.cf.clone())
             .collect();
 
+        // Validate deps configuration before toolset construction can install
+        // anything, then retain the engine for execution below.
+        let deps_engine = if self.no_deps {
+            None
+        } else {
+            let mut engine = DepsEngine::new(&config)?;
+            if !subdir_configs.is_empty() {
+                engine.add_config_files(subdir_configs.clone())?;
+            }
+            Some(engine)
+        };
+
         // Build the toolset using root config files plus subdir configs from
         // resolved tasks, so tools declared in monorepo subdirs are installed
         // before deps (e.g. `[deps.bun] auto=true`) try to use them.
@@ -408,14 +420,8 @@ impl Run {
         };
 
         // Run auto-enabled deps steps (unless --no-deps)
-        if !self.no_deps {
+        if let Some(engine) = deps_engine {
             let env = ts.env_with_path(&config).await?;
-            let mut engine = DepsEngine::new(&config)?;
-
-            if !subdir_configs.is_empty() {
-                engine.add_config_files(subdir_configs)?;
-            }
-
             let result = engine
                 .run(DepsOptions {
                     auto_only: true, // Only run providers with auto=true
