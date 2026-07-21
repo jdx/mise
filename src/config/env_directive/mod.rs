@@ -914,7 +914,7 @@ impl EnvResults {
     }
 }
 
-fn shell_expand_env(
+pub(crate) fn shell_expand_env(
     input: &str,
     env_vars: &BTreeMap<String, String>,
     missing_vars: &mut Vec<String>,
