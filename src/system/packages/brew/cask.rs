@@ -1080,16 +1080,19 @@ fn find_artifact_matching(
         .filter_map(|entry| entry.ok())
     {
         let path = entry.path();
-        if !pred(path) {
-            continue;
-        }
         let Ok(relative) = path.strip_prefix(root) else {
             continue;
         };
+        // Cheap path-string checks first; only `stat` via `pred` on name hits
+        // (large .app trees have thousands of non-matching entries).
         if relative.ends_with(name_path) {
-            return Some(entry.into_path());
-        }
-        if case_insensitive.is_none() && path_ends_with_ignore_ascii_case(relative, name_path) {
+            if pred(path) {
+                return Some(entry.into_path());
+            }
+        } else if case_insensitive.is_none()
+            && path_ends_with_ignore_ascii_case(relative, name_path)
+            && pred(path)
+        {
             case_insensitive = Some(entry.into_path());
         }
     }
@@ -1099,21 +1102,26 @@ fn find_artifact_matching(
 /// True when `path`'s trailing components match `suffix` with ASCII
 /// case-insensitive comparison of normal path components.
 fn path_ends_with_ignore_ascii_case(path: &Path, suffix: &Path) -> bool {
-    let path: Vec<_> = path.components().collect();
-    let suffix: Vec<_> = suffix.components().collect();
-    if suffix.is_empty() || suffix.len() > path.len() {
+    if suffix.as_os_str().is_empty() {
         return false;
     }
-    path[path.len() - suffix.len()..]
-        .iter()
-        .zip(suffix.iter())
-        .all(|(a, b)| match (a, b) {
+    let mut path_iter = path.components().rev();
+    for b in suffix.components().rev() {
+        let Some(a) = path_iter.next() else {
+            return false;
+        };
+        let matches = match (a, b) {
             (Component::Normal(a), Component::Normal(b)) => match (a.to_str(), b.to_str()) {
                 (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
-                _ => *a == *b,
+                _ => a == b,
             },
             _ => a == b,
-        })
+        };
+        if !matches {
+            return false;
+        }
+    }
+    true
 }
 
 fn app_target_path(target_name: &str) -> Result<PathBuf> {
