@@ -352,7 +352,10 @@ pub fn is_trusted(path: &Path) -> bool {
             return false;
         }
     };
-    if is_ignored(canonicalized_path.as_path()) {
+    // The `ignored_config_paths` setting is an explicit "never load this
+    // config" instruction and is a hard block that takes precedence over
+    // everything, including `trusted_config_paths`.
+    if is_ignored_via_setting(canonicalized_path.as_path()) {
         return false;
     }
     if IS_TRUSTED
@@ -362,16 +365,22 @@ pub fn is_trusted(path: &Path) -> bool {
     {
         return true;
     }
-    if config::is_global_config(path) {
+    // `trusted_config_paths` is trusted by configuration and overrides the
+    // persisted ignore list (a dismissed trust prompt or `mise trust
+    // --ignore`), matching the "still trusted via settings" warnings emitted by
+    // `mise trust`. It is therefore checked *before* the persisted ignore list.
+    if trusted_config_path_matches(canonicalized_path.as_path()) {
         add_trusted(canonicalized_path.to_path_buf());
         return true;
     }
-    let settings = Settings::get();
-    for p in settings.trusted_config_paths() {
-        if canonicalized_path.starts_with(p) {
-            add_trusted(canonicalized_path.to_path_buf());
-            return true;
-        }
+    // The persisted ignore list blocks trust only when the path is not trusted
+    // via `trusted_config_paths` above.
+    if is_persisted_ignored(canonicalized_path.as_path()) {
+        return false;
+    }
+    if config::is_global_config(path) {
+        add_trusted(canonicalized_path.to_path_buf());
+        return true;
     }
 
     // Check if this path is within a trusted monorepo root
@@ -387,6 +396,7 @@ pub fn is_trusted(path: &Path) -> bool {
             current = dir;
         }
     }
+    let settings = Settings::get();
     if settings.paranoid {
         let trusted = trust_file_hash(path).unwrap_or_else(|e| {
             warn!("trust_file_hash: {e}");
@@ -437,7 +447,59 @@ pub fn rm_ignored(path: PathBuf) -> Result<()> {
     IS_IGNORED.lock().unwrap().remove(&path);
     Ok(())
 }
-pub fn is_ignored(path: &Path) -> bool {
+/// Whether an already-canonicalized path lives under a `trusted_config_paths`
+/// entry. Callers with a raw path use [`is_trusted_via_config_paths`], which
+/// canonicalizes first.
+fn trusted_config_path_matches(canonicalized_path: &Path) -> bool {
+    Settings::get()
+        .trusted_config_paths()
+        .any(|p| canonicalized_path.starts_with(p))
+}
+
+/// Whether `path` is trusted purely via the `trusted_config_paths` setting.
+///
+/// This is the signal that overrides the persisted ignore list (a dismissed
+/// trust prompt or `mise trust --ignore`) in both [`is_trusted`] and config
+/// discovery. It does not consider global config or per-file trust records.
+pub fn is_trusted_via_config_paths(path: &Path) -> bool {
+    // Config discovery calls this, and the initial `Settings` load itself runs
+    // config discovery (`load_config_paths`). Reading `trusted_config_paths`
+    // before settings are loaded would re-enter `Settings::get()` and recurse,
+    // so treat the path as not-yet-trusted until settings exist; discovery runs
+    // again once they do.
+    if !settings::is_loaded() {
+        return false;
+    }
+    match path.canonicalize() {
+        Ok(canonicalized_path) => trusted_config_path_matches(&canonicalized_path),
+        Err(_) => false,
+    }
+}
+
+/// Whether `path` is under an explicitly-configured `ignored_config_paths`
+/// (`MISE_IGNORED_CONFIG_PATHS`) entry.
+///
+/// This is an explicit "never load this config" instruction and is a hard
+/// block: it takes precedence over `trusted_config_paths`.
+pub fn is_ignored_via_setting(path: &Path) -> bool {
+    match path.canonicalize() {
+        Ok(path) => env::MISE_IGNORED_CONFIG_PATHS
+            .iter()
+            .any(|p| path.starts_with(p)),
+        Err(_) => {
+            debug!("is_ignored_via_setting: path canonicalize failed");
+            false
+        }
+    }
+}
+
+/// Whether `path` is in the persisted ignore list.
+///
+/// Entries are recorded when the user answers "No" to a trust prompt or runs
+/// `mise trust --ignore`. Unlike [`is_ignored_via_setting`], this only records
+/// a dismissed prompt, so it is overridden by `trusted_config_paths` (see
+/// [`is_trusted_via_config_paths`]).
+pub fn is_persisted_ignored(path: &Path) -> bool {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         if !dirs::IGNORED_CONFIGS.exists() {
@@ -450,15 +512,20 @@ pub fn is_ignored(path: &Path) -> bool {
             }
         }
     });
-    if let Ok(path) = path.canonicalize() {
-        env::MISE_IGNORED_CONFIG_PATHS
-            .iter()
-            .any(|p| path.starts_with(p))
-            || IS_IGNORED.lock().unwrap().contains(&path)
-    } else {
-        debug!("is_ignored: path canonicalize failed");
-        true
+    match path.canonicalize() {
+        Ok(path) => IS_IGNORED.lock().unwrap().contains(&path),
+        Err(_) => {
+            debug!("is_persisted_ignored: path canonicalize failed");
+            true
+        }
     }
+}
+
+/// Whether `path` is ignored, by either the `ignored_config_paths` setting or
+/// the persisted ignore list. Callers that need to respect the
+/// `trusted_config_paths` override use the finer-grained variants directly.
+pub fn is_ignored(path: &Path) -> bool {
+    is_ignored_via_setting(path) || is_persisted_ignored(path)
 }
 
 pub fn trust(path: &Path) -> Result<()> {
