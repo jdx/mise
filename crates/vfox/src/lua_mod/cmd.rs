@@ -185,6 +185,34 @@ fn command_from_shell(shell: &[String], command: &str) -> LuaResult<Command> {
         mlua::Error::RuntimeError("cmd.exec shell command cannot be empty".to_string())
     })?;
     let mut cmd = Command::new(program);
+
+    // cmd.exe does not understand the `\"` escaping that std's Windows argument
+    // quoting uses for inner double quotes. Hand cmd command bodies through as
+    // raw arguments instead, wrapped in one outer quote pair that `/s` removes.
+    // This preserves commands such as `node -e "console.log(2 + 2)"`.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        let is_cmd = Path::new(program).file_name().is_some_and(|name| {
+            name.eq_ignore_ascii_case("cmd") || name.eq_ignore_ascii_case("cmd.exe")
+        });
+        let runs_command = args
+            .iter()
+            .any(|arg| arg.eq_ignore_ascii_case("/c") || arg.eq_ignore_ascii_case("/k"));
+
+        if is_cmd && runs_command {
+            if !args.iter().any(|arg| arg.eq_ignore_ascii_case("/s")) {
+                cmd.raw_arg("/s");
+            }
+            for arg in args {
+                cmd.raw_arg(arg);
+            }
+            cmd.raw_arg(format!("\"{command}\""));
+            return Ok(cmd);
+        }
+    }
+
     cmd.args(args);
     cmd.arg(command);
     Ok(cmd)
@@ -198,10 +226,15 @@ mod tests {
     fn test_cmd() {
         let lua = Lua::new();
         mod_cmd(&lua).unwrap();
+        let expected = if cfg!(windows) {
+            "hello world\r\n"
+        } else {
+            "hello world\n"
+        };
         lua.load(mlua::chunk! {
             local cmd = require("cmd")
             local result = cmd.exec("echo hello world")
-            assert(result == "hello world\n")
+            assert(result == $expected)
         })
         .exec()
         .unwrap();
@@ -216,18 +249,20 @@ mod tests {
             .canonicalize()
             .unwrap_or_else(|_| temp_path.to_path_buf());
         let temp_dir_str = temp_path_canonical.to_string_lossy().to_string();
-        let expected_path = temp_dir_str.trim_end_matches('/').to_string();
+        let print_cwd_command = if cfg!(windows) { "cd" } else { "pwd" };
         let lua = Lua::new();
         mod_cmd(&lua).unwrap();
-        lua.load(mlua::chunk! {
-            local cmd = require("cmd")
-            -- Test with working directory
-            local result = cmd.exec("pwd", {cwd = $temp_dir_str})
-            -- Check that result contains the expected path (handles trailing slashes/newlines)
-            assert(result:find($expected_path) ~= nil, "Expected result to contain: " .. $expected_path .. " but got: " .. result)
-        })
-        .exec()
-        .unwrap();
+        let result: String = lua
+            .load(mlua::chunk! {
+                local cmd = require("cmd")
+                return cmd.exec($print_cwd_command, {cwd = $temp_dir_str})
+            })
+            .eval()
+            .unwrap();
+        let actual_path = Path::new(result.trim())
+            .canonicalize()
+            .unwrap_or_else(|_| result.trim().into());
+        assert_eq!(actual_path, temp_path_canonical);
         // TempDir automatically cleans up when dropped
     }
 
@@ -235,10 +270,15 @@ mod tests {
     fn test_cmd_with_env() {
         let lua = Lua::new();
         mod_cmd(&lua).unwrap();
+        let print_env_command = if cfg!(windows) {
+            "echo %TEST_VAR%"
+        } else {
+            "echo $TEST_VAR"
+        };
         lua.load(mlua::chunk! {
             local cmd = require("cmd")
             -- Test with environment variables
-            local result = cmd.exec("echo $TEST_VAR", {env = {TEST_VAR = "hello"}})
+            local result = cmd.exec($print_env_command, {env = {TEST_VAR = "hello"}})
             assert(result:find("hello") ~= nil)
         })
         .exec()
@@ -261,6 +301,25 @@ mod tests {
         ))
         .exec()
         .unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_cmd_exec_preserves_inner_quotes_with_cmd() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+
+        let result: String = lua
+            .load(
+                r#"
+                local cmd = require("cmd")
+                return cmd.exec('echo "hello world"')
+            "#,
+            )
+            .eval()
+            .unwrap();
+
+        assert_eq!(result, "\"hello world\"\r\n");
     }
 
     // os.execute must honor the mise_env registry (env_clear + mise_env) so
@@ -287,6 +346,21 @@ mod tests {
         )
         .exec()
         .unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_os_execute_preserves_inner_quotes_with_cmd() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let marker = temp_dir.path().join("os-execute-output.txt");
+        let command = format!(r#"echo "hello world"> "{}""#, marker.display());
+
+        assert_eq!(os_execute(&lua, Some(command)).unwrap(), 0);
+
+        let output = std::fs::read_to_string(marker).unwrap();
+        assert_eq!(output, "\"hello world\"\r\n");
     }
 
     #[test]
