@@ -51,6 +51,11 @@ You can provide additional configuration for file tasks by adding `#MISE` commen
 
 Assuming that file was located in `mise-tasks/build`, it can then be run with `mise run build` (or with its alias: `mise run b`).
 
+Mise provides file tasks with project context variables such as
+`MISE_PROJECT_ROOT`, which identifies the project root regardless of the
+directory from which the task is invoked. See [Tasks](/tasks/#environment-variables-passed-to-tasks)
+for the complete list of variables.
+
 :::tip
 Beware of formatters changing `#MISE` to `# MISE`.
 It's intentionally ignored by mise to avoid unintentional configuration.
