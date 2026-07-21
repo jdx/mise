@@ -12,6 +12,13 @@ mise can declare git repositories in `[bootstrap.repos]` and apply them with
 Each key is the target path. The `url` is required. The optional `ref` can be a
 branch, tag, or full commit SHA.
 
+Target paths may be absolute, start with `~/`, or be relative. Relative paths
+are resolved against the project root of the config file that declares them and
+must name a directory inside it — they cannot be empty or `.`, and cannot
+escape the root with `..` or absolute segments. Because of that, relative paths
+are only valid in a project config, not in a global config such as
+`~/.config/mise/config.toml`.
+
 Repos run after `[bootstrap.packages]` and before `[dotfiles]`, so a bootstrap
 config can install `git`, clone a dotfiles repository, and then apply dotfiles
 from that checkout.
