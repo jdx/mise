@@ -1184,6 +1184,14 @@ fn blob_label(desc: &Descriptor) -> String {
         .unwrap_or_else(|| short_digest(&desc.digest).to_string())
 }
 
+/// `sha256:<hex>` digest of `bytes`.
+fn sha256_digest(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(bytes);
+    format!("sha256:{}", crate::oci::layer::hex_encode(&h.finalize()))
+}
+
 /// First 12 hex chars of a `sha256:…` digest, for display.
 fn short_digest(digest: &str) -> &str {
     let hex = digest.trim_start_matches("sha256:");
@@ -1479,12 +1487,7 @@ impl Pusher {
             manifests,
         };
         let bytes = serde_json::to_vec(&index)?;
-        let digest = {
-            use sha2::{Digest, Sha256};
-            let mut h = Sha256::new();
-            h.update(&bytes);
-            format!("sha256:{}", crate::oci::layer::hex_encode(&h.finalize()))
-        };
+        let digest = sha256_digest(&bytes);
         self.put_manifest(tag, MEDIA_TYPE_OCI_INDEX, &bytes).await?;
         Ok(digest)
     }
@@ -1559,12 +1562,7 @@ impl Pusher {
         body: &serde_json::Value,
         content_type: &str,
     ) -> Result<Descriptor> {
-        let digest = {
-            use sha2::{Digest, Sha256};
-            let mut h = Sha256::new();
-            h.update(bytes);
-            format!("sha256:{}", crate::oci::layer::hex_encode(&h.finalize()))
-        };
+        let digest = sha256_digest(bytes);
         let media_type = body
             .get("mediaType")
             .and_then(|m| m.as_str())
