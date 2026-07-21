@@ -777,10 +777,17 @@ fn find_binary_source(
     cask: &Cask,
     binary: &BinaryArtifact,
 ) -> Result<PathBuf> {
-    if let Some(source) = generated_caskroom_artifact(caskroom, cask, &binary.source)
-        && source.is_file()
-    {
-        return Ok(source);
+    // Homebrew API often records preflight/postflight wrappers as
+    // `$HOMEBREW_PREFIX/Caskroom/<token>/<version>/<name>`. Map that final
+    // path onto:
+    //   1) temp caskroom (postflight, or preflight if staged there)
+    //   2) extract stage (preflight runs with staged_path = stage; e.g. VLC)
+    for root in [caskroom, stage] {
+        if let Some(source) = generated_caskroom_artifact(root, cask, &binary.source)
+            && source.is_file()
+        {
+            return Ok(source);
+        }
     }
     if let Some(source) = absolute_binary_source(&binary.source)
         && source.is_file()
@@ -1046,7 +1053,8 @@ fn find_app(root: &Path, name: &str) -> Option<PathBuf> {
 
 fn find_artifact(root: &Path, name: &str) -> Option<PathBuf> {
     let name_path = Path::new(name);
-    WalkDir::new(root)
+    // Prefer exact path match (preserves Homebrew's declared casing).
+    if let Some(path) = WalkDir::new(root)
         .into_iter()
         .filter_entry(|entry| entry.file_name() != "__MACOSX")
         .filter_map(|entry| entry.ok())
@@ -1057,6 +1065,43 @@ fn find_artifact(root: &Path, name: &str) -> Option<PathBuf> {
                 .is_ok_and(|relative| relative.ends_with(name_path))
         })
         .map(|entry| entry.into_path())
+    {
+        return Some(path);
+    }
+    // macOS APFS is usually case-insensitive; Homebrew succeeds when the
+    // cask declares `app "yaak.app"` but the DMG ships `Yaak.app`.
+    // Match case-insensitively only as a fallback so we do not change
+    // case-sensitive filesystems' exact-match preference.
+    WalkDir::new(root)
+        .into_iter()
+        .filter_entry(|entry| entry.file_name() != "__MACOSX")
+        .filter_map(|entry| entry.ok())
+        .find(|entry| {
+            entry
+                .path()
+                .strip_prefix(root)
+                .is_ok_and(|relative| path_ends_with_ignore_ascii_case(relative, name_path))
+        })
+        .map(|entry| entry.into_path())
+}
+
+/// True when `path`'s trailing components match `suffix` with ASCII
+/// case-insensitive comparison of normal path components.
+fn path_ends_with_ignore_ascii_case(path: &Path, suffix: &Path) -> bool {
+    let path: Vec<_> = path.components().collect();
+    let suffix: Vec<_> = suffix.components().collect();
+    if suffix.is_empty() || suffix.len() > path.len() {
+        return false;
+    }
+    path[path.len() - suffix.len()..]
+        .iter()
+        .zip(suffix.iter())
+        .all(|(a, b)| match (a, b) {
+            (std::path::Component::Normal(a), std::path::Component::Normal(b)) => a
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&b.to_string_lossy()),
+            _ => a == b,
+        })
 }
 
 fn app_target_path(target_name: &str) -> Result<PathBuf> {
@@ -1600,6 +1645,49 @@ end
         file::create_dir_all(&app)?;
 
         assert_eq!(find_app(tmp.path(), "Pearcleaner.app"), Some(app));
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_lookup_matches_app_bundle_case_insensitively() -> Result<()> {
+        // Homebrew cask `yaak` declares `app "yaak.app"` but the DMG ships
+        // `Yaak.app`. APFS is case-insensitive; exact match must not be required.
+        let tmp = tempfile::tempdir()?;
+        let app = tmp.path().join("Yaak.app");
+        file::create_dir_all(&app)?;
+
+        assert_eq!(find_app(tmp.path(), "yaak.app"), Some(app.clone()));
+        assert_eq!(find_app(tmp.path(), "Yaak.app"), Some(app));
+        assert_eq!(find_app(tmp.path(), "Other.app"), None);
+        Ok(())
+    }
+
+    #[test]
+    fn maps_preflight_generated_wrapper_from_extract_stage() -> Result<()> {
+        // VLC: preflight writes `#{staged_path}/vlc.wrapper.sh` while preflight
+        // staged_path is the extract stage, not the temp Caskroom. API binary
+        // source is `$HOMEBREW_PREFIX/Caskroom/vlc/<ver>/vlc.wrapper.sh`.
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let cask = test_cask("vlc", "3.0.23");
+        let stage = tmp.path().join("extract");
+        let tmp_caskroom = tmp.path().join("tmp-caskroom");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(&tmp_caskroom)?;
+        let wrapper = stage.join("vlc.wrapper.sh");
+        std::fs::write(&wrapper, "#!/bin/sh\n")?;
+
+        let binary = BinaryArtifact {
+            source: "$HOMEBREW_PREFIX/Caskroom/vlc/3.0.23/vlc.wrapper.sh".to_string(),
+            target: Some("vlc".to_string()),
+        };
+
+        assert_eq!(
+            find_binary_source(&stage, &tmp_caskroom, &cask, &binary)?,
+            wrapper
+        );
         Ok(())
     }
 
