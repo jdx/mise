@@ -1,0 +1,3 @@
+backends = ["aqua:jdx/hk"]
+description = "git hook and pre-commit lint manager"
+test = { cmd = "hk --version", expected = "hk {{version}}" }

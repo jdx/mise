@@ -5,7 +5,7 @@ use indoc::indoc;
 
 use crate::{env, file};
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn init() {
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "debug")
@@ -22,9 +22,10 @@ fn init() {
     env::set_var("MISE_CACHE_PRUNE_AGE", "0");
     env::set_var("MISE_CACHE_DIR", env::HOME.join("data").join("cache"));
     env::set_var("MISE_CONFIG_DIR", env::HOME.join("config"));
+    env::set_var("MISE_ENV", "");
     env::set_var("MISE_DATA_DIR", env::HOME.join("data"));
     env::set_var("MISE_GLOBAL_CONFIG_FILE", "~/config/config.toml");
-    env::set_var("MISE_SYSTEM_CONFIG_FILE", "doesntexist");
+    env::set_var("MISE_SYSTEM_CONFIG_FILE", "nonexistent");
     env::set_var(
         "MISE_OVERRIDE_CONFIG_FILENAMES",
         ".test.mise.toml:test.config.toml",

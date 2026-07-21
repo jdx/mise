@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-#MISE wait_for=["build"]
-set -euo pipefail
-
-if [[ "${MISE_PRE_COMMIT:-}" == 1 ]]; then
-  cargo check -q --all-features
-else
-  cargo clippy --all-features -- -Dwarnings
-fi

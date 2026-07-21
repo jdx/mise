@@ -21,6 +21,11 @@ cat <<EOF >"$ASDF_INSTALL_PATH/bin/dummy"
 echo This is Dummy ${ASDF_INSTALL_VERSION}! \$2 \$1
 EOF
 chmod +x "$ASDF_INSTALL_PATH/bin/dummy"
+cat <<EOF >"$ASDF_INSTALL_PATH/bin/dummy-exec-tiny"
+#!/usr/bin/env bash
+exec rtx-tiny
+EOF
+chmod +x "$ASDF_INSTALL_PATH/bin/dummy-exec-tiny"
 mkdir -p "$ASDF_INSTALL_PATH/bin/subdir"
 cat <<EOF >"$ASDF_INSTALL_PATH/bin/subdir/other_bin"
 #!/usr/bin/env bash

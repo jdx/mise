@@ -1,0 +1,7 @@
+backends = [
+  "aqua:sharkdp/bat",
+  "cargo:bat",
+  "asdf:https://gitlab.com/wt0f/asdf-bat",
+]
+description = "A cat(1) clone with wings"
+test = { cmd = "bat --version", expected = "bat {{version}}" }

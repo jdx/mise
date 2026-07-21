@@ -1,0 +1,4 @@
+backends = ["aqua:mono0926/LicensePlist", "asdf:MacPaw/asdf-license-plist"]
+description = "A license list generator of all your dependencies for iOS applications"
+os = ["macos"]
+test = { cmd = "license-plist --version", expected = "{{version}}" }

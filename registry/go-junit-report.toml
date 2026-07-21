@@ -1,0 +1,6 @@
+backends = [
+  "aqua:jstemmer/go-junit-report",
+  "asdf:jwillker/asdf-go-junit-report",
+]
+description = "Convert Go test output to JUnit XML"
+test = { cmd = "go-junit-report --version", expected = "{{version}}" }

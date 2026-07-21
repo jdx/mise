@@ -1,6 +1,8 @@
+use crate::backend::SecurityFeature;
+use crate::ui::style;
 use eyre::Result;
 use itertools::Itertools;
-use serde_derive::Serialize;
+use serde::Serialize;
 
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -24,9 +26,17 @@ pub struct Tool {
 #[derive(Debug, Clone, clap::Args)]
 #[group(multiple = false)]
 pub struct ToolInfoFilter {
+    /// Only show active versions
+    #[clap(long)]
+    active: bool,
+
     /// Only show backend field
     #[clap(long)]
     backend_: bool,
+
+    /// Only show config source
+    #[clap(long)]
+    config_source: bool,
 
     /// Only show description field
     #[clap(long)]
@@ -36,17 +46,9 @@ pub struct ToolInfoFilter {
     #[clap(long)]
     installed: bool,
 
-    /// Only show active versions
-    #[clap(long)]
-    active: bool,
-
     /// Only show requested versions
     #[clap(long)]
     requested: bool,
-
-    /// Only show config source
-    #[clap(long)]
-    config_source: bool,
 
     /// Only show tool options
     #[clap(long)]
@@ -54,21 +56,41 @@ pub struct ToolInfoFilter {
 }
 
 impl Tool {
-    pub fn run(self) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().build(&Config::get())?;
-        ts.resolve()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let mut ts = ToolsetBuilder::new().build(&config).await?;
+        ts.resolve(&config).await?;
         let tvl = ts.versions.get(&self.tool);
         let tv = tvl.map(|tvl| tvl.versions.first().unwrap());
         let ba = tv.map(|tv| tv.ba()).unwrap_or_else(|| &self.tool);
-        let backend = ba.backend().ok();
+
+        // Check if the backend exists and fail if it doesn't
+        let backend = match ba.backend() {
+            Ok(b) => Some(b),
+            Err(e) => {
+                // If no versions are configured for this tool, it's likely invalid
+                if tvl.is_none() {
+                    return Err(e);
+                }
+                None
+            }
+        };
+
+        let (description, security) = if let Some(backend) = &backend {
+            (backend.description().await, backend.security_info().await)
+        } else {
+            (None, vec![])
+        };
         let info = ToolInfo {
             backend: ba.full(),
-            description: backend.and_then(|b| b.description()),
+            description,
             installed_versions: ts
-                .list_installed_versions()?
+                .list_installed_versions(&config)
+                .await?
                 .into_iter()
-                .filter(|(b, _)| b.ba() == ba)
+                .filter(|(b, _)| b.ba().as_ref() == ba)
                 .map(|(_, tv)| tv.version)
+                .unique()
                 .collect::<Vec<_>>(),
             active_versions: tvl.map(|tvl| {
                 tvl.versions
@@ -84,6 +106,7 @@ impl Tool {
             }),
             config_source: tvl.map(|tvl| tvl.source.clone()),
             tool_options: ba.opts(),
+            security,
         };
 
         if self.json {
@@ -130,7 +153,23 @@ impl Tool {
                 miseprintln!("[none]");
             }
         } else if self.filter.installed {
-            miseprintln!("{}", info.installed_versions.join(" "));
+            let active_set = info
+                .active_versions
+                .as_ref()
+                .map(|v| v.iter().collect::<std::collections::HashSet<_>>())
+                .unwrap_or_default();
+            let installed_with_bold = info
+                .installed_versions
+                .iter()
+                .map(|v| {
+                    if active_set.contains(v) {
+                        style::nbold(v).to_string()
+                    } else {
+                        v.to_string()
+                    }
+                })
+                .join(" ");
+            miseprintln!("{}", installed_with_bold);
         } else if self.filter.active {
             if let Some(active_versions) = info.active_versions {
                 miseprintln!("{}", active_versions.join(" "));
@@ -163,9 +202,29 @@ impl Tool {
             if let Some(description) = info.description {
                 table.push(("Description:", description));
             }
-            table.push(("Installed Versions:", info.installed_versions.join(" ")));
+            // Bold currently active versions within the installed list for clarity
+            let active_set = info
+                .active_versions
+                .as_ref()
+                .map(|v| v.iter().collect::<std::collections::HashSet<_>>())
+                .unwrap_or_default();
+            let installed_with_bold = info
+                .installed_versions
+                .iter()
+                .map(|v| {
+                    if active_set.contains(v) {
+                        style::nbold(v).to_string()
+                    } else {
+                        v.to_string()
+                    }
+                })
+                .join(" ");
+            table.push(("Installed Versions:", installed_with_bold));
             if let Some(active_versions) = info.active_versions {
-                table.push(("Active Version:", active_versions.join(" ")));
+                table.push((
+                    "Active Version:",
+                    style::nbold(active_versions.join(" ")).to_string(),
+                ));
             }
             if let Some(requested_versions) = info.requested_versions {
                 table.push(("Requested Version:", requested_versions.join(" ")));
@@ -185,6 +244,37 @@ impl Tool {
                         .join(","),
                 ));
             }
+            if info.security.is_empty() {
+                table.push(("Security:", "[none]".to_string()));
+            } else {
+                let security_str = info
+                    .security
+                    .iter()
+                    .map(|f| match f {
+                        SecurityFeature::Checksum { algorithm } => {
+                            if let Some(alg) = algorithm {
+                                format!("checksum ({})", alg)
+                            } else {
+                                "checksum".to_string()
+                            }
+                        }
+                        SecurityFeature::GithubAttestations { .. } => {
+                            "github_attestations".to_string()
+                        }
+                        SecurityFeature::Slsa { level } => {
+                            if let Some(l) = level {
+                                format!("slsa (level {})", l)
+                            } else {
+                                "slsa".to_string()
+                            }
+                        }
+                        SecurityFeature::Cosign => "cosign".to_string(),
+                        SecurityFeature::Minisign { .. } => "minisign".to_string(),
+                        SecurityFeature::Gpg => "gpg".to_string(),
+                    })
+                    .join(", ");
+                table.push(("Security:", security_str));
+            }
             let mut table = tabled::Table::new(table);
             table::default_style(&mut table, true);
             miseprintln!("{table}");
@@ -203,6 +293,7 @@ struct ToolInfo {
     active_versions: Option<Vec<String>>,
     config_source: Option<ToolSource>,
     tool_options: ToolVersionOptions,
+    security: Vec<SecurityFeature>,
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

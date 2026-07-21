@@ -21,3 +21,17 @@ See available versions with `mise ls-remote bun`.
 
 > [!NOTE]
 > Avoid using `bun upgrade` to upgrade bun as `mise` will not be aware of the change.
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `bun` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for install-time commands run by the core `bun` backend:
+
+```toml
+[tools]
+bun = { version = "latest", install_env = { HTTPS_PROXY = "http://proxy.example" } }
+```

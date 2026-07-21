@@ -1,0 +1,3 @@
+backends = ["aqua:josephburnett/jd", "go:github.com/josephburnett/jd"]
+description = "JSON diff and patch"
+test = { cmd = "jd --version", expected = "jd version {{version}}" }

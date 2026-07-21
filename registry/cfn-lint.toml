@@ -1,0 +1,3 @@
+backends = ["pipx:cfn-lint"]
+description = "Checks CloudFormation templates for practices and behaviour that could potentially be improved"
+# test = ["cfn-lint --version", "cfn-lint {{version}}"] # disabled: failing in CI

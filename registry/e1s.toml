@@ -1,0 +1,2 @@
+backends = ["aqua:keidarcy/e1s", "asdf:tbobm/asdf-e1s"]
+description = "E1S - Easily Manage AWS ECS Resources in Terminal(~k9s for ECS)"

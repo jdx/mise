@@ -1,0 +1,10 @@
+backends = [
+  "aqua:Kitware/CMake",
+  "asdf:mise-plugins/mise-cmake",
+  "vfox:mise-plugins/vfox-cmake",
+]
+description = "CMake is a tool to manage building of source code. Originally, CMake was designed as a generator for various dialects of Makefile, today CMake generates modern buildsystems such as Ninja as well as project files for IDEs such as Visual Studio and Xcode"
+test = { cmd = "cmake --version", expected = """
+cmake version {{version}}
+
+CMake suite maintained and supported by Kitware (kitware.com/cmake).""" }

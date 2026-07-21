@@ -1,13 +1,37 @@
 #!/usr/bin/env bash
 
 assert "mise generate bootstrap -w"
+# shellcheck disable=SC2016
+assert_contains "cat ./bin/mise" 'exec -a "$0" "$MISE_INSTALL_PATH" "$@"'
 assert "./bin/mise version"
 
-assert "mise task add xxx -- echo 'running xxx'"
+assert "mise tasks add xxx -- echo 'running xxx'"
 assert "mise generate task-stubs --mise-bin ./bin/mise"
 assert "./bin/xxx" "running xxx"
 
 assert "mise generate bootstrap -l -w"
+# shellcheck disable=SC2016
+assert_contains "cat ./bin/mise" 'exec -a "$0" "$MISE_INSTALL_PATH" "$@"'
+
+# ensure that the commands don't rely on the global mise bin
+original_mise="$(which mise)"
+mise_dir="$(dirname "$original_mise")"
+OLD_PATH="$PATH"
+PATH="$(echo "$PATH" | tr ':' '\n' | grep -v "^${mise_dir}$" | tr '\n' ':')"
+PATH="${PATH%:}" # remove trailing colon
+
 assert_contains "./bin/mise tasks ls" "xxx"
 
 assert_not_contains "MISE_IGNORED_CONFIG_PATHS=$(pwd) ./bin/mise tasks ls" "xxx"
+
+echo '
+[tasks.other_task]
+run = "echo running other_task"
+
+[tasks.my_task]
+run = ["{{mise_bin}} run other_task"]
+' >mise.toml
+
+assert_contains "./bin/mise run my_task" "running other_task"
+
+PATH="$OLD_PATH"

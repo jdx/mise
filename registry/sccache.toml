@@ -1,0 +1,7 @@
+backends = [
+  "aqua:mozilla/sccache",
+  "asdf:emersonmx/asdf-sccache",
+  "cargo:sccache",
+]
+description = "sccache is ccache with cloud storage"
+test = { cmd = "sccache --version", expected = "sccache {{version}}" }

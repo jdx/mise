@@ -1,0 +1,3 @@
+backends = ["npm:json5"]
+description = "JSON5 is an extension to the popular JSON file format that aims to be easier to write and maintain by hand (e.g. for config files). It is not intended to be used for machine-to-machine communication. (Keep using JSON or other file formats for that. 🙂)"
+test = { cmd = "json5 --version", expected = "{{version}}" }

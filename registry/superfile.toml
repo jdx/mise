@@ -1,0 +1,3 @@
+backends = ["aqua:yorukot/superfile"]
+description = "Pretty fancy and modern terminal file manager"
+test = { cmd = "spf --version", expected = "superfile version v{{version}}" }

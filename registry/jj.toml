@@ -1,0 +1,3 @@
+aliases = ["jujutsu"]
+backends = ["aqua:jj-vcs/jj", "cargo:jj-cli"]
+description = "A Git-compatible VCS that is both simple and powerful"

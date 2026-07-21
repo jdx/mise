@@ -1,0 +1,7 @@
+backends = [
+  "aqua:theryangeary/choose",
+  "cargo:choose",
+  "asdf:carbonteq/asdf-choose",
+]
+description = "A human-friendly and fast alternative to cut (and sometimes awk)"
+test = { cmd = "choose --version", expected = "{{version}}" }

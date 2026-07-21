@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+
+mkdir -p dotfiles/nvim dotfiles/bin
+echo "gitconfig content" >dotfiles/gitconfig
+echo "starship config" >dotfiles/starship.toml
+echo "init.lua" >dotfiles/nvim/init.lua
+echo "one" >dotfiles/bin/one
+echo "two" >dotfiles/bin/two
+echo "sum = {{ 1 + 1 }}" >dotfiles/ssh_config.tmpl
+
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.gitconfig" = "dotfiles/gitconfig"
+"~/.config/starship.toml" = { source = "dotfiles/starship.toml", mode = "copy" }
+"~/.ssh/config" = { source = "dotfiles/ssh_config.tmpl", mode = "template" }
+"~/.config/nvim" = "dotfiles/nvim"
+"~/.local/mybin" = { source = "dotfiles/bin", mode = "symlink-each" }
+EOF
+
+# everything is missing before applying
+assert_contains "mise dotfiles status" "missing"
+assert_contains "MISE_EXPERIMENTAL=0 mise dotfiles status" "missing"
+assert_fail "mise dotfiles status --missing"
+
+# system commands do not manage dotfiles
+assert_succeed "mise bootstrap packages apply --yes"
+assert_fail "cat ~/.gitconfig"
+
+# dry-run prints actions without writing anything
+assert_contains "mise dotfiles apply --dry-run" "ln -sf"
+assert_fail "cat ~/.gitconfig"
+
+assert_succeed "mise dotfiles apply --yes"
+assert "readlink ~/.gitconfig" "$PWD/dotfiles/gitconfig"
+assert "cat ~/.config/starship.toml" "starship config"
+assert "cat ~/.ssh/config" "sum = 2"
+assert "readlink ~/.config/nvim" "$PWD/dotfiles/nvim"
+assert "readlink ~/.local/mybin/one" "$PWD/dotfiles/bin/one"
+assert "readlink ~/.local/mybin/two" "$PWD/dotfiles/bin/two"
+
+# a table containing only source is a whole-file dotfile entry, not an edit
+echo "source-only table" >dotfiles/source-only
+cat <<EOF >>mise.toml
+"~/.source-only" = { source = "dotfiles/source-only" }
+EOF
+assert_contains "mise dotfiles status ~/.source-only" "symlink"
+assert_succeed "mise dotfiles apply ~/.source-only --yes"
+assert "readlink ~/.source-only" "$PWD/dotfiles/source-only"
+
+# wildcard sources expand to concrete target paths using matching target wildcards
+mkdir -p dotfiles/config dotfiles/question dotfiles/classes dotfiles/tree/nested
+echo "bat config" >dotfiles/config/bat.conf
+echo "question config" >dotfiles/question/app1.conf
+echo "class config" >dotfiles/classes/theme-a.conf
+echo "root config" >dotfiles/tree/root.conf
+echo "tool config" >dotfiles/tree/nested/tool.conf
+cat <<EOF >>mise.toml
+"~/.config/*.conf" = { source = "dotfiles/config/*.conf", mode = "copy" }
+"~/.local/question/app?.conf" = { source = "dotfiles/question/app?.conf", mode = "copy" }
+"~/.local/classes/theme-[ab].conf" = { source = "dotfiles/classes/theme-[ab].conf", mode = "copy" }
+"~/.local/tree/**/*.conf" = "dotfiles/tree/**/*.conf"
+EOF
+assert_succeed "mise dotfiles apply --yes"
+assert "cat ~/.config/bat.conf" "bat config"
+assert "cat ~/.local/question/app1.conf" "question config"
+assert "cat ~/.local/classes/theme-a.conf" "class config"
+assert "readlink ~/.local/tree/root.conf" "$PWD/dotfiles/tree/root.conf"
+assert "readlink ~/.local/tree/nested/tool.conf" "$PWD/dotfiles/tree/nested/tool.conf"
+
+# empty wildcard sources are skipped instead of blocking unrelated entries
+cat <<EOF >>mise.toml
+"~/.config/missing-*.conf" = "dotfiles/config/missing-*.conf"
+EOF
+assert_succeed "mise dotfiles status"
+assert_contains "mise dotfiles status 2>&1" "source pattern matched no files"
+assert_succeed "mise dotfiles apply --yes"
+
+# symlink-each leaves room for files mise doesn't manage
+touch ~/.local/mybin/unmanaged
+
+# idempotent: everything reports applied and re-running is a no-op
+assert_succeed "mise dotfiles status --missing"
+assert_contains "mise dotfiles status" "applied"
+assert_contains "mise dotfiles apply --yes 2>&1" "all files are applied"
+assert "ls ~/.local/mybin/unmanaged" "$HOME/.local/mybin/unmanaged"
+
+# copy entries pick up source changes on reapply
+echo "starship v2" >dotfiles/starship.toml
+assert_contains "mise dotfiles status" "differs"
+assert_succeed "mise dotfiles apply --yes"
+assert "cat ~/.config/starship.toml" "starship v2"
+
+# template permission drift is detected and repaired
+chmod 644 ~/.ssh/config
+chmod 600 dotfiles/ssh_config.tmpl
+assert_contains "mise dotfiles status" "permissions differ"
+assert_succeed "mise dotfiles apply --yes"
+case "$(uname -s)" in
+  Darwin) assert "stat -f %Lp ~/.ssh/config" "600" ;;
+  *) assert "stat -c %a ~/.ssh/config" "600" ;;
+esac
+
+# copying an empty source directory still creates the target dir (converges)
+mkdir -p dotfiles/emptydir
+cat <<EOF >>mise.toml
+"~/.local/emptydir" = { source = "dotfiles/emptydir", mode = "copy" }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+assert_directory_exists "$HOME/.local/emptydir"
+assert_succeed "mise dotfiles status --missing"
+
+# same for symlink-each, including a blocking file being a --force-able
+# conflict rather than silently reported applied
+mkdir -p dotfiles/emptylinks
+cat <<EOF >>mise.toml
+"~/.local/emptylinks" = { source = "dotfiles/emptylinks", mode = "symlink-each" }
+EOF
+echo "blocker" >~/.local/emptylinks
+assert_fail "mise dotfiles apply --yes"
+assert_succeed "mise dotfiles apply --yes --force"
+assert_directory_exists "$HOME/.local/emptylinks"
+assert_succeed "mise dotfiles status --missing"
+
+# dry-run never renders templates (exec() in a template must not run)
+cat <<EOF >dotfiles/exec.tmpl
+{{ exec(command="touch exec-ran") }}
+EOF
+cat <<EOF >>mise.toml
+"~/.local/exec-out" = { source = "dotfiles/exec.tmpl", mode = "template" }
+EOF
+assert_succeed "mise dotfiles apply --dry-run"
+assert_fail "ls exec-ran"
+
+# a dangling symlink at a copy target is replaced, not an IO error
+rm ~/.config/starship.toml
+ln -s /nonexistent-source ~/.config/starship.toml
+assert_contains "mise dotfiles status" "differs"
+assert_succeed "mise dotfiles apply --yes"
+assert "cat ~/.config/starship.toml" "starship v2"
+
+# directory copies are additive: unmanaged files survive a reapply
+cat <<EOF >>mise.toml
+"~/.local/copydir" = { source = "dotfiles/bin", mode = "copy" }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+assert "cat ~/.local/copydir/one" "one"
+echo "keep me" >~/.local/copydir/unmanaged
+echo "one v2" >dotfiles/bin/one
+assert_succeed "mise dotfiles apply --yes"
+assert "cat ~/.local/copydir/one" "one v2"
+assert "cat ~/.local/copydir/unmanaged" "keep me"
+
+# a real file where a symlink should go is a conflict: not clobbered
+rm ~/.gitconfig
+# identical content: regular file converges to symlink without --force
+cat dotfiles/gitconfig >~/.gitconfig
+assert_succeed "mise dotfiles apply --yes"
+assert "readlink ~/.gitconfig" "$PWD/dotfiles/gitconfig"
+rm ~/.gitconfig
+echo "precious" >~/.gitconfig
+assert_fail "mise dotfiles apply --yes"
+assert "cat ~/.gitconfig" "precious"
+# --force replaces it
+assert_succeed "mise dotfiles apply --yes --force"
+assert "readlink ~/.gitconfig" "$PWD/dotfiles/gitconfig"
+
+# symlink-each: a real file where the target directory should go is also a
+# conflict, not a raw filesystem error
+rm -rf ~/.local/mybin
+echo "blocker" >~/.local/mybin
+assert_fail "mise dotfiles apply --yes"
+assert "cat ~/.local/mybin" "blocker"
+assert_succeed "mise dotfiles apply --yes --force"
+assert "readlink ~/.local/mybin/one" "$PWD/dotfiles/bin/one"
+
+# unknown modes warn but don't fail (forward compatibility)
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.gitconfig" = { source = "dotfiles/gitconfig", mode = "hardlink" }
+EOF
+assert_succeed "mise dotfiles status"
+assert_contains "mise dotfiles status 2>&1" "unknown mode"
+
+# relative targets warn but don't fail
+cat <<EOF >mise.toml
+[dotfiles]
+"relative/path" = "dotfiles/gitconfig"
+EOF
+assert_succeed "mise dotfiles status"
+assert_contains "mise dotfiles status 2>&1" "must be absolute"
+
+# missing sources are visible in status and error on install
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.missing" = "dotfiles/does-not-exist"
+EOF
+assert_contains "mise dotfiles status" "source missing"
+assert_fail "mise dotfiles apply --yes"
+
+# all problems are reported in one pass: a broken template doesn't hide a
+# missing source (or vice versa)
+echo "{{ not_a_real_function() }}" >dotfiles/bad.tmpl
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.broken" = { source = "dotfiles/bad.tmpl", mode = "template" }
+"~/.missing" = "dotfiles/does-not-exist"
+EOF
+if install_out="$(mise dotfiles apply --yes 2>&1)"; then
+  fail "[mise dotfiles apply --yes] expected failure"
+fi
+assert_contains_text "$install_out" "sources do not exist"
+assert_contains_text "$install_out" "failed to render"
+
+# implied sources mirror home-relative paths under dotfiles.root and use
+# dotfiles.default_mode when mode is omitted
+mkdir -p implied-root/.config
+echo "implied content" >implied-root/.implied
+echo "implied starship" >implied-root/.config/implied-starship.toml
+cat <<EOF >mise.toml
+[settings]
+dotfiles.root = "$PWD/implied-root"
+dotfiles.default_mode = "copy"
+
+[dotfiles]
+"~/.implied" = {}
+"~/.config/implied-starship.toml" = { mode = "copy" }
+EOF
+assert_contains "mise dotfiles status ~/.implied" "copy"
+assert_succeed "mise dotfiles apply ~/.implied --yes"
+assert "cat ~/.implied" "implied content"
+assert_fail "cat ~/.config/implied-starship.toml"
+assert_succeed "mise dotfiles apply --yes"
+assert "cat ~/.config/implied-starship.toml" "implied starship"
+echo "implied content v2" >implied-root/.implied
+verbose_out="$(mise dotfiles apply ~/.implied --dry-run --verbose 2>&1)"
+assert_contains_text "$verbose_out" "content differs"
+
+# add captures live files into dotfiles.root and writes explicit mode
+echo "captured content" >~/.captured
+MISE_DOTFILES_ROOT="$PWD/captured-root" MISE_DOTFILES_DEFAULT_MODE=symlink mise dotfiles add '~/.captured' --yes
+assert "cat captured-root/.captured" "captured content"
+assert_contains "cat ~/.config/mise/config.toml" '"~/.captured" = { mode = "symlink" }'
+rm ~/.config/mise/config.toml
+
+# add on an already-managed copied file stores live changes back to the source
+cat <<EOF >mise.toml
+[settings]
+dotfiles.root = "$PWD/copied-root"
+
+[dotfiles]
+"~/.copied" = { mode = "copy" }
+EOF
+mkdir -p copied-root
+echo "source copy" >copied-root/.copied
+assert_succeed "mise dotfiles apply --yes"
+echo "live copy edit" >~/.copied
+assert_succeed "mise dotfiles add ~/.copied --yes"
+assert "cat copied-root/.copied" "live copy edit"
+mode_warn="$(mise dotfiles add --mode symlink ~/.copied --yes 2>&1)"
+assert_contains "echo \"$mode_warn\"" "--mode symlink was ignored"
+
+# edit opens the managed source, including symlink sources
+cat <<'EOF' >editor-write
+#!/usr/bin/env bash
+echo "edited source" >"$1"
+EOF
+chmod +x editor-write
+echo "before edit" >edit-source
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.edit-symlink" = { source = "edit-source", mode = "symlink" }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+EDITOR="$PWD/editor-write" mise dotfiles edit ~/.edit-symlink
+assert "cat edit-source" "edited source"
+assert "cat ~/.edit-symlink" "edited source"
+assert_succeed "mise dotfiles add ~/.edit-symlink --yes"
+assert "cat edit-source" "edited source"
+
+# edit --apply updates copied targets after editing the source
+echo "copy before edit" >edit-copy-source
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.edit-copy" = { source = "edit-copy-source", mode = "copy" }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+EDITOR="$PWD/editor-write" mise dotfiles edit --apply ~/.edit-copy
+assert "cat ~/.edit-copy" "edited source"
+
+# inline edit entries open the owning mise config file
+cat <<'EOF' >editor-append
+#!/usr/bin/env bash
+echo "# edited config" >>"$1"
+EOF
+chmod +x editor-append
+cat <<EOF >mise.toml
+[dotfiles]
+"~/inline-edit/dev" = { line = "inline content" }
+EOF
+EDITOR="$PWD/editor-append" mise dotfiles edit ~/inline-edit
+assert_contains "cat mise.toml" "# edited config"

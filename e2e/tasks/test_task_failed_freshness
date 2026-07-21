@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# A failed rerun must invalidate an automatic output left by an earlier success.
+cat <<'EOF' >mise.toml
+[tasks.auto]
+run = "test ! -f fail-auto && echo auto-ran"
+sources = ["auto.src"]
+outputs = { auto = true }
+EOF
+
+touch auto.src
+
+assert "mise run -q auto" "auto-ran"
+assert_empty "mise run -q auto"
+touch fail-auto
+assert_fail "mise run -q --force auto"
+rm fail-auto
+assert "mise run -q auto" "auto-ran"
+assert_empty "mise run -q auto"

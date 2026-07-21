@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Test that fuzzy matching works with vendor prefixes like "temurin-", "corretto-", etc.
+# Regression test for https://github.com/jdx/mise/discussions/7328
+#
+# The bug: fuzzy_match_filter uses pattern ^{query}([-.].+)?$ which doesn't match
+# versions like "temurin-25.0.1" because after "temurin-" there's a digit, not "-" or "."
+
+# Regression: numeric queries should not match unintended versions.
+# For example "11.0.1" must not match "11.0.10".
+assert_contains "mise latest java 11.0.1" "11.0.1"
+assert_not_contains "mise latest java 11.0.1" "11.0.10"
+
+# Test 1: ls-remote with full prefix+version works
+assert_contains "mise ls-remote java temurin-25" "temurin-25"
+
+# Test 2: latest with full prefix+version works
+assert_contains "mise latest java temurin-25" "temurin-25"
+
+# Test 3: THE BUG - latest with just vendor prefix should work but doesn't
+# When doing `mise upgrade --bump`, it extracts just the prefix "temurin-"
+# and tries to find the latest version matching that prefix
+assert_contains "mise latest java 'temurin-'" "temurin-"
+
+# Test 4: Same bug with other vendors
+assert_contains "mise latest java 'corretto-'" "corretto-"
+assert_contains "mise latest java 'zulu-'" "zulu-"
+
+# Test 5: The original issue - upgrade with vendor prefix should not error
+cat <<EOF >mise.toml
+[tools]
+java = "temurin-25"
+EOF
+
+mise install java
+assert_not_contains "mise upgrade java --bump --dry-run 2>&1" "no latest version found"

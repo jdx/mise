@@ -1,0 +1,7 @@
+backends = [
+  "aqua:bazelbuild/bazelisk",
+  "npm:@bazel/bazelisk",
+  "asdf:josephtate/asdf-bazelisk",
+]
+description = "A user-friendly launcher for Bazel"
+test = { cmd = "bazelisk --version", expected = "bazel" } # shows bazel version, not bazelisk version

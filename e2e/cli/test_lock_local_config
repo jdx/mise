@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+# Test that `mise lock` writes tools to the correct lockfile based on their source config.
+# Tools from mise.toml should go to mise.lock, tools from mise.local.toml to mise.local.lock.
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+echo "=== Test: tools only in mise.toml, mise.local.toml has only env ==="
+rm -f mise.toml mise.local.toml mise.lock mise.local.lock
+
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF
+
+cat <<EOF >mise.local.toml
+[env]
+FOO = "bar"
+EOF
+
+mise lock --platform linux-x64
+# Tools should go to mise.lock, not mise.local.lock
+assert "test -f mise.lock"
+assert "test ! -f mise.local.lock"
+assert_contains "cat mise.lock" "jqlang/jq"
+assert_contains "cat mise.lock" "1.7.1"
+
+echo "=== Test: tools in both configs go to separate lockfiles ==="
+rm -f mise.toml mise.local.toml mise.lock mise.local.lock
+
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF
+
+cat <<EOF >mise.local.toml
+[tools]
+"aqua:mikefarah/yq" = "4.44.6"
+EOF
+
+mise lock --platform linux-x64
+# jq (from mise.toml) should be in mise.lock
+assert "test -f mise.lock"
+assert_contains "cat mise.lock" "jqlang/jq"
+assert_not_contains "cat mise.lock" "mikefarah/yq"
+
+# yq (from mise.local.toml) should be in mise.local.lock
+assert "test -f mise.local.lock"
+assert_contains "cat mise.local.lock" "mikefarah/yq"
+assert_not_contains "cat mise.local.lock" "jqlang/jq"
+
+echo "=== Test: --local flag only writes mise.local.lock ==="
+rm -f mise.lock mise.local.lock
+
+mise lock --local --platform linux-x64
+# Only mise.local.lock should be created
+assert "test -f mise.local.lock"
+assert "test ! -f mise.lock"
+assert_contains "cat mise.local.lock" "mikefarah/yq"
+
+echo "=== Cleanup ==="
+rm -f mise.toml mise.local.toml mise.lock mise.local.lock
+
+echo "mise lock local config tests passed!"

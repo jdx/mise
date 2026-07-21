@@ -1,0 +1,3 @@
+backends = ["github:apollographql/router", "asdf:safx/asdf-apollo-router"]
+description = "A configurable, high-performance routing runtime for Apollo Federation"
+test = { cmd = "router --version", expected = "{{version}}" }

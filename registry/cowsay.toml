@@ -1,0 +1,2 @@
+backends = ["npm:cowsay"]
+description = "cowsay is a configurable talking cow, originally written in Perl by Tony Monroe"

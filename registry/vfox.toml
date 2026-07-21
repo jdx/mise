@@ -1,0 +1,3 @@
+backends = ["aqua:version-fox/vfox"]
+description = "A cross-platform and extendable version manager with support for Java, Node.js, Flutter, .Net & more"
+test = { cmd = "vfox --version", expected = "vfox version {{version}}" }

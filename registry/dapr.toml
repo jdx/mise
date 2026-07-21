@@ -1,0 +1,3 @@
+backends = ["aqua:dapr/cli", "asdf:asdf-community/asdf-dapr-cli"]
+description = "Command-line tools for Dapr"
+test = { cmd = "dapr --version", expected = "CLI version: {{version}}" }

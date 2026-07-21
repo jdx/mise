@@ -1,0 +1,8 @@
+backends = [
+  "aqua:mpalmer/action-validator",
+  "asdf:mpalmer/action-validator",
+  "cargo:action-validator",
+]
+description = "Tool to validate GitHub Action and Workflow YAML files"
+os = ["linux", "macos"]
+test = { cmd = "action-validator --version", expected = "action-validator {{version}}" }

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Test for PATH regression where paths after the first original path match are lost
+# Issue: https://github.com/jdx/mise/discussions/6820
+
+# This test simulates the scenario where:
+# 1. Original PATH has system paths
+# 2. User adds some Homebrew paths
+# 3. Mise adds its tool paths
+# 4. User adds MORE Homebrew paths (which get interleaved with system paths)
+# Result: Paths after the first system path match were being lost
+
+export MISE_EXPERIMENTAL=1
+
+# Simulate the PATH that existed when mise was first activated
+# (before user's full shell config ran)
+export __MISE_ORIG_PATH="/usr/local/bin:/usr/bin:/bin"
+
+# Simulate current PATH with interleaved Homebrew and system paths
+# This mimics a situation where:
+# - /opt/homebrew/opt/curl/bin was added before system paths
+# - /opt/homebrew/opt/findutils/libexec/gnubin was added after /usr/local/bin
+# - /opt/homebrew/opt/grep/libexec/gnubin was added after /usr/bin
+export PATH="/opt/homebrew/opt/curl/bin:/usr/local/bin:/opt/homebrew/opt/findutils/libexec/gnubin:/usr/bin:/opt/homebrew/opt/grep/libexec/gnubin:/bin"
+
+# Create a project with a tool
+cat >.mise.toml <<EOF
+[tools]
+tiny = "latest"
+EOF
+
+# Run hook-env and source it
+eval "$(mise hook-env -s bash)"
+
+# Verify that all Homebrew paths are still present
+# The bug would cause paths after /usr/local/bin to be lost
+assert_contains "echo $PATH" "/opt/homebrew/opt/curl/bin"
+assert_contains "echo $PATH" "/opt/homebrew/opt/findutils/libexec/gnubin"
+assert_contains "echo $PATH" "/opt/homebrew/opt/grep/libexec/gnubin"
+
+# Verify system paths are still present
+assert_contains "echo $PATH" "/usr/local/bin"
+assert_contains "echo $PATH" "/usr/bin"

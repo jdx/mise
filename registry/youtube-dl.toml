@@ -1,0 +1,3 @@
+backends = ["aqua:ytdl-org/ytdl-nightly", "asdf:mise-plugins/mise-youtube-dl"]
+description = "Command-line program to download videos from YouTube.com and other video sites"
+test = { cmd = "youtube-dl --version", expected = "{{version}}" }

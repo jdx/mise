@@ -1,0 +1,6 @@
+backends = [
+  "aqua:kubernetes-sigs/cluster-api",
+  "asdf:pfnet-research/asdf-clusterctl",
+]
+description = "Home for Cluster API, a subproject of sig-cluster-lifecycle"
+test = { cmd = "clusterctl version", expected = "{{version}}" }

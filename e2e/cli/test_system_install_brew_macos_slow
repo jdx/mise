@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# Direct Homebrew metadata tests need a macOS CI runner with network. Keep this
+# out of local runs so it never removes a developer's installed applications.
+if [[ "$(uname)" != "Darwin" ]] || [[ ${CI:-} != "true" ]]; then
+  exit 0
+fi
+
+cask_app="/Applications/Hidden Bar.app"
+caskroom="/opt/homebrew/Caskroom/hiddenbar"
+
+if [[ -e $cask_app ]] || [[ -e $caskroom ]]; then
+  exit 0
+fi
+
+trap 'rm -rf "$cask_app" "$caskroom"' EXIT
+
+assert_contains "mise bootstrap packages brew tap --dry-run jdx/tap" "~/.config/mise/config.toml"
+mise bootstrap packages brew tap jdx/tap
+assert_contains "cat ~/.config/mise/config.toml" '[bootstrap.brew.taps]'
+assert_contains "cat ~/.config/mise/config.toml" '"jdx/tap" = "https://github.com/jdx/homebrew-tap.git"'
+
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew-cask:hiddenbar" = "latest"
+EOF
+
+assert_contains "mise bootstrap packages status" "missing"
+mise bootstrap packages apply --yes
+
+assert_directory_exists "$cask_app"
+assert_directory_exists "$caskroom"
+assert_contains "mise bootstrap packages status" "installed"
+
+# aube's install docs reference jdx/tap/aube. It currently lives in
+# homebrew/core and the public jdx tap does not publish aube API metadata, so
+# this assertion starts validating the tapped install path as soon as that tap
+# metadata is available without falling back to the brew CLI.
+if curl --retry 3 --retry-delay 1 --max-time 10 -fsSL https://raw.githubusercontent.com/jdx/homebrew-tap/HEAD/api/formula/aube.json >/dev/null 2>&1; then
+  cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew:jdx/tap/aube" = "latest"
+EOF
+  mise bootstrap packages apply --yes
+  assert_contains "/opt/homebrew/bin/aube --version" "aube"
+fi

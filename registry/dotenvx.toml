@@ -1,0 +1,3 @@
+backends = ["aqua:dotenvx/dotenvx"]
+description = "a secure dotenv–from the creator of `dotenv`"
+test = { cmd = "dotenvx --version", expected = "{{version}}" }

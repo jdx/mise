@@ -9,12 +9,25 @@ All examples are in toml-task format instead of file, however they apply in both
 
 ### `run`
 
-- **Type**: `string | string[]`
+- **Type**: `string | (string | { task: string, args?: string[], env?: { [key]: string } } | { tasks: string[] })[]`
 
-The command to run. This is the only required property for a task. Note that tasks can be defined in
-`mise.toml` in various ways in order to simplify the config, e.g.: these are all equal:
+The command(s) to run. This is the only required property for a task.
 
-```toml
+You can mix scripts with task references, and pass optional `args` and `env` to referenced tasks:
+
+```mise-toml
+[tasks.grouped]
+run = [
+  { task = "t1" },          # run t1 (with its dependencies)
+  { task = "build", args = ["--release"], env = { RUSTFLAGS = "-C opt-level=3" } },
+  { tasks = ["t2", "t3"] }, # run t2 and t3 in parallel (with their dependencies)
+  "echo end",               # then run a script
+]
+```
+
+Simple forms still work and are equivalent:
+
+```mise-toml
 tasks.a = "echo hello"
 tasks.b = ["echo hello"]
 tasks.c.run = "echo hello"
@@ -26,9 +39,11 @@ run = ["echo hello"]
 
 ### `run_windows`
 
-An alternative script to run when `mise run` is executed on windows:
+- **Type**: `string | (string | { task: string, args?: string[], env?: { [key]: string } } | { tasks: string[] })[]`
 
-```toml
+Windows-specific variant of `run` supporting the same structured syntax:
+
+```mise-toml
 [tasks.build]
 run = "cargo build"
 run_windows = "cargo build --features windows"
@@ -41,7 +56,7 @@ run_windows = "cargo build --features windows"
 A description of the task. This is used in (among other places)
 the help output, completions, `mise run` (without arguments), and `mise tasks`.
 
-```toml
+```mise-toml
 [tasks.build]
 description = "Build the CLI"
 run = "cargo build"
@@ -53,22 +68,22 @@ run = "cargo build"
 
 An alias for the task so you can run it with `mise run <alias>` instead of the full task name.
 
-```toml
+```mise-toml
 [tasks.build]
-alias = "b" # run with `mise run b` or `mise b`
+alias = "b" # run with `mise run b`
 run = "cargo build"
 ```
 
 ### `depends`
 
-- **Type**: `string | string[]`
+- **Type**: `string | string[] | { task: string, args?: string[], env?: { [key]: string } }[]`
 
 Tasks that must be run before this task. This is a list of task names or aliases. Arguments can be
 passed to the task, e.g.: `depends = ["build --release"]`. If multiple tasks have the same dependency,
 that dependency will only be run once. mise will run whatever it can in parallel (up to [`--jobs`](/cli/run))
 through the use of `depends` and related properties.
 
-```toml
+```mise-toml
 [tasks.build]
 run = "cargo build"
 [tasks.test]
@@ -76,14 +91,95 @@ depends = ["build"]
 run = "cargo test"
 ```
 
+#### Passing environment variables to dependencies
+
+You can pass environment variables to specific dependencies using two syntaxes:
+
+**Shell-style inline:**
+
+```mise-toml
+[tasks.test]
+depends = ["NODE_ENV=test setup"]
+run = "npm test"
+
+[tasks.setup]
+run = 'echo "Setting up for $NODE_ENV"'
+```
+
+**Structured object format:**
+
+```mise-toml
+[tasks.test]
+depends = [
+  { task = "setup", env = { NODE_ENV = "test", DEBUG = "true" } }
+]
+run = "npm test"
+```
+
+The structured format also supports combining env vars with arguments:
+
+```mise-toml
+[tasks.deploy]
+depends = [
+  { task = "build", args = ["--release"],
+    env = { RUSTFLAGS = "-C opt-level=3" } }
+]
+run = "./deploy.sh"
+```
+
+Note: These environment variables are passed only to the specified dependency, not to the current task or other dependencies.
+
+#### Passing parent task arguments to dependencies
+
+You can forward a parent task's arguments to its dependencies using <span v-pre>`{{usage.*}}`</span> templates.
+Both the parent and child tasks must define a `usage` spec for the arguments they accept:
+
+```mise-toml
+[tasks.build]
+usage = 'arg "<app>"'
+run = 'echo "building {{usage.app}}"'
+
+[tasks.deploy]
+usage = 'arg "<app>"'
+depends = [{ task = "build", args = ["{{usage.app}}"] }]
+run = 'echo "deploying {{usage.app}}"'
+```
+
+Running `mise run deploy myapp` passes `"myapp"` to both `deploy` and its `build` dependency.
+
+This also works with the string syntax:
+
+```mise-toml
+[tasks.deploy]
+usage = 'arg "<app>"'
+depends = ["build {{usage.app}}"]
+run = 'echo "deploying {{usage.app}}"'
+```
+
+And with flags:
+
+```mise-toml
+[tasks.compile]
+usage = 'flag "--target <target>"'
+run = 'echo "compiling for $usage_target"'
+
+[tasks.package]
+usage = 'flag "--target <target>"'
+depends = [{ task = "compile", args = ["--target", "{{usage.target}}"] }]
+run = 'echo "packaging for $usage_target"'
+```
+
+Arguments flow through dependency chains — if A depends on B which depends on C, each task can
+forward its resolved arguments to its own dependencies.
+
 ### `depends_post`
 
-- **Type**: `string | string[]`
+- **Type**: `string | string[] | { task: string, args?: string[], env?: { [key]: string } }[]`
 
 Like `depends` but these tasks run _after_ this task and its dependencies complete. For example, you
 may want a `postlint` task that you can run individually without also running `lint`:
 
-```toml
+```mise-toml
 [tasks.lint]
 run = "eslint ."
 depends_post = ["postlint"]
@@ -91,18 +187,27 @@ depends_post = ["postlint"]
 run = "echo 'linting complete'"
 ```
 
+Supports the same argument and environment variable syntax as `depends`.
+
 ### `wait_for`
 
-- **Type**: `string | string[]`
+- **Type**: `string | string[] | { task: string, args?: string[], env?: { [key]: string } }[]`
 
 Similar to `depends`, it will wait for these tasks to complete before running however they won't be
 added to the list of tasks to run. This is essentially optional dependencies.
 
-```toml
+```mise-toml
 [tasks.lint]
 wait_for = ["render"] # creates some js files, so if it's running, wait for it to finish
 run = "eslint ."
 ```
+
+Supports the same argument and environment variable syntax as `depends`.
+
+`wait_for` matches tasks differently depending on whether args or env vars are specified:
+
+- `wait_for = ["setup"]` — matches by name, regardless of args or env overrides. If another task runs `depends = ["DEBUG=1 setup"]`, this will still match and wait for it.
+- `wait_for = ["setup arg1"]` or `wait_for = ["DEBUG=1 setup"]` — matches only tasks running with that exact args/env configuration.
 
 ### `env`
 
@@ -110,12 +215,12 @@ run = "eslint ."
 
 Environment variables specific to this task. These will not be passed to `depends` tasks.
 
-```toml
+```mise-toml
 [tasks.test]
 env.TEST_ENV_VAR = "ABC"
 run = [
     "echo $TEST_ENV_VAR",
-    "mise run some-other-task", # running tasks this will _will_ have TEST_ENV_VAR set of course
+    "mise run some-other-task", # running tasks like this _will_ have TEST_ENV_VAR set of course
 ]
 ```
 
@@ -126,7 +231,7 @@ run = [
 Tools to install and activate before running the task. This is useful for tasks that require a specific tool to be
 installed or a tool with a different version. It will only be used for that task, not dependencies.
 
-```toml
+```mise-toml
 [tasks.build]
 tools.rust = "1.50.0"
 run = "cargo build"
@@ -140,7 +245,7 @@ run = "cargo build"
 The directory to run the task from. The most common way this is used is when you want the task to execute
 in the user's current directory:
 
-```toml
+```mise-toml
 [tasks.test]
 dir = "{{cwd}}"
 run = "cargo test"
@@ -154,7 +259,7 @@ run = "cargo test"
 Hide the task from help, completion, and other output like `mise tasks`. Useful for deprecated or internal
 tasks you don't want others to easily see.
 
-```toml
+```mise-toml
 [tasks.internal]
 hide = true
 run = "echo my internal task"
@@ -162,16 +267,32 @@ run = "echo my internal task"
 
 ### `confirm`
 
-- **Type**: `string`
+- **Type**: `string` | `{ message: string, default: string }`
 
 A message to show before running the task. This is useful for tasks that are destructive or take a long
-time to run. The user will be prompted to confirm before the task is run.
+time to run. The user will be prompted to confirm before the task's own `run` command executes.
 
-```toml
+::: warning
+`confirm` only guards the task's own `run` command. Dependencies (`depends`) will execute **before** the confirmation prompt appears. If you need confirmation before dependencies run, add `confirm` to the dependency tasks themselves, or use `run = [{ task = "..." }]` instead of `depends`.
+:::
+
+```mise-toml
 [tasks.release]
-confirm = "Are you sure you want to cut a release?"
+confirm = { message = "Are you sure you want to cut a release?", default = "no" }
 description = 'Cut a new release'
 file = 'scripts/release.sh'
+```
+
+The confirm message supports Tera templates and can reference usage arguments:
+
+```mise-toml
+[tasks.deploy]
+usage = '''
+arg "<environment>" help="Environment to deploy to"
+flag "--force" help="Force deployment"
+'''
+confirm = "Deploy to {{ usage.environment }}?{% if usage.force %} (forced){% endif %}"
+run = "deploy.sh ${usage_environment}"
 ```
 
 ### `raw`
@@ -186,6 +307,44 @@ this that no other tasks are running at the same time.
 
 In the future we could have a property like `single = true` or something that prevents multiple tasks
 from running at the same time. If that sounds useful, search/file a ticket.
+
+### `raw_args`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+When `true`, mise does not parse arguments to the task at all — every argument
+is passed through verbatim to the underlying command, including `--help`/`-h`.
+Use this for tasks that act as a thin proxy for a tool which already has its
+own argument parser (e.g. `next build`, Django `manage.py`, Python scripts
+using `argparse`):
+
+```toml
+[tasks.manage]
+raw_args = true
+run = 'python manage.py'
+```
+
+```sh
+mise run manage --help          # forwarded to manage.py, not intercepted by mise
+mise run manage migrate --fake  # all flags reach manage.py unchanged
+```
+
+Without `raw_args`, mise intercepts `--help` and prints its own task help. As
+an ad-hoc alternative for individual invocations, you can also use
+`mise run task -- --help` — the `--` separator now bypasses mise's usage
+parser specifically for `--help`/`-h`. Arguments after that separator belong
+to the task, so `mise run task -- -- --help` forwards `-- --help` to the task.
+
+### `interactive`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Connects the task directly to the shell's stdin/stdout/stderr. Interactive tasks acquire an exclusive lock,
+ensuring sole access to standard I/O — while an interactive task is running, all other tasks (both interactive
+and non-interactive) are blocked. Non-interactive tasks can still run in parallel with each other. This is more
+targeted than the broad `raw` setting which forces single-threaded execution globally (by setting `jobs = 1`).
 
 ### `sources`
 
@@ -205,7 +364,7 @@ This can be specified with relative paths to the config file and/or with glob pa
 Ensure you don't go crazy with adding a ton of files in a glob though—mise has to scan each and every one to check
 the timestamp.
 
-```toml
+```mise-toml
 [tasks.build]
 run = "cargo build"
 sources = ["Cargo.toml", "src/**/*.rs"]
@@ -215,9 +374,60 @@ outputs = ["target/debug/mycli"]
 Running the above will only execute `cargo build` if `mise.toml`, `Cargo.toml`, or any ".rs" file in the `src` directory
 has changed since the last build.
 
+The [`task_source_files`](../templates.md#task-source-files) function can be used to iterate over a task's
+`sources` within its template context.
+
+#### Excluding sources
+
+Entries in `sources` prefixed with `!` are excluded, matching the convention
+used by gitignore, watchexec, and rsync. Exclusions affect the freshness
+check, the `task_source_files` template function, and which files
+`mise watch` watches for changes.
+
+```mise-toml
+[tasks.build]
+sources = ["src/**/*.ts", "!src/**/*.test.ts", "!src/**/*.spec.ts", "tsconfig.json"]
+run = "npm run build"
+```
+
+Entries are evaluated in order, and the latest matching entry wins. A later
+non-negated entry can re-include a file an earlier `!` excluded — for example,
+`["src/**/*.ts", "!src/**/*.test.ts", "src/keep.test.ts"]` excludes all
+`*.test.ts` files except `src/keep.test.ts`.
+
+To include a literal path that begins with `!`, escape the prefix as `\!`
+(e.g. `"\\!important.txt"` in TOML).
+
+#### Dependency invalidation
+
+When a task depends on another task that also has `sources` defined, and the dependency runs because
+its sources changed, the dependent task will also re-run — even if the dependent's own sources haven't
+changed. This is useful for monorepo workflows where downstream tasks should be invalidated by upstream
+changes:
+
+```mise-toml
+[tasks."core:build"]
+run = "tsc -p packages/core"
+sources = ["packages/core/src/**/*.ts"]
+outputs = ["packages/core/dist/**/*.js"]
+
+[tasks."frontend:build"]
+run = "tsc -p packages/frontend"
+sources = ["packages/frontend/src/**/*.ts"]
+outputs = ["packages/frontend/dist/**/*.js"]
+depends = ["core:build"]
+```
+
+If a file in `packages/core/src/` changes, both `core:build` and `frontend:build` will run. If nothing
+changes, both are skipped.
+
+Note that dependencies **without** `sources` (which always run) do not trigger this invalidation —
+otherwise `sources` on the dependent task would be effectively useless.
+
 ### `outputs`
 
 - **Type**: `string | string[] | { auto = true }`
+- **Default**: `{ auto = true }`
 
 The counterpart to `sources`, these are the files or directories that the task will create/modify after
 it executes.
@@ -227,11 +437,11 @@ an internally tracked file based on the hash of the task definition (stored in `
 This is useful if you want `mise run` to execute when sources change but don't want to have to manually `touch`
 a file for `sources` to work.
 
-```toml
+```mise-toml
 [tasks.build]
 run = "cargo build"
 sources = ["Cargo.toml", "src/**/*.rs"]
-outputs = { auto = true }
+outputs = { auto = true } # this is the default when sources is defined
 ```
 
 ### `shell`
@@ -244,7 +454,7 @@ The shell to use to run the task. This is useful if you want to run a task with 
 the default such as `fish`, `zsh`, or `pwsh`. Generally though, it's recommended to use a [shebang](./toml-tasks#shell-shebang) instead
 because that will allow IDEs with mise support to show syntax highlighting and linting for the script.
 
-```toml
+```mise-toml
 [tasks.hello]
 run = '''
 #!/usr/bin/env node
@@ -261,6 +471,10 @@ Suppress mise's output for the task such as showing the command that is run, e.g
 When this is set, mise won't show any output other than what the script itself outputs. If you'd also
 like to hide even the output that the task emits, use [`silent`](#silent).
 
+`quiet` is a _verbosity_ setting and is independent of the [`output`](#output) _style_: it no longer
+forces un-prefixed output, so `output = "prefix"` together with `quiet = true` keeps the task-name
+prefixes while hiding mise's own messages.
+
 ### `silent`
 
 - **Type**: `bool | "stdout" | "stderr"`
@@ -268,31 +482,178 @@ like to hide even the output that the task emits, use [`silent`](#silent).
 
 Suppress all output from the task. If set to `"stdout"` or `"stderr"`, only that stream will be suppressed.
 
+### `output`
+
+- **Type**: `string`
+- **Default**: unset (inherits the global [`task.output`](/configuration/settings.html#task-output) setting)
+
+Output _style_ for this task: `prefix`, `interleave`, `keep-order`, `replacing`, `timed`, `quiet`, or
+`silent`. This is the per-task equivalent of the global `task.output` setting and is orthogonal to the
+[`quiet`](#quiet)/[`silent`](#silent) verbosity fields, so styles and quietness combine freely
+(e.g. `output = "prefix"` + `quiet = true`). The `quiet`/`silent` _values_ are kept for backwards
+compatibility and bundle a style with that verbosity.
+
 ### `usage`
 
 - **Type**: `string`
 
+::: tip
+For comprehensive information about task arguments and the usage field, see the dedicated [Task Arguments](/tasks/task-arguments) page.
+:::
+
 More advanced usage specs can be added to the task's `usage` field. This only applies to toml-tasks.
 
-```toml
+```mise-toml
 [tasks.test]
 usage = '''
-arg "file" description="The file to test" default="src/main.rs"
+arg "<file>" help="The file to test" default="src/main.rs"
 '''
-run = 'cargo test {{arg(name="file")}}'
+run = 'cargo test ${usage_file?}'
+```
+
+#### Environment Variable Support for Args and Flags
+
+Both args and flags in usage specs can specify an environment variable as an alternative source for their value. This allows task arguments to be provided through environment variables when not specified on the command line.
+
+The precedence order is:
+
+1. CLI arguments/flags (highest priority)
+2. Environment variables (middle priority)
+3. Default values (lowest priority)
+
+**For positional arguments:**
+
+```mise-toml
+[tasks.deploy]
+usage = '''
+arg "<environment>" env="DEPLOY_ENV" help="Target environment" default="staging"
+arg "<region>" env="AWS_REGION" help="AWS region" default="us-east-1"
+'''
+
+run = '''
+echo "Deploying to ${usage_environment?} in ${usage_region?}"
+'''
+```
+
+Usage examples:
+
+```bash
+# Using CLI args (highest priority)
+mise run deploy production us-west-2
+
+# Using environment variables
+export DEPLOY_ENV=production
+export AWS_REGION=us-west-2
+mise run deploy
+
+# Using defaults (lowest priority)
+mise run deploy  # deploys to staging in us-east-1
+
+# CLI overrides environment variable
+export DEPLOY_ENV=staging
+mise run deploy production  # deploys to production
+```
+
+**For flags:**
+
+```mise-toml
+[tasks.build]
+usage = '''
+flag "-p --profile <profile>" env="BUILD_PROFILE" help="Build profile" default="dev"
+flag "-v --verbose" env="VERBOSE" help="Verbose output"
+'''
+
+run = '''
+echo "Building with profile: ${usage_profile?}"
+echo "Verbose: ${usage_verbose:-false}"
+'''
+```
+
+Usage examples:
+
+```bash
+# Using CLI flags
+mise run build --profile release --verbose
+
+# Using environment variables
+export BUILD_PROFILE=release
+export VERBOSE=true
+mise run build
+
+# Mixed usage - env var provides one, CLI provides another
+export BUILD_PROFILE=release
+mise run build --verbose
+```
+
+**File tasks** (tasks defined as executable files in `mise-tasks/` or `.mise/tasks/`) also support the `env` attribute:
+
+```bash
+#!/usr/bin/env bash
+#USAGE arg "<input>" env="INPUT_FILE" help="Input file to process"
+#USAGE flag "-o --output <file>" env="OUTPUT_FILE" help="Output file" default="out.txt"
+
+echo "Processing ${usage_input?} -> ${usage_output?}"
+```
+
+**Required arguments:**
+
+Environment variables can satisfy required argument checks. If an argument is marked as required (using angle brackets `<arg>`), providing its value through the environment variable specified in the `env` attribute fulfills that requirement:
+
+```mise-toml
+[tasks.deploy]
+usage = '''
+arg "<api-key>" env="API_KEY" help="API key for deployment"
+'''
+run = 'deploy --api-key ${usage_api_key?}'
+```
+
+```bash
+# This will fail - no API_KEY provided
+mise run deploy
+
+# This succeeds - API_KEY provided via environment
+export API_KEY=secret123
+mise run deploy
+
+# This also succeeds - provided via CLI
+mise run deploy secret123
 ```
 
 ## Vars
 
-Vars are variables that can be shared between tasks like environment variables but they are not
-passed as environment variables to the scripts. They are defined in the `vars` section of the
-`mise.toml` file.
+Vars are values that can be shared between TOML tasks and other Tera-rendered config like tool
+versions/options. They are similar to environment variables, but they are not exported to task
+processes. Reference them with <span v-pre>`{{vars.NAME}}`</span>.
 
-```toml
+```mise-toml
 [vars]
 e2e_args = '--headless'
 
 [tasks.test]
+run = './scripts/test-e2e.sh {{vars.e2e_args}}'
+```
+
+Vars can also use value-producing directive forms from `[env]`:
+
+```mise-toml
+[vars]
+e2e_args = { default = "--headless" }
+api_token = { required = "Set api_token in mise.local.toml" }
+secret_arg = { value = "--token=abc123", redact = true }
+_.file = ".env"
+```
+
+The `default` form reads from a process environment variable with the same name when it is set and
+non-empty; values from `[env]` are not used for this lookup. The `required` form must be satisfied by
+the process environment or by a later config file like `mise.local.toml`. Values marked with
+`redact = true` are hidden from task output. [Secrets](/environments/secrets/) are also supported as
+vars.
+
+Tasks can also define task-local vars that override config vars for that task:
+
+```mise-toml
+[tasks.test]
+vars = { e2e_args = "--headed" }
 run = './scripts/test-e2e.sh {{vars.e2e_args}}'
 ```
 
@@ -307,7 +668,7 @@ I don't want to turn all file tasks into tera templates just for this feature.
 ## `[task_config]` options
 
 Options available in the top-level `mise.toml` `[task_config]` section. These apply to all tasks which
-are included by that config file or use the same root directory, e.g.: `~/src/myprojec/mise.toml`'s `[task_config]`
+are included by that config file or use the same root directory, e.g.: `~/src/myproject/mise.toml`'s `[task_config]`
 applies to file tasks like `~/src/myproject/mise-tasks/mytask` but not to tasks in `~/src/myproject/subproj/mise.toml`.
 
 ### `task_config.dir`
@@ -319,15 +680,57 @@ Change the default directory tasks are run from.
 dir = "{{cwd}}"
 ```
 
-### `task_config.includes`
+### `task_config.includes` {#task-config-includes}
 
-Add toml files containing toml tasks, or file tasks to include when looking for tasks.
+Set the toml files and file-task directories mise should search when looking for tasks.
 
 ```toml
 [task_config]
 includes = [
     "tasks.toml", # a task toml file
-    "mytasks"     # a directory containing file tasks (in addition to the default file tasks directories)
+    "mytasks"     # a directory containing file tasks
+]
+```
+
+When `task_config.includes` is set, it replaces the default file-task directories for that config scope instead of adding to them.
+Include entries are rendered as Tera templates, so they can reference values such as `config_root`,
+`env`, and resolved `vars`.
+
+The default file-task directories are:
+
+- `mise-tasks`
+- `.mise-tasks`
+- `.mise/tasks`
+- `.config/mise/tasks`
+- `mise/tasks`
+
+If you want to keep the defaults and add another directory, include the defaults explicitly:
+
+```toml
+[task_config]
+includes = [
+    "mise-tasks",
+    ".mise-tasks",
+    ".mise/tasks",
+    ".config/mise/tasks",
+    "mise/tasks",
+    "mytasks",
+    "tasks.toml",
+]
+```
+
+For local and monorepo task discovery, mise uses the nearest config file that defines `task_config.includes`.
+That means a child config's `includes` replaces both the defaults and any `includes` defined by parent configs for that directory.
+Global config files are loaded independently, so each global config file uses its own `task_config.includes` or the default directories if `includes` is unset.
+
+Entries are evaluated in order, and when more than one include defines a task with the same name the **last** entry in the list wins.
+This applies uniformly to directory, toml-file, and `git::` includes, so to override a task coming from a `git::` include with a local one, list the local directory after the `git::` entry:
+
+```toml
+[task_config]
+includes = [
+    "git::https://github.com/myorg/shared-tasks.git//tasks", # remote task…
+    ".mise/tasks",                                           # …is overridden by the local one with the same name
 ]
 ```
 
@@ -336,18 +739,72 @@ The file should be the same format as the `[tasks]` section of `mise.toml` but w
 
 ::: code-group
 
-```toml [tasks.toml]
+```mise-toml [tasks.toml]
 task1 = "echo task1"
 task2 = "echo task2"
 task3 = "echo task3"
 
 [task4]
 run = "echo task4"
+vars = { target = "linux" }
 ```
 
 :::
 
-If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
+If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.en.dev/schema/mise-task.json>
+
+#### Remote Git Includes <Badge type="warning" text="experimental" />
+
+You can include directories or individual task toml files from git repositories using the `git::` URL syntax:
+
+::: code-group
+
+```mise-toml [ssh]
+[task_config]
+includes = [
+    "git::ssh://git@github.com/myorg/shared-tasks.git//tasks?ref=v1.0.0",
+    "git::ssh://git@github.com/myorg/shared-tasks.git//tasks/release.toml?ref=v1.0.0",
+]
+```
+
+```mise-toml [https]
+[task_config]
+includes = [
+    "git::https://github.com/myorg/shared-tasks.git//tasks?ref=main",
+    "git::https://github.com/myorg/shared-tasks.git//tasks/release.toml?ref=main",
+]
+```
+
+:::
+
+URL format: `git::<protocol>://<url>//<path>?ref=<ref>`
+
+Required fields:
+
+- `protocol`: The git protocol (ssh or https).
+- `url`: The git repository URL.
+- `path`: The path to a directory or a `.toml` task file in the repository.
+
+Optional fields:
+
+- `ref`: The git reference (branch, tag, commit). Defaults to the repository's default branch.
+
+When `path` points at a directory, mise loads both executable file tasks and any `.toml` task files inside that directory. When `path` points at a single `.toml` file, only that file is loaded.
+
+Included `.toml` files use the [task toml file format](#task-config-includes) (the keys are task names — there is no `[tasks.…]` prefix). The repository will be cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the include will be loaded as if they were local. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
+
+## Monorepo Support
+
+mise supports monorepo-style task organization with target path syntax. Enable it by setting `monorepo_root = true` in your root `mise.toml`.
+
+For complete documentation on monorepo tasks including:
+
+- Task path syntax and wildcards
+- Tool layering from parent configs
+- Performance tuning
+- Best practices and troubleshooting
+
+See the dedicated [Monorepo Tasks](/tasks/monorepo) documentation.
 
 ## `redactions` <Badge type="warning" text="experimental" />
 
@@ -369,22 +826,14 @@ You can also specify these as a glob pattern, e.g.: `redactions.env = ["SECRETS_
 
 ## `[vars]` options
 
-Vars are variables that can be shared between tasks like environment variables but they are not
-passed as environment variables to the scripts. They are defined in the `vars` section of the
-`mise.toml` file.
+See [Vars](#vars).
 
-```toml
-[vars]
-e2e_args = '--headless'
-[tasks.test]
-run = './scripts/test-e2e.sh {{vars.e2e_args}}'
-```
+## Task Configuration Settings
 
-Like `[env]`, vars can also be read in as a file:
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
 
-```toml
-[vars]
-_.file = ".env"
-```
+The following settings control task behavior. These can be set globally in `~/.config/mise/config.toml` or per-project in `mise.toml`:
 
-[Secrets](/environments/secrets) are also supported as vars.
+<Settings :level="3" prefix="task" />

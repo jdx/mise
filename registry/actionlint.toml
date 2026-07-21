@@ -1,0 +1,7 @@
+backends = [
+  "aqua:rhysd/actionlint",
+  "asdf:crazy-matt/asdf-actionlint",
+  "go:github.com/rhysd/actionlint/cmd/actionlint",
+]
+description = ":octocat: Static checker for GitHub Actions workflow files"
+test = { cmd = "actionlint --version", expected = "{{version}}" }

@@ -1,0 +1,4 @@
+aliases = ["newrelic-cli"]
+backends = ["aqua:newrelic/newrelic-cli", "asdf:NeoHsu/asdf-newrelic-cli"]
+description = "The New Relic Command Line Interface"
+test = { cmd = "newrelic --version", expected = "newrelic version {{version}}" }

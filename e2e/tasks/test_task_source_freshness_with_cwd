@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.cwd_task]
+run = "cat input.txt"
+dir = "{{cwd}}"
+sources = ["input.txt"]
+outputs = { auto = true }
+EOF
+
+mkdir a
+mkdir b
+
+echo "running a" >a/input.txt
+echo "running b 1" >b/input.txt
+
+# Should first run and then skip
+pushd a
+assert "mise run -q cwd_task" "running a"
+assert_empty "mise run -q cwd_task"
+popd
+
+# Should first run again as directory was changed and then skip
+pushd b
+assert "mise run -q cwd_task" "running b 1"
+assert_empty "mise run -q cwd_task"
+popd
+
+echo "running b 2" >b/input.txt
+
+# Should still skip as input in this directory was not changed
+pushd a
+assert_empty "mise run -q cwd_task"
+popd
+
+# Should run again as input in this directory was changed
+pushd b
+assert "mise run -q cwd_task" "running b 2"
+assert_empty "mise run -q cwd_task"
+popd

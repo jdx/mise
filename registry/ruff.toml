@@ -1,0 +1,3 @@
+backends = ["aqua:astral-sh/ruff", "asdf:simhem/asdf-ruff"]
+description = "An extremely fast Python linter and code formatter, written in Rust"
+test = { cmd = "ruff --version", expected = "ruff {{version}}" }

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Test minimum_release_age with npm backend (dist-tag date fallback)
+# Regression test for https://github.com/jdx/mise/discussions/9136
+
+export NPM_CONFIG_FUND=false
+
+mise use node
+
+# Test: mise latest with minimum_release_age should resolve to an older version
+# prettier 3.0.0 was released 2023-07-05, 2.8.8 was released 2023-05-23
+# Setting minimum_release_age to 2023-06-01 should give us 2.8.8 (not 3.x)
+# This must fall back after detecting NPMBackend::latest_stable_version is
+# newer than the cutoff, because npm dist-tags return the absolute latest.
+export MISE_MINIMUM_RELEASE_AGE="2023-06-01"
+assert_contains "mise latest npm:prettier" "2.8.8"
+unset MISE_MINIMUM_RELEASE_AGE
+
+# Test: minimum_release_age=0s effectively disables the delay and returns the absolute latest.
+export MISE_MINIMUM_RELEASE_AGE="0s"
+latest_prettier="$(mise latest npm:prettier)"
+assert_matches "echo \"$latest_prettier\"" '^[0-9]+\.[0-9]+\.[0-9]+$'
+assert_not_contains_text "$latest_prettier" "2.8.8"
+unset MISE_MINIMUM_RELEASE_AGE
+
+# Test: `mise latest --minimum-release-age` CLI flag should filter by date
+assert_contains "mise latest npm:prettier --minimum-release-age 2023-06-01" "2.8.8"
+
+# Test: CLI --minimum-release-age flag overrides the global minimum_release_age setting
+# Global is 2024-01-01 (would give 3.1.0), CLI is 2023-06-01 (gives 2.8.8)
+export MISE_MINIMUM_RELEASE_AGE="2024-01-01"
+assert_not_contains "mise latest npm:prettier" "2.8.8"
+assert_contains "mise latest npm:prettier --minimum-release-age 2023-06-01" "2.8.8"
+unset MISE_MINIMUM_RELEASE_AGE
+
+# Test: CLI --minimum-release-age flag accepts relative durations.
+assert_not_empty "mise latest npm:prettier --minimum-release-age 5y"
+
+# Test: per-tool minimum_release_age also affects backend-level latest lookup.
+cat <<EOF >mise.toml
+[tools]
+"npm:prettier" = { version = "latest", minimum_release_age = "2023-06-01" }
+EOF
+assert_contains "mise latest npm:prettier" "2.8.8"
+
+# Test: CLI --minimum-release-age flag overrides per-tool minimum_release_age.
+cat <<EOF >mise.toml
+[tools]
+"npm:prettier" = { version = "latest", minimum_release_age = "2024-01-01" }
+EOF
+assert_not_contains "mise latest npm:prettier" "2.8.8"
+assert_contains "mise latest npm:prettier --minimum-release-age 2023-06-01" "2.8.8"

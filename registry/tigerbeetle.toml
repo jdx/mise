@@ -1,0 +1,3 @@
+backends = ["github:tigerbeetle/tigerbeetle"]
+description = "The financial transactions database designed for mission critical safety and performance."
+test = { cmd = "tigerbeetle version", expected = "TigerBeetle version {{version}}" }

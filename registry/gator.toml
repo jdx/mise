@@ -1,0 +1,3 @@
+backends = ["aqua:open-policy-agent/gatekeeper", "asdf:MxNxPx/asdf-gator"]
+description = "Gatekeeper - Policy Controller for Kubernetes"
+test = { cmd = "gator --version", expected = "gator version v{{version}}" }

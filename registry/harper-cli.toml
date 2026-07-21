@@ -1,0 +1,4 @@
+backends = ["aqua:Automattic/harper/harper-cli"]
+description = "harper-cli is a small, experimental frontend for Harper. It can be used in any situation where you might need to check a large number of files automatically (like in continuous integration)"
+# harper-cli intentionally prints different version. See https://github.com/Automattic/harper/issues/557#issuecomment-2635037944
+test = { cmd = "harper-cli --version", expected = "harper-cli" }

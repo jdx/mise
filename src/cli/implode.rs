@@ -6,6 +6,7 @@ use crate::config::Settings;
 use crate::file::remove_all;
 use crate::ui::prompt;
 use crate::{dirs, env, file};
+use std::collections::BTreeSet;
 
 /// Removes mise CLI and all related data
 ///
@@ -13,21 +14,26 @@ use crate::{dirs, env, file};
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct Implode {
-    /// Also remove config directory
-    #[clap(long, verbatim_doc_comment)]
-    config: bool,
-
     /// List directories that would be removed without actually removing them
     #[clap(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
+
+    /// Also remove config directory
+    #[clap(long, verbatim_doc_comment)]
+    config: bool,
 }
 
 impl Implode {
     pub fn run(self) -> Result<()> {
-        let mut files = vec![*dirs::STATE, *dirs::DATA, *dirs::CACHE, &*env::MISE_BIN];
+        let mut files: BTreeSet<&Path> = [*dirs::STATE, *dirs::DATA, *dirs::CACHE, &*env::MISE_BIN]
+            .into_iter()
+            .collect();
         if self.config {
-            files.push(&dirs::CONFIG);
+            files.insert(&dirs::CONFIG);
         }
+        // include system data dir (e.g. /usr/local/share/mise) used by `mise install --system`
+        let system_data: &Path = &env::MISE_SYSTEM_DATA_DIR;
+        files.insert(system_data);
         for f in files.into_iter().filter(|d| d.exists()) {
             if self.dry_run {
                 miseprintln!("rm -rf {}", f.display());

@@ -1,0 +1,3 @@
+backends = ["github:prefix-dev/pixi"]
+description = "Package management made easy"
+test = { cmd = "pixi -V", expected = "pixi {{version}}" }

@@ -1,0 +1,2 @@
+backends = ["aqua:thought-machine/please", "asdf:asdf-community/asdf-please"]
+description = "High-performance extensible build system for reproducible multi-language builds"

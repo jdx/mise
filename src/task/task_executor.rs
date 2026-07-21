@@ -1,0 +1,1814 @@
+use crate::cli::args::ToolArg;
+use crate::cmd::CmdLineRunner;
+use crate::config::{Config, Settings, env_directive::EnvDirective};
+use crate::duration;
+use crate::env_diff::EnvDiff;
+#[cfg(not(windows))]
+use crate::file::is_executable;
+use crate::file::{display_path, replace_path};
+use crate::sandbox::SandboxConfig;
+use crate::task::TaskKey;
+use crate::task::task_context_builder::TaskContextBuilder;
+use crate::task::task_list::split_task_spec;
+use crate::task::task_output::{TaskOutput, trunc};
+use crate::task::task_output_handler::OutputHandler;
+use crate::task::task_script_parser::subcommand_name_from_parse;
+use crate::task::task_source_checker::{
+    remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
+};
+use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
+use crate::tera::{contains_template_syntax, render_str};
+use crate::toolset::env_cache::CachedEnv;
+use crate::ui::{style, time};
+use duct::IntoExecutablePath;
+use eyre::{Report, Result, ensure, eyre};
+use indexmap::IndexMap;
+use itertools::Itertools;
+#[cfg(unix)]
+use nix::errno::Errno;
+use std::collections::{BTreeMap, HashSet};
+use std::iter::once;
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
+use std::time::{Duration, SystemTime};
+use tokio::sync::Mutex;
+use tokio::sync::RwLock;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
+use xx::file;
+
+/// Global lock for interactive task exclusivity.
+/// Interactive tasks acquire a write lock (exclusive), non-interactive tasks acquire a read lock (shared).
+static TASK_RUNTIME_LOCK: LazyLock<RwLock<()>> = LazyLock::new(|| RwLock::new(()));
+
+#[allow(dead_code)] // Guards are held for their Drop impl, not read
+enum RuntimeLockGuard<'a> {
+    Read(tokio::sync::RwLockReadGuard<'a, ()>),
+    Write(tokio::sync::RwLockWriteGuard<'a, ()>),
+}
+
+async fn acquire_runtime_lock(interactive: bool) -> RuntimeLockGuard<'static> {
+    if interactive {
+        RuntimeLockGuard::Write(TASK_RUNTIME_LOCK.write().await)
+    } else {
+        RuntimeLockGuard::Read(TASK_RUNTIME_LOCK.read().await)
+    }
+}
+
+fn resolve_task_sandbox_path(p: &Path, task_base: Option<&Path>) -> PathBuf {
+    if p.as_os_str().is_empty() {
+        return PathBuf::new();
+    }
+    let p = replace_path(p);
+    if p.is_absolute() {
+        p
+    } else if let Some(base) = task_base {
+        base.join(p)
+    } else {
+        p
+    }
+}
+
+/// Build the single-line command shown in a task's header (the `$ ...` line).
+///
+/// Skips leading shebang/blank/`set ...` boilerplate so the first real command is
+/// shown, and joins backslash-continued lines into one logical line. Without the
+/// join, a command wrapped across physical lines would display only its first line
+/// ending in `\`, and any extra CLI args would be glued onto that dangling
+/// backslash (e.g. `$ echo foo \ --bar`). Returns the whole script if it contains
+/// only boilerplate.
+///
+/// A trailing backslash with no following line is left untouched, so a literal
+/// trailing backslash that is data rather than a continuation (e.g. a Windows path
+/// like `echo C:\tmp\`) is shown as-is. The remaining ambiguity — a literal `\` at
+/// the end of a line that *is* followed by another line — is still treated as a
+/// continuation, which is acceptable for a display-only string.
+fn display_first_command(script: &str) -> String {
+    let mut lines = script.lines();
+    let Some(first) = lines.find(|line| {
+        let t = line.trim_start();
+        !t.is_empty() && !t.starts_with("#!") && t != "set" && !t.starts_with("set ")
+    }) else {
+        return script.to_string();
+    };
+    let mut cmd = first.to_string();
+    while cmd.trim_end().ends_with('\\') {
+        let Some(next) = lines.next() else {
+            // Trailing backslash with no continuation line: keep it (literal data).
+            break;
+        };
+        let truncated = cmd.trim_end();
+        let base = truncated[..truncated.len() - 1].trim_end().to_string();
+        let next = next.trim();
+        cmd = if base.is_empty() || next.is_empty() {
+            format!("{base}{next}")
+        } else {
+            format!("{base} {next}")
+        };
+    }
+    cmd
+}
+
+/// Configuration for TaskExecutor
+pub struct TaskExecutorConfig {
+    pub force: bool,
+    pub cd: Option<PathBuf>,
+    pub shell: Option<String>,
+    pub tool: Vec<ToolArg>,
+    pub timings: bool,
+    pub continue_on_error: bool,
+    pub dry_run: bool,
+    pub skip_deps: bool,
+    /// CLI-level sandbox overrides (merged with task-level sandbox config)
+    pub sandbox: crate::sandbox::SandboxConfig,
+}
+
+/// Executes tasks with proper context, environment, and output handling
+pub struct TaskExecutor {
+    pub context_builder: TaskContextBuilder,
+    pub output_handler: OutputHandler,
+    pub failed_tasks: FailedTasks,
+
+    // CLI flags
+    pub force: bool,
+    pub cd: Option<PathBuf>,
+    pub shell: Option<String>,
+    pub tool: Vec<ToolArg>,
+    pub timings: bool,
+    pub continue_on_error: bool,
+    pub dry_run: bool,
+    pub skip_deps: bool,
+    pub sandbox: crate::sandbox::SandboxConfig,
+}
+
+impl TaskExecutor {
+    pub fn new(
+        context_builder: TaskContextBuilder,
+        output_handler: OutputHandler,
+        config: TaskExecutorConfig,
+    ) -> Self {
+        Self {
+            context_builder,
+            output_handler,
+            failed_tasks: Arc::new(StdMutex::new(Vec::new())),
+            force: config.force,
+            cd: config.cd,
+            shell: config.shell,
+            tool: config.tool,
+            timings: config.timings,
+            continue_on_error: config.continue_on_error,
+            dry_run: config.dry_run,
+            skip_deps: config.skip_deps,
+            sandbox: config.sandbox,
+        }
+    }
+
+    pub fn is_stopping(&self) -> bool {
+        !self.failed_tasks.lock().unwrap().is_empty()
+    }
+
+    pub fn add_failed_task(&self, task: Task, status: Option<i32>) {
+        let mut failed = self.failed_tasks.lock().unwrap();
+        failed.push((task, status.or(Some(1))));
+    }
+
+    fn eprint(&self, task: &Task, prefix: &str, line: &str) {
+        self.output_handler.eprint(task, prefix, line);
+    }
+
+    fn output(&self, task: Option<&Task>) -> crate::task::task_output::TaskOutput {
+        self.output_handler.output(task)
+    }
+
+    fn quiet(&self, task: Option<&Task>) -> bool {
+        self.output_handler.quiet(task)
+    }
+
+    fn raw(&self, task: Option<&Task>) -> bool {
+        self.output_handler.raw(task)
+    }
+
+    /// Build a SandboxConfig for a task by merging task-level config with CLI overrides.
+    ///
+    /// Task-level relative `allow_read`/`allow_write` paths are resolved against the task's
+    /// effective working directory (`task.dir(config)`, which itself falls back to `config_root`)
+    /// so that `allow_read = ["."]` means "the directory the task runs in", matching how `dir`
+    /// resolves. CLI-supplied paths are left as-is and resolved against cwd by `resolve_paths()`.
+    async fn build_sandbox_for_task(
+        &self,
+        task: &Task,
+        config: &Arc<Config>,
+    ) -> Result<SandboxConfig> {
+        let task_base = task.dir(config).await?;
+        let resolve_task_path =
+            |p: &PathBuf| -> PathBuf { resolve_task_sandbox_path(p, task_base.as_deref()) };
+        let mut sandbox = SandboxConfig {
+            deny_read: task.deny_all || task.deny_read || self.sandbox.deny_read,
+            deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
+            deny_net: task.deny_all || task.deny_net || self.sandbox.deny_net,
+            deny_env: task.deny_all || task.deny_env || self.sandbox.deny_env,
+            allow_read: task
+                .allow_read
+                .iter()
+                .map(&resolve_task_path)
+                .chain(self.sandbox.allow_read.iter().cloned())
+                .collect(),
+            allow_write: task
+                .allow_write
+                .iter()
+                .map(&resolve_task_path)
+                .chain(self.sandbox.allow_write.iter().cloned())
+                .collect(),
+            allow_net: task
+                .allow_net
+                .iter()
+                .chain(self.sandbox.allow_net.iter())
+                .cloned()
+                .collect(),
+            allow_env: task
+                .allow_env
+                .iter()
+                .chain(self.sandbox.allow_env.iter())
+                .cloned()
+                .collect(),
+        };
+        sandbox.resolve_paths();
+        Ok(sandbox)
+    }
+
+    pub fn task_timings(&self, task: Option<&Task>) -> bool {
+        // Resolve the style/verbosity for *this* task so a per-task `output`
+        // override is honored (e.g. a task with `output = "interleave"` must not
+        // get a timing line just because the global default is `prefix`).
+        let output_mode = self.output_handler.output(task);
+        // Quiet/silent suppresses mise's own output, so the per-task "Finished in …"
+        // timing line must not leak. This matters now that quiet keeps its style
+        // (e.g. `--quiet` with parallel tasks still resolves to `Prefix`).
+        let default = !self.output_handler.quiet(task)
+            && (output_mode == TaskOutput::Prefix
+                || output_mode == TaskOutput::Timed
+                || output_mode == TaskOutput::KeepOrder);
+        self.timings || Settings::get().task.timings.unwrap_or(default)
+    }
+
+    /// Run a task, returning true if the task actually executed (not skipped).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn run_task_sched(
+        &self,
+        task: &Task,
+        config: &Arc<Config>,
+        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        completed_tasks: HashSet<TaskKey>,
+        dep_ran: bool,
+        semaphore: Arc<Semaphore>,
+        permit: &mut Option<OwnedSemaphorePermit>,
+    ) -> Result<bool> {
+        let prefix = task.estyled_prefix();
+        let total_start = std::time::Instant::now();
+        if Settings::get().task.skip.contains(&task.name) {
+            if !self.quiet(Some(task)) {
+                self.eprint(task, &prefix, "skipping task");
+            }
+            return Ok(false);
+        }
+        // If any dependency actually ran, skip the source freshness check
+        // so that downstream tasks are invalidated by upstream changes
+        if !self.force && !dep_ran && sources_are_fresh(task, config).await? {
+            if !self.quiet(Some(task)) {
+                self.eprint(task, &prefix, "sources up-to-date, skipping");
+            }
+            return Ok(false);
+        }
+
+        let mut tools = self.tool.clone();
+        tools.extend(task.tool_args()?);
+        let ts_build_start = std::time::Instant::now();
+
+        // Check if we need special handling for monorepo tasks with config file context
+        // Remote tasks (from git::/http:/https: URLs) should NOT use config file context
+        // because they need tools from the full config hierarchy, not just the local config
+        let task_cf = if task.is_remote() {
+            None
+        } else {
+            task.cf(config)
+        };
+
+        // Build toolset - either from task's config file or standard way
+        let ts = self
+            .context_builder
+            .build_toolset_for_task(config, task, task_cf, &tools)
+            .await?;
+
+        trace!(
+            "task {} ToolsetBuilder::build took {}ms",
+            task.name,
+            ts_build_start.elapsed().as_millis()
+        );
+        let env_render_start = std::time::Instant::now();
+
+        // Build environment - either from task's config file context or standard way
+        // extra_vars contains resolved vars from the task's config hierarchy (for monorepo tasks)
+        let (mut env, task_env, extra_vars) = if let Some(task_cf) = task_cf {
+            self.context_builder
+                .resolve_task_env_with_config(config, task, task_cf, &ts)
+                .await?
+        } else {
+            // Fallback to standard behavior
+            let (env, task_env) = task.render_env(config, &ts).await?;
+            (env, task_env, None)
+        };
+
+        trace!(
+            "task {} render_env took {}ms",
+            task.name,
+            env_render_start.elapsed().as_millis()
+        );
+        let mut nested_mise_diff_exclude_keys: HashSet<String> = task_env
+            .iter()
+            .map(|(key, _)| key.clone())
+            .filter(|key| key.as_str() != crate::env::PATH_KEY.as_str())
+            .chain(once("__MISE_DIFF".to_string()))
+            .collect();
+        if !self.timings {
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_TASK_TIMINGS",
+                "0".to_string(),
+            );
+        }
+        // Propagate MISE_ENV to child tasks so -E flag works for nested mise invocations
+        if !crate::env::MISE_ENV.is_empty() {
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_ENV",
+                crate::env::MISE_ENV.join(","),
+            );
+        }
+        if let Some(cwd) = &*crate::dirs::CWD {
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_ORIGINAL_CWD",
+                cwd.display().to_string(),
+            );
+        }
+        // Prefer the task's own config_root so MISE_PROJECT_ROOT is the directory of the
+        // mise.toml that defined the task. This keeps the value stable regardless of the
+        // cwd from which the task was invoked (important for monorepo subprojects, where
+        // config.project_root depends on cwd).
+        //
+        // Exception: for global tasks (inline in ~/.config/mise/config.toml or scripts in
+        // ~/.config/mise/tasks/) and remote tasks (loaded from git/http), task.config_root
+        // points at the global/remote location rather than the user's project. Fall back
+        // to config.project_root (the local project the user is in) for those, matching
+        // the pre-existing behavior.
+        let project_root = if task.global || task.is_remote() {
+            config.project_root.clone().or(task.config_root.clone())
+        } else {
+            task.config_root.clone().or(config.project_root.clone())
+        };
+        if let Some(root) = project_root {
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_PROJECT_ROOT",
+                root.display().to_string(),
+            );
+        }
+        if let Some(monorepo_root) = config.monorepo_root() {
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_MONOREPO_ROOT",
+                monorepo_root.display().to_string(),
+            );
+        }
+        Self::insert_env_excluded_from_nested_mise_diff(
+            &mut env,
+            &mut nested_mise_diff_exclude_keys,
+            "MISE_TASK_NAME",
+            task.name.clone(),
+        );
+        let task_file = task
+            .file_path(config)
+            .await?
+            .unwrap_or(task.config_source.clone());
+        Self::insert_env_excluded_from_nested_mise_diff(
+            &mut env,
+            &mut nested_mise_diff_exclude_keys,
+            "MISE_TASK_FILE",
+            task_file.display().to_string(),
+        );
+        if let Some(dir) = task_file.parent() {
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_TASK_DIR",
+                dir.display().to_string(),
+            );
+        }
+        if let Some(config_root) = &task.config_root {
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_CONFIG_ROOT",
+                config_root.display().to_string(),
+            );
+        }
+
+        // Ensure cache key exists for task subprocesses for nested mise invocations
+        // This matches exec.rs behavior - enables caching for subprocesses
+        if Settings::get().env_cache {
+            let key = CachedEnv::ensure_encryption_key();
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "__MISE_ENV_CACHE_KEY",
+                key,
+            );
+        }
+
+        // Embed __MISE_DIFF so a nested `mise` invocation inside this task can
+        // recover the pristine env (and pristine PATH) instead of stacking our
+        // tool dirs on top of its own. Keep task-scoped vars out of the diff:
+        // nested `mise hook-env` should not unset variables that belong to the
+        // currently running task.
+        let env_for_diff = self.env_for_nested_mise_diff(&env, &nested_mise_diff_exclude_keys);
+        if let Ok(serialized) =
+            EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env_for_diff).serialize()
+        {
+            env.insert("__MISE_DIFF".into(), serialized);
+        }
+
+        let timer = std::time::Instant::now();
+
+        if let Some(file) = task.file_path(config).await? {
+            let exec_start = std::time::Instant::now();
+            remove_auto_output(task, config).await?;
+            self.exec_file(config, &file, task, &env, &prefix, extra_vars)
+                .await?;
+            trace!(
+                "task {} exec_file took {}ms (total {}ms)",
+                task.name,
+                exec_start.elapsed().as_millis(),
+                total_start.elapsed().as_millis()
+            );
+        } else {
+            let rendered_run_scripts = task
+                .render_run_scripts_with_args(
+                    config,
+                    self.cd.clone(),
+                    &task.args,
+                    &env,
+                    extra_vars.clone(),
+                )
+                .await?;
+
+            let get_args = || {
+                [String::new()]
+                    .iter()
+                    .chain(task.args.iter())
+                    .cloned()
+                    .collect()
+            };
+            self.parse_usage_spec_and_init_env(config, task, &mut env, get_args, extra_vars)
+                .await?;
+
+            // For interactive tasks, acquire the lock before confirmation so the
+            // prompt gets exclusive terminal access (consistent with exec_file path).
+            let confirm_guard = if task.interactive {
+                Some(acquire_runtime_lock(task.interactive).await)
+            } else {
+                None
+            };
+
+            // Check confirmation after usage args are parsed
+            self.check_confirmation(config, task, &env).await?;
+
+            let exec_start = std::time::Instant::now();
+            remove_auto_output(task, config).await?;
+            self.exec_task_run_entries(
+                config,
+                task,
+                (&env, &task_env),
+                &prefix,
+                rendered_run_scripts,
+                sched_tx,
+                confirm_guard,
+                &completed_tasks,
+                semaphore,
+                permit,
+            )
+            .await?;
+            trace!(
+                "task {} exec_task_run_entries took {}ms (total {}ms)",
+                task.name,
+                exec_start.elapsed().as_millis(),
+                total_start.elapsed().as_millis()
+            );
+        }
+
+        if self.task_timings(Some(task))
+            && (task.file.as_ref().is_some() || !task.run_script_strings().is_empty())
+        {
+            self.eprint(
+                task,
+                &prefix,
+                &format!("Finished in {}", time::format_duration(timer.elapsed())),
+            );
+        }
+
+        save_checksum(task, config).await?;
+
+        Ok(true)
+    }
+
+    fn insert_env_excluded_from_nested_mise_diff(
+        env: &mut BTreeMap<String, String>,
+        excluded_keys: &mut HashSet<String>,
+        key: &str,
+        value: String,
+    ) {
+        env.insert(key.to_string(), value);
+        if key != crate::env::PATH_KEY.as_str() {
+            excluded_keys.insert(key.to_string());
+        }
+    }
+
+    fn env_for_nested_mise_diff(
+        &self,
+        env: &BTreeMap<String, String>,
+        excluded_keys: &HashSet<String>,
+    ) -> BTreeMap<String, String> {
+        let mut env = env.clone();
+        for key in excluded_keys {
+            env.remove(key);
+        }
+        env
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn exec_task_run_entries(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        full_env: (&BTreeMap<String, String>, &[(String, String)]),
+        prefix: &str,
+        rendered_scripts: Vec<(String, Vec<String>)>,
+        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        existing_guard: Option<RuntimeLockGuard<'static>>,
+        completed_tasks: &HashSet<TaskKey>,
+        semaphore: Arc<Semaphore>,
+        permit: &mut Option<OwnedSemaphorePermit>,
+    ) -> Result<()> {
+        let (env, task_env) = full_env;
+        use crate::task::RunEntry;
+        let mut script_iter = rendered_scripts.into_iter();
+
+        let needs_tera = task.run().iter().any(RunEntry::has_tera_template);
+        let mut tera_state = if needs_tera {
+            let usage_values = crate::task::parse_usage_values_from_task(config, task).await?;
+            let config_root = task.config_root.clone().unwrap_or_default();
+            let tera = crate::tera::get_tera(Some(&config_root));
+            let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
+            if !usage_values.is_empty() {
+                tera_ctx.insert("usage", &usage_values);
+            }
+            tera_ctx.insert("env", env);
+            Some((tera, tera_ctx))
+        } else {
+            None
+        };
+
+        // Use an existing guard (e.g. from confirmation) or acquire a new one.
+        // The lock is held across consecutive script entries for exclusivity
+        // and temporarily dropped around inject_and_wait to avoid deadlocking.
+        let mut guard = match existing_guard {
+            Some(g) => Some(g),
+            None => Some(acquire_runtime_lock(task.interactive).await),
+        };
+        for raw_entry in task.run() {
+            let rendered;
+            let entry = if let Some((ref mut tera, ref tera_ctx)) = tera_state
+                && raw_entry.has_tera_template()
+            {
+                rendered = raw_entry.render(tera, tera_ctx)?;
+                &rendered
+            } else {
+                raw_entry
+            };
+            match entry {
+                RunEntry::Script(_) => {
+                    if let Some((script, args)) = script_iter.next() {
+                        if guard.is_none() {
+                            guard = Some(acquire_runtime_lock(task.interactive).await);
+                        }
+                        self.exec_script(&script, &args, task, env, prefix).await?;
+                    }
+                }
+                RunEntry::SingleTask {
+                    task: spec,
+                    args: entry_args,
+                    env: entry_env,
+                } => {
+                    let resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
+                    let override_args = if entry_args.is_empty() {
+                        None
+                    } else {
+                        Some(entry_args.clone())
+                    };
+                    let override_env: Vec<(String, String)> = entry_env
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    let override_env_ref = if override_env.is_empty() {
+                        None
+                    } else {
+                        Some(override_env.as_slice())
+                    };
+                    guard = None; // drop lock before waiting on sub-tasks
+                    // Release the semaphore permit before waiting on sub-tasks to
+                    // avoid deadlock when MISE_JOBS=1 (the sub-task needs a permit
+                    // but we're holding the only one).
+                    let had_permit = permit.is_some();
+                    *permit = None;
+                    self.inject_and_wait(
+                        config,
+                        &[resolved_spec],
+                        task_env,
+                        override_args.as_deref(),
+                        override_env_ref,
+                        sched_tx.clone(),
+                        completed_tasks,
+                    )
+                    .await?;
+                    if had_permit {
+                        *permit = Some(semaphore.clone().acquire_owned().await?);
+                    }
+                }
+                RunEntry::TaskGroup { tasks } => {
+                    let resolved_tasks: Vec<String> = tasks
+                        .iter()
+                        .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
+                        .collect();
+                    guard = None; // drop lock before waiting on sub-tasks
+                    let had_permit = permit.is_some();
+                    *permit = None;
+                    self.inject_and_wait(
+                        config,
+                        &resolved_tasks,
+                        task_env,
+                        None,
+                        None,
+                        sched_tx.clone(),
+                        completed_tasks,
+                    )
+                    .await?;
+                    if had_permit {
+                        *permit = Some(semaphore.clone().acquire_owned().await?);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn inject_and_wait(
+        &self,
+        config: &Arc<Config>,
+        specs: &[String],
+        task_env: &[(String, String)],
+        override_args: Option<&[String]>,
+        override_env: Option<&[(String, String)]>,
+        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        completed_tasks: &HashSet<TaskKey>,
+    ) -> Result<()> {
+        use crate::task::TaskLoadContext;
+        trace!("inject start: {}", specs.join(", "));
+        // Build tasks list from specs
+        // Create a TaskLoadContext from the specs to ensure project tasks are loaded
+        let ctx = TaskLoadContext::from_patterns(specs.iter().map(|s| {
+            let (name, _) = split_task_spec(s);
+            name
+        }));
+        let tasks = config.tasks_with_context(Some(&ctx)).await?;
+        let tasks_map: BTreeMap<String, Task> = tasks
+            .values()
+            .flat_map(|t| {
+                t.aliases
+                    .iter()
+                    .map(|a| (a.to_string(), t.clone()))
+                    .chain(once((t.name.clone(), t.clone())))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let mut to_run: Vec<Task> = vec![];
+        for spec in specs {
+            let (name, args) = split_task_spec(spec);
+            let matches = tasks_map.get_matching(name)?;
+            ensure!(!matches.is_empty(), "task not found: {}", name);
+            for t in matches {
+                let mut t = (*t).clone();
+                t.args = override_args
+                    .map(|a| a.to_vec())
+                    .unwrap_or_else(|| args.clone());
+                // Apply entry-level env via with_dependency_env (high priority,
+                // consistent with depends/depends_post) so it overrides the
+                // sub-task's own declared env.
+                if let Some(env) = override_env {
+                    let env_directives: Vec<EnvDirective> = env
+                        .iter()
+                        .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
+                        .collect();
+                    t = t.with_dependency_env(&env_directives);
+                    if let Some(config_root) = &t.config_root {
+                        let env_map: IndexMap<String, String> = env.iter().cloned().collect();
+                        t.outputs.re_render_with_env(
+                            &t.raw_outputs.clone(),
+                            &env_map,
+                            config_root,
+                        )?;
+                    } else {
+                        trace!(
+                            "re_render_with_env skipped: task {} has no config_root",
+                            t.name
+                        );
+                    }
+                }
+                if self.skip_deps {
+                    t.depends.clear();
+                    t.depends_post.clear();
+                    t.wait_for.clear();
+                }
+                to_run.push(t);
+            }
+        }
+        let sub_deps = Deps::new_pruned(config, to_run, completed_tasks).await?;
+        let sub_deps = Arc::new(Mutex::new(sub_deps));
+
+        // Pump subgraph into scheduler and signal completion via oneshot when done
+        let (done_tx, mut done_rx) = oneshot::channel::<()>();
+        let task_env_directives: Vec<EnvDirective> =
+            task_env.iter().cloned().map(Into::into).collect();
+        {
+            let sub_deps_clone = sub_deps.clone();
+            let sched_tx = sched_tx.clone();
+            // forward initial leaves synchronously
+            {
+                let mut rx = sub_deps_clone.lock().await.subscribe();
+                let mut any = false;
+                loop {
+                    match rx.try_recv() {
+                        Ok(Some(task)) => {
+                            any = true;
+                            let task = task.derive_env(&task_env_directives);
+                            trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
+                            let _ = sched_tx.send((task, sub_deps_clone.clone()));
+                        }
+                        Ok(None) => {
+                            trace!("inject initial done");
+                            break;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                            break;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                            break;
+                        }
+                    }
+                }
+                if !any {
+                    trace!("inject had no initial leaves");
+                }
+            }
+            // then forward remaining leaves asynchronously
+            tokio::spawn(async move {
+                let mut rx = sub_deps_clone.lock().await.subscribe();
+                while let Some(msg) = rx.recv().await {
+                    match msg {
+                        Some(task) => {
+                            trace!(
+                                "inject leaf scheduled: {} {}",
+                                task.name,
+                                task.args.join(" ")
+                            );
+                            let task = task.derive_env(&task_env_directives);
+                            let _ = sched_tx.send((task, sub_deps_clone.clone()));
+                        }
+                        None => {
+                            let _ = done_tx.send(());
+                            trace!("inject complete");
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Wait for completion with a check for early stopping
+        loop {
+            // Check if we should stop early due to failure
+            if self.is_stopping() && !self.continue_on_error {
+                trace!("inject_and_wait: stopping early due to failure");
+                // Clean up the dependency graph to ensure completion
+                let mut deps = sub_deps.lock().await;
+                let tasks_to_remove: Vec<Task> = deps.all().cloned().collect();
+                for task in tasks_to_remove {
+                    deps.remove(&task);
+                }
+                drop(deps);
+                // Give a short time for the spawned task to finish cleanly
+                let _ = tokio::time::timeout(Duration::from_millis(100), done_rx).await;
+                return Err(eyre!("task sequence aborted due to failure"));
+            }
+
+            // Try to receive the done signal with a short timeout
+            match tokio::time::timeout(Duration::from_millis(100), &mut done_rx).await {
+                Ok(Ok(())) => {
+                    trace!("inject_and_wait: received done signal");
+                    break;
+                }
+                Ok(Err(e)) => {
+                    return Err(eyre!(e));
+                }
+                Err(_) => {
+                    // Timeout, check again if we should stop
+                    continue;
+                }
+            }
+        }
+
+        // Final check if we failed during the execution
+        if self.is_stopping() && !self.continue_on_error {
+            return Err(eyre!("task sequence aborted due to failure"));
+        }
+
+        Ok(())
+    }
+
+    async fn exec_script(
+        &self,
+        script: &str,
+        args: &[String],
+        task: &Task,
+        env: &BTreeMap<String, String>,
+        prefix: &str,
+    ) -> Result<()> {
+        let config = Config::get().await?;
+        let script = script.trim_start();
+        // For display, skip leading shebang/blank/`set ...` boilerplate and join
+        // backslash-continued lines so the header shows the first real command as a
+        // single logical line (see display_first_command). When show_full_cmd is set,
+        // keep the whole script instead — the reduction would otherwise discard every
+        // line past the first command, making the setting a no-op (#10469, #9844).
+        let display_script = if Settings::get().task.show_full_cmd {
+            script.to_string()
+        } else {
+            display_first_command(script)
+        };
+        let args_str = args.join(" ");
+        let cmd = match (display_script.is_empty(), args_str.is_empty()) {
+            (true, true) => "$".to_string(),
+            (true, false) => format!("$ {args_str}"),
+            (false, true) => format!("$ {display_script}"),
+            (false, false) => format!("$ {display_script} {args_str}"),
+        };
+        if !self.quiet(Some(task)) {
+            let msg = style::ebold(trunc(prefix, config.redact(&cmd).trim()))
+                .bright()
+                .to_string();
+            self.eprint(task, prefix, &msg)
+        }
+
+        if script.starts_with("#!") {
+            let dir = tempfile::tempdir()?;
+            let file = dir.path().join("script");
+            tokio::fs::write(&file, script.as_bytes()).await?;
+            file::make_executable(&file)?;
+            self.exec_with_text_file_busy_retry(&file, args, task, env, prefix)
+                .await
+        } else {
+            let (program, args, cmd_verbatim) =
+                self.get_cmd_program_and_args(script, task, args)?;
+            self.exec_program(&program, &args, task, env, prefix, cmd_verbatim)
+                .await
+        }
+    }
+
+    fn get_file_program_and_args(
+        &self,
+        file: &Path,
+        task: &Task,
+        args: &[String],
+    ) -> Result<(String, Vec<String>)> {
+        let display = file.display().to_string();
+        if !Settings::get().use_file_shell_for_executable_tasks && can_execute_directly(file) {
+            return Ok((display, args.to_vec()));
+        }
+        let shell = task
+            .shell()?
+            .or_else(|| shell_from_shebang(file))
+            .or_else(|| shell_from_extension(file))
+            .unwrap_or(Settings::get().default_file_shell()?);
+        let (program, _) = task_shell_parts(&shell, "file shell")?;
+        trace!("using shell: {}", shell.join(" "));
+        let mut full_args = shell.to_vec();
+        full_args.push(display);
+        if !args.is_empty() {
+            full_args.extend(args.iter().cloned());
+        }
+        Ok((program.to_string(), full_args[1..].to_vec()))
+    }
+
+    /// Build the `(program, args, cmd_verbatim)` for an inline script. When
+    /// `cmd_verbatim` is true (Windows + a `cmd.exe` inline shell), `args` are
+    /// already wrapped for cmd and must be appended to the command line
+    /// verbatim (via `CmdLineRunner::raw_arg`) rather than through std's
+    /// MSVCRT-style quoting — see the windows branch below and discussion #9355.
+    fn get_cmd_program_and_args(
+        &self,
+        script: &str,
+        task: &Task,
+        args: &[String],
+    ) -> Result<(String, Vec<String>, bool)> {
+        let shell = task.shell()?.unwrap_or(self.clone_default_inline_shell()?);
+        let (program, _shell_args) = task_shell_parts(&shell, "inline shell")?;
+        trace!("using shell: {}", shell.join(" "));
+        let mut full_args = shell.clone();
+
+        #[cfg(windows)]
+        {
+            // When the inline shell is cmd.exe, hand the script to cmd verbatim
+            // instead of letting std::process::Command apply MSVCRT-style
+            // quoting. std would wrap the script in quotes and escape any inner
+            // `"` as `\"`, but cmd.exe does not understand that escaping, so
+            // commands like `python -c "import x"` get mangled (the child sees
+            // `\"import`). We assemble the whole command into one body, wrap it
+            // in a single outer quote pair, and use `/s` so cmd strips exactly
+            // that pair and runs the rest — inner quotes included — verbatim.
+            // See discussion #9355.
+            let runs_command = _shell_args
+                .iter()
+                .any(|f| f.eq_ignore_ascii_case("/c") || f.eq_ignore_ascii_case("/k"));
+            if crate::path::is_cmd_shell_program(Path::new(program)) && runs_command {
+                let cmd_args = crate::path::cmd_verbatim_args(_shell_args, script, args);
+                return Ok((program.to_string(), cmd_args, true));
+            }
+            // Non-POSIX, non-cmd shells (e.g. `pwsh -Command`) use a different
+            // quoting convention than `shell_words` (which is POSIX), so keep
+            // passing their forwarded args as separate argv. Only POSIX shells
+            // (`bash -c`, `sh -c`, …) fall through to the shared append below.
+            if !crate::path::is_posix_shell_program(Path::new(program)) {
+                full_args.push(script.to_string());
+                full_args.extend(args.iter().cloned());
+                return Ok((program.to_string(), full_args[1..].to_vec(), false));
+            }
+        }
+
+        // Shared (Unix, and Windows POSIX shells like `bash -c`): append the
+        // forwarded args to the command string so they reach an inline `-c` shell
+        // as part of the command — the documented behavior for inline TOML
+        // scripts — rather than as positional parameters. Passing them as separate
+        // argv to `bash -c` on Windows shifted the user's first arg into `$0`.
+        // See #9355.
+        let mut script = script.to_string();
+        if !args.is_empty() {
+            script = format!("{script} {}", shell_words::join(args));
+        }
+        full_args.push(script);
+        Ok((program.to_string(), full_args[1..].to_vec(), false))
+    }
+
+    fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
+        if let Some(shell) = &self.shell {
+            crate::path::split_shell_command(shell)
+        } else {
+            Settings::get().default_inline_shell()
+        }
+    }
+
+    async fn exec_file(
+        &self,
+        config: &Arc<Config>,
+        file: &Path,
+        task: &Task,
+        env: &BTreeMap<String, String>,
+        prefix: &str,
+        extra_vars: Option<IndexMap<String, String>>,
+    ) -> Result<()> {
+        let mut env = env.clone();
+        let command = file.to_string_lossy().to_string();
+        let args = task.args.iter().cloned().collect_vec();
+        let get_args = || once(command.clone()).chain(args.clone()).collect_vec();
+        self.parse_usage_spec_and_init_env(config, task, &mut env, get_args, extra_vars)
+            .await?;
+
+        // For interactive tasks, acquire the lock before confirmation so the
+        // prompt gets exclusive terminal access. For non-interactive tasks,
+        // acquire after confirmation to avoid blocking the task graph.
+        let guard = if task.interactive {
+            Some(acquire_runtime_lock(task.interactive).await)
+        } else {
+            None
+        };
+
+        // Check confirmation after usage args are parsed
+        self.check_confirmation(config, task, &env).await?;
+
+        if !self.quiet(Some(task)) {
+            let cmd = format!("{} {}", display_path(file), args.join(" "))
+                .trim()
+                .to_string();
+            let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
+            let cmd = trunc(prefix, config.redact(&cmd).trim());
+            self.eprint(task, prefix, &cmd);
+        }
+
+        let _guard = if guard.is_some() {
+            guard
+        } else {
+            Some(acquire_runtime_lock(task.interactive).await)
+        };
+        self.exec(file, &args, task, &env, prefix).await
+    }
+
+    async fn exec(
+        &self,
+        file: &Path,
+        args: &[String],
+        task: &Task,
+        env: &BTreeMap<String, String>,
+        prefix: &str,
+    ) -> Result<()> {
+        let (program, args) = self.get_file_program_and_args(file, task, args)?;
+        self.exec_program(&program, &args, task, env, prefix, false)
+            .await
+    }
+
+    async fn exec_with_text_file_busy_retry(
+        &self,
+        file: &Path,
+        args: &[String],
+        task: &Task,
+        env: &BTreeMap<String, String>,
+        prefix: &str,
+    ) -> Result<()> {
+        const ETXTBUSY_RETRIES: usize = 3;
+        const ETXTBUSY_SLEEP_MS: u64 = 50;
+
+        let mut attempt = 0;
+        loop {
+            match self.exec(file, args, task, env, prefix).await {
+                Ok(()) => break Ok(()),
+                Err(err) if Self::is_text_file_busy(&err) && attempt < ETXTBUSY_RETRIES => {
+                    attempt += 1;
+                    trace!(
+                        "retrying execution of {} after ETXTBUSY (attempt {}/{})",
+                        display_path(file),
+                        attempt,
+                        ETXTBUSY_RETRIES
+                    );
+                    // Exponential backoff: 50ms, 100ms, 200ms
+                    let sleep_ms = ETXTBUSY_SLEEP_MS * (1 << (attempt - 1));
+                    tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
+                }
+                Err(err) => break Err(err),
+            }
+        }
+    }
+
+    async fn exec_program(
+        &self,
+        program: &str,
+        args: &[String],
+        task: &Task,
+        env: &BTreeMap<String, String>,
+        prefix: &str,
+        cmd_verbatim: bool,
+    ) -> Result<()> {
+        #[cfg(not(windows))]
+        let _ = cmd_verbatim;
+        let config = Config::get().await?;
+        let program = program.to_executable();
+        let redactions = config.redactions();
+        let raw = self.raw(Some(task));
+        let sandbox = self.build_sandbox_for_task(task, &config).await?;
+        let env = if sandbox.is_active() {
+            &sandbox.filter_env(env)
+        } else {
+            env
+        };
+        // On Windows, when about to spawn a POSIX shell, resolve the program to
+        // an absolute path *before* converting PATH for the child. Otherwise the
+        // converted Unix-form PATH is also what Win32 CreateProcess uses to find
+        // the program, and `bash` cannot be located in `/c/...:/c/...` entries.
+        #[cfg(windows)]
+        let program =
+            crate::path::resolve_posix_shell_program_path(&program, env).unwrap_or(program);
+        let env = maybe_convert_env_for_msys_shell(Path::new(&program), env);
+        let runner = CmdLineRunner::new(program.clone());
+        // On Windows, `cmd_verbatim` means `args` are already wrapped for cmd.exe
+        // and must be appended to the command line without std's MSVCRT-style
+        // quoting (which would escape inner `"` as `\"` and break the command).
+        // See `get_cmd_program_and_args` and discussion #9355.
+        #[cfg(windows)]
+        let runner = if cmd_verbatim {
+            args.iter().fold(runner, |r, a| r.raw_arg(a))
+        } else {
+            runner.args(args)
+        };
+        #[cfg(not(windows))]
+        let runner = runner.args(args);
+        // Command inherits the current process environment in addition to the
+        // explicit task env, so remove usage_* keys that argument parsing
+        // intentionally cleared from the task env.
+        let inherited_usage_keys = std::env::vars_os()
+            .filter(|(key, _)| {
+                let key = key.to_string_lossy();
+                crate::task::is_usage_env_key(&key)
+                    && !crate::task::env_contains_key(env.as_ref(), &key)
+            })
+            .map(|(key, _)| key);
+        let runner = inherited_usage_keys.fold(runner, |runner, key| runner.env_remove(key));
+        let mut cmd = runner
+            .envs(env.as_ref())
+            .redact(redactions.deref().clone())
+            .raw(raw)
+            .with_sandbox(sandbox);
+        if raw && !redactions.is_empty() {
+            if task.interactive && !task.raw && !Settings::get().raw {
+                hint!(
+                    "interactive_redactions",
+                    "interactive tasks bypass redactions—secrets may appear in terminal output",
+                    ""
+                );
+            } else {
+                hint!(
+                    "raw_redactions",
+                    "--raw will prevent mise from being able to use redactions",
+                    ""
+                );
+            }
+        }
+        let output = self.output(Some(task));
+        cmd.with_pass_signals();
+        match output {
+            TaskOutput::Prefix => {
+                if !task.silent.suppresses_stdout() {
+                    cmd = cmd.with_on_stdout(|line| {
+                        if console::colors_enabled() {
+                            prefix_println!(prefix, "{line}\x1b[0m");
+                        } else {
+                            prefix_println!(prefix, "{line}");
+                        }
+                    });
+                } else {
+                    cmd = cmd.stdout(Stdio::null());
+                }
+                if !task.silent.suppresses_stderr() {
+                    cmd = cmd.with_on_stderr(|line| {
+                        if console::colors_enabled() {
+                            self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                        } else {
+                            self.eprint(task, prefix, &line);
+                        }
+                    });
+                } else {
+                    cmd = cmd.stderr(Stdio::null());
+                }
+            }
+            TaskOutput::KeepOrder => {
+                if !task.silent.suppresses_stdout() {
+                    let state = self.output_handler.keep_order_state.clone();
+                    let task_clone = task.clone();
+                    let prefix_str = prefix.to_string();
+                    cmd = cmd.with_on_stdout(move |line| {
+                        state
+                            .lock()
+                            .unwrap()
+                            .on_stdout(&task_clone, prefix_str.clone(), line);
+                    });
+                } else {
+                    cmd = cmd.stdout(Stdio::null());
+                }
+                if !task.silent.suppresses_stderr() {
+                    let state = self.output_handler.keep_order_state.clone();
+                    let task_clone = task.clone();
+                    let prefix_str = prefix.to_string();
+                    cmd = cmd.with_on_stderr(move |line| {
+                        state
+                            .lock()
+                            .unwrap()
+                            .on_stderr(&task_clone, prefix_str.clone(), line);
+                    });
+                } else {
+                    cmd = cmd.stderr(Stdio::null());
+                }
+            }
+            TaskOutput::Replacing => {
+                // Replacing mode shows a progress indicator unless both streams are suppressed
+                if task.silent.suppresses_stdout() {
+                    cmd = cmd.stdout(Stdio::null());
+                }
+                if task.silent.suppresses_stderr() {
+                    cmd = cmd.stderr(Stdio::null());
+                }
+                // Show progress indicator except when both streams are fully suppressed
+                if !task.silent.suppresses_both() {
+                    let pr = self.output_handler.get_or_init_task_pr(task);
+                    cmd = cmd.with_pr_arc(pr);
+                }
+            }
+            TaskOutput::Timed => {
+                if !task.silent.suppresses_stdout() {
+                    let timed_outputs = self.output_handler.timed_outputs.clone();
+                    cmd = cmd.with_on_stdout(move |line| {
+                        timed_outputs
+                            .lock()
+                            .unwrap()
+                            .insert(prefix.to_string(), (SystemTime::now(), line));
+                    });
+                } else {
+                    cmd = cmd.stdout(Stdio::null());
+                }
+                if !task.silent.suppresses_stderr() {
+                    cmd = cmd.with_on_stderr(|line| {
+                        if console::colors_enabled() {
+                            self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                        } else {
+                            self.eprint(task, prefix, &line);
+                        }
+                    });
+                } else {
+                    cmd = cmd.stderr(Stdio::null());
+                }
+            }
+            TaskOutput::Silent => {
+                cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
+            // `Quiet` is no longer returned by `output()` (verbosity is decoupled
+            // from style; it maps to `Interleave`), but the variant still exists as
+            // a config value so it's kept here for match exhaustiveness.
+            TaskOutput::Quiet | TaskOutput::Interleave => {
+                if raw || redactions.is_empty() {
+                    cmd = cmd.stdin(Stdio::inherit());
+                    if !task.silent.suppresses_stdout() {
+                        cmd = cmd.stdout(Stdio::inherit());
+                    } else {
+                        cmd = cmd.stdout(Stdio::null());
+                    }
+                    if !task.silent.suppresses_stderr() {
+                        cmd = cmd.stderr(Stdio::inherit());
+                    } else {
+                        cmd = cmd.stderr(Stdio::null());
+                    }
+                }
+            }
+        }
+        let dir = task_cwd(task, &config).await?;
+        if !dir.exists() {
+            self.eprint(
+                task,
+                prefix,
+                &format!(
+                    "{} task directory does not exist: {}",
+                    style::eyellow("WARN"),
+                    display_path(&dir)
+                ),
+            );
+        }
+        cmd = cmd.current_dir(dir);
+        if self.dry_run {
+            return Ok(());
+        }
+        let effective_timeout =
+            task.timeout
+                .as_ref()
+                .and_then(|s| match duration::parse_duration(s) {
+                    Ok(d) => Some(d),
+                    Err(e) => {
+                        warn!("invalid timeout {:?} for task {}: {e}", s, task.name);
+                        None
+                    }
+                });
+        if let Some(timeout) = effective_timeout {
+            cmd = cmd.with_timeout(timeout);
+        }
+        // Apply sandbox async (DNS resolution for macOS) before spawning.
+        cmd.apply_sandbox().await?;
+        cmd.execute_async().await?;
+        trace!("{prefix} exited successfully");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn is_text_file_busy(err: &Report) -> bool {
+        err.chain().any(|cause| {
+            if let Some(io_err) = cause.downcast_ref::<std::io::Error>()
+                && let Some(code) = io_err.raw_os_error()
+            {
+                // ETXTBUSY (Text file busy) on Unix
+                return code == Errno::ETXTBSY as i32;
+            }
+            false
+        })
+    }
+
+    #[cfg(not(unix))]
+    #[allow(unused_variables)]
+    fn is_text_file_busy(err: &Report) -> bool {
+        false
+    }
+
+    fn parse_confirm_default(default: &str) -> Result<bool> {
+        match default.trim().to_ascii_lowercase().as_str() {
+            "yes" | "y" | "true" => Ok(true),
+            "no" | "n" | "false" => Ok(false),
+            _ => Err(eyre!(
+                "invalid task confirm default: {default:?}, expected one of yes/no/y/n/true/false"
+            )),
+        }
+    }
+
+    async fn check_confirmation(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        env: &BTreeMap<String, String>,
+    ) -> Result<()> {
+        if let Some(confirm) = &task.confirm
+            && !Settings::get().yes
+        {
+            let message = if contains_template_syntax(confirm.message()) {
+                let config_root = task.config_root.clone().unwrap_or_default();
+                let mut tera = crate::tera::get_tera(Some(&config_root));
+                let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
+
+                // Add usage values from parsed environment
+                let mut usage_ctx = std::collections::HashMap::new();
+                for (key, value) in env {
+                    if let Some(usage_key) = key.strip_prefix("usage_") {
+                        usage_ctx.insert(usage_key.to_string(), tera::Value::from(value.clone()));
+                    }
+                }
+                tera_ctx.insert("usage", &usage_ctx);
+                render_str(&mut tera, confirm.message(), &tera_ctx)?
+            } else {
+                confirm.message().to_string()
+            };
+            let default_yes = match confirm.default_value() {
+                Some(default) => Self::parse_confirm_default(default)?,
+                None => true, // keep backwards compatible default of yes if not specified
+            };
+            if !crate::ui::prompt::confirm_with_default(&message, default_yes).unwrap_or(false) {
+                return Err(eyre!("aborted by user"));
+            }
+        }
+        Ok(())
+    }
+
+    async fn parse_usage_spec_and_init_env(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        env: &mut BTreeMap<String, String>,
+        get_args: impl Fn() -> Vec<String>,
+        extra_vars: Option<IndexMap<String, String>>,
+    ) -> Result<()> {
+        let bypass_usage_parser = task.should_bypass_usage_parser();
+        if !task.raw_args {
+            // usage_* variables are outputs of this task's argument parser,
+            // so they must not influence spec discovery or parsing.
+            crate::task::clear_usage_env(env);
+        }
+        let (spec, _) = task
+            .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
+            .await?;
+        // raw_args tasks (and `-- --help`/`-- -h` ad-hoc invocations) must
+        // skip the usage parser so it can't intercept --help.
+        if !bypass_usage_parser
+            && (!spec.cmd.args.is_empty()
+                || !spec.cmd.flags.is_empty()
+                || !spec.cmd.subcommands.is_empty())
+        {
+            let args: Vec<String> = get_args();
+            trace!("Parsing usage spec for {:?}", args);
+            // Pass env vars to Parser so it can resolve env= defaults in usage specs
+            let env_map: std::collections::HashMap<String, String> =
+                env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let po = usage::Parser::new(&spec)
+                .with_env(env_map)
+                .parse(&args)
+                .map_err(|err| eyre!(err))?;
+            for (k, v) in po.as_env() {
+                trace!("Adding key {} value {} in env", k, v);
+                env.insert(k, v);
+            }
+            // always export $usage_cmd when spec has subcommands so
+            // shell scripts with `set -u` don't fail when none is chosen
+            if !spec.cmd.subcommands.is_empty() {
+                env.entry("usage_cmd".to_string()).or_default();
+            }
+            if let Some(subcmd) = subcommand_name_from_parse(&po.cmds) {
+                trace!("Adding key usage_cmd value {} in env", subcmd);
+                env.insert("usage_cmd".to_string(), subcmd);
+            }
+        } else {
+            trace!("Usage spec has no args, flags, or subcommands");
+        }
+
+        Ok(())
+    }
+}
+
+/// Check if a file can be executed directly by the OS without a shell wrapper.
+/// On Unix, this checks the executable permission bit.
+/// On Windows, this checks for a known executable extension (.bat, .ps1, etc.)
+/// — shebang-only files need to be run through a shell.
+fn can_execute_directly(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        // .ps1 files need pwsh -File, they can't be executed directly
+        if path.extension().is_some_and(|e| e == "ps1") {
+            return false;
+        }
+        crate::file::has_known_executable_extension(path)
+    }
+    #[cfg(not(windows))]
+    {
+        is_executable(path)
+    }
+}
+
+/// Determine the shell from a file's extension.
+/// e.g. `.ps1` → `["pwsh", "-File"]`
+fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
+    match path.extension()?.to_str()? {
+        "ps1" => Some(vec!["pwsh".to_string(), "-File".to_string()]),
+        _ => None,
+    }
+}
+
+fn task_shell_parts<'a>(shell: &'a [String], shell_kind: &str) -> Result<(&'a str, &'a [String])> {
+    shell
+        .split_first()
+        .map(|(program, args)| (program.as_str(), args))
+        .ok_or_else(|| {
+            eyre!("{shell_kind} is empty; check task shell, --shell, or default shell settings")
+        })
+}
+
+/// On Windows, when spawning a POSIX-style shell (bash/sh/zsh/...) for a task, the
+/// child needs PATH in MSYS Unix format — `/c/foo:/d/bar` rather than `C:\foo;D:\bar`.
+/// PowerShell-launched mise inherits no `MSYSTEM`, so the conversion has to happen
+/// here at the spawn boundary (driven by the target program), not in mise's own env.
+///
+/// The cfg-attribute pattern keeps the call site OS-agnostic and avoids cloning the
+/// env on the common path (Windows + non-POSIX-shell, or any non-Windows host).
+fn maybe_convert_env_for_msys_shell<'a>(
+    program: &Path,
+    env: &'a BTreeMap<String, String>,
+) -> std::borrow::Cow<'a, BTreeMap<String, String>> {
+    #[cfg(windows)]
+    {
+        if crate::path::is_posix_shell_program(program)
+            && let Some(path_val) = env.get(&*crate::env::PATH_KEY)
+            // Skip the clone+convert cycle when PATH is already in Unix form (no
+            // `;` separator, no `\` to translate). This is the common case when
+            // mise itself runs inside Git Bash and spawns another bash subshell.
+            && (path_val.contains(';') || path_val.contains('\\'))
+        {
+            let drive_prefix = msys_drive_prefix_for(program, env);
+            let converted = crate::path::windows_path_list_to_unix(path_val, &drive_prefix);
+            let mut new_env = env.clone();
+            new_env.insert((*crate::env::PATH_KEY).to_string(), converted);
+            return std::borrow::Cow::Owned(new_env);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = program;
+    }
+    std::borrow::Cow::Borrowed(env)
+}
+
+/// The cygdrive prefix inserted before drive letters when converting PATH for a
+/// POSIX shell. `is_cygwin_shell` only selects the *default* when no override is set:
+/// empty for MSYS2 / Git Bash (`/c/...`), `/cygdrive` for Cygwin (`/cygdrive/c/...`).
+///
+/// The `cygdrive` automount mechanism is shared by Cygwin and MSYS2 / Git Bash — both
+/// let the user change the mount root in `/etc/fstab` (Cygwin's default is `/cygdrive`,
+/// MSYS2's is `/`). mise does not parse fstab, so `MISE_CYGDRIVE_PREFIX` is an explicit
+/// override honored for *both* shells. A trailing `/` is trimmed since the converter
+/// emits its own separator after the prefix, so `MISE_CYGDRIVE_PREFIX=/` collapses to
+/// the MSYS `/c/...` form. A non-empty value that is not absolute (no leading `/`, e.g.
+/// `mnt`) would produce relative PATH entries that bash silently ignores, so it is
+/// rejected with a warning and the shell's default is used instead.
+#[cfg(windows)]
+fn msys_drive_prefix_for(program: &Path, env: &BTreeMap<String, String>) -> String {
+    // Default automount root when no override is set: empty for Git Bash / MSYS2
+    // (`/c/...`), `/cygdrive` for Cygwin (`/cygdrive/c/...`).
+    let default = if crate::path::is_cygwin_shell(program) {
+        "/cygdrive"
+    } else {
+        ""
+    };
+    let raw = env
+        .get("MISE_CYGDRIVE_PREFIX")
+        .cloned()
+        .or_else(|| std::env::var("MISE_CYGDRIVE_PREFIX").ok())
+        .filter(|s| !s.is_empty());
+    let Some(mut s) = raw else {
+        return default.to_string();
+    };
+    // Trim trailing slashes in place — the converter appends its own separator.
+    s.truncate(s.trim_end_matches('/').len());
+    if s.is_empty() {
+        // `MISE_CYGDRIVE_PREFIX=/` → empty prefix → MSYS `/c/...` form.
+        String::new()
+    } else if s.starts_with('/') {
+        s
+    } else {
+        // Describe the default clearly: an empty prefix is the Git Bash `/c/...` form,
+        // otherwise the Cygwin `/cygdrive` root.
+        let default_desc = if default.is_empty() {
+            "the Git Bash `/c/...` form".to_string()
+        } else {
+            format!("the default `{default}`")
+        };
+        warn!(
+            "MISE_CYGDRIVE_PREFIX={s:?} is not absolute (must start with `/`); \
+             using {default_desc}"
+        );
+        default.to_string()
+    }
+}
+
+/// Read the shebang from a file and parse it into a shell command.
+/// e.g. `#!/usr/bin/env bash` → `["bash"]`
+/// e.g. `#!/bin/bash` → `["/bin/bash"]`
+fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
+    use std::io::{BufRead, BufReader};
+    let f = std::fs::File::open(path).ok()?;
+    let mut reader = BufReader::new(f);
+    let mut first_line = String::new();
+    reader.read_line(&mut first_line).ok()?;
+    let shebang = first_line.strip_prefix("#!")?;
+    let shebang = shebang.strip_prefix("/usr/bin/env -S").unwrap_or(shebang);
+    let shebang = shebang.strip_prefix("/usr/bin/env").unwrap_or(shebang);
+    let mut parts = shebang.split_whitespace();
+    let shell = parts.next()?;
+    // On Windows, convert unix paths like /bin/bash to just the binary name
+    let shell = if cfg!(windows) {
+        shell.rsplit('/').next().unwrap_or(shell)
+    } else {
+        shell
+    };
+    let args: Vec<String> = parts.map(|s| s.to_string()).collect();
+    Some(once(shell.to_string()).chain(args).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env_with_path(path: &str) -> BTreeMap<String, String> {
+        let mut env = BTreeMap::new();
+        env.insert((*crate::env::PATH_KEY).to_string(), path.to_string());
+        env.insert("OTHER".to_string(), "unchanged".to_string());
+        env
+    }
+
+    #[test]
+    fn test_task_shell_parts_errors_on_empty_shell() {
+        let shell = Vec::new();
+        let err = task_shell_parts(&shell, "inline shell").unwrap_err();
+        assert!(err.to_string().contains("inline shell is empty"));
+    }
+
+    #[test]
+    fn test_task_shell_parts_splits_program_and_args() {
+        let shell = vec!["cmd".to_string(), "/c".to_string()];
+        let (program, args) = task_shell_parts(&shell, "inline shell").unwrap();
+        assert_eq!(program, "cmd");
+        assert_eq!(args, &["/c"]);
+    }
+
+    #[test]
+    fn test_resolve_task_sandbox_path_expands_home_before_task_base() {
+        let resolved =
+            resolve_task_sandbox_path(Path::new("~/sandbox-path"), Some(Path::new("/task/base")));
+
+        assert_eq!(resolved, crate::dirs::HOME.join("sandbox-path"));
+    }
+
+    #[test]
+    fn test_resolve_task_sandbox_path_uses_task_base_for_relative_paths() {
+        let resolved =
+            resolve_task_sandbox_path(Path::new("sandbox-path"), Some(Path::new("/task/base")));
+
+        assert_eq!(resolved, PathBuf::from("/task/base/sandbox-path"));
+    }
+
+    #[test]
+    fn test_resolve_task_sandbox_path_preserves_empty_paths_for_filtering() {
+        let resolved = resolve_task_sandbox_path(Path::new(""), Some(Path::new("/task/base")));
+
+        assert_eq!(resolved, PathBuf::new());
+    }
+
+    #[test]
+    fn test_display_first_command_plain() {
+        assert_eq!(display_first_command("echo hi"), "echo hi");
+    }
+
+    #[test]
+    fn test_display_first_command_skips_boilerplate() {
+        let script = "#!/usr/bin/env bash\nset -Eeuo pipefail\necho hi";
+        assert_eq!(display_first_command(script), "echo hi");
+    }
+
+    #[test]
+    fn test_display_first_command_joins_continuations() {
+        let script = "echo long_command \\\n  --option1 value1 \\\n  --option2";
+        assert_eq!(
+            display_first_command(script),
+            "echo long_command --option1 value1 --option2"
+        );
+    }
+
+    #[test]
+    fn test_display_first_command_joins_continuations_after_boilerplate() {
+        let script = "#!/usr/bin/env bash\nset -e\necho foo \\\n  --bar";
+        assert_eq!(display_first_command(script), "echo foo --bar");
+    }
+
+    #[test]
+    fn test_display_first_command_keeps_literal_trailing_backslash() {
+        // A trailing backslash with no following line is treated as literal data
+        // (it cannot be a continuation), so it is preserved rather than dropped or
+        // joined. Only genuine multi-line continuations are merged.
+        assert_eq!(display_first_command("echo foo \\"), "echo foo \\");
+    }
+
+    #[test]
+    fn test_display_first_command_keeps_windows_path_trailing_backslash() {
+        // A Windows path ending in a backslash is data, not a line continuation,
+        // and must be shown verbatim in the header.
+        assert_eq!(display_first_command("echo C:\\tmp\\"), "echo C:\\tmp\\");
+    }
+
+    #[test]
+    fn test_display_first_command_all_boilerplate_returns_script() {
+        let script = "#!/usr/bin/env bash\nset -e";
+        assert_eq!(display_first_command(script), script);
+    }
+
+    #[test]
+    fn test_display_first_command_header_has_no_dangling_backslash_with_args() {
+        // Reproduces #10083: the joined command plus extra args must not contain
+        // the `\ ` sequence that confused the original output.
+        let display_script = display_first_command("echo long_command \\\n  --option1 value1");
+        let args_str = ["--extra", "args"].join(" ");
+        let header = format!("$ {display_script} {args_str}");
+        assert_eq!(header, "$ echo long_command --option1 value1 --extra args");
+        assert!(!header.contains("\\ "));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_converts_for_bash() {
+        let env = env_with_path(r"C:\Users\me\.rustup\bin;D:\tools\bin");
+        let out = maybe_convert_env_for_msys_shell(Path::new("bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/c/Users/me/.rustup/bin:/d/tools/bin"
+        );
+        assert_eq!(out.get("OTHER").unwrap(), "unchanged");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_skips_for_cmd() {
+        let env = env_with_path(r"C:\Users\me\.rustup\bin;D:\tools\bin");
+        let out = maybe_convert_env_for_msys_shell(Path::new("cmd.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            r"C:\Users\me\.rustup\bin;D:\tools\bin"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_full_path_to_bash() {
+        let env = env_with_path(r"C:\foo;D:\bar");
+        let out =
+            maybe_convert_env_for_msys_shell(Path::new(r"C:\Program Files\Git\bin\bash.exe"), &env);
+        assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/c/foo:/d/bar");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_uses_cygdrive_for_cygwin_bash() {
+        // A Cygwin bash (detected by the `cygwin64` path segment) needs the
+        // `/cygdrive/c/...` form, not Git Bash's `/c/...`.
+        let env = env_with_path(r"C:\foo;D:\bar");
+        let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/cygdrive/c/foo:/cygdrive/d/bar"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_honors_cygdrive_prefix_override() {
+        // A non-default cygdrive mount (e.g. fstab `/mnt`) is supplied via
+        // MISE_CYGDRIVE_PREFIX in the task env rather than parsed from fstab.
+        let mut env = env_with_path(r"C:\foo;D:\bar");
+        env.insert("MISE_CYGDRIVE_PREFIX".to_string(), "/mnt".to_string());
+        let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/mnt/c/foo:/mnt/d/bar"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_honors_cygdrive_prefix_for_git_bash() {
+        // The cygdrive automount root is configurable in MSYS2 / Git Bash too (not just
+        // Cygwin). A Git Bash user with a non-default fstab mount supplies it via
+        // MISE_CYGDRIVE_PREFIX; without it the default would (wrongly) be `/c/...`.
+        let mut env = env_with_path(r"C:\foo;D:\bar");
+        env.insert("MISE_CYGDRIVE_PREFIX".to_string(), "/mnt".to_string());
+        let out =
+            maybe_convert_env_for_msys_shell(Path::new(r"C:\Program Files\Git\bin\bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/mnt/c/foo:/mnt/d/bar"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_rejects_relative_cygdrive_prefix() {
+        // A prefix without a leading slash (e.g. `mnt`) would yield relative PATH
+        // entries bash ignores; fall back to the shell's default instead. For the
+        // Cygwin binary used here that default is `/cygdrive` (Git Bash would fall
+        // back to an empty prefix, i.e. the `/c/...` form).
+        let mut env = env_with_path(r"C:\foo;D:\bar");
+        env.insert("MISE_CYGDRIVE_PREFIX".to_string(), "mnt".to_string());
+        let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/cygdrive/c/foo:/cygdrive/d/bar"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_cygdrive_prefix_slash_is_msys() {
+        // `MISE_CYGDRIVE_PREFIX=/` trims to empty → MSYS `/c/...` form.
+        let mut env = env_with_path(r"C:\foo;D:\bar");
+        env.insert("MISE_CYGDRIVE_PREFIX".to_string(), "/".to_string());
+        let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
+        assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/c/foo:/d/bar");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_borrows_when_path_already_unix() {
+        // PATH already in Unix form (no `;` and no `\`) — Cow stays Borrowed,
+        // env is not cloned. Common when mise runs from Git Bash itself.
+        let env = env_with_path("/c/foo:/d/bar:/usr/bin");
+        let out = maybe_convert_env_for_msys_shell(Path::new("bash.exe"), &env);
+        assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/c/foo:/d/bar:/usr/bin"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_borrows_when_path_missing() {
+        // No PATH at all — also no clone.
+        let mut env = BTreeMap::new();
+        env.insert("OTHER".to_string(), "unchanged".to_string());
+        let out = maybe_convert_env_for_msys_shell(Path::new("bash.exe"), &env);
+        assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_maybe_convert_env_for_msys_shell_noop_on_unix() {
+        let env = env_with_path("/usr/bin:/bin");
+        let out = maybe_convert_env_for_msys_shell(Path::new("bash"), &env);
+        assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/usr/bin:/bin");
+    }
+}

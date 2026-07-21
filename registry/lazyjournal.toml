@@ -1,0 +1,3 @@
+backends = ["aqua:Lifailon/lazyjournal"]
+description = "TUI for journalctl, file system logs, as well Docker and Podman containers for quick viewing and filtering with fuzzy find, regex support (like fzf and grep) and coloring the output, written in Go with the gocui library"
+test = { cmd = "lazyjournal --version", expected = "{{version}}" }

@@ -1,0 +1,3 @@
+backends = ["github:cube2222/octosql"]
+description = "OctoSQL is a query tool that allows you to join, analyse and transform data from multiple databases and file formats using SQL"
+test = { cmd = "octosql --version", expected = "octosql version {{version}}" }

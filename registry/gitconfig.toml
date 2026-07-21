@@ -1,0 +1,3 @@
+backends = ["github:0ghny/gitconfig", "asdf:0ghny/asdf-gitconfig"]
+description = "Cli to manage multiple gitconfigs with ease"
+test = { cmd = "gitconfig --version", expected = "gitconfig version {{version}}" }

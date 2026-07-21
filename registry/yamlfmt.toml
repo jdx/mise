@@ -1,0 +1,7 @@
+backends = [
+  "aqua:google/yamlfmt",
+  "asdf:mise-plugins/asdf-yamlfmt",
+  "go:github.com/google/yamlfmt/cmd/yamlfmt",
+]
+description = "An extensible command line tool or library to format yaml files"
+test = { cmd = "yamlfmt --version", expected = "yamlfmt {{version}}" }

@@ -1,0 +1,2 @@
+backends = ["aqua:updatecli/updatecli", "asdf:updatecli/asdf-updatecli"]
+description = "A Declarative Dependency Management tool"

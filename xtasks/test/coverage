@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
-#MISE description="run all tests with coverage report"
+#MISE description="Run all tests with coverage report"
 
 echo "::group::Setup"
 set -euxo pipefail
-# shellcheck disable=SC1090
-if [[ -n ${MISE_GITHUB_BOT_TOKEN:-} ]]; then
-  export GITHUB_API_TOKEN="$MISE_GITHUB_BOT_TOKEN"
-fi
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
 
@@ -16,5 +12,3 @@ mise install
 mise x -- bun i
 echo "::endgroup::"
 mise x -- ./e2e/run_all_tests
-echo "::group::mise test-tool"
-MISE_USE_VERSIONS_HOST=0 mise test-tool --all

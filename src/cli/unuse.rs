@@ -1,14 +1,31 @@
+use std::{path::PathBuf, sync::Arc};
+
 use crate::cli::args::ToolArg;
 use crate::cli::prune::prune;
-use crate::config;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, config_file};
 use crate::file::display_path;
-use crate::toolset::ToolRequest;
+use crate::{config, env};
 use eyre::Result;
 use itertools::Itertools;
+use path_absolutize::Absolutize;
 
 /// Removes installed tool versions from mise.toml
+///
+/// By default, this will use the `mise.toml` file that has the tool defined.
+/// If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
+/// the lowest precedence file (`mise.toml`) will be used.
+/// See https://mise.en.dev/configuration.html#target-file-for-write-operations
+///
+/// In the following order:
+///   - If `--global` is set, it will use the global config file.
+///   - If `--path` is set, it will use the config file at the given path.
+///   - If `--env` is set, it will use `mise.<env>.toml`.
+///   - If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
+///   - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
+///   - Otherwise just "mise.toml" or global config if cwd is home directory.
+///
+/// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 ///
 /// Will also prune the installed version if no other configurations are using it.
 #[derive(Debug, clap::Args)]
@@ -18,30 +35,41 @@ pub struct Unuse {
     #[clap(value_name = "INSTALLED_TOOL@VERSION", required = true)]
     installed_tool: Vec<ToolArg>,
 
+    /// Create/modify an environment-specific config file like .mise.<env>.toml
+    #[clap(long, short, overrides_with_all = & ["global", "path"])]
+    env: Option<String>,
+
+    /// Use the global config file (`~/.config/mise/config.toml`) instead of the local one
+    #[clap(short, long, overrides_with_all = & ["path", "env"])]
+    global: bool,
+
+    /// Specify a path to a config file or directory
+    ///
+    /// If a directory is specified, it will look for a config file in that directory following
+    /// the rules above.
+    #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
+    path: Option<PathBuf>,
+
     /// Do not also prune the installed version
     #[clap(long)]
     no_prune: bool,
-
-    /// Remove tool from global config
-    #[clap(short, long)]
-    global: bool,
 }
 
 impl Unuse {
-    pub fn run(self) -> Result<()> {
-        let config = Config::get();
-        let mut cf = self.get_config_file(&config)?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let cf = self.get_config_file(&config).await?;
         let tools = cf.to_tool_request_set()?.tools;
         let mut removed: Vec<&ToolArg> = vec![];
         for ta in &self.installed_tool {
-            if let Some(tool_requests) = tools.get(&ta.ba) {
-                let tools_to_remove: Vec<&ToolRequest> = tool_requests
-                    .iter()
-                    .filter(|tv| {
-                        tv.version() == ta.version.as_ref().map_or("latest", |v| v.as_str())
-                    })
-                    .collect();
-                for _tool in tools_to_remove {
+            if let Some(tool_requests) = tools.get(ta.ba.as_ref()) {
+                let should_remove = if let Some(v) = &ta.version {
+                    tool_requests.iter().any(|tv| &tv.version() == v)
+                } else {
+                    true
+                };
+                // TODO: this won't work properly for unusing a specific version in of multiple in a config
+                if should_remove {
                     removed.push(ta);
                     cf.remove_tool(&ta.ba)?;
                 }
@@ -56,25 +84,63 @@ impl Unuse {
         }
 
         if !self.no_prune {
-            prune(self.installed_tool.iter().map(|ta| &ta.ba).collect(), false)?;
-            config::rebuild_shims_and_runtime_symlinks(&[])?;
+            prune(
+                &config,
+                self.installed_tool
+                    .iter()
+                    .map(|ta| ta.ba.as_ref())
+                    .collect(),
+                false,
+            )
+            .await?;
+            let config = Config::reset().await?;
+            let ts = config.get_toolset().await?;
+            config::rebuild_shims_and_runtime_symlinks(
+                &config,
+                ts,
+                &[],
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await?;
         }
 
         Ok(())
     }
 
-    pub fn get_config_file(&self, config: &Config) -> Result<Box<dyn ConfigFile>> {
-        for cf in config.config_files.values() {
-            if cf
-                .to_tool_request_set()?
-                .tools
-                .keys()
-                .any(|ba| self.installed_tool.iter().any(|ta| ta.ba == *ba))
-            {
-                return config_file::parse(cf.get_path());
+    async fn get_config_file(&self, config: &Config) -> Result<Arc<dyn ConfigFile>> {
+        let cwd = env::current_dir()?;
+        let path = if self.global {
+            config::global_config_path()
+        } else if let Some(p) = &self.path {
+            let from_dir = config::config_file_from_dir(p).absolutize()?.to_path_buf();
+            if from_dir.starts_with(&cwd) {
+                from_dir
+            } else {
+                p.clone()
             }
-        }
-        config_file::parse_or_init(&config::local_toml_config_path())
+        } else if let Some(env) = &self.env {
+            let p = cwd.join(format!(".mise.{env}.toml"));
+            if p.exists() {
+                p
+            } else {
+                cwd.join(format!("mise.{env}.toml"))
+            }
+        } else if env::in_home_dir() {
+            config::global_config_path()
+        } else {
+            for cf in config.config_files.values() {
+                if cf
+                    .to_tool_request_set()?
+                    .tools
+                    .keys()
+                    .any(|ba| self.installed_tool.iter().any(|ta| &ta.ba == ba))
+                {
+                    return config_file::parse(cf.get_path()).await;
+                }
+            }
+            config::local_toml_config_path()
+        };
+        config_file::parse_or_init(&path).await
     }
 }
 
@@ -86,5 +152,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     # will uninstall specific version from global config
     $ <bold>mise unuse -g node@18.0.0</bold>
+
+    # will uninstall specific version from .mise.local.toml
+    $ <bold>mise unuse --env local node@20</bold>
+
+    # will uninstall specific version from .mise.staging.toml
+    $ <bold>mise unuse --env staging node@20</bold>
 "#
 );

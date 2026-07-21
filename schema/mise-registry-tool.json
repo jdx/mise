@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mise.en.dev/schema/mise-registry-tool.json",
+  "title": "mise registry tool schema",
+  "description": "Schema for individual tool files in the mise registry",
+  "type": "object",
+  "$defs": {
+    "backendFull": {
+      "type": "string",
+      "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|pipx|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
+    },
+    "optionValue": {
+      "description": "Backend option value.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/optionValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/optionValue"
+          }
+        }
+      ]
+    },
+    "os": {
+      "type": "string",
+      "enum": ["freebsd", "linux", "macos", "openbsd", "windows"]
+    },
+    "platform": {
+      "type": "string",
+      "pattern": "^(linux|macos|windows)-(x64|arm64|x86|loongarch64|riscv64)$"
+    },
+    "optionPlatform": {
+      "type": "string",
+      "pattern": "^(linux|macos|darwin|windows)-(x64|amd64|x86_64|arm64|aarch64|x86|loongarch64|riscv64)$"
+    },
+    "platformSelector": {
+      "description": "OS, architecture, or platform this backend supports.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/os"
+        },
+        {
+          "type": "string",
+          "enum": ["x64", "arm64", "x86", "loongarch64", "riscv64"]
+        },
+        {
+          "$ref": "#/$defs/platform"
+        }
+      ]
+    },
+    "toolId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_.-]+$"
+    },
+    "toolArg": {
+      "type": "string",
+      "pattern": "^\\S+$"
+    }
+  },
+  "properties": {
+    "aliases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/toolId"
+      },
+      "description": "Alternative names for the tool"
+    },
+    "backends": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/backendFull",
+            "description": "Backend specification as a string (e.g., 'aqua:owner/repo')"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "full": {
+                "$ref": "#/$defs/backendFull",
+                "description": "Full backend specification"
+              },
+              "platforms": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/platformSelector"
+                },
+                "description": "Operating systems, architectures, or platforms this backend supports"
+              },
+              "options": {
+                "type": "object",
+                "description": "Backend-specific options",
+                "properties": {
+                  "platforms": {
+                    "type": "object",
+                    "description": "Platform-specific options (e.g., macos-arm64, linux-x64)",
+                    "propertyNames": {
+                      "$ref": "#/$defs/optionPlatform"
+                    },
+                    "additionalProperties": {
+                      "type": "object",
+                      "description": "Platform-specific configuration",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/optionValue"
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": {
+                  "$ref": "#/$defs/optionValue"
+                }
+              }
+            },
+            "required": ["full"],
+            "unevaluatedProperties": false
+          }
+        ]
+      },
+      "description": "List of backends that can install this tool",
+      "minItems": 1
+    },
+    "description": {
+      "type": "string",
+      "description": "A brief description of the tool"
+    },
+    "detect": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Files that indicate this tool should be suggested during config generation"
+    },
+    "idiomatic_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Files that indicate this tool should be used in a project"
+    },
+    "os": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/os"
+      },
+      "description": "Operating systems this tool supports (empty means all)"
+    },
+    "overrides": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/toolId"
+      },
+      "description": "List of tool IDs that this tool overrides"
+    },
+    "test": {
+      "type": "object",
+      "properties": {
+        "cmd": {
+          "type": "string",
+          "description": "Command to run to test the tool installation"
+        },
+        "expected": {
+          "type": "string",
+          "description": "Expected substring in the command output"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/toolArg"
+          },
+          "description": "Additional mise tool arguments to install before running test.cmd. Used only by mise test-tool."
+        }
+      },
+      "required": ["cmd", "expected"],
+      "unevaluatedProperties": false,
+      "description": "Command to test the tool installation"
+    }
+  },
+  "required": ["backends"],
+  "unevaluatedProperties": false
+}

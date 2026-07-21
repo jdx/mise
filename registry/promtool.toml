@@ -1,0 +1,3 @@
+backends = ["aqua:prometheus/prometheus", "asdf:asdf-community/asdf-promtool"]
+description = "The Prometheus monitoring system and time series database"
+test = { cmd = "promtool --version", expected = "promtool, version {{version}}" }

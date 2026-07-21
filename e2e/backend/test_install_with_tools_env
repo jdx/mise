@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+require_cmd npm
+
+# Regression test: installing npm/cargo/pipx tools should not fail when
+# env vars use `tools = true` lazy evaluation referencing other tools.
+# Previously, the install process tried to resolve `tools = true` env
+# directives during installation, but the referenced tools might not be
+# installed yet, causing template rendering errors.
+# See: https://github.com/jdx/mise/discussions/8346
+
+export NPM_CONFIG_FUND=false
+
+cat >mise.toml <<'EOF'
+[tools]
+node = "latest"
+"npm:prettier" = "3.1.0"
+
+[env]
+NODE_VERSION = { value = "{{ tools.node.version }}", tools = true }
+EOF
+
+assert_succeed "mise install"

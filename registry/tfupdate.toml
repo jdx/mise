@@ -1,0 +1,2 @@
+backends = ["aqua:minamijoyo/tfupdate", "asdf:yuokada/asdf-tfupdate"]
+description = "Update version constraints in your Terraform configurations"

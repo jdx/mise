@@ -1,0 +1,6 @@
+backends = [
+  "aqua:nametake/golangci-lint-langserver",
+  "go:github.com/nametake/golangci-lint-langserver",
+]
+description = "golangci-lint language server"
+test = { cmd = "which golangci-lint-langserver", expected = "golangci-lint-langserver" }

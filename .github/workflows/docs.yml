@@ -3,14 +3,32 @@ name: docs
 on:
   push:
     paths:
+      - ".github/actions/**"
+      - ".github/workflows/docs.yml"
+      - "bun.lock"
       - "docs/**"
+      - "mise.toml"
+      - "package.json"
+      - "registry/**"
+      - "settings.toml"
+      - "tasks.toml"
       - "tasks/docs/**"
+      - "xtasks/docs/**"
     branches:
       - main
   pull_request:
     paths:
+      - ".github/actions/**"
+      - ".github/workflows/docs.yml"
+      - "bun.lock"
       - "docs/**"
+      - "mise.toml"
+      - "package.json"
+      - "registry/**"
+      - "settings.toml"
+      - "tasks.toml"
       - "tasks/docs/**"
+      - "xtasks/docs/**"
     branches:
       - main
   workflow_dispatch:
@@ -20,20 +38,19 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
   docs:
     if: github.repository == 'jdx/mise'
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0 # for lastUpdated
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4
         with:
           install_args: bun
-          cache: true
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: bun i
       - run: mise run docs:release

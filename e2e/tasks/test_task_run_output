@@ -25,6 +25,71 @@ running b
 running c
 running all
 running z"
+# test that task.output config setting works the same as MISE_TASK_OUTPUT env var
+cat <<EOF >mise.toml
+[settings]
+task.output = "silent"
+[tasks.a]
+run = 'echo running a'
+[tasks.b]
+depends = 'a'
+run = 'echo running b'
+[tasks.c]
+depends = ['b']
+run = 'echo running c'
+[tasks.all]
+depends = ['a', 'b', 'c']
+depends_post = 'z'
+run = 'echo running all'
+[tasks.d]
+run = 'echo running d'
+[tasks.z]
+run = 'echo running z'
+EOF
+assert_empty "mise run all" ""
+cat <<EOF >mise.toml
+[settings]
+task.output = "quiet"
+[tasks.a]
+run = 'echo running a'
+[tasks.b]
+depends = 'a'
+run = 'echo running b'
+[tasks.c]
+depends = ['b']
+run = 'echo running c'
+[tasks.all]
+depends = ['a', 'b', 'c']
+depends_post = 'z'
+run = 'echo running all'
+[tasks.d]
+run = 'echo running d'
+[tasks.z]
+run = 'echo running z'
+EOF
+assert "mise run all" "running a
+running b
+running c
+running all
+running z"
+cat <<EOF >mise.toml
+[tasks.a]
+run = 'echo running a'
+[tasks.b]
+depends = 'a'
+run = 'echo running b'
+[tasks.c]
+depends = ['b']
+run = 'echo running c'
+[tasks.all]
+depends = ['a', 'b', 'c']
+depends_post = 'z'
+run = 'echo running all'
+[tasks.d]
+run = 'echo running d'
+[tasks.z]
+run = 'echo running z'
+EOF
 MISE_TASK_OUTPUT=interleave assert "mise run all" "running a
 running b
 running c
@@ -35,7 +100,7 @@ MISE_TASK_OUTPUT=prefix assert "mise run all" "[a] running a
 [c] running c
 [all] running all
 [z] running z"
-# defaults to interleave if linear depedency graph
+# defaults to interleave if linear dependency graph
 assert "mise run all" "running a
 running b
 running c
@@ -44,7 +109,7 @@ running z"
 # now the graph isn't linear so it uses prefix
 assert_contains "mise run a ::: d" "[a] running a"
 assert_contains "mise run a ::: d" "[d] running d"
-assert "mise task deps" "a
+assert "mise tasks deps" "a
 all
 ├── c
 │   └── b
@@ -59,17 +124,10 @@ c
     └── a
 d
 z
-├── all
-│   ├── c
-│   │   └── b
-│   │       └── a
-│   ├── b
-│   │   └── a
-│   └── a
-├── a
-├── b
-│   └── a
-├── c
-│   └── b
-│       └── a
-└── d"
+└── all
+    ├── c
+    │   └── b
+    │       └── a
+    ├── b
+    │   └── a
+    └── a"

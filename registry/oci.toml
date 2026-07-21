@@ -1,0 +1,2 @@
+backends = ["vfox:jdx/vfox-oci", "asdf:mise-plugins/mise-oci"]
+description = "Oracle Cloud Infrastructure CLI"

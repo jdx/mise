@@ -1,0 +1,4 @@
+backends = ["aqua:atlassian.com/acli"]
+description = "Software to interact with Atlassian Cloud from the terminal"
+os = ["linux", "macos"]
+test = { cmd = "acli --version", expected = "acli version {{version}}" }

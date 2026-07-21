@@ -1,0 +1,3 @@
+backends = ["aqua:ducaale/xh", "asdf:NeoHsu/asdf-xh", "cargo:xh"]
+description = "Friendly and fast tool for sending HTTP requests"
+test = { cmd = "xh -V", expected = "xh {{version}}" }

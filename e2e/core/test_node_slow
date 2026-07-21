@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+export MISE_NODE_COREPACK=1
+export MISE_NODE_DEFAULT_PACKAGES_FILE="$PWD/.default-npm-packages"
+export NPM_CONFIG_FUND=false
+
+# Use Node 24 (LTS) for corepack tests since Node 25+ removed corepack
+corepack_version=$(mise latest node@24)
+echo "v$corepack_version" >.node-version
+echo "zx" >"$MISE_NODE_DEFAULT_PACKAGES_FILE"
+
+# Enable idiomatic version files for node
+mise settings set idiomatic_version_file_enable_tools node
+
+mise i node@lts/hydrogen
+mise i -f node
+hydrogen_path="$(mise where node@lts/hydrogen)"
+assert "mise x node@$corepack_version -- $hydrogen_path/bin/npm config get prefix" "$hydrogen_path"
+assert_contains "mise x node@lts/hydrogen -- node --version" "v18."
+assert "mise x -- node --version" "v$corepack_version"
+assert_contains "mise x -- which yarn" "yarn"
+assert_contains "mise x -- which zx" "zx"
+
+mise use nodejs@20.1.0
+mise ls
+assert "mise x -- node --version" "v20.1.0"
+assert_contains "mise ls-remote nodejs" "20.1.0"
+mise use --rm node

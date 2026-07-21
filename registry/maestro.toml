@@ -1,0 +1,2 @@
+backends = ["github:mobile-dev-inc/maestro", "asdf:dotanuki-labs/asdf-maestro"]
+description = "Painless E2E Automation for Mobile and Web"

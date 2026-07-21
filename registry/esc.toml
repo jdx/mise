@@ -1,0 +1,3 @@
+backends = ["aqua:pulumi/esc", "asdf:fxsalazar/asdf-esc"]
+description = "Pulumi ESC is a centralized, secure service for environments, secrets, and configuration management, optimized for multi-cloud infrastructures and applications"
+test = { cmd = "esc version", expected = "v{{version}}" }

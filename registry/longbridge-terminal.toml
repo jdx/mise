@@ -1,0 +1,7 @@
+backends = [
+  "github:longbridge/longbridge-terminal",
+  "cargo:longbridge-terminal",
+]
+bin = "longbridge"
+description = "AI-native CLI for Longbridge Securities — real-time market data, portfolio, and trading"
+test = { cmd = "longbridge --version", expected = "longbridge {{version}}" }

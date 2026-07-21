@@ -1,0 +1,3 @@
+backends = ["github:ccache/ccache", "asdf:asdf-community/asdf-ccache"]
+description = "ccache – a fast compiler cache"
+test = { cmd = "ccache --version", expected = "ccache version {{version}}" }

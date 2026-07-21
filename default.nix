@@ -1,8 +1,8 @@
-{ pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, openssl, git }:
+{ pkgs, lib, rustPlatform, coreutils, bash, direnv, openssl, git }:
 
 rustPlatform.buildRustPackage {
   pname = "mise";
-  version = "2025.4.0";
+  version = "2026.7.11";
 
   src = lib.cleanSource ./.;
 
@@ -10,16 +10,32 @@ rustPlatform.buildRustPackage {
     lockFile = ./Cargo.lock;
   };
 
-  nativeBuildInputs = with pkgs; [ pkg-config ];
-  buildInputs = with pkgs; [
-    coreutils
-    bash
-    direnv
-    gnused
+  nativeBuildInputs = with pkgs; [
+    cmakeMinimal
+    clang
+    llvmPackages.libclang
+    pkg-config
+    rustPlatform.bindgenHook
+  ];
+  nativeCheckInputs = with pkgs; [
     git
+  ];
+  buildInputs = with pkgs; [
+    bash
+    coreutils
+    direnv
     gawk
+    git
+    gnused
     openssl
-  ] ++ lib.optionals stdenv.isDarwin [ darwin.apple_sdk.frameworks.Security darwin.apple_sdk.frameworks.SystemConfiguration ];
+  ];
+
+  LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+
+  # tera-contrib's now() resolves its timezone by name (TimeZone::get("UTC")),
+  # which requires a tzdb. The build sandbox provides none, so tests calling
+  # now() fail with "Unknown timezone: UTC".
+  TZDIR = "${pkgs.tzdata}/share/zoneinfo";
 
   prePatch = ''
     substituteInPlace ./src/test.rs ./test/data/plugins/**/bin/* \
@@ -45,7 +61,7 @@ rustPlatform.buildRustPackage {
   '';
 
   meta = with lib; {
-    description = "The front-end to your dev env";
+    description = "Dev tools, env vars, and tasks in one CLI";
     homepage = "https://github.com/jdx/mise";
     license = licenses.mit;
     mainProgram = "mise";

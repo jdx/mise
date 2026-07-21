@@ -1,0 +1,2 @@
+backends = ["aqua:slok/sloth", "asdf:slok/asdf-sloth"]
+description = "Easy and simple Prometheus SLO (service level objectives) generator"

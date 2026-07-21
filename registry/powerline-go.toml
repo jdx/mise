@@ -1,0 +1,2 @@
+backends = ["aqua:justjanne/powerline-go", "asdf:dex4er/asdf-powerline-go"]
+description = "A beautiful and useful low-latency prompt for your shell, written in go"

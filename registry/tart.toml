@@ -1,0 +1,4 @@
+backends = ["aqua:cirruslabs/tart"]
+description = "macOS and Linux VMs on Apple Silicon to use in CI and other automations"
+os = ["macos"]
+test = { cmd = "tart --version", expected = "{{version}}" }

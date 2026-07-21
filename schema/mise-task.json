@@ -1,8 +1,12 @@
 {
-  "$id": "https://mise.jdx.dev/schema/mise-task.json",
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mise.en.dev/schema/mise-task.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "mise-task-schema",
   "type": "object",
+  "description": "Config file for included mise tasks (https://mise.en.dev/tasks/#task-configuration)",
+  "additionalProperties": {
+    "$ref": "#/$defs/task"
+  },
   "$defs": {
     "task": {
       "oneOf": [
@@ -19,272 +23,1097 @@
           "type": "array"
         },
         {
-          "additionalProperties": false,
-          "properties": {
-            "alias": {
-              "oneOf": [
-                {
-                  "description": "alias for this task",
-                  "type": "string"
-                },
-                {
-                  "description": "alias for this task",
-                  "items": {
-                    "description": "alias for this task",
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
-              ]
+          "allOf": [
+            {
+              "$ref": "#/$defs/task_props"
             },
-            "confirm": {
+            {
+              "properties": {
+                "extends": {
+                  "description": "name of the task template to extend",
+                  "type": "string"
+                }
+              }
+            }
+          ],
+          "unevaluatedProperties": false,
+          "type": "object"
+        }
+      ]
+    },
+    "task_props": {
+      "description": "common task properties",
+      "properties": {
+        "alias": {
+          "oneOf": [
+            {
+              "description": "alias for this task",
+              "type": "string"
+            },
+            {
+              "description": "alias for this task",
+              "items": {
+                "description": "alias for this task",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "confirm": {
+          "oneOf": [
+            {
               "description": "confirmation message before running this task",
               "type": "string"
             },
-            "depends": {
-              "oneOf": [
-                {
-                  "description": "task with args to run before this task",
+            {
+              "description": "confirmation message before running this task with default value",
+              "properties": {
+                "message": {
+                  "description": "confirmation message before running this task",
                   "type": "string"
                 },
-                {
-                  "description": "task with args to run before this task",
-                  "items": {
-                    "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
-              ]
-            },
-            "depends_post": {
-              "oneOf": [
-                {
-                  "description": "task with args to run after this task",
+                "default": {
+                  "description": "default value for confirmation (yes/no/true/false)",
+                  "enum": ["yes", "no", "y", "n", "true", "false"],
                   "type": "string"
-                },
-                {
-                  "description": "task with args to run after this task",
-                  "items": {
-                    "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
                 }
-              ]
-            },
-            "wait_for": {
-              "oneOf": [
-                {
-                  "description": "task with args to wait for completion first",
-                  "type": "string"
-                },
-                {
-                  "description": "task with args to wait for completion first",
-                  "items": {
-                    "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
-              ]
-            },
-            "description": {
-              "description": "description of task",
-              "type": "string"
-            },
-            "dir": {
-              "default": "{{ config_root }}",
-              "description": "directory to run script in, default is the project's base directory",
-              "type": "string"
-            },
-            "env": {
-              "additionalProperties": {
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "enum": [false],
-                    "type": "boolean"
-                  }
-                ]
               },
-              "description": "environment variables",
+              "required": ["message", "default"],
+              "unevaluatedProperties": false,
               "type": "object"
+            }
+          ]
+        },
+        "depends": {
+          "oneOf": [
+            {
+              "description": "task with args to run before this task",
+              "type": "string"
             },
-            "tools": {
-              "description": "tools to install/activate before running this task",
-              "additionalProperties": {
-                "oneOf": [
-                  {
-                    "description": "version of the tool to install",
-                    "type": "string"
+            {
+              "description": "task with args to run before this task",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/task_dependency_item"
+              }
+            }
+          ]
+        },
+        "depends_post": {
+          "oneOf": [
+            {
+              "description": "task with args to run after this task",
+              "type": "string"
+            },
+            {
+              "description": "task with args to run after this task",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/task_dependency_item"
+              }
+            }
+          ]
+        },
+        "wait_for": {
+          "oneOf": [
+            {
+              "description": "task with args to wait for completion first",
+              "type": "string"
+            },
+            {
+              "description": "task with args to wait for completion first",
+              "items": {
+                "$ref": "#/$defs/task_dependency_item"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "description": {
+          "description": "description of task",
+          "type": "string"
+        },
+        "dir": {
+          "default": "{{ config_root }}",
+          "description": "directory to run script in, default is the project's base directory",
+          "type": "string"
+        },
+        "env": {
+          "$ref": "#/$defs/env"
+        },
+        "vars": {
+          "$ref": "#/$defs/vars"
+        },
+        "tools": {
+          "description": "tools to install/activate before running this task",
+          "additionalProperties": {
+            "$ref": "#/$defs/tool"
+          },
+          "type": "object"
+        },
+        "hide": {
+          "default": false,
+          "description": "do not display this task",
+          "type": "boolean"
+        },
+        "outputs": {
+          "oneOf": [
+            {
+              "description": "files created by this task",
+              "items": {
+                "description": "glob pattern or path to files created by this task",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "description": "glob pattern or path to files created by this task",
+              "type": "string"
+            },
+            {
+              "unevaluatedProperties": false,
+              "properties": {
+                "auto": {
+                  "description": "automatically touch an internal tracked file instead of specifying outputs",
+                  "enum": [true],
+                  "type": "boolean"
+                }
+              },
+              "required": ["auto"],
+              "type": "object"
+            }
+          ]
+        },
+        "output": {
+          "description": "output style for this task (prefix, interleave, keep-order, replacing, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",
+          "enum": [
+            "prefix",
+            "interleave",
+            "keep-order",
+            "replacing",
+            "timed",
+            "quiet",
+            "silent"
+          ],
+          "type": "string"
+        },
+        "quiet": {
+          "default": false,
+          "description": "do not display mise information for this task",
+          "type": "boolean"
+        },
+        "silent": {
+          "default": false,
+          "description": "suppress all output for this task",
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "enum": ["stdout", "stderr"],
+              "type": "string"
+            }
+          ]
+        },
+        "interactive": {
+          "default": false,
+          "description": "mark task as interactive, acquiring exclusive terminal access while allowing other non-interactive tasks to run in parallel",
+          "type": "boolean"
+        },
+        "raw": {
+          "default": false,
+          "description": "directly connect task to stdin/stdout/stderr",
+          "type": "boolean"
+        },
+        "raw_args": {
+          "default": false,
+          "description": "skip mise's argument parsing for this task — all arguments (including --help/-h) are forwarded verbatim to the underlying command. Use for tasks that proxy a tool with its own argument parser.",
+          "type": "boolean"
+        },
+        "run": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/task_run_entry"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/task_run_entry"
+              }
+            }
+          ]
+        },
+        "run_windows": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/task_run_entry"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/task_run_entry"
+              }
+            }
+          ]
+        },
+        "file": {
+          "description": "Execute an external script",
+          "type": "string"
+        },
+        "sources": {
+          "oneOf": [
+            {
+              "description": "files that this task depends on (entries starting with `!` are excluded; use `\\!` to escape a literal `!` prefix)",
+              "items": {
+                "description": "glob pattern or path to files that this task depends on (entries starting with `!` are excluded)",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "description": "glob pattern or path to files that this task depends on (entries starting with `!` are excluded)",
+              "type": "string"
+            }
+          ]
+        },
+        "shell": {
+          "description": "specify a shell command to run the script with",
+          "type": "string"
+        },
+        "usage": {
+          "description": "Specify usage (https://usage.jdx.dev/) specs for the task",
+          "type": "string"
+        },
+        "timeout": {
+          "description": "timeout for this task",
+          "type": "string"
+        },
+        "deny_all": {
+          "default": false,
+          "description": "block reads, writes, network, and env vars",
+          "type": "boolean"
+        },
+        "deny_read": {
+          "default": false,
+          "description": "block filesystem reads",
+          "type": "boolean"
+        },
+        "deny_write": {
+          "default": false,
+          "description": "block all filesystem writes",
+          "type": "boolean"
+        },
+        "deny_net": {
+          "default": false,
+          "description": "block all network access",
+          "type": "boolean"
+        },
+        "deny_env": {
+          "default": false,
+          "description": "block env var inheritance",
+          "type": "boolean"
+        },
+        "allow_read": {
+          "description": "allow reads from specific paths",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allow_write": {
+          "description": "allow writes to specific paths",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allow_net": {
+          "description": "allow network to specific hosts",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allow_env": {
+          "description": "allow specific env vars through",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "env": {
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/env_value"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "$ref": "#/$defs/env_required"
+              }
+            },
+            "required": ["value"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "default": {
+                "$ref": "#/$defs/env_default"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["default"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "$ref": "#/$defs/env_required"
+              }
+            },
+            "required": ["required"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "$ref": "#/$defs/env_age"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "$ref": "#/$defs/env_required"
+              }
+            },
+            "required": ["age"],
+            "unevaluatedProperties": false,
+            "description": "[experimental] age-encrypted environment variable"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "$ref": "#/$defs/env_age_value"
                   },
-                  {
-                    "properties": {
-                      "version": {
-                        "description": "version of the tool to install",
+                  "format": {
+                    "$ref": "#/$defs/env_age_format"
+                  },
+                  "tools": {
+                    "$ref": "#/$defs/env_tools"
+                  },
+                  "redact": {
+                    "$ref": "#/$defs/env_redact"
+                  },
+                  "required": {
+                    "$ref": "#/$defs/env_required"
+                  }
+                },
+                "required": ["value"],
+                "unevaluatedProperties": false,
+                "description": "[experimental] age-encrypted value (complex format)"
+              }
+            },
+            "required": ["age"],
+            "unevaluatedProperties": false,
+            "description": "[experimental] age-encrypted environment variable"
+          },
+          {
+            "$ref": "#/$defs/env_value"
+          }
+        ]
+      },
+      "description": "environment variables",
+      "properties": {
+        "_": {
+          "description": "environment modules",
+          "additionalProperties": true,
+          "properties": {
+            "file": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/env_directive"
+                },
+                {
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
+                  "type": "string"
+                },
+                {
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "description": "environment file to load (dotenv, json, yaml, or toml)",
                         "type": "string"
                       },
-                      "os": {
-                        "oneOf": [
-                          {
-                            "description": "operating system to install on",
-                            "type": "array"
-                          },
-                          {
-                            "description": "option to pass to tool",
-                            "type": "string"
-                          },
-                          {
-                            "description": "option to pass to tool",
-                            "type": "boolean"
-                          }
-                        ]
+                      {
+                        "$ref": "#/$defs/env_directive"
                       }
-                    },
-                    "required": ["version"],
-                    "type": "object",
-                    "additionalProperties": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        }
-                      ]
-                    }
+                    ]
                   }
-                ]
+                }
+              ]
+            },
+            "path": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "$ref": "#/$defs/env_path"
+                    },
+                    "paths": {
+                      "$ref": "#/$defs/env_paths"
+                    },
+                    "tools": {
+                      "$ref": "#/$defs/env_tools"
+                    }
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "$ref": "#/$defs/env_path"
+                        }
+                      },
+                      "required": ["path"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "paths": {
+                          "$ref": "#/$defs/env_paths"
+                        }
+                      },
+                      "required": ["paths"]
+                    }
+                  ]
+                },
+                {
+                  "description": "PATH entry to add",
+                  "type": "string"
+                },
+                {
+                  "description": "PATH entries to add",
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "description": "PATH entry to add",
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "$ref": "#/$defs/env_path"
+                          },
+                          "tools": {
+                            "$ref": "#/$defs/env_tools"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "python": {
+              "description": "python environment",
+              "properties": {
+                "venv": {
+                  "oneOf": [
+                    {
+                      "description": "path to python virtual environment to use",
+                      "type": "string"
+                    },
+                    {
+                      "description": "virtualenv options",
+                      "properties": {
+                        "create": {
+                          "default": false,
+                          "description": "create a new virtual environment if one does not exist",
+                          "type": "boolean"
+                        },
+                        "path": {
+                          "description": "path to python virtual environment to use",
+                          "type": "string"
+                        },
+                        "python": {
+                          "description": "python version to use",
+                          "type": "string"
+                        },
+                        "python_create_args": {
+                          "description": "additional arguments to pass to python when creating a virtual environment",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "uv_create_args": {
+                          "description": "additional arguments to pass to uv when creating a virtual environment",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": ["path"],
+                      "type": "object"
+                    }
+                  ]
+                }
               },
               "type": "object"
             },
-            "hide": {
-              "default": false,
-              "description": "do not display this task",
-              "type": "boolean"
-            },
-            "outputs": {
+            "source": {
               "oneOf": [
                 {
-                  "description": "files created by this task",
+                  "$ref": "#/$defs/env_directive"
+                },
+                {
+                  "description": "bash script to load",
+                  "type": "string"
+                },
+                {
+                  "description": "bash scripts to load",
+                  "type": "array",
                   "items": {
-                    "description": "glob pattern or path to files created by this task",
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                {
-                  "description": "glob pattern or path to files created by this task",
-                  "type": "string"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "auto": {
-                      "description": "automatically touch an internal tracked file instead of specifying outputs",
-                      "enum": [true],
-                      "type": "boolean"
-                    }
-                  },
-                  "required": ["auto"],
-                  "type": "object"
+                    "oneOf": [
+                      {
+                        "description": "bash script to load",
+                        "type": "string"
+                      },
+                      {
+                        "$ref": "#/$defs/env_directive"
+                      }
+                    ]
+                  }
                 }
               ]
-            },
-            "quiet": {
-              "default": false,
-              "description": "do not display mise information for this task",
-              "type": "boolean"
-            },
-            "silent": {
-              "default": false,
-              "description": "suppress all output for this task",
-              "oneOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "enum": ["stdout", "stderr"],
-                  "type": "string"
-                }
-              ]
-            },
-            "raw": {
-              "default": false,
-              "description": "directly connect task to stdin/stdout/stderr",
-              "type": "boolean"
-            },
-            "run": {
-              "oneOf": [
-                {
-                  "description": "script to run",
-                  "type": "string"
-                },
-                {
-                  "description": "script to run",
-                  "items": {
-                    "description": "script to run",
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
-              ]
-            },
-            "run_windows": {
-              "oneOf": [
-                {
-                  "description": "script to run on windows",
-                  "type": "string"
-                },
-                {
-                  "description": "script to run on windows",
-                  "items": {
-                    "description": "script to run on windows",
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
-              ]
-            },
-            "file": {
-              "description": "Execute an external script",
-              "type": "string"
-            },
-            "sources": {
-              "oneOf": [
-                {
-                  "description": "files that this task depends on",
-                  "items": {
-                    "description": "glob pattern or path to files that this task depends on",
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                {
-                  "description": "glob pattern or path to files that this task depends on",
-                  "type": "string"
-                }
-              ]
-            },
-            "shell": {
-              "description": "specify a shell command to run the script with",
-              "type": "string"
-            },
-            "usage": {
-              "description": "Specify usage (https://usage.jdx.dev/) specs for the task",
-              "type": "string"
             }
           },
           "type": "object"
         }
+      },
+      "type": "object"
+    },
+    "vars": {
+      "description": "variables to set",
+      "type": "object",
+      "properties": {
+        "_": {
+          "description": "vars modules",
+          "additionalProperties": true,
+          "properties": {
+            "file": {
+              "oneOf": [
+                {
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
+                  "type": "string"
+                },
+                {
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
+                  "items": {
+                    "description": "environment file to load (dotenv, json, yaml, or toml)",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "source": {
+              "oneOf": [
+                {
+                  "description": "bash script to load",
+                  "type": "string"
+                },
+                {
+                  "description": "bash scripts to load",
+                  "items": {
+                    "description": "bash script to load",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "description": "value of variable",
+            "type": "string"
+          },
+          {
+            "description": "value of variable",
+            "type": "integer"
+          },
+          {
+            "description": "value of variable",
+            "const": true
+          },
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "const": true
+                  }
+                ]
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["value"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "default": {
+                "$ref": "#/$defs/env_default"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["default"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "oneOf": [
+                  {
+                    "const": true
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "required": ["required"],
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "$ref": "#/$defs/env_age"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "required": ["age"],
+            "unevaluatedProperties": false,
+            "description": "[experimental] age-encrypted variable"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "$ref": "#/$defs/env_age_value"
+                  },
+                  "format": {
+                    "$ref": "#/$defs/env_age_format"
+                  },
+                  "redact": {
+                    "$ref": "#/$defs/env_redact"
+                  }
+                },
+                "required": ["value"],
+                "unevaluatedProperties": false,
+                "description": "[experimental] age-encrypted value (complex format)"
+              }
+            },
+            "required": ["age"],
+            "unevaluatedProperties": false
+          }
+        ]
+      }
+    },
+    "tool": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool_options"
+            },
+            {
+              "properties": {
+                "install_env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/env_value"
+                  },
+                  "description": "environment variables during tool installation"
+                },
+                "depends": {
+                  "oneOf": [
+                    {
+                      "description": "tools that must be installed before this tool",
+                      "type": "string"
+                    },
+                    {
+                      "description": "tools that must be installed before this tool",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "postinstall": {
+                  "description": "command to run after tool installation",
+                  "type": "string"
+                }
+              }
+            }
+          ],
+          "type": "object",
+          "unevaluatedProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "array"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          }
+        }
       ]
+    },
+    "task_run_entry": {
+      "oneOf": [
+        {
+          "description": "script to run",
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "task": {
+              "description": "single task name to run",
+              "type": "string"
+            },
+            "args": {
+              "description": "arguments to pass to the task",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env": {
+              "description": "environment variables to set for the task",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["task"]
+        },
+        {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "tasks": {
+              "description": "parallel task group to run",
+              "items": {
+                "description": "task name and args",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": ["tasks"]
+        }
+      ]
+    },
+    "task_dependency_item": {
+      "description": "task name and args",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "task": {
+              "type": "string"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["task"],
+          "unevaluatedProperties": false
+        }
+      ]
+    },
+    "env_value": {
+      "description": "environment variable value; false removes the variable",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "env_tools": {
+      "type": "boolean",
+      "description": "load tools before resolving"
+    },
+    "env_redact": {
+      "type": "boolean",
+      "description": "redact the value from logs"
+    },
+    "env_required": {
+      "oneOf": [
+        {
+          "type": "boolean",
+          "description": "require this environment variable to be defined before mise runs or in a later config file"
+        },
+        {
+          "type": "string",
+          "description": "require this environment variable with user help text on how to set it"
+        }
+      ],
+      "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+    },
+    "env_default": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "fallback value to use when the environment variable is unset or empty"
+        },
+        {
+          "type": "integer",
+          "description": "fallback value to use when the environment variable is unset or empty"
+        }
+      ],
+      "description": "fallback value to use when the environment variable is unset or empty"
+    },
+    "env_age": {
+      "type": "string",
+      "description": "[experimental] age-encrypted value (simplified format)"
+    },
+    "tool_options": {
+      "properties": {
+        "version": {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        "path": {
+          "description": "path to a custom compiled version",
+          "type": "string"
+        },
+        "prefix": {
+          "description": "version prefix to resolve",
+          "type": "string"
+        },
+        "ref": {
+          "description": "version control reference to compile",
+          "type": "string"
+        },
+        "os": {
+          "$ref": "#/$defs/os_filter"
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["version"]
+        },
+        {
+          "required": ["path"]
+        },
+        {
+          "required": ["prefix"]
+        },
+        {
+          "required": ["ref"]
+        }
+      ],
+      "type": "object"
+    },
+    "env_directive": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/env_path"
+        },
+        "paths": {
+          "$ref": "#/$defs/env_paths"
+        },
+        "tools": {
+          "$ref": "#/$defs/env_tools"
+        },
+        "redact": {
+          "$ref": "#/$defs/env_redact"
+        },
+        "required": {
+          "$ref": "#/$defs/env_required"
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/env_path"
+            }
+          },
+          "required": ["path"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "$ref": "#/$defs/env_paths"
+            }
+          },
+          "required": ["paths"]
+        }
+      ]
+    },
+    "env_age_value": {
+      "type": "string",
+      "description": "[experimental] age-encrypted value"
+    },
+    "env_age_format": {
+      "type": "string",
+      "enum": ["raw", "zstd"],
+      "description": "[experimental] compression format for the encrypted value"
+    },
+    "env_path": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "env_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "os_filter": {
+      "description": "operating system filters to install on",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/os_filter_item"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/os_filter_item"
+          }
+        }
+      ]
+    },
+    "os_filter_item": {
+      "description": "operating system or os/arch pair to install on",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.+-]+(/[A-Za-z0-9_.+-]+)?$",
+      "examples": ["linux", "macos", "windows", "macos/arm64", "linux/x64"]
     }
-  },
-  "description": "Config file for included mise tasks (https://mise.jdx.dev/tasks/#task-configuration)",
-  "additionalProperties": {
-    "$ref": "#/$defs/task"
   }
 }

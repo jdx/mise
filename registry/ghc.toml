@@ -1,0 +1,3 @@
+backends = ["conda:ghc", "asdf:mise-plugins/mise-ghcup"]
+description = "The Glorious Glasgow Haskell Compiler."
+test = { cmd = "ghc --version", expected = "The Glorious Glasgow Haskell Compilation System, version {{version}}" }

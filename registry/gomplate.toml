@@ -1,0 +1,2 @@
+backends = ["aqua:hairyhenderson/gomplate", "asdf:sneakybeaky/asdf-gomplate"]
+description = "A flexible commandline tool for template rendering. Supports lots of local and remote datasources"

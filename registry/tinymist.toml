@@ -1,0 +1,5 @@
+backends = ["aqua:Myriad-Dreamin/tinymist", "cargo:tinymist"]
+description = "Tinymist is an integrated language service for Typst."
+# 0.14.4 doesn't print version
+# expected was: "Build Git Describe:  v{{version}}"
+test = { cmd = "tinymist --version", expected = "" }

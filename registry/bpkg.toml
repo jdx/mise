@@ -1,0 +1,3 @@
+backends = ["vfox:mise-plugins/vfox-bpkg", "asdf:mise-plugins/mise-bpkg"]
+description = "Lightweight bash package manager"
+test = { cmd = "bpkg --version", expected = "{{version}}" }

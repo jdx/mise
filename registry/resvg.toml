@@ -1,0 +1,3 @@
+backends = ["aqua:linebender/resvg", "cargo:resvg"]
+description = "An SVG rendering library."
+test = { cmd = "resvg --version", expected = "{{version}}" }

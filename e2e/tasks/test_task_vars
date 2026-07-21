@@ -25,3 +25,202 @@ vars.foo = "bar"
 vars.bar = "bar: {{vars.foo}}"
 EOF
 assert "mise run a" "foo: bar: bar"
+
+# Per-task vars override config-level vars
+cat <<EOF >mise.toml
+[vars]
+greeting = "hello"
+name = "world"
+
+[tasks.a]
+run = "echo {{vars.greeting}} {{vars.name}}"
+vars = { greeting = "hi" }
+EOF
+assert "mise run a" "hi world"
+
+# Per-task var templates can reference base (config-level) vars
+cat <<EOF >mise.toml
+[vars]
+base = "base_value"
+
+[tasks.a]
+run = "echo {{vars.derived}}"
+vars = { derived = "derived from {{vars.base}}" }
+EOF
+assert "mise run a" "derived from base_value"
+
+# Per-task var templates can reference mise env values
+cat <<EOF >mise.toml
+[env]
+greeting = "env-section"
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+
+[tasks.a.vars]
+greeting = "{{ env.greeting }}"
+EOF
+assert "mise run a" "env-section"
+
+# Config vars can preserve an existing non-empty env var with a fallback
+cat <<EOF >mise.toml
+[vars]
+greeting = { default = "hello" }
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+EOF
+assert "mise run a" "hello"
+greeting=hi assert "mise run a" "hi"
+greeting="" assert "mise run a" "hello"
+
+# Task vars defaults also read from the process environment, not [env]
+cat <<EOF >mise.toml
+[env]
+greeting = "env-section"
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+
+[tasks.a.vars]
+greeting = { default = "hello" }
+EOF
+assert "mise run a" "hello"
+greeting=hi assert "mise run a" "hi"
+
+# Task vars required also read from the process environment, not [env]
+cat <<EOF >mise.toml
+[env]
+required_from_env = "env-section"
+
+[tasks.a]
+run = "echo {{vars.required_from_env}}"
+
+[tasks.a.vars]
+required_from_env = { required = true }
+EOF
+assert_fail_contains "mise run a" "Required variable 'required_from_env' is not defined"
+required_from_env=from_process assert "mise run a" "from_process"
+
+# Task vars defaults override config-level vars when the process env is unset
+cat <<EOF >mise.toml
+[vars]
+greeting = "config"
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+
+[tasks.a.vars]
+greeting = { default = "task" }
+EOF
+assert "mise run a" "task"
+greeting=hi assert "mise run a" "hi"
+
+# Config vars defaults read from the process environment, not [env]
+cat <<EOF >mise.toml
+[env]
+greeting = "env-section"
+
+[vars]
+greeting = { default = "hello" }
+
+[tasks.a]
+run = "echo {{vars.greeting}}"
+EOF
+assert "mise run a" "hello"
+
+# Required config vars show var-specific errors with help text
+cat <<EOF >mise.toml
+[vars]
+api_token = { required = "set api_token in mise.local.toml" }
+
+[tasks.a]
+run = "echo {{vars.api_token}}"
+EOF
+assert_fail_contains "mise run a" "Required variable 'api_token' is not defined"
+assert_fail_contains "mise run a" "Help: set api_token in mise.local.toml"
+
+# Required config vars can be supplied by the process environment
+cat <<EOF >mise.toml
+[vars]
+api_token = { required = true }
+
+[tasks.a]
+run = "echo {{vars.api_token}}"
+EOF
+api_token=from_env assert "mise run a" "from_env"
+
+# Required vars sourced from the process environment can be redacted
+cat <<EOF >mise.toml
+[vars]
+env_secret = { required = true, redact = true }
+
+[tasks.a]
+run = "echo {{vars.env_secret}}"
+EOF
+env_secret=env-secret-token assert_contains "mise run a" "[redacted]"
+env_secret=env-secret-token assert_not_contains "mise run a" "env-secret-token"
+
+# Required config vars can be supplied by a later config file
+cat <<EOF >mise.toml
+[vars]
+api_token = { required = true }
+
+[tasks.a]
+run = "echo {{vars.api_token}}"
+EOF
+cat <<EOF >mise.local.toml
+[vars]
+api_token = "from_local"
+EOF
+assert "mise run a" "from_local"
+
+# Task-local required vars validate without overwriting resolved base vars
+cat <<EOF >mise.toml
+[vars]
+existing = "from_config"
+
+[tasks.a]
+run = "echo {{vars.existing}}"
+
+[tasks.a.vars]
+existing = { required = true }
+EOF
+assert "mise run a" "from_config"
+existing=from_env assert "mise run a" "from_config"
+
+# Task-local required vars can redact values inherited from config vars
+cat <<EOF >mise.toml
+[vars]
+inherited_secret = "inherited-secret-token"
+
+[tasks.a]
+run = "echo {{vars.inherited_secret}}"
+
+[tasks.a.vars]
+inherited_secret = { required = true, redact = true }
+EOF
+assert_contains "mise run a" "[redacted]"
+assert_not_contains "mise run a" "inherited-secret-token"
+
+# Config vars with redact=true are redacted from task output
+cat <<EOF >mise.toml
+[vars]
+config_secret = { value = "config-secret-token", redact = true }
+
+[tasks.a]
+run = "echo {{vars.config_secret}}"
+EOF
+assert_contains "mise run a" "[redacted]"
+assert_not_contains "mise run a" "config-secret-token"
+
+# Task-local vars with redact=true are redacted from task output
+cat <<EOF >mise.toml
+[tasks.a]
+run = "echo {{vars.task_secret}}"
+
+[tasks.a.vars]
+task_secret = { value = "task-secret-token", redact = true }
+EOF
+assert_contains "mise run a" "[redacted]"
+assert_not_contains "mise run a" "task-secret-token"

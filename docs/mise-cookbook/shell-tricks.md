@@ -1,6 +1,6 @@
 # Shell tricks
 
-A collection of shell utities leveraging mise.
+A collection of shell utilities leveraging mise.
 
 ## Prompt colouring
 
@@ -70,7 +70,7 @@ Using record-query you can inspect the `__MISE_DIFF` and `__MISE_SESSION` variab
 function mise_parse_env {
   rq -m < <(
     zcat -q < <(
-      printf $'\x1f\x8b\x08\x00\x00\x00\x00\x00'
+      printf '\x1f\x8b\x08\x00\x00\x00\x00\x00'
       base64 -d <<< "$1"
     )
   )

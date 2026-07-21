@@ -1,0 +1,7 @@
+backends = [
+  "aqua:slsa-framework/slsa-verifier",
+  "github:slsa-framework/slsa-verifier",
+  "go:github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier",
+]
+description = "Verify provenance from SLSA compliant builders"
+test = { cmd = "slsa-verifier version", expected = "{{version}}" }

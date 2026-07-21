@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+# `mise x` should only touch the project lockfile when the install resolves
+# the same version specifier as the config. CLI overrides
+# (`mise x tool@<version>`) carry a different specifier, so pairing the
+# config's request with their installed version would produce a nonsensical
+# lockfile entry.
+
+export MISE_LOCKFILE=1
+
+cat <<EOF >mise.toml
+[tools]
+dummy = "1"
+EOF
+
+mise uninstall dummy --all
+mise install dummy@1.0.0
+touch mise.lock
+mise lock --platform linux-x64
+assert_contains "cat mise.lock" "1.0.0"
+
+# `mise x dummy@2.0.0` resolves to 2.0.0 — an explicit CLI override that
+# doesn't satisfy `dummy = "1"`. Lockfile must stay at 1.0.0.
+mise x dummy@2.0.0 -- dummy
+assert_contains "cat mise.lock" "1.0.0"
+assert_not_contains "cat mise.lock" "2.0.0"
+
+# Same for `mise x dummy@latest` — the latest is 2.0.0, and the lockfile
+# must not adopt it under the `"1"` request.
+mise x dummy@latest -- dummy
+assert_contains "cat mise.lock" "1.0.0"
+assert_not_contains "cat mise.lock" "2.0.0"
+
+# `mise x dummy` (no version) carries the config's `"1"` specifier, so it
+# isn't an override. Verify it still resolves and runs against the locked
+# 1.0.0 (and would be allowed to populate the lockfile entry — exercised by
+# the empty-lockfile case below).
+mise x dummy -- dummy
+assert_contains "cat mise.lock" "1.0.0"
+
+# Env-var overrides (`MISE_<TOOL>_VERSION=...`) are the same class of
+# override as CLI args — they carry a `ToolSource::Environment` and a
+# version specifier that may not match the config's. The version-match
+# check covers them too: with mise.toml `dummy = "1"`, setting
+# `MISE_DUMMY_VERSION=2` must not pair the "1" request with a 2.x install.
+MISE_DUMMY_VERSION=2 mise install
+assert_contains "cat mise.lock" "1.0.0"
+assert_not_contains "cat mise.lock" "2.0.0"
+
+# `mise upgrade` is the supported way to explicitly bump the lockfile and
+# *should* update it (it remaps Argument → MiseToml before update_lockfiles).
+mise upgrade dummy@1.1.0
+assert_contains "cat mise.lock" "1.1.0"
+assert_not_contains "cat mise.lock" "1.0.0"
+
+# `mise x dummy` against an empty (but existing) lockfile must populate the
+# entry — the install satisfies the config's `"1"` request, so propagation
+# is correct.
+mise uninstall dummy --all
+echo "" >mise.lock
+mise x dummy -- dummy
+assert_contains "cat mise.lock" "dummy"
+assert_contains "cat mise.lock" "1.1.0"

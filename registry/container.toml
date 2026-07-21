@@ -1,0 +1,4 @@
+backends = ["aqua:apple/container"]
+description = "A tool for creating and running Linux containers using lightweight virtual machines on a Mac."
+os = ["macos"]
+test = { cmd = "container --version", expected = "container CLI version {{version}}" }

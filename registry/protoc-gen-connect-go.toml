@@ -1,0 +1,5 @@
+backends = [
+  "go:connectrpc.com/connect/cmd/protoc-gen-connect-go",
+  "asdf:dylanrayboss/asdf-protoc-gen-connect-go",
+]
+description = "The Go implementation of Connect: Protobuf RPC that works"

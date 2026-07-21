@@ -1,10 +1,13 @@
 use eyre::Result;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
+use crate::env_diff::EnvMap;
 use crate::shell::{ShellType, get_shell};
 use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
+use crate::wildcard::wildcard_match;
+use indexmap::IndexSet;
 
 /// Exports env vars to activate mise a single time
 ///
@@ -17,55 +20,107 @@ pub struct Env {
     #[clap(value_name = "TOOL@VERSION")]
     tool: Vec<ToolArg>,
 
+    /// Output in dotenv format
+    #[clap(long, short = 'D', overrides_with = "shell")]
+    dotenv: bool,
+
     /// Output in JSON format
     #[clap(long, short = 'J', overrides_with = "shell")]
     json: bool,
+
+    /// Shell type to generate environment variables for
+    #[clap(long, short, overrides_with = "json")]
+    shell: Option<ShellType>,
 
     /// Output in JSON format with additional information (source, tool)
     #[clap(long, overrides_with = "shell")]
     json_extended: bool,
 
-    /// Output in dotenv format
-    #[clap(long, short = 'D', overrides_with = "shell")]
-    dotenv: bool,
+    /// Only show redacted environment variables
+    #[clap(long)]
+    redacted: bool,
 
-    /// Shell type to generate environment variables for
-    #[clap(long, short, overrides_with = "json")]
-    shell: Option<ShellType>,
+    /// Only show values of environment variables
+    #[clap(long)]
+    values: bool,
 }
 
 impl Env {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
-        ts.install_missing_versions(&InstallOptions::default())?;
-        ts.notify_if_versions_missing();
+    pub async fn run(self) -> Result<()> {
+        let mut config = Config::get().await?;
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .build(&config)
+            .await?;
+        let (_, missing) = ts
+            .install_missing_versions(&mut config, &InstallOptions::default())
+            .await?;
+        ts.notify_missing_versions(missing);
+
+        // Pre-compute final_env when needed by --redacted or --dotenv to
+        // avoid calling it twice. final_env includes the tools-only pass
+        // whose redactions are not in config.env_results().
+        let final_env = if self.redacted || self.dotenv {
+            Some(ts.final_env(&config).await?)
+        } else {
+            None
+        };
+
+        let redacted_keys = if self.redacted {
+            let env_results = config.env_results().await?;
+            let mut keys = IndexSet::new();
+            keys.extend(env_results.redactions.clone());
+            if let Some((_, ref tools_env_results)) = final_env {
+                keys.extend(tools_env_results.redactions.clone());
+            }
+            keys.extend(config.redaction_keys());
+            Some(keys)
+        } else {
+            None
+        };
 
         if self.json {
-            self.output_json(&config, ts)
+            self.output_json(&config, ts, &redacted_keys).await
         } else if self.json_extended {
-            self.output_extended_json(&config, ts)
+            self.output_extended_json(&config, ts, &redacted_keys).await
         } else if self.dotenv {
-            self.output_dotenv(&config, ts)
+            self.output_dotenv(final_env.unwrap().0, &redacted_keys)
+        } else if self.values {
+            self.output_values(&config, ts, &redacted_keys).await
         } else {
-            self.output_shell(&config, ts)
+            self.output_shell(&config, ts, &redacted_keys).await
         }
     }
 
-    fn output_json(&self, config: &Config, ts: Toolset) -> Result<()> {
-        let env = ts.env_with_path(config)?;
+    async fn output_json(
+        &self,
+        config: &Arc<Config>,
+        ts: Toolset,
+        redacted_keys: &Option<IndexSet<String>>,
+    ) -> Result<()> {
+        let mut env = ts.env_with_path(config).await?;
+
+        if let Some(keys) = redacted_keys {
+            env.retain(|k, _| self.should_include_key(k, keys));
+        }
+
         miseprintln!("{}", serde_json::to_string_pretty(&env)?);
         Ok(())
     }
 
-    fn output_extended_json(&self, config: &Config, ts: Toolset) -> Result<()> {
+    async fn output_extended_json(
+        &self,
+        config: &Arc<Config>,
+        ts: Toolset,
+        redacted_keys: &Option<IndexSet<String>>,
+    ) -> Result<()> {
         let mut res = BTreeMap::new();
 
-        ts.env_with_path(config)?.iter().for_each(|(k, v)| {
+        ts.env_with_path(config).await?.iter().for_each(|(k, v)| {
             res.insert(k.to_string(), BTreeMap::from([("value", v.to_string())]));
         });
 
-        config.env_with_sources()?.iter().for_each(|(k, v)| {
+        config.env_with_sources().await?.iter().for_each(|(k, v)| {
             res.insert(
                 k.to_string(),
                 BTreeMap::from([
@@ -76,7 +131,8 @@ impl Env {
         });
 
         let tool_map: BTreeMap<String, String> = ts
-            .list_all_versions()?
+            .list_all_versions(config)
+            .await?
             .into_iter()
             .map(|(b, tv)| {
                 (
@@ -91,6 +147,7 @@ impl Env {
             .collect();
 
         ts.env_from_tools(config)
+            .await
             .iter()
             .for_each(|(name, value, tool_id)| {
                 res.insert(
@@ -109,14 +166,29 @@ impl Env {
                 );
             });
 
+        if let Some(keys) = redacted_keys {
+            res.retain(|k, _| self.should_include_key(k, keys));
+        }
+
         miseprintln!("{}", serde_json::to_string_pretty(&res)?);
         Ok(())
     }
 
-    fn output_shell(&self, config: &Config, ts: Toolset) -> Result<()> {
+    async fn output_shell(
+        &self,
+        config: &Arc<Config>,
+        ts: Toolset,
+        redacted_keys: &Option<IndexSet<String>>,
+    ) -> Result<()> {
         let default_shell = get_shell(Some(ShellType::Bash)).unwrap();
         let shell = get_shell(self.shell).unwrap_or(default_shell);
-        for (k, v) in ts.env_with_path(config)? {
+        let mut env = ts.env_with_path(config).await?;
+
+        if let Some(keys) = redacted_keys {
+            env.retain(|k, _| self.should_include_key(k, keys));
+        }
+
+        for (k, v) in env {
             let k = k.to_string();
             let v = v.to_string();
             miseprint!("{}", shell.set_env(&k, &v))?;
@@ -124,14 +196,45 @@ impl Env {
         Ok(())
     }
 
-    fn output_dotenv(&self, config: &Config, ts: Toolset) -> Result<()> {
-        let (env, _) = ts.final_env(config)?;
+    fn output_dotenv(
+        &self,
+        mut env: EnvMap,
+        redacted_keys: &Option<IndexSet<String>>,
+    ) -> Result<()> {
+        if let Some(keys) = redacted_keys {
+            env.retain(|k, _| self.should_include_key(k, keys));
+        }
+
         for (k, v) in env {
             let k = k.to_string();
             let v = v.to_string();
             miseprint!("{}={}\n", k, v)?;
         }
         Ok(())
+    }
+
+    async fn output_values(
+        &self,
+        config: &Arc<Config>,
+        ts: Toolset,
+        redacted_keys: &Option<IndexSet<String>>,
+    ) -> Result<()> {
+        let mut env = ts.env_with_path(config).await?;
+
+        if let Some(keys) = redacted_keys {
+            env.retain(|k, _| self.should_include_key(k, keys));
+        }
+
+        for (_, v) in env {
+            miseprintln!("{}", v);
+        }
+        Ok(())
+    }
+
+    fn should_include_key(&self, key: &str, redacted_keys: &IndexSet<String>) -> bool {
+        redacted_keys
+            .iter()
+            .any(|pattern| wildcard_match(key, pattern))
     }
 }
 

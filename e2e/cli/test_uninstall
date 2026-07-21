@@ -20,3 +20,13 @@ mise uninstall -a dummy
 assert_not_contains "mise ls dummy" "1.1.0"
 assert_not_contains "mise ls dummy" "2.0.1"
 assert_not_contains "mise ls dummy" "2.1.0"
+
+# Test: --dry-run-code should exit non-zero when there are tools to uninstall
+mise i dummy@1.0.0
+assert_fail_contains "mise uninstall dummy@1.0.0 --dry-run-code 2>&1" "uninstalled (dry-run)"
+# Verify the tool was NOT actually uninstalled
+assert_contains "mise ls --installed dummy" "1.0.0"
+
+# Test: --dry-run-code should exit 0 when the tool is not installed
+mise uninstall dummy@1.0.0
+assert_succeed "mise uninstall dummy@1.0.0 --dry-run-code 2>&1"

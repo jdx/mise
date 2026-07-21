@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export GOPROXY="https://proxy.golang.org,direct"
+
+cat <<'EOF' >mise.toml
+[settings]
+minimum_release_age = "2100-01-01"
+
+[tools]
+'go:github.com/roborev-dev/roborev/cmd/roborev' = { version = "latest", minimum_release_age = "2026-04-07" }
+EOF
+
+assert_contains "mise install --dry-run 2>&1" "go:github.com/roborev-dev/roborev/cmd/roborev@0.50.0"
+
+cat <<'EOF' >mise.toml
+[settings]
+minimum_release_age = "2026-04-07"
+
+[tools]
+'go:github.com/roborev-dev/roborev/cmd/roborev' = { version = "latest", minimum_release_age = "2100-01-01" }
+EOF
+
+assert_matches "mise install --dry-run 2>&1" "go:github.com/roborev-dev/roborev/cmd/roborev@[0-9]+\.[0-9]+\.[0-9]+"
+assert_not_contains "mise install --dry-run 2>&1" "go:github.com/roborev-dev/roborev/cmd/roborev@0.50.0"

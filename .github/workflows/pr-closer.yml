@@ -1,0 +1,17 @@
+name: pr-closer
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # daily at midnight
+  workflow_dispatch:
+
+jobs:
+  pr-closer:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      checks: read
+      statuses: read
+    steps:
+      - uses: jdx/pr-closer@ddc40dfad5567fc7296a2463880c618344d26055 # v1.1.0

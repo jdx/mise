@@ -1,0 +1,3 @@
+backends = ["aqua:getzola/zola", "asdf:salasrod/asdf-zola"]
+description = "A fast static site generator in a single binary with everything built-in. https://www.getzola.org"
+test = { cmd = "zola --version", expected = "zola {{version}}" }

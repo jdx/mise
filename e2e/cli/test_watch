@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+mise use dummy@latest
+mise use -g watchexec@latest
+
+mise tasks add example -- echo 'running example'
+
+test_mise_watch() {
+  local mise_path="$1"
+  output_file=.watch_output
+
+  rm -f "${output_file}"
+
+  $mise_path watch example -e '.aaa' >"${output_file}" &
+  PID_TO_KILL=$!
+
+  while ! grep -q "running example" "${output_file}"; do
+    sleep 0.5
+  done
+
+  kill -SIGINT $PID_TO_KILL
+
+  assert_contains "cat ${output_file}" "running example"
+}
+
+# Test with original mise
+test_mise_watch "mise"
+
+# Test when mise is not in PATH by temporarily removing its directory from PATH
+original_mise="$(which mise)"
+mise_dir="$(dirname "$original_mise")"
+mkdir -p ./bin && cp "$original_mise" ./bin/mise
+OLD_PATH="$PATH"
+PATH="$(echo "$PATH" | tr ':' '\n' | grep -v "^${mise_dir}$" | tr '\n' ':')"
+PATH="${PATH%:}" # remove trailing colon
+test_mise_watch "./bin/mise"
+PATH="$OLD_PATH"

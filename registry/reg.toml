@@ -1,0 +1,2 @@
+backends = ["aqua:genuinetools/reg", "asdf:looztra/asdf-reg"]
+description = "Docker registry v2 command line client and repo listing generator with security checks"

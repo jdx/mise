@@ -1,0 +1,2 @@
+backends = ["aqua:charmbracelet/gum", "asdf:lwiechec/asdf-gum"]
+description = "A tool for glamorous shell scripts"

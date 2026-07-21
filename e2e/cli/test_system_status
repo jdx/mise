@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"apt:bc" = "latest"
+"apk:bc" = "latest"
+"brew:jq" = "latest"
+"dnf:bc" = "latest"
+"mas:497799835" = "latest"
+"pacman:bc" = "latest"
+EOF
+
+# status renders on any platform; unavailable managers are skipped, not errors
+assert_succeed "mise bootstrap packages status"
+assert_succeed "MISE_EXPERIMENTAL=0 mise bootstrap packages status"
+assert_contains "mise bootstrap packages status" "bc"
+assert_contains "mise bootstrap packages status" "497799835"
+assert_contains "mise bootstrap packages status --json" '"apt"'
+assert_contains "mise bootstrap packages status --json" '"apk"'
+assert_contains "mise bootstrap packages status --json" '"mas"'
+if ! command -v apk >/dev/null; then
+  assert_fail_contains "mise bootstrap packages apply --manager apk --dry-run --yes" "apk is not available"
+fi
+if [[ "$(uname)" == "Darwin" ]] && command -v mas >/dev/null; then
+  assert_succeed "mise bootstrap packages apply --manager mas --dry-run --yes"
+else
+  assert_fail "mise bootstrap packages apply --manager mas --dry-run --yes"
+fi
+
+# unknown managers warn but don't fail
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"not-a-real-manager:whatever" = "latest"
+EOF
+assert_succeed "mise bootstrap packages status"
+assert_contains "mise bootstrap packages status 2>&1" "unknown bootstrap package manager"
+
+# the manager prefix is required; entries without one warn but don't fail
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"noprefix" = "latest"
+EOF
+assert_succeed "mise bootstrap packages status"
+assert_contains "mise bootstrap packages status 2>&1" "invalid system package spec"
+
+# empty [bootstrap.packages] section
+cat <<EOF >mise.toml
+[bootstrap.packages]
+EOF
+assert_succeed "mise bootstrap packages status"
+
+# no [system] section at all
+cat <<EOF >mise.toml
+[tools]
+EOF
+assert_succeed "mise bootstrap packages status"

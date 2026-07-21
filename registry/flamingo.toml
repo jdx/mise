@@ -1,0 +1,3 @@
+backends = ["github:flux-subsystem-argo/flamingo", "asdf:log2/asdf-flamingo"]
+description = "Flux Subsystem for Argo"
+test = { cmd = "flamingo -v", expected = "flamingo version {{version}}" }

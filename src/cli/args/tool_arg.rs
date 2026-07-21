@@ -1,6 +1,6 @@
-use std::fmt::Display;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::{fmt::Display, sync::Arc};
 
 use crate::cli::args::BackendArg;
 use crate::toolset::{ToolRequest, ToolSource};
@@ -12,7 +12,7 @@ use xx::regex;
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ToolArg {
     pub short: String,
-    pub ba: BackendArg,
+    pub ba: Arc<BackendArg>,
     pub version: Option<String>,
     pub version_type: ToolVersionType,
     pub tvr: Option<ToolRequest>,
@@ -34,21 +34,21 @@ impl FromStr for ToolArg {
     fn from_str(input: &str) -> eyre::Result<Self> {
         let (backend_input, version) = parse_input(input);
 
-        let backend: BackendArg = backend_input.into();
+        let ba: Arc<BackendArg> = Arc::new(backend_input.parse()?);
         let version_type = match version.as_ref() {
             Some(version) => version.parse()?,
             None => ToolVersionType::Version(String::from("latest")),
         };
         let tvr = version
             .as_ref()
-            .map(|v| ToolRequest::new(backend.clone(), v, ToolSource::Argument))
+            .map(|v| ToolRequest::new(ba.clone(), v, ToolSource::Argument))
             .transpose()?;
         Ok(Self {
-            short: backend.short.clone(),
+            short: ba.short.clone(),
             tvr,
             version: version.map(|v| v.to_string()),
             version_type,
-            ba: backend,
+            ba,
         })
     }
 }
@@ -79,11 +79,11 @@ impl Display for ToolVersionType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Path(p) => write!(f, "path:{}", p.to_string_lossy()),
-            Self::Prefix(p) => write!(f, "prefix:{}", p),
+            Self::Prefix(p) => write!(f, "prefix:{p}"),
             Self::Ref(rt, r) => write!(f, "{rt}:{r}"),
-            Self::Sub { sub, orig_version } => write!(f, "sub-{}:{}", sub, orig_version),
+            Self::Sub { sub, orig_version } => write!(f, "sub-{sub}:{orig_version}"),
             Self::System => write!(f, "system"),
-            Self::Version(v) => write!(f, "{}", v),
+            Self::Version(v) => write!(f, "{v}"),
         }
     }
 }
@@ -111,7 +111,7 @@ impl ToolArg {
                 )?);
                 tools[1].ba = a.ba;
                 tools[1].version_type = b.ba.tool_name.parse()?;
-                tools[1].version = Some(b.ba.tool_name);
+                tools[1].version = Some(b.ba.tool_name.clone());
                 tools.remove(0);
             }
         }
@@ -144,50 +144,74 @@ impl ToolArg {
 impl Display for ToolArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.tvr {
-            Some(tvr) => write!(f, "{}", tvr),
+            Some(tvr) => write!(f, "{tvr}"),
             _ => write!(f, "{}", self.ba.tool_name),
         }
     }
 }
 
 fn parse_input(s: &str) -> (&str, Option<&str>) {
-    let (backend, version) = s
-        .split_once('@')
-        .map(|(f, v)| (f, if v.is_empty() { None } else { Some(v) }))
-        .unwrap_or((s, None));
+    let Some((left, right)) = s.split_once('@') else {
+        return (s, None);
+    };
 
-    // special case for packages with npm scopes like "npm:@antfu/ni"
-    if backend == "npm:" {
-        if let Some(v) = version {
-            return if let Some(i) = v.find('@') {
-                let ver = &v[i + 1..];
+    if left.is_empty() {
+        // Scoped package name starting with '@' (e.g., "@anthropic-ai/claude-code")
+        // The first '@' is part of the name, not a version separator
+        // Look for a second '@' to separate name from version
+        return right
+            .split_once('@')
+            .map(|(name, version)| {
                 (
-                    &s[..backend.len() + i + 1],
-                    if ver.is_empty() { None } else { Some(ver) },
+                    &s[..name.len() + 1],
+                    if version.is_empty() {
+                        None
+                    } else {
+                        Some(version)
+                    },
                 )
-            } else {
-                (&s[..backend.len() + v.len() + 1], None)
-            };
-        }
+            })
+            .unwrap_or((s, None));
     }
 
-    (backend, version)
+    if left.ends_with(':') {
+        // Backend format: try to find version in the remaining part
+        return right
+            .split_once('@')
+            .map(|(tool, version)| {
+                (
+                    &s[..left.len() + tool.len() + 1],
+                    if version.is_empty() {
+                        None
+                    } else {
+                        Some(version)
+                    },
+                )
+            })
+            .unwrap_or((s, None));
+    }
+
+    // Simple "tool@version" format
+    (left, if right.is_empty() { None } else { Some(right) })
 }
 
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
 
+    use crate::config::Config;
+
     use super::*;
 
-    #[test]
-    fn test_tool_arg() {
+    #[tokio::test]
+    async fn test_tool_arg() {
+        let _config = Config::get().await.unwrap();
         let tool = ToolArg::from_str("node").unwrap();
         assert_eq!(
             tool,
             ToolArg {
                 short: "node".into(),
-                ba: "node".into(),
+                ba: Arc::new("node".into()),
                 version: None,
                 version_type: ToolVersionType::Version("latest".into()),
                 tvr: None,
@@ -195,38 +219,45 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_tool_arg_with_version() {
+    #[tokio::test]
+    async fn test_tool_arg_with_version() {
+        let _config = Config::get().await.unwrap();
         let tool = ToolArg::from_str("node@20").unwrap();
         assert_eq!(
             tool,
             ToolArg {
                 short: "node".into(),
-                ba: "node".into(),
+                ba: Arc::new("node".into()),
                 version: Some("20".into()),
                 version_type: ToolVersionType::Version("20".into()),
-                tvr: Some(ToolRequest::new("node".into(), "20", ToolSource::Argument).unwrap()),
+                tvr: Some(
+                    ToolRequest::new(Arc::new("node".into()), "20", ToolSource::Argument).unwrap()
+                ),
             }
         );
     }
 
-    #[test]
-    fn test_tool_arg_with_version_and_alias() {
+    #[tokio::test]
+    async fn test_tool_arg_with_version_and_alias() {
+        let _config = Config::get().await.unwrap();
         let tool = ToolArg::from_str("nodejs@lts").unwrap();
         assert_eq!(
             tool,
             ToolArg {
                 short: "node".into(),
-                ba: "node".into(),
+                ba: Arc::new("node".into()),
                 version: Some("lts".into()),
                 version_type: ToolVersionType::Version("lts".into()),
-                tvr: Some(ToolRequest::new("node".into(), "lts", ToolSource::Argument).unwrap()),
+                tvr: Some(
+                    ToolRequest::new(Arc::new("node".into()), "lts", ToolSource::Argument).unwrap()
+                ),
             }
         );
     }
 
-    #[test]
-    fn test_tool_arg_parse_input() {
+    #[tokio::test]
+    async fn test_tool_arg_parse_input() {
+        let _config = Config::get().await.unwrap();
         let t = |input, f, v| {
             let (backend, version) = parse_input(input);
             assert_eq!(backend, f);
@@ -257,5 +288,15 @@ mod tests {
             "ubi:BurntSushi/ripgrep[exe=rg,match=musl]",
             Some("1.0.0"),
         );
+        // Scoped package names without backend prefix
+        t(
+            "@anthropic-ai/claude-code",
+            "@anthropic-ai/claude-code",
+            None,
+        );
+        t("@biomejs/biome", "@biomejs/biome", None);
+        t("@biomejs/biome@latest", "@biomejs/biome", Some("latest"));
+        t("@biomejs/biome@1.0.0", "@biomejs/biome", Some("1.0.0"));
+        t("@biomejs/biome@", "@biomejs/biome", None);
     }
 }

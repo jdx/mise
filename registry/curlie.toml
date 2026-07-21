@@ -1,0 +1,3 @@
+backends = ["aqua:rs/curlie"]
+description = "The power of curl, the ease of use of httpie"
+test = { cmd = "curlie version", expected = "curlie {{version}}" }

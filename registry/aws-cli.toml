@@ -1,0 +1,8 @@
+aliases = ["aws", "awscli"]
+backends = [
+  { full = "aqua:aws/aws-cli", options = { symlink_bins = "true" } },
+  "asdf:MetricMike/asdf-awscli",
+]
+description = "The AWS Command Line Interface (AWS CLI v2) is a unified tool that provides a consistent interface for interacting with all parts of Amazon Web Services"
+os = ["linux", "macos"]
+test = { cmd = "aws --version", expected = "aws-cli/{{version}}" }

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Test default OpenJDK vendor
+mise i java@17
+assert_not_contains "mise x java@17 -- java -version 2>&1" 'Temurin-17'
+mise cache clear
+
+# Test setting shorthand vendor to Temurin
+mise settings set java.shorthand_vendor temurin
+mise i java@21
+assert_contains "mise x java@21 -- java -version 2>&1" 'Temurin-21'
+
+# Ensure sort order of ls-remote for shorthand vendor
+temurin=$(mise ls-remote java@temurin-21 | sed 's/temurin-//')
+# Create regex pattern with escaped special chars and pipe-separated alternatives
+pattern=$(echo "$temurin" | sed 's/\./\\./g; s/+/\\+/g' | paste -sd '|' -)
+assert_matches "mise ls-remote java@21" "$pattern"

@@ -1,0 +1,4 @@
+backends = ["aqua:sigstore/gitsign", "asdf:spencergilbert/asdf-gitsign"]
+description = "Keyless Git signing using Sigstore"
+os = ["linux", "macos"]
+test = { cmd = "gitsign --version", expected = "gitsign version v{{version}}" }

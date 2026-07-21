@@ -1,0 +1,5 @@
+backends = [
+  "aqua:kubernetes-sigs/kubebuilder",
+  "asdf:virtualstaticvoid/asdf-kubebuilder",
+]
+description = "Kubebuilder - SDK for building Kubernetes APIs using CRDs"

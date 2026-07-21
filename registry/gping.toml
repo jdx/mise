@@ -1,0 +1,3 @@
+backends = ["aqua:orf/gping", "github:orf/gping", "cargo:gping"]
+description = "Ping, but with a graph"
+test = { cmd = "gping --version", expected = "gping {{version}}" }

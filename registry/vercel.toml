@@ -1,0 +1,11 @@
+description = "Build and deploy on the Vercel cloud"
+test = { cmd = "vc --version", expected = "{{version}}", tools = [
+  "aube@1.26.0",
+] }
+
+[[backends]]
+full = "npm:vercel"
+
+[backends.options]
+allow_builds = ["esbuild"]
+trust_policy_excludes = ["undici"]

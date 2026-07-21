@@ -1,0 +1,7 @@
+backends = [
+  "aqua:itchyny/gojq",
+  "asdf:jimmidyson/asdf-gojq",
+  "go:github.com/itchyny/gojq/cmd/gojq",
+]
+description = "Pure Go implementation of jq"
+test = { cmd = "gojq --version", expected = "gojq {{version}}" }

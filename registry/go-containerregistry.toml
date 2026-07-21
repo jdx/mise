@@ -1,0 +1,5 @@
+backends = [
+  "aqua:google/go-containerregistry",
+  "asdf:dex4er/asdf-go-containerregistry",
+]
+description = "Go library and CLIs for working with container registries"

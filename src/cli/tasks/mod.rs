@@ -8,6 +8,7 @@ mod deps;
 mod edit;
 mod info;
 mod ls;
+mod validate;
 
 /// Manage tasks
 #[derive(clap::Args)]
@@ -25,29 +26,31 @@ pub struct Tasks {
 
 #[derive(Subcommand)]
 enum Commands {
-    Add(add::TasksAdd),
+    Add(Box<add::TasksAdd>),
     Deps(deps::TasksDeps),
     Edit(edit::TasksEdit),
     Info(info::TasksInfo),
     Ls(ls::TasksLs),
-    Run(run::Run),
+    Run(Box<run::Run>),
+    Validate(validate::TasksValidate),
 }
 
 impl Commands {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         match self {
-            Self::Add(cmd) => cmd.run(),
-            Self::Deps(cmd) => cmd.run(),
-            Self::Edit(cmd) => cmd.run(),
-            Self::Info(cmd) => cmd.run(),
-            Self::Ls(cmd) => cmd.run(),
-            Self::Run(cmd) => cmd.run(),
+            Self::Add(cmd) => (*cmd).run().await,
+            Self::Deps(cmd) => cmd.run().await,
+            Self::Edit(cmd) => cmd.run().await,
+            Self::Info(cmd) => cmd.run().await,
+            Self::Ls(cmd) => cmd.run().await,
+            Self::Run(cmd) => (*cmd).run().await,
+            Self::Validate(cmd) => cmd.run().await,
         }
     }
 }
 
 impl Tasks {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let cmd = self
             .command
             .or(self.task.map(|t| {
@@ -58,6 +61,6 @@ impl Tasks {
             }))
             .unwrap_or(Commands::Ls(self.ls));
 
-        cmd.run()
+        cmd.run().await
     }
 }

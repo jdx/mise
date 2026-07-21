@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Regression test: env_cache must not leak a uv venv across directories.
+#
+# The env cache key (compute_env_cache_key in src/toolset/toolset_env.rs) is
+# derived from the resolved config files (+ sibling mise.lock), tool versions,
+# settings and the base PATH. But NOT from the current directory or the
+# uv.lock / .venv location that `python.uv_venv_auto` discovers via find_up.
+#
+# As a result two directories that resolve the same config files share one
+# cache key, even though only one of them contains a uv venv. Whichever
+# directory computes its env first wins for both, so:
+#   * the venv "stays active" after leaving the project dir, and
+#   * a project venv can fail to activate if a non-venv sibling cached first.
+#
+# Both are the same root cause and both are exercised below. A correct fix
+# (making the cache key aware of cwd / uv.lock) satisfies both; a fix that
+# merely marks the venv directive uncacheable would still fail scenario 2.
+
+set -euo pipefail
+
+export MISE_EXPERIMENTAL=1
+# Enable env caching with a fixed encryption key, as `mise activate` would set.
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+# uv venv auto-source lives in the GLOBAL config so that both directories below
+# resolve the exact same set of config files -> the same cache key. Neither
+# directory has a local mise.toml.
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings]
+python.uv_venv_auto = "source"
+EOF
+
+# "source" mode only needs an existing .venv directory and a uv.lock; it does
+# not create anything, so no python/uv install is required for this test.
+mkdir -p proj/.venv/bin other
+: >proj/uv.lock
+
+# Sanity check: the venv activates inside the project directory.
+cd proj
+assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+cd ..
+
+# Scenario 1 -- venv must not leak into a sibling without a uv.lock.
+# (Equivalent to "VIRTUAL_ENV stays set after leaving the venv directory".)
+# proj computed first and cached its env (with venv) under the shared key;
+# `other` then gets a cache hit and wrongly inherits VIRTUAL_ENV.
+cd other
+assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
+cd ..
+
+# Scenario 2 -- a non-venv sibling must not suppress the project's venv.
+# Start from a clean cache, visit `other` first (caches a "no venv" env under
+# the shared key), then the project dir must STILL activate its venv.
+rm -rf "${MISE_STATE_DIR:?}/env-cache"
+cd other
+assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
+cd ../proj
+assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+cd ..

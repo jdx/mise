@@ -1,0 +1,9 @@
+backends = [
+  { full = "aqua:eza-community/eza", platforms = [
+    "linux",
+  ] },
+  "vfox:jdx/vfox-eza",
+  "cargo:eza",
+]
+description = "A modern, maintained replacement for ls"
+test = { cmd = "eza --version", expected = "v{{version}}" }

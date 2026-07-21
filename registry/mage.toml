@@ -1,0 +1,2 @@
+backends = ["aqua:magefile/mage", "asdf:mathew-fleisch/asdf-mage"]
+description = "a Make/rake-like dev tool using Go"

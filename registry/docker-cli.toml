@@ -1,0 +1,3 @@
+backends = ["aqua:docker/cli"]
+description = "Docker CE CLI"
+test = { cmd = "docker --version | awk '{print $3}' | tr -d ','", expected = "{{version}}" }

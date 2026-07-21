@@ -1,0 +1,8 @@
+description = "The Tanzu Core CLI project provides the core functionality of the Tanzu CLI. The CLI is based on a plugin architecture where CLI command functionality can be delivered through independently developed plugin binaries"
+test = { cmd = "tanzu version", expected = "version: v{{version}}" }
+
+[[backends]]
+full = "github:vmware-tanzu/tanzu-cli"
+
+[backends.options]
+rename_exe = "tanzu"

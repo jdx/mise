@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+cat <<EOF >mise.toml
+[tools]
+node = "24.16.0"
+EOF
+
+echo "=== default fallback locks supported binaries and unsupported compile fallback ==="
+MISE_NODE_CONFIGURE_OPTS="--openssl-no-asm" \
+  MISE_NODE_MAKE_OPTS="-s" \
+  mise lock --platform linux-x64,linux-riscv64
+
+assert_contains "cat mise.lock" "[tools.node.options]"
+assert_contains "cat mise.lock" 'configure_opts = "--openssl-no-asm"'
+assert_contains "cat mise.lock" 'make_opts = "-s"'
+assert_contains "cat mise.lock" '[tools.node."platforms.linux-x64"]'
+assert_contains "cat mise.lock" 'url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0-linux-x64.tar.gz"'
+assert_contains "cat mise.lock" 'checksum = "sha256:'
+assert_contains "cat mise.lock" '[tools.node."platforms.linux-riscv64"]'
+assert_contains "cat mise.lock" 'install = "source"'
+assert_contains "cat mise.lock" 'url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0.tar.gz"'
+assert_not_contains "cat mise.lock" "node-v24.16.0-linux-riscv64.tar.gz"
+assert_not_contains "cat mise.lock" "compile ="
+assert_not_contains "cat mise.lock" "install_method"
+
+echo "=== compile=true records source compile outcomes for both platforms ==="
+rm -f mise.lock
+MISE_NODE_COMPILE=1 \
+  MISE_NODE_CONFIGURE_OPTS="--openssl-no-asm" \
+  MISE_NODE_MAKE_OPTS="-s" \
+  mise lock --platform linux-x64,linux-riscv64
+
+assert_contains "cat mise.lock" "[tools.node.options]"
+assert_contains "cat mise.lock" 'compile = "true"'
+assert_contains "cat mise.lock" 'configure_opts = "--openssl-no-asm"'
+assert_contains "cat mise.lock" 'make_opts = "-s"'
+assert_contains "cat mise.lock" '[tools.node."platforms.linux-x64"]'
+assert_contains "cat mise.lock" '[tools.node."platforms.linux-riscv64"]'
+assert_contains "cat mise.lock" 'install = "source"'
+assert_contains "awk '/\\[tools.node.\"platforms.linux-x64\"\\]/{f=1;next}/^\\[/{f=0}f' mise.lock" 'install = "source"'
+assert_contains "awk '/\\[tools.node.\"platforms.linux-riscv64\"\\]/{f=1;next}/^\\[/{f=0}f' mise.lock" 'install = "source"'
+assert_contains "cat mise.lock" 'url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0.tar.gz"'
+assert_not_contains "cat mise.lock" "node-v24.16.0-linux-x64.tar.gz"
+assert_not_contains "cat mise.lock" "node-v24.16.0-linux-riscv64.tar.gz"
+assert_not_contains "cat mise.lock" 'url_api = "'
+assert_not_contains "cat mise.lock" "install_method"
+
+echo "=== compile=false keeps supported binaries and skips unsupported platforms ==="
+rm -f mise.lock
+MISE_NODE_COMPILE=0 \
+  MISE_NODE_CONFIGURE_OPTS="--openssl-no-asm" \
+  MISE_NODE_MAKE_OPTS="-s" \
+  mise lock --platform linux-x64,linux-riscv64
+
+assert_contains "cat mise.lock" "[tools.node.options]"
+assert_contains "cat mise.lock" 'compile = "false"'
+assert_not_contains "cat mise.lock" "configure_opts"
+assert_not_contains "cat mise.lock" "make_opts"
+assert_contains "cat mise.lock" '[tools.node."platforms.linux-x64"]'
+assert_contains "cat mise.lock" 'url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0-linux-x64.tar.gz"'
+assert_contains "cat mise.lock" 'checksum = "sha256:'
+assert_not_contains "cat mise.lock" "platforms.linux-riscv64"
+assert_not_contains "cat mise.lock" "node-v24.16.0-linux-riscv64.tar.gz"
+assert_not_contains "cat mise.lock" "install_method"
+
+echo "=== locked source outcome without url is missing a lockfile url ==="
+cat <<EOF >mise.lock
+$LOCKFILE_HEADER
+
+[[tools.node]]
+version = "24.16.0"
+backend = "core:node"
+
+[tools.node."platforms.linux-x64"]
+install = "source"
+EOF
+
+assert_fail "mise install --locked --dry-run node@24.16.0" "No lockfile URL found"

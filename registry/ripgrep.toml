@@ -1,0 +1,8 @@
+aliases = ["rg"]
+backends = [
+  "aqua:BurntSushi/ripgrep",
+  "asdf:https://gitlab.com/wt0f/asdf-ripgrep",
+  "cargo:ripgrep",
+]
+description = "ripgrep recursively searches directories for a regex pattern while respecting your gitignore"
+test = { cmd = "rg --version", expected = "ripgrep {{version}}" }

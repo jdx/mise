@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+
+#################################################################################
+# Setup
+#################################################################################
+
+PORT_FILE="$TMPDIR/mise_git_http_port"
+READY_FILE="$TMPDIR/mise_git_http_ready"
+INFO_FILE="$TMPDIR/mise_git_http_info"
+
+# Clean up any previous server files
+rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
+
+# Start local git HTTP server with OS-assigned port to avoid race conditions
+MISE_GIT_HTTP_PORT_FILE="$PORT_FILE" \
+  MISE_GIT_HTTP_READY_FILE="$READY_FILE" \
+  MISE_GIT_HTTP_INFO_FILE="$INFO_FILE" \
+  python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
+SERVER_PID=$!
+
+# Wait for server to be ready (with timeout)
+wait_for_server() {
+  local max_attempts=30 # 30 seconds timeout
+  local attempt=1
+
+  while [ $attempt -le $max_attempts ]; do
+    if [ -f "$READY_FILE" ] && [ -f "$PORT_FILE" ]; then
+      return 0
+    fi
+    sleep 1
+    attempt=$((attempt + 1))
+  done
+
+  echo "ERROR: Git HTTP server failed to start within 30 seconds"
+  kill "$SERVER_PID" 2>/dev/null || true
+  exit 1
+}
+
+wait_for_server
+
+# Read the actual port from the file
+SERVER_PORT=$(cat "$PORT_FILE")
+LOCAL_GIT_URL="http://localhost:${SERVER_PORT}/repo.git"
+
+# Update cache directory paths for local server
+REMOTE_TASKS_DIR="${MISE_CACHE_DIR}/remote-git-tasks-cache"
+
+git init
+
+# Ensure cleanup on exit
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+  rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
+}
+trap cleanup EXIT
+
+#################################################################################
+# Test remote git directory includes with no ref
+#################################################################################
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+    "git::${LOCAL_GIT_URL}//xtasks/lint"
+]
+EOF
+
+# The xtasks/lint directory contains multiple task files
+# We should be able to see and run them
+assert_contains "mise tasks" "ripgrep"
+assert_succeed "mise run ripgrep" # Remote task from included directory should be downloaded
+assert_directory_exists "${REMOTE_TASKS_DIR}"
+assert_directory_not_empty "${REMOTE_TASKS_DIR}"
+
+mise cache clear # Clear cache to force redownload
+
+#################################################################################
+# Test remote git directory includes with ref
+#################################################################################
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+    "git::${LOCAL_GIT_URL}//xtasks/lint?ref=v2025.1.17"
+]
+EOF
+
+assert_contains "mise tasks" "ripgrep"
+assert_succeed "mise run ripgrep" # Remote task should be downloaded
+assert_directory_exists "${REMOTE_TASKS_DIR}"
+assert_directory_not_empty "${REMOTE_TASKS_DIR}"
+
+mise cache clear # Clear cache to force redownload
+
+#################################################################################
+# Test remote git directory includes with no cache
+#################################################################################
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+    "git::${LOCAL_GIT_URL}//xtasks/lint"
+]
+EOF
+
+assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run ripgrep" # Remote task should be redownloaded
+assert_directory_not_exists "${REMOTE_TASKS_DIR}"
+
+assert_succeed "mise run ripgrep" # Cache should be used
+assert_directory_exists "${REMOTE_TASKS_DIR}"
+assert_directory_not_empty "${REMOTE_TASKS_DIR}"
+
+mise cache clear # Clear cache to force redownload
+
+#################################################################################
+# Test mixed local and remote includes
+#################################################################################
+
+# Create a local tasks directory
+mkdir -p local-tasks
+cat <<'EOF' >local-tasks/local_task
+#!/usr/bin/env bash
+echo "Local task executed"
+EOF
+chmod +x local-tasks/local_task
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+    "local-tasks",
+    "git::${LOCAL_GIT_URL}//xtasks/lint"
+]
+EOF
+
+# Both local and remote tasks should be available
+assert_contains "mise tasks" "local_task"
+assert_contains "mise tasks" "ripgrep"
+assert_succeed "mise run local_task"
+assert_succeed "mise run ripgrep"
+
+mise cache clear # Clear cache to force redownload
+
+#################################################################################
+# Test remote git directory includes that contain toml task files
+#################################################################################
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+    "git::${LOCAL_GIT_URL}//xtasks/lint"
+]
+EOF
+
+# Tasks defined inside tasks.toml in the remote directory should be loaded
+# alongside the executable script tasks.
+assert_contains "mise tasks" "ripgrep"
+assert_contains "mise tasks" "toml_task"
+assert_contains "mise tasks" "toml_table_task"
+assert_contains "mise run toml_task" "toml_task executed"
+assert_contains "mise run toml_table_task" "toml_table_task executed"
+
+mise cache clear # Clear cache to force redownload
+
+#################################################################################
+# Test remote git includes that point directly at a toml file
+#################################################################################
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+    "git::${LOCAL_GIT_URL}//xtasks/standalone/standalone.toml"
+]
+EOF
+
+assert_contains "mise tasks" "standalone_task"
+assert_contains "mise run standalone_task" "standalone_task executed"
+
+echo "All tests passed!"

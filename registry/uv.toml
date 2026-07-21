@@ -1,0 +1,4 @@
+backends = ["aqua:astral-sh/uv", "asdf:asdf-community/asdf-uv", "pipx:uv"]
+description = "An extremely fast Python package installer and resolver, written in Rust"
+detect = ["uv.lock"]
+test = { cmd = "uv --version", expected = "uv {{version}}" }

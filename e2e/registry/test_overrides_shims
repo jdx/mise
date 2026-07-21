@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# Test 1: node defined before npm — shim should use explicit npm
+cat >mise.toml <<EOF
+[tools]
+node = "20.10.0"
+npm = "10.9.0"
+EOF
+
+mise install
+mise reshim
+assert_contains "$MISE_DATA_DIR/shims/npm --version" "10.9.0"
+
+# Test 2: npm defined before node — shim should still use explicit npm
+cat >mise.toml <<EOF
+[tools]
+npm = "10.9.0"
+node = "20.10.0"
+EOF
+
+mise install
+mise reshim
+assert_contains "$MISE_DATA_DIR/shims/npm --version" "10.9.0"

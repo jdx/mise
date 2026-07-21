@@ -1,0 +1,3 @@
+backends = ["pipx:yamllint", "asdf:ericcornelissen/asdf-yamllint"]
+description = "A linter for YAML files"
+test = { cmd = "yamllint --version", expected = "yamllint {{version}}" }

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Tests `mise oci push --update-index`: the tag becomes an OCI image index
+# with one entry per platform. A single host can only build one platform, so
+# this covers: creating the index, idempotent re-push (same platform upserts
+# rather than duplicates), and upgrading a previously single-arch tag.
+
+export MISE_EXPERIMENTAL=1
+export SOURCE_DATE_EPOCH=1700000000
+
+mise install crane@latest >/dev/null 2>&1
+
+find_available_port() {
+  python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()"
+}
+
+REGISTRY_PID=""
+cleanup() {
+  if [[ -n ${REGISTRY_PID:-} ]]; then
+    kill "$REGISTRY_PID" 2>/dev/null || true
+    wait "$REGISTRY_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+PORT="$(find_available_port)"
+REGISTRY="127.0.0.1:$PORT"
+mise x crane@latest -- crane registry serve --address "$REGISTRY" >/dev/null 2>&1 &
+REGISTRY_PID=$!
+for _ in $(seq 1 50); do
+  if curl -fsS "http://$REGISTRY/v2/" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.2
+done
+assert_succeed "curl -fsS http://$REGISTRY/v2/"
+
+cat >mise.toml <<EOF
+[tools]
+jq = "1.8.1"
+EOF
+mise install >/dev/null 2>&1
+
+host_arch="$(uname -m)"
+case "$host_arch" in
+  x86_64) host_arch=amd64 ;;
+  aarch64) host_arch=arm64 ;;
+esac
+
+# --- 1. --update-index on a fresh tag creates an index with one entry ---
+assert_contains "mise oci push --update-index --from scratch --no-mise $REGISTRY/e2e/devenv:latest" \
+  "updated image index: sha256:"
+manifest="$(mise x crane@latest -- crane manifest --insecure "$REGISTRY/e2e/devenv:latest")"
+assert_contains "echo '$manifest'" '"application/vnd.oci.image.index.v1+json"'
+assert "echo '$manifest' | jq '.manifests | length'" "1"
+assert "echo '$manifest' | jq -r '.manifests[0].platform.architecture'" "$host_arch"
+assert "echo '$manifest' | jq -r '.manifests[0].platform.os'" "linux"
+
+# crane resolves the index to the platform manifest and validates it.
+assert_succeed "mise x crane@latest -- crane validate --insecure --remote $REGISTRY/e2e/devenv:latest"
+
+# --- 2. Re-push upserts (still exactly one entry, identical index) ---
+index_digest_1="$(mise x crane@latest -- crane digest --insecure "$REGISTRY/e2e/devenv:latest")"
+assert_contains "mise oci push --update-index --from scratch --no-mise $REGISTRY/e2e/devenv:latest" \
+  "updated image index: $index_digest_1"
+assert "mise x crane@latest -- crane manifest --insecure $REGISTRY/e2e/devenv:latest | jq '.manifests | length'" "1"
+
+# --- 3. Layer reuse still works through the index (the cache descends
+# into this platform's entry) ---
+mise uninstall jq >/dev/null 2>&1
+assert_contains "mise oci push --update-index --from scratch --no-mise $REGISTRY/e2e/devenv:latest" \
+  "1 tool layer(s) reused from previous image"
+mise install >/dev/null 2>&1
+
+# --- 4. A previously single-arch tag upgrades to an index without losing
+# the existing platform entry ---
+assert_contains "mise oci push --from scratch --no-mise $REGISTRY/e2e/devenv:single" "pushed sha256:"
+assert_contains "mise oci push --update-index --from scratch --no-mise $REGISTRY/e2e/devenv:single" \
+  "updated image index: sha256:"
+single="$(mise x crane@latest -- crane manifest --insecure "$REGISTRY/e2e/devenv:single")"
+assert_contains "echo '$single'" '"application/vnd.oci.image.index.v1+json"'
+# Same platform, so the wrapped old entry and the new push collapse to one.
+assert "echo '$single' | jq '.manifests | length'" "1"
+assert_succeed "mise x crane@latest -- crane validate --insecure --remote $REGISTRY/e2e/devenv:single"

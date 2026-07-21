@@ -1,0 +1,2 @@
+backends = ["aqua:msoap/shell2http", "asdf:ORCID/asdf-shell2http"]
+description = "Executing shell commands via HTTP server"

@@ -1,0 +1,3 @@
+backends = ["aqua:suzuki-shunsuke/pinact"]
+description = "pinact is a CLI to edit GitHub Workflow and Composite action files and pin versions of Actions and Reusable Workflows. pinact can also update their versions and verify version annotations"
+test = { cmd = "pinact version", expected = "{{version}}" }

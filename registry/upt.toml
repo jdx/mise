@@ -1,0 +1,2 @@
+backends = ["github:sigoden/upt", "asdf:ORCID/asdf-upt"]
+description = "Universal Package-management Tool for any OS"

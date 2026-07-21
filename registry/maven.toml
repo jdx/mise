@@ -1,0 +1,7 @@
+backends = [
+  "aqua:apache/maven",
+  "asdf:mise-plugins/mise-maven",
+  "vfox:mise-plugins/vfox-maven",
+]
+description = "Apache Maven core"
+test = { cmd = "mvn --version", expected = "Apache Maven {{version}}" }

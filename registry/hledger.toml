@@ -1,0 +1,2 @@
+backends = ["github:simonmichael/hledger", "asdf:airtonix/asdf-hledger"]
+description = "Robust, fast, intuitive plain text accounting tool with CLI, TUI and web interfaces"

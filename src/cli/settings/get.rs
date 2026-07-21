@@ -1,5 +1,6 @@
 use crate::config;
-use crate::config::{SETTINGS, Settings};
+use crate::config::Settings;
+use crate::config::settings::SETTINGS_META;
 use eyre::bail;
 
 /// Show a current setting
@@ -7,7 +8,7 @@ use eyre::bail;
 /// This is the contents of a single entry in ~/.config/mise/config.toml
 ///
 /// Note that aliases are also stored in this file
-/// but managed separately with `mise aliases get`
+/// but managed separately with `mise tool-alias get`
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsGet {
@@ -25,7 +26,7 @@ impl SettingsGet {
                 .unwrap_or_default();
             Settings::partial_as_dict(&partial)?
         } else {
-            SETTINGS.as_dict()?
+            Settings::get().as_dict()?
         };
         let mut value = toml::Value::Table(settings);
         let mut key = Some(self.setting.as_str());
@@ -37,6 +38,8 @@ impl SettingsGet {
             if let Some(v) = value.as_table().and_then(|t| t.get(k.0)) {
                 key = k.1;
                 value = v.clone()
+            } else if is_known_setting(&self.setting) {
+                bail!("Setting [{}] is not set", self.setting);
             } else {
                 bail!("Unknown setting: {}", self.setting);
             }
@@ -48,6 +51,14 @@ impl SettingsGet {
 
         Ok(())
     }
+}
+
+fn is_known_setting(key: &str) -> bool {
+    if SETTINGS_META.contains_key(key) {
+        return true;
+    }
+    let prefix = format!("{key}.");
+    SETTINGS_META.keys().any(|k| k.starts_with(&prefix))
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

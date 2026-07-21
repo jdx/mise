@@ -1,0 +1,6 @@
+backends = [
+  "aqua:kubernetes-sigs/aws-iam-authenticator",
+  "asdf:zekker6/asdf-aws-iam-authenticator",
+]
+description = "A tool to use AWS IAM credentials to authenticate to a Kubernetes cluster"
+test = { cmd = "aws-iam-authenticator version", expected = '"Version":"{{version}}"' }

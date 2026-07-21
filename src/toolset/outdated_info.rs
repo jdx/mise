@@ -1,12 +1,18 @@
-use crate::Result;
+use crate::semver::{chunkify_version, split_version_prefix};
 use crate::toolset;
-use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
-use serde_derive::Serialize;
-use std::fmt::{Display, Formatter};
+use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
+use crate::{Result, backend::ABackend, config::Config};
+use serde::Serialize;
+use std::{
+    collections::BTreeSet,
+    fmt::{Display, Formatter},
+    path::PathBuf,
+    sync::Arc,
+};
 use tabled::Tabled;
-use versions::{Mess, Version, Versioning};
+use versions::Version;
 
-#[derive(Debug, Serialize, Clone, Tabled)]
+#[derive(Debug, Serialize, Clone, Tabled, PartialEq, Eq, Hash)]
 pub struct OutdatedInfo {
     pub name: String,
     #[serde(skip)]
@@ -16,22 +22,18 @@ pub struct OutdatedInfo {
     #[tabled(skip)]
     pub tool_version: ToolVersion,
     pub requested: String,
-    #[tabled(display_with("Self::display_current", self))]
+    #[tabled(display("Self::display_current"))]
     pub current: Option<String>,
-    #[tabled(display_with("Self::display_bump", self))]
+    #[tabled(display("Self::display_bump"))]
     pub bump: Option<String>,
     pub latest: String,
     pub source: ToolSource,
 }
 
 impl OutdatedInfo {
-    pub fn new(tv: ToolVersion, latest: String) -> Result<Self> {
+    pub fn new(config: &Arc<Config>, tv: ToolVersion, latest: String) -> Result<Self> {
         let t = tv.backend()?;
-        let current = if t.is_version_installed(&tv, true) {
-            Some(tv.version.clone())
-        } else {
-            None
-        };
+        let current = Self::current_version(config, &t, &tv)?;
         let oi = Self {
             source: tv.request.source().clone(),
             name: tv.ba().short.to_string(),
@@ -45,16 +47,71 @@ impl OutdatedInfo {
         Ok(oi)
     }
 
-    pub fn resolve(tv: ToolVersion, bump: bool) -> eyre::Result<Option<Self>> {
+    fn current_version(
+        config: &Arc<Config>,
+        backend: &ABackend,
+        tv: &ToolVersion,
+    ) -> Result<Option<String>> {
+        if backend.is_version_installed(config, tv, true) {
+            return Ok(Some(tv.version.clone()));
+        }
+        if matches!(&tv.request, ToolRequest::Version { version, .. } if version == "latest") {
+            if tv.request.version() == tv.version {
+                // "latest" was not resolved to a concrete version (e.g. plugin not
+                // installed yet). Don't try to infer an installed version; the
+                // generic path below would treat "latest" as a fuzzy prefix and
+                // incorrectly match any installed numeric version.
+                return Ok(None);
+            }
+            // When minimum_release_age causes "latest" to resolve to a version not yet
+            // installed on disk, fall back to finding the highest installed version.
+            // Otherwise to_remove in `mise up` won't know which old version to uninstall.
+            let Some(current) = backend.latest_installed_version(None)? else {
+                return Ok(None);
+            };
+            let current_tv = ToolVersion::new(tv.request.clone(), current);
+            if backend.is_version_installed(config, &current_tv, true) {
+                return Ok(Some(current_tv.version));
+            }
+            return Ok(None);
+        }
+
+        let query = match &tv.request {
+            ToolRequest::Version { version, .. } => Some(version.clone()),
+            ToolRequest::Prefix { prefix, .. } => Some(prefix.clone()),
+            _ => return Ok(None),
+        };
+        let Some(current) = backend.latest_installed_version(query)? else {
+            return Ok(None);
+        };
+        let current_tv = ToolVersion::new(tv.request.clone(), current);
+        if backend.is_version_installed(config, &current_tv, true) {
+            Ok(Some(current_tv.version))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn resolve(
+        config: &Arc<Config>,
+        tv: ToolVersion,
+        bump: bool,
+        opts: &ResolveOptions,
+    ) -> eyre::Result<Option<Self>> {
         let t = tv.backend()?;
         // prefix is something like "temurin-" or "corretto-"
-        let prefix = xx::regex!(r"^[a-zA-Z-]+-")
-            .find(&tv.request.version())
-            .map(|m| m.as_str().to_string());
-        let latest_result = if bump {
-            t.latest_version(prefix.clone())
+        let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
+        let use_backend_latest =
+            bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown);
+
+        let latest_result = if use_backend_latest {
+            let prefix = prefixed_latest_query(&prefix, &prefix_version);
+            // For bumps and installed-but-inactive tools (`--no-source`), use backend latest.
+            t.latest_version(config, prefix, opts.before_date).await
         } else {
-            tv.latest_version().map(Option::from)
+            tv.latest_version_with_opts(config, opts)
+                .await
+                .map(Option::from)
         };
         let latest = match latest_result {
             Ok(Some(latest)) => latest,
@@ -67,55 +124,73 @@ impl OutdatedInfo {
                 return Ok(None);
             }
         };
-        let mut oi = Self::new(tv, latest)?;
+        let mut oi = Self::new(config, tv, latest)?;
+        if opts.inactive && oi.source == ToolSource::Unknown {
+            // Installed-but-inactive tools have no config source, so their request
+            // is usually pinned to the currently installed version. With --no-source we
+            // want to install the discovered latest version instead.
+            let backend = oi.tool_request.ba().clone();
+            let source = oi.tool_request.source().clone();
+            let options = oi.tool_request.options();
+            oi.tool_request = ToolRequest::new_opts(backend, &oi.latest, options, source)?;
+        }
         if oi
             .current
             .as_ref()
             .is_some_and(|c| !toolset::is_outdated_version(c, &oi.latest))
         {
-            trace!("skipping up-to-date version {}", oi.tool_version);
-            return Ok(None);
+            // Check if this is a rolling version (like "nightly") with a new checksum
+            let rolling_outdated = t
+                .is_rolling_version_outdated(config, &oi.tool_version.request.version())
+                .await;
+            if !rolling_outdated {
+                trace!("skipping up-to-date version {}", oi.tool_version);
+                return Ok(None);
+            }
+            trace!(
+                "rolling version {} has updates (checksum changed)",
+                oi.tool_version.request.version()
+            );
         }
         if bump {
-            let prefix = prefix.unwrap_or_default();
             let old = oi.tool_version.request.version();
-            let old = old.strip_prefix(&prefix).unwrap_or_default();
-            let new = oi.latest.strip_prefix(&prefix).unwrap_or_default();
-            if let Some(bumped_version) = check_semver_bump(old, new) {
-                if bumped_version != oi.tool_version.request.version() {
-                    oi.bump = match oi.tool_request.clone() {
-                        ToolRequest::Version {
-                            version: _version,
+            let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
+            let new = oi.latest.strip_prefix(&prefix).unwrap_or(&oi.latest);
+            if let Some(bumped_version) = check_semver_bump(old, new)
+                && bumped_version != oi.tool_version.request.version()
+            {
+                oi.bump = match oi.tool_request.clone() {
+                    ToolRequest::Version {
+                        version: _version,
+                        backend,
+                        options,
+                        source,
+                    } => {
+                        oi.tool_request = ToolRequest::Version {
                             backend,
                             options,
                             source,
-                        } => {
-                            oi.tool_request = ToolRequest::Version {
-                                backend,
-                                options,
-                                source,
-                                version: format!("{prefix}{bumped_version}"),
-                            };
-                            Some(oi.tool_request.version())
-                        }
-                        ToolRequest::Prefix {
-                            prefix: _prefix,
+                            version: format!("{prefix}{bumped_version}"),
+                        };
+                        Some(oi.tool_request.version())
+                    }
+                    ToolRequest::Prefix {
+                        prefix: _prefix,
+                        backend,
+                        options,
+                        source,
+                    } => {
+                        oi.tool_request = ToolRequest::Prefix {
                             backend,
                             options,
                             source,
-                        } => {
-                            oi.tool_request = ToolRequest::Prefix {
-                                backend,
-                                options,
-                                source,
-                                prefix: format!("{prefix}{bumped_version}"),
-                            };
-                            Some(oi.tool_request.version())
-                        }
-                        _ => {
-                            warn!("upgrading non-version tool requests");
-                            None
-                        }
+                            prefix: format!("{prefix}{bumped_version}"),
+                        };
+                        Some(oi.tool_request.version())
+                    }
+                    _ => {
+                        warn!("upgrading non-version tool requests");
+                        None
                     }
                 }
             }
@@ -123,17 +198,17 @@ impl OutdatedInfo {
         Ok(Some(oi))
     }
 
-    fn display_current(&self) -> String {
-        if let Some(current) = &self.current {
-            current.clone()
+    fn display_current(current: &Option<String>) -> String {
+        if let Some(current) = current {
+            current.to_string()
         } else {
             "[MISSING]".to_string()
         }
     }
 
-    fn display_bump(&self) -> String {
-        if let Some(bump) = &self.bump {
-            bump.clone()
+    fn display_bump(bump: &Option<String>) -> String {
+        if let Some(bump) = bump {
+            bump.to_string()
         } else {
             "[NONE]".to_string()
         }
@@ -144,31 +219,62 @@ impl Display for OutdatedInfo {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:<20} ", self.name)?;
         if let Some(current) = &self.current {
-            write!(f, "{:<20} ", current)?;
+            write!(f, "{current:<20} ")?;
         } else {
             write!(f, "{:<20} ", "MISSING")?;
         }
         write!(f, "-> {:<10} (", self.latest)?;
         if let Some(bump) = &self.bump {
-            write!(f, "bump to {} in ", bump)?;
+            write!(f, "bump to {bump} in ")?;
         }
         write!(f, "{})", self.source)
     }
+}
+
+pub(crate) fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<String> {
+    let prefix = prefix.trim();
+    if prefix.is_empty()
+        || prefix_version.is_empty()
+        || prefix.contains(':')
+        // A lone leading v/V is version syntax, not a backend/vendor prefix.
+        // Treat it as unprefixed so backends with normalized bare versions like
+        // 3.13.1 still resolve their latest release during --bump.
+        || matches!(prefix, "v" | "V")
+    {
+        return None;
+    }
+
+    let query_version = chunkify_version(prefix_version)
+        .into_iter()
+        .next()
+        .filter(|version| !version.is_empty())
+        .unwrap_or_else(|| prefix_version.to_string());
+
+    Some(format!("{prefix}{query_version}"))
 }
 
 /// check if the new version is a bump from the old version and return the new version
 /// at the same specificity level as the old version
 /// used with `mise outdated --bump` to determine what new semver range to use
 /// given old: "20" and new: "21.2.3", return Some("21")
-fn check_semver_bump(old: &str, new: &str) -> Option<String> {
-    if old == "latest" {
-        return Some("latest".to_string());
+pub fn check_semver_bump(old: &str, new: &str) -> Option<String> {
+    // Preserve known channel names as-is
+    const CHANNEL_NAMES: &[&str] = &[
+        "latest", "nightly", "stable", "beta", "dev", "canary", "edge", "lts",
+    ];
+    if CHANNEL_NAMES.iter().any(|&c| c.eq_ignore_ascii_case(old)) {
+        return Some(old.to_string());
     }
     if let Some(("prefix", old_)) = old.split_once(':') {
         return check_semver_bump(old_, new);
     }
     let old_chunks = chunkify_version(old);
     let new_chunks = chunkify_version(new);
+    // If old has no semver chunks but is non-empty, it's likely a channel name
+    // that we didn't recognize - preserve it as-is
+    if old_chunks.is_empty() && !old.is_empty() {
+        return Some(old.to_string());
+    }
     if !old_chunks.is_empty() && !new_chunks.is_empty() {
         if old_chunks.len() > new_chunks.len() {
             warn!(
@@ -191,32 +297,124 @@ fn check_semver_bump(old: &str, new: &str) -> Option<String> {
     }
 }
 
-/// split a version number into chunks
-/// given v: "1.2-3a4" return ["1", ".2", "-3", "a4"]
-fn chunkify_version(v: &str) -> Vec<String> {
-    fn chunkify(m: &Mess, sep0: &str, chunks: &mut Vec<String>) {
-        for (i, chunk) in m.chunks.iter().enumerate() {
-            let sep = if i == 0 { sep0 } else { "." };
-            chunks.push(format!("{}{}", sep, chunk));
-        }
-        if let Some((next_sep, next_mess)) = &m.next {
-            chunkify(next_mess, next_sep.to_string().as_ref(), chunks)
+/// Represents a config file update needed when a CLI-specified version doesn't match
+/// the current config prefix.
+pub struct ConfigBump {
+    pub tool_name: String,
+    pub config_path: std::path::PathBuf,
+    pub old_version: String,
+    pub new_version: String,
+    pub new_request: ToolRequest,
+}
+
+/// Compute config bumps needed when CLI-specified versions don't match current config prefixes.
+/// Returns a list of bumps to apply (or preview in dry-run mode).
+pub fn compute_config_bumps(
+    config: &Config,
+    tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
+) -> Vec<ConfigBump> {
+    let config_paths = config.config_files.keys().cloned().collect();
+    compute_config_bumps_for_paths(config, tool_versions, &config_paths)
+}
+
+/// Compute config bumps against a bounded set of config paths.
+///
+/// This lets callers that intentionally target a subset of the loaded config
+/// hierarchy avoid updating shadowed parent configs.
+pub fn compute_config_bumps_for_paths(
+    config: &Config,
+    tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
+    config_paths: &BTreeSet<PathBuf>,
+) -> Vec<ConfigBump> {
+    let mut bumps = Vec::new();
+
+    for &(tool_name, cli_version) in tool_versions {
+        for (path, cf) in config.config_files.iter() {
+            if !config_paths.contains(path) {
+                continue;
+            }
+            if crate::config::is_global_config(path) {
+                continue;
+            }
+            let Ok(trs) = cf.to_tool_request_set() else {
+                continue;
+            };
+
+            // Find the tool by short name in this config file
+            let matching = trs.tools.iter().find(|(ba, _)| ba.short == tool_name);
+            let Some((_ba, requests)) = matching else {
+                continue;
+            };
+            if requests.len() != 1 {
+                continue;
+            }
+
+            let current_version = requests[0].version();
+            let (prefix, _) = split_version_prefix(&current_version);
+            let old = current_version
+                .strip_prefix(&prefix)
+                .unwrap_or(&current_version);
+
+            if let Some(bumped) = check_semver_bump(old, cli_version)
+                && bumped != old
+            {
+                let new_version = format!("{prefix}{bumped}");
+                let new_request = match requests[0].clone() {
+                    ToolRequest::Version {
+                        version: _,
+                        backend,
+                        options,
+                        source,
+                    } => ToolRequest::Version {
+                        version: new_version.clone(),
+                        backend,
+                        options,
+                        source,
+                    },
+                    ToolRequest::Prefix {
+                        prefix: _,
+                        backend,
+                        options,
+                        source,
+                    } => ToolRequest::Prefix {
+                        prefix: format!("{prefix}{bumped}"),
+                        backend,
+                        options,
+                        source,
+                    },
+                    other => other,
+                };
+                bumps.push(ConfigBump {
+                    tool_name: tool_name.to_string(),
+                    config_path: path.clone(),
+                    old_version: current_version.to_string(),
+                    new_version,
+                    new_request,
+                });
+            }
+            break;
         }
     }
 
-    let mut chunks = vec![];
-    // don't parse "latest", otherwise bump from latest to any version would have one chunk only
-    if v != "latest" {
-        if let Some(v) = Versioning::new(v) {
-            let m = match v {
-                Versioning::Ideal(sem_ver) => sem_ver.to_mess(),
-                Versioning::General(version) => version.to_mess(),
-                Versioning::Complex(mess) => mess,
-            };
-            chunkify(&m, "", &mut chunks);
-        }
+    bumps
+}
+
+/// Apply config bumps by writing the new versions to their config files.
+pub fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
+    for bump in bumps {
+        let Some(cf) = config.config_files.get(&bump.config_path) else {
+            continue;
+        };
+        let Ok(trs) = cf.to_tool_request_set() else {
+            continue;
+        };
+        let Some((ba, _)) = trs.tools.iter().find(|(ba, _)| ba.short == bump.tool_name) else {
+            continue;
+        };
+        cf.replace_versions(ba, vec![bump.new_request.clone()])?;
+        cf.save()?;
     }
-    chunks
+    Ok(())
 }
 
 pub fn is_outdated_version(current: &str, latest: &str) -> bool {
@@ -230,9 +428,13 @@ pub fn is_outdated_version(current: &str, latest: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
+    use std::sync::Arc;
     use test_log::test;
 
-    use super::{check_semver_bump, is_outdated_version};
+    use super::{OutdatedInfo, check_semver_bump, is_outdated_version, prefixed_latest_query};
+    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::config::Config;
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, install_state};
 
     #[test]
     fn test_is_outdated_version() {
@@ -296,5 +498,197 @@ mod tests {
             check_semver_bump("latest", "20.0.0"),
             Some("latest".to_string())
         );
+        // Channel names like "nightly", "stable", "beta" should be preserved
+        std::assert_eq!(
+            check_semver_bump("nightly", "0.10.0"),
+            Some("nightly".to_string())
+        );
+        std::assert_eq!(
+            check_semver_bump("stable", "0.10.0"),
+            Some("stable".to_string())
+        );
+        std::assert_eq!(
+            check_semver_bump("beta", "1.0.0-beta.1"),
+            Some("beta".to_string())
+        );
+    }
+
+    #[test]
+    fn test_prefixed_latest_query() {
+        assert_eq!(
+            prefixed_latest_query("temurin-", "17.0.7+7"),
+            Some("temurin-17".to_string())
+        );
+        assert_eq!(
+            prefixed_latest_query("temurin-", "17-ea"),
+            Some("temurin-17".to_string())
+        );
+        assert_eq!(
+            prefixed_latest_query("corretto-", "2024-09-16"),
+            Some("corretto-2024".to_string())
+        );
+        assert_eq!(prefixed_latest_query("prefix:1.", "24"), None);
+        assert_eq!(prefixed_latest_query("v", "3.13.1"), None);
+        assert_eq!(prefixed_latest_query("V", "3.13.1"), None);
+        assert_eq!(prefixed_latest_query("", "17.0.7"), None);
+        assert_eq!(prefixed_latest_query("temurin-", ""), None);
+    }
+
+    #[test]
+    fn test_v_prefix_bump_preserves_bare_latest_version() {
+        let prefix = "v";
+        let old = "v3.12.0";
+        let latest = "3.13.1";
+
+        let old = old.strip_prefix(prefix).unwrap_or(old);
+        let new = latest.strip_prefix(prefix).unwrap_or(latest);
+        let bumped = check_semver_bump(old, new).unwrap();
+
+        assert_eq!(bumped, "3.13.1");
+        assert_eq!(format!("{prefix}{bumped}"), "v3.13.1");
+    }
+
+    #[tokio::test]
+    async fn current_version_uses_installed_version_matching_request() {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let short = "summary-current-test";
+        let mut backend = BackendArg::new_raw(
+            short.into(),
+            Some(format!("asdf:{short}")),
+            short.into(),
+            Some(ToolVersionOptions::default()),
+            BackendResolution::new(true),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(short);
+        let install_path = backend.installs_path.join("1.25.9");
+        std::fs::create_dir_all(&install_path).unwrap();
+        install_state::add_tool_version(&backend, &install_path, "1.25.9");
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "1.25".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.25.10".into());
+        let info = OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap();
+
+        assert_eq!(info.current.as_deref(), Some("1.25.9"));
+    }
+
+    #[tokio::test]
+    async fn current_version_uses_installed_version_matching_prefix_request() {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let short = "summary-current-prefix-test";
+        let mut backend = BackendArg::new_raw(
+            short.into(),
+            Some(format!("asdf:{short}")),
+            short.into(),
+            Some(ToolVersionOptions::default()),
+            BackendResolution::new(true),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(short);
+        let install_path = backend.installs_path.join("1.25.9");
+        std::fs::create_dir_all(&install_path).unwrap();
+        install_state::add_tool_version(&backend, &install_path, "1.25.9");
+
+        let request = ToolRequest::Prefix {
+            backend: Arc::new(backend),
+            prefix: "1.25".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.25.10".into());
+        let info = OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap();
+
+        assert_eq!(info.current.as_deref(), Some("1.25.9"));
+    }
+
+    #[tokio::test]
+    async fn current_version_ignores_stale_install_state_matches() {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let short = "summary-current-stale-test";
+        let mut backend = BackendArg::new_raw(
+            short.into(),
+            Some(format!("asdf:{short}")),
+            short.into(),
+            Some(ToolVersionOptions::default()),
+            BackendResolution::new(true),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(short);
+        let install_path = backend.installs_path.join("1.25.9");
+        install_state::add_tool_version(&backend, &install_path, "1.25.9");
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "1.25".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.25.10".into());
+        let info = OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap();
+
+        assert_eq!(info.current, None);
+    }
+
+    #[tokio::test]
+    async fn current_version_falls_back_to_installed_when_latest_not_installed() {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let short = "summary-current-latest-test";
+        let mut backend = BackendArg::new_raw(
+            short.into(),
+            Some(format!("asdf:{short}")),
+            short.into(),
+            Some(ToolVersionOptions::default()),
+            BackendResolution::new(true),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(short);
+        let install_path = backend.installs_path.join("1.25.9");
+        std::fs::create_dir_all(&install_path).unwrap();
+        install_state::add_tool_version(&backend, &install_path, "1.25.9");
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "latest".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.25.10".into());
+        let info = OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap();
+
+        assert_eq!(info.current.as_deref(), Some("1.25.9"));
+    }
+
+    #[tokio::test]
+    async fn current_version_reports_installed_resolved_latest() {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let short = "summary-current-resolved-latest-test";
+        let mut backend = BackendArg::new_raw(
+            short.into(),
+            Some(format!("asdf:{short}")),
+            short.into(),
+            Some(ToolVersionOptions::default()),
+            BackendResolution::new(true),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(short);
+        let install_path = backend.installs_path.join("1.25.10");
+        std::fs::create_dir_all(&install_path).unwrap();
+        install_state::add_tool_version(&backend, &install_path, "1.25.10");
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "latest".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.25.10".into());
+        let info = OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap();
+
+        assert_eq!(info.current.as_deref(), Some("1.25.10"));
     }
 }

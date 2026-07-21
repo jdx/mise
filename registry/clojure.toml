@@ -1,0 +1,2 @@
+backends = ["vfox:jdx/vfox-clojure", "asdf:mise-plugins/mise-clojure"]
+description = "The Clojure Programming Language"

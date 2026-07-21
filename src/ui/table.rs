@@ -52,8 +52,14 @@ impl MiseTable {
         table
             .load_preset(comfy_table::presets::NOTHING)
             .set_content_arrangement(ContentArrangement::Dynamic);
-        if console::colors_enabled() {
-            table.enforce_styling();
+        // Pin the width when the user overrides it (e.g. MISE_TERM_WIDTH in CI).
+        // comfy_table does its own terminal detection, which fails in non-ttys,
+        // so this is what makes the override actually affect `mise ls` et al.
+        if let Some(w) = *crate::env::TERM_WIDTH_OVERRIDE {
+            table.set_width(w.min(u16::MAX as usize) as u16);
+        }
+        if !console::colors_enabled() {
+            table.force_no_tty();
         }
         if !no_header && console::user_attended() {
             let headers = headers.iter().map(Self::header).collect_vec();
@@ -87,8 +93,10 @@ impl MiseTable {
         // trim first character, skipping color characters
         let re = regex!(r"^(\x{1b}[^ ]*\d+m) ");
         for line in table.lines() {
-            let line = re.replacen(line.trim(), 1, "$1");
-            println!("{}", line);
+            let line = line.strip_prefix(' ').unwrap_or(line);
+            let line = re.replacen(line, 1, "$1");
+            let line = line.trim_end();
+            calm_io::stdoutln!("{line}")?;
         }
         Ok(())
     }

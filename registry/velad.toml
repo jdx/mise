@@ -1,0 +1,3 @@
+backends = ["github:kubevela/velad", "asdf:mise-plugins/mise-velad"]
+description = "Lightweight KubeVela that runs as Daemon in single node with high availability"
+test = { cmd = "velad version", expected = "Version: v{{version}}" }

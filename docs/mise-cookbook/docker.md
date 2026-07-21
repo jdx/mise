@@ -7,7 +7,7 @@ Here are some tips on using Docker with mise.
 Here is an example Dockerfile showing how to install mise in a Docker image.
 
 ```Dockerfile [Dockerfile]
-FROM debian:12-slim
+FROM debian:13-slim
 
 RUN apt-get update  \
     && apt-get -y --no-install-recommends install  \
@@ -33,28 +33,100 @@ docker build -t debian-mise .
 docker run -it --rm debian-mise
 ```
 
+## Shared tools in multi-user containers
+
+For toolbox containers or bastion hosts where tools should be pre-installed for all users,
+use `mise install --system` to install tools into `/usr/local/share/mise/installs`.
+Each user's mise will automatically find these system-level tools without any configuration.
+
+The following example also shows installing using `extrepo` on Debian/Ubuntu image.
+With this approach you cannot specify `MISE_VERSION` or `MISE_INSTALL_PATH`.
+
+```Dockerfile [Dockerfile]
+# syntax=docker/dockerfile:1
+FROM debian:13-slim
+
+RUN <<EOF
+  set -ex
+  apt-get update
+  apt-get install -y extrepo
+  extrepo enable mise
+  apt-get remove -y --auto-remove extrepo # extrepo and its deps are not needed after extrepo enable
+  apt-get update
+  apt-get install -y mise build-essential
+  rm -fr /var/lib/apt/lists/*
+EOF
+
+# Pre-install tools to the system-wide shared directory
+RUN mise install --system node@26 python@3.15
+```
+
+Users in the container will see these tools automatically:
+
+```shell
+$ mise ls
+node    26.0.0 (system)
+python  3.15.0 (system)
+```
+
+Users can install additional versions in their own directory — those take priority over
+system versions. To customize the system directory, set `MISE_SYSTEM_DATA_DIR`.
+
+You can also configure additional shared directories with `MISE_SHARED_INSTALL_DIRS`
+(paths separated by `:` on Unix and `;` on Windows) or the `shared_install_dirs` setting.
+
+### Devcontainers with home directory mounts
+
+Devcontainers often mount the user's home directory, which means `~/.local/share/mise/installs`
+comes from the mount rather than the Docker image. Tools pre-installed during `docker build`
+into `~/.local/share/mise/installs` would be hidden by the mount.
+
+Use `mise install --system` to install tools to `/usr/local/share/mise/installs` instead —
+this path is outside `~` and survives home directory mounts:
+
+```Dockerfile [Dockerfile]
+FROM debian:13-slim
+# ... install mise ...
+RUN mise install --system node@26 python@3.15
+```
+
+When the container starts with `~` mounted, users still see the system tools automatically.
+Any tools they install normally go to `~/.local/share/mise/installs` (on the mount) and
+take priority over system versions.
+
+## Overriding libc detection
+
+In minimal Docker images (scratch, busybox, distroless) where no dynamic linker
+files exist, mise may not detect whether the system uses musl or glibc. Set `libc`
+or `MISE_LIBC` to force the detection:
+
+```Dockerfile
+ENV MISE_LIBC=musl
+RUN mise install
+```
+
+Valid values are `musl`, `glibc`, and `gnu` (case-insensitive, with `gnu` treated
+as glibc). Invalid values are silently ignored and mise falls back to runtime
+detection. When the mise binary is compiled for musl (the default for Linux
+releases), it will also fall back to musl automatically when no linker is detected.
+
 ## Task to run mise in a Docker container
 
-This can be useful use if you need to reproduce an issue you're having with mise in a clean environment.
+This can be useful if you need to reproduce an issue you're having with mise in a clean environment.
 
 ```toml [mise.toml]
 [tasks.docker]
-run = "docker run --pull=always -it --rm --entrypoint bash jdxcode/mise:latest"
+run = "docker run -it --rm debian-mise"
 ```
 
-Example usage:
+Build the image first (see above), then:
 
 ```shell
 ❯ mise docker
-[docker] $ docker run --pull=always -it --rm --entrypoint bash jdxcode/mise:latest
-# latest: Pulling from jdxcode/mise
-# Digest: sha256:eecc479b6259479ffca5a4f9c68dbfe8631ca62dc59aa60c9ab5e4f6e9982701
-# Status: Image is up to date for jdxcode/mise:latest
-root@75f179a190a1:/mise# eval "$(mise activate bash)"
+[docker] $ docker run -it --rm debian-mise
+root@75f179a190a1:/# eval "$(mise activate bash)"
 # overwrite configuration and prune to give us a clean state
-root@75f179a190a1:/mise# echo "" >/mise/config.toml
-root@75f179a190a1:/mise# mise prune --yes
-# mise pruned configuration links
-# mise python@3.13.1 ✓ remove /mise/cache/python/3.13.1
+root@75f179a190a1:/# echo "" > /mise/config.toml
+root@75f179a190a1:/# mise prune --yes
 # ...
 ```

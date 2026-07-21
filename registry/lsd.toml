@@ -1,0 +1,2 @@
+backends = ["aqua:lsd-rs/lsd", "asdf:mise-plugins/asdf-lsd", "cargo:lsd"]
+description = "The next gen ls command"

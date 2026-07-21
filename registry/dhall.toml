@@ -1,0 +1,3 @@
+backends = ["aqua:dhall-lang/dhall-haskell", "asdf:mise-plugins/mise-dhall"]
+description = "Maintainable configuration files (haskell)"
+test = { cmd = "dhall --version", expected = "{{version}}" }

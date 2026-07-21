@@ -1,0 +1,3 @@
+backends = ["aqua:sl1pm4t/k2tf", "asdf:carlduevel/asdf-k2tf"]
+description = "Kubernetes YAML to Terraform HCL converter"
+test = { cmd = "k2tf --version", expected = "k2tf version: {{version}}" }

@@ -1,0 +1,3 @@
+backends = ["aqua:terraform-linters/tflint", "asdf:skyzyx/asdf-tflint"]
+description = "A Pluggable Terraform Linter"
+test = { cmd = "tflint --version", expected = "TFLint version {{version}}" }

@@ -11,23 +11,6 @@ export const commands: { [key: string]: Command } = {
   activate: {
     hide: false,
   },
-  alias: {
-    hide: false,
-    subcommands: {
-      get: {
-        hide: false,
-      },
-      ls: {
-        hide: false,
-      },
-      set: {
-        hide: false,
-      },
-      unset: {
-        hide: false,
-      },
-    },
-  },
   asdf: {
     hide: true,
   },
@@ -42,10 +25,192 @@ export const commands: { [key: string]: Command } = {
   "bin-paths": {
     hide: false,
   },
+  bootstrap: {
+    hide: false,
+    subcommands: {
+      dotfiles: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      launchd: {
+        hide: true,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      linux: {
+        hide: false,
+        subcommands: {
+          "systemd-units": {
+            hide: false,
+            subcommands: {
+              apply: {
+                hide: false,
+              },
+              status: {
+                hide: false,
+              },
+            },
+          },
+        },
+      },
+      macos: {
+        hide: false,
+        subcommands: {
+          defaults: {
+            hide: false,
+            subcommands: {
+              apply: {
+                hide: false,
+              },
+              status: {
+                hide: false,
+              },
+            },
+          },
+          "launchd-agents": {
+            hide: false,
+            subcommands: {
+              apply: {
+                hide: false,
+              },
+              status: {
+                hide: false,
+              },
+            },
+          },
+        },
+      },
+      "macos-defaults": {
+        hide: true,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      "mise-shell-activate": {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      packages: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          brew: {
+            hide: false,
+            subcommands: {
+              tap: {
+                hide: false,
+              },
+              untap: {
+                hide: false,
+              },
+            },
+          },
+          import: {
+            hide: false,
+          },
+          prune: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+          upgrade: {
+            hide: false,
+          },
+          use: {
+            hide: false,
+          },
+        },
+      },
+      plugins: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      repos: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          exec: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+          update: {
+            hide: false,
+          },
+        },
+      },
+      status: {
+        hide: false,
+      },
+      systemd: {
+        hide: true,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      user: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+    },
+  },
   cache: {
     hide: false,
     subcommands: {
       clear: {
+        hide: false,
+      },
+      path: {
         hide: false,
       },
       prune: {
@@ -59,9 +224,6 @@ export const commands: { [key: string]: Command } = {
   config: {
     hide: false,
     subcommands: {
-      generate: {
-        hide: false,
-      },
       get: {
         hide: false,
       },
@@ -79,16 +241,30 @@ export const commands: { [key: string]: Command } = {
   deactivate: {
     hide: false,
   },
+  deps: {
+    hide: false,
+    subcommands: {
+      add: {
+        hide: false,
+      },
+      install: {
+        hide: false,
+      },
+      remove: {
+        hide: false,
+      },
+    },
+  },
   direnv: {
     hide: true,
     subcommands: {
+      activate: {
+        hide: true,
+      },
       envrc: {
         hide: true,
       },
       exec: {
-        hide: true,
-      },
-      activate: {
         hide: true,
       },
     },
@@ -100,6 +276,26 @@ export const commands: { [key: string]: Command } = {
         hide: false,
       },
     },
+  },
+  dotfiles: {
+    hide: false,
+    subcommands: {
+      add: {
+        hide: false,
+      },
+      apply: {
+        hide: false,
+      },
+      edit: {
+        hide: false,
+      },
+      status: {
+        hide: false,
+      },
+    },
+  },
+  edit: {
+    hide: false,
   },
   en: {
     hide: false,
@@ -137,6 +333,17 @@ export const commands: { [key: string]: Command } = {
       "task-stubs": {
         hide: false,
       },
+      "tool-stub": {
+        hide: false,
+      },
+    },
+  },
+  github: {
+    hide: true,
+    subcommands: {
+      token: {
+        hide: true,
+      },
     },
   },
   global: {
@@ -166,13 +373,36 @@ export const commands: { [key: string]: Command } = {
   local: {
     hide: true,
   },
+  lock: {
+    hide: false,
+  },
   ls: {
     hide: false,
   },
   "ls-remote": {
     hide: false,
   },
+  mcp: {
+    hide: false,
+  },
+  oci: {
+    hide: false,
+    subcommands: {
+      build: {
+        hide: false,
+      },
+      push: {
+        hide: false,
+      },
+      run: {
+        hide: false,
+      },
+    },
+  },
   outdated: {
+    hide: false,
+  },
+  patrons: {
     hide: false,
   },
   plugins: {
@@ -207,13 +437,13 @@ export const commands: { [key: string]: Command } = {
   "render-help": {
     hide: true,
   },
-  "render-mangen": {
-    hide: true,
-  },
   reshim: {
     hide: false,
   },
   run: {
+    hide: false,
+  },
+  search: {
     hide: false,
   },
   "self-update": {
@@ -243,6 +473,26 @@ export const commands: { [key: string]: Command } = {
     },
   },
   shell: {
+    hide: false,
+  },
+  "shell-alias": {
+    hide: false,
+    subcommands: {
+      get: {
+        hide: false,
+      },
+      ls: {
+        hide: false,
+      },
+      set: {
+        hide: false,
+      },
+      unset: {
+        hide: false,
+      },
+    },
+  },
+  sponsors: {
     hide: false,
   },
   sync: {
@@ -280,12 +530,49 @@ export const commands: { [key: string]: Command } = {
       run: {
         hide: false,
       },
+      validate: {
+        hide: false,
+      },
     },
   },
   "test-tool": {
     hide: false,
   },
+  token: {
+    hide: false,
+    subcommands: {
+      forgejo: {
+        hide: false,
+      },
+      github: {
+        hide: false,
+      },
+      gitlab: {
+        hide: false,
+      },
+    },
+  },
   tool: {
+    hide: false,
+  },
+  "tool-alias": {
+    hide: false,
+    subcommands: {
+      get: {
+        hide: false,
+      },
+      ls: {
+        hide: false,
+      },
+      set: {
+        hide: false,
+      },
+      unset: {
+        hide: false,
+      },
+    },
+  },
+  "tool-stub": {
     hide: false,
   },
   trust: {
@@ -295,6 +582,9 @@ export const commands: { [key: string]: Command } = {
     hide: false,
   },
   unset: {
+    hide: false,
+  },
+  untrust: {
     hide: false,
   },
   unuse: {

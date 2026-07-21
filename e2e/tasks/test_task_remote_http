@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+#################################################################################
+# Setup
+#################################################################################
+
+# Start HTTP test server
+HTTP_PORT_FILE="$TMPDIR/mise_http_test_port"
+MISE_HTTP_TEST_PORT_FILE="$HTTP_PORT_FILE" python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" 0 &
+HTTP_SERVER_PID=$!
+
+# Ensure cleanup on exit
+cleanup() {
+  kill "$HTTP_SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# Wait for server to start
+wait_for_file "$HTTP_PORT_FILE" "HTTP test server port file" 30 "$HTTP_SERVER_PID"
+HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+
+cat <<EOF >mise.toml
+[tasks.remote_http_task]
+file = "http://localhost:${HTTP_PORT}/test/mytask"
+description = "HTTP remote task"
+EOF
+
+#################################################################################
+# Test usage and info with HTTP remote tasks (non-git)
+# Verifies fix for https://github.com/jdx/mise/discussions/6603
+#################################################################################
+
+# Usage should work for HTTP remote tasks
+assert_contains "mise tasks ls --usage" 'cmd remote_http_task help="HTTP remote task"'
+
+# Info should show local cached path, not HTTP URL
+assert_contains "mise tasks info remote_http_task" "remote-http-tasks-cache"
+assert_not_contains "mise tasks info remote_http_task" "http://localhost"
+
+# Validate should work with remote tasks
+assert_succeed "mise tasks validate remote_http_task"

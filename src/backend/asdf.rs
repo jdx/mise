@@ -1,38 +1,41 @@
-use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::{collections::BTreeMap, sync::Arc};
 
-use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::external_plugin_cache::ExternalPluginCache;
+use crate::backend::normalize_idiomatic_contents;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
 use crate::hash::hash_to_str;
 use crate::install_context::InstallContext;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseIdiomaticFile};
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::mise_plugin_toml::MisePluginToml;
-use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
-use crate::timeout::run_with_timeout;
+use crate::plugins::{PluginType, Script, ScriptManager};
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
+use crate::{backend::Backend, plugins::PluginEnum, timeout};
 use crate::{dirs, env, file};
+use async_trait::async_trait;
 use color_eyre::eyre::{Result, WrapErr, eyre};
 use console::style;
 use heck::ToKebabCase;
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub struct AsdfBackend {
-    pub ba: BackendArg,
+    pub ba: Arc<BackendArg>,
     pub name: String,
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
     pub toml: MisePluginToml,
-    plugin: Box<AsdfPlugin>,
+    plugin: Arc<AsdfPlugin>,
+    plugin_enum: PluginEnum,
     cache: ExternalPluginCache,
     latest_stable_cache: CacheManager<Option<String>>,
     alias_cache: CacheManager<Vec<(String, String)>>,
@@ -49,12 +52,14 @@ impl AsdfBackend {
             toml_path = plugin_path.join("rtx.plugin.toml");
         }
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
+        let plugin = Arc::new(plugin);
+        let plugin_enum = PluginEnum::Asdf(plugin.clone());
         Self {
             cache: ExternalPluginCache::default(),
             latest_stable_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("latest_stable.msgpack.z"),
             )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
             .with_fresh_file(plugin_path.clone())
             .with_fresh_file(plugin_path.join("bin/latest-stable"))
             .build(),
@@ -69,15 +74,13 @@ impl AsdfBackend {
             .with_fresh_file(plugin_path.join("bin/list-legacy-filenames"))
             .build(),
             plugin_path,
-            plugin: Box::new(plugin),
+            plugin,
+            plugin_enum,
             repo_url: None,
             toml,
             name,
-            ba,
+            ba: Arc::new(ba),
         }
-    }
-    pub fn plugin(&self) -> &dyn Plugin {
-        &*self.plugin
     }
 
     fn fetch_cached_idiomatic_file(&self, idiomatic_file: &Path) -> Result<Option<String>> {
@@ -105,12 +108,12 @@ impl AsdfBackend {
         Ok(())
     }
 
-    fn fetch_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<String>> {
+    async fn fetch_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<String>> {
         let list_bin_paths = self.plugin_path.join("bin/list-bin-paths");
         let bin_paths = if matches!(tv.request, ToolRequest::System { .. }) {
             Vec::new()
         } else if list_bin_paths.exists() {
-            let sm = self.script_man_for_tv(tv)?;
+            let sm = self.script_man_for_tv(config, tv).await?;
             // TODO: find a way to enable this without deadlocking
             // for (t, tv) in ts.list_current_installed_versions(config) {
             //     if t.name == self.name {
@@ -120,6 +123,7 @@ impl AsdfBackend {
             //         sm.prepend_path(p);
             //     }
             // }
+            Settings::ensure_not_safe("executing asdf plugin scripts")?;
             let output = sm.cmd(&Script::ListBinPaths).read()?;
             output
                 .split_whitespace()
@@ -136,9 +140,14 @@ impl AsdfBackend {
         };
         Ok(bin_paths)
     }
-    fn fetch_exec_env(&self, ts: &Toolset, tv: &ToolVersion) -> Result<EnvMap> {
-        let mut sm = self.script_man_for_tv(tv)?;
-        for p in ts.list_paths() {
+    async fn fetch_exec_env(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<EnvMap> {
+        let mut sm = self.script_man_for_tv(config, tv).await?;
+        for p in ts.list_paths(config).await {
             sm.prepend_path(p);
         }
         let script = sm.get_script_path(&ExecEnv);
@@ -156,17 +165,23 @@ impl AsdfBackend {
         Ok(env)
     }
 
-    fn script_man_for_tv(&self, tv: &ToolVersion) -> Result<ScriptManager> {
-        let config = Config::get();
+    async fn script_man_for_tv(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<ScriptManager> {
         let mut sm = self.plugin.script_man.clone();
-        for (key, value) in tv.request.options().opts {
+        for (key, value) in tv.request.options().opts_as_strings() {
             let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
             sm = sm.with_env(k, value.clone());
             let k = format!("MISE_TOOL_OPTS__{}", key.to_uppercase());
-            sm = sm.with_env(k, value.clone());
+            sm = sm.with_env(k, value);
         }
-        for (key, value) in tv.request.options().install_env {
-            sm = sm.with_env(key, value.clone());
+        for (key, value) in tv.install_env() {
+            sm = match value.into_string() {
+                Some(value) => sm.with_env(key, value),
+                None => sm.without_env(key),
+            };
         }
         if let Some(project_root) = &config.project_root {
             let project_root = project_root.to_string_lossy().to_string();
@@ -187,7 +202,7 @@ impl AsdfBackend {
             _ => &tv.version,
         };
         // add env vars from mise.toml files
-        for (key, value) in config.env()? {
+        for (key, value) in config.env().await? {
             sm = sm.with_env(key, value.clone());
         }
         let install = tv.install_path().to_string_lossy().to_string();
@@ -204,7 +219,7 @@ impl AsdfBackend {
             .with_env("MISE_DOWNLOAD_PATH", download)
             .with_env("MISE_INSTALL_PATH", install)
             .with_env("MISE_INSTALL_TYPE", install_type)
-            .with_env("MISE_INSTALL_VERSION", install_version);
+            .with_env(env::MISE_INSTALL_VERSION_ENV_VAR, install_version);
         Ok(sm)
     }
 }
@@ -223,12 +238,13 @@ impl Hash for AsdfBackend {
     }
 }
 
+#[async_trait]
 impl Backend for AsdfBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Asdf
     }
 
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
@@ -236,15 +252,32 @@ impl Backend for AsdfBackend {
         Some(PluginType::Asdf)
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        self.plugin.fetch_remote_versions()
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
     }
 
-    fn latest_stable_version(&self) -> Result<Option<String>> {
-        run_with_timeout(
-            || {
+    /// ASDF plugins handle their own downloads through plugin scripts.
+    /// Lockfile URLs are not applicable since installation is delegated to plugin scripts.
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        let versions = self.plugin.fetch_remote_versions()?;
+        Ok(versions
+            .into_iter()
+            .map(|v| VersionInfo {
+                version: v,
+                ..Default::default()
+            })
+            .collect())
+    }
+
+    async fn latest_stable_version(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+        timeout::run_with_timeout_async(
+            || async {
                 if !self.plugin.has_latest_stable_script() {
-                    return self.latest_version(Some("latest".into()));
+                    return Ok(None);
                 }
                 self.latest_stable_cache
                     .get_or_try_init(|| self.plugin.fetch_latest_stable())
@@ -256,8 +289,9 @@ impl Backend for AsdfBackend {
                     })
                     .cloned()
             },
-            SETTINGS.fetch_remote_versions_timeout(),
+            Settings::get().fetch_remote_versions_timeout(),
         )
+        .await
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
@@ -282,7 +316,7 @@ impl Backend for AsdfBackend {
         Ok(aliases)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
         if let Some(data) = &self.toml.list_idiomatic_filenames.data {
             return Ok(self.plugin.parse_idiomatic_filenames(data));
         }
@@ -300,9 +334,9 @@ impl Backend for AsdfBackend {
             .cloned()
     }
 
-    fn parse_idiomatic_file(&self, idiomatic_file: &Path) -> Result<String> {
+    async fn _parse_idiomatic_file(&self, idiomatic_file: &Path) -> Result<Vec<String>> {
         if let Some(cached) = self.fetch_cached_idiomatic_file(idiomatic_file)? {
-            return Ok(cached);
+            return Ok(cached.split_whitespace().map(|s| s.to_string()).collect());
         }
         trace!(
             "parsing idiomatic file: {}",
@@ -313,25 +347,31 @@ impl Backend for AsdfBackend {
             true => self.plugin.script_man.read(&script)?,
             false => fs::read_to_string(idiomatic_file)?,
         }
-        .trim()
         .to_string();
+        let idiomatic_version = normalize_idiomatic_contents(&idiomatic_version);
 
         self.write_idiomatic_cache(idiomatic_file, &idiomatic_version)?;
-        Ok(idiomatic_version)
+        if idiomatic_version.is_empty() {
+            return Ok(vec![]);
+        }
+        Ok(idiomatic_version
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect())
     }
 
-    fn plugin(&self) -> Option<&dyn Plugin> {
-        Some(self.plugin())
+    fn plugin(&self) -> Option<&PluginEnum> {
+        Some(&self.plugin_enum)
     }
 
-    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        let mut sm = self.script_man_for_tv(&tv)?;
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let mut sm = self.script_man_for_tv(&ctx.config, &tv).await?;
 
-        for p in ctx.ts.list_paths() {
+        for p in ctx.ts.list_paths(&ctx.config).await {
             sm.prepend_path(p);
         }
 
-        let run_script = |script| sm.run_by_line(script, &ctx.pr);
+        let run_script = |script| sm.run_by_line(script, ctx.pr.as_ref());
 
         if sm.script_exists(&Download) {
             ctx.pr.set_message("bin/download".into());
@@ -344,24 +384,40 @@ impl Backend for AsdfBackend {
         Ok(tv)
     }
 
-    fn uninstall_version_impl(&self, pr: &Box<dyn SingleReport>, tv: &ToolVersion) -> Result<()> {
+    async fn uninstall_version_impl(
+        &self,
+        config: &Arc<Config>,
+        pr: &dyn SingleReport,
+        tv: &ToolVersion,
+    ) -> Result<()> {
         if self.plugin_path.join("bin/uninstall").exists() {
-            self.script_man_for_tv(tv)?
+            self.script_man_for_tv(config, tv)
+                .await?
                 .run_by_line(&Script::Uninstall, pr)?;
         }
         Ok(())
     }
 
-    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        let runtime_path = tv.runtime_path();
         Ok(self
             .cache
-            .list_bin_paths(self, tv, || self.fetch_bin_paths(tv))?
+            .list_bin_paths(config, self, tv, async || {
+                self.fetch_bin_paths(config, tv).await
+            })
+            .await?
             .into_iter()
-            .map(|path| tv.install_path().join(path))
+            .map(|path| runtime_path.join(path))
             .collect())
     }
 
-    fn exec_env(&self, config: &Config, ts: &Toolset, tv: &ToolVersion) -> eyre::Result<EnvMap> {
+    async fn exec_env(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> eyre::Result<EnvMap> {
+        let total_start = std::time::Instant::now();
         if matches!(tv.request, ToolRequest::System { .. }) {
             return Ok(BTreeMap::new());
         }
@@ -370,8 +426,18 @@ impl Backend for AsdfBackend {
             // the second is to prevent infinite loops
             return Ok(BTreeMap::new());
         }
-        self.cache
-            .exec_env(config, self, tv, || self.fetch_exec_env(ts, tv))
+        let res = self
+            .cache
+            .exec_env(config, self, tv, async || {
+                self.fetch_exec_env(config, ts, tv).await
+            })
+            .await;
+        trace!(
+            "exec_env cache.get_or_try_init_async for {} finished in {}ms",
+            self.name,
+            total_start.elapsed().as_millis()
+        );
+        res
     }
 }
 
@@ -390,13 +456,13 @@ impl Debug for AsdfBackend {
 
 #[cfg(test)]
 mod tests {
-    use test_log::test;
 
     use super::*;
 
-    #[test]
-    fn test_debug() {
+    #[tokio::test]
+    async fn test_debug() {
+        let _config = Config::get().await.unwrap();
         let plugin = AsdfBackend::from_arg("dummy".into());
-        assert!(format!("{:?}", plugin).starts_with("AsdfPlugin { name: \"dummy\""));
+        assert!(format!("{plugin:?}").starts_with("AsdfPlugin { name: \"dummy\""));
     }
 }

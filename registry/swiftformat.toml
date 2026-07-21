@@ -1,0 +1,12 @@
+description = "A command-line tool and Xcode Extension for formatting Swift code"
+test = { cmd = "swiftformat --version", expected = "{{version}}" }
+
+[[backends]]
+full = "github:nicklockwood/SwiftFormat"
+
+[backends.options]
+no_app = true
+rename_exe = "swiftformat"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-swiftformat"

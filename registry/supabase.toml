@@ -1,0 +1,3 @@
+backends = ["aqua:supabase/cli"]
+description = "Supabase CLI. Manage postgres migrations, run Supabase locally, deploy edge functions. Postgres backups. Generating types from your database schema"
+test = { cmd = "supabase --version", expected = "{{version}}" }

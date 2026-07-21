@@ -1,0 +1,3 @@
+backends = ["aqua:cloudflare/cfssl/cfssljson"]
+description = "cfssljson: Takes the JSON output from Cloudflare's cfssl and multirootca programs and writes certificates, keys, CSRs, and bundles to disk."
+test = { cmd = "cfssljson -version", expected = "Version: {{version}}" }

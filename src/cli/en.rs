@@ -1,10 +1,9 @@
 use crate::cli::exec::Exec;
-use crate::config::Settings;
 use std::path::PathBuf;
 
 use crate::env;
 
-/// [experimental] starts a new shell with the mise environment built from the current configuration
+/// Starts a new shell with the mise environment built from the current configuration
 ///
 /// This is an alternative to `mise activate` that allows you to explicitly start a mise session.
 /// It will have the tools and environment variables in the configs loaded.
@@ -24,10 +23,7 @@ pub struct En {
 }
 
 impl En {
-    pub fn run(self) -> eyre::Result<()> {
-        let settings = Settings::get();
-        settings.ensure_experimental("en")?;
-
+    pub async fn run(self) -> eyre::Result<()> {
         env::set_current_dir(&self.dir)?;
         let shell = self.shell.unwrap_or((*env::SHELL).clone());
         let command = shell_words::split(&shell).map_err(|e| eyre::eyre!(e))?;
@@ -38,8 +34,20 @@ impl En {
             jobs: None,
             c: None,
             command: Some(command),
+            no_deps: false,
+            fresh_env: false,
+            deny_all: false,
+            deny_read: false,
+            deny_write: false,
+            deny_net: false,
+            deny_env: false,
+            allow_read: vec![],
+            allow_write: vec![],
+            allow_net: vec![],
+            allow_env: vec![],
         }
         .run()
+        .await
     }
 }
 

@@ -1,0 +1,4 @@
+backends = ["aqua:cloudposse/atmos", "asdf:cloudposse/asdf-atmos"]
+description = "Workflow automation tool for DevOps. Keep configuration DRY with hierarchical imports of configurations, inheritance, and WAY more. Native support for Terraform and Helmfile"
+idiomatic_files = [".atmos-version"]
+test = { cmd = "atmos version", expected = "Atmos {{version}}" }

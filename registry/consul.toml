@@ -1,0 +1,2 @@
+backends = ["aqua:hashicorp/consul", "asdf:mise-plugins/mise-hashicorp"]
+description = "Consul is a distributed, highly available, and data center aware solution to connect and configure applications across dynamic, distributed infrastructure"

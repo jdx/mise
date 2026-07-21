@@ -1,0 +1,3 @@
+backends = ["aqua:pivotal-cf/om", "asdf:mise-plugins/tanzu-plug-in-for-asdf"]
+description = "General command line utility for working with VMware Tanzu Operations Manager"
+test = { cmd = "om version", expected = "{{version}}" }

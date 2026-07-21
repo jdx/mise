@@ -1,0 +1,5 @@
+backends = ["aqua:smtg-ai/claude-squad"]
+description = "Manage multiple AI agents like Claude Code, Aider, Codex, and Amp. 10x your productivity"
+test = { cmd = "claude-squad version", expected = """
+claude-squad version {{version}}
+https://github.com/smtg-ai/claude-squad/releases/tag/v{{version}}""" }

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# Test that hooks defined in global config (~/.config/mise/config.toml) work
+# See: https://github.com/jdx/mise/discussions/5264
+# See: https://github.com/jdx/mise/discussions/5293
+# See: https://github.com/jdx/mise/discussions/4875
+
+# Set up global config with hooks
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[hooks]
+enter = 'echo GLOBAL-ENTER'
+leave = 'echo GLOBAL-LEAVE'
+cd = 'echo GLOBAL-CD'
+preinstall = 'echo GLOBAL-PREINSTALL'
+postinstall = 'echo GLOBAL-POSTINSTALL'
+EOF
+
+# Set up a project config with tools
+cat <<EOF >mise.toml
+[tools]
+dummy = 'latest'
+EOF
+
+# Global preinstall/postinstall hooks should fire during install
+assert_contains "mise i 2>&1" "GLOBAL-PREINSTALL"
+assert_contains "mise i dummy@1 2>&1" "GLOBAL-POSTINSTALL"
+
+# Initialize hook-env session
+eval "$(mise hook-env)"
+
+# Navigate away and back to trigger enter/leave/cd
+cd ~ || exit 1
+assert_contains "mise hook-env 2>&1" "GLOBAL-LEAVE"
+eval "$(mise hook-env)"
+
+cd ~/workdir || exit 1
+assert_contains "mise hook-env 2>&1" "GLOBAL-ENTER"
+assert_contains "mise hook-env 2>&1" "GLOBAL-CD"
+eval "$(mise hook-env)"
+
+# cd within workdir should still trigger global cd hook
+mkdir -p subdir
+cd ~/workdir/subdir || exit 1
+assert_contains "mise hook-env 2>&1" "GLOBAL-CD"
+eval "$(mise hook-env)"

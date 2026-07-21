@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# Test that lockfile matching works when mise.toml uses "v" prefix but lockfile doesn't
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+# --- Test: "v" prefix in mise.toml matches lockfile without "v" prefix ---
+cat <<'EOF' >mise.toml
+[tools]
+jq = "v1.7.1"
+EOF
+
+cat <<EOF >mise.lock
+[[tools.jq]]
+version = "1.7.1"
+backend = "aqua:jqlang/jq"
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.7.1.tar.gz" }
+EOF
+
+# --locked --dry-run should succeed (version should match despite "v" prefix)
+assert_contains "mise install --locked --dry-run 2>&1" "would install"

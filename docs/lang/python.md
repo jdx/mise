@@ -11,24 +11,61 @@ at [`./src/plugins/core/python.rs`](https://github.com/jdx/mise/blob/main/src/pl
 
 ## Usage
 
-The following installs the latest version of python-3.11.x and makes it the global
+The following installs the latest version of python-3.15.x and makes it the global
 default:
 
 ```sh
-mise use -g python@3.11
+mise use -g python@3.15
 ```
 
 You can also use multiple versions of python at the same time:
 
 ```sh
-$ mise use -g python@3.10 python@3.11
+$ mise use -g python@3.14 python@3.15
 $ python -V
-3.10.0
-$ python3.11 -V
-3.11.0
+3.14.0
+$ python3.15 -V
+3.15.0
+```
+
+You can also install a specific python flavour. To get the latest version from a flavour just use the
+flavour prefix.
+
+```sh
+mise use -g python@anaconda         # latest version of anaconda
 ```
 
 See the [Python Cookbook](/mise-cookbook/python.html) for common tasks and examples.
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `python` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for python-build, default package installation, and install-time
+verification commands run by the core `python` backend:
+
+```toml
+[tools]
+python = { version = "latest", install_env = { CONFIGURE_OPTS = "--enable-optimizations" } }
+```
+
+### `patch_sysconfig`
+
+When installing precompiled Python binaries on Unix, mise patches the Python `sysconfig` data by
+default so build-time paths from `python-build-standalone` point at the final mise install path. If
+that patching causes an install problem for a specific Python build, disable it with
+`patch_sysconfig = false`:
+
+```toml
+[tools]
+python = { version = "3.14", patch_sysconfig = false }
+```
+
+Disabling this patch can leave stale build-time paths in the installed Python's `sysconfig` data, so
+prefer the default unless you need this as an install workaround.
 
 ## `.python-version` support
 
@@ -36,40 +73,122 @@ See the [Python Cookbook](/mise-cookbook/python.html) for common tasks and examp
 
 ## Automatic virtualenv activation
 
-Python comes with virtualenv support built in, use it with `mise.toml` configuration like
-one of the following:
+mise has two ways to manage Python virtualenvs:
+
+| Mechanism             | Best for                     | Config location      |
+| --------------------- | ---------------------------- | -------------------- |
+| `python.uv_venv_auto` | uv projects (with `uv.lock`) | `[settings]` section |
+| `_.python.venv`       | Projects not using uv        | `[env]` section      |
+
+**`python.uv_venv_auto`** detects and sources the `.venv` managed by `uv`. Use `"source"` to only activate existing venvs, or `"create|source"` to create if missing. See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for full examples.
+
+**`_.python.venv`** creates/activates a venv and adds it to PATH. It works with both `mise activate` and `mise exec`. Use this for projects that don't use uv.
+
+::: warning
+These are separate mechanisms with different code paths. Options like `uv_create_args` and `python_create_args` in `_.python.venv` are not used by `python.uv_venv_auto`.
+:::
+
+### `_.python.venv` configuration
+
+Use `_.python.venv` in the `[env]` section of `mise.toml`:
 
 ```toml
 [tools]
-python = "3.11" # [optional] will be used for the venv
+python = "3.15" # [optional] will be used for the venv
 
 [env]
 _.python.venv = ".venv" # relative to this file's directory
 _.python.venv = "/root/.venv" # can be absolute
 _.python.venv = "{{env.HOME}}/.cache/venv/myproj" # can use templates
 _.python.venv = { path = ".venv", create = true } # create the venv if it doesn't exist
-_.python.venv = { path = ".venv", create = true, python = "3.10" } # use a specific python version
-_.python.venv = { path = ".venv", create = true, python_create_args = ["--without-pip"] } # pass args to python -m venv
-_.python.venv = { path = ".venv", create = true, uv_create_args = ["--system-site-packages"] } # pass args to uv venv
+_.python.venv = { path = ".venv", create = true, python = "3.15" } # use a specific python version
+_.python.venv = {
+  path = ".venv", create = true,
+  python_create_args = ["--without-pip"], # pass args to python -m venv
+}
+_.python.venv = {
+  path = ".venv", create = true,
+  uv_create_args = ["--system-site-packages"], # pass args to uv venv
+}
 # Install seed packages (pip, setuptools, and wheel) into the virtual environment.
 _.python.venv = { path = ".venv", create = true, uv_create_args = ['--seed'] }
 ```
 
 The venv will need to be created manually with `python -m venv /path/to/venv` unless `create=true`.
+See [env-directives](https://mise.en.dev/environments/#env-directives) for `_.python.venv`.
+
+::: tip
+Virtualenv activation requires `mise activate` or `mise exec`. When using [shims](/dev-tools/shims) alone, the venv's `bin/` directory is not added to PATH, so `which python` will point to the shim rather than the venv's interpreter.
+:::
+
+### `python.uv_venv_auto` setting
+
+For uv-managed projects (those with a `uv.lock` file), you can use the `python.uv_venv_auto` setting to automatically source or create the `.venv` that uv manages. See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for full examples.
+
+```toml [mise.toml]
+[settings]
+python.uv_venv_auto = "source"        # activate existing .venv
+# or
+python.uv_venv_auto = "create|source" # create .venv if missing, then activate
+```
 
 ## mise & uv
 
-If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` will use it to create virtual environments. Otherwise, it will use the built-in `python -m venv` command.
+If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` will use it to create virtual environments via `_.python.venv`. Otherwise, it will use the built-in `python -m venv` command.
 
 Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
+
+:::warning
+The `true` value for `python.uv_venv_auto` is considered legacy and will be deprecated in a
+future release (planned for mise 2026.7). Prefer `"source"` or `"create|source"` instead.
+Note: the `python.uv_venv_auto` **setting** itself is not going away — only the `true` value is
+being phased out.
+:::
+
+One difference between the legacy `true` value and the newer string values is that `true` also
+exports `UV_PYTHON` (set to just the Python version number). This tells `uv` which Python version
+to use, but does not guarantee that `uv` uses the specific interpreter managed by `mise` — `uv`
+may fall back to a system or self-managed Python of the same version.
+
+To strictly ensure `uv` uses `mise`'s managed Python interpreter, set `UV_PYTHON` to the actual
+install path instead:
+
+```toml
+[tools]
+python = "3.15"
+
+[env]
+UV_PYTHON = { value = "{{ tools.python.path }}", tools = true }
+```
 
 See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for more examples.
 
 ## Default Python packages
 
+::: warning Planned deprecation
+Default package files are deprecated. They are still supported for now, but mise will start warning
+in `2026.11.0` and support will be removed in `2027.11.0`.
+
+For Python CLIs, install the tool directly with the [pipx backend](/dev-tools/backends/pipx.html):
+
+```toml
+[tools]
+"pipx:black" = "latest"
+```
+
+For packages that really should be installed into every Python version, use a tool-level
+`postinstall` hook:
+
+```toml
+[tools]
+python = { version = "3.13", postinstall = "python -m pip install --upgrade ansible" }
+```
+
+:::
+
 mise can automatically install a default set of Python packages with pip right after installing a
-Python version. To enable this feature, provide a `$HOME/.default-python-packages` file that lists
-one package per line, for example:
+Python version. To use this legacy feature, provide a `$HOME/.default-python-packages` file that
+lists one package per line, for example:
 
 ```text
 ansible
@@ -168,7 +287,7 @@ brew link pkg-config
 a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
 additional to that python in mise has a few extra configuration variables.
 
-Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable.
+Set these with `mise settings set [VARIABLE]=[VALUE]` or by setting the environment variable.
 
 <script setup>
 import Settings from '/components/settings.vue';

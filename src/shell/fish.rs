@@ -3,27 +3,37 @@
 use std::fmt::{Display, Formatter};
 
 use crate::config::Settings;
-use crate::shell::{ActivateOptions, Shell};
+use crate::env::{self};
+use crate::shell::{self, ActivateOptions, Shell};
 use indoc::formatdoc;
+use itertools::Itertools;
 use shell_escape::unix::escape;
 
 #[derive(Default)]
 pub struct Fish {}
 
+impl Fish {}
+
 impl Shell for Fish {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.to_string_lossy();
+
+        let exe = escape(exe.to_string_lossy());
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
+
+        out.push_str(&shell::build_deactivation_script(self));
+
         out.push_str(&self.format_activate_prelude(&opts.prelude));
 
         // much of this is from direnv
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_fish.go#L14-L36
         out.push_str(&formatdoc! {r#"
             set -gx MISE_SHELL fish
-            set -gx __MISE_ORIG_PATH $PATH
+            if not set -q __MISE_ORIG_PATH
+                set -gx __MISE_ORIG_PATH $PATH
+            end
 
             function mise
               if test (count $argv) -eq 0
@@ -58,7 +68,7 @@ impl Shell for Fish {
         if !opts.no_hook_env {
             out.push_str(&formatdoc! {r#"
 
-            function __mise_env_eval --on-event fish_prompt --description {description};
+            function __mise_env_eval --description {description};
                 {exe} hook-env{flags} -s fish | source;
 
                 if test "$mise_fish_mode" != "disable_arrow";
@@ -72,6 +82,18 @@ impl Shell for Fish {
                 end;
             end;
 
+            function __mise_env_eval_on_prompt --on-event fish_prompt --description {description};
+                if set -q __mise_skip_first_prompt_pwd;
+                    set -l activate_pwd "$__mise_skip_first_prompt_pwd";
+                    set -e __mise_skip_first_prompt_pwd;
+                    if test "$PWD" = "$activate_pwd";
+                        return;
+                    end;
+                end;
+
+                __mise_env_eval;
+            end;
+
             function __mise_env_eval_2 --on-event fish_preexec --description {description};
                 if set -q __mise_env_again;
                     set -e __mise_env_again;
@@ -83,6 +105,7 @@ impl Shell for Fish {
             end;
 
             __mise_env_eval
+            set -g __mise_skip_first_prompt_pwd "$PWD"
         "#});
         }
         if Settings::get().not_found_auto_install {
@@ -111,9 +134,11 @@ impl Shell for Fish {
     fn deactivate(&self) -> String {
         formatdoc! {r#"
           functions --erase __mise_env_eval
+          functions --erase __mise_env_eval_on_prompt
           functions --erase __mise_env_eval_2
           functions --erase __mise_cd_hook
           functions --erase mise
+          set -e __mise_skip_first_prompt_pwd
           set -e MISE_SHELL
           set -e __MISE_DIFF
           set -e __MISE_SESSION
@@ -122,18 +147,76 @@ impl Shell for Fish {
 
     fn set_env(&self, key: &str, v: &str) -> String {
         let k = escape(key.into());
-        let v = escape(v.into());
-        format!("set -gx {k} {v}\n")
+        // Fish uses space-separated list for PATH, not colon-separated string
+        if key == "PATH" {
+            let paths = v.split(':').map(|p| escape(p.into())).join(" ");
+            format!("set -gx PATH {paths}\n")
+        } else {
+            let v = escape(v.into());
+            format!("set -gx {k} {v}\n")
+        }
     }
 
-    fn prepend_env(&self, key: &str, v: &str) -> String {
+    fn prepend_env(&self, key: &str, value: &str) -> String {
         let k = escape(key.into());
-        let v = escape(v.into());
-        format!("set -gx {k} {v} ${k}\n")
+
+        match key {
+            env_key if env_key == *env::PATH_KEY => env::split_paths(value)
+                .filter_map(|path| {
+                    let path_str = path.to_str()?;
+                    if path_str.is_empty() {
+                        None
+                    } else {
+                        Some(format!(
+                            "fish_add_path --global --path {}\n",
+                            escape(path_str.into())
+                        ))
+                    }
+                })
+                .collect::<String>(),
+            _ => {
+                let v = escape(value.into());
+                format!("set -gx {k} {v} ${k}\n")
+            }
+        }
+    }
+
+    fn move_prepend_env(&self, key: &str, value: &str) -> String {
+        match key {
+            env_key if env_key == *env::PATH_KEY => env::split_paths(value)
+                .filter_map(|path| {
+                    let path_str = path.to_str()?;
+                    if path_str.is_empty() {
+                        None
+                    } else {
+                        Some(format!(
+                            "fish_add_path --global --move --path {}\n",
+                            escape(path_str.into())
+                        ))
+                    }
+                })
+                .collect::<String>(),
+            _ => self.prepend_env(key, value),
+        }
+    }
+
+    fn supports_move_path(&self) -> bool {
+        true
     }
 
     fn unset_env(&self, k: &str) -> String {
         format!("set -e {k}\n", k = escape(k.into()))
+    }
+
+    fn set_alias(&self, name: &str, cmd: &str) -> String {
+        let name = escape(name.into());
+        let cmd = escape(cmd.into());
+        format!("complete -e {name}\nalias {name} {cmd}\n")
+    }
+
+    fn unset_alias(&self, name: &str) -> String {
+        let name = escape(name.into());
+        format!("complete -e {name}\nfunctions -e {name}\n")
     }
 }
 
@@ -143,7 +226,7 @@ impl Display for Fish {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 mod tests {
     use insta::assert_snapshot;
     use std::path::Path;
@@ -155,6 +238,12 @@ mod tests {
 
     #[test]
     fn test_activate() {
+        // Unset __MISE_ORIG_PATH to avoid PATH restoration logic in output
+        unsafe {
+            std::env::remove_var("__MISE_ORIG_PATH");
+            std::env::remove_var("__MISE_DIFF");
+        }
+
         let fish = Fish::default();
         let exe = Path::new("/some/dir/mise");
         let opts = ActivateOptions {
@@ -175,6 +264,14 @@ mod tests {
     fn test_prepend_env() {
         let sh = Fish::default();
         assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
+    }
+
+    #[test]
+    fn test_move_prepend_env() {
+        let sh = Fish::default();
+        assert_snapshot!(replace_path(
+            &sh.move_prepend_env("PATH", "/some/dir:/2/dir")
+        ));
     }
 
     #[test]

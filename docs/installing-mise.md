@@ -6,6 +6,27 @@ If you are new to `mise`, follow the [Getting Started](/getting-started) guide f
 
 This page lists various ways to install `mise` on your system.
 
+| Platform              | Recommended    | Alternative     |
+| --------------------- | -------------- | --------------- |
+| macOS                 | Homebrew       | mise.run        |
+| Linux (Debian/Ubuntu) | apt            | mise.run        |
+| Linux (Fedora/RHEL)   | dnf            | mise.run        |
+| Linux (Arch)          | pacman         | mise.run        |
+| Linux (Alpine)        | apk            | mise.run        |
+| Windows               | Scoop          | winget          |
+| Any (Rust users)      | cargo binstall | cargo install   |
+| CI/Docker             | mise.run       | GitHub Releases |
+
+::: tip Which methods auto-update?
+Package managers (apt, dnf, brew, pacman, etc.) update mise when you update system packages. Other methods can be updated with `mise self-update`.
+:::
+
+::: tip Keep mise up to date
+mise connects to many external registries and backends, such as aqua, GitHub releases, language package registries, and system package managers. Those services change over time, so mise works best when the CLI is kept on a recent version.
+
+Projects and organizations should generally set a [`min_version`](/configuration.html#minimum-mise-version) when they need a newer mise feature instead of locking every user to a specific mise executable. While there are ways to pin or bootstrap a particular mise version, locking users to one mise version is generally discouraged. Pinning mise back is like preventing `apt update` or `brew update` from refreshing package metadata: it can hide deprecation messages and cause bit rot with upstream integrations like aqua-registry. Breaking changes are avoided unless they go through a long deprecation process, so staying current should usually be low risk.
+:::
+
 ### <https://mise.run>
 
 Note that it isn't necessary for `mise` to be on `PATH`. If you run the activate script in your
@@ -14,22 +35,56 @@ file, mise will automatically add itself to `PATH`.
 
 ```sh
 curl https://mise.run | sh
+```
 
-# or with options
+or with options
+
+```sh
 curl https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
 ```
+
+#### Shell-specific installation + activation
+
+For a more streamlined setup, you can use shell-specific endpoints that will install mise and automatically configure activation in your shell's configuration file:
+
+::: code-group
+
+```sh [zsh]
+curl https://mise.run/zsh | sh
+# Installs mise and adds activation to ~/.zshrc
+```
+
+```sh [bash]
+curl https://mise.run/bash | sh
+# Installs mise and adds activation to ~/.bashrc
+```
+
+```sh [fish]
+curl https://mise.run/fish | sh
+# Installs mise and adds activation to ~/.config/fish/config.fish
+```
+
+:::
+
+These shell-specific installers will:
+
+- Install mise using the same logic as the main installer
+- Automatically detect your shell's configuration file
+- Add the activation line if it's not already present
+- Skip adding activation if it's already configured (safe to run multiple times)
 
 Options:
 
 - `MISE_DEBUG=1` – enable debug logging
 - `MISE_QUIET=1` – disable non-error output
 - `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/bin/mise`)
-- `MISE_VERSION=v2024.5.17` – install a specific version
+- `MISE_VERSION=v2025.12.0` – install a specific version
+- `MISE_INSTALL_SKIP_IF_EXISTS=1` – skip the download/install if the mise binary at the install path already matches the requested version
 
 If you want to verify the install script hasn't been tampered with:
 
 ```sh
-gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 0x7413A06D
+gpg --keyserver hkps://keys.openpgp.org --recv-keys 24853EC9F655CE80B48E6C3A8B81C9D17413A06D
 curl https://mise.jdx.dev/install.sh.sig | gpg --decrypt > install.sh
 # ensure the above is signed with the mise release key
 sh ./install.sh
@@ -40,34 +95,6 @@ As long as you don't change the version with `MISE_VERSION`, the install script 
 version was when it was downloaded with checksums inside the file. This makes downloading the file and putting it into
 a project a great way to ensure that anyone installing with that script fetches the exact same mise bin.
 :::
-
-or if you're allergic to `| sh`:
-
-::: code-group
-
-```sh [macos-arm64]
-curl https://mise.jdx.dev/mise-latest-macos-arm64 > ~/.local/bin/mise
-chmod +x ~/.local/bin/mise
-```
-
-```sh [macos-x64]
-curl https://mise.jdx.dev/mise-latest-macos-x64 > ~/.local/bin/mise
-chmod +x ~/.local/bin/mise
-```
-
-```sh [linux-x64]
-curl https://mise.jdx.dev/mise-latest-linux-x64 > ~/.local/bin/mise
-chmod +x ~/.local/bin/mise
-```
-
-```sh [linux-arm64]
-curl https://mise.jdx.dev/mise-latest-linux-arm64 > ~/.local/bin/mise
-chmod +x ~/.local/bin/mise
-```
-
-:::
-
-It doesn't matter where you put it. So use `~/bin`, `/usr/local/bin`, `~/.local/bin` or whatever.
 
 Supported os/arch:
 
@@ -97,29 +124,22 @@ the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/m
 
 ### apt
 
-For installation on Ubuntu/Debian:
+On Ubuntu 26.04+, mise is available via a PPA:
 
-::: code-group
-
-```sh [amd64]
-sudo apt update -y && sudo apt install -y gpg sudo wget curl
-sudo install -dm 755 /etc/apt/keyrings
-wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=amd64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
+```sh
+sudo add-apt-repository -y ppa:jdxcode/mise
 sudo apt update
 sudo apt install -y mise
 ```
 
-```sh [arm64]
-sudo apt update -y && apt install -y gpg sudo wget curl
-sudo install -dm 755 /etc/apt/keyrings
-wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
+On Debian 11+ and Ubuntu 22.04+, mise repository can be enabled with extrepo:
+
+```sh
+sudo apt install -y extrepo
+sudo extrepo enable mise
 sudo apt update
 sudo apt install -y mise
 ```
-
-:::
 
 ### pacman
 
@@ -129,12 +149,14 @@ For Arch Linux:
 sudo pacman -S mise
 ```
 
+[Arch package](https://archlinux.org/packages/extra/x86_64/mise/)
+
 ### Cargo
 
 Build from source with Cargo:
 
 ```sh
-cargo install mise
+cargo install --locked mise
 ```
 
 Do it faster with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
@@ -152,27 +174,58 @@ cargo install mise --git https://github.com/jdx/mise --branch main
 
 ### dnf
 
-For Fedora 40, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
+#### Fedora 41+, CentOS Stream 9+, RHEL 10+
 
 ```sh
-dnf install -y dnf-plugins-core
-dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
-dnf install -y mise
+dnf copr enable jdxcode/mise
+dnf install mise
 ```
 
-Fedora 41+ (dnf5)
+#### RHEL 9 / AlmaLinux 9 / Rocky 9
+
+RHEL 9 AppStream is currently frozen at Rust 1.88, which is older than mise's
+minimum supported Rust version. Use the CentOS Stream 9 build instead — the
+resulting binary works on RHEL 9 derivatives:
 
 ```sh
-dnf install -y dnf-plugins-core
-dnf config-manager addrepo --from-repofile=https://mise.jdx.dev/rpm/mise.repo
-dnf install -y mise
+dnf copr enable jdxcode/mise centos-stream+epel-next-9
+dnf install mise
 ```
+
+[COPR package page](https://copr.fedorainfracloud.org/coprs/jdxcode/mise/)
+
+### Snap (Linux)
+
+```sh
+sudo snap install mise --classic
+```
+
+[snapcraft.io page](https://snapcraft.io/mise)
 
 ### Docker
 
-```sh
-docker run jdxcode/mise x node@20 -- node -v
+See the [Docker cookbook](/mise-cookbook/docker) for tips on using mise with Docker.
+
+::: details Example Dockerfile
+
+```dockerfile
+FROM debian:13-slim
+
+RUN apt-get update \
+    && apt-get -y --no-install-recommends install sudo curl git ca-certificates build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV MISE_DATA_DIR="/mise"
+ENV MISE_CONFIG_DIR="/mise"
+ENV MISE_CACHE_DIR="/mise/cache"
+ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
+ENV PATH="/mise/shims:$PATH"
+RUN curl https://mise.run | sh
+RUN mise trust -a && mise install
 ```
+
+:::
 
 ### Homebrew
 
@@ -180,27 +233,33 @@ docker run jdxcode/mise x node@20 -- node -v
 brew install mise
 ```
 
+[Homebrew formula](https://formulae.brew.sh/formula/mise)
+
 ### npm
 
 mise is available on npm as a precompiled binary. This isn't a Node.js package—just distributed
 via npm. This is useful for JS projects that want to setup mise via `package.json` or `npx`.
 
 ```sh
-npm install -g @jdxcode/mise
+npm install -g mise
 ```
 
 Use npx if you just want to test it out for a single command without fully installing:
 
 ```sh
-npx @jdxcode/mise exec python@3.11 -- python some_script.py
+npx mise exec python@3.11 -- python some_script.py
 ```
+
+[npm package](https://www.npmjs.com/package/mise)
+
+The legacy [`@jdxcode/mise`](https://www.npmjs.com/package/@jdxcode/mise) package is still published.
 
 ### GitHub Releases
 
 Download the latest release from [GitHub](https://github.com/jdx/mise/releases).
 
 ```sh
-curl -L https://github.com/jdx/mise/releases/download/v2024.1.0/mise-v2024.1.0-linux-x64 > /usr/local/bin/mise
+curl -L https://github.com/jdx/mise/releases/download/v2025.12.0/mise-v2025.12.0-linux-x64 > /usr/local/bin/mise
 chmod +x /usr/local/bin/mise
 ```
 
@@ -210,9 +269,11 @@ chmod +x /usr/local/bin/mise
 sudo port install mise
 ```
 
+[MacPorts port](https://ports.macports.org/port/mise/)
+
 ### nix
 
-For the Nix package manager, at release 23.05 or later:
+For the Nix package manager, at release 24.05 or later:
 
 ```sh
 nix-env -iA mise
@@ -222,12 +283,24 @@ You can also import the package directly using
 `mise-flake.packages.${system}.mise`. It supports all default Nix
 systems.
 
-### yum
+::: tip NixOS compiles from source by default
+For precompiled binaries, enable [nix-ld](https://github.com/Mic92/nix-ld) and disable [`all_compile`](/configuration/settings.html#all_compile).
+:::
+
+### yum (RHEL 8, CentOS Stream 8, Amazon Linux 2)
 
 ```sh
 yum install -y yum-utils
 yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 yum install -y mise
+```
+
+### zypper
+
+```sh
+sudo wget https://mise.jdx.dev/rpm/mise.repo -O /etc/zypp/repos.d/mise.repo
+sudo zypper refresh
+sudo zypper install mise
 ```
 
 ### Windows - Scoop
@@ -238,11 +311,15 @@ This is the recommended way to install mise on Windows. It will automatically ad
 scoop install mise
 ```
 
+[Scoop manifest](https://github.com/ScoopInstaller/Main/blob/master/bucket/mise.json)
+
 ### Windows - winget
 
 ```sh
 winget install jdx.mise
 ```
+
+[winget manifest](https://github.com/microsoft/winget-pkgs/tree/master/manifests/j/jdx/mise)
 
 ### Windows - Chocolatey
 
@@ -285,10 +362,10 @@ echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 For homebrew and possibly other installs mise is automatically activated so
 this is not necessary.
 
-See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise_fish_auto_activate1) for more information.
+See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise-fish-auto-activate-1) for more information.
 :::
 
-### Powershell
+### PowerShell
 
 ::: warning
 See [about_Profiles](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles) docs to find your actual profile location.
@@ -296,7 +373,7 @@ You will need to first create the parent directory if it does not exist.
 :::
 
 ```powershell
-echo 'mise activate pwsh | Out-String | Invoke-Expression' >> $HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
+echo '(&mise activate pwsh) | Out-String | Invoke-Expression' >> $HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
 ```
 
 ### Nushell
@@ -327,7 +404,7 @@ bit off startup time by using a pure Python import: add the code below to, for
 example, `~/.config/xonsh/mise.py` config file and `import mise` it in `~/.config/xonsh/rc.xsh`:
 
 ```python
-from pathlib         import Path
+from pathlib import Path
 from xonsh.built_ins import XSH
 
 ctx = XSH.ctx
@@ -389,14 +466,13 @@ Then, run the following commands to install the completion script for your shell
 
 ```sh [bash]
 # This requires bash-completion to be installed
-mkdir -p /etc/bash_completion.d/
-mise completion bash --include-bash-completion-lib | sudo tee /etc/bash_completion.d/mise > /dev/null
+mkdir -p ~/.local/share/bash-completion/completions/
+mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise
 ```
 
 ```sh [zsh]
 # If you use oh-my-zsh, there is a `mise` plugin. Update your .zshrc file with:
 # plugins=(... mise)
-# This must be after `source $ZSH/oh-my-zsh.sh` line in your .zshrc file.
 
 # Otherwise, look where zsh search for completions with
 echo $fpath | tr ' ' '\n'
@@ -413,6 +489,16 @@ mise completion fish > ~/.config/fish/completions/mise.fish
 :::
 
 Then source your shell's rc file or restart your shell.
+
+## Troubleshooting
+
+If you encounter issues after installation, run:
+
+```sh
+mise doctor
+```
+
+This will diagnose common problems with your mise setup. See [mise doctor](/cli/doctor) for more information.
 
 ## Uninstalling
 

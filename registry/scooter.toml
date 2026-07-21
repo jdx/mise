@@ -1,0 +1,3 @@
+backends = ["aqua:thomasschafer/scooter", "cargo:scooter"]
+description = "Interactive find-and-replace in the terminal"
+test = { cmd = "scooter --version", expected = "scooter {{version}}" }

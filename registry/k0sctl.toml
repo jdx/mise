@@ -1,0 +1,3 @@
+backends = ["aqua:k0sproject/k0sctl", "asdf:Its-Alex/asdf-plugin-k0sctl"]
+description = "A bootstrapping and management tool for k0s clusters"
+test = { cmd = "k0sctl version", expected = "version: v{{version}}" }

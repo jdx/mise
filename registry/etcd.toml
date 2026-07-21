@@ -1,0 +1,7 @@
+backends = [
+  "aqua:etcd-io/etcd",
+  "asdf:particledecay/asdf-etcd",
+  "vfox:mise-plugins/vfox-etcd",
+]
+description = "Distributed reliable key-value store for the most critical data of a distributed system"
+test = { cmd = "etcd --version", expected = "etcd Version: {{version}}" }

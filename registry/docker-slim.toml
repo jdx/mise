@@ -1,0 +1,4 @@
+backends = ["aqua:mintoolkit/mint", "asdf:xataz/asdf-docker-slim"]
+description = "minT(oolkit): Mint awesome, secure and production ready containers just the way you need them! Don't change anything in your container image and minify it by up to 30x (and for compiled languages even more) making it secure too! (free and open source)"
+os = ["linux", "macos"]
+test = { cmd = "slim --version", expected = "" } # prints out weird version of mint or something

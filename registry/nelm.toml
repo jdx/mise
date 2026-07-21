@@ -1,0 +1,2 @@
+backends = ["aqua:werf/nelm"]
+description = "Nelm is a Helm 4 alternative - it is a Kubernetes deployment tool that manages Helm Charts and deploys them to Kubernetes"

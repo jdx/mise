@@ -1,0 +1,2 @@
+backends = ["aqua:direnv/direnv", "asdf:asdf-community/asdf-direnv"]
+description = "unclutter your .profile"

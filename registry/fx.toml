@@ -1,0 +1,2 @@
+backends = ["aqua:antonmedv/fx", "asdf:https://gitlab.com/wt0f/asdf-fx"]
+description = "Command-line tool and terminal JSON viewer"

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# Test glob pattern support in task_config.includes
+# See: https://github.com/jdx/mise/discussions/7860
+
+# Create a tasks directory with multiple task files
+# Note: Standalone task TOML files use a different format than mise.toml
+mkdir -p tasks
+
+cat <<EOF >tasks/build.toml
+[build]
+run = 'echo "building"'
+EOF
+
+cat <<EOF >tasks/test.toml
+[test]
+run = 'echo "testing"'
+EOF
+
+cat <<EOF >tasks/deploy.toml
+[deploy]
+run = 'echo "deploying"'
+EOF
+
+# Create mise.toml with glob pattern in includes
+cat <<EOF >mise.toml
+[task_config]
+includes = ["tasks/*.toml"]
+EOF
+
+# Test that all tasks are discovered via glob pattern
+assert_contains "mise tasks" "build"
+assert_contains "mise tasks" "test"
+assert_contains "mise tasks" "deploy"
+
+# Test that the tasks actually run
+assert_contains "mise run build" "building"
+assert_contains "mise run test" "testing"
+assert_contains "mise run deploy" "deploying"
+
+# Test mixing glob with literal paths
+cat <<EOF >extra-tasks.toml
+[extra]
+run = 'echo "extra task"'
+EOF
+
+cat <<EOF >mise.toml
+[task_config]
+includes = ["tasks/*.toml", "extra-tasks.toml"]
+EOF
+
+assert_contains "mise tasks" "build"
+assert_contains "mise tasks" "extra"
+assert_contains "mise run extra" "extra task"

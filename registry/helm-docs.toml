@@ -1,0 +1,2 @@
+backends = ["aqua:norwoodj/helm-docs", "asdf:sudermanjr/asdf-helm-docs"]
+description = "A tool for automatically generating markdown documentation for helm charts"

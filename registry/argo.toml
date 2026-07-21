@@ -1,0 +1,3 @@
+backends = ["aqua:argoproj/argo-workflows", "asdf:sudermanjr/asdf-argo"]
+description = "Argo Workflows CLI. Workflow engine for Kubernetes"
+test = { cmd = "argo version", expected = "argo: v{{version}}" }

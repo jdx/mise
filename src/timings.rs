@@ -43,7 +43,7 @@ fn render(module: &str, diff: Duration) -> String {
         .trim()
         .to_string();
     if diff.as_micros() > 8000 {
-        style::eblack(out).on_red().on_bright()
+        style::eblack(out).on_red().bold()
     } else if diff.as_micros() > 4000 {
         style::eblack(out).on_red()
     } else if diff.as_micros() > 2000 {
@@ -81,6 +81,15 @@ macro_rules! time {
 }
 
 #[macro_export]
+macro_rules! progress_trace {
+    ($($arg:tt)+) => {{
+        if *$crate::env::MISE_PROGRESS_TRACE {
+            eprintln!("[PROGRESS] {}", format!($($arg)+));
+        }
+    }};
+}
+
+#[macro_export]
 macro_rules! measure {
     ($fmt:expr, $block:block) => {{
         if *$crate::env::MISE_TIMINGS > 0 {
@@ -89,12 +98,14 @@ macro_rules! measure {
             let result = $block;
             end();
             result
-        } else {
+        } else if log::log_enabled!(log::Level::Trace) {
             let msg = format!($fmt);
             trace!("{msg} start");
             let result = $block;
             trace!("{msg} done");
             result
+        } else {
+            $block
         }
     }};
 }

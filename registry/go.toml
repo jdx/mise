@@ -1,0 +1,3 @@
+backends = ["core:go"]
+description = "go lang (Builtin plugin)"
+detect = ["go.mod", "go.sum"]

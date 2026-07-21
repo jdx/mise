@@ -1,0 +1,2 @@
+backends = ["aqua:peripheryapp/periphery", "asdf:mise-plugins/mise-periphery"]
+description = "A tool to identify unused code in Swift projects"

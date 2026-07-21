@@ -1,0 +1,7 @@
+backends = [
+  "aqua:jpillora/chisel",
+  "go:github.com/jpillora/chisel",
+  "asdf:lwiechec/asdf-chisel",
+]
+description = "A fast TCP/UDP tunnel over HTTP"
+test = { cmd = "chisel --version", expected = "{{version}}" }

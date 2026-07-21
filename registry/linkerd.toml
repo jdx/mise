@@ -1,0 +1,2 @@
+backends = ["aqua:linkerd/linkerd2", "asdf:kforsthoevel/asdf-linkerd"]
+description = "Ultralight, security-first service mesh for Kubernetes. Main repo for Linkerd 2.x"

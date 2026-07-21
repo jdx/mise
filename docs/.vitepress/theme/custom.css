@@ -1,0 +1,1863 @@
+/**
+ * Customize default theme styling by overriding CSS variables
+ * Color palette: Warm culinary aesthetic — burgundy, gold, sage
+ */
+
+@font-face {
+  font-family: "Roc Grotesk";
+  src: url("/fonts/rocgrotesk-light-webfont.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roc Grotesk";
+  src: url("/fonts/rocgrotesk-regular-webfont.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roc Grotesk";
+  src: url("/fonts/rocgrotesk-medium-webfont.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roc Grotesk";
+  src: url("/fonts/rocgrotesk-bold-webfont.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Brand Colors - Rich burgundy */
+  --vp-c-brand-1: #8B2252;
+  --vp-c-brand-2: #722F37;
+  --vp-c-brand-3: #5C1A2A;
+  --vp-c-brand-soft: rgba(139, 34, 82, 0.14);
+
+  /* Accent Colors - Sage green */
+  --vp-c-success-1: #8FA86E;
+  --vp-c-success-2: #7A9460;
+  --vp-c-success-3: #6B7F4E;
+  --vp-c-success-soft: rgba(143, 168, 110, 0.14);
+
+  /* Warning Colors - Warm gold */
+  --vp-c-warning-1: #C5975B;
+  --vp-c-warning-2: #B08450;
+  --vp-c-warning-3: #9A7245;
+  --vp-c-warning-soft: rgba(197, 151, 91, 0.14);
+
+  /* Danger Colors - Terra cotta */
+  --vp-c-danger-1: #C44536;
+  --vp-c-danger-2: #B33A2E;
+  --vp-c-danger-3: #A03025;
+  --vp-c-danger-soft: rgba(196, 69, 54, 0.14);
+
+  /* Custom accent */
+  --mise-accent-gold: #D4A76A;
+
+  /* Typography */
+  --vp-font-family-base: "Roc Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --vp-font-family-mono: "JetBrains Mono", "Fira Code", "SF Mono", Monaco,
+    "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
+  --vp-font-family-heading: "Cormorant Garamond", Georgia, serif;
+
+
+  /* Custom spacing for better readability */
+  --vp-layout-max-width: 1440px;
+}
+
+/* Dark mode specific customizations */
+.dark {
+  /* Brand overrides for dark mode */
+  --vp-c-brand-1: #C75B7A;
+  --vp-c-brand-2: #B04A68;
+  --vp-c-brand-3: #9A3D5A;
+  --vp-c-brand-soft: rgba(199, 91, 122, 0.14);
+
+  /* Enhanced dark mode colors - deeper for contrast */
+  --vp-c-bg: #141010;
+  --vp-c-bg-soft: #1C1614;
+  --vp-c-bg-mute: #261E1A;
+  --vp-c-bg-alt: #181312;
+
+  /* Warm dividers */
+  --vp-c-divider: #3A2E25;
+  --vp-c-divider-light: #4A3D33;
+
+  /* Text colors with warm undertones */
+  --vp-c-text-1: #EDE6DF;
+  --vp-c-text-2: #C9BFB5;
+  --vp-c-text-3: #9E9288;
+  --vp-c-text-4: #71685E;
+
+  /* Code block enhancements */
+  --vp-code-block-bg: #1F1713;
+  --vp-code-block-divider-color: #3A2E25;
+  --vp-code-copy-code-hover-bg: #3A2E25;
+
+  /* Inline code styling */
+  --vp-c-code-bg: #2D221A;
+  --vp-c-code-color: #C75B7A;
+}
+
+/* Light mode customizations */
+:root:not(.dark) {
+  /* Light mode brand colors */
+  --vp-c-brand-1: #8B2252;
+  --vp-c-brand-2: #722F37;
+  --vp-c-brand-3: #5C1A2A;
+  --vp-c-brand-soft: rgba(139, 34, 82, 0.08);
+
+  /* Adjusted success colors for light mode */
+  --vp-c-success-1: #6B7F4E;
+  --vp-c-success-2: #5A6B40;
+  --vp-c-success-soft: rgba(107, 127, 78, 0.08);
+
+  /* Adjusted warning colors */
+  --vp-c-warning-1: #C5975B;
+  --vp-c-warning-2: #B08450;
+  --vp-c-warning-soft: rgba(197, 151, 91, 0.08);
+
+  /* Cream/warm background colors */
+  --vp-c-bg: #FDF8F3;
+  --vp-c-bg-soft: #F5EDE3;
+  --vp-c-bg-mute: #E8DDD0;
+  --vp-c-bg-alt: #F0E6DA;
+
+  /* Text colors */
+  --vp-c-text-1: #2A1F1A;
+  --vp-c-text-2: #5A4D42;
+  --vp-c-text-3: #7D7068;
+  --vp-c-text-4: #A09489;
+
+  /* Warm dividers */
+  --vp-c-divider: #D4C8B8;
+  --vp-c-divider-light: #C5B8A5;
+
+  /* Light mode code styling */
+  --vp-c-code-bg: #F0E6DA;
+  --vp-c-code-color: #8B2252;
+
+  /* Code blocks in light mode */
+  --vp-code-block-bg: #F5EDE3;
+  --vp-code-block-divider-color: #D4C8B8;
+}
+
+/* Navigation Bar — solid background, no pop-in */
+.VPNav {
+  background-color: var(--vp-c-bg) !important;
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.VPNavBar {
+  background-color: transparent !important;
+}
+
+.VPNavBar .wrapper {
+  background-color: transparent !important;
+}
+
+.VPNavBar .content {
+  background-color: transparent !important;
+}
+
+/* Logo */
+.VPNavBarTitle .VPImage.logo {
+  height: 40px !important;
+  width: auto !important;
+  transition: transform 0.25s ease, filter 0.25s ease;
+}
+
+/* On the home page the navbar brand stays hidden while the big hero
+   lockup is on screen (class toggled from Layout.vue), then fades in
+   as you scroll past — one logo that settles into the header. */
+.VPNavBarTitle {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.hide-nav-brand .VPNavBarTitle {
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+}
+
+/* SSR renders the navbar without the `home top` state classes, so its
+   divider and solid background flash on first paint until hydration
+   catches up. While the hero lockup is on screen (same pre-paint class),
+   keep the navbar chrome transparent like VitePress's own top-of-home
+   state does. !important because VitePress's scoped selectors
+   (.VPNavBar:not(.home) .divider-line[data-v-*]) out-specify us. */
+.hide-nav-brand .VPNavBar .divider-line {
+  background-color: transparent !important;
+}
+
+.hide-nav-brand .VPNavBar:not(.has-sidebar) {
+  background-color: transparent !important;
+}
+
+/* During "preboot" (pre-paint class from the inline head script, removed
+   by Layout.vue right after hydration) navbar transitions are disabled so
+   state corrections snap invisibly instead of fading in front of the user
+   — e.g. reloading the home page while scrolled down, or the divider's
+   0.5s background fade. */
+.preboot .VPNavBar,
+.preboot .VPNavBarTitle,
+.preboot .VPNavBar .divider-line {
+  transition: none !important;
+}
+
+/* Non-home pages: mirror VitePress's `.VPNavBar.has-sidebar` layout before
+   hydration adds the class, so the search box and menu don't jump right.
+   Values copied from vitepress/dist/client/theme-default (VPNavBar.vue). */
+@media (min-width: 960px) {
+  .preboot-sidebar .VPNavBar .wrapper {
+    padding: 0;
+  }
+
+  .preboot-sidebar .VPNavBar .container {
+    max-width: 100%;
+  }
+
+  .preboot-sidebar .VPNavBar .title {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    padding: 0 32px;
+    width: var(--vp-sidebar-width);
+    height: var(--vp-nav-height);
+    background-color: transparent;
+  }
+
+  .preboot-sidebar .VPNavBar .content {
+    position: relative;
+    z-index: 1;
+    padding-right: 32px;
+    padding-left: var(--vp-sidebar-width);
+  }
+
+  .preboot-sidebar .VPNavBar .divider {
+    padding-left: var(--vp-sidebar-width);
+  }
+}
+
+@media (min-width: 1440px) {
+  .preboot-sidebar .VPNavBar .title {
+    padding-left: max(32px, calc((100% - (var(--vp-layout-max-width) - 64px)) / 2));
+    width: calc(
+      (100% - (var(--vp-layout-max-width) - 64px)) / 2 + var(--vp-sidebar-width) -
+        32px
+    );
+  }
+
+  .preboot-sidebar .VPNavBar .content {
+    padding-right: calc((100vw - var(--vp-layout-max-width)) / 2 + 32px);
+    padding-left: calc(
+      (100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)
+    );
+  }
+
+  .preboot-sidebar .VPNavBar .divider {
+    padding-left: calc(
+      (100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)
+    );
+  }
+}
+
+.VPNavBarTitle:hover .VPImage.logo {
+  transform: scale(1.1);
+  filter: drop-shadow(0 0 10px rgba(139, 34, 82, 0.4));
+}
+
+/* Site Title */
+.VPNavBarTitle .title {
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  margin-left: 0.25rem;
+  color: var(--vp-c-text-1);
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+  .VPNavBarTitle .title::before {
+    display: none;
+  }
+}
+
+/* Social links */
+.VPSocialLinks {
+  align-items: center !important;
+}
+
+/* GitHub star count badge */
+.VPSocialLinks a[href*="github.com/jdx/mise"] {
+  display: inline-flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  position: relative;
+  padding-bottom: 12px !important;
+  margin-bottom: -12px !important;
+}
+
+/* Ensure GitHub icon is visible and aligned */
+.VPSocialLinks a[href*="github.com/jdx/mise"] svg {
+  display: block !important;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+}
+
+.VPSocialLinks .star-count {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--vp-c-text-3);
+  font-family: var(--vp-font-family-mono);
+  letter-spacing: -0.02em;
+  transition: color 0.25s ease;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.VPSocialLinks .star-count .star-glyph {
+  font-family: -apple-system, "Segoe UI Symbol", sans-serif;
+  line-height: 1;
+  margin-right: 0.2em;
+}
+
+.VPSocialLinks a[href*="github.com/jdx/mise"]:hover .star-count {
+  color: var(--vp-c-brand-1);
+}
+
+.EndevFooter {
+  align-items: center;
+  border-top: 1px solid var(--vp-c-divider);
+  color: var(--vp-c-text-2);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 14px;
+  gap: 8px;
+  justify-content: center;
+  line-height: 28px;
+  margin-top: auto;
+  padding: 22px 24px 26px;
+  text-align: center;
+}
+
+.EndevFooterLink {
+  align-items: center;
+  color: inherit;
+  display: inline-flex;
+  gap: 8px;
+  line-height: 28px;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.EndevFooterLink:hover {
+  color: var(--vp-c-brand-1);
+}
+
+.EndevFooterLogo {
+  border-radius: 8px;
+  display: inline-block;
+  height: 28px;
+  vertical-align: middle;
+  width: 28px;
+}
+
+/* Hide star count on mobile to save space */
+@media (max-width: 640px) {
+  .VPSocialLinks .star-count {
+    display: none;
+  }
+}
+
+/* Cormorant Garamond — all headings */
+h1, h2, h3, h4, h5, h6,
+.vp-doc h1, .vp-doc h2, .vp-doc h3, .vp-doc h4,
+.VPHero .name,
+.VPHome .name,
+.VPFeatures .title,
+.VPDocOutlineTitle {
+  font-family: "Cormorant Garamond", Georgia, serif !important;
+  letter-spacing: 0.01em;
+  font-weight: 600;
+}
+
+/* Details/summary — keep body font, not heading serif */
+.vp-doc details,
+.vp-doc summary {
+  font-family: var(--vp-font-family-base) !important;
+}
+
+/* Nav — all Roc Grotesk */
+.VPNav,
+.VPNavBar,
+.VPNavBarTitle .title,
+.VPNavBarMenu .VPNavBarMenuLink,
+.VPNavBarMenuGroup .text,
+.VPNavBarSearch,
+.DocSearch-Button {
+  font-family: "Roc Grotesk", sans-serif !important;
+  font-weight: 400;
+}
+
+/* Nav bar menu items */
+.VPNavBarMenu .VPNavBarMenuLink {
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+
+/* Buttons — Roc Grotesk */
+.VPButton {
+  font-family: "Roc Grotesk", sans-serif !important;
+}
+
+/* "On this page" header */
+.VPDocOutlineTitle {
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+/* Make search button text invisible but maintain layout */
+.DocSearch-Button .DocSearch-Button-Placeholder {
+  visibility: hidden;
+}
+
+/* Body text */
+.vp-doc p,
+.vp-doc li,
+.vp-doc td,
+.vp-doc blockquote {
+  font-size: 1rem;
+  line-height: 1.75;
+  font-weight: 400;
+}
+
+/* Reset mermaid diagrams — don't inherit body text styles */
+.vp-doc .mermaid,
+.vp-doc .mermaid * {
+  font-size: initial !important;
+  font-family: sans-serif !important;
+  font-weight: 400 !important;
+}
+
+/* Tab headers — Roc Grotesk */
+.vp-code-group .tabs label,
+.plugin-tabs--tab {
+  font-family: "Roc Grotesk", sans-serif !important;
+  font-weight: 400;
+  font-size: 1rem !important;
+}
+
+/* Reset code sizing — don't inherit body bump */
+.vp-doc :not(pre) > code {
+  font-size: 0.8em !important;
+  font-weight: 400 !important;
+  padding: 2px 5px !important;
+}
+
+.vp-doc div[class*="language-"] code {
+  font-size: 0.85rem !important;
+}
+
+/* h1 sizing */
+.vp-doc h1 {
+  font-size: 2.8rem;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.vp-doc h2 {
+  font-size: 1.8rem;
+  line-height: 1.25;
+}
+
+.vp-doc h3 {
+  font-size: 1.4rem;
+  line-height: 1.3;
+}
+
+.vp-doc h4 {
+  font-size: 1.15rem;
+  line-height: 1.35;
+}
+
+/* Site title */
+.VPNavBarTitle .title {
+  font-size: 1.15rem !important;
+  letter-spacing: 0.03em;
+}
+
+/* ═══ Hero section — "The Chef's Counter" ═══ */
+/* VitePress pulls the hero up under the nav with a negative margin
+   (nav height + layout-top banner), so padding-top must include that
+   offset or the hero content hides behind the navbar. */
+.VPHero {
+  padding-top: calc(
+    var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 76px
+  ) !important;
+  padding-bottom: 64px !important;
+  position: relative;
+  z-index: 1;
+  /* single static tint for depth — deliberately no animation/orbs/grain */
+  background: radial-gradient(
+    1000px 500px at 68% 12%,
+    rgba(139, 34, 82, 0.08),
+    transparent 70%
+  );
+}
+
+.dark .VPHero {
+  background: radial-gradient(
+    1000px 500px at 68% 12%,
+    rgba(199, 91, 122, 0.07),
+    transparent 70%
+  );
+}
+
+/* Two-column hero layout */
+.VPHero .container {
+  max-width: 1040px !important;
+  margin: 0 auto !important;
+}
+
+.VPHero .main {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 0 60px;
+}
+
+/* Hide the default VitePress hero name and actions */
+.VPHero .name {
+  display: none !important;
+}
+
+.VPHero .actions {
+  display: none !important;
+}
+
+.VPHero .tagline {
+  grid-column: 1;
+  grid-row: 2;
+  font-family: "Cormorant Garamond", Georgia, serif !important;
+  font-size: 1.75rem !important;
+  font-weight: 500;
+  font-style: italic;
+  letter-spacing: 0.01em;
+  color: var(--vp-c-text-2);
+  margin-top: -4px !important;
+  text-align: center;
+}
+
+/* Right column wrapper */
+.hero-right {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 28px;
+}
+
+/* Custom action buttons in right column */
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.action-btn {
+  font-family: "Roc Grotesk", sans-serif;
+  font-weight: 500;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 10px 24px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: all 0.25s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  line-height: 1;
+}
+
+.action-btn-brand {
+  background: var(--vp-c-brand-1);
+  color: #fff;
+}
+
+.action-btn-brand:hover {
+  background: var(--vp-c-brand-2);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(139, 34, 82, 0.25);
+}
+
+.action-btn-alt {
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  border: 1px solid var(--vp-c-divider);
+}
+
+.action-btn-alt:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+  transform: translateY(-2px);
+}
+
+/* Landing page feature card text */
+.VPFeature .details {
+  font-size: 1rem;
+  line-height: 1.6;
+  font-weight: 400;
+}
+
+/* Button customization */
+.VPButton {
+  font-weight: 500;
+  font-size: 0.8rem;
+  transition: all 0.25s ease !important;
+  border-radius: 6px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.VPButton.brand:hover,
+.VPButton.alt:hover {
+  transform: translateY(-3px) !important;
+}
+
+.VPButton.medium {
+  padding: 0 24px;
+  height: 40px;
+  line-height: 1;
+}
+
+.VPButton.brand {
+  background: linear-gradient(135deg, #8B2252 0%, #722F37 100%);
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(139, 34, 82, 0.2);
+}
+
+.VPButton.brand:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(139, 34, 82, 0.3);
+  background: linear-gradient(135deg, #9A2860 0%, #8B2252 100%);
+}
+
+.dark .VPButton.brand {
+  background: linear-gradient(135deg, #C75B7A 0%, #B04A68 100%);
+  box-shadow: 0 2px 8px rgba(199, 91, 122, 0.2);
+}
+
+.dark .VPButton.brand:hover {
+  box-shadow: 0 6px 20px rgba(199, 91, 122, 0.3);
+  background: linear-gradient(135deg, #D46A88 0%, #C75B7A 100%);
+}
+
+.VPButton.alt {
+  border-color: var(--vp-c-divider);
+  background: var(--vp-c-bg-soft);
+}
+
+.VPButton.alt:hover {
+  transform: translateY(-2px);
+  border-color: var(--vp-c-brand-1);
+  box-shadow: 0 4px 12px rgba(139, 34, 82, 0.1);
+}
+
+.VPButton:hover {
+  transform: translateY(-2px);
+}
+
+/* Sidebar — Roc Grotesk */
+.VPSidebar {
+  font-family: "Roc Grotesk", sans-serif !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Light mode sidebar background */
+:root:not(.dark) .VPSidebar {
+  background-color: rgba(253, 248, 243, 0.8);
+}
+
+.VPSidebarItem {
+  margin: 0;
+}
+
+/* Override serif heading font for sidebar collapsible group titles (rendered as h3) */
+.VPSidebarItem .text {
+  font-family: var(--vp-font-family-base) !important;
+}
+
+.VPSidebarItem.level-0 > .item {
+  padding-top: 2px;
+  padding-bottom: 2px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  font-size: 0.75rem;
+  color: var(--vp-c-text-3);
+}
+
+.VPSidebarItem .link {
+  transition: all 0.2s ease;
+  border-radius: 4px;
+  padding: 2px 6px !important;
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.VPSidebarItem .link:hover {
+  background-color: var(--vp-c-bg-mute);
+  color: var(--vp-c-brand-1);
+}
+
+.VPSidebarItem .link.active {
+  background-color: rgba(139, 34, 82, 0.15) !important;
+  color: var(--vp-c-brand-1) !important;
+  font-weight: 700 !important;
+  border-left: 3px solid var(--vp-c-brand-1) !important;
+  padding-left: 10px !important;
+  border-radius: 0 6px 6px 0 !important;
+  box-shadow: inset 0 0 0 1px rgba(139, 34, 82, 0.08);
+}
+
+.dark .VPSidebarItem .link.active {
+  background-color: rgba(199, 91, 122, 0.22) !important;
+  box-shadow: inset 0 0 0 1px rgba(199, 91, 122, 0.12);
+}
+
+/* Code blocks with better syntax highlighting */
+.vp-code-group {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+div[class*="language-"] {
+  border-radius: 8px;
+  border: 1px solid var(--vp-code-block-divider-color);
+  transition:
+    box-shadow 0.3s ease,
+    border-color 0.3s ease;
+}
+
+div[class*="language-"]:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+div[class*="language-"] .lang {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+/* Copy code button enhancement */
+div[class*="language-"] .copy {
+  background-color: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+div[class*="language-"] .copy:hover {
+  background-color: var(--vp-c-brand-1);
+  border-color: var(--vp-c-brand-1);
+  color: white;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--vp-c-bg-soft);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vp-c-divider);
+  border-radius: 5px;
+  border: 2px solid var(--vp-c-bg-soft);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vp-c-text-3);
+}
+
+/* ═══ Feature cards — culinary mise cards ═══ */
+.VPFeatures {
+  position: relative;
+  z-index: 1;
+}
+
+.VPFeatures .title {
+  font-family: "Cormorant Garamond", Georgia, serif !important;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.VPFeature {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1) !important;
+  background: var(--vp-c-bg);
+  position: relative;
+  overflow: hidden;
+}
+
+.VPFeature:hover {
+  transform: translateY(-6px) !important;
+}
+
+/* Accent top border — each card gets a color via nth-child */
+.VPFeature::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--vp-c-brand-1);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.VPFeatures .items .item:nth-child(1) .VPFeature::before {
+  background: linear-gradient(90deg, #8B2252, #C75B7A);
+}
+
+.VPFeatures .items .item:nth-child(2) .VPFeature::before {
+  background: linear-gradient(90deg, #D4A76A, #C5975B);
+}
+
+.VPFeatures .items .item:nth-child(3) .VPFeature::before {
+  background: linear-gradient(90deg, #6B7F4E, #8FA86E);
+}
+
+.VPFeature:hover {
+  border-color: var(--vp-c-brand-soft);
+  transform: translateY(-6px);
+  box-shadow:
+    0 16px 40px rgba(139, 34, 82, 0.08),
+    0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.dark .VPFeature:hover {
+  box-shadow:
+    0 16px 40px rgba(199, 91, 122, 0.06),
+    0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.VPFeature:hover::before {
+  opacity: 1;
+}
+
+.VPFeature .icon {
+  font-size: 2.2rem;
+  margin-bottom: 0.75rem;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.VPFeature:hover .icon {
+  transform: scale(1.15) rotate(-3deg);
+}
+
+/* Table styling */
+.vp-doc .vp-table {
+  margin: 1.5rem 0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--vp-c-divider);
+}
+
+.vp-doc table {
+  border-collapse: collapse;
+  font-family: "Roc Grotesk", sans-serif;
+  font-size: 0.95rem;
+  width: 100%;
+  margin: 0;
+  display: table;
+}
+
+.vp-doc th {
+  background: var(--vp-c-bg-soft);
+  font-family: "Roc Grotesk", sans-serif;
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  color: var(--vp-c-text-2);
+}
+
+.vp-doc td {
+  font-family: "Roc Grotesk", sans-serif !important;
+  font-weight: 400;
+  font-size: 0.95rem !important;
+}
+
+.vp-doc tr {
+  transition: background-color 0.2s ease;
+}
+
+.vp-doc tbody tr:hover {
+  background-color: var(--vp-c-bg-soft);
+}
+
+/* Links with underline animation */
+.vp-doc a {
+  position: relative;
+  color: var(--vp-c-brand-1);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.vp-doc a:hover {
+  color: var(--vp-c-brand-2);
+}
+
+.vp-doc a:not(.header-anchor):not(.VPButton)::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  bottom: -2px;
+  left: 0;
+  background-color: var(--vp-c-brand-1);
+  transform: scaleX(0);
+  transform-origin: bottom right;
+  transition: transform 0.25s ease-out;
+}
+
+.vp-doc a:not(.header-anchor):not(.VPButton):hover::after {
+  transform: scaleX(1);
+  transform-origin: bottom left;
+}
+
+/* Tip/Warning/Danger blocks customization */
+.custom-block {
+  border-radius: 8px;
+  border-width: 1px;
+  margin: 1.5rem 0;
+}
+
+.custom-block.tip {
+  border-color: var(--vp-c-success-2);
+  background-color: var(--vp-c-success-soft);
+}
+
+.custom-block.warning {
+  border-color: var(--vp-c-warning-2);
+  background-color: var(--vp-c-warning-soft);
+}
+
+.custom-block.danger {
+  border-color: var(--vp-c-danger-2);
+  background-color: var(--vp-c-danger-soft);
+}
+
+.custom-block-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  font-size: 0.85rem;
+}
+
+/* Search modal enhancement */
+.VPLocalSearchBox {
+  --vp-local-search-highlight-bg: var(--vp-c-brand-soft);
+  --vp-local-search-highlight-text: var(--vp-c-brand-1);
+}
+
+/* Algolia DocSearch customization */
+.DocSearch {
+  --docsearch-primary-color: var(--vp-c-brand-1) !important;
+  --docsearch-highlight-color: var(--vp-c-brand-1) !important;
+  --docsearch-muted-color: var(--vp-c-text-2) !important;
+  --docsearch-hit-color: var(--vp-c-text-1) !important;
+  --docsearch-hit-active-color: var(--vp-c-text-1) !important;
+  --docsearch-hit-background: var(--vp-c-bg-soft) !important;
+}
+
+/* Warm burgundy background for selected search results */
+.DocSearch-Hit[aria-selected="true"] {
+  background-color: rgba(139, 34, 82, 0.1) !important;
+}
+
+.DocSearch-Hit[aria-selected="true"] a {
+  background-color: rgba(139, 34, 82, 0.1) !important;
+}
+
+.dark .DocSearch-Hit[aria-selected="true"] {
+  background-color: rgba(199, 91, 122, 0.08) !important;
+}
+
+.dark .DocSearch-Hit[aria-selected="true"] a {
+  background-color: rgba(199, 91, 122, 0.08) !important;
+}
+
+/* Page transitions — disabled for snappy feel */
+
+/* Terminal-style elements */
+.terminal {
+  background: #1A1210;
+  color: #D4A76A;
+  padding: 1rem;
+  border-radius: 8px;
+  font-family: var(--vp-font-family-mono);
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.terminal::before {
+  content: "● ● ●";
+  position: absolute;
+  top: 0.75rem;
+  left: 1rem;
+  color: #C44536;
+  font-size: 0.75rem;
+  letter-spacing: 0.25rem;
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+  .VPHero .main {
+    grid-template-columns: 1fr !important;
+  }
+
+  .VPHero .tagline {
+    grid-column: 1;
+    grid-row: auto;
+    text-align: center;
+    font-size: 1.15rem !important;
+  }
+
+  .hero-right {
+    grid-column: 1;
+    grid-row: auto;
+    align-items: center;
+    margin-top: 24px;
+  }
+
+  .hero-actions {
+    justify-content: center;
+  }
+
+  .VPHero {
+    padding-top: calc(
+      var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 48px
+    ) !important;
+    padding-bottom: 40px !important;
+  }
+}
+
+/* Loading animation for async content */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.loading {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Custom badge styles */
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: var(--vp-font-family-base);
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.badge-new {
+  background-color: var(--vp-c-success-soft);
+  color: var(--vp-c-success-1);
+  border: 1px solid var(--vp-c-success-2);
+}
+
+.badge-beta {
+  background-color: var(--vp-c-warning-soft);
+  color: var(--vp-c-warning-1);
+  border: 1px solid var(--vp-c-warning-2);
+}
+
+.badge-deprecated {
+  background-color: var(--vp-c-danger-soft);
+  color: var(--vp-c-danger-1);
+  border: 1px solid var(--vp-c-danger-2);
+}
+
+/* ═══ Landing page ═══ */
+/* .heading wraps .name; hide it too or it occupies an empty grid row */
+.VPHero .heading,
+.VPHero .name,
+.VPHero .tagline,
+.VPHero .actions {
+  display: none !important;
+}
+
+.VPHero .container {
+  max-width: 1120px !important;
+}
+
+.VPHero .main {
+  display: grid !important;
+  grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
+  gap: 56px;
+  align-items: center;
+}
+
+.VPHero .text {
+  max-width: none !important;
+}
+
+.VPContent.is-home,
+.VPHome {
+  overflow-x: hidden;
+}
+
+.hero-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.landing-kicker {
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem !important;
+  line-height: 1.3 !important;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+}
+
+.landing-kicker::before {
+  content: "";
+  display: inline-block;
+  width: 24px;
+  height: 1px;
+  margin-right: 10px;
+  vertical-align: middle;
+  background: currentColor;
+}
+
+/* centered CTA — no leading dash */
+.landing-cta .landing-kicker::before {
+  display: none;
+}
+
+/* Big brand lockup — same composition as the navbar brand, scaled up.
+   The navbar copy stays hidden until this scrolls past (see .hide-nav-brand). */
+.hero-lockup {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.hero-lockup .chef-logo {
+  width: auto;
+  height: clamp(64px, 9vw, 96px);
+  filter: drop-shadow(0 12px 34px rgba(139, 34, 82, 0.16));
+}
+
+.lockup-word {
+  font-family: "Roc Grotesk", sans-serif;
+  font-size: clamp(1.8rem, 3.2vw, 2.5rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--vp-c-text-1);
+  white-space: nowrap;
+}
+
+.hero-lockup .chef-logo-dark {
+  display: none;
+}
+
+.dark .hero-lockup .chef-logo-light {
+  display: none;
+}
+
+.dark .hero-lockup .chef-logo-dark {
+  display: inline;
+}
+
+.hero-copy h1 {
+  margin: 22px 0 0;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(2.9rem, 5vw, 4rem);
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.05;
+  letter-spacing: 0;
+  color: var(--vp-c-brand-1);
+  text-wrap: balance;
+}
+
+.hero-copy p {
+  max-width: min(42ch, 100%);
+  margin: 22px 0 0;
+  color: var(--vp-c-text-2);
+  font-size: 1.1rem;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+
+.hero-right {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.hero-terminal {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 22px 48px -28px rgba(0, 0, 0, 0.5);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.82rem;
+}
+
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-mute);
+}
+
+.terminal-bar span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.terminal-bar span:nth-child(1) {
+  background: var(--vp-c-danger-1);
+}
+
+.terminal-bar span:nth-child(2) {
+  background: var(--vp-c-warning-1);
+}
+
+.terminal-bar span:nth-child(3) {
+  background: var(--vp-c-success-1);
+}
+
+.terminal-bar strong {
+  margin-left: auto;
+  margin-right: auto;
+  color: var(--vp-c-text-3);
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+}
+
+.terminal-body {
+  padding: 18px 20px;
+  color: var(--vp-c-text-1);
+  line-height: 1.75;
+  white-space: nowrap;
+  overflow: auto;
+}
+
+.terminal-body .prompt {
+  color: var(--vp-c-brand-1);
+}
+
+.terminal-body .ok {
+  color: var(--vp-c-success-1);
+}
+
+.terminal-body .key {
+  color: var(--vp-c-warning-1);
+}
+
+.terminal-body .dim {
+  color: var(--vp-c-text-3);
+}
+
+.hero-install {
+  align-items: stretch;
+}
+
+.hero-install .install-command {
+  width: 100%;
+  justify-content: space-between;
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+
+.hero-install .install-copy {
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero-install .install-alt {
+  align-self: flex-start;
+}
+
+.VPHome .vp-doc {
+  max-width: none;
+  padding: 0 24px 80px;
+}
+
+.landing-page {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.landing-section {
+  margin-top: 76px;
+}
+
+.landing-metaphor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
+  gap: 64px;
+  align-items: center;
+  padding-top: 72px;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.landing-section h2 {
+  margin: 12px 0 0;
+  /* reset vp-doc h2 defaults (top border + padding) on landing headings */
+  border-top: 0;
+  padding-top: 0;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--vp-c-brand-1);
+  text-wrap: balance;
+}
+
+.landing-aube h2,
+.landing-cta h2 {
+  text-wrap: balance;
+}
+
+.landing-section p {
+  color: var(--vp-c-text-2);
+}
+
+.landing-definition {
+  margin-top: 24px;
+  padding: 22px;
+  border-left: 2px solid var(--vp-c-brand-1);
+  border-radius: 0 8px 8px 0;
+  background: var(--vp-c-bg-soft);
+}
+
+.definition-word {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 1.7rem;
+  font-style: italic;
+  color: var(--vp-c-text-1);
+}
+
+.definition-word span {
+  margin-left: 8px;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.8rem;
+  color: var(--vp-c-text-3);
+}
+
+/* Syntax-highlighted mise.toml example — wrap the VitePress code block
+   in the brand-accent panel and let Shiki color the tokens. */
+.landing-config .language-toml {
+  margin: 0;
+  border: 1px solid var(--vp-c-divider);
+  border-left: 2px solid var(--vp-c-brand-1);
+  border-radius: 0 8px 8px 0;
+  background: var(--vp-c-bg-soft);
+}
+
+.landing-config .language-toml pre {
+  margin: 0;
+  padding: 22px;
+  overflow: auto;
+  background: transparent;
+}
+
+.landing-config .language-toml code {
+  padding: 0;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.88rem;
+  line-height: 1.8;
+}
+
+/* The lang label just repeats "toml"; the copy button is enough */
+.landing-config .language-toml > .lang {
+  display: none;
+}
+
+.landing-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 34px;
+}
+
+.landing-small-button,
+.landing-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  color: var(--vp-c-text-1);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.landing-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.landing-feature-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 28px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  text-decoration: none !important;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.card-cmd {
+  margin: 0 0 14px;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--vp-c-text-3);
+}
+
+.landing-feature-card:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-2px);
+  box-shadow: 0 18px 44px -32px rgba(139, 34, 82, 0.45);
+}
+
+.landing-feature-card h3 {
+  margin: 0 0 10px;
+  font-family: "Roc Grotesk", sans-serif;
+  font-size: 2rem;
+  font-weight: 500;
+  line-height: 1.05;
+}
+
+.landing-feature-card p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.card-link {
+  display: inline-block;
+  /* push to the card bottom so links align across the grid */
+  margin-top: auto;
+  padding-top: 20px;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  color: var(--vp-c-brand-1);
+}
+
+.card-link::after {
+  content: "→";
+  display: inline-block;
+  margin-left: 6px;
+  transition: transform 0.2s ease;
+}
+
+.landing-feature-card:hover .card-link::after {
+  transform: translateX(3px);
+}
+
+.landing-tools {
+  width: 100vw;
+  margin: 76px calc(50% - 50vw) 0;
+  padding: 28px 24px;
+  border-top: 1px solid var(--vp-c-divider);
+  border-bottom: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-soft);
+}
+
+.landing-tools p {
+  margin: 0 0 14px;
+  text-align: center;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+}
+
+.landing-tools-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  justify-content: center;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.landing-tools-list a {
+  white-space: nowrap;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-size: 1.75rem;
+  font-weight: 300;
+  color: var(--vp-c-text-2);
+  text-decoration: none;
+}
+
+.landing-tools-list a:hover {
+  color: var(--vp-c-brand-1);
+}
+
+.landing-aube {
+  display: block;
+  margin: 48px auto 0;
+  padding: 28px;
+  border: 1px solid rgba(107, 127, 78, 0.35);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(107, 127, 78, 0.12), transparent 44%),
+    var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  text-decoration: none !important;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.landing-aube:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-2px);
+  box-shadow: 0 18px 44px -32px rgba(107, 127, 78, 0.55);
+}
+
+.dark .landing-aube {
+  background:
+    linear-gradient(135deg, rgba(143, 168, 110, 0.14), transparent 48%),
+    var(--vp-c-bg-soft);
+  border-color: rgba(143, 168, 110, 0.35);
+}
+
+.landing-aube h2 {
+  margin: 12px 0 0;
+  /* reset vp-doc h2 defaults (top border + padding) inside the card */
+  border-top: 0;
+  padding-top: 0;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(2.2rem, 4vw, 3.4rem);
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--vp-c-brand-1);
+}
+
+.landing-aube p:not(.landing-kicker) {
+  max-width: 58ch;
+  margin: 16px 0 0;
+  color: var(--vp-c-text-2);
+}
+
+.landing-recipe-grid {
+  display: grid;
+  position: relative;
+  grid-template-columns: 260px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}
+
+.landing-mini-install {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 16px;
+  overflow: auto;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-1);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.88rem;
+}
+
+/* strip VitePress's inline-code pill so it doesn't box-in-a-box
+   (needs .landing-page to outweigh `.vp-doc :not(pre) > code`) */
+.landing-page .landing-mini-install code {
+  padding: 0 !important;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit !important;
+}
+
+.landing-quickstart {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 48px;
+}
+
+.recipe-steps {
+  /* distribute the four labels over the full panel height */
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-right: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-soft);
+}
+
+.recipe-tab-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.recipe-step {
+  display: flex;
+  flex: 1;
+  gap: 12px;
+  align-items: center;
+  margin: 0;
+  padding: 14px 18px;
+  border-left: 2px solid transparent;
+  color: var(--vp-c-text-2);
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.recipe-step:hover {
+  background: color-mix(in srgb, var(--vp-c-brand-1) 8%, transparent);
+  color: var(--vp-c-text-1);
+}
+
+#recipe-tab-1:checked ~ .recipe-steps .recipe-step-1,
+#recipe-tab-2:checked ~ .recipe-steps .recipe-step-2,
+#recipe-tab-3:checked ~ .recipe-steps .recipe-step-3,
+#recipe-tab-4:checked ~ .recipe-steps .recipe-step-4 {
+  border-left: 2px solid var(--vp-c-brand-1);
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-1);
+}
+
+.recipe-steps span {
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem;
+  color: var(--vp-c-text-3);
+}
+
+.recipe-panel {
+  display: none;
+  height: 100%;
+}
+
+#recipe-tab-1:checked ~ .landing-code .recipe-panel-1,
+#recipe-tab-2:checked ~ .landing-code .recipe-panel-2,
+#recipe-tab-3:checked ~ .landing-code .recipe-panel-3,
+#recipe-tab-4:checked ~ .landing-code .recipe-panel-4 {
+  display: block;
+}
+
+/* Quickstart transcripts reuse the hero terminal's palette
+   (.terminal-body .prompt/.dim/.ok/.key) for one coherent look. */
+.landing-code .terminal-body {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 280px;
+  padding: 24px;
+  background: var(--vp-code-block-bg);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.88rem;
+  line-height: 1.8;
+}
+
+.landing-cta {
+  padding: 64px 28px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background:
+    radial-gradient(600px 260px at 50% 0%, rgba(139, 34, 82, 0.14), transparent),
+    var(--vp-c-bg-soft);
+  text-align: center;
+}
+
+.landing-cta h2 {
+  color: var(--vp-c-text-1);
+  font-family: "Roc Grotesk", sans-serif;
+  font-style: normal;
+  /* reset vp-doc h2 defaults (top border + margin) inside the card */
+  margin: 12px 0 24px;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.landing-cta h2 em {
+  color: var(--vp-c-brand-1);
+}
+
+.landing-cta .landing-mini-install {
+  max-width: 460px;
+  margin: 0 auto;
+  justify-content: center;
+}
+
+.landing-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 22px;
+}
+
+@media (max-width: 960px) {
+  .VPHero .main,
+  .landing-metaphor,
+  .landing-quickstart,
+  .landing-recipe-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .landing-feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-steps {
+    border-right: 0;
+    border-bottom: 1px solid var(--vp-c-divider);
+  }
+
+  .landing-section-heading {
+    display: block;
+  }
+}
+
+@media (max-width: 640px) {
+  .VPHero {
+    padding-top: calc(
+      var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 42px
+    ) !important;
+    padding-bottom: 48px !important;
+  }
+
+  .VPHero .container {
+    padding-right: 24px !important;
+    padding-left: 24px !important;
+  }
+
+  .hero-copy h1 {
+    font-size: 2.4rem;
+  }
+
+  .landing-section h2 {
+    font-size: 2.2rem;
+  }
+
+  .hero-lockup .chef-logo {
+    height: 52px;
+  }
+
+  .lockup-word {
+    font-size: 1.5rem;
+  }
+
+  /* panels hold 3-5 lines; don't reserve desktop height on phones */
+  .landing-code .terminal-body {
+    min-height: 180px;
+  }
+
+  .hero-copy p {
+    font-size: 1rem;
+    max-width: 30ch;
+  }
+
+  .terminal-body {
+    font-size: 0.76rem;
+  }
+
+  .landing-section {
+    margin-top: 54px;
+  }
+
+  .landing-aube {
+    margin-top: 40px;
+    padding: 22px;
+  }
+
+  .landing-metaphor {
+    padding-top: 48px;
+  }
+}

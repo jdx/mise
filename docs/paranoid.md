@@ -21,17 +21,26 @@ $ mise install
 mise ~/src/mise/.tool-versions is not trusted. Trust it [y/n]?
 ```
 
-Generally only potentially dangerous config files are checked such as files
-that use templates (which can execute arbitrary code) or that set env vars.
-Under paranoid, however, all config files must be trusted first.
+In normal mode, mise checks trust before parsing `mise.toml` files because they
+can contain behavior that executes code or affects the environment. Some
+discovery paths that look at previously tracked configs may skip untrusted files
+instead of prompting. Commands that directly need an untrusted config, such as
+`mise lock`, can fail with an untrusted-config error when mise cannot prompt.
+When mise detects that it is running in CI, configs are assumed to be trusted
+unless paranoid mode is enabled.
+
+Under paranoid, all config files must be trusted first, including formats that
+normally do not require trust.
 
 Also, in normal mode, a config file only needs to be trusted a single time.
 In paranoid, the contents of the file are hashed to check if the file changes.
 If you change your config file, you'll need to trust it again.
 
+Note that global and system config files (e.g., `~/.config/mise/config.toml`) are implicitly trusted and exempt from this check. This allows paranoid mode to be enabled in a global config without requiring a trust prompt for that file itself.
+
 ## Community plugins
 
-Community plugins can not be directly installed via short-name under paranoid.
+Community plugins cannot be directly installed via short-name under paranoid.
 You can install plugins that are either core, maintained by the mise team,
 or plugins that mise has marked as "first-party"—meaning plugins developed by
 the same team that builds the tool the plugin installs.
@@ -53,6 +62,27 @@ malicious actor injecting false data would not introduce a security risk.
 Normally mise uses HTTP because loading the TLS module takes about 10ms and this
 affects commonly used commands so it is a noticeably delay.
 In paranoid mode, all endpoints will be fetched over HTTPS.
+
+## Provenance re-verification
+
+Normally, when a lockfile contains both a checksum and a provenance entry for a tool,
+`mise install` trusts the lockfile and skips provenance re-verification to avoid
+redundant API calls (e.g., to GitHub). This is safe when you trust the lockfile was
+generated correctly.
+
+In paranoid mode, `mise install` always re-verifies provenance (SLSA, cosign, minisign,
+GitHub artifact attestations) at install time, even when the lockfile already has a
+provenance entry. This ensures that cryptographic verification happens on every install,
+not just when the lockfile is first generated.
+
+This behavior can also be enabled independently via the
+[`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance) setting.
+
+## See also
+
+[Safe mode](/security.html#safe-mode) (`MISE_SAFE=1`) is a related but distinct control: where
+paranoid tightens _trust_ (which configs are loaded and re-verified), safe mode is a hard boundary
+on _code execution_ for running mise against configuration you do not control.
 
 ## More?
 

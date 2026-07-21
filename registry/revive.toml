@@ -1,0 +1,2 @@
+backends = ["aqua:mgechev/revive", "asdf:bjw-s/asdf-revive"]
+description = "~6x faster, stricter, configurable, extensible, and beautiful drop-in replacement for golint"

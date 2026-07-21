@@ -1,0 +1,3 @@
+backends = ["aqua:charmbracelet/crush"]
+description = "The glamourous AI coding agent for your favourite terminal"
+test = { cmd = "crush --version", expected = "v{{version}}" }

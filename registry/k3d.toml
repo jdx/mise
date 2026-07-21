@@ -1,0 +1,3 @@
+backends = ["aqua:k3d-io/k3d", "asdf:spencergilbert/asdf-k3d"]
+description = "Little helper to run CNCF's k3s in Docker"
+test = { cmd = "k3d --version", expected = "k3d version v{{version}}" }

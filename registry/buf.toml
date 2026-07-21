@@ -1,0 +1,3 @@
+backends = ["aqua:bufbuild/buf", "asdf:truepay/asdf-buf"]
+description = "The best way of working with Protocol Buffers"
+test = { cmd = "buf --version", expected = "{{version}}" }

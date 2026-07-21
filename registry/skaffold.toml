@@ -1,0 +1,5 @@
+backends = [
+  "aqua:GoogleContainerTools/skaffold",
+  "asdf:nklmilojevic/asdf-skaffold",
+]
+description = "Easy and Repeatable Kubernetes Development"

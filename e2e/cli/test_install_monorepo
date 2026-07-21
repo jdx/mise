@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=dummy
+
+rm -rf "$MISE_DATA_DIR/plugins/tiny"
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
+
+echo "=== install --monorepo installs every configured root ==="
+mkdir -p monorepo/packages/a monorepo/packages/b monorepo/packages/c
+cat >monorepo/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+cat >monorepo/packages/a/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+cat >monorepo/packages/b/mise.toml <<'EOF'
+[tools]
+tiny = "2.1.0"
+dummy = "1.0.0"
+EOF
+echo "2" >monorepo/packages/c/.dummy-version
+
+assert "cd monorepo && mise install --monorepo"
+assert "test -d '$MISE_DATA_DIR/installs/tiny/1.0.0'"
+assert "test -d '$MISE_DATA_DIR/installs/tiny/2.1.0'"
+assert "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+assert "test -d '$MISE_DATA_DIR/installs/dummy/2.0.0'"
+
+echo "=== install --monorepo TOOL filters across roots ==="
+rm -rf "$MISE_DATA_DIR/installs/tiny" "$MISE_DATA_DIR/installs/dummy"
+assert "cd monorepo && mise install --monorepo tiny"
+assert "test -d '$MISE_DATA_DIR/installs/tiny/1.0.0'"
+assert "test -d '$MISE_DATA_DIR/installs/tiny/2.1.0'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/tiny/3.1.0'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/2.0.0'"
+
+echo "=== ls --monorepo includes every configured root ==="
+output=$(cd monorepo && mise ls --monorepo 2>&1)
+assert_contains "echo '$output'" "tiny"
+assert_contains "echo '$output'" "1.0.0"
+assert_contains "echo '$output'" "2.1.0"
+assert_contains "echo '$output'" "dummy"
+assert_contains "echo '$output'" "2.0.0"
+
+echo "=== ls --monorepo rejects modes that bypass monorepo union ==="
+assert_fail_contains "cd monorepo && mise ls --monorepo --prunable 2>&1" "cannot be used with"
+assert_fail_contains "cd monorepo && mise ls --monorepo --all-sources 2>&1" "cannot be used with"
+
+echo "=== --monorepo requires monorepo_root and explicit config_roots ==="
+mkdir -p outside no-roots empty-roots
+cat >no-roots/mise.toml <<'EOF'
+monorepo_root = true
+EOF
+cat >empty-roots/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+assert_fail_contains "cd outside && mise install --monorepo 2>&1" "monorepo_root = true"
+assert_fail_contains "cd no-roots && mise install --monorepo 2>&1" "[monorepo].config_roots is required"
+assert_fail_contains "cd empty-roots && mise install --monorepo 2>&1" "did not match any config roots"
+
+echo "=== deferred --monorepo commands are explicit stubs ==="
+assert_fail_contains "cd monorepo && mise upgrade --monorepo 2>&1" "not implemented"
+assert_fail_contains "cd monorepo && mise prune --monorepo 2>&1" "not implemented"
+assert_fail_contains "cd monorepo && mise outdated --monorepo 2>&1" "not implemented"

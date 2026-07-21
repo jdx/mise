@@ -22,8 +22,22 @@ else
   }
 fi
 
+warn() {
+  printf '%s\n' "$*" >&2
+}
+
 error() {
   echo "$@" >&2
+  exit 1
+}
+
+unsupported_arch() {
+  arch="$1"
+  warn "unsupported architecture: $arch"
+  warn ""
+  warn "mise does not provide prebuilt binaries for this platform."
+  warn "If Rust/Cargo is available, install from source with:"
+  warn "  cargo install --locked mise"
   exit 1
 }
 #endregion
@@ -43,9 +57,16 @@ get_os() {
 get_arch() {
   musl=""
   if type ldd >/dev/null 2>/dev/null; then
-    libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
-    if [ -n "$libc" ]; then
+    if [ "${MISE_INSTALL_MUSL-}" = "1" ] || [ "${MISE_INSTALL_MUSL-}" = "true" ]; then
       musl="-musl"
+    elif [ "$(uname -o)" = "Android" ]; then
+      # Android (Termux) always uses musl
+      musl="-musl"
+    else
+      libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
+      if [ -n "$libc" ]; then
+        musl="-musl"
+      fi
     fi
   fi
   arch="$(uname -m)"
@@ -56,7 +77,7 @@ get_arch() {
   elif [ "$arch" = armv7l ]; then
     echo "armv7$musl"
   else
-    error "unsupported architecture: $arch"
+    unsupported_arch "$arch"
   fi
 }
 
@@ -68,18 +89,24 @@ get_ext() {
     echo "tar.gz"
   elif tar_supports_zstd; then
     echo "tar.zst"
-  elif command -v zstd >/dev/null 2>&1; then
-    echo "tar.zst"
   else
     echo "tar.gz"
   fi
 }
 
 tar_supports_zstd() {
-  # tar is bsdtar or version is >= 1.31
-  if tar --version | grep -q 'bsdtar' && command -v zstd >/dev/null 2>&1; then
+  if ! command -v zstd >/dev/null 2>&1; then
+    false
+  # tar is bsdtar
+  elif tar --version | grep -q 'bsdtar'; then
     true
-  elif tar --version | grep -q '1\.(3[1-9]|[4-9][0-9]'; then
+  # busybox tar reports a "1.3x" version that matches the GNU check below, but it
+  # cannot decompress .tar.zst itself. Detect it so we fall back to the zstd pipe
+  # (or a .tar.gz download) instead of running `tar -xf` on a zstd tarball.
+  elif tar --version 2>&1 | grep -qi 'busybox'; then
+    false
+  # tar version is >= 1.31
+  elif tar --version | grep -q '1\.\(3[1-9]\|[4-9][0-9]\)'; then
     true
   else
     false
@@ -98,14 +125,16 @@ shasum_bin() {
 
 get_checksum() {
   version=$1
-  os="$(get_os)"
-  arch="$(get_arch)"
-  ext="$(get_ext)"
+  os=$2
+  arch=$3
+  ext=$4
   url="https://github.com/jdx/mise/releases/download/v${version}/SHASUMS256.txt"
+  current_version="$MISE_CURRENT_VERSION"
+  current_version="${current_version#v}"
 
   # For current version use static checksum otherwise
   # use checksum from releases
-  if [ "$version" = "$MISE_CURRENT_VERSION" ]; then
+  if [ "$version" = "$current_version" ]; then
     checksum_linux_x86_64="$MISE_CHECKSUM_LINUX_X86_64"
     checksum_linux_x86_64_musl="$MISE_CHECKSUM_LINUX_X86_64_MUSL"
     checksum_linux_arm64="$MISE_CHECKSUM_LINUX_ARM64"
@@ -124,7 +153,7 @@ get_checksum() {
     checksum_macos_arm64_zstd="$MISE_CHECKSUM_MACOS_ARM64_ZSTD"
 
     # TODO: refactor this, it's a bit messy
-    if [ "$(get_ext)" = "tar.zst" ]; then
+    if [ "$ext" = "tar.zst" ]; then
       if [ "$os" = "linux" ]; then
         if [ "$arch" = "x64" ]; then
           echo "$checksum_linux_x86_64_zstd"
@@ -188,7 +217,6 @@ get_checksum() {
     else
       if command -v wget >/dev/null 2>&1; then
         debug ">" wget -qO - "$url"
-        stderr=$(mktemp)
         checksums="$(wget -qO - "$url")"
       else
         error "mise standalone install specific version requires curl or wget but neither is installed. Aborting."
@@ -209,9 +237,9 @@ get_checksum() {
 
 download_file() {
   url="$1"
+  download_dir="$2"
   filename="$(basename "$url")"
-  cache_dir="$(mktemp -d)"
-  file="$cache_dir/$filename"
+  file="$download_dir/$filename"
 
   info "mise: installing mise..."
 
@@ -223,6 +251,7 @@ download_file() {
       debug ">" wget -qO "$file" "$url"
       stderr=$(mktemp)
       wget -O "$file" "$url" >"$stderr" 2>&1 || error "wget failed: $(cat "$stderr")"
+      rm "$stderr"
     else
       error "mise standalone install requires curl or wget but neither is installed. Aborting."
     fi
@@ -231,32 +260,81 @@ download_file() {
   echo "$file"
 }
 
+# Prints the version of an installed mise binary (the first field of
+# `mise version`, e.g. "2025.6.0"), with any leading "v" stripped. Prints
+# nothing if the binary is missing or fails to report a version.
+installed_mise_version() {
+  bin="$1"
+  if [ -x "$bin" ]; then
+    installed_version="$("$bin" version 2>/dev/null | head -n1 | cut -d' ' -f1)"
+    echo "${installed_version#v}"
+  fi
+}
+
 install_mise() {
   version="${MISE_VERSION:-$MISE_CURRENT_VERSION}"
   version="${version#v}"
-  os="$(get_os)"
-  arch="$(get_arch)"
-  ext="$(get_ext)"
+  current_version="$MISE_CURRENT_VERSION"
+  current_version="${current_version#v}"
+  os="${MISE_INSTALL_OS:-$(get_os)}"
+  arch="${MISE_INSTALL_ARCH:-$(get_arch)}"
+  ext="${MISE_INSTALL_EXT:-$(get_ext)}"
   install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
   install_dir="$(dirname "$install_path")"
-  tarball_url="https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-${os}-${arch}.${ext}"
+  install_from_github="${MISE_INSTALL_FROM_GITHUB:-}"
 
-  cache_file=$(download_file "$tarball_url")
+  # Opt-in: skip the download/install if the binary already at the install
+  # path matches the requested version. Only the install path is checked (not
+  # the wider PATH) so that skipping never leaves install_path missing.
+  skip_if_exists="${MISE_INSTALL_SKIP_IF_EXISTS-}"
+  if [ "$skip_if_exists" = "1" ] || [ "$skip_if_exists" = "true" ]; then
+    if [ -x "$install_path" ]; then
+      existing_version="$(installed_mise_version "$install_path")"
+      if [ -n "$existing_version" ] && [ "$existing_version" = "$version" ]; then
+        info "mise: $install_path is already at version $version, skipping install"
+        return 0
+      fi
+    fi
+  fi
+  if [ "$version" != "$current_version" ] || [ "$install_from_github" = "1" ] || [ "$install_from_github" = "true" ]; then
+    tarball_url="https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-${os}-${arch}.${ext}"
+  elif [ -n "${MISE_TARBALL_URL-}" ]; then
+    tarball_url="$MISE_TARBALL_URL"
+  else
+    tarball_url="https://mise.jdx.dev/v${version}/mise-v${version}-${os}-${arch}.${ext}"
+  fi
+
+  download_dir="$(mktemp -d)"
+  cache_file=$(download_file "$tarball_url" "$download_dir")
   debug "mise-setup: tarball=$cache_file"
 
   debug "validating checksum"
-  cd "$(dirname "$cache_file")" && get_checksum "$version" | "$(shasum_bin)" -c >/dev/null
+  cd "$(dirname "$cache_file")" && get_checksum "$version" "$os" "$arch" "$ext" | "$(shasum_bin)" -c >/dev/null
 
   # extract tarball
+  if [ -d "$install_path" ]; then
+    error "MISE_INSTALL_PATH '$install_path' is a directory. Please set it to a file path, e.g. '$install_path/mise'."
+  fi
   mkdir -p "$install_dir"
-  rm -rf "$install_path"
-  cd "$(mktemp -d)"
-  if [ "$(get_ext)" = "tar.zst" ] && ! tar_supports_zstd; then
-    zstd -d -c "$cache_file" | tar -xf -
+  rm -f "$install_path"
+  extract_dir="$(mktemp -d)"
+  cd "$extract_dir"
+  if [ "$ext" = "tar.zst" ] && ! tar_supports_zstd; then
+    zstd -d -c "$cache_file" | tar --no-same-owner -xf -
   else
-    tar -xf "$cache_file"
+    tar --no-same-owner -xf "$cache_file"
+  fi
+  if [ "$(id -u)" = "0" ]; then
+    chown 0:0 mise/bin/mise
+    chmod 755 mise/bin/mise
   fi
   mv mise/bin/mise "$install_path"
+
+  # cleanup
+  cd / # Move out of $extract_dir before removing it
+  rm -rf "$download_dir"
+  rm -rf "$extract_dir"
+
   info "mise: installed successfully to $install_path"
 }
 
@@ -266,19 +344,19 @@ after_finish_help() {
     info "mise: run the following to activate mise in your shell:"
     info "echo \"eval \\\"\\\$($install_path activate zsh)\\\"\" >> \"${ZDOTDIR-$HOME}/.zshrc\""
     info ""
-    info "mise: run \`mise doctor\` to verify this is setup correctly"
+    info "mise: run \`mise doctor\` to verify this is set up correctly"
     ;;
   */bash)
     info "mise: run the following to activate mise in your shell:"
     info "echo \"eval \\\"\\\$($install_path activate bash)\\\"\" >> ~/.bashrc"
     info ""
-    info "mise: run \`mise doctor\` to verify this is setup correctly"
+    info "mise: run \`mise doctor\` to verify this is set up correctly"
     ;;
   */fish)
     info "mise: run the following to activate mise in your shell:"
     info "echo \"$install_path activate fish | source\" >> ~/.config/fish/config.fish"
     info ""
-    info "mise: run \`mise doctor\` to verify this is setup correctly"
+    info "mise: run \`mise doctor\` to verify this is set up correctly"
     ;;
   *)
     info "mise: run \`$install_path --help\` to get started"

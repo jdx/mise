@@ -9,17 +9,19 @@ impl EnvResults {
     #[allow(clippy::too_many_arguments)]
     pub fn source(
         ctx: &mut tera::Context,
-        tera: &mut tera::Tera,
+        tera: &mut Option<crate::tera::TeraEngine>,
         paths: &mut Vec<(PathBuf, PathBuf)>,
         r: &mut EnvResults,
         normalize_path: fn(&Path, PathBuf) -> PathBuf,
         source: &Path,
+        exec_env: &EnvMap,
         config_root: &Path,
         env_vars: &EnvMap,
         input: String,
     ) -> Result<IndexMap<PathBuf, IndexMap<String, String>>> {
+        crate::config::Settings::ensure_not_safe("sourcing scripts via `_.source`")?;
         let mut out = IndexMap::new();
-        let s = r.parse_template(ctx, tera, source, &input)?;
+        let s = r.parse_template(ctx, tera, source, exec_env, &input)?;
         let orig_path = env_vars.get(&*env::PATH_KEY).cloned().unwrap_or_default();
         let mut env_diff_opts = EnvDiffOptions::default();
         env_diff_opts.ignore_keys.shift_remove(&*env::PATH_KEY); // allow modifying PATH
@@ -37,6 +39,9 @@ impl EnvResults {
                             // TODO: perhaps deal with path removals as well
                             if let Some(new_path) = v.strip_suffix(&orig_path) {
                                 for p in env::split_paths(new_path) {
+                                    if p.as_os_str().is_empty() {
+                                        continue;
+                                    }
                                     paths.push((p, source.to_path_buf()));
                                 }
                             }

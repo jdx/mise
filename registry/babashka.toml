@@ -1,0 +1,8 @@
+description = "Native, fast starting Clojure interpreter for scripting"
+test = { cmd = "bb --version", expected = "babashka v{{version}}" }
+
+[[backends]]
+full = "github:babashka/babashka"
+
+[[backends]]
+full = "asdf:pitch-io/asdf-babashka"

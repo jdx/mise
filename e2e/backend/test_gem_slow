@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 
+export MISE_RUBY_COMPILE=true
 mise use ruby
 assert "mise x gem:rubocop@1.69.0 -- rubocop --version" "1.69.0"

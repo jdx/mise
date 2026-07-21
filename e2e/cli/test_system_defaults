@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[bootstrap.macos.defaults]
+NSGlobalDomain = { KeyRepeat = 2 }
+"com.apple.dock" = { autohide = true, tilesize = 48, orientation = "left" }
+
+[bootstrap.macos.dock]
+show_recents = false
+
+[bootstrap.macos.finder]
+show_all_files = true
+preferred_view_style = "list"
+
+[bootstrap.macos.keyboard]
+initial_key_repeat = 15
+
+[bootstrap.macos.trackpad]
+tap_to_click = true
+EOF
+
+# status renders on any platform; on non-macOS entries are skipped, not errors
+assert_succeed "mise bootstrap macos defaults status"
+assert_contains "mise bootstrap macos defaults status" "com.apple.dock"
+assert_contains "mise bootstrap macos defaults status" "show-recents"
+assert_contains "mise bootstrap macos defaults status" "AppleShowAllFiles"
+assert_contains "mise bootstrap macos defaults status" "InitialKeyRepeat"
+assert_contains "mise bootstrap macos defaults status" "Clicking"
+assert_contains "mise bootstrap macos defaults status --json" '"macos_defaults"'
+if [[ $(uname) != "Darwin" ]]; then
+  assert_contains "mise bootstrap macos defaults status" "skipped"
+  assert_contains "mise bootstrap macos defaults status --json" '"available": false'
+  # unavailable entries don't count as missing (cross-platform configs)
+  assert_succeed "mise bootstrap macos defaults status --missing"
+  # install skips defaults silently off-macOS
+  assert_succeed "mise bootstrap macos defaults apply --yes"
+fi
+
+# dry-run never writes anything
+assert_succeed "mise bootstrap macos defaults apply --dry-run --yes"
+
+# unsupported value types warn but don't fail
+cat <<EOF >mise.toml
+[bootstrap.macos.defaults]
+"com.apple.dock" = { future-array = [1, 2] }
+EOF
+assert_succeed "mise bootstrap macos defaults status"
+assert_contains "mise bootstrap macos defaults status 2>&1" "unsupported value type"
+
+# a domain entry that isn't a table warns but doesn't fail
+cat <<EOF >mise.toml
+[bootstrap.macos.defaults]
+autohide = true
+EOF
+assert_succeed "mise bootstrap macos defaults status"
+assert_contains "mise bootstrap macos defaults status 2>&1" "expected a table"
+
+# friendly defaults validate keys and enum values
+cat <<EOF >mise.toml
+[bootstrap.macos.dock]
+orientation = "top"
+future_key = true
+
+[bootstrap.macos.finder]
+preferred_view_style = "coverflow"
+EOF
+assert_succeed "mise bootstrap macos defaults status"
+assert_contains "mise bootstrap macos defaults status 2>&1" "invalid value"
+assert_contains "mise bootstrap macos defaults status 2>&1" "unknown key"
+
+# empty [bootstrap.macos.defaults] section
+cat <<EOF >mise.toml
+[bootstrap.macos.defaults]
+EOF
+assert_succeed "mise bootstrap macos defaults status"
+
+if [[ $(uname) == "Darwin" ]]; then
+  # status must not fail when keys don't exist yet (initial setup)
+  cat <<EOF >mise.toml
+[bootstrap.macos.defaults]
+NSGlobalDomain = { "_mise_test_nonexistent_key_42" = true }
+"com.mise.nonexistent" = { TestKey = true }
+EOF
+  assert_succeed "mise bootstrap macos defaults status"
+  assert_contains "mise bootstrap macos defaults status" "unset"
+  # dry-run must not fail either
+  assert_succeed "mise bootstrap macos defaults apply --dry-run --yes"
+fi

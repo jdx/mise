@@ -1,0 +1,3 @@
+backends = ["aqua:tstack/lnav"]
+description = "Log file navigator"
+test = { cmd = "lnav --version", expected = "lnav {{version}}" }

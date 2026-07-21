@@ -2,59 +2,230 @@ use eyre::{WrapErr, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
+use serde::Deserialize;
 use serde::de::Visitor;
 use serde::{Deserializer, de};
-use serde_derive::Deserialize;
-use std::collections::{BTreeMap, HashMap};
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::{Mutex, MutexGuard},
+};
 use tera::Context as TeraContext;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::config_file::toml::deserialize_arr;
-use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
-use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+use crate::config::config_file::{
+    ConfigFile, TaskConfig, config_trust_root, is_ignored, trust, trust_check,
+};
+use crate::config::config_file::{config_root, toml::deserialize_arr};
+use crate::config::env_directive::{
+    AgeFormat, EnvDirective, EnvDirectiveOptions, EnvValue, RequiredValue,
+};
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap};
+use crate::config::{Alias, AliasMap, Config, Settings};
+use crate::deps::DepsConfig;
+use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
-use crate::hooks::{Hook, Hooks};
+use crate::hooks::{Hook, HookDef, Hooks};
+use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
-use crate::task::Task;
-use crate::tera::{BASE_CONTEXT, get_tera};
+use crate::system::{BootstrapTomlConfig, DotfilesTomlConfig};
+use crate::task::{Task, TaskTemplate};
+use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
 use crate::watch_files::WatchFile;
-use crate::{dirs, file};
+use crate::{env, file};
 
-use super::config_root;
+use super::diagnostic::toml_parse_error;
+use super::min_version::MinVersionSpec;
+
+const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
+const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
+
+/// Convert a `toml::Value` to a `toml_edit::Value` for serialization.
+fn toml_value_to_edit(v: toml::Value) -> Value {
+    match v {
+        toml::Value::String(s) => Value::from(s),
+        toml::Value::Integer(i) => Value::from(i),
+        toml::Value::Float(f) => Value::from(f),
+        toml::Value::Boolean(b) => Value::from(b),
+        toml::Value::Datetime(dt) => {
+            // Parse the datetime string back into a toml_edit datetime
+            dt.to_string()
+                .parse::<toml_edit::Datetime>()
+                .map(Value::from)
+                .unwrap_or_else(|_| Value::from(dt.to_string()))
+        }
+        toml::Value::Array(arr) => {
+            let mut edit_arr = Array::new();
+            for item in arr {
+                edit_arr.push(toml_value_to_edit(item));
+            }
+            Value::Array(edit_arr)
+        }
+        toml::Value::Table(table) => {
+            let mut edit_table = InlineTable::new();
+            for (k, v) in table {
+                edit_table.insert(k, toml_value_to_edit(v));
+            }
+            Value::InlineTable(edit_table)
+        }
+    }
+}
+
+fn normalize_option_template_value(value: toml::Value) -> toml::Value {
+    match value {
+        toml::Value::String(s) => toml::Value::String(s.replace("{{version}}", "{version}")),
+        value => value,
+    }
+}
+
+fn should_normalize_option_template(key: &str) -> bool {
+    !matches!(key, "os" | "depends" | "install_env") && !key.starts_with("install_env.")
+}
+
+fn insert_tool_option<E>(
+    options: &mut ToolVersionOptions,
+    key: String,
+    value: toml::Value,
+) -> std::result::Result<(), E>
+where
+    E: de::Error,
+{
+    let value = if should_normalize_option_template(&key) {
+        normalize_option_template_value(value)
+    } else {
+        value
+    };
+    options.insert_option(key, value).map_err(de::Error::custom)
+}
+
+#[derive(Deserialize)]
+#[serde(try_from = "RawToolMap")]
+pub(crate) struct ParsedToolMap {
+    pub request: String,
+    pub options: IndexMap<String, toml::Value>,
+}
+
+#[derive(Deserialize)]
+struct RawToolMap {
+    version: Option<toml::Value>,
+    path: Option<toml::Value>,
+    prefix: Option<toml::Value>,
+    #[serde(rename = "ref")]
+    ref_: Option<toml::Value>,
+    #[serde(flatten)]
+    options: IndexMap<String, toml::Value>,
+}
+
+fn parse_tool_selector(
+    key: &'static str,
+    value: Option<toml::Value>,
+) -> std::result::Result<Option<(&'static str, String)>, String> {
+    match value {
+        Some(toml::Value::String(value)) => Ok(Some((key, value))),
+        Some(_) => Err(format!("tool selector `{key}` must be a string")),
+        None => Ok(None),
+    }
+}
+
+impl TryFrom<RawToolMap> for ParsedToolMap {
+    type Error = String;
+
+    fn try_from(raw: RawToolMap) -> std::result::Result<Self, Self::Error> {
+        let selectors = [
+            parse_tool_selector("version", raw.version)?,
+            parse_tool_selector("path", raw.path)?,
+            parse_tool_selector("prefix", raw.prefix)?,
+            parse_tool_selector("ref", raw.ref_)?,
+        ];
+        let mut selectors = selectors.into_iter().flatten();
+        let Some((key, value)) = selectors.next() else {
+            return Err(
+                "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`"
+                    .to_string(),
+            );
+        };
+        if let Some((other, _)) = selectors.next() {
+            return Err(format!(
+                "tool definition cannot specify both `{key}` and `{other}`"
+            ));
+        }
+        let request = if key == "version" {
+            value
+        } else {
+            format!("{key}:{value}")
+        };
+        Ok(Self {
+            request,
+            options: raw.options,
+        })
+    }
+}
+
+fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
+    let core = options.core;
+    if let Some(os) = core.os
+        && !os.is_empty()
+    {
+        let mut arr = Array::new();
+        for o in os {
+            arr.push(Value::from(o));
+        }
+        table.insert("os", Value::Array(arr));
+    }
+    if let Some(depends) = core.depends
+        && !depends.is_empty()
+    {
+        let mut arr = Array::new();
+        for dep in depends {
+            arr.push(Value::from(dep));
+        }
+        table.insert("depends", Value::Array(arr));
+    }
+    if !core.install_env.is_empty() {
+        let mut env = InlineTable::new();
+        for (k, v) in core.install_env {
+            env.insert(k, v.into());
+        }
+        table.insert("install_env", env.into());
+    }
+}
 
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
     #[serde(rename = "_")]
     custom: Option<toml::Value>,
-    #[serde(default, deserialize_with = "deserialize_version")]
-    min_version: Option<Versioning>,
+    #[serde(default, deserialize_with = "deserialize_min_version")]
+    min_version: Option<MinVersionSpec>,
     #[serde(skip)]
     context: TeraContext,
     #[serde(skip)]
     path: PathBuf,
-    #[serde(default, alias = "dotenv", deserialize_with = "deserialize_arr")]
+    #[serde(default, deserialize_with = "deserialize_arr")]
     env_file: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_arr")]
+    dotenv: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_root_env")]
     env: EnvList,
     #[serde(default, deserialize_with = "deserialize_arr")]
     env_path: Vec<String>,
     #[serde(default)]
     alias: AliasMap,
+    #[serde(default)]
+    tool_alias: AliasMap,
+    #[serde(default)]
+    shell_alias: IndexMap<String, String>,
     #[serde(skip)]
-    doc: OnceCell<DocumentMut>,
+    doc: Mutex<OnceCell<DocumentMut>>,
     #[serde(default)]
-    hooks: IndexMap<Hooks, toml::Value>,
+    hooks: IndexMap<Hooks, HookDef>,
     #[serde(default)]
-    tools: IndexMap<BackendArg, MiseTomlToolList>,
+    tools: Mutex<IndexMap<BackendArg, MiseTomlToolList>>,
     #[serde(default)]
     plugins: HashMap<String, String>,
     #[serde(default)]
@@ -64,11 +235,30 @@ pub struct MiseToml {
     #[serde(default)]
     tasks: Tasks,
     #[serde(default)]
+    task_templates: TaskTemplates,
+    #[serde(default)]
     watch_files: Vec<WatchFile>,
     #[serde(default)]
+    deps: Option<DepsConfig>,
+    #[serde(default)]
+    oci: Option<OciConfig>,
+    #[serde(default)]
+    bootstrap: Option<BootstrapTomlConfig>,
+    #[serde(default)]
+    dotfiles: Option<DotfilesTomlConfig>,
+    #[serde(default, deserialize_with = "deserialize_vars")]
     vars: EnvList,
     #[serde(default)]
     settings: SettingsPartial,
+    /// Marks this config as a monorepo root, enabling target path syntax for tasks
+    #[serde(default)]
+    monorepo_root: Option<bool>,
+    /// Legacy name for monorepo_root, retained during its deprecation period
+    #[serde(default)]
+    experimental_monorepo_root: Option<bool>,
+    /// Configuration for monorepo task discovery
+    #[serde(default)]
+    monorepo: Option<MonorepoConfig>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -80,27 +270,90 @@ pub struct MiseTomlTool {
     pub options: Option<ToolVersionOptions>,
 }
 
-#[derive(Debug, Clone)]
-pub struct MiseTomlEnvDirective {
-    pub value: String,
-    pub options: EnvDirectiveOptions,
+fn parse_mise_toml_tool_map<E>(parsed: ParsedToolMap) -> std::result::Result<MiseTomlTool, E>
+where
+    E: de::Error,
+{
+    let tt = parsed.request.parse().map_err(de::Error::custom)?;
+    let mut options = ToolVersionOptions::default();
+    for (key, value) in parsed.options {
+        insert_tool_option(&mut options, key, value)?;
+    }
+    Ok(MiseTomlTool {
+        tt,
+        options: Some(options),
+    })
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct Tasks(pub BTreeMap<String, Task>);
 
 #[derive(Debug, Default, Clone)]
+pub struct TaskTemplates(pub IndexMap<String, TaskTemplate>);
+
+#[derive(Debug, Default, Clone)]
 pub struct EnvList(pub(crate) Vec<EnvDirective>);
 
+/// Configuration for [monorepo] section in mise.toml
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct MonorepoConfig {
+    /// Explicit list of config roots for monorepo task discovery.
+    /// Supports single-level glob patterns (*).
+    #[serde(default)]
+    pub config_roots: Vec<String>,
+    /// Use a single lockfile at the monorepo root for descendant config roots.
+    /// None follows the rollout default; true opts in, false keeps colocated locks.
+    pub lockfile: Option<bool>,
+}
+
+impl EnvList {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 impl MiseToml {
+    fn enforce_min_version_fallback(body: &str) -> eyre::Result<()> {
+        if let Ok(val) = toml::from_str::<toml::Value>(body)
+            && let Some(min_val) = val.get("min_version")
+        {
+            let mut hard_req: Option<versions::Versioning> = None;
+            let mut soft_req: Option<versions::Versioning> = None;
+            match min_val {
+                toml::Value::String(s) => {
+                    hard_req = versions::Versioning::new(s);
+                }
+                toml::Value::Table(t) => {
+                    if let Some(toml::Value::String(s)) = t.get("hard") {
+                        hard_req = versions::Versioning::new(s);
+                    }
+                    if let Some(toml::Value::String(s)) = t.get("soft") {
+                        soft_req = versions::Versioning::new(s);
+                    }
+                }
+                _ => {}
+            }
+            if let Some(spec) =
+                crate::config::config_file::min_version::MinVersionSpec::new(hard_req, soft_req)
+            {
+                crate::config::Config::enforce_min_version_spec(&spec)?;
+            }
+        }
+        Ok(())
+    }
     pub fn init(path: &Path) -> Self {
         let mut context = BASE_CONTEXT.clone();
-        context.insert("config_root", config_root(path).to_str().unwrap());
-        Self {
+        context.insert(
+            "config_root",
+            config_root::config_root(path).to_str().unwrap(),
+        );
+        let mut rf = Self {
             path: path.to_path_buf(),
             context,
             ..Default::default()
-        }
+        };
+        rf.update_context_env(env::PRISTINE_ENV.clone());
+        rf
     }
 
     pub fn from_file(path: &Path) -> eyre::Result<Self> {
@@ -109,15 +362,37 @@ impl MiseToml {
     }
 
     pub fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
-        trust_check(path)?;
+        if !Self::is_trust_exempt(body, path) {
+            trust_check(path)?;
+        }
         trace!("parsing: {}", display_path(path));
-        let des = toml::Deserializer::new(body);
-        let mut rf: MiseToml = serde_ignored::deserialize(des, |p| {
+        let des = toml::Deserializer::parse(body).map_err(|e| toml_parse_error(&e, body, path))?;
+        let de_res = serde_ignored::deserialize(des, |p| {
             warn!("unknown field in {}: {p}", display_path(path));
-        })?;
+        });
+        let mut rf: MiseToml = match de_res {
+            Ok(rf) => rf,
+            Err(err) => {
+                Self::enforce_min_version_fallback(body)?;
+                return Err(toml_parse_error(&err, body, path));
+            }
+        };
+        if let Some(legacy_monorepo_root) = rf.experimental_monorepo_root.take() {
+            deprecated_at!(
+                "2026.7.7",
+                "2027.12.0",
+                "config.experimental_monorepo_root",
+                "`experimental_monorepo_root` in {} is deprecated. Use `monorepo_root` instead.",
+                display_path(path)
+            );
+            rf.monorepo_root.get_or_insert(legacy_monorepo_root);
+        }
         rf.context = BASE_CONTEXT.clone();
-        rf.context
-            .insert("config_root", path.parent().unwrap().to_str().unwrap());
+        rf.context.insert(
+            "config_root",
+            config_root::config_root(path).to_str().unwrap(),
+        );
+        rf.update_context_env(env::PRISTINE_ENV.clone());
         rf.path = path.to_path_buf();
         let project_root = rf.project_root().map(|p| p.to_path_buf());
         for task in rf.tasks.0.values_mut() {
@@ -128,26 +403,100 @@ impl MiseToml {
         Ok(rf)
     }
 
-    fn doc(&self) -> eyre::Result<&DocumentMut> {
-        self.doc.get_or_try_init(|| {
-            let body = file::read_to_string(&self.path).unwrap_or_default();
-            Ok(body.parse()?)
-        })
+    /// Whether the config file at `path` loads without trust (see
+    /// [`Self::is_trust_exempt`]). Returns false for unreadable files and for
+    /// non-mise.toml files (e.g. `.tool-versions`), which have their own flow.
+    pub fn path_is_trust_exempt(path: &Path) -> bool {
+        file::read_to_string(path).is_ok_and(|body| Self::is_trust_exempt(&body, path))
     }
 
-    fn doc_mut(&mut self) -> eyre::Result<&mut DocumentMut> {
+    /// Whether this config body can be loaded without trusting the file.
+    ///
+    /// Safe configs cannot execute code or change mise's behavior beyond
+    /// requesting tool versions and defining tasks, so there is nothing to
+    /// gate behind a trust prompt. Anything else — env vars, hooks, settings,
+    /// aliases, templates, tool options like `postinstall`/`install_env` —
+    /// still requires trust.
+    fn is_trust_exempt(body: &str, path: &Path) -> bool {
+        if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+            return false;
+        }
+        // configs the user chose to ignore should stay unloaded rather than
+        // becoming loadable because their content happens to be safe
+        if is_ignored(&config_trust_root(path)) || is_ignored(path) {
+            return false;
+        }
+        is_safe_config_body(body)
+    }
+
+    fn doc(&self) -> eyre::Result<DocumentMut> {
+        self.doc
+            .lock()
+            .unwrap()
+            .get_or_try_init(|| {
+                let body = file::read_to_string(&self.path).unwrap_or_default();
+                Ok(body.parse()?)
+            })
+            .cloned()
+    }
+
+    fn warn_deprecated_env_keys(&self) {
+        if !self.env_file.is_empty() {
+            deprecated_at!(
+                LEGACY_ENV_KEYS_DEPRECATED_WARN_AT,
+                LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT,
+                "config.env_file",
+                "`env_file` in {} is deprecated. Use `env._.file` instead.",
+                display_path(&self.path)
+            );
+        }
+        if !self.dotenv.is_empty() {
+            deprecated_at!(
+                LEGACY_ENV_KEYS_DEPRECATED_WARN_AT,
+                LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT,
+                "config.dotenv",
+                "`dotenv` in {} is deprecated. Use `env._.file` instead.",
+                display_path(&self.path)
+            );
+        }
+        if !self.env_path.is_empty() {
+            deprecated_at!(
+                LEGACY_ENV_KEYS_DEPRECATED_WARN_AT,
+                LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT,
+                "config.env_path",
+                "`env_path` in {} is deprecated. Use `env._.path` instead.",
+                display_path(&self.path)
+            );
+        }
+    }
+
+    fn doc_mut(&self) -> eyre::Result<MutexGuard<'_, OnceCell<DocumentMut>>> {
         self.doc()?;
-        Ok(self.doc.get_mut().unwrap())
+        Ok(self.doc.lock().unwrap())
+    }
+
+    pub fn set_backend_alias(&mut self, fa: &BackendArg, to: &str) -> eyre::Result<()> {
+        self.doc_mut()?
+            .get_mut()
+            .unwrap()
+            .entry("tool_alias")
+            .or_insert_with(table)
+            .as_table_like_mut()
+            .unwrap()
+            .insert(&fa.short, value(to));
+        Ok(())
     }
 
     pub fn set_alias(&mut self, fa: &BackendArg, from: &str, to: &str) -> eyre::Result<()> {
-        self.alias
+        self.tool_alias
             .entry(fa.short.to_string())
             .or_default()
             .versions
             .insert(from.into(), to.into());
         self.doc_mut()?
-            .entry("alias")
+            .get_mut()
+            .unwrap()
+            .entry("tool_alias")
             .or_insert_with(table)
             .as_table_like_mut()
             .unwrap()
@@ -163,42 +512,90 @@ impl MiseToml {
         Ok(())
     }
 
-    pub fn remove_alias(&mut self, fa: &BackendArg, from: &str) -> eyre::Result<()> {
-        if let Some(aliases) = self
-            .doc_mut()?
-            .get_mut("alias")
-            .and_then(|v| v.as_table_mut())
-        {
-            if let Some(alias) = aliases
-                .get_mut(&fa.to_string())
-                .and_then(|v| v.as_table_mut())
-            {
-                if let Some(versions) = alias.get_mut("versions").and_then(|v| v.as_table_mut()) {
-                    versions.remove(from);
-                    if versions.is_empty() {
-                        alias.remove("versions");
-                    }
+    pub fn remove_backend_alias(&mut self, fa: &BackendArg) -> eyre::Result<()> {
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        // Remove from both tool_alias and deprecated alias sections
+        for section in ["tool_alias", "alias"] {
+            if let Some(aliases) = doc.get_mut(section).and_then(|v| v.as_table_mut()) {
+                aliases.remove(&fa.short);
+                if aliases.is_empty() {
+                    doc.as_table_mut().remove(section);
                 }
-                if alias.is_empty() {
-                    aliases.remove(&fa.to_string());
-                }
-            }
-            if aliases.is_empty() {
-                self.doc_mut()?.as_table_mut().remove("alias");
             }
         }
-        if let Some(aliases) = self.alias.get_mut(&fa.short) {
-            aliases.versions.shift_remove(from);
-            if aliases.versions.is_empty() && aliases.backend.is_none() {
-                self.alias.shift_remove(&fa.short);
+        Ok(())
+    }
+
+    pub fn remove_alias(&mut self, fa: &BackendArg, from: &str) -> eyre::Result<()> {
+        // Remove from both tool_alias and deprecated alias in memory
+        for alias_map in [&mut self.tool_alias, &mut self.alias] {
+            if let Some(aliases) = alias_map.get_mut(&fa.short) {
+                aliases.versions.shift_remove(from);
+                if aliases.versions.is_empty() && aliases.backend.is_none() {
+                    alias_map.shift_remove(&fa.short);
+                }
+            }
+        }
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        // Remove from both tool_alias and deprecated alias sections in doc
+        for section in ["tool_alias", "alias"] {
+            if let Some(aliases) = doc.get_mut(section).and_then(|v| v.as_table_mut()) {
+                if let Some(alias) = aliases
+                    .get_mut(&fa.to_string())
+                    .and_then(|v| v.as_table_mut())
+                {
+                    if let Some(versions) = alias.get_mut("versions").and_then(|v| v.as_table_mut())
+                    {
+                        versions.remove(from);
+                        if versions.is_empty() {
+                            alias.remove("versions");
+                        }
+                    }
+                    if alias.is_empty() {
+                        aliases.remove(&fa.to_string());
+                    }
+                }
+                if aliases.is_empty() {
+                    doc.as_table_mut().remove(section);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn set_shell_alias(&mut self, name: &str, command: &str) -> eyre::Result<()> {
+        self.shell_alias.insert(name.into(), command.into());
+        self.doc_mut()?
+            .get_mut()
+            .unwrap()
+            .entry("shell_alias")
+            .or_insert_with(table)
+            .as_table_like_mut()
+            .unwrap()
+            .insert(name, value(command));
+        Ok(())
+    }
+
+    pub fn remove_shell_alias(&mut self, name: &str) -> eyre::Result<()> {
+        self.shell_alias.shift_remove(name);
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        if let Some(shell_alias) = doc.get_mut("shell_alias").and_then(|v| v.as_table_mut()) {
+            shell_alias.remove(name);
+            if shell_alias.is_empty() {
+                doc.as_table_mut().remove("shell_alias");
             }
         }
         Ok(())
     }
 
     pub fn update_env<V: Into<Value>>(&mut self, key: &str, value: V) -> eyre::Result<()> {
-        let mut env_tbl = self
-            .doc_mut()?
+        let mut doc = self.doc_mut()?;
+        let mut env_tbl = doc
+            .get_mut()
+            .unwrap()
             .entry("env")
             .or_insert_with(table)
             .as_table_mut()
@@ -217,9 +614,145 @@ impl MiseToml {
         Ok(())
     }
 
+    /// Set `[bootstrap.packages]."<manager>:<package>" = "<version>"`,
+    /// creating the tables as needed ("latest" means no pin)
+    pub fn update_bootstrap_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
+        self.bootstrap
+            .get_or_insert_with(Default::default)
+            .packages
+            .insert(spec.to_string(), version.to_string());
+        let mut doc = self.doc_mut()?;
+        let bootstrap = doc
+            .get_mut()
+            .unwrap()
+            .entry("bootstrap")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        // don't render an empty [bootstrap] header above [bootstrap.packages]
+        bootstrap.set_implicit(true);
+        let packages = bootstrap
+            .entry("packages")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        let key = get_key_with_decor(packages, spec);
+        packages.insert_formatted(&key, toml_edit::value(version));
+        Ok(())
+    }
+
+    /// Set `[bootstrap.brew.taps]."<owner>/<tap>" = "<url>"`, creating the
+    /// tables as needed. Only used by the `#[cfg(unix)]` brew CLI commands.
+    #[cfg(unix)]
+    pub fn update_bootstrap_brew_tap(&mut self, tap: &str, url: &str) -> eyre::Result<()> {
+        self.bootstrap
+            .get_or_insert_with(Default::default)
+            .brew
+            .taps
+            .insert(tap.to_string(), url.to_string());
+        let mut doc = self.doc_mut()?;
+        let bootstrap = doc
+            .get_mut()
+            .unwrap()
+            .entry("bootstrap")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        bootstrap.set_implicit(true);
+        let brew = bootstrap
+            .entry("brew")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        brew.set_implicit(true);
+        let taps = brew
+            .entry("taps")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        let key = get_key_with_decor(taps, tap);
+        taps.insert_formatted(&key, toml_edit::value(url));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    pub fn remove_bootstrap_brew_tap(&mut self, tap: &str) -> eyre::Result<()> {
+        if let Some(bootstrap) = &mut self.bootstrap {
+            bootstrap.brew.taps.shift_remove(tap);
+        }
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        if let Some(bootstrap) = doc.get_mut("bootstrap").and_then(|v| v.as_table_mut())
+            && let Some(brew) = bootstrap.get_mut("brew").and_then(|v| v.as_table_mut())
+            && let Some(taps) = brew.get_mut("taps").and_then(|v| v.as_table_mut())
+        {
+            taps.remove(tap);
+            if taps.is_empty() {
+                brew.remove("taps");
+                if brew.is_empty() {
+                    bootstrap.remove("brew");
+                    if bootstrap.is_empty() {
+                        doc.remove("bootstrap");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn update_env_age(
+        &mut self,
+        key: &str,
+        value: &str,
+        format: Option<AgeFormat>,
+    ) -> eyre::Result<()> {
+        let mut doc = self.doc_mut()?;
+        let mut env_tbl = doc
+            .get_mut()
+            .unwrap()
+            .entry("env")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+
+        // Create the age inline table
+        let mut outer_table = InlineTable::new();
+
+        // Check if we need the complex format or can use simplified form
+        match format {
+            Some(AgeFormat::Zstd) => {
+                // Non-default format, use full form: {age = {value = "...", format = "zstd"}}
+                let mut age_table = InlineTable::new();
+                age_table.insert("value", value.into());
+                age_table.insert("format", "zstd".into());
+                outer_table.insert("age", Value::InlineTable(age_table));
+            }
+            Some(AgeFormat::Raw) | None => {
+                // Default format or no format, use simplified form: {age = "..."}
+                outer_table.insert("age", value.into());
+            }
+        }
+
+        let key_parts = key.split('.').collect_vec();
+        for (i, k) in key_parts.iter().enumerate() {
+            if i == key_parts.len() - 1 {
+                let k = get_key_with_decor(env_tbl, k);
+                env_tbl
+                    .insert_formatted(&k, toml_edit::Item::Value(Value::InlineTable(outer_table)));
+                break;
+            } else if !env_tbl.contains_key(k) {
+                env_tbl.insert_formatted(&Key::from(*k), toml_edit::table());
+            }
+            env_tbl = env_tbl.get_mut(k).unwrap().as_table_mut().unwrap();
+        }
+        Ok(())
+    }
+
     pub fn remove_env(&mut self, key: &str) -> eyre::Result<()> {
-        let env_tbl = self
-            .doc_mut()?
+        let mut doc = self.doc_mut()?;
+        let env_tbl = doc
+            .get_mut()
+            .unwrap()
             .entry("env")
             .or_insert_with(table)
             .as_table_mut()
@@ -228,18 +761,127 @@ impl MiseToml {
         Ok(())
     }
 
+    // Merge base OS env vars with env sections from this file,
+    // so they are available for templating.
+    // Note this only merges regular key-value variables; referenced files are not resolved.
+    fn update_context_env(&mut self, mut base_env: EnvMap) {
+        for e in &self.env.0 {
+            match e {
+                EnvDirective::Val(key, value, _) => {
+                    base_env.insert(key.clone(), value.clone());
+                }
+                EnvDirective::Default(key, value, _)
+                    if base_env.get(key).is_none_or(|v| v.is_empty()) =>
+                {
+                    base_env.insert(key.clone(), value.clone());
+                }
+                _ => {}
+            }
+        }
+        self.context.insert("env", &base_env);
+    }
+
     fn parse_template(&self, input: &str) -> eyre::Result<String> {
-        if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
+        self.parse_template_with_context(&self.template_context(), input)
+    }
+
+    fn parse_template_with_context(
+        &self,
+        context: &TeraContext,
+        input: &str,
+    ) -> eyre::Result<String> {
+        if !contains_template_syntax(input) {
             return Ok(input.to_string());
         }
         let dir = self.path.parent();
-        let output = get_tera(dir)
-            .render_str(input, &self.context)
-            .wrap_err_with(|| {
-                let p = display_path(&self.path);
-                eyre!("failed to parse template {input} in {p}")
-            })?;
+        let mut tera = get_tera(dir);
+        let output = render_str(&mut tera, input, context).wrap_err_with(|| {
+            let p = display_path(&self.path);
+            eyre!("failed to parse template {input} in {p}")
+        })?;
         Ok(output)
+    }
+
+    fn template_context(&self) -> TeraContext {
+        let mut context = self.context.clone();
+        Self::insert_resolved_vars(&mut context);
+        context
+    }
+
+    fn insert_resolved_vars(context: &mut TeraContext) {
+        if context.get("vars").is_some() {
+            return;
+        }
+        let Some(config) = Config::maybe_get() else {
+            return;
+        };
+        if let Some(vars_results) = config.vars_results_cached() {
+            let vars = vars_results
+                .vars
+                .iter()
+                .map(|(k, (v, _))| (k.clone(), v.clone()))
+                .collect::<IndexMap<_, _>>();
+            context.insert("vars", &vars);
+        } else if !config.vars.is_empty() {
+            context.insert("vars", &config.vars);
+        }
+    }
+
+    /// Render a tool-option template at config-load time, resolving env/vars but
+    /// deferring `os()`/`arch()` (re-emitted as `{{ os() }}`/`{{ arch() }}`) so
+    /// backends can render them for the host at install time or for an arbitrary
+    /// target during cross-platform `mise lock`.
+    fn parse_tool_option_template(
+        &self,
+        context: &TeraContext,
+        input: &str,
+    ) -> eyre::Result<String> {
+        if !contains_template_syntax(input) {
+            return Ok(input.to_string());
+        }
+        let dir = self.path.parent();
+        let mut tera = crate::tera::get_tera_preserving_os_arch(dir);
+        let output = render_str(&mut tera, input, context).wrap_err_with(|| {
+            let p = display_path(&self.path);
+            eyre!("failed to parse template {input} in {p}")
+        })?;
+        Ok(output)
+    }
+
+    fn parse_tool_option_value_template(
+        &self,
+        context: &TeraContext,
+        key: Option<&str>,
+        value: &mut toml::Value,
+        defer_os_arch: bool,
+    ) -> eyre::Result<()> {
+        match value {
+            toml::Value::String(s) => {
+                let preserve_os_arch = defer_os_arch && matches!(key, Some("url" | "checksum_url"));
+                *s = if preserve_os_arch {
+                    self.parse_tool_option_template(context, s)?
+                } else {
+                    self.parse_template_with_context(context, s)?
+                };
+            }
+            toml::Value::Array(values) => {
+                for value in values {
+                    self.parse_tool_option_value_template(context, key, value, defer_os_arch)?;
+                }
+            }
+            toml::Value::Table(table) => {
+                for (key, value) in table.iter_mut() {
+                    self.parse_tool_option_value_template(
+                        context,
+                        Some(key),
+                        value,
+                        defer_os_arch,
+                    )?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 }
 
@@ -248,25 +890,8 @@ impl ConfigFile for MiseToml {
         self.path.as_path()
     }
 
-    fn min_version(&self) -> &Option<Versioning> {
-        &self.min_version
-    }
-
-    fn project_root(&self) -> Option<&Path> {
-        let filename = self.path.file_name().unwrap_or_default().to_string_lossy();
-        match self.path.parent() {
-            Some(dir) => match dir {
-                dir if dir.starts_with(*dirs::CONFIG) => None,
-                dir if dir.starts_with(*dirs::SYSTEM) => None,
-                dir if dir == *dirs::HOME => None,
-                dir if !filename.starts_with('.') && dir.ends_with(".mise") => dir.parent(),
-                dir if !filename.starts_with('.') && dir.ends_with(".config/mise") => {
-                    dir.parent().unwrap().parent()
-                }
-                dir => Some(dir),
-            },
-            None => None,
-        }
+    fn min_version(&self) -> Option<&MinVersionSpec> {
+        self.min_version.as_ref()
     }
 
     fn plugins(&self) -> eyre::Result<HashMap<String, String>> {
@@ -281,6 +906,7 @@ impl ConfigFile for MiseToml {
     }
 
     fn env_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
+        self.warn_deprecated_env_keys();
         let env_entries = self.env.0.iter().cloned();
         let path_entries = self
             .env_path
@@ -290,6 +916,7 @@ impl ConfigFile for MiseToml {
         let env_files = self
             .env_file
             .iter()
+            .chain(&self.dotenv)
             .map(|p| EnvDirective::File(p.clone(), Default::default()))
             .collect_vec();
         let all = path_entries
@@ -308,36 +935,43 @@ impl ConfigFile for MiseToml {
         self.tasks.0.values().collect()
     }
 
-    fn remove_tool(&mut self, fa: &BackendArg) -> eyre::Result<()> {
-        self.tools.shift_remove(fa);
-        let doc = self.doc_mut()?;
-        if let Some(tools) = doc.get_mut("tools") {
-            if let Some(tools) = tools.as_table_like_mut() {
-                tools.remove(&fa.to_string());
-                if tools.is_empty() {
-                    doc.as_table_mut().remove("tools");
-                }
+    fn task_templates(&self) -> IndexMap<String, TaskTemplate> {
+        self.task_templates.0.clone()
+    }
+
+    fn remove_tool(&self, fa: &BackendArg) -> eyre::Result<()> {
+        let mut tools = self.tools.lock().unwrap();
+        tools.shift_remove(fa);
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        if let Some(tools) = doc.get_mut("tools")
+            && let Some(tools) = tools.as_table_like_mut()
+        {
+            tools.remove(&fa.to_string());
+            if tools.is_empty() {
+                doc.as_table_mut().remove("tools");
             }
         }
         Ok(())
     }
 
-    fn replace_versions(
-        &mut self,
-        ba: &BackendArg,
-        versions: Vec<ToolRequest>,
-    ) -> eyre::Result<()> {
-        let is_tools_sorted = is_tools_sorted(&self.tools); // was it previously sorted (if so we'll keep it sorted)
-        let existing = self.tools.entry(ba.clone()).or_default();
+    fn replace_versions(&self, ba: &BackendArg, versions: Vec<ToolRequest>) -> eyre::Result<()> {
+        trace!("replacing versions {ba:?} {versions:?}");
+        let mut tools = self.tools.lock().unwrap();
+        let is_tools_sorted = is_tools_sorted(&tools); // was it previously sorted (if so we'll keep it sorted)
+        let existing = tools.entry(ba.clone()).or_default();
         let output_empty_opts = |opts: &ToolVersionOptions| {
-            if opts.os.is_some() || !opts.install_env.is_empty() {
+            if opts.os.as_ref().is_some_and(|o| !o.is_empty())
+                || opts.depends.as_ref().is_some_and(|d| !d.is_empty())
+                || !opts.install_env.is_empty()
+            {
                 return false;
             }
-            if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba()) {
-                if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
-                    // in this case the options specified are the same as in the registry so output no options and rely on the defaults
-                    return true;
-                }
+            if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba())
+                && reg_ba.opts.as_ref().is_some_and(|o| o == opts)
+            {
+                // in this case the options specified are the same as in the registry so output no options and rely on the defaults
+                return true;
             }
             opts.is_empty()
         };
@@ -345,8 +979,12 @@ impl ConfigFile for MiseToml {
             .iter()
             .map(|tr| MiseTomlTool::from(tr.clone()))
             .collect();
-        let tools = self
-            .doc_mut()?
+        trace!("done replacing versions");
+        let mut doc = self.doc_mut()?;
+        trace!("got doc");
+        let tools = doc
+            .get_mut()
+            .unwrap()
             .entry("tools")
             .or_insert_with(table)
             .as_table_mut()
@@ -367,23 +1005,10 @@ impl ConfigFile for MiseToml {
             } else {
                 let mut table = InlineTable::new();
                 table.insert("version", versions[0].version().into());
-                for (k, v) in options.opts {
-                    table.insert(k, v.into());
+                for (k, v) in &options.opts {
+                    table.insert(k, toml_value_to_edit(v.clone()));
                 }
-                if let Some(os) = options.os {
-                    let mut arr = Array::new();
-                    for o in os {
-                        arr.push(Value::from(o));
-                    }
-                    table.insert("os", Value::Array(arr));
-                }
-                if !options.install_env.is_empty() {
-                    let mut env = InlineTable::new();
-                    for (k, v) in options.install_env {
-                        env.insert(k, v.into());
-                    }
-                    table.insert("install_env", env.into());
-                }
+                insert_core_options(&mut table, options);
                 tools.insert_formatted(&key, table.into());
             }
         } else {
@@ -395,9 +1020,11 @@ impl ConfigFile for MiseToml {
                 } else {
                     let mut table = InlineTable::new();
                     table.insert("version", v.to_string().into());
-                    for (k, v) in tr.options().opts {
-                        table.insert(k, v.clone().into());
+                    let options = tr.options();
+                    for (k, v) in &options.opts {
+                        table.insert(k, toml_value_to_edit(v.clone()));
                     }
+                    insert_core_options(&mut table, options);
                     arr.push(table);
                 }
             }
@@ -432,16 +1059,104 @@ impl ConfigFile for MiseToml {
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
         let source = ToolSource::MiseToml(self.path.clone());
         let mut trs = ToolRequestSet::new();
-        for (ba, tvp) in &self.tools {
-            for tool in &tvp.0 {
-                let version = self.parse_template(&tool.tt.to_string())?;
-                let tvr = if let Some(mut options) = tool.options.clone() {
-                    for v in options.opts.values_mut() {
-                        *v = self.parse_template(v)?;
-                    }
-                    ToolRequest::new_opts(ba.clone(), &version, options, source.clone())?
+        let tools = self.tools.lock().unwrap();
+        let mut context = self.context.clone();
+        if let Some(config) = Config::maybe_get()
+            && let Some(env_results) = config.env_results_cached()
+        {
+            let mut env_vars: EnvMap =
+                if let Some(existing_env) = context.get("env").and_then(|v| v.as_map()) {
+                    existing_env
+                        .iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.to_string(), s.to_string())))
+                        .collect()
                 } else {
-                    ToolRequest::new(ba.clone(), &version, source.clone())?
+                    env::PRISTINE_ENV.clone()
+                };
+            for key in &env_results.env_remove {
+                env_vars.remove(key);
+            }
+            env_vars.extend(
+                env_results
+                    .env
+                    .iter()
+                    .map(|(k, (v, _))| (k.clone(), v.clone())),
+            );
+            context.insert("env", &env_vars);
+        }
+        Self::insert_resolved_vars(&mut context);
+        for (ba, tvp) in tools.iter() {
+            for tool in &tvp.0 {
+                let version = self.parse_template_with_context(&context, &tool.tt.to_string())?;
+                let tvr = if let Some(mut options) = tool.options.clone() {
+                    // Add placeholder for version since it's not available at config load time
+                    // This preserves {{ version }} in the output for install-time rendering
+                    let mut opts_context = context.clone();
+                    opts_context.insert("version", "{{ version }}");
+                    // The http and s3 backends re-render their url/checksum_url per
+                    // target platform (host at install, any target during `mise
+                    // lock`), so only those two options defer os()/arch() instead of
+                    // resolving them now. Every other option (here and for other
+                    // backends) is consumed verbatim, so it keeps host resolution at
+                    // config load — deferring it would leak raw `{{ os() }}`
+                    // fragments into consumers that never render again (e.g.
+                    // checksum_expr).
+                    let defer_os_arch = matches!(
+                        ba.backend_type(),
+                        crate::backend::backend_type::BackendType::Http
+                            | crate::backend::backend_type::BackendType::S3
+                    );
+                    for (k, v) in options.opts.iter_mut() {
+                        self.parse_tool_option_value_template(
+                            &opts_context,
+                            Some(k),
+                            v,
+                            defer_os_arch,
+                        )?;
+                    }
+                    let mut ba = ba.clone();
+                    // Start with cached options but filter out install-time-only options
+                    // when config provides its own options. This allows:
+                    // - Changing url/asset_pattern/checksum without reinstall issues
+                    // - Replacing stale layout options like bin_path with current config values
+                    let mut ba_opts = ba.opts().clone();
+                    let backend_type = ba.backend_type();
+                    ba_opts.opts.retain(|k, _| {
+                        !crate::backend::is_install_time_option_key_for_type(&backend_type, k)
+                    });
+                    ba_opts.apply_overrides(&options);
+                    // Re-apply registry defaults for install-time keys not overridden by user.
+                    // The filtering above strips both stale install-state cache AND registry
+                    // defaults. We want to keep registry defaults while discarding stale cache.
+                    if let Some(rt) = crate::registry::REGISTRY.get(ba.short.as_str()) {
+                        let full = ba.full();
+                        // Get structured options from registry (table-format backends)
+                        let mut registry_opts = rt.backend_options(&full);
+                        // Also parse inline options from [key=val,...] in the full string
+                        if let Some(start) = full.rfind('[')
+                            && full.ends_with(']')
+                        {
+                            let inline = crate::toolset::parse_tool_options(
+                                &full[start + 1..full.len() - 1],
+                            );
+                            for (k, v) in inline.opts {
+                                registry_opts.opts.entry(k).or_insert(v);
+                            }
+                        }
+                        for (k, v) in registry_opts.opts {
+                            ba_opts.opts.entry(k).or_insert(v);
+                        }
+                    }
+                    // Replace config-owned fields rather than merging them with cached values.
+                    // This intentionally supersedes apply_overrides above so omitted values clear
+                    // stale cache and install_env does not retain cached entries.
+                    ba_opts.os = options.os.clone();
+                    ba_opts.depends = options.depends.clone();
+                    ba_opts.install_env = options.install_env.clone();
+                    ba.set_opts(Some(ba_opts.clone()));
+                    ToolRequest::new_opts(ba.into(), &version, ba_opts, source.clone())?
+                } else {
+                    ToolRequest::new(ba.clone().into(), &version, source.clone())?
                 };
                 trs.add_version(tvr, &source);
             }
@@ -450,8 +1165,22 @@ impl ConfigFile for MiseToml {
     }
 
     fn aliases(&self) -> eyre::Result<AliasMap> {
-        self.alias
-            .clone()
+        // Emit deprecation warning if [alias] is used
+        if !self.alias.is_empty() {
+            deprecated!(
+                "alias",
+                "[alias] is deprecated, use [tool_alias] instead in {}",
+                display_path(&self.path)
+            );
+        }
+
+        // Merge alias and tool_alias, with tool_alias taking precedence
+        let mut combined: AliasMap = self.alias.clone();
+        for (k, v) in &self.tool_alias {
+            combined.insert(k.clone(), v.clone());
+        }
+
+        combined
             .iter()
             .map(|(k, v)| {
                 let versions = v
@@ -474,8 +1203,39 @@ impl ConfigFile for MiseToml {
             .collect()
     }
 
+    fn shell_aliases(&self) -> eyre::Result<IndexMap<String, String>> {
+        self.shell_alias
+            .iter()
+            .map(|(k, v)| {
+                let v = self.parse_template(v)?;
+                Ok((k.clone(), v))
+            })
+            .collect()
+    }
+
     fn task_config(&self) -> &TaskConfig {
         &self.task_config
+    }
+
+    fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
+        self.task_config
+            .includes
+            .as_ref()
+            .map(|includes| {
+                includes
+                    .iter()
+                    .map(|include| self.parse_template(include))
+                    .collect()
+            })
+            .transpose()
+    }
+
+    fn monorepo_root(&self) -> Option<bool> {
+        self.monorepo_root
+    }
+
+    fn monorepo(&self) -> Option<&MonorepoConfig> {
+        self.monorepo.as_ref()
     }
 
     fn redactions(&self) -> &Redactions {
@@ -492,7 +1252,21 @@ impl ConfigFile for MiseToml {
                         .iter()
                         .map(|p| self.parse_template(p))
                         .collect::<eyre::Result<Vec<String>>>()?,
-                    run: self.parse_template(&wf.run)?,
+                    run: wf
+                        .run
+                        .as_ref()
+                        .map(|r| self.parse_template(r))
+                        .transpose()?,
+                    shell: wf
+                        .shell
+                        .as_ref()
+                        .map(|s| self.parse_template(s))
+                        .transpose()?,
+                    task: wf
+                        .task
+                        .as_ref()
+                        .map(|t| self.parse_template(t))
+                        .transpose()?,
                 })
             })
             .collect()
@@ -502,10 +1276,10 @@ impl ConfigFile for MiseToml {
         Ok(self
             .hooks
             .iter()
-            .map(|(hook, val)| {
-                let mut hooks = Hook::from_toml(*hook, val.clone())?;
+            .map(|(hook_type, def)| {
+                let mut hooks = def.clone().into_hooks(*hook_type);
                 for hook in hooks.iter_mut() {
-                    hook.script = self.parse_template(&hook.script)?;
+                    hook.render_templates(|s| self.parse_template(s))?;
                 }
                 eyre::Ok(hooks)
             })
@@ -513,6 +1287,22 @@ impl ConfigFile for MiseToml {
             .into_iter()
             .flatten()
             .collect())
+    }
+
+    fn deps_config(&self) -> Option<DepsConfig> {
+        self.deps.clone()
+    }
+
+    fn oci_config(&self) -> Option<OciConfig> {
+        self.oci.clone()
+    }
+
+    fn bootstrap_config(&self) -> Option<BootstrapTomlConfig> {
+        self.bootstrap.clone()
+    }
+
+    fn dotfiles_config(&self) -> Option<DotfilesTomlConfig> {
+        self.dotfiles.clone()
     }
 }
 
@@ -537,15 +1327,18 @@ impl Debug for MiseToml {
         let title = format!("MiseToml({}): {tools}", &display_path(&self.path));
         let mut d = f.debug_struct(&title);
         if let Some(min_version) = &self.min_version {
-            d.field("min_version", &min_version.to_string());
+            d.field("min_version", min_version);
         }
         if !self.env_file.is_empty() {
             d.field("env_file", &self.env_file);
         }
-        if let Ok(env) = self.env_entries() {
-            if !env.is_empty() {
-                d.field("env", &env);
-            }
+        if !self.dotenv.is_empty() {
+            d.field("dotenv", &self.dotenv);
+        }
+        if let Ok(env) = self.env_entries()
+            && !env.is_empty()
+        {
+            d.field("env", &env);
         }
         if !self.alias.is_empty() {
             d.field("alias", &self.alias);
@@ -568,19 +1361,30 @@ impl Clone for MiseToml {
             context: self.context.clone(),
             path: self.path.clone(),
             env_file: self.env_file.clone(),
+            dotenv: self.dotenv.clone(),
             env: self.env.clone(),
             env_path: self.env_path.clone(),
             alias: self.alias.clone(),
-            doc: self.doc.clone(),
+            tool_alias: self.tool_alias.clone(),
+            shell_alias: self.shell_alias.clone(),
+            doc: Mutex::new(self.doc.lock().unwrap().clone()),
             hooks: self.hooks.clone(),
-            tools: self.tools.clone(),
+            tools: Mutex::new(self.tools.lock().unwrap().clone()),
             redactions: self.redactions.clone(),
             plugins: self.plugins.clone(),
             tasks: self.tasks.clone(),
+            task_templates: self.task_templates.clone(),
             task_config: self.task_config.clone(),
             settings: self.settings.clone(),
             watch_files: self.watch_files.clone(),
+            deps: self.deps.clone(),
+            oci: self.oci.clone(),
+            bootstrap: self.bootstrap.clone(),
+            dotfiles: self.dotfiles.clone(),
             vars: self.vars.clone(),
+            monorepo_root: self.monorepo_root,
+            experimental_monorepo_root: self.experimental_monorepo_root,
+            monorepo: self.monorepo.clone(),
         }
     }
 }
@@ -671,20 +1475,95 @@ impl From<ToolRequest> for MiseTomlTool {
     }
 }
 
-fn deserialize_version<'de, D>(deserializer: D) -> Result<Option<Versioning>, D::Error>
+fn deserialize_min_version<'de, D>(deserializer: D) -> Result<Option<MinVersionSpec>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s: Option<String> = serde::Deserialize::deserialize(deserializer)?;
+    struct MinVersionVisitor;
 
-    match s {
-        Some(s) => Ok(Some(
-            Versioning::new(&s)
-                .ok_or(versions::Error::IllegalVersioning(s))
-                .map_err(serde::de::Error::custom)?,
-        )),
-        None => Ok(None),
+    impl<'de> Visitor<'de> for MinVersionVisitor {
+        type Value = Option<MinVersionSpec>;
+
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+            formatter.write_str("string or table for min_version")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            deserializer.deserialize_any(self)
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            let version = Versioning::new(v)
+                .ok_or_else(|| versions::Error::IllegalVersioning(v.to_string()))
+                .map_err(E::custom)?;
+            Ok(MinVersionSpec::new(Some(version), None))
+        }
+
+        fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            self.visit_str(&v)
+        }
+
+        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            let mut hard: Option<Versioning> = None;
+            let mut soft: Option<Versioning> = None;
+            while let Some(key) = map.next_key::<String>()? {
+                match key.as_str() {
+                    "hard" => {
+                        if hard.is_some() {
+                            return Err(de::Error::duplicate_field("hard"));
+                        }
+                        let value: String = map.next_value()?;
+                        let version = Versioning::new(&value)
+                            .ok_or_else(|| versions::Error::IllegalVersioning(value.clone()))
+                            .map_err(de::Error::custom)?;
+                        hard = Some(version);
+                    }
+                    "soft" => {
+                        if soft.is_some() {
+                            return Err(de::Error::duplicate_field("soft"));
+                        }
+                        let value: String = map.next_value()?;
+                        let version = Versioning::new(&value)
+                            .ok_or_else(|| versions::Error::IllegalVersioning(value.clone()))
+                            .map_err(de::Error::custom)?;
+                        soft = Some(version);
+                    }
+                    other => {
+                        return Err(de::Error::unknown_field(other, &["hard", "soft"]));
+                    }
+                }
+            }
+            Ok(MinVersionSpec::new(hard, soft))
+        }
     }
+
+    deserializer.deserialize_option(MinVersionVisitor)
 }
 
 impl<'de> de::Deserialize<'de> for EnvList {
@@ -697,19 +1576,9 @@ impl<'de> de::Deserialize<'de> for EnvList {
         impl<'de> Visitor<'de> for EnvManVisitor {
             type Value = EnvList;
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("env table or array of env tables")
+                formatter.write_str("environment variable table")
             }
 
-            fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
-            where
-                S: de::SeqAccess<'de>,
-            {
-                let mut env = vec![];
-                while let Some(list) = seq.next_element::<EnvList>()? {
-                    env.extend(list.0);
-                }
-                Ok(EnvList(env))
-            }
             fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
@@ -718,6 +1587,82 @@ impl<'de> de::Deserialize<'de> for EnvList {
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "_" | "mise" => {
+                            if key == "mise" {
+                                deprecated_at!(
+                                    "2026.7.0",
+                                    "2026.12.0",
+                                    "config.env.mise",
+                                    "`env.mise` is deprecated. Use `env._` instead."
+                                );
+                            }
+                            #[derive(Deserialize)]
+                            #[serde(untagged)]
+                            enum MiseTomlEnvDirectiveValue {
+                                Single {
+                                    #[serde(alias = "value")]
+                                    path: String,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                                Multiple {
+                                    #[serde(alias = "value", alias = "values", alias = "paths")]
+                                    path: Vec<String>,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                            }
+
+                            struct MiseTomlEnvDirective(MiseTomlEnvDirectiveValue);
+
+                            impl<'de> Deserialize<'de> for MiseTomlEnvDirective {
+                                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                                where
+                                    D: Deserializer<'de>,
+                                {
+                                    let value = toml::Value::deserialize(deserializer)?;
+                                    let (uses_value, uses_values) = value
+                                        .as_table()
+                                        .map(|table| {
+                                            (
+                                                table.contains_key("value"),
+                                                table.contains_key("values"),
+                                            )
+                                        })
+                                        .unwrap_or_default();
+                                    let directive = MiseTomlEnvDirectiveValue::deserialize(value)
+                                        .map_err(de::Error::custom)?;
+
+                                    if uses_value {
+                                        deprecated_at!(
+                                            "2026.7.0",
+                                            "2026.12.0",
+                                            "config.directive.value",
+                                            "`value` in built-in `file`, `path`, and `source` directive objects is deprecated. Use `path` instead."
+                                        );
+                                    }
+                                    if uses_values {
+                                        deprecated_at!(
+                                            "2026.7.0",
+                                            "2026.12.0",
+                                            "config.directive.values",
+                                            "`values` in built-in `file`, `path`, and `source` directive objects is deprecated. Use `path` instead."
+                                        );
+                                    }
+
+                                    Ok(MiseTomlEnvDirective(directive))
+                                }
+                            }
+
+                            impl FromStr for MiseTomlEnvDirective {
+                                type Err = String;
+                                fn from_str(s: &str) -> Result<Self, Self::Err> {
+                                    Ok(MiseTomlEnvDirective(MiseTomlEnvDirectiveValue::Single {
+                                        path: s.to_string(),
+                                        options: Default::default(),
+                                    }))
+                                }
+                            }
+
                             struct EnvDirectivePythonVenv {
                                 path: String,
                                 create: bool,
@@ -836,19 +1781,37 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 }
                             }
 
+                            fn flatten_directives<F>(
+                                directives: Vec<MiseTomlEnvDirective>,
+                                constructor: F,
+                            ) -> impl Iterator<Item = EnvDirective>
+                            where
+                                F: Fn(String, EnvDirectiveOptions) -> EnvDirective + 'static,
+                            {
+                                directives.into_iter().flat_map(move |d| match d.0 {
+                                    MiseTomlEnvDirectiveValue::Single { path, options } => {
+                                        vec![constructor(path, options)]
+                                    }
+                                    MiseTomlEnvDirectiveValue::Multiple { path, options } => path
+                                        .into_iter()
+                                        .map(|v| constructor(v, options.clone()))
+                                        .collect(),
+                                })
+                            }
+
                             let directives = map.next_value::<EnvDirectives>()?;
                             // TODO: parse these in the order they're defined somehow
-                            for d in directives.path {
-                                env.push(EnvDirective::Path(d.value, d.options));
-                            }
-                            for d in directives.file {
-                                env.push(EnvDirective::File(d.value, d.options));
-                            }
-                            for d in directives.source {
-                                env.push(EnvDirective::Source(d.value, d.options));
-                            }
-                            for (key, value) in directives.other {
-                                env.push(EnvDirective::Module(key, value, Default::default()));
+                            env.extend(flatten_directives(directives.path, EnvDirective::Path));
+                            env.extend(flatten_directives(directives.file, EnvDirective::File));
+                            env.extend(flatten_directives(directives.source, EnvDirective::Source));
+                            for (key, mut value) in directives.other {
+                                let mut opts = EnvDirectiveOptions::default();
+                                if let Some(table) = value.as_table_mut()
+                                    && let Some(tools) = table.remove("tools")
+                                {
+                                    opts.tools = tools.as_bool().unwrap_or(false);
+                                }
+                                env.push(EnvDirective::Module(key, value, opts));
                             }
                             if let Some(venv) = directives.python.venv {
                                 env.push(EnvDirective::PythonVenv {
@@ -859,167 +1822,148 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     python_create_args: venv.python_create_args,
                                     options: EnvDirectiveOptions {
                                         tools: true,
-                                        redact: false,
+                                        redact: Some(false),
+                                        required: RequiredValue::False,
                                     },
                                 });
                             }
                         }
                         _ => {
+                            #[derive(Deserialize)]
+                            #[serde(untagged)]
                             enum Val {
-                                Int(i64),
-                                Str(String),
-                                Bool(bool),
-                                Map {
-                                    value: Box<Val>,
-                                    tools: bool,
-                                    redact: bool,
+                                AgeComplex {
+                                    age: AgeComplexVal,
                                 },
+                                AgeWithOptions {
+                                    age: String,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                                Map {
+                                    value: EnvValue,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                                DefaultMap {
+                                    default: EnvValue,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                                OptionsOnly {
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                                Primitive(EnvValue),
                             }
-                            impl Display for Val {
-                                fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-                                    match self {
-                                        Val::Int(i) => write!(f, "{}", i),
-                                        Val::Str(s) => write!(f, "{}", s),
-                                        Val::Bool(b) => write!(f, "{}", b),
-                                        Val::Map {
-                                            value,
-                                            tools,
-                                            redact,
-                                        } => {
-                                            write!(f, "{}", value)?;
-                                            if *tools {
-                                                write!(f, " tools")?;
-                                            }
-                                            if *redact {
-                                                write!(f, " redact")?;
-                                            }
-                                            Ok(())
-                                        }
+
+                            #[derive(Deserialize)]
+                            struct AgeComplexVal {
+                                value: String,
+                                #[serde(default)]
+                                format: Option<AgeFormat>,
+                                #[serde(flatten)]
+                                options: EnvDirectiveOptions,
+                            }
+                            let raw_value = map.next_value::<toml::Value>()?;
+                            if let Some(table) = raw_value.as_table() {
+                                let has_default = table.contains_key("default");
+                                if has_default && table.contains_key("value") {
+                                    return Err(serde::de::Error::custom(format!(
+                                        "Environment variable '{}' cannot have both 'value' and 'default'. The 'value' field always overwrites, while 'default' only applies when the variable is unset or empty. Remove either the 'value' field or the 'default' field.",
+                                        key
+                                    )));
+                                }
+                                if has_default && table.contains_key("required") {
+                                    return Err(serde::de::Error::custom(format!(
+                                        "Environment variable '{}' cannot have both 'default' and 'required'. The 'required' flag means the variable must be defined elsewhere, while 'default' provides a fallback value. Remove either the 'default' field or the 'required' flag.",
+                                        key
+                                    )));
+                                }
+                                if has_default && table.contains_key("age") {
+                                    return Err(serde::de::Error::custom(format!(
+                                        "Environment variable '{}' cannot have both 'age' and 'default'. Remove either the 'age' field or the 'default' field.",
+                                        key
+                                    )));
+                                }
+                            }
+                            let val_result = raw_value.try_into::<Val>().map_err(|e| {
+                                serde::de::Error::custom(format!(
+                                    "failed to parse environment variable '{}': {}",
+                                    key, e
+                                ))
+                            })?;
+
+                            // Handle Age variants separately since they create different directive types
+                            match &val_result {
+                                Val::AgeComplex { age } => {
+                                    let directive = EnvDirective::Age {
+                                        key: key.clone(),
+                                        value: age.value.clone(),
+                                        format: age.format.clone(),
+                                        options: age.options.clone(),
+                                    };
+                                    env.push(directive);
+                                    continue;
+                                }
+                                Val::AgeWithOptions { age, options } => {
+                                    let directive = EnvDirective::Age {
+                                        key: key.clone(),
+                                        value: age.clone(),
+                                        format: None, // Default format for simplified syntax with options
+                                        options: options.clone(),
+                                    };
+                                    env.push(directive);
+                                    continue;
+                                }
+                                _ => {}
+                            }
+
+                            let directive = match val_result {
+                                Val::Primitive(value) => match value.into_string() {
+                                    Some(s) => {
+                                        EnvDirective::Val(key, s, EnvDirectiveOptions::default())
+                                    }
+                                    None => EnvDirective::Rm(key, EnvDirectiveOptions::default()),
+                                },
+                                Val::Map { value, options } => {
+                                    // Validate that required cannot be used with any value
+                                    if options.required.is_required() {
+                                        return Err(serde::de::Error::custom(format!(
+                                            "Environment variable '{}' cannot have both 'value' and 'required'. The 'required' flag means the variable must be defined elsewhere (in the environment or a later config file). Remove either the 'value' field or the 'required' flag.",
+                                            key
+                                        )));
+                                    }
+                                    match value.into_string() {
+                                        Some(s) => EnvDirective::Val(key, s, options),
+                                        None => EnvDirective::Rm(key, options),
                                     }
                                 }
-                            }
-
-                            impl<'de> de::Deserialize<'de> for Val {
-                                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                                where
-                                    D: Deserializer<'de>,
-                                {
-                                    struct ValVisitor;
-
-                                    impl<'de> Visitor<'de> for ValVisitor {
-                                        type Value = Val;
-                                        fn expecting(
-                                            &self,
-                                            formatter: &mut Formatter,
-                                        ) -> std::fmt::Result
-                                        {
-                                            formatter.write_str("env value")
-                                        }
-
-                                        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(Val::Bool(v))
-                                        }
-
-                                        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(Val::Int(v))
-                                        }
-
-                                        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(Val::Str(v.to_string()))
-                                        }
-
-                                        fn visit_map<A>(
-                                            self,
-                                            mut map: A,
-                                        ) -> Result<Self::Value, A::Error>
-                                        where
-                                            A: de::MapAccess<'de>,
-                                        {
-                                            let mut value: Option<Val> = None;
-                                            let mut tools = None;
-                                            let mut redact = None;
-                                            while let Some((key, val)) =
-                                                map.next_entry::<String, Val>()?
-                                            {
-                                                match key.as_str() {
-                                                    "value" => {
-                                                        value = Some(val);
-                                                    }
-                                                    "tools" => {
-                                                        tools = Some(val);
-                                                    }
-                                                    "redact" => {
-                                                        redact = Some(val);
-                                                    }
-                                                    _ => {
-                                                        return Err(de::Error::unknown_field(
-                                                            &key,
-                                                            &["value", "tools", "redact"],
-                                                        ));
-                                                    }
-                                                }
-                                            }
-                                            let value = value
-                                                .ok_or_else(|| de::Error::missing_field("value"))?;
-                                            let tools = if let Some(Val::Bool(tools)) = tools {
-                                                tools
-                                            } else {
-                                                false
-                                            };
-                                            Ok(Val::Map {
-                                                value: Box::new(value),
-                                                tools,
-                                                redact: redact
-                                                    .map(|r| {
-                                                        if let Val::Bool(b) = r { b } else { false }
-                                                    })
-                                                    .unwrap_or_default(),
-                                            })
-                                        }
+                                Val::DefaultMap { default, options } => {
+                                    let Some(default) = default.into_default_string() else {
+                                        return Err(serde::de::Error::custom(format!(
+                                            "Environment variable '{}' default cannot be a boolean. Use a string or integer fallback instead.",
+                                            key
+                                        )));
+                                    };
+                                    EnvDirective::Default(key, default, options)
+                                }
+                                Val::OptionsOnly { options } => {
+                                    // No value provided - this creates a required variable that must be defined elsewhere
+                                    if !options.required.is_required() {
+                                        return Err(serde::de::Error::custom(format!(
+                                            "Environment variable '{}' has no value. Either provide a value or set required=true to indicate it must be defined elsewhere.",
+                                            key
+                                        )));
                                     }
-
-                                    deserializer.deserialize_any(ValVisitor)
+                                    // For required variables without a value, we create a Required directive
+                                    EnvDirective::Required(key, options)
                                 }
-                            }
-
-                            let value = map.next_value::<Val>()?;
-                            match value {
-                                Val::Int(i) => {
-                                    env.push(EnvDirective::Val(
-                                        key,
-                                        i.to_string(),
-                                        Default::default(),
-                                    ));
+                                Val::AgeComplex { .. } | Val::AgeWithOptions { .. } => {
+                                    unreachable!() // Already handled above
                                 }
-                                Val::Str(s) => {
-                                    env.push(EnvDirective::Val(key, s, Default::default()));
-                                }
-                                Val::Bool(true) => env.push(EnvDirective::Val(
-                                    key,
-                                    "true".into(),
-                                    Default::default(),
-                                )),
-                                Val::Bool(false) => {
-                                    env.push(EnvDirective::Rm(key, Default::default()))
-                                }
-                                Val::Map {
-                                    value,
-                                    tools,
-                                    redact,
-                                } => {
-                                    let opts = EnvDirectiveOptions { tools, redact };
-                                    env.push(EnvDirective::Val(key, value.to_string(), opts));
-                                }
-                            }
+                            };
+                            env.push(directive);
                         }
                     }
                 }
@@ -1027,8 +1971,61 @@ impl<'de> de::Deserialize<'de> for EnvList {
             }
         }
 
-        deserializer.deserialize_any(EnvManVisitor)
+        deserializer.deserialize_map(EnvManVisitor)
     }
+}
+
+pub(crate) fn deserialize_vars<'de, D>(deserializer: D) -> std::result::Result<EnvList, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let value = toml::Value::deserialize(deserializer)?;
+    fn contains_mise(value: &toml::Value) -> bool {
+        match value {
+            toml::Value::Table(table) => table.contains_key("mise"),
+            toml::Value::Array(values) => values.iter().any(contains_mise),
+            _ => false,
+        }
+    }
+    if contains_mise(&value) {
+        return Err(de::Error::custom("`vars.mise` is not supported"));
+    }
+    EnvList::deserialize(value).map_err(de::Error::custom)
+}
+
+fn deserialize_root_env<'de, D>(deserializer: D) -> std::result::Result<EnvList, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    struct RootEnvVisitor;
+
+    impl<'de> Visitor<'de> for RootEnvVisitor {
+        type Value = EnvList;
+
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+            formatter.write_str("env table or flat array of env tables")
+        }
+
+        fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            EnvList::deserialize(de::value::MapAccessDeserializer::new(map))
+        }
+
+        fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
+        where
+            S: de::SeqAccess<'de>,
+        {
+            let mut env = vec![];
+            while let Some(list) = seq.next_element::<EnvList>()? {
+                env.extend(list.0);
+            }
+            Ok(EnvList(env))
+        }
+    }
+
+    deserializer.deserialize_any(RootEnvVisitor)
 }
 
 impl<'de> de::Deserialize<'de> for MiseTomlToolList {
@@ -1065,156 +2062,19 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                 Ok(MiseTomlToolList(tools))
             }
 
-            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
+            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
             {
-                let mut options: ToolVersionOptions = Default::default();
-                let mut tt: Option<ToolVersionType> = None;
-                while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    match k.as_str() {
-                        "version" => {
-                            tt = Some(v.as_str().unwrap().parse().map_err(de::Error::custom)?);
-                        }
-                        "path" | "prefix" | "ref" => {
-                            tt = Some(
-                                format!("{k}:{}", v.as_str().unwrap())
-                                    .parse()
-                                    .map_err(de::Error::custom)?,
-                            );
-                        }
-                        "os" => match v {
-                            toml::Value::Array(s) => {
-                                options.os = Some(
-                                    s.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
-                                );
-                            }
-                            toml::Value::String(s) => {
-                                options.opts.insert(k, s);
-                            }
-                            _ => {
-                                return Err(de::Error::custom("os must be a string or array"));
-                            }
-                        },
-                        "install_env" => match v {
-                            toml::Value::Table(env) => {
-                                for (k, v) in env {
-                                    match v {
-                                        toml::Value::Boolean(v) => {
-                                            options.install_env.insert(k, v.to_string());
-                                        }
-                                        toml::Value::Integer(v) => {
-                                            options.install_env.insert(k, v.to_string());
-                                        }
-                                        toml::Value::String(v) => {
-                                            options.install_env.insert(k, v);
-                                        }
-                                        _ => {
-                                            return Err(de::Error::custom("invalid value type"));
-                                        }
-                                    }
-                                }
-                            }
-                            _ => {
-                                return Err(de::Error::custom("env must be a table"));
-                            }
-                        },
-                        _ => match v {
-                            toml::Value::Boolean(v) => {
-                                options.opts.insert(k, v.to_string());
-                            }
-                            toml::Value::Integer(v) => {
-                                options.opts.insert(k, v.to_string());
-                            }
-                            toml::Value::String(v) => {
-                                options.opts.insert(k, v);
-                            }
-                            _ => {
-                                return Err(de::Error::custom("invalid value type"));
-                            }
-                        },
-                    }
-                }
-                if let Some(tt) = tt {
-                    Ok(MiseTomlToolList(vec![MiseTomlTool {
-                        tt,
-                        options: Some(options),
-                    }]))
-                } else {
-                    Err(de::Error::custom("missing version"))
-                }
+                let parsed =
+                    ParsedToolMap::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                Ok(MiseTomlToolList(vec![
+                    parse_mise_toml_tool_map::<M::Error>(parsed)?,
+                ]))
             }
         }
 
         deserializer.deserialize_any(MiseTomlToolListVisitor)
-    }
-}
-
-impl FromStr for MiseTomlEnvDirective {
-    type Err = eyre::Report;
-
-    fn from_str(s: &str) -> eyre::Result<Self> {
-        Ok(MiseTomlEnvDirective {
-            value: s.into(),
-            options: Default::default(),
-        })
-    }
-}
-
-impl<'de> de::Deserialize<'de> for MiseTomlEnvDirective {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        struct MiseTomlEnvDirectiveVisitor;
-
-        impl<'de> Visitor<'de> for MiseTomlEnvDirectiveVisitor {
-            type Value = MiseTomlEnvDirective;
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("env directive")
-            }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(MiseTomlEnvDirective {
-                    value: v.into(),
-                    options: Default::default(),
-                })
-            }
-
-            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
-            where
-                M: de::MapAccess<'de>,
-            {
-                let mut options: EnvDirectiveOptions = Default::default();
-                let mut value = None;
-                while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    match k.as_str() {
-                        "value" | "path" => {
-                            value = Some(v.as_str().unwrap().to_string());
-                        }
-                        "tools" => {
-                            options.tools = v.as_bool().unwrap();
-                        }
-                        "redact" => {
-                            options.redact = v.as_bool().unwrap();
-                        }
-                        _ => {
-                            return Err(de::Error::custom("invalid key"));
-                        }
-                    }
-                }
-                if let Some(value) = value {
-                    Ok(MiseTomlEnvDirective { value, options })
-                } else {
-                    Err(de::Error::custom("missing value"))
-                }
-            }
-        }
-
-        deserializer.deserialize_any(MiseTomlEnvDirectiveVisitor)
     }
 }
 
@@ -1241,67 +2101,13 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                 Ok(MiseTomlTool { tt, options: None })
             }
 
-            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
             {
-                let mut options: ToolVersionOptions = Default::default();
-                let mut tt = ToolVersionType::System;
-                while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    match k.as_str() {
-                        "version" => {
-                            tt = v.as_str().unwrap().parse().map_err(de::Error::custom)?;
-                        }
-                        "path" | "prefix" | "ref" => {
-                            tt = format!("{k}:{}", v.as_str().unwrap())
-                                .parse()
-                                .map_err(de::Error::custom)?;
-                        }
-                        "os" => match v {
-                            toml::Value::Array(s) => {
-                                options.os = Some(
-                                    s.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
-                                );
-                            }
-                            toml::Value::String(s) => {
-                                options.opts.insert(k, s);
-                            }
-                            _ => {
-                                return Err(de::Error::custom("os must be a string or array"));
-                            }
-                        },
-                        "install_env" => match v {
-                            toml::Value::Table(env) => {
-                                for (k, v) in env {
-                                    match v {
-                                        toml::Value::Boolean(v) => {
-                                            options.install_env.insert(k, v.to_string());
-                                        }
-                                        toml::Value::Integer(v) => {
-                                            options.install_env.insert(k, v.to_string());
-                                        }
-                                        toml::Value::String(v) => {
-                                            options.install_env.insert(k, v);
-                                        }
-                                        _ => {
-                                            return Err(de::Error::custom("invalid value type"));
-                                        }
-                                    }
-                                }
-                            }
-                            _ => {
-                                return Err(de::Error::custom("env must be a table"));
-                            }
-                        },
-                        _ => {
-                            options.opts.insert(k, v.as_str().unwrap().to_string());
-                        }
-                    }
-                }
-                Ok(MiseTomlTool {
-                    tt,
-                    options: Some(options),
-                })
+                let parsed =
+                    ParsedToolMap::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                parse_mise_toml_tool_map::<M::Error>(parsed)
             }
         }
 
@@ -1344,7 +2150,7 @@ impl<'de> de::Deserialize<'de> for Tasks {
                                 E: de::Error,
                             {
                                 Ok(TaskDef(Task {
-                                    run: vec![v.to_string()],
+                                    run: vec![crate::task::RunEntry::Script(v.to_string())],
                                     ..Default::default()
                                 }))
                             }
@@ -1354,7 +2160,7 @@ impl<'de> de::Deserialize<'de> for Tasks {
                                 S: de::SeqAccess<'de>,
                             {
                                 let mut run = vec![];
-                                while let Some(s) = seq.next_element::<String>()? {
+                                while let Some(s) = seq.next_element::<crate::task::RunEntry>()? {
                                     run.push(s);
                                 }
                                 Ok(TaskDef(Task {
@@ -1387,6 +2193,36 @@ impl<'de> de::Deserialize<'de> for Tasks {
         }
 
         deserializer.deserialize_any(TasksVisitor)
+    }
+}
+
+impl<'de> de::Deserialize<'de> for TaskTemplates {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct TaskTemplatesVisitor;
+
+        impl<'de> Visitor<'de> for TaskTemplatesVisitor {
+            type Value = TaskTemplates;
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("map of task template names to template definitions")
+            }
+
+            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: de::MapAccess<'de>,
+            {
+                let mut templates = IndexMap::new();
+                while let Some(name) = map.next_key::<String>()? {
+                    let template: TaskTemplate = map.next_value()?;
+                    templates.insert(name, template);
+                }
+                Ok(TaskTemplates(templates))
+            }
+        }
+
+        deserializer.deserialize_any(TaskTemplatesVisitor)
     }
 }
 
@@ -1469,13 +2305,74 @@ impl<'de> de::Deserialize<'de> for Alias {
     }
 }
 
+/// A config body is safe to load without trust when nothing in it can execute
+/// code at load time or change mise's behavior without an explicit user
+/// action:
+/// - `min_version` is inert
+/// - `[tools]` entries with plain version strings only matter when the user
+///   runs something like `mise install`. Entries with options (tables) are
+///   excluded because options like `postinstall` and `install_env` run code
+///   or alter the install environment.
+/// - `[tasks]` definitions are inert until the user explicitly runs one
+/// - no Tera template syntax anywhere — templates render while config and
+///   tasks load and can run arbitrary commands via exec()
+fn is_safe_config_body(body: &str) -> bool {
+    // Fast reject: literal Tera delimiters in the raw text.
+    if contains_template_syntax(body) {
+        return false;
+    }
+    let Ok(toml::Value::Table(table)) = toml::from_str::<toml::Value>(body) else {
+        // let the normal trust + parse flow handle invalid TOML
+        return false;
+    };
+    // The raw-body check above misses escaped delimiters that TOML decodes,
+    // e.g. `"{{ exec(...) }}"` becomes `{{ exec(...) }}`
+    // after parsing and would still render via Tera. Re-check every decoded
+    // string (keys and values, at any depth) so no exec()-capable template
+    // can slip through into tool versions or task fields.
+    if toml_table_has_template(&table) {
+        return false;
+    }
+    table.iter().all(|(key, value)| match key.as_str() {
+        "min_version" | "tasks" => true,
+        "tools" => value.as_table().is_some_and(|tools| {
+            tools.values().all(|version| match version {
+                toml::Value::String(_) => true,
+                toml::Value::Array(versions) => {
+                    versions.iter().all(|v| matches!(v, toml::Value::String(_)))
+                }
+                _ => false,
+            })
+        }),
+        _ => false,
+    })
+}
+
+/// Whether any decoded string (table key or value, at any depth) contains
+/// Tera template syntax. Used to catch escaped delimiters (e.g. `{{`)
+/// that a raw-text scan misses but that still render after TOML parsing.
+pub(crate) fn toml_value_has_template(value: &toml::Value) -> bool {
+    match value {
+        toml::Value::String(s) => contains_template_syntax(s),
+        toml::Value::Array(arr) => arr.iter().any(toml_value_has_template),
+        toml::Value::Table(t) => toml_table_has_template(t),
+        _ => false,
+    }
+}
+
+fn toml_table_has_template(table: &toml::Table) -> bool {
+    table
+        .iter()
+        .any(|(k, v)| contains_template_syntax(k) || toml_value_has_template(v))
+}
+
 fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
     let mut last = None;
     for k in tools.keys() {
-        if let Some(last) = last {
-            if k < last {
-                return false;
-            }
+        if let Some(last) = last
+            && k < last
+        {
+            return false;
         }
         last = Some(k);
     }
@@ -1485,18 +2382,23 @@ fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
-    use indoc::formatdoc;
+    use std::sync::Arc;
+
+    use indoc::{formatdoc, indoc};
     use insta::{assert_debug_snapshot, assert_snapshot};
     use test_log::test;
 
-    use crate::dirs::CWD;
+    use crate::dirs;
+    use crate::file;
     use crate::test::replace_path;
-    use crate::toolset::ToolRequest;
+    use crate::toolset::{CoreToolOptions, ToolRequest};
+    use crate::{config::Config, dirs::CWD};
 
     use super::*;
 
-    #[test]
-    fn test_fixture() {
+    #[tokio::test]
+    async fn test_fixture() {
+        let _config = Config::get().await.unwrap();
         let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
 
         assert_debug_snapshot!(cf.env_entries().unwrap());
@@ -1510,8 +2412,9 @@ mod tests {
         assert_snapshot!(replace_path(&format!("{:#?}", &cf)));
     }
 
-    #[test]
-    fn test_env() {
+    #[tokio::test]
+    async fn test_env() {
+        let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1537,8 +2440,422 @@ mod tests {
         });
     }
 
+    #[tokio::test]
+    async fn test_env_var_in_tool() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [env]
+        TERRAFORM_VERSION = '1.0.0'
+        JQ_PREFIX = '1.6'
+
+        [tools]
+        terraform = "{{env.TERRAFORM_VERSION}}"
+        jq = { prefix = "{{ env.JQ_PREFIX }}" }
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        assert_snapshot!(replace_path(&format!(
+            "{:#?}",
+            cf.to_tool_request_set().unwrap().tools
+        )));
+    }
+
     #[test]
-    fn test_env_array_valid() {
+    fn test_tool_selectors() {
+        #[derive(Deserialize)]
+        struct ToolConfig {
+            #[allow(dead_code)]
+            tools: IndexMap<BackendArg, MiseTomlToolList>,
+        }
+
+        let valid = indoc! {r#"
+        [tools]
+        node = { version = "20" }
+        go = { prefix = "1.22" }
+        python = { ref = "main" }
+        shellcheck = { path = "/opt/shellcheck" }
+        ruby = [{ prefix = "3.3", os = "linux-x64" }]
+        "#};
+        assert!(toml::from_str::<ToolConfig>(valid).is_ok());
+
+        for (config, expected) in [
+            (
+                "[tools]\nnode = { version = \"20\", prefix = \"20\" }\n",
+                "tool definition cannot specify both `version` and `prefix`",
+            ),
+            (
+                "[tools]\nnode = [{ path = \"/opt/node\", ref = \"main\" }]\n",
+                "tool definition cannot specify both `path` and `ref`",
+            ),
+            (
+                "[tools]\nnode = [{ os = \"linux-x64\" }]\n",
+                "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
+            ),
+            (
+                "[tools]\nnode = { prefix = 20 }\n",
+                "tool selector `prefix` must be a string",
+            ),
+        ] {
+            let err = match toml::from_str::<ToolConfig>(config) {
+                Ok(_) => panic!("expected tool selector validation to fail"),
+                Err(err) => err,
+            };
+            assert!(err.to_string().contains(expected), "{err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_packages() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.packages]
+        "apt:libssl-dev" = "latest"
+        "apt:curl" = "8.5.0-2"
+        "brew:postgresql@17" = "latest"
+        "future-manager:whatever" = "latest"
+
+        [bootstrap.brew.taps]
+        "railwaycat/emacsmacport" = "https://github.com/railwaycat/homebrew-emacsmacport"
+
+        [bootstrap.repos]
+        "~/src/dotfiles" = { url = "https://github.com/jdx/dotfiles.git", ref = "main" }
+
+        [bootstrap.hooks.pre-packages]
+        run = "echo preparing"
+
+        [bootstrap.hooks.post-tools]
+        run = ["echo one", "echo two"]
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        assert_eq!(system.packages.get("apt:libssl-dev").unwrap(), "latest");
+        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        assert_eq!(system.packages.get("brew:postgresql@17").unwrap(), "latest");
+        assert_eq!(
+            system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
+            "https://github.com/railwaycat/homebrew-emacsmacport"
+        );
+        let repo = system.repos.get("~/src/dotfiles").unwrap();
+        assert_eq!(
+            repo.url.as_deref(),
+            Some("https://github.com/jdx/dotfiles.git")
+        );
+        assert_eq!(repo.git_ref.as_deref(), Some("main"));
+        assert!(system.hooks.get("pre-packages").unwrap().is_table());
+        assert!(system.hooks.get("post-tools").unwrap().is_table());
+        assert_eq!(system.user.login_shell, None);
+        // unknown managers parse fine (forward compatibility)
+        assert_eq!(
+            system.packages.get("future-manager:whatever").unwrap(),
+            "latest"
+        );
+
+        // no [bootstrap] section -> None
+        file::write(&p, "[tools]\n").unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        assert!(cf.bootstrap_config().is_none());
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_login_shell() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.user]
+        login_shell = "/bin/zsh"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        assert_eq!(system.user.login_shell.as_deref(), Some("/bin/zsh"));
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_mise_shell_activate() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.mise_shell_activate]
+        zsh = true
+        bash = false
+        fish = {enabled = true}
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        assert_eq!(
+            system.mise_shell_activate.get("zsh"),
+            Some(&toml::Value::Boolean(true))
+        );
+        assert_eq!(
+            system.mise_shell_activate.get("bash"),
+            Some(&toml::Value::Boolean(false))
+        );
+        assert!(system.mise_shell_activate.get("fish").unwrap().is_table());
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_macos_defaults() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.macos.defaults]
+        NSGlobalDomain = { KeyRepeat = 2, ApplePressAndHoldEnabled = false }
+        "com.apple.dock" = { autohide = true, tilesize = 48, magnification-scale = 1.5, orientation = "left", future-array = [1, 2] }
+
+        [bootstrap.macos.dock]
+        show_recents = false
+
+        [bootstrap.macos.finder]
+        show_all_files = true
+        preferred_view_style = "list"
+
+        [bootstrap.macos.keyboard]
+        initial_key_repeat = 15
+
+        [bootstrap.macos.trackpad]
+        tap_to_click = true
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        let global = system.macos.defaults.get("NSGlobalDomain").unwrap();
+        assert_eq!(global.get("KeyRepeat").unwrap(), &toml::Value::Integer(2));
+        assert_eq!(
+            global.get("ApplePressAndHoldEnabled").unwrap(),
+            &toml::Value::Boolean(false)
+        );
+        let dock = system.macos.defaults.get("com.apple.dock").unwrap();
+        assert_eq!(dock.get("autohide").unwrap(), &toml::Value::Boolean(true));
+        assert_eq!(dock.get("tilesize").unwrap(), &toml::Value::Integer(48));
+        assert_eq!(
+            dock.get("magnification-scale").unwrap(),
+            &toml::Value::Float(1.5)
+        );
+        assert_eq!(
+            dock.get("orientation").unwrap(),
+            &toml::Value::String("left".into())
+        );
+        assert!(dock.get("future-array").unwrap().is_array());
+        assert_eq!(
+            system.macos.dock.get("show_recents").unwrap(),
+            &toml::Value::Boolean(false)
+        );
+        assert_eq!(
+            system.macos.finder.get("show_all_files").unwrap(),
+            &toml::Value::Boolean(true)
+        );
+        assert_eq!(
+            system.macos.finder.get("preferred_view_style").unwrap(),
+            &toml::Value::String("list".into())
+        );
+        assert_eq!(
+            system.macos.keyboard.get("initial_key_repeat").unwrap(),
+            &toml::Value::Integer(15)
+        );
+        assert_eq!(
+            system.macos.trackpad.get("tap_to_click").unwrap(),
+            &toml::Value::Boolean(true)
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_macos_launchd_agents() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.macos.launchd.agents.my-sync]
+        program = "~/.local/bin/my-sync"
+        args = ["--watch"]
+        run_at_load = true
+        start_interval = 300
+        start_calendar_interval = { hour = 2, minute = 0 }
+        environment = { PATH = "/usr/bin:/bin" }
+        working_directory = "~"
+        stdout_path = "~/Library/Logs/my-sync.log"
+        kickstart = true
+
+        [bootstrap.macos.launchd.agents.my-backup]
+        program = "~/.local/bin/my-backup"
+        start_calendar_interval = [{ hour = 3 }, { hour = 12, weekday = 1 }]
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        let agent = system.macos.launchd.agents.get("my-sync").unwrap();
+        assert_eq!(agent.program.as_deref(), Some("~/.local/bin/my-sync"));
+        assert_eq!(agent.args, vec!["--watch"]);
+        assert!(agent.run_at_load);
+        assert_eq!(agent.start_interval, Some(300));
+        let crate::system::launchd::LaunchdCalendarIntervals::Single(interval) =
+            agent.start_calendar_interval.as_ref().unwrap()
+        else {
+            panic!("expected single calendar interval");
+        };
+        assert_eq!(interval.hour, Some(2));
+        assert_eq!(interval.minute, Some(0));
+        assert_eq!(
+            agent.environment.get("PATH").map(String::as_str),
+            Some("/usr/bin:/bin")
+        );
+        assert_eq!(agent.working_directory.as_deref(), Some("~"));
+        assert_eq!(
+            agent.stdout_path.as_deref(),
+            Some("~/Library/Logs/my-sync.log")
+        );
+        assert!(agent.kickstart);
+        let backup = system.macos.launchd.agents.get("my-backup").unwrap();
+        let crate::system::launchd::LaunchdCalendarIntervals::Multiple(intervals) =
+            backup.start_calendar_interval.as_ref().unwrap()
+        else {
+            panic!("expected multiple calendar intervals");
+        };
+        assert_eq!(intervals.len(), 2);
+        assert_eq!(intervals[0].hour, Some(3));
+        assert_eq!(intervals[1].hour, Some(12));
+        assert_eq!(intervals[1].weekday, Some(1));
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_bootstrap_package() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        // creates [bootstrap.packages] when absent, preserves other sections
+        file::write(&p, "[tools]\njq = \"latest\"\n").unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.update_bootstrap_package("apt:curl", "latest").unwrap();
+        cf.update_bootstrap_package("brew:postgresql@17", "latest")
+            .unwrap();
+        // overrides an existing pin in place
+        cf.update_bootstrap_package("apt:curl", "8.5.0-2").unwrap();
+        assert_snapshot!(cf.dump().unwrap(), @r#"
+        [tools]
+        jq = "latest"
+
+        [bootstrap.packages]
+        "apt:curl" = "8.5.0-2"
+        "brew:postgresql@17" = "latest"
+        "#);
+        let system = cf.bootstrap_config().unwrap();
+        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_core_options_do_not_normalize_version_placeholder() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [tools]
+        node = { version = "1.0.0", depends = ["{{version}}"], install_env = { FOO = "{{version}}" }, url = "https://example.com/{{version}}" }
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let trs = cf.to_tool_request_set().unwrap();
+        let node_req = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "node")
+            .and_then(|(_, reqs)| reqs.first())
+            .unwrap();
+        let opts = node_req.options();
+
+        assert_eq!(opts.depends, Some(vec!["{{version}}".to_string()]));
+        assert_eq!(
+            opts.install_env.get("FOO"),
+            Some(&EnvValue::String("{{version}}".to_string()))
+        );
+        assert_eq!(opts.get("url"), Some("https://example.com/{version}"));
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_tool_options_preserve_quoted_literal_dotted_keys() {
+        crate::toolset::install_state::init().await.unwrap();
+        let cf = MiseToml::from_str(
+            r#"
+            [tools."aqua:example/vars-tool"]
+            version = "1.0.0"
+            fixture_version = "2.0.0"
+            "vars.fixture_version" = "1.0.0"
+            "#,
+            std::path::Path::new("mise.toml"),
+        )
+        .unwrap();
+        let trs = cf.to_tool_request_set().unwrap();
+        let (_, requests, _) = trs.iter().next().unwrap();
+        let opts = requests[0].options();
+
+        assert_eq!(opts.get("fixture_version"), Some("2.0.0"));
+        assert_eq!(opts.get("vars.fixture_version"), Some("1.0.0"));
+    }
+
+    #[tokio::test]
+    async fn test_env_source_var_in_tool() {
+        let cwd = CWD.as_ref().unwrap();
+        let script = cwd.join("set-go-version.sh");
+        let config_file = cwd.join(".test.mise.toml");
+
+        file::write(&script, "export MY_GO_VERSION=\"1.2.3\"\n").unwrap();
+        file::write(
+            &config_file,
+            r#"
+        [env]
+        _.source = "./set-go-version.sh"
+
+        [tools]
+        go = "{{env.MY_GO_VERSION}}"
+        "#,
+        )
+        .unwrap();
+
+        let config = Config::reset().await.unwrap();
+        let trs = config.get_tool_request_set().await.unwrap();
+        let go_req = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "go")
+            .and_then(|(_, reqs)| reqs.first())
+            .unwrap();
+
+        assert_eq!(go_req.version(), "1.2.3");
+
+        file::remove_file(&config_file).unwrap();
+        file::remove_file(&script).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_env_array_valid() {
+        let _config = Config::get().await.unwrap();
         let env = parse_env(formatdoc! {r#"
         [[env]]
         foo="bar"
@@ -1561,38 +2878,94 @@ mod tests {
     }
 
     #[test]
-    fn test_path_dirs() {
+    fn test_env_and_vars_array_boundaries() {
+        assert!(toml::from_str::<MiseToml>(r#"env = [{ FOO = "one" }, { BAR = "two" }]"#).is_ok());
+        assert!(toml::from_str::<MiseToml>("env = []").is_ok());
+        assert!(
+            toml::from_str::<MiseToml>(
+                r#"
+                [env]
+                _.source = ["./first.sh", "./second.sh"]
+
+                [vars]
+                _.file = ["./first.env", "./second.env"]
+                "#,
+            )
+            .is_ok()
+        );
+
+        for invalid in [
+            r#"env = [[{ FOO = "bar" }]]"#,
+            r#"env = [{ FOO = "bar" }, [{ BAR = "baz" }]]"#,
+            r#"vars = []"#,
+            r#"vars = [{ FOO = "bar" }]"#,
+            r#"vars = [[{ FOO = "bar" }]]"#,
+        ] {
+            assert!(
+                toml::from_str::<MiseToml>(invalid).is_err(),
+                "expected config to be rejected: {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_task_env_and_vars_arrays_invalid() {
+        for field in ["env", "vars"] {
+            let config = formatdoc! {r#"
+                [tasks.example]
+                run = "echo ok"
+                {field} = [{{ FOO = "bar" }}]
+            "#};
+            assert!(
+                toml::from_str::<MiseToml>(&config).is_err(),
+                "expected task {field} array to be rejected"
+            );
+
+            let config = formatdoc! {r#"
+                [task_templates.example]
+                {field} = [{{ FOO = "bar" }}]
+            "#};
+            assert!(
+                toml::from_str::<MiseToml>(&config).is_err(),
+                "expected task template {field} array to be rejected"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_path_dirs() {
+        let _config = Config::get().await.unwrap();
         let env = parse_env(formatdoc! {r#"
             env_path=["/foo", "./bar"]
             [env]
             foo="bar"
             "#});
 
-        assert_snapshot!(env, @r"
-        path_add /foo
-        path_add ./bar
+        assert_snapshot!(env, @r#"
+        _.path = "/foo"
+        _.path = "./bar"
         foo=bar
-        ");
+        "#);
 
         let env = parse_env(formatdoc! {r#"
             env_path="./bar"
             "#});
-        assert_snapshot!(env, @"path_add ./bar");
+        assert_snapshot!(env, @r#"_.path = "./bar""#);
 
         let env = parse_env(formatdoc! {r#"
             [env]
             _.path = "./bar"
             "#});
-        assert_debug_snapshot!(env, @r#""path_add ./bar""#);
+        assert_debug_snapshot!(env, @r#""_.path = \"./bar\"""#);
 
         let env = parse_env(formatdoc! {r#"
             [env]
             _.path = ["/foo", "./bar"]
             "#});
-        assert_snapshot!(env, @r"
-        path_add /foo
-        path_add ./bar
-        ");
+        assert_snapshot!(env, @r#"
+        _.path = "/foo"
+        _.path = "./bar"
+        "#);
 
         let env = parse_env(formatdoc! {r#"
             [[env]]
@@ -1600,62 +2973,70 @@ mod tests {
             [[env]]
             _.path = "./bar"
             "#});
-        assert_snapshot!(env, @r"
-        path_add /foo
-        path_add ./bar
-        ");
+        assert_snapshot!(env, @r#"
+        _.path = "/foo"
+        _.path = "./bar"
+        "#);
 
         let env = parse_env(formatdoc! {r#"
             env_path = "/foo"
             [env]
             _.path = "./bar"
             "#});
-        assert_snapshot!(env, @r"
-        path_add /foo
-        path_add ./bar
-        ");
+        assert_snapshot!(env, @r#"
+        _.path = "/foo"
+        _.path = "./bar"
+        "#);
     }
 
-    #[test]
-    fn test_env_file() {
+    #[tokio::test]
+    async fn test_env_file() {
+        let _config = Config::get().await.unwrap();
         let env = parse_env(formatdoc! {r#"
             env_file = ".env"
             "#});
 
-        assert_debug_snapshot!(env, @r#""dotenv .env""#);
+        assert_debug_snapshot!(env, @r#""_.file = \".env\"""#);
 
         let env = parse_env(formatdoc! {r#"
             env_file=[".env", ".env2"]
             "#});
-        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
+        assert_debug_snapshot!(env, @r#""_.file = \".env\"\n_.file = \".env2\"""#);
 
         let env = parse_env(formatdoc! {r#"
             [env]
             _.file = ".env"
             "#});
-        assert_debug_snapshot!(env, @r#""dotenv .env""#);
+        assert_debug_snapshot!(env, @r#""_.file = \".env\"""#);
 
         let env = parse_env(formatdoc! {r#"
             [env]
             _.file = [".env", ".env2"]
             "#});
-        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
+        assert_debug_snapshot!(env, @r#""_.file = \".env\"\n_.file = \".env2\"""#);
 
         let env = parse_env(formatdoc! {r#"
             dotenv = ".env"
             [env]
             _.file = ".env2"
+        "#});
+        assert_debug_snapshot!(env, @r#""_.file = \".env\"\n_.file = \".env2\"""#);
+
+        let env = parse_env(formatdoc! {r#"
+            env_file = ".env"
+            dotenv = ".env2"
             "#});
-        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
+        assert_debug_snapshot!(env, @r#""_.file = \".env\"\n_.file = \".env2\"""#);
     }
 
-    #[test]
-    fn test_set_alias() {
+    #[tokio::test]
+    async fn test_set_alias() {
+        let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
             formatdoc! {r#"
-            [alias.node.versions]
+            [tool_alias.node.versions]
             16 = "16.0.0"
             18 = "18.0.0"
         "#},
@@ -1668,14 +3049,55 @@ mod tests {
         cf.set_alias(&node, "20", "20.0.0").unwrap();
         cf.set_alias(&python, "3.10", "3.10.0").unwrap();
 
-        assert_debug_snapshot!(cf.alias);
+        assert_debug_snapshot!(cf.tool_alias);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         assert_snapshot!(cf);
         file::remove_file(&p).unwrap();
     }
 
     #[test]
-    fn test_remove_alias() {
+    fn test_tasks_confirm_parses() {
+        let body = r#"
+[tasks.deploy]
+confirm = { message = "Are you sure you want to deploy to ({{ env.HOME }})?", default = "no" }
+run = 'echo " $usage_environment"'
+"#;
+
+        let path = std::path::Path::new("/tmp/mise.toml");
+        let rf = MiseToml::from_str(body, path).unwrap();
+        let task = rf.tasks.0.get("deploy").expect("deploy task should exist");
+
+        assert!(matches!(
+            task.confirm,
+            Some(crate::task::TaskConfirm::Options { .. })
+        ));
+    }
+
+    #[test]
+    fn test_task_templates_confirm_parses() {
+        let body = r#"
+[task_templates.deploy]
+confirm = { message = "Are you sure?", default = "no" }
+run = 'echo "template"'
+"#;
+
+        let path = std::path::Path::new("/tmp/mise.toml");
+        let rf = MiseToml::from_str(body, path).unwrap();
+        let template = rf
+            .task_templates
+            .0
+            .get("deploy")
+            .expect("deploy template should exist");
+
+        assert!(matches!(
+            template.confirm,
+            Some(crate::task::TaskConfirm::Options { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_remove_alias() {
+        let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1703,8 +3125,9 @@ mod tests {
         file::remove_file(&p).unwrap();
     }
 
-    #[test]
-    fn test_replace_versions() {
+    #[tokio::test]
+    async fn test_replace_versions() {
+        let _config = Config::get().await.unwrap();
         let p = PathBuf::from("/tmp/.mise.toml");
         file::write(
             &p,
@@ -1714,13 +3137,13 @@ mod tests {
             "#},
         )
         .unwrap();
-        let mut cf = MiseToml::from_file(&p).unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
         let node = "node".into();
         cf.replace_versions(
             &node,
             vec![
-                ToolRequest::new("node".into(), "16.0.1", ToolSource::Unknown).unwrap(),
-                ToolRequest::new("node".into(), "18.0.1", ToolSource::Unknown).unwrap(),
+                ToolRequest::new(Arc::new("node".into()), "16.0.1", ToolSource::Unknown).unwrap(),
+                ToolRequest::new(Arc::new("node".into()), "18.0.1", ToolSource::Unknown).unwrap(),
             ],
         )
         .unwrap();
@@ -1733,8 +3156,9 @@ mod tests {
         file::remove_all(&p).unwrap();
     }
 
-    #[test]
-    fn test_remove_plugin() {
+    #[tokio::test]
+    async fn test_remove_plugin() {
+        let _config = Config::get().await.unwrap();
         let p = PathBuf::from("/tmp/.mise.toml");
         file::write(
             &p,
@@ -1744,7 +3168,7 @@ mod tests {
             "#},
         )
         .unwrap();
-        let mut cf = MiseToml::from_file(&p).unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
         cf.remove_tool(&"node".into()).unwrap();
 
         assert_debug_snapshot!(cf.to_toolset().unwrap());
@@ -1765,14 +3189,65 @@ mod tests {
         _.file=".env"
         foo3="3"
         "#};
-        assert_snapshot!(parse_env(toml), @r"
+        assert_snapshot!(parse_env(toml), @r#"
         foo1=1
         unset rm
-        path_add /foo
-        dotenv .env
+        _.path = "/foo"
+        _.file = ".env"
         foo2=2
         foo3=3
-        ");
+        "#);
+    }
+
+    #[test]
+    fn test_vars_mise_is_not_a_directive_namespace() {
+        let err = toml::from_str::<MiseToml>(indoc! {r#"
+            [vars.mise]
+            file = ".env"
+        "#})
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("`vars.mise` is not supported"), "{err}");
+
+        let err = toml::from_str::<MiseToml>(r#"vars = [[{ mise = { file = ".env" } }]]"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`vars.mise` is not supported"), "{err}");
+    }
+
+    #[test]
+    fn test_env_default_entries() {
+        let toml = indoc! {r#"
+        [env]
+        foo1 = { default = "fallback" }
+        foo2 = { default = 2, tools = true }
+        "#}
+        .to_string();
+        assert_snapshot!(parse_env(toml), @r#"
+        foo1 default=fallback
+        foo2 default=2
+        "#);
+    }
+
+    #[test]
+    fn test_env_default_invalid_combinations() {
+        let err = parse_error("[env]\nFOO = { value = \"x\", default = \"y\" }\n");
+        assert!(
+            err.contains("cannot have both 'value' and 'default'"),
+            "{err}"
+        );
+        let err = parse_error("[env]\nFOO = { required = true, default = \"y\" }\n");
+        assert!(
+            err.contains("cannot have both 'default' and 'required'"),
+            "{err}"
+        );
+        let err = parse_error("[env]\nFOO = { age = \"AGE-SECRET\", default = \"y\" }\n");
+        assert!(
+            err.contains("cannot have both 'age' and 'default'"),
+            "{err}"
+        );
+        let err = parse_error("[env]\nFOO = { default = false }\n");
+        assert!(err.contains("default cannot be a boolean"), "{err}");
     }
 
     #[test]
@@ -1796,22 +3271,22 @@ mod tests {
         foo6="6"
         _.source="/baz2"
         "#};
-        assert_snapshot!(parse_env(toml), @r"
+        assert_snapshot!(parse_env(toml), @r#"
         foo1=1
         unset rm
-        path_add /foo
-        dotenv .env
-        source /baz1
+        _.path = "/foo"
+        _.file = ".env"
+        _.source = "/baz1"
         foo2=2
         foo3=3
         foo4=4
         unset rm
-        path_add /bar
-        dotenv .env2
-        source /baz2
+        _.path = "/bar"
+        _.file = ".env2"
+        _.source = "/baz2"
         foo5=5
         foo6=6
-        ");
+        "#);
     }
 
     fn parse(s: String) -> MiseToml {
@@ -1825,5 +3300,418 @@ mod tests {
 
     fn parse_env(toml: String) -> String {
         parse(toml).env_entries().unwrap().into_iter().join("\n")
+    }
+
+    fn parse_error(toml: &str) -> String {
+        #[derive(Debug, Deserialize)]
+        struct TestConfig {
+            #[allow(dead_code)]
+            env: EnvList,
+        }
+
+        toml::from_str::<TestConfig>(toml).unwrap_err().to_string()
+    }
+
+    #[test]
+    fn test_is_safe_config_body() {
+        assert!(is_safe_config_body(""));
+        assert!(is_safe_config_body(indoc! {r#"
+        min_version = "2024.1.1"
+        [tools]
+        node = "20"
+        python = ["3.11", "3.12"]
+        "cargo:eza" = "latest"
+        "#}));
+        // tasks are inert until the user explicitly runs one
+        assert!(is_safe_config_body(indoc! {r#"
+        [tasks.build]
+        run = "cargo build"
+        dir = "src"
+        env = { FOO = "bar" }
+        [tasks.test]
+        depends = ["build"]
+        run = ["cargo test"]
+        "#}));
+
+        // templates can execute commands
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        node = "{{ exec(command='echo 20') }}"
+        "#}));
+        // tool options like postinstall/install_env run code
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        node = { version = "20", postinstall = "corepack enable" }
+        "#}));
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        node = [{ version = "20" }]
+        "#}));
+        // tasks with templates render (and can exec) while loading
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tasks.build]
+        run = "cargo build"
+        description = "{{ exec(command='echo hi') }}"
+        "#}));
+        // escaped Tera delimiters ({ == '{', } == '}') decode to
+        // `{{ exec(...) }}` after TOML parsing and must not bypass the check
+        assert!(!is_safe_config_body(
+            "[tools]\nnode = \"\\u007b\\u007b exec(command='echo 20') \\u007d\\u007d\"\n"
+        ));
+        assert!(!is_safe_config_body(
+            "[tasks.build]\nrun = \"cargo build\"\ndescription = \"\\u007b\\u007b exec(command='echo hi') \\u007d\\u007d\"\n"
+        ));
+        // an escaped delimiter in a key must also be caught
+        assert!(!is_safe_config_body(
+            "[tasks]\n\"\\u007b\\u007b exec() \\u007d\\u007d\" = { run = \"x\" }\n"
+        ));
+        // anything beyond min_version/tools/tasks requires trust
+        for body in [
+            "[env]\nFOO = \"bar\"",
+            "[task_config]\nincludes = [\"tasks.toml\"]",
+            "[hooks]\nenter = \"echo hi\"",
+            "[settings]\nparanoid = false",
+            "[alias]\nnode = \"asdf:foo/bar\"",
+            "[plugins]\nfoo = \"https://example.com/foo.git\"",
+            "env_file = \".env\"",
+        ] {
+            assert!(!is_safe_config_body(body), "should require trust: {body}");
+        }
+        // invalid toml falls back to the normal trust + parse flow
+        assert!(!is_safe_config_body("[tools"));
+    }
+
+    #[tokio::test]
+    async fn test_table_syntax_preserves_registry_defaults() {
+        // Test for #8039: table syntax like `ansible = { version = "latest" }`
+        // should preserve registry defaults (e.g. uvx=false, pipx_args=--include-deps)
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            ansible = {{ version = "latest" }}
+        "#});
+        let trs = cf.to_tool_request_set().unwrap();
+        let tools = trs.tools;
+        // Find the ansible tool request
+        let ansible_requests = tools
+            .iter()
+            .find(|(ba, _)| ba.short == "ansible")
+            .map(|(_, reqs)| reqs)
+            .expect("ansible should be in tool request set");
+        let opts = ansible_requests[0].options();
+        assert_eq!(
+            opts.get_string("uvx").as_deref(),
+            Some("false"),
+            "registry default uvx=false should be preserved with table syntax"
+        );
+        assert_eq!(
+            opts.get("pipx_args"),
+            Some("--include-deps"),
+            "registry default pipx_args=--include-deps should be preserved with table syntax"
+        );
+
+        // Also verify that user-provided options override registry defaults
+        let cf2 = parse(formatdoc! {r#"
+            [tools]
+            ansible = {{ version = "latest", uvx = "true" }}
+        "#});
+        let trs2 = cf2.to_tool_request_set().unwrap();
+        let ansible2 = trs2
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "ansible")
+            .map(|(_, reqs)| reqs)
+            .expect("ansible should be in tool request set");
+        let opts2 = ansible2[0].options();
+        assert_eq!(
+            opts2.get_string("uvx").as_deref(),
+            Some("true"),
+            "user-provided uvx=true should override registry default uvx=false"
+        );
+        assert_eq!(
+            opts2.get("pipx_args"),
+            Some("--include-deps"),
+            "non-overridden registry default pipx_args should still be preserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_table_syntax_user_opts_override_registry_defaults() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            podman = {{ version = "latest", rename_exe = "podman-remote" }}
+        "#});
+        let trs = cf.to_tool_request_set().unwrap();
+        let podman = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "podman")
+            .map(|(_, reqs)| reqs)
+            .expect("podman should be in tool request set");
+
+        assert_eq!(
+            podman[0].options().get("rename_exe"),
+            Some("podman-remote"),
+            "user-provided rename_exe should override the registry default"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_depends_field_parsing() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            dummy = {{ version = "latest", depends = ["tiny"] }}
+        "#});
+        let trs = cf.to_tool_request_set().unwrap();
+        let dummy = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "dummy")
+            .map(|(_, reqs)| reqs)
+            .expect("dummy should be in tool request set");
+        let opts = dummy[0].options();
+        assert_eq!(
+            opts.depends,
+            Some(vec!["tiny".to_string()]),
+            "depends should be parsed as a named field"
+        );
+        assert!(
+            !opts.opts.contains_key("depends"),
+            "depends should not leak into opts"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_depends_field_single_string() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            dummy = {{ version = "latest", depends = "tiny" }}
+        "#});
+        let trs = cf.to_tool_request_set().unwrap();
+        let dummy = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "dummy")
+            .map(|(_, reqs)| reqs)
+            .expect("dummy should be in tool request set");
+        let opts = dummy[0].options();
+        assert_eq!(
+            opts.depends,
+            Some(vec!["tiny".to_string()]),
+            "single string depends should be wrapped in a vec"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_os_field_single_string() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            dummy = {{ version = "latest", os = "linux" }}
+        "#});
+        let trs = cf.to_tool_request_set().unwrap();
+        let dummy = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "dummy")
+            .map(|(_, reqs)| reqs)
+            .expect("dummy should be in tool request set");
+        let opts = dummy[0].options();
+        assert_eq!(
+            opts.os,
+            Some(vec!["linux".to_string()]),
+            "single string os should be wrapped in a vec"
+        );
+        assert!(
+            !opts.opts.contains_key("os"),
+            "os should not leak into opts"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_preserves_named_core_options() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".replace-core-options.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            needs-dummy = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let needs_dummy = "needs-dummy".into();
+        let mut options = ToolVersionOptions {
+            core: CoreToolOptions {
+                os: Some(vec!["linux".to_string()]),
+                depends: Some(vec!["dummy".to_string()]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        options
+            .install_env
+            .insert("FOO".to_string(), EnvValue::from("bar"));
+
+        cf.replace_versions(
+            &needs_dummy,
+            vec![
+                ToolRequest::new_opts(
+                    Arc::new("needs-dummy".into()),
+                    "1.0.1",
+                    options,
+                    ToolSource::Unknown,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(dump.contains("depends"), "depends should be written back");
+        assert!(
+            dump.contains("dummy"),
+            "depends value should be written back"
+        );
+        assert!(dump.contains("os"), "os should be written back");
+        assert!(
+            dump.contains("install_env"),
+            "install_env should be written back"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_omits_empty_os() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".replace-empty-os.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let dummy = "dummy".into();
+        let options = ToolVersionOptions {
+            core: CoreToolOptions {
+                os: Some(vec![]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        cf.replace_versions(
+            &dummy,
+            vec![
+                ToolRequest::new_opts(
+                    Arc::new("dummy".into()),
+                    "1.0.1",
+                    options,
+                    ToolSource::Unknown,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(dump.contains(r#"dummy = "1.0.1""#));
+        assert!(!dump.contains("os"), "empty os should not be written back");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_linux_systemd_units() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.linux.systemd.units.my-sync]
+        description = "sync files"
+        after = ["network-online.target"]
+        wants = ["network-online.target"]
+        exec_start = "~/.local/bin/my-sync --watch"
+        type = "oneshot"
+        remain_after_exit = true
+        exec_stop = "~/.local/bin/my-sync --stop"
+        timeout_start_sec = "120"
+        timeout_stop_sec = "30"
+        no_new_privileges = true
+        private_tmp = true
+        environment = { PATH = "/usr/bin:/bin" }
+        working_directory = "~"
+        restart = "on-failure"
+        restart_sec = "5s"
+        standard_output = "append:%h/.local/state/my-sync.log"
+        wanted_by = ["default.target"]
+
+        [bootstrap.linux.systemd.units.my-sync-timer]
+        on_boot_sec = "2min"
+        on_unit_active_sec = "10min"
+        on_unit_inactive_sec = "5min"
+        on_calendar = "hourly"
+        randomized_delay_sec = "30s"
+        accuracy_sec = "1s"
+        persistent = true
+        unit = "dev.mise.my-sync.service"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        let unit = system.linux.systemd.units.get("my-sync").unwrap();
+        assert_eq!(unit.description.as_deref(), Some("sync files"));
+        assert_eq!(unit.after, vec!["network-online.target"]);
+        assert_eq!(unit.wants, vec!["network-online.target"]);
+        assert_eq!(
+            unit.exec_start.as_deref(),
+            Some("~/.local/bin/my-sync --watch")
+        );
+        assert_eq!(unit.service_type.as_deref(), Some("oneshot"));
+        assert_eq!(unit.remain_after_exit, Some(true));
+        assert_eq!(
+            unit.exec_stop.as_deref(),
+            Some("~/.local/bin/my-sync --stop")
+        );
+        assert_eq!(unit.timeout_start_sec.as_deref(), Some("120"));
+        assert_eq!(unit.timeout_stop_sec.as_deref(), Some("30"));
+        assert_eq!(unit.no_new_privileges, Some(true));
+        assert_eq!(unit.private_tmp, Some(true));
+        assert_eq!(
+            unit.environment.get("PATH").map(String::as_str),
+            Some("/usr/bin:/bin")
+        );
+        assert_eq!(unit.working_directory.as_deref(), Some("~"));
+        assert_eq!(unit.restart.as_deref(), Some("on-failure"));
+        assert_eq!(unit.restart_sec.as_deref(), Some("5s"));
+        assert_eq!(
+            unit.standard_output.as_deref(),
+            Some("append:%h/.local/state/my-sync.log")
+        );
+        assert_eq!(
+            unit.wanted_by.as_deref(),
+            Some(["default.target".to_string()].as_slice())
+        );
+        let timer = system.linux.systemd.units.get("my-sync-timer").unwrap();
+        assert_eq!(timer.on_boot_sec.as_deref(), Some("2min"));
+        assert_eq!(timer.on_unit_active_sec.as_deref(), Some("10min"));
+        assert_eq!(timer.on_unit_inactive_sec.as_deref(), Some("5min"));
+        assert_eq!(timer.on_calendar.as_deref(), Some("hourly"));
+        assert_eq!(timer.randomized_delay_sec.as_deref(), Some("30s"));
+        assert_eq!(timer.accuracy_sec.as_deref(), Some("1s"));
+        assert_eq!(timer.persistent, Some(true));
+        assert_eq!(timer.unit.as_deref(), Some("dev.mise.my-sync.service"));
+        file::remove_file(&p).unwrap();
     }
 }

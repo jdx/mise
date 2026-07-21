@@ -1,14 +1,10 @@
 name "mise"
 bin "mise"
-about "The front-end to your dev env"
-long_about r"mise is a tool for managing runtime versions. https://github.com/jdx/mise
+about "Dev tools, env vars, and tasks in one CLI"
+long_about r"mise prepares your development environment before each command runs. https://github.com/jdx/mise
 
-It's a replacement for tools like nvm, nodenv, rbenv, rvm, chruby, pyenv, etc.
-that works for any language. It's also great for managing linters/tools like
-jq and shellcheck.
-
-It is inspired by asdf and uses asdf's plugin ecosystem under the hood:
-https://asdf-vm.com/"
+It installs and switches between project tools, loads environment variables,
+and runs tasks from the same configuration."
 usage "Usage: mise [OPTIONS] <COMMAND>"
 flag "-C --cd" help="Change directory before running command" global=true {
     arg "<DIR>"
@@ -52,7 +48,7 @@ Customize status output with `status` settings."#
     flag "-s --shell" help="Shell type to generate the script for" hide=true {
         arg "<SHELL>"
     }
-    flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
+    flag "--status" help="Show \"mise: <TOOL>@<VERSION>\" message when changing directories" hide=true
     flag "--shims" help="Use shims instead of modifying PATH\nEffectively the same as:\n    PATH=\"$HOME/.local/share/mise/shims:$PATH\""
     flag "-q --quiet" help="Suppress non-error messages"
     arg "[SHELL_TYPE]" help="Shell type to generate the script for"
@@ -60,19 +56,19 @@ Customize status output with `status` settings."#
 cmd "alias" help="Manage aliases" {
     alias "a"
     alias "aliases" hide=true
-    flag "-p --plugin" help="filter aliases by plugin" {
-        arg "<PLUGIN>"
+    flag "-p --tool" help="Filter aliases by tool" {
+        arg "<TOOL>"
     }
     flag "--no-header" help="Don't show table header"
-    cmd "get" help="Show an alias for a plugin" {
-        long_help r"Show an alias for a plugin
+    cmd "get" help="Show an alias for a tool" {
+        long_help r"Show an alias for a tool
 
-This is the contents of an alias.<PLUGIN> entry in ~/.config/mise/config.toml"
+This is the contents of a tool_alias.<TOOL> entry in ~/.config/mise/config.toml"
         after_long_help r"Examples:
    $ mise alias get node lts-hydrogen
    20.0.0
 "
-        arg "<PLUGIN>" help="The plugin to show the alias for"
+        arg "<TOOL>" help="The tool to show the alias for"
         arg "<ALIAS>" help="The alias to show"
     }
     cmd "ls" help="List aliases\nShows the aliases that can be specified.\nThese can come from user config or from plugins in `bin/list-aliases`." {
@@ -87,35 +83,35 @@ For user config, aliases are defined like the following in `~/.config/mise/confi
   lts = "20.0.0""#
         after_long_help r"Examples:
 
-    $ mise aliases
+    $ mise tool-alias
     node    lts-hydrogen   20.0.0
 "
         flag "--no-header" help="Don't show table header"
-        arg "[PLUGIN]" help="Show aliases for <PLUGIN>"
+        arg "[TOOL]" help="Show aliases for <TOOL>"
     }
-    cmd "set" help="Add/update an alias for a plugin" {
+    cmd "set" help="Add/update an alias for a tool/backend" {
         alias "add" "create"
-        long_help r"Add/update an alias for a plugin
+        long_help r"Add/update an alias for a tool/backend
 
 This modifies the contents of ~/.config/mise/config.toml"
         after_long_help r"Examples:
 
     $ mise alias set node lts-hydrogen 18.0.0
 "
-        arg "<PLUGIN>" help="The plugin to set the alias for"
+        arg "<TOOL>" help="The tool/backend to set the alias for"
         arg "<ALIAS>" help="The alias to set"
         arg "<VALUE>" help="The value to set the alias to"
     }
-    cmd "unset" help="Clears an alias for a plugin" {
+    cmd "unset" help="Clears an alias for a tool/backend" {
         alias "rm" "remove" "delete" "del"
-        long_help r"Clears an alias for a plugin
+        long_help r"Clears an alias for a tool/backend
 
 This modifies the contents of ~/.config/mise/config.toml"
         after_long_help r"Examples:
 
     $ mise alias unset node lts-hydrogen
 "
-        arg "<PLUGIN>" help="The plugin to remove the alias from"
+        arg "<TOOL>" help="The tool/backend to remove the alias from"
         arg "<ALIAS>" help="The alias to remove"
     }
 }
@@ -123,8 +119,12 @@ cmd "asdf" hide=true help="[internal] simulates asdf for plugins that call \"asd
     arg "[ARGS]..." help="all arguments" var=true
 }
 cmd "backends" help="Manage backends" {
-    alias "b"
-    alias "backend" "backend-list" hide=true
+    alias "b" "backend" "backend-list" hide=true
+    after_long_help r"Deprecation:
+
+The `mise b` alias is deprecated and will be removed in mise 2027.4.0.
+Use `mise backends` instead.
+"
     cmd "ls" help="List built-in backends" {
         alias "list"
         after_long_help r"Examples:
@@ -147,14 +147,14 @@ Run `mise cache` with no args to view the current cache directory."
     cmd "clear" help="Deletes all cache files in mise" {
         alias "c"
         alias "clean" hide=true
-        arg "[PLUGIN]..." help="Plugin(s) to clear cache for e.g.: node, python" var=true
+        arg "[TOOL]..." help="Tool(s) to clear cache for e.g.: node, python" var=true
     }
 }
 cmd "completion" help="Generate shell completions" {
     alias "complete" "completions" hide=true
     after_long_help r"Examples:
 
-    $ mise completion bash > /etc/bash_completion.d/mise
+    $ mise completion bash > ~/.local/share/bash-completion/completions/mise
     $ mise completion zsh  > /usr/local/share/zsh/site-functions/_mise
     $ mise completion fish > ~/.config/fish/completions/mise.fish
 "
@@ -225,7 +225,7 @@ This can be used to temporarily disable mise in a shell session."
 cmd "direnv" help="Output direnv function to use mise inside direnv" {
     long_help r"Output direnv function to use mise inside direnv
 
-See https://mise.jdx.dev/direnv.html for more information
+See https://mise.en.dev/direnv.html for more information
 
 Because this generates the idiomatic files based on currently installed plugins,
 you should run this command after installing new plugins. Otherwise
@@ -235,7 +235,7 @@ direnv may not know to update environment variables when legacy file versions ch
     cmd "activate" help="Output direnv function to use mise inside direnv" {
         long_help r"Output direnv function to use mise inside direnv
 
-See https://mise.jdx.dev/direnv.html for more information
+See https://mise.en.dev/direnv.html for more information
 
 Because this generates the legacy files based on currently installed plugins,
 you should run this command after installing new plugins. Otherwise
@@ -303,7 +303,7 @@ The "--" separates runtimes from the commands to pass along to the subprocess."#
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg "<JOBS>"
     }
-    flag "--raw" help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
+    flag "--raw" help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     arg "[TOOL@VERSION]..." help="Tool(s) to start e.g.: node@20 python@3.10" var=true
     arg "[COMMAND]..." help="Command string to execute (same as --command)" var=true
 }
@@ -375,8 +375,8 @@ Use `mise local` to set a tool version locally in the current directory."
 "
     flag "--pin" help="Save exact version to `~/.tool-versions`\ne.g.: `mise global --pin node@20` will save `node 20.0.0` to ~/.tool-versions"
     flag "--fuzzy" help="Save fuzzy version to `~/.tool-versions`\ne.g.: `mise global --fuzzy node@20` will save `node 20` to ~/.tool-versions\nthis is the default behavior unless MISE_ASDF_COMPAT=1"
-    flag "--remove" help="Remove the plugin(s) from ~/.tool-versions" var=true {
-        arg "<PLUGIN>"
+    flag "--remove" help="Remove the tool(s) from ~/.tool-versions" var=true {
+        arg "<TOOL>"
     }
     flag "--path" help="Get the path of the global config file"
     arg "[TOOL@VERSION]..." help="Tool(s) to add to .tool-versions\ne.g.: node@20\nIf this is a single tool with no version, the current value of the global\n.tool-versions will be displayed" var=true
@@ -385,7 +385,7 @@ cmd "hook-env" hide=true help="[internal] called by activate hook to update env 
     flag "-s --shell" help="Shell type to generate script for" {
         arg "<SHELL>"
     }
-    flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
+    flag "--status" help="Show \"mise: <TOOL>@<VERSION>\" message when changing directories" hide=true
     flag "-q --quiet" help="Hide warnings such as when a tool is not installed"
 }
 cmd "hook-not-found" hide=true help="[internal] called by shell when a command is not found" {
@@ -405,7 +405,7 @@ cmd "install" help="Install a tool version" {
     alias "i"
     long_help r"Install a tool version
 
-Installs a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
+Installs a tool version to `~/.local/share/mise/installs/<TOOL>/<VERSION>`
 Installing alone will not activate the tools so they won't be in PATH.
 To install and/or activate in one command, use `mise use` which will create a `.mise.toml` file
 in the current directory to activate this tool when inside the directory.
@@ -423,9 +423,9 @@ Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg "<JOBS>"
     }
-    flag "--raw" help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
+    flag "--raw" help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     flag "-v --verbose" help="Show installation output" var=true count=true {
-        long_help "Show installation output\n\nThis argument will print plugin output such as download, configuration, and compilation output."
+        long_help "Show installation output\n\nThis argument will print backend output such as download, configuration, and compilation output."
     }
     arg "[TOOL@VERSION]..." help="Tool(s) to install e.g.: node@20" var=true
 }
@@ -492,8 +492,8 @@ is set. A future v2 release of mise will default to using `.mise.toml`."
     flag "-p --parent" help="Recurse up to find a .tool-versions file rather than using the current directory only\nby default this command will only set the tool in the current directory (\"$PWD/.tool-versions\")"
     flag "--pin" help="Save exact version to `.tool-versions`\ne.g.: `mise local --pin node@20` will save `node 20.0.0` to .tool-versions"
     flag "--fuzzy" help="Save fuzzy version to `.tool-versions` e.g.: `mise local --fuzzy node@20` will save `node 20` to .tool-versions This is the default behavior unless MISE_ASDF_COMPAT=1"
-    flag "--remove" help="Remove the plugin(s) from .tool-versions" var=true {
-        arg "<PLUGIN>"
+    flag "--remove" help="Remove the tool(s) from .tool-versions" var=true {
+        arg "<TOOL>"
     }
     flag "--path" help="Get the path of the config file"
     arg "[TOOL@VERSION]..." help="Tool(s) to add to .tool-versions/.mise.toml\ne.g.: node@20\nif this is a single tool with no version,\nthe current value of .tool-versions/.mise.toml will be displayed" var=true
@@ -537,7 +537,7 @@ It's a useful command to get the current state of your tools."#
         arg "<PLUGIN_FLAG>"
     }
     flag "-c --current" help="Only show tool versions currently specified in a .tool-versions/.mise.toml"
-    flag "-g --global" help="Only show tool versions currently specified in a the global .tool-versions/.mise.toml"
+    flag "-g --global" help="Only show tool versions currently specified in the global .tool-versions/.mise.toml"
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in .tool-versions/.mise.toml but not installed)"
     flag "--parseable" help="Output in an easily parseable format" hide=true
     flag "-J --json" help="Output in JSON format"
@@ -606,7 +606,7 @@ cmd "plugins" help="Manage plugins" {
         alias "i" "a" "add"
         long_help r"Install a plugin
 
-note that mise automatically can install plugins when you install a tool
+note that mise can automatically install plugins when you install a tool
 e.g.: `mise install node@20` will autoinstall the node plugin
 
 This behavior can be modified in ~/.config/mise/config.toml"
@@ -675,7 +675,7 @@ Can also show remotely available plugins to install."
         long_help r"
 List all available remote plugins
 
-The full list is here: https://github.com/jdx/mise/blob/main/registry.toml
+The full list is here: https://github.com/jdx/mise/blob/main/registry/
 
 Examples:
   $ mise plugins ls-remote
@@ -715,8 +715,8 @@ cmd "prune" help="Delete unused versions of tools" {
 
 mise tracks which config files have been used in ~/.local/state/mise/tracked-configs
 Versions which are no longer the latest specified in any of those configs are deleted.
-Versions installed only with environment variables (`MISE_<PLUGIN>_VERSION`) will be deleted,
-as will versions only referenced on the command line (`mise exec <PLUGIN>@<VERSION>`)."
+Versions installed only with environment variables (`MISE_<TOOL>_VERSION`) will be deleted,
+as will versions only referenced on the command line (`mise exec <TOOL>@<VERSION>`)."
     after_long_help r"Examples:
 
     $ mise prune --dry-run
@@ -724,7 +724,7 @@ as will versions only referenced on the command line (`mise exec <PLUGIN>@<VERSI
     rm -rf ~/.local/share/mise/versions/node/20.0.1
 "
     flag "-n --dry-run" help="Do not actually delete anything"
-    flag "--configs" help="Prune only tracked and trusted configuration links that point to non-existent configurations"
+    flag "--configs" help="Prune only tracked and trusted configuration links that point to nonexistent configurations"
     flag "--tools" help="Prune only unused versions of tools"
     arg "[PLUGIN]..." help="Prune only versions from this plugin(s)" var=true
 }
@@ -746,7 +746,7 @@ other ways to install things (like using yarn or pnpm for node) that mise does
 not know about and so it will be necessary to call this explicitly.
 
 If you think mise should automatically call this for a particular command, please
-open an issue on the mise repo. You can also setup a shell function to reshim
+open an issue on the mise repo. You can also set up a shell function to reshim
 automatically (it's really fast so you don't need to worry about overhead):
 
 npm() {
@@ -762,13 +762,13 @@ npm() {
     arg "[PLUGIN]" hide=true
     arg "[VERSION]" hide=true
 }
-cmd "run" help="[experimental] Run a tasks" {
+cmd "run" help="[experimental] Run a task" {
     alias "r"
-    long_help r#"[experimental] Run a tasks
+    long_help r#"[experimental] Run a task
 
-This command will run a tasks, or multiple tasks in parallel.
+This command will run a task, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a tasks, it will only run if the source
+If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in .mise.toml or as standalone scripts.
@@ -805,12 +805,12 @@ The name of the script will be the name of the tasks.
     $ mise run lint ::: test ::: check
 
     # Execute multiple tasks each with their own arguments.
-    $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+    $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 "#
     flag "-C --cd" help="Change to this directory before executing the command" {
         arg "<CD>"
     }
-    flag "-n --dry-run" help="Don't actually run the tasks(s), just print them in order of execution"
+    flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
     flag "-f --force" help="Force the tasks to run even if outputs are up to date"
     flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the tasks's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
     flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
@@ -871,7 +871,7 @@ cmd "settings" help="Manage settings" {
 This is the contents of a single entry in ~/.config/mise/config.toml
 
 Note that aliases are also stored in this file
-but managed separately with `mise aliases get`"
+but managed separately with `mise tool-alias get`"
         after_long_help r"Examples:
 
     $ mise settings get legacy_version_file
@@ -886,7 +886,7 @@ but managed separately with `mise aliases get`"
 This is the contents of ~/.config/mise/config.toml
 
 Note that aliases are also stored in this file
-but managed separately with `mise aliases`"
+but managed separately with `mise tool-alias`"
         after_long_help r"Examples:
 
     $ mise settings
@@ -936,7 +936,7 @@ by `mise activate`."#
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg "<JOBS>"
     }
-    flag "--raw" help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
+    flag "--raw" help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     flag "-u --unset" help="Removes a previously set version"
     arg "[TOOL@VERSION]..." help="Tool(s) to use" var=true
 }
@@ -1001,17 +1001,17 @@ cmd "tasks" help="[experimental] Manage tasks" {
         flag "--dot" help="Display dependencies in DOT format"
         arg "[TASKS]..." help="Tasks to show dependencies for\nCan specify multiple tasks by separating with spaces\ne.g.: mise tasks deps lint test check" var=true
     }
-    cmd "edit" help="[experimental] Edit a tasks with $EDITOR" {
-        long_help r"[experimental] Edit a tasks with $EDITOR
+    cmd "edit" help="[experimental] Edit a task with $EDITOR" {
+        long_help r"[experimental] Edit a task with $EDITOR
 
-The tasks will be created as a standalone script if it does not already exist."
+The task will be created as a standalone script if it does not already exist."
         after_long_help r"Examples:
 
     $ mise tasks edit build
     $ mise tasks edit test
 "
-        flag "-p --path" help="Display the path to the tasks instead of editing it"
-        arg "<TASK>" help="Tasks to edit"
+        flag "-p --path" help="Display the path to the task instead of editing it"
+        arg "<TASK>" help="Task to edit"
     }
     cmd "ls" help="[experimental] List available tasks to execute\nThese may be included from the config file or from the project's .mise/tasks directory\nmise will merge all tasks from all parent directories into this list." {
         long_help r"[experimental] List available tasks to execute
@@ -1036,13 +1036,13 @@ tasks will override the global ones if they have the same name."
         }
         flag "-J --json" help="Output in JSON format"
     }
-    cmd "run" help="[experimental] Run a tasks" {
+    cmd "run" help="[experimental] Run a task" {
         alias "r"
-        long_help r#"[experimental] Run a tasks
+        long_help r#"[experimental] Run a task
 
-This command will run a tasks, or multiple tasks in parallel.
+This command will run a task, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a tasks, it will only run if the source
+If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in .mise.toml or as standalone scripts.
@@ -1079,12 +1079,12 @@ The name of the script will be the name of the tasks.
     $ mise run lint ::: test ::: check
 
     # Execute multiple tasks each with their own arguments.
-    $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+    $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 "#
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg "<CD>"
         }
-        flag "-n --dry-run" help="Don't actually run the tasks(s), just print them in order of execution"
+        flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
         flag "-f --force" help="Force the tasks to run even if outputs are up to date"
         flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the tasks's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
         flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
@@ -1151,7 +1151,7 @@ cmd "upgrade" help="Upgrades outdated tool versions" {
         arg "<JOBS>"
     }
     flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
-    flag "--raw" help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
+    flag "--raw" help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     arg "[TOOL@VERSION]..." help="Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded" var=true
 }
 cmd "usage" help="Generate a usage CLI spec" {
@@ -1192,9 +1192,9 @@ This replaces asdf's `local` and `global` commands, however those are still avai
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg "<JOBS>"
     }
-    flag "--raw" help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
-    flag "--remove" help="Remove the plugin(s) from config file" var=true {
-        arg "<PLUGIN>"
+    flag "--raw" help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
+    flag "--remove" help="Remove the tool(s) from config file" var=true {
+        arg "<TOOL>"
     }
     flag "-p --path" help="Specify a path to a config file or directory If a directory is specified, it will look for .mise.toml (default) or .tool-versions" {
         arg "<PATH>"
@@ -1205,7 +1205,7 @@ This replaces asdf's `local` and `global` commands, however those are still avai
 cmd "version" help="Show mise version" {
     alias "v" hide=true
 }
-cmd "watch" help="[experimental] Run a tasks watching for changes" {
+cmd "watch" help="[experimental] Run a task watching for changes" {
     alias "w"
     after_long_help r#"Examples:
     $ mise watch -t build
@@ -1222,7 +1222,7 @@ cmd "watch" help="[experimental] Run a tasks watching for changes" {
     flag "-t --task" help="Tasks to run" var=true {
         arg "<TASK>"
     }
-    flag "-g --glob" help="Files to watch\nDefaults to sources from the tasks(s)" var=true {
+    flag "-g --glob" help="Files to watch\nDefaults to sources from the task(s)" var=true {
         arg "<GLOB>"
     }
     arg "[ARGS]..." help="Extra arguments" var=true

@@ -7,8 +7,9 @@ mod git_pre_commit;
 mod github_action;
 mod task_docs;
 mod task_stubs;
+mod tool_stub;
 
-/// [experimental] Generate files for various tools/services
+/// Generate files for various tools/services
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "gen", alias = "g")]
 pub struct Generate {
@@ -25,24 +26,26 @@ enum Commands {
     GithubAction(github_action::GithubAction),
     TaskDocs(task_docs::TaskDocs),
     TaskStubs(task_stubs::TaskStubs),
+    ToolStub(tool_stub::ToolStub),
 }
 
 impl Commands {
-    pub fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         match self {
-            Self::Bootstrap(cmd) => cmd.run(),
-            Self::Config(cmd) => cmd.run(),
-            Self::Devcontainer(cmd) => cmd.run(),
-            Self::GitPreCommit(cmd) => cmd.run(),
-            Self::GithubAction(cmd) => cmd.run(),
-            Self::TaskDocs(cmd) => cmd.run(),
-            Self::TaskStubs(cmd) => cmd.run(),
+            Self::Bootstrap(cmd) => cmd.run().await,
+            Self::Config(cmd) => cmd.run().await,
+            Self::Devcontainer(cmd) => cmd.run().await,
+            Self::GitPreCommit(cmd) => cmd.run().await,
+            Self::GithubAction(cmd) => cmd.run().await,
+            Self::TaskDocs(cmd) => cmd.run().await,
+            Self::TaskStubs(cmd) => cmd.run().await,
+            Self::ToolStub(cmd) => cmd.run().await,
         }
     }
 }
 
 impl Generate {
-    pub fn run(self) -> eyre::Result<()> {
-        self.command.run()
+    pub async fn run(self) -> eyre::Result<()> {
+        self.command.run().await
     }
 }

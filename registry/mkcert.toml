@@ -1,0 +1,3 @@
+backends = ["aqua:FiloSottile/mkcert", "asdf:salasrod/asdf-mkcert"]
+description = "A simple zero-config tool to make locally trusted development certificates with any names you'd like"
+test = { cmd = "mkcert --version", expected = "v{{version}}" }

@@ -1,0 +1,3 @@
+backends = ["github:clj-kondo/clj-kondo", "asdf:rynkowsg/asdf-clj-kondo"]
+description = "Static analyzer and linter for Clojure code that sparks joy"
+test = { cmd = "clj-kondo --version", expected = "{{version}}" }

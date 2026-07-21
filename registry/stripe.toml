@@ -1,0 +1,3 @@
+aliases = ["stripe-cli"]
+backends = ["aqua:stripe/stripe-cli", "asdf:offbyone/asdf-stripe"]
+description = "A command-line tool for Stripe"

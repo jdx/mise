@@ -1,0 +1,3 @@
+backends = ["aqua:kptdev/kpt", "asdf:nlamirault/asdf-kpt"]
+description = "Automate Kubernetes Configuration Editing"
+os = ["linux", "macos"]

@@ -1,0 +1,2 @@
+backends = ["aqua:ovh/venom", "asdf:aabouzaid/asdf-venom"]
+description = "Manage and run your integration tests with efficiency - Venom run executors (script, HTTP Request, web, imap, etc... ) and assertions"

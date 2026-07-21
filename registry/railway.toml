@@ -1,0 +1,8 @@
+description = "Railway CLI"
+test = { cmd = "railway --version", expected = "railway {{version}}" }
+
+[[backends]]
+full = "github:railwayapp/cli"
+
+[[backends]]
+full = "cargo:railwayapp"

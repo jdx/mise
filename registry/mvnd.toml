@@ -1,0 +1,2 @@
+backends = ["aqua:apache/maven-mvnd", "asdf:joschi/asdf-mvnd"]
+description = "Apache Maven Daemon"

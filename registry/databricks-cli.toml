@@ -1,0 +1,8 @@
+description = "Databricks CLI"
+test = { cmd = "databricks --version", expected = "Databricks CLI v{{version}}" }
+
+[[backends]]
+full = "aqua:databricks/cli"
+
+[[backends]]
+full = "github:databricks/cli"

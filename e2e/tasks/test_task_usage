@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 
 # tests that "test.sh" gets mapped to "test" except when an existing task is there named "test"
-assert "mise task add --file test.sh --description sh"
-assert "mise task ls" "test  sh"
-assert_json_partial_array "mise task ls --json" "name,description,source" "[
+assert "mise tasks add --file test.sh --description sh"
+assert "mise tasks ls" "test  sh"
+assert_json_partial_array "mise tasks ls --json" "name,description,source" "[
   {
     \"name\": \"test\",
     \"description\": \"sh\",
     \"source\": \"$PWD/mise-tasks/test.sh\"
   }
 ]"
-assert "mise task ls --usage" 'cmd test help=sh'
+assert "mise tasks ls --usage" 'cmd test help=sh {
+    arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
+}'
 
-assert "mise task add --file test --description no-sh"
-assert "mise task ls" "test     no-sh
+assert "mise tasks add --file test --description no-sh"
+assert "mise tasks ls" "test     no-sh
 test.sh  sh"
-assert_json_partial_array "mise task ls --json" "name,description,source" "[
+assert_json_partial_array "mise tasks ls --json" "name,description,source" "[
   {
     \"name\": \"test\",
     \"description\": \"no-sh\",
@@ -28,7 +30,7 @@ assert_json_partial_array "mise task ls --json" "name,description,source" "[
   }
 ]"
 
-assert_json_partial_array "mise task ls --json" "name,description,source" "$(
+assert_json_partial_array "mise tasks ls --json" "name,description,source" "$(
   cat <<EOF
 [
   {
@@ -45,8 +47,12 @@ assert_json_partial_array "mise task ls --json" "name,description,source" "$(
 EOF
 )"
 
-assert "mise task ls --usage" 'cmd test help=no-sh
-cmd test.sh help=sh'
+assert "mise tasks ls --usage" 'cmd test help=no-sh {
+    arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
+}
+cmd test.sh help=sh {
+    arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
+}'
 
 touch script.sh
 chmod +x script.sh
@@ -61,16 +67,16 @@ EOF
 assert "mise run mytask" "abc"
 
 mkdir -p mise-tasks
-cat <<EOF >mise-tasks/test-args.js
-#!/usr/bin/env node
-//MISE description="Compare block IDs between grower and packer tenants"
-//USAGE flag "-g --grower <growerTenant>" required=#true var=#true help="The grower tenant ID(s) to compare"
-//USAGE flag "-p --packer <packerTenant>" required=#true help="The packer tenant ID to match against"
+cat <<EOF >mise-tasks/test-args
+#!/usr/bin/env bash
+#MISE description="Compare block IDs between grower and packer tenants"
+#USAGE flag "-g --grower <growerTenant>" required=#true var=#true help="The grower tenant ID(s) to compare"
+#USAGE flag "-p --packer <packerTenant>" required=#true help="The packer tenant ID to match against"
 
-console.log(\`grower: \${process.env.usage_grower}\`);
-console.log(\`packer: \${process.env.usage_packer}\`);
+echo "grower: \$usage_grower"
+echo "packer: \$usage_packer"
 EOF
-chmod +x mise-tasks/test-args.js
+chmod +x mise-tasks/test-args
 
 # assert_fail "mise run test-args --grower 1 -g 2" "Missing required flag: --packer <packer>"
 assert "mise run --trace test-args --grower 1 -g 2 --packer 3" "grower: 1 2

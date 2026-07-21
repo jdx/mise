@@ -1,0 +1,447 @@
+#!/usr/bin/env bash
+
+# Validate that the mise JSON schema works correctly with tombi (strict mode).
+# Tombi v0.9.19 fixed evaluated-property collection for allOf +
+# unevaluatedProperties in tombi-toml/tombi#1725, which lets the schema share
+# task properties through $refs without inlining them.
+
+TOMBI_VERSION="0.9.22"
+
+# Install a pinned tombi version so release asset packaging changes do not break
+# this schema regression test.
+mise use -g tombi@$TOMBI_VERSION
+
+SCHEMA_PATH="$ROOT/schema/mise.json"
+TASK_SCHEMA_PATH="$ROOT/schema/mise-task.json"
+REGISTRY_TOOL_SCHEMA_PATH="$ROOT/schema/mise-registry-tool.json"
+TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
+TOMBI_LINT="$TOMBI lint --offline --no-cache --error-on-warnings --quiet"
+assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
+
+# Set up tombi config pointing to local schema
+cat >"$HOME/tombi.toml" <<EOF
+toml-version = "v1.0.0"
+
+[schema]
+enabled = true
+strict = true
+
+[[schemas]]
+path = "file://$SCHEMA_PATH"
+include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.toml", "mise-vars.toml"]
+
+[[schemas]]
+path = "file://$TASK_SCHEMA_PATH"
+include = ["mise-task-os.toml"]
+
+[[schemas]]
+path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
+include = ["mise-registry-tool.toml"]
+EOF
+
+# Create a mise.toml exercising task properties that were previously broken
+cat >"$HOME/workdir/mise.toml" <<'TOML'
+env_file = ".env"
+env_path = "./bin"
+
+[[watch_files]]
+patterns = ["src/**/*.rs"]
+run = "cargo fmt"
+shell = "bash -c"
+
+[task_templates.base]
+dir = "{{config_root}}"
+deny_net = true
+allow_env = ["CI"]
+
+[tasks.build]
+description = "Build the project"
+depends = ["lint"]
+run = "cargo build"
+dir = "{{config_root}}"
+quiet = true
+usage = "build [args]"
+deny_env = true
+allow_read = ["."]
+
+[tasks.lint]
+extends = "base"
+run = "cargo clippy"
+description = "Lint the project"
+
+[vars]
+e2e_args = { default = "--headless", redact = true }
+
+[tool_alias.java.versions]
+"11.0" = "temurin-11"
+
+[bootstrap.macos.launchd.agents.daily]
+program = "/bin/echo"
+start_calendar_interval = { hour = 2, minute = 0 }
+
+[bootstrap.macos.launchd.agents.boundaries]
+program = "/bin/echo"
+start_calendar_interval = [
+  { minute = 0, hour = 0, day = 1, weekday = 0, month = 1 },
+  { minute = 59, hour = 23, day = 31, weekday = 7, month = 12 },
+]
+
+[bootstrap.linux.systemd.units.sync]
+exec_start = "/usr/bin/rsync --archive source/ destination/"
+type = "oneshot"
+remain_after_exit = true
+exec_stop = "/usr/bin/umount destination"
+timeout_start_sec = "2min"
+timeout_stop_sec = "30s"
+no_new_privileges = true
+private_tmp = true
+
+[bootstrap.linux.systemd.units.sync-timer]
+on_boot_sec = "2min"
+on_unit_inactive_sec = "5min"
+randomized_delay_sec = "30s"
+accuracy_sec = "1s"
+persistent = true
+unit = "dev.mise.sync.service"
+wanted_by = ["timers.target"]
+
+[bootstrap.mise_shell_activate]
+bash = true
+zsh = false
+fish = "activate"
+bash_profile = "shims"
+bashrc = { enabled = true, mode = "activate" }
+zshenv = { enabled = false }
+zprofile = { enabled = true, mode = "shims" }
+zshrc = true
+
+[[oci.copy]]
+host = "dist/my-app"
+image = "/usr/local/bin/my-app"
+
+[[oci.copy]]
+host = "assets"
+image = "//srv//.assets///"
+TOML
+
+# Create a separate file for age schema coverage so mise does not try to decrypt
+# placeholder values while running tombi through `mise x`.
+cat >"$HOME/workdir/mise-age.toml" <<'TOML'
+[env]
+VALUE_OBJECT = { value = 123, tools = true, redact = true, required = "set VALUE_OBJECT" }
+VALUE_DEFAULT = { default = 123, tools = true, redact = true }
+SECRET_SIMPLE = { age = "AGE-SECRET", tools = true }
+SECRET_COMPLEX = { age = { value = "AGE-SECRET", format = "raw", tools = true, redact = true } }
+TOML
+
+cat >"$HOME/workdir/mise-env-directives.toml" <<'TOML'
+[env]
+_.file = { path = ".env", tools = true, redact = true, required = true }
+_.source = [{ path = "env.sh", tools = true, redact = true, required = "source env.sh" }]
+_.path = { paths = ["./bin", "./scripts"], tools = true }
+TOML
+
+cat >"$HOME/workdir/mise-vars.toml" <<'TOML'
+[vars]
+STRING = "value"
+INTEGER = 123
+TRUE_BOOL = true
+VALUE_STRING = { value = "value", redact = true }
+VALUE_INTEGER = { value = 123 }
+VALUE_TRUE = { value = true }
+VALUE_DEFAULT = { default = 123, redact = true }
+REQUIRED_TRUE = { required = true, redact = true }
+REQUIRED_HELP = { required = "set REQUIRED_HELP in mise.local.toml" }
+SECRET_SIMPLE = { age = "AGE-SECRET", redact = false }
+SECRET_COMPLEX = { age = { value = "AGE-SECRET", format = "raw", redact = true } }
+_.file = ".env"
+_.source = ["env.sh"]
+TOML
+
+cat >"$HOME/workdir/mise-os.toml" <<'TOML'
+[tools]
+node = { version = "latest", os = ["linux", "macos/arm64", "darwin/aarch64", "win/amd64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, backend_options = { nested = true } }
+go = { version = "latest", os = "linux/x64" }
+
+[tasks.build.tools]
+rust = { version = "latest", os = ["linux/x64", "macos/arm64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, profile = "release", targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"], backend_options = { nested = { enabled = true, retries = 2 } } }
+TOML
+
+cat >"$HOME/workdir/mise-task-os.toml" <<'TOML'
+[build]
+run = "echo ok"
+
+[build.tools]
+node = { version = "latest", os = ["linux/x64", "macos/arm64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, profile = "release", matching = ["node", "npm"], platforms = { linux-x64 = { bin = ["node", "npm"], env = { NODE_ENV = "test" } } } }
+TOML
+
+cat >"$HOME/workdir/mise-registry-tool.toml" <<'TOML'
+backends = [
+  { full = "aqua:ImageMagick/ImageMagick", platforms = ["windows-x64"] },
+  { full = "github:owner/repo", platforms = ["linux", "arm64"], options = { platforms = { linux-x64 = { asset_pattern = "tool-linux.tar.gz" }, darwin-aarch64 = { asset_pattern = "tool-darwin.tar.gz" } } } },
+]
+description = "Example tool"
+test = { cmd = "tool --version", expected = "tool {{version}}" }
+TOML
+
+# tombi lint should succeed with no errors (warnings about table order are ok)
+cd "$HOME/workdir"
+assert_succeed "$TOMBI_LINT mise.toml"
+assert_succeed "$TOMBI_LINT mise-age.toml"
+assert_succeed "$TOMBI_LINT mise-env-directives.toml"
+assert_succeed "$TOMBI_LINT mise-vars.toml"
+assert_succeed "$TOMBI_LINT mise-os.toml"
+assert_succeed "$TOMBI_LINT mise-task-os.toml"
+assert_succeed "$TOMBI_LINT mise-registry-tool.toml"
+
+# Verify that invalid properties on tasks are rejected
+cat >"$HOME/workdir/mise-bad.toml" <<'TOML'
+[tasks.build]
+description = "Build the project"
+run = "cargo build"
+bogus_invalid_property = "should fail"
+TOML
+
+cat >"$HOME/tombi.toml" <<EOF
+toml-version = "v1.0.0"
+
+[schema]
+enabled = true
+strict = true
+
+[[schemas]]
+path = "file://$SCHEMA_PATH"
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+
+[[schemas]]
+path = "file://$TASK_SCHEMA_PATH"
+include = ["mise-bad-task-os.toml", "mise-bad-task-install-env-float.toml", "mise-bad-task-postinstall.toml"]
+
+[[schemas]]
+path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
+include = ["mise-bad-registry-tool.toml"]
+
+[[schemas]]
+path = "file://$SCHEMA_PATH"
+include = ["mise-bad-tool-alias.toml"]
+EOF
+
+assert_fail "$TOMBI_LINT mise-bad.toml"
+
+# Verify that options for complex age values must be nested inside age
+cat >"$HOME/workdir/mise-bad-age.toml" <<'TOML'
+[env]
+SECRET = { age = { value = "AGE-SECRET" }, tools = true }
+SECRET_FORMAT = { age = { value = "AGE-SECRET", format = "zip" } }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-age.toml"
+
+cat >"$HOME/workdir/mise-bad-env-default.toml" <<'TOML'
+[env]
+VALUE_AND_DEFAULT = { value = "x", default = "y" }
+REQUIRED_AND_DEFAULT = { required = true, default = "y" }
+AGE_AND_DEFAULT = { age = "AGE-SECRET", default = "y" }
+BOOL_DEFAULT = { default = false }
+
+[vars]
+VALUE_AND_DEFAULT = { value = "x", default = "y" }
+BOOL_DEFAULT = { default = false }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-env-default.toml"
+
+cat >"$HOME/workdir/mise-bad-env-directive.toml" <<'TOML'
+[env]
+_.file = { path = ".env", required = 123 }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-env-directive.toml"
+
+cat >"$HOME/workdir/mise-bad-env-float.toml" <<'TOML'
+[env]
+FLOAT = 1.23
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-env-float.toml"
+
+cat >"$HOME/workdir/mise-bad-install-env-float.toml" <<'TOML'
+[tools]
+node = { version = "latest", install_env = { FLOAT = 1.23 } }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-install-env-float.toml"
+
+# Tool-level postinstall hooks must be strings in both schemas.
+for postinstall in 123 true 1.23 2026-07-17T12:34:56Z; do
+  cat >"$HOME/workdir/mise-bad-postinstall.toml" <<TOML
+[tools]
+node = { version = "latest", postinstall = $postinstall }
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-postinstall.toml"
+
+  cat >"$HOME/workdir/mise-bad-task-postinstall.toml" <<TOML
+[build]
+run = "echo ok"
+
+[build.tools]
+node = { version = "latest", postinstall = $postinstall }
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-task-postinstall.toml"
+done
+
+cat >"$HOME/workdir/mise-bad-vars.toml" <<'TOML'
+[vars]
+FALSE_BOOL = false
+VALUE_FALSE = { value = false }
+REQUIRED_FALSE = { required = false }
+FLOAT = 1.23
+VALUE_FLOAT = { value = 1.23 }
+TOOLS_FILTERED = { value = "not actually resolved as a var", tools = true }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-vars.toml"
+
+# Verify that extends is rejected on task_templates (not supported at runtime)
+cat >"$HOME/workdir/mise-bad-tmpl.toml" <<'TOML'
+[task_templates.derived]
+extends = "base"
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-tmpl.toml"
+
+# Verify that quiet/hide/raw/interactive/raw_args are rejected on task_templates
+for flag in quiet hide raw interactive raw_args; do
+  cat >"$HOME/workdir/mise-bad-tmpl-output-flag.toml" <<TOML
+[task_templates.base]
+$flag = true
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-tmpl-output-flag.toml"
+done
+
+cat >"$HOME/workdir/mise-bad-os.toml" <<'TOML'
+[tools]
+node = { version = "latest", os = true }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-os.toml"
+
+cat >"$HOME/workdir/mise-bad-tool-alias.toml" <<'TOML'
+[tool_alias.node.versions]
+lts = { bad = true }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-tool-alias.toml"
+
+cat >"$HOME/workdir/mise-bad-watch-files.toml" <<'TOML'
+[[watch_files]]
+patterns = ["uv.lock"]
+task = "sync-deps"
+shell = "bash -c"
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-watch-files.toml"
+
+# Verify that launchd calendar intervals match runtime validation
+for interval in \
+  '{}' \
+  '[]' \
+  '[{}]' \
+  '{ minute = 60 }' \
+  '{ hour = 24 }' \
+  '{ day = 0 }' \
+  '{ weekday = 8 }' \
+  '{ month = 13 }' \
+  '{ second = 0 }'; do
+  cat >"$HOME/workdir/mise-bad-launchd-calendar.toml" <<TOML
+[bootstrap.macos.launchd.agents.invalid]
+program = "/bin/echo"
+start_calendar_interval = $interval
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-launchd-calendar.toml"
+done
+
+# Verify that systemd service/timer declarations match runtime validation
+for unit in \
+  '{ description = "service missing exec_start" }' \
+  '{ persistent = true }' \
+  '{ exec_start = "/bin/true", on_boot_sec = "1min" }' \
+  '{ exec_start = "/bin/true", type = "daemon" }'; do
+  cat >"$HOME/workdir/mise-bad-systemd.toml" <<TOML
+[bootstrap.linux.systemd.units]
+invalid = $unit
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-systemd.toml"
+done
+
+# Verify that OCI copy entries match runtime validation
+for copy in \
+  '{ image = "/srv/app" }' \
+  '{ host = "assets" }' \
+  '{ host = "", image = "/srv/app" }' \
+  '{ host = "assets", image = "srv/app" }' \
+  '{ host = "assets", image = "/" }' \
+  '{ host = "assets", image = "////" }' \
+  '{ host = "assets", image = "/srv/./app" }' \
+  '{ host = "assets", image = "/srv/../app" }' \
+  '{ host = "assets", image = "/srv/app", extra = true }'; do
+  cat >"$HOME/workdir/mise-bad-oci-copy.toml" <<TOML
+[oci]
+copy = [$copy]
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-oci-copy.toml"
+done
+
+# Verify that unknown shell activation targets and invalid values are rejected
+cat >"$HOME/workdir/mise-bad-shell-activate.toml" <<'TOML'
+[bootstrap.mise_shell_activate]
+powershell = true
+TOML
+assert_fail "$TOMBI_LINT mise-bad-shell-activate.toml"
+
+cat >"$HOME/workdir/mise-bad-shell-activate.toml" <<'TOML'
+[bootstrap.mise_shell_activate]
+zsh = "invalid"
+TOML
+assert_fail "$TOMBI_LINT mise-bad-shell-activate.toml"
+
+cat >"$HOME/workdir/mise-bad-shell-activate.toml" <<'TOML'
+[bootstrap.mise_shell_activate]
+zsh = { mode = "activate" }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-shell-activate.toml"
+
+cat >"$HOME/workdir/mise-bad-shell-activate.toml" <<'TOML'
+[bootstrap.mise_shell_activate]
+zsh = { enabled = true, unknown = true }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-shell-activate.toml"
+
+cat >"$HOME/workdir/mise-bad-task-os.toml" <<'TOML'
+[build]
+run = "echo ok"
+
+[build.tools]
+node = { version = "latest", os = true }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-task-os.toml"
+
+cat >"$HOME/workdir/mise-bad-task-install-env-float.toml" <<'TOML'
+[build]
+run = "echo ok"
+
+[build.tools]
+node = { version = "latest", install_env = { FLOAT = 1.23 } }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-task-install-env-float.toml"
+
+cat >"$HOME/workdir/mise-bad-registry-tool.toml" <<'TOML'
+backends = [
+  { full = "github:owner/repo", platforms = ["windows-amd64"] },
+  { full = "github:owner/repo", options = { platforms = { linux-x64-musl = { asset_pattern = "tool-linux.tar.gz" } } } },
+]
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-registry-tool.toml"

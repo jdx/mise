@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# Test mise token gitlab command
+
+unset GITLAB_TOKEN MISE_GITLAB_TOKEN MISE_GITLAB_ENTERPRISE_TOKEN MISE_GITLAB_GLAB_CLI_TOKENS
+
+# Test 1: No token configured
+assert_contains "mise token gitlab" "(none)"
+
+# Test 2: GITLAB_TOKEN env var
+assert_contains "GITLAB_TOKEN=env-test-token mise token gitlab --unmask" "env-test-token"
+assert_contains "GITLAB_TOKEN=env-test-token mise token gitlab --unmask" "GITLAB_TOKEN"
+
+# Test 3: MISE_GITLAB_TOKEN takes precedence over GITLAB_TOKEN
+assert_contains "MISE_GITLAB_TOKEN=mise-token GITLAB_TOKEN=other mise token gitlab --unmask" "mise-token"
+assert_contains "MISE_GITLAB_TOKEN=mise-token GITLAB_TOKEN=other mise token gitlab --unmask" "MISE_GITLAB_TOKEN"
+
+# Test 4: gitlab_tokens.toml
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/gitlab_tokens.toml" <<'EOF'
+[tokens."gitlab.com"]
+token = "toml-test-token"
+
+[tokens."gitlab.example.com"]
+token = "enterprise-toml-token"
+EOF
+assert_contains "mise token gitlab --unmask" "toml-test-token"
+assert_contains "mise token gitlab --unmask" "gitlab_tokens.toml"
+assert_contains "mise token gitlab gitlab.example.com --unmask" "enterprise-toml-token"
+
+# Test 5: Env var beats toml file
+assert_contains "GITLAB_TOKEN=env-wins mise token gitlab --unmask" "env-wins"
+assert_not_contains "GITLAB_TOKEN=env-wins mise token gitlab --unmask" "toml-test-token"
+
+# Test 6: glab CLI config fallback
+rm "$MISE_CONFIG_DIR/gitlab_tokens.toml"
+mkdir -p "$HOME/.config/glab-cli"
+cat >"$HOME/.config/glab-cli/config.yml" <<'EOF'
+hosts:
+  gitlab.com:
+    token: glab-cli-token
+EOF
+assert_contains "mise token gitlab --unmask" "glab-cli-token"
+assert_contains "mise token gitlab --unmask" "glab CLI"
+
+# Test 7: glab CLI can be disabled
+assert_contains "MISE_GITLAB_GLAB_CLI_TOKENS=false mise token gitlab" "(none)"
+
+# Test 8: Token masking
+assert_not_contains "GITLAB_TOKEN=glpatabcdefghijklmnop mise token gitlab" "glpatabcdefghijklmnop"
+assert_contains "GITLAB_TOKEN=glpatabcdefghijklmnop mise token gitlab" "glpa"
+
+# Test 9: Enterprise env var for non-gitlab.com host
+assert_contains "MISE_GITLAB_ENTERPRISE_TOKEN=ent-token mise token gitlab gitlab.example.com --unmask" "ent-token"
+assert_contains "MISE_GITLAB_ENTERPRISE_TOKEN=ent-token mise token gitlab gitlab.example.com --unmask" "MISE_GITLAB_ENTERPRISE_TOKEN"

@@ -1,0 +1,2 @@
+backends = ["aqua:temporalio/temporal", "asdf:asdf-community/asdf-temporal"]
+description = "Temporal service and CLI"

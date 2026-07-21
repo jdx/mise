@@ -1,0 +1,3 @@
+backends = ["aqua:GitGuardian/ggshield", "pipx:ggshield"]
+description = "Detect and validate 500+ types of hardcoded secrets with advanced checks. Use it as a pre-commit hook, GitHub Action, or CLI for proactive secret detection and security."
+test = { cmd = "ggshield --version", expected = "ggshield, version {{version}}" }

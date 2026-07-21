@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Plugin-declared system dependencies: detection, reporting, and the
+# system_deps setting. Detection is exercised install-free via `mise doctor`
+# and `mise bootstrap status`; the warn/ignore install behavior is exercised
+# with a plugin whose install fails offline (the pre-flight runs first).
+
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/sysdeptest"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "sysdeptest"
+PLUGIN.version = "0.1.0"
+PLUGIN.description = "system-deps test plugin"
+PLUGIN.systemDependencies = {
+	-- satisfied: `sh` exists everywhere
+	{ command = "sh -c 'exit 0'" },
+	-- missing required, with remediation hints
+	{ bin = "definitely-missing-binary-xyz",
+	  packages = { brew = "missingpkg", apt = "missingpkg" } },
+	-- missing optional: must never fail or prompt
+	{ bin = "another-missing-binary-xyz", optional = "extra feature",
+	  packages = { brew = "extrapkg", apt = "extrapkg" } },
+}
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return { { version = "1.0.0" } }
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	-- a local file:// url that does not exist: the download fails offline and
+	-- deterministically, after the system-deps pre-flight has already run.
+	return { version = ctx.version, url = "file:///nonexistent/sysdeptest.tar.gz" }
+end
+LUA
+
+cat >mise.toml <<'TOML'
+[tools]
+sysdeptest = "1.0.0"
+TOML
+
+# warn mode: the pre-flight reports the missing required capability and a
+# copy-paste install hint, then the (offline) install fails.
+assert_fail_contains "MISE_SYSTEM_DEPS=warn mise install sysdeptest@1.0.0" "definitely-missing-binary-xyz"
+assert_fail_contains "MISE_SYSTEM_DEPS=warn mise install sysdeptest@1.0.0" "install with:"
+
+# ignore mode: no system-deps output at all (install still fails on download).
+out="$(MISE_SYSTEM_DEPS=ignore mise install sysdeptest@1.0.0 2>&1 || true)"
+assert_not_contains_text "$out" "definitely-missing-binary-xyz"
+
+# non-interactive prompt mode must not hang — it degrades to warn.
+assert_fail_contains "MISE_SYSTEM_DEPS=prompt mise install sysdeptest@1.0.0" "definitely-missing-binary-xyz"
+
+# doctor surfaces the missing required dep (but not the optional one).
+# (doctor exits non-zero when it finds any problem, so tolerate the status.)
+doctor_out="$(mise doctor 2>&1 || true)"
+assert_contains_text "$doctor_out" "requires system dependency definitely-missing-binary-xyz"
+assert_not_contains_text "$doctor_out" "another-missing-binary-xyz"
+
+# bootstrap status shows a row per declared dep with its state.
+assert_contains "MISE_EXPERIMENTAL=1 mise bootstrap status 2>&1" "plugin-deps"
+assert_contains "MISE_EXPERIMENTAL=1 mise bootstrap status 2>&1" "missing"
+assert_contains "MISE_EXPERIMENTAL=1 mise bootstrap status 2>&1" "optional missing"

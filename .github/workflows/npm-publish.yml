@@ -1,0 +1,118 @@
+name: npm-publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run in dry-run mode (no actual publish)"
+        required: false
+        default: true
+        type: boolean
+      version:
+        description: "Version to publish (e.g., v2026.1.1). Defaults to latest release."
+        required: false
+        type: string
+
+concurrency:
+  group: npm-publish-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
+
+env:
+  DRY_RUN: ${{ github.event_name == 'release' && '0' || (inputs.dry_run && '1' || '0') }}
+
+jobs:
+  npm-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    if: |
+      (github.event_name == 'release' &&
+       startsWith(github.event.release.tag_name, 'v') &&
+       !github.event.release.prerelease) ||
+      github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Download release artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ -n "$INPUT_VERSION" ]]; then
+            # Validate the dispatch input against a strict release-tag pattern
+            # before using it in shell paths or as a download key.
+            if ! [[ "$INPUT_VERSION" =~ ^v[0-9][0-9A-Za-z._+-]*$ ]]; then
+              echo "::error::Invalid version input: $INPUT_VERSION" >&2
+              exit 1
+            fi
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="$(./scripts/get-version.sh)"
+          fi
+          mkdir -p "releases/$VERSION"
+
+          # Download release artifacts from GitHub release
+          gh release download "$VERSION" \
+            --repo "$REPOSITORY" \
+            --dir "releases/$VERSION" \
+            --pattern "mise-*.tar.gz" \
+            --pattern "mise-*.tar.xz" || {
+              echo "Failed to download release artifacts"
+              exit 1
+            }
+
+          # Also download to releases/ directory for compatibility
+          cp "releases/$VERSION"/mise-*.tar.gz releases/ || true
+          cp "releases/$VERSION"/mise-*.tar.xz releases/ || true
+
+      - name: Setup Node.js
+        # `actions/setup-node` writes the npm registry URL and `NODE_AUTH_TOKEN`
+        # auth into ~/.npmrc — aube reads the same file when it PUTs the
+        # tarball, so this step is still needed even though npm itself is not
+        # the publish client.
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.x"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Install mise
+        run: |
+          curl -fsSL https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install aube via mise
+        # aube comes from this repo's `mise.toml` -> `registry/aube.toml`
+        # (-> `github:endevco/aube`). Same install path local devs see when
+        # they run `mise install`. aube signs SLSA provenance via the
+        # Sigstore public-good instance using the workflow's
+        # `id-token: write` permission, the same way `npm publish
+        # --provenance` does.
+        run: mise install aube
+
+      - name: Publish npm packages
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ${DRY_RUN:-0} != 1 ]]; then
+            if [[ -n "$INPUT_VERSION" ]]; then
+              if ! [[ "$INPUT_VERSION" =~ ^v[0-9][0-9A-Za-z._+-]*$ ]]; then
+                echo "::error::Invalid version input: $INPUT_VERSION" >&2
+                exit 1
+              fi
+              MISE_VERSION="$INPUT_VERSION"
+            else
+              MISE_VERSION="$(./scripts/get-version.sh)"
+            fi
+            export MISE_VERSION
+            export RELEASE_DIR="releases"
+            NPM_PREFIX=@jdxcode/mise mise x aube -- ./scripts/release-npm.sh
+            NPM_PREFIX=mise NPM_PLATFORM_PREFIX=@jdxcode/mise PUBLISH_PLATFORM_PACKAGES=0 mise x aube -- ./scripts/release-npm.sh
+          else
+            echo "DRY RUN: Would publish npm packages"
+          fi

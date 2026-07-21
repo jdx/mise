@@ -1,0 +1,337 @@
+#!/usr/bin/env bash
+
+# Test successful validation
+cat <<EOF >mise.toml
+[tasks.valid]
+run = "echo valid"
+
+[tasks.meta-task]
+depends = ["valid"]
+EOF
+
+assert_contains "mise tasks validate" "✓ All 2 task(s) validated successfully"
+
+# Test circular dependency detection
+cat <<EOF >mise.toml
+[tasks.a]
+run = "echo a"
+depends = ["b"]
+
+[tasks.b]
+run = "echo b"
+depends = ["a"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "Circular dependency detected"
+assert_contains "mise tasks validate 2>&1 || true" "circular-dependency"
+assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
+
+# Test missing dependency
+cat <<EOF >mise.toml
+[tasks.valid]
+run = "echo valid"
+
+[tasks.invalid]
+run = "echo invalid"
+depends = ["nonexistent"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "Dependency 'nonexistent' not found"
+assert_contains "mise tasks validate 2>&1 || true" "missing-dependency"
+
+# Test invalid timeout
+cat <<EOF >mise.toml
+[tasks.bad-timeout]
+run = "echo test"
+timeout = "not-a-duration"
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "Invalid timeout format"
+assert_contains "mise tasks validate 2>&1 || true" "invalid-timeout"
+
+# Test valid timeout formats
+cat <<EOF >mise.toml
+[tasks.good-timeout-1]
+run = "echo test"
+timeout = "30s"
+
+[tasks.good-timeout-2]
+run = "echo test"
+timeout = "5m"
+
+[tasks.good-timeout-3]
+run = "echo test"
+timeout = "1h"
+EOF
+
+assert_contains "mise tasks validate" "✓ All 3 task(s) validated successfully"
+
+# Test duplicate aliases (should only report once, not for each task)
+cat <<EOF >mise.toml
+[tasks.task1]
+run = "echo 1"
+alias = "myalias"
+
+[tasks.task2]
+run = "echo 2"
+alias = "myalias"
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "Alias 'myalias' is used by multiple tasks"
+assert_contains "mise tasks validate 2>&1 || true" "alias-conflict"
+# Verify the error is only reported once (not duplicated for each task)
+error_count=$(mise tasks validate 2>&1 | grep -c "Alias 'myalias' is used by multiple tasks" || true)
+[ "$error_count" = "1" ] || (echo "Expected 1 alias conflict error, got $error_count" && exit 1)
+
+# Test empty task
+cat <<EOF >mise.toml
+[tasks.empty]
+description = "empty task"
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "Task has no executable content"
+assert_contains "mise tasks validate 2>&1 || true" "no-execution"
+
+# Test invalid glob pattern
+cat <<EOF >mise.toml
+[tasks.bad-glob]
+run = "echo test"
+sources = ["[invalid-glob"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "Invalid source glob pattern"
+assert_contains "mise tasks validate 2>&1 || true" "invalid-glob-pattern"
+
+# Negation (`!`-prefixed) and escaped (`\!`-prefixed) source patterns are valid
+# once the prefix is stripped, and must not be reported as invalid.
+cat <<'EOF' >mise.toml
+[tasks.good-exclusions]
+run = "echo test"
+sources = ["src/**/*.ts", "!src/**/*.test.ts", "!src/**/*.spec.ts", "\\!literal.txt"]
+EOF
+
+assert_contains "mise tasks validate" "✓ All 1 task(s) validated successfully"
+
+# A `!`-prefixed pattern that is otherwise invalid should still be reported.
+cat <<EOF >mise.toml
+[tasks.bad-exclusion]
+run = "echo test"
+sources = ["!{[bad"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "Invalid source glob pattern"
+assert_contains "mise tasks validate 2>&1 || true" "invalid-glob-pattern"
+
+# Test JSON output
+cat <<EOF >mise.toml
+[tasks.valid]
+run = "echo valid"
+
+[tasks.invalid]
+run = "echo invalid"
+depends = ["missing"]
+EOF
+
+assert_contains "mise tasks validate --json 2>&1 || true" '"tasks_validated": 2'
+assert_contains "mise tasks validate --json 2>&1 || true" '"errors": 1'
+assert_contains "mise tasks validate --json 2>&1 || true" '"category": "missing-dependency"'
+
+# Test errors-only flag
+cat <<EOF >mise.toml
+[tasks.error-task]
+depends = ["missing"]
+
+[tasks.warning-task]
+file = "./non-executable.sh"
+EOF
+
+touch non-executable.sh
+assert_contains "mise tasks validate --errors-only 2>&1 || true" "error-task"
+assert_not_contains "mise tasks validate --errors-only 2>&1 || true" "warning-task"
+
+# Test specific task validation
+cat <<EOF >mise.toml
+[tasks.good]
+run = "echo good"
+
+[tasks.bad]
+depends = ["missing"]
+EOF
+
+assert_contains "mise tasks validate good" "✓ All 1 task(s) validated successfully"
+assert_contains "mise tasks validate bad 2>&1 || true" "Dependency 'missing' not found"
+
+# Test validation with file-based tasks
+mkdir -p mise-tasks
+cat <<'SCRIPT' >mise-tasks/filetask.sh
+#!/usr/bin/env bash
+#MISE description="Test file task"
+#MISE depends=["valid"]
+echo "file task"
+SCRIPT
+chmod +x mise-tasks/filetask.sh
+
+cat <<EOF >mise.toml
+[tasks.valid]
+run = "echo valid"
+EOF
+
+assert_contains "mise tasks validate filetask" "✓ All 1 task(s) validated successfully"
+
+# Test missing file
+cat <<EOF >mise.toml
+[tasks.missing-file]
+file = "./does-not-exist.sh"
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "Task file not found"
+assert_contains "mise tasks validate 2>&1 || true" "missing-file"
+
+# Clean up before next test
+rm -rf mise-tasks non-executable.sh
+
+# Test that run entries can reference tasks by alias (not just by name)
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo building"
+alias = "b"
+
+[tasks.deploy]
+run = [
+  { task = "b" }
+]
+EOF
+
+assert_contains "mise tasks validate" "✓ All 2 task(s) validated successfully"
+
+# Test that command-line validation can use task aliases
+assert_contains "mise tasks validate b" "✓ All 1 task(s) validated successfully"
+assert_contains "mise tasks validate build" "✓ All 1 task(s) validated successfully"
+
+# Test unknown field validation in file tasks
+mkdir -p mise-tasks
+cat <<'SCRIPT' >mise-tasks/bad-field
+#!/usr/bin/env bash
+#MISE description="Test file task"
+#MISE not_a_valid_field="this should error"
+echo "should not run"
+SCRIPT
+chmod +x mise-tasks/bad-field
+
+assert_contains "mise tasks validate bad-field 2>&1 || true" "unknown field"
+assert_contains "mise tasks validate bad-field 2>&1 || true" "not_a_valid_field"
+
+# Clean up
+rm -rf mise-tasks
+
+# Test unknown field validation in TOML tasks
+cat <<EOF >mise.toml
+[tasks.toml-bad-field]
+run = "echo test"
+not_a_valid_field = "this should error"
+EOF
+
+assert_contains "mise tasks validate toml-bad-field 2>&1 || true" "unknown field"
+assert_contains "mise tasks validate toml-bad-field 2>&1 || true" "not_a_valid_field"
+
+# Clean up mise.toml before next test
+rm -f mise.toml
+
+# Test multiple alias fields (both alias and aliases)
+mkdir -p mise-tasks
+cat <<'SCRIPT' >mise-tasks/multiple-alias
+#!/usr/bin/env bash
+#MISE description="Task with both alias and aliases"
+#MISE alias="single"
+#MISE aliases=["multi1", "multi2"]
+echo "should not run"
+SCRIPT
+chmod +x mise-tasks/multiple-alias
+
+assert_contains "mise tasks validate multiple-alias 2>&1 || true" "Cannot define both 'alias' and 'aliases'"
+
+# Clean up
+rm -rf mise-tasks
+
+# Test monorepo config_root dependency validation matches runtime resolution
+rm -f mise.toml
+mkdir -p monorepo-validate/pkg
+cat <<'EOF' >monorepo-validate/mise.toml
+monorepo_root = true
+
+[settings]
+experimental = true
+
+[monorepo]
+config_roots = ["pkg"]
+EOF
+
+cat <<'EOF' >monorepo-validate/pkg/mise.toml
+[tasks._dep]
+hide = true
+alias = "dep-alias"
+usage = 'arg "<name>"'
+run = 'echo "arg=$usage_name"'
+
+[tasks.w_bare]
+depends = ["_dep bare"]
+
+[tasks.w_colon]
+depends = [":_dep colon"]
+
+[tasks.w_full]
+depends = ["//pkg:_dep full"]
+
+[tasks.w_alias]
+depends = ["dep-alias alias"]
+EOF
+
+(
+  cd monorepo-validate/pkg
+  assert_contains "mise tasks validate" "✓ All 5 task(s) validated successfully"
+)
+
+assert_contains "mise -C monorepo-validate run //pkg:w_bare" "arg=bare"
+assert_contains "mise -C monorepo-validate run //pkg:w_colon" "arg=colon"
+assert_contains "mise -C monorepo-validate run //pkg:w_full" "arg=full"
+assert_contains "mise -C monorepo-validate run //pkg:w_alias" "arg=alias"
+
+# Clean up
+rm -rf monorepo-validate
+
+# Test that run.tasks entries with inline arguments are accepted
+mkdir -p mise-tasks
+cat <<'SCRIPT' >mise-tasks/test
+#!/usr/bin/env bash
+#MISE description="Run tests"
+#USAGE flag "--mode <mode>" {
+#USAGE   choices "integration" "unit"
+#USAGE   default "unit"
+#USAGE   help "Test suite to run"
+#USAGE }
+echo "running ${usage_mode} tests"
+SCRIPT
+chmod +x mise-tasks/test
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo building"
+
+[tasks.integrate]
+description = "Run integration tests"
+depends = ["build"]
+run = [
+  { task = "test --mode=integration" }
+]
+
+[tasks.parallel-tests]
+description = "Run tests in parallel"
+run = [
+  { tasks = ["test --mode=integration", "test --mode=unit"] }
+]
+EOF
+
+assert_contains "mise tasks validate" "✓ All 4 task(s) validated successfully"
+
+# Clean up
+rm -rf mise-tasks

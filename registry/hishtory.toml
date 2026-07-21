@@ -1,0 +1,2 @@
+backends = ["github:ddworken/hishtory", "asdf:asdf-community/asdf-hishtory"]
+description = "Your shell history: synced, queryable, and in context"

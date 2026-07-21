@@ -1,14 +1,23 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::plugins::VERSION_REGEX;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{file, plugins};
+use crate::{
+    backend::Backend, backend::VersionInfo, backend::platform_target::PlatformTarget,
+    config::Config,
+};
+use crate::{env, file, plugins};
+use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
@@ -16,71 +25,135 @@ use xx::regex;
 
 #[derive(Debug)]
 pub struct ElixirPlugin {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
 impl ElixirPlugin {
     pub fn new() -> Self {
         Self {
-            ba: plugins::core::new_backend_arg("elixir"),
+            ba: Arc::new(plugins::core::new_backend_arg("elixir")),
         }
     }
 
     fn elixir_bin(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin").join("elixir")
+        tv.install_path().join("bin").join(elixir_bin_name())
     }
 
-    fn test_elixir(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+    async fn test_elixir(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("elixir --version".into());
         CmdLineRunner::new(self.elixir_bin(tv))
-            .with_pr(&ctx.pr)
-            .envs(self.dependency_env()?)
+            .with_pr(ctx.pr.as_ref())
+            .envs(self.dependency_env(&ctx.config).await?)
+            .env_values(tv.install_env())
             .arg("--version")
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
-        let version = &tv.version;
-        let url = format!("https://builds.hex.pm/builds/elixir/v{version}.zip");
+    fn version_tag(version: &str) -> String {
+        if regex!(r"^[0-9]").is_match(version) {
+            format!("v{version}")
+        } else {
+            version.to_string()
+        }
+    }
+
+    fn download_url(version: &str) -> String {
+        format!(
+            "https://builds.hex.pm/builds/elixir/{}.zip",
+            Self::version_tag(version)
+        )
+    }
+
+    async fn checksum(version: &str) -> Result<Option<String>> {
+        let version_tag = Self::version_tag(version);
+        let builds = HTTP_FETCH
+            .get_text_cached("https://builds.hex.pm/builds/elixir/builds.txt")
+            .await?;
+        Ok(builds.lines().find_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 4 && parts[0] == version_tag {
+                Some(format!("sha256:{}", parts[3]))
+            } else {
+                None
+            }
+        }))
+    }
+
+    fn lockfile_url(&self, tv: &ToolVersion) -> Option<String> {
+        tv.lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|p| p.url.clone())
+    }
+
+    fn set_lockfile_url(&self, tv: &mut ToolVersion, url: &str) {
+        tv.lock_platforms
+            .entry(self.get_platform_key())
+            .or_default()
+            .url = Some(url.to_string());
+    }
+
+    async fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+        let url = self
+            .lockfile_url(tv)
+            .unwrap_or_else(|| Self::download_url(&tv.version));
 
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
         if !tarball_path.exists() {
-            HTTP.download_file(&url, &tarball_path, Some(pr))?;
+            HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
         }
+        self.set_lockfile_url(tv, &url);
 
         Ok(tarball_path)
     }
 
-    fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
+    async fn install(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        tarball_path: &Path,
+    ) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
-        file::unzip(tarball_path, &tv.install_path())?;
+        file::unzip(tarball_path, &tv.install_path(), &Default::default())?;
 
         Ok(())
     }
 
-    fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
-        self.test_elixir(ctx, tv)
+    async fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        self.test_elixir(ctx, tv).await
     }
 }
 
+#[async_trait]
 impl Backend for ElixirPlugin {
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        let versions: Vec<String> = HTTP_FETCH
-            .get_text("https://builds.hex.pm/builds/elixir/builds.txt")?
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        // Format: "version hash timestamp checksum"
+        // Example: "v1.17.3 abc123 2024-12-01T00:00:00Z def456"
+        let versions: Vec<VersionInfo> = HTTP_FETCH
+            .get_text_cached("https://builds.hex.pm/builds/elixir/builds.txt")
+            .await?
             .lines()
             .unique()
-            .filter_map(|s| s.split_once(' ').map(|(v, _)| v.trim_start_matches('v')))
-            .filter(|s| regex!(r"^[0-9]+\.[0-9]+\.[0-9]").is_match(s))
-            .sorted_by_cached_key(|s| {
+            .filter_map(|s| {
+                let parts: Vec<&str> = s.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    let version = parts[0].trim_start_matches('v');
+                    let timestamp = parts[2]; // Third field is the timestamp
+                    Some((version.to_string(), timestamp.to_string()))
+                } else {
+                    None
+                }
+            })
+            .filter(|(v, _)| regex!(r"^[0-9]+\.[0-9]+\.[0-9]").is_match(v))
+            .sorted_by_cached_key(|(s, _)| {
                 (
                     Versioning::new(s.split_once('-').map(|(v, _)| v).unwrap_or(s)),
                     !VERSION_REGEX.is_match(s),
@@ -89,27 +162,90 @@ impl Backend for ElixirPlugin {
                     s.to_string(),
                 )
             })
-            .map(|s| s.to_string())
+            .map(|(version, created_at)| VersionInfo {
+                version,
+                created_at: Some(created_at),
+                ..Default::default()
+            })
             .collect();
         Ok(versions)
+    }
+
+    async fn _idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
+        Ok(vec![".exenv-version".into()])
     }
 
     fn get_dependencies(&self) -> Result<Vec<&str>> {
         Ok(vec!["erlang"])
     }
 
-    fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, &ctx.pr)?;
+    async fn install_version_(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<ToolVersion> {
+        let tarball_path = self.download(&mut tv, ctx.pr.as_ref()).await?;
+        ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
-        self.install(ctx, &tv, &tarball_path)?;
-        self.verify(ctx, &tv)?;
+        ctx.pr.next_operation();
+        self.install(ctx, &tv, &tarball_path).await?;
+        self.verify(ctx, &tv).await?;
         Ok(tv)
     }
 
-    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        Ok(PlatformInfo {
+            url: Some(Self::download_url(&tv.version)),
+            checksum: Self::checksum(&tv.version).await?,
+            ..Default::default()
+        })
+    }
+
+    async fn list_bin_paths(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         Ok(["bin", ".mix/escripts"]
             .iter()
             .map(|p| tv.install_path().join(p))
             .collect())
+    }
+
+    async fn exec_env(
+        &self,
+        config: &Arc<Config>,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        let mut map = BTreeMap::new();
+        let mut set = |k: &str, v: PathBuf| {
+            map.insert(k.to_string(), v.to_string_lossy().to_string());
+        };
+        let config_env = config.env().await?;
+        if !env::PRISTINE_ENV.contains_key("MIX_HOME") && !config_env.contains_key("MIX_HOME") {
+            set("MIX_HOME", tv.install_path().join(".mix"));
+        }
+        if !env::PRISTINE_ENV.contains_key("MIX_ARCHIVES")
+            && !config_env.contains_key("MIX_ARCHIVES")
+        {
+            set(
+                "MIX_ARCHIVES",
+                tv.install_path().join(".mix").join("archives"),
+            );
+        }
+        Ok(map)
+    }
+}
+
+fn elixir_bin_name() -> &'static str {
+    if cfg!(windows) {
+        "elixir.bat"
+    } else {
+        "elixir"
     }
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2209
 
 echo "tools.dummy = '1'" >mise.toml
 echo "tools.dummy = '2'" >mise.test.toml

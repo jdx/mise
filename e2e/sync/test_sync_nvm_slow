@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1091
 
 export NVM_DIR="$PWD/.nvm"
 mkdir -p "$NVM_DIR"

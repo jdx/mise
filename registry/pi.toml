@@ -1,0 +1,7 @@
+backends = [
+  "aqua:earendil-works/pi",
+  "github:earendil-works/pi",
+  "npm:@earendil-works/pi-coding-agent",
+]
+description = "Pi is a minimal terminal coding harness"
+test = { cmd = "pi --version", expected = "{{version}}" }

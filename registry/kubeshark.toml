@@ -1,0 +1,2 @@
+backends = ["aqua:kubeshark/kubeshark", "asdf:carnei-ro/asdf-kubeshark"]
+description = "The API traffic analyzer for Kubernetes providing real-time K8s protocol-level visibility, capturing and monitoring all traffic and payloads going in, out and across containers, pods, nodes and clusters. Inspired by Wireshark, purposely built for Kubernetes"

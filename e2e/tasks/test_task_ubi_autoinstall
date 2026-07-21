@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# Test that ubi tool options are preserved during auto-install via `mise run`
+# Reproduces: https://github.com/jdx/mise/discussions/6582
+
+cat <<EOF >mise.toml
+[tools]
+"ubi:databricks/cli" = { version = "0.233.0", exe = "databricks" }
+
+[tasks.test]
+run = "databricks --version"
+EOF
+
+# This should auto-install databricks with the exe="databricks" option
+# Without the fix, it would fail with "could not find any files matching [cli*]"
+assert_contains "mise run test" "0.233.0"

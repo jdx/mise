@@ -1,0 +1,10 @@
+backends = [
+  "aqua:jdx/usage",
+  { full = "asdf:mise-plugins/mise-usage", platforms = [
+    "linux",
+    "macos",
+  ] },
+  "cargo:usage-cli",
+]
+description = "A specification for CLIs"
+test = { cmd = "usage --version", expected = "usage-cli {{version}}" }

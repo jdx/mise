@@ -1,12 +1,18 @@
 #![allow(unknown_lints)]
 #![allow(clippy::literal_string_with_formatting_args)]
+// eyre 0.6.12 emits a trailing semicolon from bail!, which nightly rejects.
+#![allow(semicolon_in_expressions_from_macros)]
+
+use std::{
+    panic,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use crate::cli::Cli;
 use crate::cli::version::VERSION;
 use color_eyre::{Section, SectionExt};
 use eyre::Report;
 use indoc::indoc;
-use itertools::Itertools;
 
 #[cfg(test)]
 #[macro_use]
@@ -24,12 +30,15 @@ mod timings;
 #[macro_use]
 mod cmd;
 
+mod agecrypt;
 mod aqua;
 mod backend;
 pub(crate) mod build_time;
 mod cache;
 mod cli;
 mod config;
+mod deps;
+pub(crate) mod deps_graph;
 mod direnv;
 mod dirs;
 pub(crate) mod duration;
@@ -40,13 +49,17 @@ mod exit;
 #[cfg_attr(windows, path = "fake_asdf_windows.rs")]
 mod fake_asdf;
 mod file;
+pub(crate) mod forgejo;
+mod fuzzy;
 mod git;
 pub(crate) mod github;
+pub(crate) mod gitlab;
 mod gpg;
 mod hash;
 mod hook_env;
 mod hooks;
 mod http;
+mod install_before;
 mod install_context;
 mod lock_file;
 mod lockfile;
@@ -54,22 +67,31 @@ pub(crate) mod logger;
 pub(crate) mod maplit;
 mod migrate;
 mod minisign;
+mod netrc;
+mod oci;
+pub(crate) mod parallel;
+mod path;
 mod path_env;
+mod platform;
 mod plugins;
 mod rand;
 mod redactions;
 mod registry;
+mod remote_source;
 pub(crate) mod result;
 mod runtime_symlinks;
+mod sandbox;
+mod semver;
 mod shell;
 mod shims;
 mod shorthands;
 mod sops;
 mod sysconfig;
+mod system;
 pub(crate) mod task;
 pub(crate) mod tera;
 pub(crate) mod timeout;
-mod tokio;
+mod tokens;
 mod toml;
 mod toolset;
 mod ui;
@@ -80,14 +102,50 @@ mod wildcard;
 
 pub(crate) use crate::exit::exit;
 pub(crate) use crate::result::Result;
-pub(crate) use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 fn main() -> eyre::Result<()> {
-    color_eyre::install()?;
+    let nprocs = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or_default();
+    // Tokio spawns every worker thread eagerly when the runtime is built, so
+    // the default worker count is startup cost paid by every invocation —
+    // clone + stack + TLS per thread before any work happens. Async I/O
+    // doesn't need a worker per core (blocking work uses tokio's separate
+    // on-demand pool), so cap the default on many-core machines. An explicit
+    // MISE_JOBS still raises it without limit.
+    let threads = crate::env::MISE_JOBS
+        .unwrap_or_else(|| nprocs.min(16))
+        .max(8);
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(threads)
+        .build()?
+        .block_on(main_())
+}
+
+async fn main_() -> eyre::Result<()> {
+    // Configure color-eyre based on color preferences
+    let hook_builder = if *env::CLICOLOR == Some(false) {
+        // Use blank theme (no colors) when colors are disabled
+        color_eyre::config::HookBuilder::new().theme(color_eyre::config::Theme::new())
+    } else {
+        color_eyre::config::HookBuilder::default()
+    };
+    let (panic_hook, eyre_hook) = hook_builder.into_hooks();
+    eyre_hook.install()?;
+    install_panic_hook(panic_hook);
+    if std::env::current_dir().is_ok() {
+        unsafe {
+            path_absolutize::update_cwd();
+        }
+    }
     measure!("main", {
-        let args = env::args().collect_vec();
-        match Cli::run(&args).with_section(|| VERSION.to_string().header("Version:")) {
+        let args = env::args_safe();
+        match Cli::run(&args)
+            .await
+            .with_section(|| VERSION.to_string().header("Version:"))
+        {
             Ok(()) => Ok(()),
             Err(err) => handle_err(err),
         }?;
@@ -99,33 +157,43 @@ fn main() -> eyre::Result<()> {
 }
 
 fn handle_err(err: Report) -> eyre::Result<()> {
-    if let Some(err) = err.downcast_ref::<std::io::Error>() {
-        if err.kind() == std::io::ErrorKind::BrokenPipe {
-            return Ok(());
-        }
-    }
-    show_github_rate_limit_err(&err);
-    if *env::MISE_FRIENDLY_ERROR
-        || (!cfg!(debug_assertions) && log::max_level() < log::LevelFilter::Debug)
+    if let Some(err) = err.downcast_ref::<std::io::Error>()
+        && err.kind() == std::io::ErrorKind::BrokenPipe
     {
+        return Ok(());
+    }
+    if is_interrupted_io_error(&err) {
+        stop_multi_progress();
+        exit(130);
+    }
+
+    // Check for miette diagnostic errors and render them specially
+    if let Some(diagnostic) = err.downcast_ref::<config::config_file::diagnostic::MiseDiagnostic>()
+    {
+        safe_eprintln!("{}", diagnostic.render());
+        exit(1);
+    }
+
+    show_github_rate_limit_err(&err);
+    if *env::MISE_FRIENDLY_ERROR {
         display_friendly_err(&err);
         exit(1);
     }
-    Err(err)
+    let async_backtrace = async_backtrace::taskdump_tree(true);
+    Err(err.section(async_backtrace.header("Async Tasks")))
 }
 
 fn show_github_rate_limit_err(err: &Report) {
     let msg = format!("{err:?}");
     if msg.contains("HTTP status client error (403 Forbidden) for url (https://api.github.com") {
         warn!(
-            "GitHub API returned a 403 Forbidden error. This likely means you have exceeded the rate limit."
+            "GitHub API returned a 403 Forbidden error. This is most commonly caused by exceeding the rate limit, though other causes (e.g. insufficient token permissions) are possible."
         );
-        if env::GITHUB_TOKEN.is_none() {
+        if github::resolve_token("github.com").is_none() {
             warn!(indoc!(
-                r#"GITHUB_TOKEN is not set. This means mise is making unauthenticated requests to GitHub which have a lower rate limit.
-                   To increase the rate limit, set the GITHUB_TOKEN environment variable to a GitHub personal access token.
-                   Create a token at https://github.com/settings/tokens and set it as GITHUB_TOKEN in your environment.
-                   You do not need to give this token any scopes."#
+                r#"No GitHub token was found, so mise is making unauthenticated requests to GitHub which have a much lower rate limit.
+                   Create a token at https://github.com/settings/tokens (no scopes required) and set it as GITHUB_TOKEN in your environment.
+                   See https://mise.en.dev/dev-tools/github-tokens.html for all supported token sources (env vars, gh CLI, credential_command, etc.)."#
             ));
         }
     }
@@ -135,6 +203,74 @@ fn display_friendly_err(err: &Report) {
     for err in err.chain() {
         error!("{err}");
     }
+    error!("Version: {}", *VERSION);
     let msg = ui::style::edim("Run with --verbose or MISE_VERBOSE=1 for more information");
     error!("{msg}");
+}
+
+fn is_interrupted_io_error(err: &Report) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|e| e.kind() == std::io::ErrorKind::Interrupted)
+    })
+}
+
+fn stop_multi_progress() {
+    if let Some(mpr) = MultiProgressReport::try_get() {
+        let _ = mpr.stop();
+    }
+}
+
+static ASYNC_PANIC_OCCURRED: AtomicBool = AtomicBool::new(false);
+
+pub fn install_panic_hook(panic_hook: color_eyre::config::PanicHook) {
+    panic::set_hook(Box::new(move |panic_info| {
+        if tokio::runtime::Handle::try_current().is_ok()
+            && !ASYNC_PANIC_OCCURRED.swap(true, Ordering::SeqCst)
+        {
+            let bt = async_backtrace::backtrace();
+            let mut bt_buffer = String::new();
+            if let Some(bt) = bt {
+                let locations = &*bt;
+                for (index, loc) in locations.iter().enumerate() {
+                    bt_buffer.push_str(&format!("{index:3}: {loc:?}\n"));
+                }
+            } else {
+                bt_buffer.push_str("[no accessible async backtrace]");
+            }
+            let all = async_backtrace::taskdump_tree(true);
+            // A panic hook must never panic: a panic while the hook runs
+            // aborts the process with SIGABRT.
+            safe_eprintln!(
+                "=== Async Backtrace (panic occurred in tokio runtime) ===\n\
+                {bt_buffer}\n\
+                ------- TASK DUMP TREE -------\n\
+                {all}\n\
+                === End Async Backtrace ===\n"
+            );
+        }
+
+        // color_eyre's own panic hook prints its report with eprintln!, which
+        // panics when stderr is unwritable — render the report ourselves
+        // instead of chaining to it
+        safe_eprintln!("{}", panic_hook.panic_report(panic_info));
+    }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eyre::eyre;
+
+    #[test]
+    fn detects_interrupted_io_error() {
+        assert!(is_interrupted_io_error(&eyre!(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "user cancelled"
+        ))));
+        assert!(!is_interrupted_io_error(&eyre!(std::io::Error::other(
+            "user cancelled"
+        ))));
+    }
 }

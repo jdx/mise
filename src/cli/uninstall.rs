@@ -3,14 +3,13 @@ use std::sync::Arc;
 use console::style;
 use eyre::{Result, bail, eyre};
 use itertools::Itertools;
-use rayon::prelude::*;
 
 use crate::backend::Backend;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{config, dirs, file};
+use crate::{config, dirs, exit, file};
 
 /// Removes installed tool versions
 ///
@@ -29,15 +28,25 @@ pub struct Uninstall {
     /// Do not actually delete anything
     #[clap(long, short = 'n')]
     dry_run: bool,
+
+    /// Like --dry-run but exits with code 1 if there are tools to uninstall
+    ///
+    /// This is useful for scripts to check if tools need to be uninstalled.
+    #[clap(long, verbatim_doc_comment)]
+    dry_run_code: bool,
 }
 
 impl Uninstall {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    fn is_dry_run(&self) -> bool {
+        self.dry_run || self.dry_run_code
+    }
+
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
         let tool_versions = if self.installed_tool.is_empty() && self.all {
-            self.get_all_tool_versions(&config)?
+            self.get_all_tool_versions(&config).await?
         } else {
-            self.get_requested_tool_versions()?
+            self.get_requested_tool_versions(&config).await?
         };
         let tool_versions = tool_versions
             .into_iter()
@@ -48,80 +57,109 @@ impl Uninstall {
         }
 
         let mpr = MultiProgressReport::get();
+        let mut has_work = false;
         for (plugin, tv) in tool_versions {
-            if !plugin.is_version_installed(&tv, true) {
+            if !plugin.is_version_installed(&config, &tv, true) {
                 warn!("{} is not installed", tv.style());
                 continue;
             }
 
+            has_work = true;
             let pr = mpr.add(&tv.style());
-            if let Err(err) = plugin.uninstall_version(&tv, &pr, self.dry_run) {
+            if let Err(err) = plugin
+                .uninstall_version(&config, &tv, pr.as_ref(), self.is_dry_run())
+                .await
+            {
                 error!("{err}");
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
             }
-            if self.dry_run {
+            if self.is_dry_run() {
                 pr.finish_with_message("uninstalled (dry-run)".into());
             } else {
                 pr.finish_with_message("uninstalled".into());
             }
         }
 
+        if self.is_dry_run() {
+            if self.dry_run_code && has_work {
+                exit::exit(1);
+            }
+            return Ok(());
+        }
+
         file::touch_dir(&dirs::DATA)?;
-        config::rebuild_shims_and_runtime_symlinks(&[])?;
+        let config = Config::reset().await?;
+        let ts = config.get_toolset().await?;
+        config::rebuild_shims_and_runtime_symlinks(
+            &config,
+            ts,
+            &[],
+            crate::lockfile::LockfileUpdateMode::Normal,
+        )
+        .await?;
 
         Ok(())
     }
 
-    fn get_all_tool_versions(
+    async fn get_all_tool_versions(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
     ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
-        let ts = ToolsetBuilder::new().build(config)?;
+        let ts = ToolsetBuilder::new().build(config).await?;
         let tool_versions = ts
-            .list_installed_versions()?
+            .list_installed_versions(config)
+            .await?
             .into_iter()
             .collect::<Vec<_>>();
         Ok(tool_versions)
     }
-    fn get_requested_tool_versions(&self) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
+    async fn get_requested_tool_versions(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
         let runtimes = ToolArg::double_tool_condition(&self.installed_tool)?;
-        let tool_versions = runtimes
-            .into_par_iter()
-            .map(|ta| {
-                let backend = ta.ba.backend()?;
-                let query = ta.tvr.as_ref().map(|tvr| tvr.version()).unwrap_or_default();
-                let installed_versions = backend.list_installed_versions()?;
-                let exact_match = installed_versions.iter().find(|v| v == &&query);
-                let matches = match exact_match {
-                    Some(m) => vec![m],
-                    None => installed_versions
-                        .iter()
-                        .filter(|v| v.starts_with(&query))
-                        .collect_vec(),
-                };
-                let mut tvs = matches
+        let mut tool_versions = Vec::new();
+        for ta in runtimes {
+            let backend = ta.ba.backend()?;
+            let query = ta.tvr.as_ref().map(|tvr| tvr.version()).unwrap_or_default();
+            let installed_versions = backend.list_installed_versions();
+            let exact_match = installed_versions.iter().find(|v| v == &&query);
+            let matches = match exact_match {
+                Some(m) => vec![m],
+                None => installed_versions
+                    .iter()
+                    .filter(|v| v.starts_with(&query))
+                    .collect_vec(),
+            };
+
+            let mut tvs = Vec::new();
+
+            if let Some(tvr) = &ta.tvr {
+                tvs.push((
+                    backend.clone(),
+                    tvr.resolve(config, &Default::default()).await?,
+                ));
+            }
+
+            tvs.extend(
+                matches
                     .into_iter()
                     .map(|v| {
                         let tvr = ToolRequest::new(backend.ba().clone(), v, ToolSource::Unknown)?;
                         let tv = ToolVersion::new(tvr, v.into());
                         Ok((backend.clone(), tv))
                     })
-                    .collect::<Result<Vec<_>>>()?;
-                if let Some(tvr) = &ta.tvr {
-                    tvs.push((backend.clone(), tvr.resolve(&Default::default())?));
-                }
-                if tvs.is_empty() {
-                    warn!(
-                        "no versions found for {}",
-                        style(&backend).blue().for_stderr()
-                    );
-                }
-                Ok(tvs)
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
+                    .collect::<Result<Vec<_>>>()?,
+            );
+
+            if tvs.is_empty() {
+                warn!(
+                    "no versions found for {}",
+                    style(&backend).blue().for_stderr()
+                );
+            }
+            tool_versions.extend(tvs);
+        }
         Ok(tool_versions)
     }
 }

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+# Test S3 backend configuration and error handling
+# Note: This test validates configuration parsing and error messages
+# since we don't have a test S3 bucket available in CI
+
+# Test 1: S3 backend requires 'url' option
+cat <<EOF >mise.toml
+[tools]
+"s3:test-tool" = { version = "1.0.0" }
+EOF
+
+assert_fail_matches "mise install 2>&1" "S3 backend requires 'url' option"
+
+# Test 2: S3 URL must use s3:// scheme
+cat <<EOF >mise.toml
+[tools]
+"s3:test-tool" = { version = "1.0.0", url = "https://bucket/path/tool.tar.gz" }
+EOF
+
+assert_fail_matches "mise install 2>&1" "URL must use s3:// scheme"
+
+# Test 3: S3 URL must include bucket name
+cat <<EOF >mise.toml
+[tools]
+"s3:test-tool" = { version = "1.0.0", url = "s3:///path/tool.tar.gz" }
+EOF
+
+assert_fail_matches "mise install 2>&1" "S3 URL must include bucket name"
+
+# Test 4: Valid S3 URL shows access denied (expected without credentials)
+cat <<EOF >mise.toml
+[tools]
+"s3:test-tool" = { version = "1.0.0", url = "s3://nonexistent-bucket-12345/tools/test-{version}.tar.gz" }
+EOF
+
+# This should fail with an S3 error (access denied or bucket not found)
+# The exact error depends on AWS SDK behavior, but it should be an S3-related error
+assert_fail_matches "mise install 2>&1" "S3"
+
+# Test 5: Verify S3 backend is recognized (ls-remote returns empty when no version discovery)
+cat <<EOF >mise.toml
+[tools]
+"s3:test-tool" = { version = "1.0.0", url = "s3://bucket/tools/test-{version}.tar.gz" }
+EOF
+
+# ls-remote should succeed but return empty (no version discovery configured)
+assert_empty "mise ls-remote s3:test-tool"
+
+# Test 6: S3 backend with custom endpoint (for MinIO, etc.)
+cat <<EOF >mise.toml
+[tools."s3:custom-endpoint"]
+version = "1.0.0"
+url = "s3://bucket/tools/tool-{version}.tar.gz"
+endpoint = "http://localhost:9000"
+region = "us-east-1"
+EOF
+
+# Should fail trying to connect to the endpoint
+assert_fail_matches "mise install 2>&1" "S3"
+
+# Test 7: S3 backend with platform-specific URLs
+cat <<EOF >mise.toml
+[tools."s3:platform-tool"]
+version = "1.0.0"
+
+[tools."s3:platform-tool".platforms]
+darwin-arm64 = { url = "s3://bucket/tools/tool-{version}-darwin-arm64.tar.gz" }
+darwin-x64 = { url = "s3://bucket/tools/tool-{version}-darwin-x64.tar.gz" }
+linux-x64 = { url = "s3://bucket/tools/tool-{version}-linux-x64.tar.gz" }
+EOF
+
+# Should fail with S3 error (validates platform URL selection works)
+assert_fail_matches "mise install 2>&1" "S3"
+
+echo "S3 backend E2E tests completed successfully"

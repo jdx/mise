@@ -1,46 +1,63 @@
 name: hyperfine
 on:
-  push:
-    branches: ["main"]
   pull_request:
     branches: ["main"]
+    # paths:
+    #   - ".github/workflows/hyperfine.yml"
+    #   - "Cargo.toml"
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
-  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
   MISE_EXPERIMENTAL: 1
-  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
 
 permissions:
+  issues: write
   pull-requests: write
 
 jobs:
   benchmark:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: github.head_ref == 'release' || github.head_ref == 'hyperfine'
+    runs-on: namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-pr-rust-linux
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
-      - uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
       - run: curl https://mise.run | MISE_INSTALL_PATH="$HOME/bin/mise-release" sh
       - run: echo "$HOME/bin" >> "$GITHUB_PATH"
       - id: versions
         run: |
           #echo "main=$(git rev-parse --short origin/main)" >> "$GITHUB_OUTPUT"
           echo "release=$(mise-release v | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-      #- uses: actions/cache@v4
+      #- uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
       #  with:
       #    path: ~/bin/mise-${{ steps.versions.outputs.main }}
-      #    key: mise-hyperfine-main-${{ steps.versions.outputs.main }}-${{ runner.os }}
+      #    key: mise-hyperfine-main-${{ steps.versions.outputs.main }}-${{ runner.os }}-${{ runner.arch }}
       #- name: build main
       #  run: |
       #    if [ ! -f "$HOME/bin/mise-${{ steps.versions.outputs.main }}" ]; then
@@ -51,36 +68,125 @@ jobs:
       - run: mv "$HOME/bin/mise-release" "$HOME/bin/mise-${{ steps.versions.outputs.release }}"
       #- run: cp "$HOME/bin/mise-${{ steps.versions.outputs.main }}" "$HOME/bin/mise-main"
       - run: cargo build --profile serious && mv target/serious/mise "$HOME/bin"
-      - uses: actions/cache@v4
-        with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - run: mise install
+      - uses: ./.github/actions/mise-tools
       - run: |
+          set -exo pipefail
+          failed=false
+          outlier_warning="Statistical outliers were detected"
+          threshold_scaled=1100
+
+          scale_decimal() {
+            local number="$1"
+            local whole fraction
+            whole=${number%%.*}
+            fraction=${number#*.}
+            if [ "$fraction" = "$number" ]; then
+              fraction=0
+            fi
+            fraction="${fraction}000"
+            echo $((10#$whole * 1000 + 10#${fraction:0:3}))
+          }
+
           CMDS=(
             "x -- echo"
             "env"
             "hook-env"
             "ls"
           )
-          echo "# Hyperfine Performance" >> comment.md
+          echo "## Hyperfine Performance" >> comment.md
           for cmd in "${CMDS[@]}"; do
-             #mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-main $cmd" "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
-             mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
+            hyperfine_log="$(mktemp)"
+            reference_cmd="${MISE_ALT:-mise-${{ steps.versions.outputs.release }}} $cmd"
+            current_cmd="mise $cmd"
+            mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "$reference_cmd" "$current_cmd" 2>&1 | tee "$hyperfine_log"
             echo "### \`mise $cmd\`" >> comment.md
             cat out.md >> comment.md
+            cat out.md
+            noisy=false
+            if grep -q "$outlier_warning" "$hyperfine_log"; then
+              noisy=true
+            fi
+            
+            # Extract relative performance from hyperfine output
+            relative_row="$(grep "±.*±" out.md || true)"
+            if [ -z "$relative_row" ]; then
+              echo "::warning title=Missing hyperfine relative result::Could not find a relative result for mise $cmd."
+              echo "⚠️  Inconclusive: could not find a relative result for \`$cmd\`." >> comment.md
+              rm -f "$hyperfine_log"
+              continue
+            fi
+            variance=$(printf '%s\n' "$relative_row" | awk '{print $(NF-3)}' | sed 's/%//')
+            uncertainty=$(printf '%s\n' "$relative_row" | awk '{print $(NF-1)}' | sed 's/%//')
+            if [ -z "$variance" ] || [ -z "$uncertainty" ]; then
+              echo "::warning title=Malformed hyperfine relative result::Could not parse the relative result for mise $cmd."
+              echo "⚠️  Inconclusive: could not parse the relative result for \`$cmd\`." >> comment.md
+              rm -f "$hyperfine_log"
+              continue
+            fi
+            variance_scaled=$(scale_decimal "$variance")
+            uncertainty_scaled=$(scale_decimal "$uncertainty")
+            variance=$(((variance_scaled - 1000) / 10))
+            
+            # Add warning if variance exceeds 10%
+            if [ "$variance_scaled" -gt "$threshold_scaled" ]; then
+              if printf '%s\n' "$relative_row" | grep -Fq "| \`$reference_cmd\` |"; then
+                echo "✅  Performance improvement for \`$cmd\` is ${variance}%" >> comment.md
+              elif [ "$noisy" = true ]; then
+                echo "::warning title=Noisy hyperfine result::mise $cmd measured ${variance}% slower, but hyperfine reported statistical outliers. Treating this benchmark as inconclusive."
+                echo "⚠️  Inconclusive: \`$cmd\` measured ${variance}% slower, but hyperfine reported statistical outliers." >> comment.md
+              elif [ "$((variance_scaled - uncertainty_scaled))" -le "$threshold_scaled" ]; then
+                echo "::warning title=Inconclusive hyperfine result::mise $cmd measured ${variance}% slower, but the relative uncertainty overlaps the 10% threshold. Treating this benchmark as inconclusive."
+                echo "⚠️  Inconclusive: \`$cmd\` measured ${variance}% slower, but the relative uncertainty overlaps the 10% threshold." >> comment.md
+              else
+                echo "⚠️  Warning: Performance variance for \`$cmd\` is ${variance}%" >> comment.md
+                failed=true
+              fi
+            fi
+            rm -f "$hyperfine_log"
           done
-          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+          if [ "$failed" = true ]; then
+            exit 1
+          fi
         env:
           SHELL: zsh
+      - run: mise run test:perf
+        if: ${{ !cancelled() }}
+        env:
+          NUM_TOOLS: 200
+          NUM_TASKS: 2000
+          RUNS: 10
+          MISE_ALT: mise-${{ steps.versions.outputs.release }}
+      - if: ${{ !cancelled() }}
+        run: sccache --show-stats
+      - run: cat comment.md >> "$GITHUB_STEP_SUMMARY"
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
       - name: Comment on PR
-        uses: thollander/actions-comment-pull-request@v3
-        if: github.event_name == 'pull_request'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
         continue-on-error: true
-        #if: "startsWith(github.event.pull_request.title, 'perf:') || startsWith(github.event.pull_request.title, 'chore: release')"
         with:
-          file-path: comment.md
-          comment-tag: hyperfine
+          script: |
+            const fs = require("fs");
+            const marker = "<!-- hyperfine -->";
+            const body = `${marker}\n${fs.readFileSync("comment.md", "utf8")}`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const comment = comments.find((comment) => comment.body?.includes(marker));
+            if (comment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: comment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

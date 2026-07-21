@@ -1,0 +1,3 @@
+backends = ["aqua:mathew-fleisch/bashbot", "asdf:mathew-fleisch/asdf-bashbot"]
+description = "A slack-bot written in golang for infrastructure/devops teams"
+test = { cmd = "bashbot version", expected = "v{{version}}" }

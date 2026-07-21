@@ -1,0 +1,3 @@
+backends = ["aqua:skeema/skeema"]
+description = "Declarative pure-SQL schema management for MySQL and MariaDB (Community Edition)"
+test = { cmd = "skeema version | awk -F, '{print $1}'", expected = "skeema version {{version}}-community" }

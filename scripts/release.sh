@@ -14,43 +14,44 @@ mkdir -p "$RELEASE_DIR/$MISE_VERSION"
 
 echo "::group::Build"
 platforms=(
-  linux-x64
-  linux-x64-musl
-  linux-arm64
-  linux-arm64-musl
-  linux-armv7
-  linux-armv7-musl
-  macos-x64
-  macos-arm64
+	linux-x64
+	linux-x64-musl
+	linux-arm64
+	linux-arm64-musl
+	linux-armv7
+	linux-armv7-musl
+	macos-x64
+	macos-arm64
 )
 for platform in "${platforms[@]}"; do
-  cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
-  cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz"
-  cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.zst" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.zst"
-  zipsign sign tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" ~/.zipsign/mise.priv
-  zipsign verify tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$BASE_DIR/zipsign.pub"
-  cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/mise-latest-$platform.tar.gz"
-  cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/mise-latest-$platform.tar.xz"
-  cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.zst" "$RELEASE_DIR/mise-latest-$platform.tar.zst"
-  tar -xvzf "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
-  cp -v mise/bin/mise "$RELEASE_DIR/mise-latest-$platform"
-  cp -v mise/bin/mise "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform"
+	cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
+	cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz"
+	cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.zst" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.zst"
+	zipsign sign tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" ~/.zipsign/mise.priv
+	zipsign verify tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$BASE_DIR/zipsign.pub"
+	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/mise-latest-$platform.tar.gz"
+	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/mise-latest-$platform.tar.xz"
+	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.zst" "$RELEASE_DIR/mise-latest-$platform.tar.zst"
+	tar -xvzf "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
+	cp -v mise/bin/mise "$RELEASE_DIR/mise-latest-$platform"
+	cp -v mise/bin/mise "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform"
 done
 
 windows_platforms=(
-  windows-arm64
-  windows-x64
+	windows-arm64
+	windows-x64
 )
 for platform in "${windows_platforms[@]}"; do
-  cp artifacts/*/"mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip"
-  zipsign sign zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" ~/.zipsign/mise.priv
-  zipsign verify zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$BASE_DIR/zipsign.pub"
-  cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/mise-latest-$platform.zip"
+	cp artifacts/*/"mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip"
+	zipsign sign zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" ~/.zipsign/mise.priv
+	zipsign verify zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$BASE_DIR/zipsign.pub"
+	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/mise-latest-$platform.zip"
+	unzip -p "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" mise/bin/mise.exe >"$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.exe"
+	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.exe" "$RELEASE_DIR/mise-latest-$platform.exe"
 done
 
 echo "::group::Checksums"
 pushd "$RELEASE_DIR"
-echo "$MISE_VERSION" | tr -d 'v' >VERSION
 cp mise-latest-linux-x64 mise-latest-linux-amd64
 cp mise-latest-macos-x64 mise-latest-macos-amd64
 sha256sum ./mise-latest-* >SHASUMS256.txt
@@ -76,13 +77,13 @@ gpg -u 8B81C9D17413A06D --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_
 minisign -WSs "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m "$RELEASE_DIR"/install.sh </dev/zero
 cp "$RELEASE_DIR"/{install.sh,install.sh.sig,install.sh.minisig} "$RELEASE_DIR/$MISE_VERSION"
 
-if [[ "$DRY_RUN" != 1 ]]; then
-  echo "::group::Publish npm @jdxcode/mise"
-  NPM_PREFIX=@jdxcode/mise ./scripts/release-npm.sh
-  #  echo "::group::Publish npm mise-cli"
-  #  NPM_PREFIX=mise-cli ./scripts/release-npm.sh
-  echo "::group::Publish r2"
-  ./scripts/publish-r2.sh
-  echo "::group::Publish GitHub releases"
-  gh release edit --draft=false "$MISE_VERSION"
-fi
+echo "::group::mise.run scripts"
+./scripts/render-mise-run.sh
+
+echo "::group::Sign source tarball"
+TMP_FILE="$(mktemp)"
+curl -L -o "$TMP_FILE" "https://github.com/jdx/mise/archive/refs/tags/$MISE_VERSION.tar.gz"
+gpg --detach-sign -u 8B81C9D17413A06D <"$TMP_FILE" >"$RELEASE_DIR/$MISE_VERSION/$MISE_VERSION.tar.gz.sig"
+rm "$TMP_FILE"
+
+# Publishing is now done after GitHub release is created

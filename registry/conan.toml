@@ -1,0 +1,3 @@
+backends = ["pipx:conan", "asdf:mise-plugins/mise-pyapp"]
+description = "Decentralized, open-source (MIT), C/C++ package manager"
+test = { cmd = "conan --version", expected = "Conan version {{version}}" }

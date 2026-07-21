@@ -1,0 +1,6 @@
+backends = [
+  "aqua:doitintl/kube-no-trouble",
+  "asdf:virtualstaticvoid/asdf-kubent",
+]
+description = "Easily check your clusters for use of deprecated APIs"
+test = { cmd = "kubent --version", expected = "version {{version}}" }

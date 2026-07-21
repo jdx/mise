@@ -1,9 +1,9 @@
 use eyre::Result;
-use rayon::prelude::*;
 use std::collections::BTreeMap;
 use tabled::{Table, Tabled};
 
 use crate::config::Config;
+use crate::parallel;
 use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::full_to_url;
@@ -26,12 +26,13 @@ pub struct PluginsLs {
     #[clap(short, long, verbatim_doc_comment, conflicts_with = "all", hide = true)]
     pub core: bool,
 
-    /// List installed plugins
-    #[clap(long, verbatim_doc_comment, conflicts_with = "all", hide = true)]
-    pub user: bool,
+    /// Show plugins with available updates
+    /// Checks the remote for newer versions and only displays plugins that are outdated
+    #[clap(short, long, verbatim_doc_comment)]
+    pub outdated: bool,
 
     /// Show the git url for each plugin
-    /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+    /// e.g.: https://github.com/mise-plugins/vfox-cmake.git
     #[clap(short, long, alias = "url", verbatim_doc_comment)]
     pub urls: bool,
 
@@ -39,11 +40,15 @@ pub struct PluginsLs {
     /// e.g.: main 1234abc
     #[clap(long, hide = true, verbatim_doc_comment)]
     pub refs: bool,
+
+    /// List installed plugins
+    #[clap(long, verbatim_doc_comment, conflicts_with = "all", hide = true)]
+    pub user: bool,
 }
 
 impl PluginsLs {
-    pub fn run(self, config: &Config) -> Result<()> {
-        let mut plugins: BTreeMap<_, _> = install_state::list_plugins()?
+    pub async fn run(self, config: &Config) -> Result<()> {
+        let mut plugins: BTreeMap<_, _> = install_state::list_plugins()
             .iter()
             .map(|(k, p)| (k.clone(), (*p, None)))
             .collect();
@@ -56,7 +61,7 @@ impl PluginsLs {
         }
 
         if self.all {
-            for (name, backends) in config.get_shorthands() {
+            for (name, backends) in &config.shorthands {
                 for full in backends {
                     let plugin_type = PluginType::from_full(full)?;
                     plugins.insert(name.clone(), (plugin_type, Some(full_to_url(full))));
@@ -67,7 +72,7 @@ impl PluginsLs {
         let plugins = plugins
             .into_iter()
             .map(|(short, (pt, url))| {
-                let mut plugin = pt.plugin(short.clone());
+                let plugin = pt.plugin(short.clone());
                 if let Some(url) = url {
                     plugin.set_remote_url(url);
                 }
@@ -75,9 +80,63 @@ impl PluginsLs {
             })
             .collect::<BTreeMap<_, _>>();
 
-        if self.urls || self.refs {
+        if self.outdated {
+            let installed: Vec<_> = plugins
+                .into_iter()
+                .filter(|(_, p)| p.is_installed())
+                .collect();
+            let results = parallel::parallel(installed, |(name, p)| async move {
+                tokio::task::spawn_blocking(move || {
+                    let local_sha = p.current_sha_short().unwrap_or_else(|e| {
+                        warn!("{name}: {e:?}");
+                        None
+                    });
+                    let remote_sha = p.remote_sha().unwrap_or_else(|e| {
+                        warn!("{name}: {e:?}");
+                        None
+                    });
+                    let remote_url = p.get_remote_url().unwrap_or_else(|e| {
+                        warn!("{name}: {e:?}");
+                        None
+                    });
+                    let abbrev_ref = p.current_abbrev_ref().unwrap_or_else(|e| {
+                        warn!("{name}: {e:?}");
+                        None
+                    });
+                    (name, local_sha, remote_sha, remote_url, abbrev_ref)
+                })
+                .await
+                .map_err(|e| eyre::eyre!(e))
+            })
+            .await?;
+            let mut data: Vec<_> = results
+                .into_iter()
+                .filter_map(|(name, local_sha, remote_sha, remote_url, abbrev_ref)| {
+                    let local_sha = local_sha?;
+                    let remote_sha = remote_sha?;
+                    if remote_sha.starts_with(&local_sha) {
+                        return None;
+                    }
+                    Some(OutdatedRow {
+                        plugin: name,
+                        url: remote_url.unwrap_or_default(),
+                        ref_: abbrev_ref.unwrap_or_default(),
+                        local: local_sha,
+                        remote: remote_sha.chars().take(7).collect(),
+                    })
+                })
+                .collect();
+            data.sort_by(|a, b| a.plugin.cmp(&b.plugin));
+            if data.is_empty() {
+                info!("All plugins are up to date");
+            } else {
+                let mut table = Table::new(data);
+                table::default_style(&mut table, false);
+                miseprintln!("{table}");
+            }
+        } else if self.urls || self.refs {
             let data = plugins
-                .into_par_iter()
+                .into_iter()
                 .map(|(name, p)| {
                     let remote_url = p.get_remote_url().unwrap_or_else(|e| {
                         warn!("{name}: {e:?}");
@@ -126,15 +185,25 @@ struct Row {
     sha: String,
 }
 
+#[derive(Tabled)]
+#[tabled(rename_all = "PascalCase")]
+struct OutdatedRow {
+    plugin: String,
+    url: String,
+    ref_: String,
+    local: String,
+    remote: String,
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise plugins ls</bold>
-    node
-    ruby
+    cmake
+    poetry
 
     $ <bold>mise plugins ls --urls</bold>
-    node    https://github.com/asdf-vm/asdf-nodejs.git
-    ruby    https://github.com/asdf-vm/asdf-ruby.git
+    cmake     https://github.com/mise-plugins/vfox-cmake.git
+    poetry    https://github.com/mise-plugins/vfox-poetry.git
 "#
 );

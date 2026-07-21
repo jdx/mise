@@ -1,0 +1,3 @@
+backends = ["aqua:sharkdp/vivid", "cargo:vivid"]
+description = "A themeable LS_COLORS generator with a rich filetype datebase"
+test = { cmd = "vivid --version", expected = "vivid {{version}}" }

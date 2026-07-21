@@ -1,0 +1,79 @@
+use crate::config::{arch, os};
+use mlua::{UserData, UserDataFields};
+use std::path::PathBuf;
+use std::sync::LazyLock as Lazy;
+use std::sync::Mutex;
+
+#[derive(Debug, Clone)]
+pub(crate) struct Runtime {
+    pub(crate) os: String,
+    pub(crate) arch: String,
+    pub(crate) env_type: Option<String>,
+    pub(crate) version: String,
+    pub(crate) plugin_dir_path: PathBuf,
+}
+
+static RUNTIME: Lazy<Mutex<Runtime>> = Lazy::new(|| {
+    Mutex::new(Runtime {
+        os: os(),
+        arch: arch(),
+        env_type: None,
+        version: "0.6.0".to_string(), // https://github.com/version-fox/vfox/releases
+        plugin_dir_path: PathBuf::new(),
+    })
+});
+
+impl Runtime {
+    pub(crate) fn get(plugin_dir_path: PathBuf, env_type_override: Option<&str>) -> Runtime {
+        let mut runtime = RUNTIME.lock().unwrap().clone();
+        runtime.plugin_dir_path = plugin_dir_path;
+        if let Some(env_type) = env_type_override {
+            runtime.env_type = Some(env_type.to_string());
+        }
+        runtime
+    }
+
+    pub(crate) fn with_platform(plugin_dir_path: PathBuf, os: &str, arch: &str) -> Runtime {
+        let mut runtime = Self::get(plugin_dir_path, None);
+        runtime.os = os.to_string();
+        runtime.arch = arch.to_string();
+        runtime.env_type = None; // target libc is unknown in cross-platform context
+        runtime
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_os(os: String) {
+        let mut runtime = RUNTIME.lock().unwrap();
+        runtime.os = os;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_arch(arch: String) {
+        let mut runtime = RUNTIME.lock().unwrap();
+        runtime.arch = arch;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_env_type(et: Option<String>) {
+        let mut runtime = RUNTIME.lock().unwrap();
+        runtime.env_type = et;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reset() {
+        let mut runtime = RUNTIME.lock().unwrap();
+        runtime.os = os();
+        runtime.arch = arch();
+        runtime.env_type = None;
+    }
+}
+
+impl UserData for Runtime {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_field_method_get("osType", |_, t| Ok(t.os.clone()));
+        fields.add_field_method_get("archType", |_, t| Ok(t.arch.clone()));
+        fields.add_field_method_get("envType", |_, t| Ok(t.env_type.clone()));
+        fields.add_field_method_get("version", |_, t| Ok(t.version.clone()));
+        fields.add_field_method_get("pluginDirPath", |_, t| Ok(t.plugin_dir_path.clone()));
+    }
+}

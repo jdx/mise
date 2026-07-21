@@ -1,0 +1,3 @@
+backends = ["aqua:ossf/scorecard"]
+description = "OpenSSF Scorecard - Security health metrics for Open Source"
+test = { cmd = "scorecard version", expected = "v{{version}}" }

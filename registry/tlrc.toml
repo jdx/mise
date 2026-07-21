@@ -1,0 +1,3 @@
+backends = ["aqua:tldr-pages/tlrc", "cargo:tlrc"]
+description = "A tldr client written in Rust"
+test = { cmd = "tldr --version", expected = "tlrc v{{version}}" }

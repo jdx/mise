@@ -1,0 +1,3 @@
+backends = ["aqua:google/go-containerregistry", "asdf:dmpe/asdf-crane"]
+description = "Go library and CLIs for working with container registries"
+test = { cmd = "crane version", expected = "{{version}}" }

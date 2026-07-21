@@ -1,0 +1,2 @@
+backends = ["github:quarkusio/quarkus", "asdf:mise-plugins/mise-quarkus"]
+description = "The quarkus command lets you create projects, manage extensions and do essential build and development tasks using the underlying project build tool"

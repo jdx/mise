@@ -1,0 +1,10 @@
+backends = [
+  "vfox:mise-plugins/vfox-yarn",
+  "asdf:mise-plugins/mise-yarn",
+  "aqua:yarnpkg/berry",
+  "npm:@yarnpkg/cli-dist",
+]
+description = "Yarn is a package manager that doubles down as project manager. Whether you work on simple projects or industry monorepos, whether you're an open source developer or an enterprise user, Yarn has your back"
+detect = ["yarn.lock", ".yarnrc.yml"]
+idiomatic_files = ["package.json"]
+test = { cmd = "yarn --version", expected = "{{version}}" }

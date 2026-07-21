@@ -1,0 +1,3 @@
+backends = ["aqua:expert-lsp/expert", "github:expert-lsp/expert"]
+description = "Official Elixir Language Server Protocol implementation"
+test = { cmd = "expert --version", expected = "{{version}}" }

@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 
 use duct::Expression;
 use eyre::{Result, WrapErr, eyre};
@@ -7,9 +10,8 @@ use gix::{self};
 use once_cell::sync::OnceCell;
 use xx::file;
 
-use crate::cmd;
 use crate::cmd::CmdLineRunner;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::file::touch_dir;
 use crate::ui::progress_report::SingleReport;
 
@@ -22,7 +24,7 @@ macro_rules! git_cmd {
     ( $dir:expr $(, $arg:expr )* $(,)? ) => {
         {
             let safe = format!("safe.directory={}", $dir.display());
-            cmd!("git", "-C", $dir, "-c", safe $(, $arg)*)
+            sanitize_git_env(cmd!("git", "-C", $dir, "-c", safe, "-c", "core.autocrlf=false" $(, $arg)*))
         }
     }
 }
@@ -60,15 +62,77 @@ impl Git {
     }
 
     pub fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
-        let gitref = gitref.map_or_else(|| self.current_branch(), Ok)?;
-        self.update_ref(gitref, false)
+        match gitref {
+            Some(gitref) => {
+                let remote_ref_kind = self.remote_ref_kind(&gitref)?;
+                self.update_ref(gitref, remote_ref_kind)
+            }
+            None => self.update_ref(self.current_branch()?, None),
+        }
     }
 
     pub fn update_tag(&self, gitref: String) -> Result<(String, String)> {
-        self.update_ref(gitref, true)
+        self.update_ref(gitref, Some(RemoteRefKind::Tag))
     }
 
-    fn update_ref(&self, gitref: String, is_tag_ref: bool) -> Result<(String, String)> {
+    fn remote_ref_kind(&self, gitref: &str) -> Result<Option<RemoteRefKind>> {
+        if gitref.starts_with("refs/") || looks_like_sha(gitref) {
+            return Ok(None);
+        }
+
+        let branch_ref = format!("refs/heads/{gitref}");
+        let tag_ref = format!("refs/tags/{gitref}");
+        let output = git_cmd_read!(
+            &self.dir,
+            "ls-remote",
+            "--refs",
+            "origin",
+            &branch_ref,
+            &tag_ref
+        )?;
+
+        // Match git's usual disambiguation: a same-named branch wins over a
+        // tag, while callers can select the tag with `refs/tags/<name>`.
+        Ok(remote_ref_kind(&output, &branch_ref, &tag_ref))
+    }
+
+    /// Detached `git checkout --force <ref>` with no fetch. Used after `clone`
+    /// when the caller asked to land on a specific SHA — the clone has already
+    /// pulled all reachable objects, so a fetch with a `<sha>:<sha>` refspec
+    /// would be redundant (and on servers without
+    /// `uploadpack.allowReachableSHA1InWant`, would fail).
+    fn checkout(&self, gitref: &str) -> Result<()> {
+        let cmd = git_cmd!(
+            &self.dir,
+            "-c",
+            "advice.detachedHead=false",
+            "-c",
+            "advice.objectNameWarning=false",
+            "checkout",
+            "--force",
+            gitref,
+        );
+        let res = cmd
+            .stderr_to_stdout()
+            .stdout_capture()
+            .unchecked()
+            .run()
+            .map_err(|err| eyre!("git failed: {cmd:?} {err:#}"))?;
+        if !res.status.success() {
+            return Err(eyre!(
+                "git failed: {cmd:?} {}",
+                String::from_utf8_lossy(&res.stdout)
+            ));
+        }
+        touch_dir(&self.dir)?;
+        Ok(())
+    }
+
+    fn update_ref(
+        &self,
+        gitref: String,
+        remote_ref_kind: Option<RemoteRefKind>,
+    ) -> Result<(String, String)> {
         debug!("updating {} to {}", self.dir.display(), gitref);
         let exec = |cmd: Expression| match cmd.stderr_to_stdout().stdout_capture().unchecked().run()
         {
@@ -86,11 +150,10 @@ impl Git {
         };
         debug!("updating {} to {} with git", self.dir.display(), gitref);
 
-        let refspec = if is_tag_ref {
-            format!("refs/tags/{}:refs/tags/{}", gitref, gitref)
-        } else {
-            format!("{}:{}", gitref, gitref)
-        };
+        let qualified_ref = remote_ref_kind.map(|kind| qualify_remote_ref(&gitref, kind));
+        let refspec = qualified_ref
+            .as_ref()
+            .map_or_else(|| format!("{gitref}:{gitref}"), |r| format!("{r}:{r}"));
         exec(git_cmd!(
             &self.dir,
             "fetch",
@@ -100,6 +163,10 @@ impl Git {
             &refspec
         ))?;
         let prev_rev = self.current_sha()?;
+        let checkout_ref = match (remote_ref_kind, qualified_ref.as_deref()) {
+            (Some(RemoteRefKind::Tag), Some(tag_ref)) => tag_ref,
+            _ => &gitref,
+        };
         exec(git_cmd!(
             &self.dir,
             "-c",
@@ -108,7 +175,7 @@ impl Git {
             "advice.objectNameWarning=false",
             "checkout",
             "--force",
-            &gitref
+            &checkout_ref
         ))?;
         let post_rev = self.current_sha()?;
         touch_dir(&self.dir)?;
@@ -117,15 +184,21 @@ impl Git {
     }
 
     pub fn clone(&self, url: &str, options: CloneOptions) -> Result<()> {
-        debug!("cloning {} to {}", url, self.dir.display());
         if let Some(parent) = self.dir.parent() {
             file::mkdirp(parent)?;
         }
-        if SETTINGS.libgit2 || SETTINGS.gix {
-            debug!("Use libgit2 or gix");
+        // gix's `with_ref_name` and git CLI's `-b` only accept branch/tag names.
+        // If the caller passed a commit SHA, clone without a ref and then
+        // check out the SHA explicitly. gix in particular panics
+        // ("we map by name only and have no object-id in refspec") if a SHA
+        // is fed to `with_ref_name`.
+        let sha_branch = options.branch.as_deref().filter(|b| looks_like_sha(b));
+        let named_branch = options.branch.as_deref().filter(|b| !looks_like_sha(b));
+        if Settings::get().libgit2 || Settings::get().gix {
+            debug!("cloning {} to {} with gix", url, self.dir.display());
             let mut prepare_clone = gix::prepare_clone(url, &self.dir)?;
 
-            if let Some(branch) = &options.branch {
+            if let Some(branch) = named_branch {
                 prepare_clone = prepare_clone.with_ref_name(Some(branch))?;
             }
 
@@ -135,8 +208,12 @@ impl Git {
             prepare_checkout
                 .main_worktree(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)?;
 
+            if let Some(sha) = sha_branch {
+                self.checkout(sha)?;
+            }
             return Ok(());
         }
+        debug!("cloning {} to {} with git", url, self.dir.display());
         match get_git_version() {
             Ok(version) => trace!("git version: {}", version),
             Err(err) => warn!(
@@ -149,15 +226,23 @@ impl Git {
             pr.abandon();
         }
 
-        let mut cmd = CmdLineRunner::new("git")
-            .arg("clone")
-            .arg("-q")
-            .arg("--depth")
-            .arg("1")
-            .arg(url)
-            .arg(&self.dir);
+        let mut cmd = sanitize_git_cmd_runner(
+            CmdLineRunner::new("git")
+                .arg("clone")
+                .arg("-q")
+                .arg("-o")
+                .arg("origin")
+                .arg("-c")
+                .arg("core.autocrlf=false"),
+        );
+        // `--depth 1` is incompatible with checking out an arbitrary SHA later,
+        // so do a full clone when the caller passed a SHA.
+        if sha_branch.is_none() {
+            cmd = cmd.arg("--depth").arg("1");
+        }
+        cmd = cmd.arg(url).arg(&self.dir);
 
-        if let Some(branch) = &options.branch {
+        if let Some(branch) = named_branch {
             cmd = cmd.args([
                 "-b",
                 branch,
@@ -168,6 +253,36 @@ impl Git {
         }
 
         cmd.execute()?;
+
+        if let Some(sha) = sha_branch {
+            self.checkout(sha)?;
+        }
+        Ok(())
+    }
+
+    pub fn update_submodules(&self) -> Result<()> {
+        debug!("updating submodules in {}", self.dir.display());
+
+        let exec = |cmd: Expression| match cmd.stderr_to_stdout().stdout_capture().unchecked().run()
+        {
+            Ok(res) => {
+                if res.status.success() {
+                    Ok(())
+                } else {
+                    Err(eyre!(
+                        "git failed: {cmd:?} {}",
+                        String::from_utf8(res.stdout).unwrap()
+                    ))
+                }
+            }
+            Err(err) => Err(eyre!("git failed: {cmd:?} {err:#}")),
+        };
+
+        exec(
+            git_cmd!(&self.dir, "submodule", "update", "--init", "--recursive")
+                .env("GIT_TERMINAL_PROMPT", "0"),
+        )?;
+
         Ok(())
     }
 
@@ -232,13 +347,12 @@ impl Git {
         if !self.exists() {
             return None;
         }
-        if let Ok(repo) = self.repo() {
-            if let Ok(remote) = repo.find_remote("origin") {
-                if let Some(url) = remote.url(gix::remote::Direction::Fetch) {
-                    trace!("remote url for {dir:?}: {url}");
-                    return Some(url.to_string());
-                }
-            }
+        if let Ok(repo) = self.repo()
+            && let Ok(remote) = repo.find_remote("origin")
+            && let Some(url) = remote.url(gix::remote::Direction::Fetch)
+        {
+            trace!("remote url for {dir:?}: {url}");
+            return Some(url.to_string());
         }
         let res = git_cmd_read!(&self.dir, "config", "--get", "remote.origin.url");
         match res {
@@ -260,6 +374,15 @@ impl Git {
         }
     }
 
+    pub fn remote_sha(&self, branch: &str) -> Result<Option<String>> {
+        let output = git_cmd_read!(&self.dir, "ls-remote", "origin", branch)?;
+        Ok(output
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().next())
+            .map(|sha| sha.to_string()))
+    }
+
     pub fn exists(&self) -> bool {
         self.dir.join(".git").is_dir()
     }
@@ -277,6 +400,149 @@ fn get_git_version() -> Result<String> {
     Ok(version.trim().into())
 }
 
+fn sanitize_git_env(cmd: Expression) -> Expression {
+    GIT_CONTEXT_ENV
+        .iter()
+        .fold(cmd, |cmd, env| cmd.env_remove(env))
+}
+
+fn sanitize_git_cmd_runner<'a>(cmd: CmdLineRunner<'a>) -> CmdLineRunner<'a> {
+    GIT_CONTEXT_ENV
+        .iter()
+        .fold(cmd, |cmd, env| cmd.env_remove(env))
+}
+
+const GIT_CONTEXT_ENV: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RemoteRefKind {
+    Branch,
+    Tag,
+}
+
+fn qualify_remote_ref(gitref: &str, kind: RemoteRefKind) -> String {
+    let prefix = match kind {
+        RemoteRefKind::Branch => "refs/heads/",
+        RemoteRefKind::Tag => "refs/tags/",
+    };
+    if gitref.starts_with(prefix) {
+        gitref.to_string()
+    } else {
+        format!("{prefix}{gitref}")
+    }
+}
+
+fn remote_ref_kind(output: &str, branch_ref: &str, tag_ref: &str) -> Option<RemoteRefKind> {
+    let has_ref = |expected: &str| {
+        output.lines().any(|line| {
+            line.split_once(char::is_whitespace)
+                .is_some_and(|(_, name)| name == expected)
+        })
+    };
+
+    if has_ref(branch_ref) {
+        Some(RemoteRefKind::Branch)
+    } else if has_ref(tag_ref) {
+        Some(RemoteRefKind::Tag)
+    } else {
+        None
+    }
+}
+
+/// Heuristic for whether a ref string is a commit SHA (full SHA-1 or SHA-256).
+///
+/// Branch and tag names that happen to be all-hex would also match, but git
+/// disallows refs that are valid object IDs anyway (see `git check-ref-format`),
+/// so the heuristic is safe in practice. Abbreviated SHAs are intentionally not
+/// matched — they are ambiguous with short branch names and need server-side
+/// resolution before they can be checked out.
+fn looks_like_sha(s: &str) -> bool {
+    matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// If `path` is inside a linked git worktree, returns the equivalent path in
+/// the repository's main checkout, e.g. `/repo-wt/sub/mise.toml` →
+/// `/repo/sub/mise.toml`. Returns None for paths in a main checkout, outside
+/// any git repository, or in worktrees of a bare repository.
+///
+/// Detection is filesystem-only (no git subprocess): a linked worktree root
+/// contains a `.git` *file* pointing at `<main>/.git/worktrees/<name>`.
+pub fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
+    static CACHE: LazyLock<Mutex<HashMap<PathBuf, Option<PathBuf>>>> =
+        LazyLock::new(Default::default);
+    for wt_root in path.ancestors() {
+        let dotgit = wt_root.join(".git");
+        if dotgit.is_dir() {
+            // A `.git` directory is either the main checkout or a nested
+            // independent repository. Either way stop: a nested repo's
+            // contents are not derived from the outer repo's history, so its
+            // configs must keep their own trust records rather than
+            // inheriting the outer main checkout's via path mapping.
+            return None;
+        }
+        if dotgit.is_file() {
+            // `.git` files are used by both linked worktrees and submodules.
+            // Only a linked worktree resolves to a main checkout here; for
+            // anything else (submodule, bare-repo worktree) keep walking up —
+            // a submodule may itself live inside a linked worktree.
+            let main_root = CACHE
+                .lock()
+                .unwrap()
+                .entry(wt_root.to_path_buf())
+                .or_insert_with(|| main_checkout_root(&dotgit))
+                .clone();
+            if let Some(main_root) = main_root {
+                let equiv = main_root.join(path.strip_prefix(wt_root).ok()?);
+                return (equiv != path).then_some(equiv);
+            }
+        }
+    }
+    None
+}
+
+/// Resolves a linked worktree's `.git` file to the root of the main checkout
+fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
+    let contents = std::fs::read_to_string(dotgit_file).ok()?;
+    let gitdir = PathBuf::from(contents.strip_prefix("gitdir:")?.trim());
+    let gitdir = if gitdir.is_relative() {
+        dotgit_file.parent()?.join(gitdir)
+    } else {
+        gitdir
+    };
+    // Linked worktrees keep their private git dir at
+    // `<common>/worktrees/<name>`, containing a `commondir` file pointing to
+    // the shared git dir (usually `../..`, i.e. `<main>/.git`). Submodule git
+    // dirs live under `modules/` and have neither, which is what
+    // distinguishes them here.
+    if gitdir.parent()?.file_name() != Some(OsStr::new("worktrees")) {
+        return None;
+    }
+    let common = PathBuf::from(
+        std::fs::read_to_string(gitdir.join("commondir"))
+            .ok()?
+            .trim(),
+    );
+    let common = if common.is_relative() {
+        gitdir.join(common)
+    } else {
+        common
+    };
+    let common = common.canonicalize().ok()?;
+    if common.file_name() == Some(OsStr::new(".git")) {
+        common.parent().map(|p| p.to_path_buf())
+    } else {
+        None // bare repository — no main checkout to share trust with
+    }
+}
+
 impl Debug for Git {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Git").field("dir", &self.dir).finish()
@@ -285,12 +551,12 @@ impl Debug for Git {
 
 #[derive(Default)]
 pub struct CloneOptions<'a> {
-    pr: Option<&'a Box<dyn SingleReport>>,
+    pr: Option<&'a dyn SingleReport>,
     branch: Option<String>,
 }
 
 impl<'a> CloneOptions<'a> {
-    pub fn pr(mut self, pr: &'a Box<dyn SingleReport>) -> Self {
+    pub fn pr(mut self, pr: &'a dyn SingleReport) -> Self {
         self.pr = Some(pr);
         self
     }
@@ -298,5 +564,385 @@ impl<'a> CloneOptions<'a> {
     pub fn branch(mut self, branch: &str) -> Self {
         self.branch = Some(branch.to_string());
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CloneOptions, Git, looks_like_sha, sanitize_git_cmd_runner, sanitize_git_env};
+    use crate::cmd::CmdLineRunner;
+    use crate::config::Settings;
+    use std::process::Command;
+
+    #[test]
+    fn sha_detection() {
+        assert!(looks_like_sha("0123456789abcdef0123456789abcdef01234567"));
+        assert!(looks_like_sha(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        ));
+        assert!(!looks_like_sha("main"));
+        assert!(!looks_like_sha("v1.2.3"));
+        assert!(!looks_like_sha("abcdef1")); // short SHA not supported
+        assert!(!looks_like_sha(""));
+        assert!(!looks_like_sha("g123456789abcdef0123456789abcdef01234567")); // non-hex
+    }
+
+    #[test]
+    fn remote_ref_parser_prefers_branches_over_tags() {
+        let output = "\
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\trefs/heads/release
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
+";
+        assert_eq!(
+            super::remote_ref_kind(output, "refs/heads/release", "refs/tags/release"),
+            Some(super::RemoteRefKind::Branch)
+        );
+        assert_eq!(
+            super::remote_ref_kind(output, "refs/heads/missing", "refs/tags/release"),
+            Some(super::RemoteRefKind::Tag)
+        );
+        assert_eq!(
+            super::remote_ref_kind(output, "refs/heads/missing", "refs/tags/missing"),
+            None
+        );
+    }
+
+    #[test]
+    fn update_resolves_short_branches_and_tags() {
+        let tmp = tempfile::tempdir().unwrap();
+        let origin = tmp.path().join("origin");
+        std::fs::create_dir_all(&origin).unwrap();
+
+        let git_in = |dir: &std::path::Path, args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .output()
+                .expect("spawn git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8(out.stdout).unwrap().trim().to_string()
+        };
+        git_in(&origin, &["-c", "init.defaultBranch=main", "init", "-q"]);
+        git_in(&origin, &["config", "user.email", "test@example.com"]);
+        git_in(&origin, &["config", "user.name", "Test"]);
+
+        std::fs::write(origin.join("version"), "release\n").unwrap();
+        git_in(&origin, &["add", "version"]);
+        git_in(&origin, &["commit", "-q", "-m", "release"]);
+        let release_sha = git_in(&origin, &["rev-parse", "HEAD"]);
+        git_in(&origin, &["branch", "release-branch"]);
+        git_in(&origin, &["branch", "collision"]);
+        git_in(&origin, &["tag", "lightweight-v1"]);
+        git_in(
+            &origin,
+            &["tag", "-a", "annotated-v1", "-m", "annotated-v1"],
+        );
+
+        std::fs::write(origin.join("version"), "tag-collision\n").unwrap();
+        git_in(&origin, &["commit", "-q", "-am", "tag collision"]);
+        let tag_collision_sha = git_in(&origin, &["rev-parse", "HEAD"]);
+        git_in(&origin, &["tag", "-a", "collision", "-m", "collision"]);
+
+        std::fs::write(origin.join("version"), "main\n").unwrap();
+        git_in(&origin, &["commit", "-q", "-am", "main"]);
+
+        let cases = [
+            ("release-branch", release_sha.as_str()),
+            ("lightweight-v1", release_sha.as_str()),
+            ("annotated-v1", release_sha.as_str()),
+            ("refs/tags/annotated-v1", release_sha.as_str()),
+            (release_sha.as_str(), release_sha.as_str()),
+            ("collision", release_sha.as_str()),
+            ("refs/tags/collision", tag_collision_sha.as_str()),
+        ];
+        let url = format!("file://{}", origin.display());
+        for (index, (selector, expected_sha)) in cases.into_iter().enumerate() {
+            let clone = tmp.path().join(format!("clone-{index}"));
+            git_in(tmp.path(), &["clone", "-q", &url, clone.to_str().unwrap()]);
+            if selector == "annotated-v1" {
+                // A stale local branch must not override a remote tag after the
+                // remote branch has disappeared.
+                git_in(&clone, &["branch", "annotated-v1"]);
+            }
+
+            Git::new(&clone)
+                .update(Some(selector.to_string()))
+                .unwrap_or_else(|err| panic!("update {selector} failed: {err:#}"));
+            assert_eq!(
+                git_in(&clone, &["rev-parse", "HEAD"]),
+                expected_sha,
+                "selector {selector} checked out the wrong commit"
+            );
+        }
+
+        let clone = tmp.path().join("clone-update-tag-full-ref");
+        git_in(tmp.path(), &["clone", "-q", &url, clone.to_str().unwrap()]);
+        Git::new(&clone)
+            .update_tag("refs/tags/annotated-v1".to_string())
+            .unwrap_or_else(|err| panic!("update_tag with full ref failed: {err:#}"));
+        assert_eq!(git_in(&clone, &["rev-parse", "HEAD"]), release_sha);
+    }
+
+    #[test]
+    fn worktree_main_checkout_equivalent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().canonicalize().unwrap();
+        let main = base.join("main");
+        let wt = base.join("wt");
+        std::fs::create_dir_all(main.join(".git/worktrees/wt")).unwrap();
+        std::fs::create_dir_all(wt.join("sub")).unwrap();
+        std::fs::write(main.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
+        std::fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/worktrees/wt").display()),
+        )
+        .unwrap();
+
+        // worktree root and nested paths map to the main checkout
+        assert_eq!(super::main_checkout_equivalent(&wt), Some(main.clone()));
+        assert_eq!(
+            super::main_checkout_equivalent(&wt.join("sub/mise.toml")),
+            Some(main.join("sub/mise.toml"))
+        );
+        // main checkout and non-repo paths do not map
+        assert_eq!(super::main_checkout_equivalent(&main), None);
+        assert_eq!(super::main_checkout_equivalent(&base), None);
+
+        // worktree of a bare repo does not map
+        let bare = base.join("bare.git");
+        let bare_wt = base.join("bare-wt");
+        std::fs::create_dir_all(bare.join("worktrees/bare-wt")).unwrap();
+        std::fs::create_dir_all(&bare_wt).unwrap();
+        std::fs::write(bare.join("worktrees/bare-wt/commondir"), "../..\n").unwrap();
+        std::fs::write(
+            bare_wt.join(".git"),
+            format!("gitdir: {}\n", bare.join("worktrees/bare-wt").display()),
+        )
+        .unwrap();
+        assert_eq!(super::main_checkout_equivalent(&bare_wt), None);
+
+        // a submodule also uses a `.git` file but is not a linked worktree:
+        // its configs must not inherit the parent checkout's trust
+        let subm = main.join("subm");
+        std::fs::create_dir_all(main.join(".git/modules/subm")).unwrap();
+        std::fs::create_dir_all(&subm).unwrap();
+        std::fs::write(
+            subm.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/modules/subm").display()),
+        )
+        .unwrap();
+        assert_eq!(super::main_checkout_equivalent(&subm), None);
+        assert_eq!(
+            super::main_checkout_equivalent(&subm.join("mise.toml")),
+            None
+        );
+
+        // a submodule checked out inside a linked worktree maps through the
+        // outer worktree to the same submodule path in the main checkout
+        let wt_subm = wt.join("subm");
+        std::fs::create_dir_all(&wt_subm).unwrap();
+        std::fs::write(
+            wt_subm.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/modules/subm").display()),
+        )
+        .unwrap();
+        assert_eq!(
+            super::main_checkout_equivalent(&wt_subm.join("mise.toml")),
+            Some(subm.join("mise.toml"))
+        );
+    }
+
+    #[test]
+    fn git_commands_ignore_inherited_work_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let cache = tmp.path().join("cache");
+        let work_tree = tmp.path().join("work-tree");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&work_tree).unwrap();
+
+        let git_in = |dir: &std::path::Path, args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .output()
+                .expect("spawn git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            out
+        };
+        git_in(&src, &["-c", "init.defaultBranch=main", "init", "-q"]);
+        std::fs::write(src.join("file.txt"), "hello\n").unwrap();
+        git_in(&src, &["add", "file.txt"]);
+        git_in(
+            &src,
+            &[
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "-m",
+                "main",
+            ],
+        );
+        let url = format!("file://{}", src.display());
+        let clone = Command::new("git")
+            .args(["clone", "-q", &url])
+            .arg(&cache)
+            .output()
+            .expect("spawn git clone");
+        assert!(
+            clone.status.success(),
+            "git clone failed: {}",
+            String::from_utf8_lossy(&clone.stderr)
+        );
+        std::fs::remove_file(cache.join("file.txt")).unwrap();
+
+        let output = sanitize_git_env(
+            git_cmd!(&cache, "checkout", "--force", "HEAD")
+                .env("GIT_WORK_TREE", &work_tree)
+                .env("GIT_INDEX_FILE", work_tree.join("index")),
+        )
+        .stderr_to_stdout()
+        .stdout_capture()
+        .unchecked()
+        .run()
+        .expect("run git checkout");
+        assert!(
+            output.status.success(),
+            "git checkout failed: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+
+        assert!(cache.join("file.txt").exists());
+        assert!(!work_tree.join("file.txt").exists());
+        assert!(!work_tree.join("index").exists());
+
+        let clone_cache = tmp.path().join("clone-cache");
+        sanitize_git_cmd_runner(
+            CmdLineRunner::new("git")
+                .arg("clone")
+                .arg("-q")
+                .arg(&url)
+                .arg(&clone_cache)
+                .env("GIT_WORK_TREE", &work_tree),
+        )
+        .execute()
+        .expect("git clone should ignore inherited GIT_WORK_TREE");
+
+        assert!(clone_cache.join("file.txt").exists());
+        assert!(!work_tree.join("file.txt").exists());
+    }
+
+    /// Regression test for https://github.com/jdx/mise/discussions/9472:
+    /// gix's `with_ref_name` panics ("we map by name only and have no
+    /// object-id in refspec") when given a commit SHA. Our `clone()` must
+    /// detect that case and fall back to a plain clone + checkout.
+    ///
+    /// Covers both the gix backend (where the panic originates) and a SHA
+    /// reachable only from a non-default branch (so the clone must be full,
+    /// not shallow, for the checkout to find the object).
+    #[test]
+    fn clone_by_sha_does_not_panic() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+
+        let git_in = |dir: &std::path::Path, args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .output()
+                .expect("spawn git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            out
+        };
+        git_in(&src, &["-c", "init.defaultBranch=main", "init", "-q"]);
+        git_in(
+            &src,
+            &[
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "main",
+            ],
+        );
+        // Park the SHA we want to check out on a non-default branch, so the
+        // test would fail if `clone()` did a shallow / single-branch clone.
+        git_in(&src, &["checkout", "-q", "-b", "feature"]);
+        git_in(
+            &src,
+            &[
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "feature",
+            ],
+        );
+        let sha = String::from_utf8(git_in(&src, &["rev-parse", "HEAD"]).stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+        assert_eq!(sha.len(), 40);
+        // Move feature off HEAD so the SHA isn't on the default branch.
+        git_in(&src, &["checkout", "-q", "main"]);
+
+        let url = format!("file://{}", src.display());
+
+        // gix path — the panic site. Settings::gix defaults to true, but make
+        // it explicit so the test is robust to future default changes.
+        let backups = (Settings::get().gix, Settings::get().libgit2);
+        Settings::override_with(|s| {
+            s.gix = Some(true);
+            s.libgit2 = Some(false);
+        });
+        let dst_gix = tmp.path().join("dst-gix");
+        Git::new(&dst_gix)
+            .clone(&url, CloneOptions::default().branch(&sha))
+            .expect("gix clone with SHA must not panic and must succeed");
+        let head = git_in(&dst_gix, &["rev-parse", "HEAD"]);
+        assert_eq!(String::from_utf8(head.stdout).unwrap().trim(), sha);
+
+        // CLI path — `git clone -b <sha>` is rejected; verify the SHA
+        // bypass works there too.
+        Settings::override_with(|s| {
+            s.gix = Some(false);
+            s.libgit2 = Some(false);
+        });
+        let dst_cli = tmp.path().join("dst-cli");
+        Git::new(&dst_cli)
+            .clone(&url, CloneOptions::default().branch(&sha))
+            .expect("CLI clone with SHA must succeed");
+        let head = git_in(&dst_cli, &["rev-parse", "HEAD"]);
+        assert_eq!(String::from_utf8(head.stdout).unwrap().trim(), sha);
+
+        // Restore so we don't leak settings into other tests.
+        Settings::override_with(|s| {
+            s.gix = Some(backups.0);
+            s.libgit2 = Some(backups.1);
+        });
     }
 }

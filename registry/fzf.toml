@@ -1,0 +1,3 @@
+backends = ["aqua:junegunn/fzf", "asdf:kompiro/asdf-fzf"]
+description = ":cherry_blossom: A command-line fuzzy finder"
+test = { cmd = "fzf --version", expected = "{{version}}" }

@@ -1,0 +1,3 @@
+backends = ["aqua:openai/codex", "npm:@openai/codex"]
+description = "Lightweight coding agent that runs in your terminal"
+test = { cmd = "codex --version", expected = "codex-cli {{version}}" }

@@ -1,0 +1,27 @@
+description = "Flyway by Redgate • Database Migrations Made Easy"
+test = { cmd = "flyway --version", expected = "{{version}}" }
+
+[[backends]]
+full = "github:flyway/flyway"
+
+[backends.options]
+version_prefix = "flyway-"
+
+[backends.options.platforms.macos-arm64]
+asset_pattern = "flyway-commandline-{{ version }}-macosx-arm64.tar.gz"
+bin_path = "flyway-{{ version }}"
+
+[backends.options.platforms.macos-x64]
+asset_pattern = "flyway-commandline-{{ version }}-macosx-x64.tar.gz"
+bin_path = "flyway-{{ version }}"
+
+[backends.options.platforms.linux-x64]
+asset_pattern = "flyway-commandline-{{ version }}-linux-x64.tar.gz"
+bin_path = "flyway-{{ version }}"
+
+[backends.options.platforms.windows-x64]
+asset_pattern = "flyway-commandline-{{ version }}-windows-x64.zip"
+bin_path = "flyway-{{ version }}"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-flyway"

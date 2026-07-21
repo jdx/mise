@@ -1,0 +1,4 @@
+aliases = ["benthos"]
+backends = ["aqua:redpanda-data/connect", "asdf:benthosdev/benthos-asdf"]
+description = "Fancy stream processing made operationally mundane"
+test = { cmd = "redpanda-connect --version", expected = "Version: {{version}}" }

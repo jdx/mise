@@ -2,3 +2,13 @@
 
 assert "mise install-into node@22.0.0 ./mynode"
 assert "./mynode/bin/node -v" "v22.0.0"
+
+# #8115: must not clobber a non-empty, non-mise directory
+mkdir -p ./not_empty
+echo data >./not_empty/keep.txt
+assert_fail "MISE_YES=0 mise install-into node@22.0.0 ./not_empty"
+assert "cat ./not_empty/keep.txt" "data" # contents preserved (no rm -rf)
+
+# explicit opt-in via global --yes overrides the guard
+assert "mise install-into node@22.0.0 ./not_empty --yes"
+assert "./not_empty/bin/node -v" "v22.0.0"

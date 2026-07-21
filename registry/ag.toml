@@ -1,0 +1,3 @@
+backends = ["vfox:mise-plugins/vfox-ag", "asdf:mise-plugins/mise-ag"]
+description = "The Silver Searcher: A code searching tool similar to ack, with a focus on speed"
+# test = ["ag --version", "ag version {{version}}"] # requires libpcre

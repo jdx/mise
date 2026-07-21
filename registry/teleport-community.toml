@@ -1,0 +1,5 @@
+backends = [
+  "vfox:jdx/vfox-teleport-community",
+  "asdf:mise-plugins/mise-teleport-community",
+]
+description = "Teleport provides connectivity, authentication, access controls and audit for infrastructure (community version)"

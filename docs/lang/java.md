@@ -16,12 +16,14 @@ not already installed) and makes it the global default:
 
 ```sh
 mise use -g java@openjdk-21
-mise use -g java@21         # alternate shorthands for openjdk-only
+mise use -g java@21         # alternate shorthands for openjdk
 ```
 
-You can also install a jdk from a different vendor:
+You can also install a jdk from a different vendor. To get the latest version from a vendor just use the
+vendor prefix.
 
 ```sh
+mise use -g java@temurin        # latest version from Temurin
 mise use -g java@temurin-21
 mise use -g java@zulu-21
 mise use -g java@corretto-21
@@ -30,11 +32,23 @@ mise use -g java@corretto-21
 See available versions with `mise ls-remote java`.
 
 ::: warning
-Note that shorthand versions (like `21` in the example) use [`OpenJDK`](https://openjdk.org/) as the vendor.
-The OpenJDK versions will only be updated for a 6-month period. Updates and security patches will not be available after this short period. This also applies for LTS versions.
+Note that shorthand versions (like `21` in the example) use [`OpenJDK`](https://openjdk.org/) as the default vendor. The default vendor can be changed with the setting [`java.shorthand_vendor`](../configuration/settings.md#java.shorthand_vendor). The OpenJDK versions will only be updated for a 6-month period. Updates and security patches will not be available after this short period. This also applies for LTS versions.
 
 For more information on which JDK to choose, see <https://whichjdk.com>.
 :::
+
+## JAVA_HOME
+
+mise automatically sets `JAVA_HOME` to the active Java installation. This requires [`mise activate`](/cli/activate) — shims alone do not set environment variables like `JAVA_HOME`.
+
+If `JAVA_HOME` appears stuck on an old version after changing your `mise.toml`, try:
+
+```sh
+cd . # triggers mise hook-env to re-evaluate
+echo $JAVA_HOME
+```
+
+If using an IDE that reads `JAVA_HOME` at startup, you may need to restart it after switching Java versions. For non-interactive environments (CI, scripts), use `mise exec` or `mise run` which always set up the full environment.
 
 ## macOS JAVA_HOME Integration
 
@@ -82,7 +96,7 @@ ln -s ~/.sdkman/candidates/java/21.0.1-open ~/.local/share/mise/installs/java/21
 cp ~/.local/share/mise/installs/java/21.0.1-open/lib/libjli.dylib ~/.local/share/mise/installs/java/21.0.1-open/Contents/MacOS/libjli.dylib
 ```
 
-4. Don't forget to make sure the cache is blocked and valid, by making sure an **empty** directory **exists** for your version in the [mise cache](https://mise.jdx.dev/directories.html#cache-mise):
+4. Don't forget to make sure the cache is blocked and valid, by making sure an **empty** directory **exists** for your version in the [mise cache](https://mise.en.dev/directories.html#cache-mise):
    e.g.
 
 ```sh
@@ -96,6 +110,15 @@ mise/java/21.0.1-open:
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `java` backend.
 These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for install-time commands run by the core `java` backend:
+
+```toml
+[tools]
+java = { version = "latest", install_env = { JAVA_TOOL_OPTIONS = "-Djava.net.useSystemProxies=true" } }
+```
 
 ### `release_type`
 
@@ -121,3 +144,10 @@ mkdir -p ~/.asdf/installs/ && ln -s ~/.local/share/mise/installs/java ~/.asdf/in
 ```
 
 Otherwise, you can always use the [foojay-resolver-convention](https://plugins.gradle.org/plugin/org.gradle.toolchains.foojay-resolver-convention) plugin to let Gradle automatically install JDKs required by your project.
+
+## Settings
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="java" :level="3" />

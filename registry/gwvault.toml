@@ -1,0 +1,2 @@
+backends = ["aqua:GoodwayGroup/gwvault", "asdf:GoodwayGroup/asdf-gwvault"]
+description = "ansible-vault CLI reimplemented in go"

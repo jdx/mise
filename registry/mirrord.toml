@@ -1,0 +1,3 @@
+backends = ["aqua:metalbear-co/mirrord", "asdf:metalbear-co/asdf-mirrord"]
+description = "Connect your local process and your cloud environment, and run local code in cloud conditions"
+# test = ["mirrord --version", "mirrord {{version}}"]

@@ -1,0 +1,3 @@
+backends = ["npm:turbo"]
+description = "Turborepo is a high-performance build system for JavaScript and TypeScript codebases."
+test = { cmd = "turbo --version", expected = "{{version}}" }

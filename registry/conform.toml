@@ -1,0 +1,4 @@
+backends = ["aqua:siderolabs/conform", "asdf:skyzyx/asdf-conform"]
+description = "Policy enforcement for your pipelines"
+os = ["linux", "macos"]
+test = { cmd = "conform version", expected = "conform version v{{version}}" }

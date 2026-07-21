@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+# #10282: a `tools = true` [env] value must reach a vfox plugin's install hook
+# even when the hook shells out via Lua `os.execute` (not cmd.exec). Before the
+# fix, os.execute inherited mise's raw process env (which lacks the tools=true
+# var during a non-activated `mise install`), so the value was missing and
+# installs like gcloud (which reads CLOUDSDK_PYTHON in its install.sh) failed.
+
+PLUGIN_DIR="$PWD/vfox-tools-env"
+MARKER="$PWD/tools-env-marker"
+
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "tools-env"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/tools-env"
+PLUGIN.license = "MIT"
+PLUGIN.description = "tools=true env test plugin"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return {
+		{ version = "1.0.0" },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return {
+		version = ctx.version,
+	}
+end
+LUA
+
+# PostInstall shells out via os.execute (NOT cmd.exec) to capture the
+# tools=true env var, mirroring how vfox-gcloud runs its install.sh.
+cat >"$PLUGIN_DIR/hooks/post_install.lua" <<LUA
+function PLUGIN:PostInstall(ctx)
+	os.execute("printf '%s' \"\$MISE_TEST_TOOLS_VAR\" > \"$MARKER\"")
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	return {}
+end
+LUA
+
+git -C "$PLUGIN_DIR" init
+git -C "$PLUGIN_DIR" add .
+git -C "$PLUGIN_DIR" -c user.name="mise" -c user.email="mise@example.com" commit -m "initial plugin"
+
+cat >mise.toml <<EOF
+[settings]
+unix_default_inline_shell_args = "sh -c"
+
+[tools]
+"vfox:file://$PLUGIN_DIR" = "1.0.0"
+
+[env]
+MISE_TEST_TOOLS_VAR = { value = "resolved-via-tools-env", tools = true }
+EOF
+
+mise install
+assert "cat '$MARKER'" "resolved-via-tools-env"

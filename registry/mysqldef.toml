@@ -1,0 +1,2 @@
+backends = ["aqua:sqldef/sqldef/mysqldef"]
+description = "Idempotent schema management for MySQL and more"

@@ -1,0 +1,5 @@
+backends = ["aqua:godotengine/godot"]
+description = "Free and open source 2D and 3D game engine"
+# Example of `godot --version`: 4.6.stable.official.89cea1439 (MAJOR.MINOR.stable.official.SHORT_COMMIT_HASH)
+# PATCH is sometimes present after MINOR.
+test = { cmd = "godot --version | awk -F'.stable' '{print $1}'", expected = "{{ version | split(pat='-') | first }}" }

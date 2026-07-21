@@ -1,35 +1,44 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use console::{Term, style};
 use eyre::{Result, bail, eyre};
 use itertools::Itertools;
+use jiff::Timestamp;
 use path_absolutize::Absolutize;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{Config, SETTINGS, config_file, is_global_config};
-use crate::env::{
-    MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
-};
+use crate::config::{Config, ConfigPathOptions, Settings, config_file, resolve_target_config_path};
 use crate::file::display_path;
+use crate::install_before::resolve_cli_minimum_release_age;
 use crate::registry::REGISTRY;
 use crate::toolset::{
-    InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder,
+    ConfigScope, InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion,
+    ToolsetBuilder,
 };
 use crate::ui::ctrlc;
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{config, env, file};
+use crate::{config, env, exit, file};
 
 /// Installs a tool and adds the version to mise.toml.
 ///
 /// This will install the tool version if it is not already installed.
 /// By default, this will use a `mise.toml` file in the current directory.
+/// If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
+/// the lowest precedence file (`mise.toml`) will be used.
+/// See https://mise.en.dev/configuration.html#target-file-for-write-operations
 ///
 /// In the following order:
-///   - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.
+///   - If `--global` is set, it will use the global config file.
+///   - If `--path` is set, it will use the config file at the given path.
+///   - If `--env` is set, it will use `mise.<env>.toml`.
+///   - If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
 ///   - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
-///   - If `MISE_ENV` is set, it will use a `mise.<env>.toml` instead.
-///   - Otherwise just "mise.toml"
+///   - Otherwise just "mise.toml" or global config if cwd is home directory.
+///
+/// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 ///
 /// Use the `--global` flag to use the global config file instead.
 #[derive(Debug, clap::Args)]
@@ -46,38 +55,26 @@ pub struct Use {
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
+    /// Create/modify an environment-specific config file like .mise.<env>.toml
+    #[clap(long, short, overrides_with_all = & ["global", "path"])]
+    env: Option<String>,
+
     /// Force reinstall even if already installed
     #[clap(long, short, requires = "tool")]
     force: bool,
 
-    /// Save fuzzy version to config file
-    ///
-    /// e.g.: `mise use --fuzzy node@20` will save 20 as the version
-    /// this is the default behavior unless `MISE_PIN=1`
-    #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
-    fuzzy: bool,
-
     /// Use the global config file (`~/.config/mise/config.toml`) instead of the local one
     #[clap(short, long, overrides_with_all = & ["path", "env"])]
     global: bool,
-
-    /// Create/modify an environment-specific config file like .mise.<env>.toml
-    #[clap(long, short, overrides_with_all = & ["global", "path"])]
-    env: Option<String>,
 
     /// Number of jobs to run in parallel
     /// [default: 4]
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets `--jobs=1`
-    #[clap(long, overrides_with = "jobs")]
-    raw: bool,
-
-    /// Remove the plugin(s) from config file
-    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
-    remove: Vec<BackendArg>,
+    /// Perform a dry run, showing what would be installed and modified without making changes
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    dry_run: bool,
 
     /// Specify a path to a config file or directory
     ///
@@ -86,31 +83,74 @@ pub struct Use {
     #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
+    /// Like --dry-run but exits with code 1 if there are changes to make
+    ///
+    /// This is useful for scripts to check if tools need to be added or removed.
+    #[clap(long, verbatim_doc_comment)]
+    dry_run_code: bool,
+
+    /// Save fuzzy version to config file
+    ///
+    /// e.g.: `mise use --fuzzy node@20` will save 20 as the version
+    /// this is the default behavior unless `MISE_PIN=1`
+    #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
+    fuzzy: bool,
+
+    /// Only install versions released before this date or older than this duration
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    #[clap(long, alias = "before", verbatim_doc_comment)]
+    minimum_release_age: Option<String>,
+
     /// Save exact version to config file
     /// e.g.: `mise use --pin node@20` will save 20.0.0 as the version
     /// Set `MISE_PIN=1` to make this the default behavior
     ///
     /// Consider using mise.lock as a better alternative to pinning in mise.toml:
-    /// https://mise.jdx.dev/configuration/settings.html#lockfile
+    /// https://mise.en.dev/configuration/settings.html#lockfile
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
+
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal
+    /// Implies `--jobs=1`
+    #[clap(long, overrides_with = "jobs")]
+    raw: bool,
+
+    /// Remove the tool(s) from config file
+    #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
+    remove: Vec<BackendArg>,
 }
 
 impl Use {
-    pub fn run(mut self) -> Result<()> {
+    fn is_dry_run(&self) -> bool {
+        self.dry_run || self.dry_run_code
+    }
+
+    pub async fn run(mut self) -> Result<()> {
         if self.tool.is_empty() && self.remove.is_empty() {
             self.tool = vec![self.tool_selector()?];
         }
         env::TOOL_ARGS.write().unwrap().clone_from(&self.tool);
-        let config = Config::try_get()?;
+        let mut config = Config::get().await?;
+        let scope = if self.global {
+            ConfigScope::GlobalOnly
+        } else {
+            ConfigScope::All
+        };
         let mut ts = ToolsetBuilder::new()
-            .with_global_only(self.global)
-            .build(&config)?;
-        let mpr = MultiProgressReport::get();
-        let mut cf = self.get_config_file()?;
+            .with_scope(scope)
+            .build(&config)
+            .await?;
+        let cf = self.get_config_file().await?;
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
+            before_date: self.get_before_date()?,
+            before_date_from_default: false,
+            filter_installed_versions_by_release_date: false,
+            offline: false,
+            refresh_remote_versions: false,
+            inactive: false,
         };
         let versions: Vec<_> = self
             .tool
@@ -118,7 +158,7 @@ impl Use {
             .cloned()
             .map(|t| match t.tvr {
                 Some(tvr) => {
-                    if tvr.version() == "latest" {
+                    if tvr.version() == "latest" && !Settings::get().locked {
                         // user specified `@latest` so we should resolve the latest version
                         // TODO: this should only happen on this tool, not all of them
                         resolve_options.latest_versions = true;
@@ -133,40 +173,43 @@ impl Use {
                 ),
             })
             .collect::<Result<_>>()?;
-        let mut versions = ts.install_all_versions(
-            versions.clone(),
-            &mpr,
-            &InstallOptions {
-                force: self.force,
-                jobs: self.jobs,
-                raw: self.raw,
-                resolve_options,
-                ..Default::default()
-            },
-        )?;
+        let mut versions = ts
+            .install_all_versions(
+                &mut config,
+                versions.clone(),
+                &InstallOptions {
+                    reason: "use".to_string(),
+                    force: self.force,
+                    jobs: self.jobs,
+                    raw: self.raw,
+                    dry_run: self.is_dry_run(),
+                    resolve_options,
+                    ..Default::default()
+                },
+            )
+            .await?;
 
-        let pin = self.pin || !self.fuzzy && (SETTINGS.pin || SETTINGS.asdf_compat);
+        let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
 
         for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
             let versions: Vec<_> = tvl
                 .into_iter()
                 .map(|tv| {
                     let mut request = tv.request.clone();
-                    if pin {
-                        if let ToolRequest::Version {
+                    if pin
+                        && let ToolRequest::Version {
                             version: _version,
                             source,
                             options,
                             backend,
                         } = request
-                        {
-                            request = ToolRequest::Version {
-                                version: tv.version.clone(),
-                                source,
-                                options,
-                                backend,
-                            };
-                        }
+                    {
+                        request = ToolRequest::Version {
+                            version: tv.version.clone(),
+                            source,
+                            options,
+                            backend,
+                        };
                     }
                     request
                 })
@@ -175,55 +218,65 @@ impl Use {
         }
 
         if self.global {
-            self.warn_if_hidden(&config, cf.get_path());
+            self.warn_if_hidden(&config, cf.get_path()).await;
         }
-        for plugin_name in &self.remove {
-            cf.remove_tool(plugin_name)?;
-        }
-        cf.save()?;
-
-        for tv in &mut versions {
-            // update the source so the lockfile is updated correctly
-            tv.request.set_source(cf.source());
+        for tool_name in &self.remove {
+            cf.remove_tool(tool_name)?;
         }
 
-        config::rebuild_shims_and_runtime_symlinks(&versions)?;
+        if !self.is_dry_run() {
+            cf.save()?;
+            for tv in &mut versions {
+                // update the source so the lockfile is updated correctly
+                tv.request.set_source(cf.source());
+            }
 
-        self.render_success_message(cf.as_ref(), &versions)?;
+            let config = Config::reset().await?;
+            let ts = config.get_toolset().await?;
+            config::rebuild_shims_and_runtime_symlinks(
+                &config,
+                ts,
+                &versions,
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await?;
+        }
+
+        self.render_success_message(cf.as_ref(), &versions, &self.remove)?;
         Ok(())
     }
 
-    fn get_config_file(&self) -> Result<Box<dyn ConfigFile>> {
+    async fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
-        let path = if self.global {
-            MISE_GLOBAL_CONFIG_FILE.clone()
-        } else if let Some(p) = &self.path {
-            let from_dir = config_file_from_dir(p).absolutize()?.to_path_buf();
+
+        // Handle special case for --path that needs absolutize logic for compatibility
+        let path = if let Some(p) = &self.path {
+            let from_dir = config::config_file_from_dir(p).absolutize()?.to_path_buf();
             if from_dir.starts_with(&cwd) {
                 from_dir
             } else {
                 p.clone()
             }
-        } else if let Some(env) = &self.env {
-            let p = cwd.join(format!(".mise.{env}.toml"));
-            if p.exists() {
-                p
-            } else {
-                cwd.join(format!("mise.{env}.toml"))
-            }
-        } else if !env::MISE_ENV.is_empty() {
-            let env = env::MISE_ENV.last().unwrap();
-            config_file_from_dir(&cwd.join(format!("mise.{env}.toml")))
-        } else if env::in_home_dir() {
-            MISE_GLOBAL_CONFIG_FILE.clone()
         } else {
-            config_file_from_dir(&cwd)
+            let opts = ConfigPathOptions {
+                global: self.global,
+                path: None, // handled above
+                env: self.env.clone(),
+                cwd: Some(cwd),
+                prefer_toml: false, // mise use supports .tool-versions and other formats
+                prevent_home_local: true, // When in HOME, use global config
+            };
+            resolve_target_config_path(opts)?
         };
-        config_file::parse_or_init(&path)
+
+        config_file::parse_or_init(&path).await
     }
 
-    fn warn_if_hidden(&self, config: &Config, global: &Path) {
-        let ts = ToolsetBuilder::new().build(config).unwrap_or_default();
+    async fn warn_if_hidden(&self, config: &Arc<Config>, global: &Path) {
+        let ts = ToolsetBuilder::new()
+            .build(config)
+            .await
+            .unwrap_or_default();
         let warn = |targ: &ToolArg, p| {
             let plugin = &targ.ba;
             let p = display_path(p);
@@ -231,24 +284,69 @@ impl Use {
             warn!("{plugin} is defined in {p} which overrides the global config ({global})");
         };
         for targ in &self.tool {
-            if let Some(tv) = ts.versions.get(&targ.ba) {
-                if let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source {
-                    if !file::same_file(p, global) {
-                        warn(targ, p);
-                    }
-                }
+            if let Some(tv) = ts.versions.get(targ.ba.as_ref())
+                && let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source
+                && !file::same_file(p, global)
+                && !config::is_system_config(p)
+            {
+                warn(targ, p);
             }
         }
     }
 
-    fn render_success_message(&self, cf: &dyn ConfigFile, versions: &[ToolVersion]) -> Result<()> {
+    fn render_success_message(
+        &self,
+        cf: &dyn ConfigFile,
+        versions: &[ToolVersion],
+        remove: &[BackendArg],
+    ) -> Result<()> {
         let path = display_path(cf.get_path());
-        let tools = versions.iter().map(|t| t.style()).join(", ");
-        miseprintln!(
-            "{} {} tools: {tools}",
-            style("mise").green(),
-            style(path).cyan().for_stderr(),
-        );
+        let quiet = Settings::get().quiet;
+
+        if self.is_dry_run() {
+            let mut messages = vec![];
+
+            if !versions.is_empty() {
+                let tools = versions.iter().map(|t| t.style()).join(", ");
+                messages.push(format!("add: {tools}"));
+            }
+
+            if !remove.is_empty() {
+                let tools_to_remove = remove.iter().map(|r| r.to_string()).join(", ");
+                messages.push(format!("remove: {tools_to_remove}"));
+            }
+
+            if !messages.is_empty() {
+                if !quiet {
+                    miseprintln!(
+                        "{} would update {} ({})",
+                        style("mise").green(),
+                        style(&path).cyan().for_stderr(),
+                        messages.join(", ")
+                    );
+                }
+                if self.dry_run_code {
+                    exit::exit(1);
+                }
+            }
+        } else if !quiet {
+            if !versions.is_empty() {
+                let tools = versions.iter().map(|t| t.style()).join(", ");
+                miseprintln!(
+                    "{} {} tools: {tools}",
+                    style("mise").green(),
+                    style(&path).cyan().for_stderr(),
+                );
+            }
+            if !remove.is_empty() {
+                let tools_to_remove = remove.iter().map(|r| r.to_string()).join(", ");
+                miseprintln!(
+                    "{} {} removed: {tools_to_remove}",
+                    style("mise").green(),
+                    style(&path).cyan().for_stderr(),
+                );
+            }
+        }
         Ok(())
     }
 
@@ -256,10 +354,12 @@ impl Use {
         if !console::user_attended_stderr() {
             bail!("No tool specified and not running interactively");
         }
+        let theme = crate::ui::theme::get_theme();
         let mut s = demand::Select::new("Tools")
             .description("Select a tool to install")
             .filtering(true)
-            .filterable(true);
+            .filterable(true)
+            .theme(&theme);
         for rt in REGISTRY.values().unique_by(|r| r.short) {
             if let Some(backend) = rt.backends().first() {
                 // TODO: populate registry with descriptions from aqua and other sources
@@ -277,28 +377,17 @@ impl Use {
             }
         }
     }
-}
 
-fn config_file_from_dir(p: &Path) -> PathBuf {
-    if !p.is_dir() {
-        return p.to_path_buf();
-    }
-    for dir in file::all_dirs().unwrap_or_default() {
-        if let Some(cf) = config::config_files_in_dir(&dir).last() {
-            if !is_global_config(cf) {
-                return cf.clone();
-            }
-        }
-    }
-    match SETTINGS.asdf_compat {
-        true => p.join(&*MISE_DEFAULT_TOOL_VERSIONS_FILENAME),
-        false => p.join(&*MISE_DEFAULT_CONFIG_FILENAME),
+    /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
+    /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
+    fn get_before_date(&self) -> Result<Option<Timestamp>> {
+        resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-    
+
     # run with no arguments to use the interactive selector
     $ <bold>mise use</bold>
 

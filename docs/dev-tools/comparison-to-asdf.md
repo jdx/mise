@@ -34,7 +34,7 @@ closer. asdf is likely fast enough that the difference in overhead between asdf-
 even be enough to notice for you—after all there are plenty of people still using asdf-bash that
 claim they don't even notice how slow it is (don't ask me how):
 
-![GgAQJJmWIAAUlec](https://github.com/user-attachments/assets/05689925-396d-41f3-bcd1-7b3b1bf6c2fa)
+![asdf vs mise exec performance comparison chart](./asdf-mise-exec-perf.jpg)
 
 I don't think performance is a good enough reason to switch though now that asdf-go is a thing. It's
 a reason, but it's a minor one. The improved security in mise, better DX, and lack of reliance on
@@ -63,7 +63,7 @@ feel like defeats the purpose of having a dedicated org in the first place. By t
 would like for there to no longer be any asdf plugins in the registry that aren't owned by me.
 
 I've also been adopting extra security verification steps when vendors offer that ability such as
-gpg verification on node installs, or slsa-verify/cosign checks on some aqua tools.
+gpg verification on node installs, and native Cosign/SLSA/Minisign/GitHub attestation verification for aqua tools.
 
 ## UX
 
@@ -92,7 +92,7 @@ and sets the version:
 mise use node@20
 ```
 
-If you have an existing `.tool-versions` file, or `.mise-toml`, you can install all plugins
+If you have an existing `.tool-versions` file, or `.mise.toml`, you can install all plugins
 and runtimes with a single command:
 
 ```sh
@@ -134,7 +134,7 @@ it's written in Rust, this is very quick—taking ~10ms on my machine. 4ms if th
 14ms if it's
 a full reload.
 
-tl;dr: asdf adds overhead (~120ms) when calling a runtime, mise adds a small amount of overhead (~
+tl;dr: asdf adds overhead (~~120ms) when calling a runtime, mise adds a small amount of overhead (~~
 5ms)
 when the prompt loads.
 
@@ -149,10 +149,10 @@ work on Windows.
 
 asdf plugins are insecure. They typically are written by individuals with no ties to the vendors
 that provide the underlying tool.
-Where possible, mise does not use asdf plugins and instead uses backends like aqua and ubi which do
+Where possible, mise does not use asdf plugins and instead uses backends like aqua and github which do
 not require separate plugins.
 
-Aqua tools can be configured with cosign/slsa verification as well.
+Aqua tools include native Cosign/SLSA/Minisign/GitHub attestation verification built into mise.
 See [SECURITY](https://github.com/jdx/mise/blob/main/SECURITY.md) for more information.
 
 ## Command Compatibility

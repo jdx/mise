@@ -6,8 +6,9 @@ use console::style;
 use eyre::bail;
 use path_absolutize::Absolutize;
 
-use crate::cli::args::ToolArg;
 use crate::file::{make_symlink, remove_all};
+use crate::toolset::install_state;
+use crate::{cli::args::ToolArg, config::Config};
 use crate::{config, file};
 
 /// Symlinks a tool version into mise
@@ -31,7 +32,7 @@ pub struct Link {
 }
 
 impl Link {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let version = match self.tool.tvr {
             Some(ref tvr) => tvr.version(),
             None => bail!("must provide a version for {}", self.tool.style()),
@@ -43,7 +44,7 @@ impl Link {
                 style(path.to_string_lossy()).cyan().for_stderr()
             );
         }
-        let target = self.tool.ba.installs_path.join(version);
+        let target = self.tool.ba.installs_path.join(&version);
         if target.exists() {
             if self.force {
                 remove_all(&target)?;
@@ -58,7 +59,23 @@ impl Link {
         file::create_dir_all(target.parent().unwrap())?;
         make_symlink(&path, &target)?;
 
-        config::rebuild_shims_and_runtime_symlinks(&[])
+        // A linked tool is complete by definition. Clear any stale `incomplete`
+        // marker left in the cache by a previously-interrupted install so that
+        // `mise use`/`mise doctor` don't treat the linked version as missing.
+        // See discussion #3539.
+        let incomplete = install_state::incomplete_file_path(&self.tool.ba.short, &version);
+        let _ = file::remove_file(&incomplete);
+
+        let config = Config::reset().await?;
+        let ts = config.get_toolset().await?;
+        config::rebuild_shims_and_runtime_symlinks(
+            &config,
+            ts,
+            &[],
+            crate::lockfile::LockfileUpdateMode::Normal,
+        )
+        .await?;
+        Ok(())
     }
 }
 
@@ -69,7 +86,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>node-build 20.0.0 ~/.nodes/20.0.0</bold>
     $ <bold>mise link node@20.0.0 ~/.nodes/20.0.0</bold>
 
-    # have mise use the python version provided by Homebrew
+    # have mise use the node version provided by Homebrew
     $ <bold>brew install node</bold>
     $ <bold>mise link node@brew $(brew --prefix node)</bold>
     $ <bold>mise use node@brew</bold>

@@ -1,0 +1,6 @@
+backends = [
+  "aqua:AlexanderGrooff/mermaid-ascii",
+  "github:AlexanderGrooff/mermaid-ascii",
+]
+description = "Render Mermaid graphs inside your terminal"
+test = { cmd = "which mermaid-ascii", expected = "mermaid-ascii" }

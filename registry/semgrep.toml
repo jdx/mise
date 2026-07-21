@@ -1,0 +1,3 @@
+backends = ["pipx:semgrep", "asdf:mise-plugins/mise-semgrep"]
+description = "Lightweight static analysis for many languages. Find bug variants with patterns that look like source code."
+test = { cmd = "semgrep --version", expected = "{{version}}" }

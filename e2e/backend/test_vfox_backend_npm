@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2103
+
+# Test vfox backend with npm plugin (plugin:tool format) using vfox-npm submodule
+
+# Link the vfox-npm plugin from the submodule
+mise plugins link vfox-npm "$ROOT/test/plugins/vfox-npm"
+
+# Test plugin:tool format with assertions
+latest_version=$(mise latest vfox-npm:prettier)
+partial_version=$(echo "$latest_version" | cut -d. -f1-2)
+assert_contains "mise ls-remote vfox-npm:prettier" "$partial_version."
+mise install "vfox-npm:prettier@$latest_version"
+assert "mise use vfox-npm:prettier@$latest_version"
+assert_contains "mise exec -- prettier --version" "$latest_version"
+
+# Test --locked works with a version-only lockfile entry. Backend plugins have
+# no hook for supplying URLs, so --locked should accept version-only entries
+# rather than failing with "No lockfile URL found".
+cat <<EOF >mise.toml
+[tools]
+"vfox-npm:prettier" = "$latest_version"
+EOF
+cat <<EOF >mise.lock
+[[tools."vfox-npm:prettier"]]
+version = "$latest_version"
+backend = "vfox-npm:prettier"
+EOF
+assert "mise install --locked --dry-run"
+
+# Test uninstall functionality
+assert "mise uninstall vfox-npm:prettier@$latest_version"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/vfox-npm/prettier/$latest_version"

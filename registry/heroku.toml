@@ -1,0 +1,4 @@
+aliases = ["heroku-cli"]
+backends = ["npm:heroku"]
+description = "The Heroku Command Line Interface (CLI) is an essential part of using Heroku. With it, you can create and manage Heroku apps directly from the terminal"
+test = { cmd = "heroku --version", expected = "heroku/{{version}}" }

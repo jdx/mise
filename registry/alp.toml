@@ -1,0 +1,3 @@
+backends = ["aqua:tkuchiki/alp", "asdf:asdf-community/asdf-alp"]
+description = "Access Log Profiler"
+test = { cmd = "alp --version", expected = "{{version}}" }

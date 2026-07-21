@@ -1,0 +1,3 @@
+backends = ["aqua:fastfetch-cli/fastfetch"]
+description = "An actively maintained, feature-rich and performance oriented, neofetch like system information tool"
+test = { cmd = "fastfetch --version | awk '{print $1, $2}'", expected = "fastfetch {{version}}" }

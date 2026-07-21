@@ -1,0 +1,10 @@
+description = "Jules, the asynchronous coding agent from Google, in the terminal"
+test = { cmd = "jules version", expected = "Version: v{{version}}", tools = [
+  "aube",
+] }
+
+[[backends]]
+full = "npm:@google/jules"
+
+[backends.options]
+allow_builds = ["@google/jules"]

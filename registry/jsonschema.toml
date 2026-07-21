@@ -1,0 +1,3 @@
+backends = ["aqua:sourcemeta/jsonschema"]
+description = "The CLI for working with JSON Schema. Covers formatting, linting, testing, bundling, and more for both local development and CI/CD pipelines"
+test = { cmd = "jsonschema version", expected = "{{version}}" }

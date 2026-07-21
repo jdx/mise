@@ -1,0 +1,5 @@
+# aqua cannot support oxlint 1.17.0 or later.
+# See https://github.com/oxc-project/oxc/discussions/14452#discussioncomment-14631344
+backends = ["npm:oxlint", "aqua:oxc-project/oxc/oxlint"]
+description = "This is the linter for oxc."
+test = { cmd = "oxlint --version", expected = "Version: {{version}}" }

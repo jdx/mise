@@ -10,7 +10,7 @@ use indexmap::indexmap;
 use std::sync::LazyLock as Lazy;
 
 use crate::cmd::{CmdLineRunner, cmd};
-use crate::config::{SETTINGS, Settings};
+use crate::config::Settings;
 use crate::env::PATH_KEY;
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
@@ -116,6 +116,29 @@ impl ScriptManager {
         self
     }
 
+    pub fn without_env<K>(mut self, key: K) -> Self
+    where
+        K: Into<OsString>,
+    {
+        let key = key.into();
+        #[cfg(windows)]
+        if let Some(existing) = self
+            .env
+            .keys()
+            .find(|existing| {
+                existing
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case(&key.to_string_lossy())
+            })
+            .cloned()
+        {
+            self.env.remove(&existing);
+        }
+        #[cfg(not(windows))]
+        self.env.remove(&key);
+        self
+    }
+
     pub fn prepend_path(&mut self, path: PathBuf) {
         let k: OsString = PATH_KEY.to_string().into();
         let mut paths = env::split_paths(&self.env[&k]).collect::<Vec<_>>();
@@ -155,6 +178,7 @@ impl ScriptManager {
     }
 
     pub fn read(&self, script: &Script) -> Result<String> {
+        Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let mut cmd = self.cmd(script);
         let settings = &Settings::try_get()?;
         if !settings.verbose {
@@ -164,16 +188,18 @@ impl ScriptManager {
             .wrap_err_with(|| ScriptFailed(display_path(self.get_script_path(script)), None))
     }
 
-    pub fn run_by_line(&self, script: &Script, pr: &Box<dyn SingleReport>) -> Result<()> {
+    pub fn run_by_line(&self, script: &Script, pr: &dyn SingleReport) -> Result<()> {
+        Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let path = self.get_script_path(script);
         pr.set_message(display_path(&path));
         let mut cmd = CmdLineRunner::new(path.clone());
-        if let Some(arch) = &SETTINGS.arch {
-            if arch == "x86_64" && cfg!(macos) {
-                cmd = CmdLineRunner::new("/usr/bin/arch")
-                    .arg("-x86_64")
-                    .arg(path.clone());
-            }
+        if let Some(arch) = &Settings::get().arch
+            && arch == "x86_64"
+            && cfg!(macos)
+        {
+            cmd = CmdLineRunner::new("/usr/bin/arch")
+                .arg("-x86_64")
+                .arg(path.clone());
         }
         let cmd = cmd.with_pr(pr).env_clear().envs(&self.env);
         if let Err(e) = cmd.execute() {

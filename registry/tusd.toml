@@ -1,0 +1,3 @@
+backends = ["github:tus/tusd"]
+description = "Reference server implementation in Go of tus: the open protocol for resumable file uploads"
+test = { cmd = "tusd --version | head -n1", expected = "Version: v{{version}}" }

@@ -1,0 +1,7 @@
+aliases = ["powershell"]
+backends = [
+  "aqua:PowerShell/PowerShell",
+  "asdf:daveneeley/asdf-powershell-core",
+]
+description = "PowerShell for every system"
+test = { cmd = "pwsh --version", expected = "PowerShell {{version}}" }

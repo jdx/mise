@@ -1,0 +1,3 @@
+backends = ["aqua:blender/blender"]
+description = "Blender is a free and open-source 3D computer graphics software"
+test = { cmd = "blender --version", expected = "Blender {{version}}" }

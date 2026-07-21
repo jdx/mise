@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
 
+# Start local HTTP test server
+HTTP_PORT_FILE="$TMPDIR/mise_http_test_port"
+MISE_HTTP_TEST_PORT_FILE="$HTTP_PORT_FILE" python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" 0 &
+SERVER_PID=$!
+
+# Wait for server to start
+wait_for_file "$HTTP_PORT_FILE" "HTTP test server port file" 30 "$SERVER_PID"
+SERVER_PORT=$(cat "$HTTP_PORT_FILE")
+
+# Ensure cleanup on exit
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+  rm -f "${MISE_HTTP_TEST_PORT_FILE:-$TMPDIR/mise_http_test_port}"
+}
+trap cleanup EXIT
+
 cat <<EOF >mytask
 #!/usr/bin/env bash
 echo "running mytask"
@@ -19,6 +35,6 @@ assert "mise run mytask" "running mytask"
 cd .. || exit 1
 
 cat <<EOF >mise.toml
-tasks.mytask.file = "https://mise.jdx.dev/test/mytask"
+tasks.mytask.file = "http://localhost:${SERVER_PORT}/test/mytask"
 EOF
 assert "mise run mytask" "running mytask"

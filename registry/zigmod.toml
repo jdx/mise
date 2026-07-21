@@ -1,0 +1,7 @@
+backends = [
+  "aqua:nektro/zigmod",
+  "github:nektro/zigmod",
+  "asdf:mise-plugins/asdf-zigmod",
+]
+description = "A package manager for the Zig programming language"
+test = { cmd = "zigmod version", expected = "{{version}}" }

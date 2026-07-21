@@ -1,0 +1,7 @@
+backends = [
+  "aqua:dominikh/go-tools/staticcheck",
+  "asdf:pbr0ck3r/asdf-staticcheck",
+  "go:honnef.co/go/tools/cmd/staticcheck",
+]
+description = "Staticcheck - The advanced Go linter"
+test = { cmd = "staticcheck --version", expected = "staticcheck {{version}}" }

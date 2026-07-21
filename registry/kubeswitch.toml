@@ -1,0 +1,3 @@
+backends = ["aqua:danielfoehrKn/kubeswitch", "github:danielfoehrKn/kubeswitch"]
+description = "The kubectx for operators"
+test = { cmd = "switcher --version", expected = "switcher version v{{version}}" }

@@ -12,6 +12,6 @@ Implemented based on the description from
 
 2. add the hook - replace `_hook_name` with your function name:
 
-        export -a chpwd_functions                              # define hooks as an shell array
+        export -a chpwd_functions                              # define hooks as a shell array
         [[ " ${chpwd_functions[*]} " == *" _hook_name "* ]] || # prevent double addition
         chpwd_functions+=(_hook_name)                          # finally add it to the list

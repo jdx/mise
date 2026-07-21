@@ -1,22 +1,33 @@
+use std::collections::HashSet;
+use std::str::FromStr;
+use std::sync::Arc;
+
 use crate::cli::args::ToolArg;
 use crate::config::Config;
+use crate::config::Settings;
+use crate::errors::split_install_result;
 use crate::hooks::Hooks;
-use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{config, env, hooks};
+use crate::install_before::resolve_cli_minimum_release_age;
+use crate::toolset::{
+    InstallOptions, ResolveOptions, ToolRequest, ToolRequestSet, ToolSource, Toolset, tool_env_vars,
+};
+use crate::{config, env, exit, hooks};
+use clap::ValueHint;
 use eyre::Result;
 use itertools::Itertools;
+use jiff::Timestamp;
+use std::path::PathBuf;
 
 /// Install a tool version
 ///
-/// Installs a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
+/// Installs a tool version to `~/.local/share/mise/installs/<TOOL>/<VERSION>`
 /// Installing alone will not activate the tools so they won't be in PATH.
 /// To install and/or activate in one command, use `mise use` which will create a `mise.toml` file
 /// in the current directory to activate this tool when inside the directory.
 /// Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.
 ///
 /// Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
-#[derive(Debug, clap::Args)]
+#[derive(Debug, Default, clap::Args)]
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Install {
     /// Tool(s) to install
@@ -33,49 +44,338 @@ pub struct Install {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets --jobs=1
-    #[clap(long, overrides_with = "jobs")]
-    raw: bool,
+    /// Show what would be installed without actually installing
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    dry_run: bool,
 
     /// Show installation output
     ///
-    /// This argument will print plugin output such as download, configuration, and compilation output.
+    /// This argument will print backend output such as download, configuration, and compilation output.
     #[clap(long, short, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Like --dry-run but exits with code 1 if there are tools to install
+    ///
+    /// This is useful for scripts to check if tools need to be installed.
+    #[clap(long, verbatim_doc_comment)]
+    dry_run_code: bool,
+
+    /// Only install versions released before this date or older than this duration
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    #[clap(long, alias = "before", verbatim_doc_comment)]
+    minimum_release_age: Option<String>,
+
+    /// Install tools from every [monorepo].config_roots config root
+    ///
+    /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+    /// [monorepo].config_roots in the monorepo root config.
+    #[clap(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
+    monorepo: bool,
+
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal
+    /// Implies --jobs=1
+    #[clap(long, overrides_with = "jobs")]
+    raw: bool,
+
+    /// Install tool(s) to a shared directory
+    ///
+    /// Installs to the specified directory instead of the default install location.
+    /// May require elevated permissions depending on the path.
+    #[clap(long, verbatim_doc_comment, value_hint = ValueHint::DirPath, conflicts_with = "system")]
+    shared: Option<PathBuf>,
+
+    /// Install tool(s) to the system-wide shared directory
+    ///
+    /// Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
+    /// May require elevated permissions (e.g. sudo).
+    #[clap(long, verbatim_doc_comment, conflicts_with = "shared")]
+    system: bool,
+
+    /// Skip confirmation when installing missing plugin system dependencies.
+    /// Set internally by `mise bootstrap --yes`; not a user-facing flag.
+    #[clap(skip)]
+    yes: bool,
 }
 
 impl Install {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    /// a bare `mise install` (install everything missing from config), as run
+    /// by `mise bootstrap`
+    pub(crate) fn new_bare(dry_run: bool, yes: bool) -> Self {
+        Self {
+            dry_run,
+            yes,
+            ..Default::default()
+        }
+    }
+
+    fn is_dry_run(&self) -> bool {
+        self.dry_run || self.dry_run_code
+    }
+
+    #[async_backtrace::framed]
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        if !self.is_dry_run() {
+            crate::lockfile::migrate_monorepo_lockfiles(&config)?;
+        }
         match &self.tool {
             Some(runtime) => {
+                let original_tool_args = env::TOOL_ARGS.read().unwrap().clone();
                 env::TOOL_ARGS.write().unwrap().clone_from(runtime);
-                self.install_runtimes(&config, runtime)?
+                self.install_runtimes(config, runtime, original_tool_args)
+                    .await?
             }
-            None => self.install_missing_runtimes(&config)?,
+            None => self.install_missing_runtimes(config).await?,
         };
+        self.hint_missing_system_packages().await;
         Ok(())
     }
 
-    fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<()> {
-        let mpr = MultiProgressReport::get();
-        let tools = runtimes.iter().map(|ta| ta.ba.short.clone()).collect();
-        let mut ts = config.get_tool_request_set()?.filter_by_tool(tools).into();
-        let tool_versions = self.get_requested_tool_versions(&ts, runtimes)?;
-        let versions = if tool_versions.is_empty() {
-            warn!("no runtimes to install");
-            warn!("specify a version with `mise install <PLUGIN>@<VERSION>`");
-            vec![]
+    /// one-time hint when `[bootstrap.packages]` entries are missing — mise
+    /// never installs system packages implicitly
+    async fn hint_missing_system_packages(&self) {
+        // the status queries spawn package-manager processes; skip them
+        // entirely once the hint has been shown (or is disabled)
+        if !crate::hint::hint_would_display("system_packages_missing") {
+            return;
+        }
+        let Ok(config) = Config::get().await else {
+            return;
+        };
+        let mgrs = crate::system::packages_from_config(&config);
+        if mgrs.is_empty() {
+            return;
+        }
+        // when everything is satisfied the hint never fires, so also
+        // throttle the checks to once per day — but only while the set of
+        // packages that would actually be checked is unchanged, so editing
+        // [bootstrap.packages] or widening system_packages.managers re-checks
+        // immediately
+        let mut available = std::collections::HashSet::new();
+        for mp in &mgrs {
+            if !mp.disabled && mp.manager.unavailable_reason_async().await.is_none() {
+                available.insert(mp.manager.name().to_string());
+            }
+        }
+        let fingerprint = mgrs
+            .iter()
+            .filter(|mp| available.contains(mp.manager.name()))
+            .flat_map(|mp| {
+                mp.requests
+                    .iter()
+                    .map(move |r| format!("{}:{}", mp.manager.name(), r))
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let checked = crate::dirs::STATE.join("system-packages-checked");
+        if checked
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age < std::time::Duration::from_secs(24 * 60 * 60))
+            && crate::file::read_to_string(&checked).is_ok_and(|prev| prev == fingerprint)
+        {
+            return;
+        }
+        let mut missing = 0;
+        let mut all_queries_ok = true;
+        for mp in mgrs {
+            if !available.contains(mp.manager.name()) {
+                continue;
+            }
+            match mp.manager.installed(&mp.requests).await {
+                Ok(statuses) => {
+                    missing += statuses
+                        .iter()
+                        .filter(|s| {
+                            !matches!(
+                                s.state,
+                                crate::system::packages::PackageState::Installed { .. }
+                            )
+                        })
+                        .count();
+                }
+                // a transient query failure must not start the 24h throttle
+                Err(_) => all_queries_ok = false,
+            }
+        }
+        if all_queries_ok {
+            let _ = crate::file::write(&checked, &fingerprint);
+        }
+        if missing > 0 {
+            hint!(
+                "system_packages_missing",
+                "{missing} system package(s) from [bootstrap.packages] are missing. Install them with",
+                "mise bootstrap packages apply"
+            );
+        }
+    }
+
+    #[async_backtrace::framed]
+    async fn install_runtimes(
+        &self,
+        config: Arc<Config>,
+        runtimes: &[ToolArg],
+        original_tool_args: Vec<ToolArg>,
+    ) -> Result<()> {
+        let monorepo_union = if self.monorepo {
+            Some(config.monorepo_union().await?)
         } else {
-            ts.install_all_versions(tool_versions, &mpr, &self.install_opts())?
+            None
         };
-        config::rebuild_shims_and_runtime_symlinks(&versions)?;
+        let mut install_config = self
+            .effective_config(&config, monorepo_union.as_ref())
+            .await?;
+        let trs = match &monorepo_union {
+            Some(union) => union.tool_request_set.clone(),
+            None => config.get_tool_request_set().await?.clone(),
+        };
+
+        // Expand wildcards (e.g., "pipx:*") to actual ToolArgs from config
+        let mut has_unmatched_wildcard = false;
+        let expanded_runtimes: Vec<ToolArg> = runtimes
+            .iter()
+            .flat_map(|ta| {
+                if let Some(backend_prefix) = ta.ba.short.strip_suffix(":*") {
+                    // Find all tools in config with this backend prefix
+                    let matching: Vec<_> = trs
+                        .tools
+                        .keys()
+                        .filter(|ba| {
+                            ba.short.starts_with(&format!("{backend_prefix}:"))
+                                && ba.tool_name != "*"
+                        })
+                        .filter_map(|ba| ToolArg::from_str(&ba.short).ok())
+                        .collect();
+                    if matching.is_empty() {
+                        warn!("no tools found in config matching {}", ta.ba.short);
+                        has_unmatched_wildcard = true;
+                    }
+                    return matching;
+                }
+                vec![ta.clone()]
+            })
+            .collect();
+
+        // If only wildcards were provided and none matched, exit early
+        if expanded_runtimes.is_empty() && has_unmatched_wildcard {
+            return Ok(());
+        }
+
+        let tools: HashSet<String> = expanded_runtimes
+            .iter()
+            .map(|ta| ta.ba.short.clone())
+            .collect();
+        // Collect set of tools that appear in any config file or in a
+        // MISE_<TOOL>_VERSION env var. We can't use trs.sources here because
+        // load_runtime_args overrides the underlying source with
+        // ToolSource::Argument whenever the user passes TOOL@VERSION, so config-
+        // and env-sourced tools become indistinguishable from CLI-only ones.
+        let configured_config_files = match &monorepo_union {
+            Some(union) => union.config_files.clone(),
+            None => config.config_files.clone(),
+        };
+        let configured_tools: HashSet<String> = configured_config_files
+            .values()
+            .filter_map(|cf| cf.to_tool_request_set().ok())
+            .flat_map(|cf_trs| cf_trs.tools.into_keys().map(|ba| ba.short.clone()))
+            .chain(tool_env_vars().map(|(name, _, _)| name))
+            .collect();
+        let inactive_tools: Vec<String> = tools
+            .iter()
+            .filter(|t| !configured_tools.contains(*t))
+            .cloned()
+            .collect();
+        let mut ts: Toolset = trs.filter_by_tool(tools).into();
+        let tool_versions = self.get_requested_tool_versions(&ts, &expanded_runtimes)?;
+        let (mut versions, install_error) = if tool_versions.is_empty() {
+            warn!("no runtimes to install");
+            warn!("specify a version with `mise install <TOOL>@<VERSION>`");
+            (vec![], Ok(()))
+        } else {
+            if let Some(monorepo_union) = &monorepo_union {
+                Toolset::ensure_config_plugins_installed_from_urls(
+                    &config,
+                    &monorepo_union.repo_urls,
+                    self.is_dry_run(),
+                )
+                .await?;
+            }
+            split_install_result(
+                ts.install_all_versions(&mut install_config, tool_versions, &self.install_opts()?)
+                    .await,
+            )
+        };
+        // In dry-run mode, check if any tools would be installed before filtering
+        if self.is_dry_run() {
+            if self.dry_run_code {
+                let has_work = versions.iter().any(|tv| tv.install_satisfied != Some(true));
+                if has_work {
+                    exit::exit(1);
+                }
+            }
+            return install_error;
+        }
+
+        if install_error.is_ok() || !versions.is_empty() {
+            // because we may be installing a tool that is not in config, we need to restore the original tool args and reset everything
+            env::TOOL_ARGS
+                .write()
+                .unwrap()
+                .clone_from(&original_tool_args);
+            let config = Config::reset().await?;
+            let rebuild_config = self.effective_config(&config, None).await?;
+            let ts_owned;
+            let ts = if self.monorepo {
+                ts_owned = Self::resolved_toolset_from_trs(&rebuild_config, trs.clone()).await?;
+                &ts_owned
+            } else {
+                rebuild_config.get_toolset().await?
+            };
+            let current_versions = ts.list_current_versions();
+            // ensure that only current versions are sent to lockfile rebuild
+            versions.retain(|tv| current_versions.iter().any(|(_, cv)| tv == cv));
+
+            config::rebuild_shims_and_runtime_symlinks(
+                &rebuild_config,
+                ts,
+                &versions,
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await?;
+        }
+
+        // Warn about tools that were installed but not in any config file
+        if !inactive_tools.is_empty() {
+            let tool_list = inactive_tools.join(", ");
+            let use_cmds: Vec<String> = inactive_tools
+                .iter()
+                .map(|t| format!("  mise use {t}"))
+                .collect();
+            warn!(
+                "{tool_list} installed but not activated — {} not in any config file.\nTo install and activate, run:\n{}",
+                if inactive_tools.len() == 1 {
+                    "it is"
+                } else {
+                    "they are"
+                },
+                use_cmds.join("\n"),
+            );
+        }
+
+        install_error?;
         Ok(())
     }
 
-    fn install_opts(&self) -> InstallOptions {
-        InstallOptions {
+    fn install_opts(&self) -> Result<InstallOptions> {
+        let install_dir = if self.system {
+            Some(env::MISE_SYSTEM_INSTALLS_DIR.clone())
+        } else {
+            self.shared.clone()
+        };
+        Ok(InstallOptions {
             force: self.force,
             jobs: self.jobs,
             raw: self.raw,
@@ -83,9 +383,25 @@ impl Install {
             resolve_options: ResolveOptions {
                 use_locked_version: true,
                 latest_versions: true,
+                before_date: self.get_before_date()?,
+                before_date_from_default: false,
+                filter_installed_versions_by_release_date: false,
+                offline: false,
+                refresh_remote_versions: false,
+                inactive: false,
             },
+            dry_run: self.is_dry_run(),
+            locked: Settings::get().locked,
+            install_dir,
+            yes: self.yes || Settings::get().yes,
             ..Default::default()
-        }
+        })
+    }
+
+    /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
+    /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
+    fn get_before_date(&self) -> Result<Option<Timestamp>> {
+        resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 
     fn get_requested_tool_versions(
@@ -99,26 +415,27 @@ impl Install {
                 // user provided an explicit version
                 Some(tv) => requests.push(tv),
                 None => {
-                    if ta.tvr.is_none() {
-                        match ts.versions.get(&ta.ba) {
-                            // the tool is in config so fetch the params from config
-                            // this may match multiple versions of one tool (e.g.: python)
-                            Some(tvl) => {
-                                for tvr in &tvl.requests {
-                                    requests.push(tvr.clone());
-                                }
+                    match ts.versions.get(ta.ba.as_ref()) {
+                        // the tool is in config so fetch the params from config
+                        // this may match multiple versions of one tool (e.g.: python)
+                        Some(tvl) => {
+                            for tvr in &tvl.requests {
+                                requests.push(tvr.clone());
                             }
-                            // in this case the user specified a tool which is not in config
-                            // so we default to @latest with no options
-                            None => {
-                                let tvr = ToolRequest::Version {
-                                    backend: ta.ba.clone(),
-                                    version: "latest".into(),
-                                    options: ta.ba.opts(),
-                                    source: ToolSource::Argument,
-                                };
-                                requests.push(tvr);
+                        }
+                        // In normal install mode, a bare tool absent from config defaults to
+                        // @latest. In monorepo mode, bare tools are filters over the union.
+                        None => {
+                            if self.monorepo {
+                                continue;
                             }
+                            let tvr = ToolRequest::Version {
+                                backend: ta.ba.clone(),
+                                version: "latest".into(),
+                                options: ta.ba.opts(),
+                                source: ToolSource::Argument,
+                            };
+                            requests.push(tvr);
                         }
                     }
                 }
@@ -127,20 +444,140 @@ impl Install {
         Ok(requests)
     }
 
-    fn install_missing_runtimes(&self, config: &Config) -> eyre::Result<()> {
-        let trs = config.get_tool_request_set()?;
-        let versions = trs.missing_tools().into_iter().cloned().collect_vec();
-        let versions = if versions.is_empty() {
-            info!("all tools are installed");
-            hooks::run_one_hook(config.get_toolset()?, Hooks::Postinstall, None);
-            vec![]
+    async fn install_missing_runtimes(&self, config: Arc<Config>) -> eyre::Result<()> {
+        let monorepo_union = if self.monorepo {
+            Some(config.monorepo_union().await?)
         } else {
-            let mpr = MultiProgressReport::get();
-            let mut ts = Toolset::from(trs.clone());
-            ts.install_all_versions(versions, &mpr, &self.install_opts())?
+            None
         };
-        config::rebuild_shims_and_runtime_symlinks(&versions)?;
+        let trs = measure!("get_tool_request_set", {
+            match &monorepo_union {
+                Some(union) => union.tool_request_set.clone(),
+                None => config.get_tool_request_set().await?.clone(),
+            }
+        });
+        let mut install_config = self
+            .effective_config(&config, monorepo_union.as_ref())
+            .await?;
+
+        // Install plugins from [plugins] config section first
+        // This must happen before checking for missing tools so env-only plugins get installed
+        if let Some(monorepo_union) = &monorepo_union {
+            Toolset::ensure_config_plugins_installed_from_urls(
+                &config,
+                &monorepo_union.repo_urls,
+                self.is_dry_run(),
+            )
+            .await?;
+        } else {
+            Toolset::ensure_config_plugins_installed(&config, self.is_dry_run()).await?;
+        }
+
+        // Check for tools that don't exist in the registry
+        // These were tracked during build() before being filtered out
+        for ba in &trs.unknown_tools {
+            // This will error with a proper message like "tool not found in mise tool registry"
+            ba.backend()?;
+        }
+        let missing = measure!("fetching missing runtimes", {
+            trs.missing_tools(&install_config)
+                .await
+                .into_iter()
+                .cloned()
+                .collect_vec()
+        });
+        let has_missing = !missing.is_empty();
+        let (versions, install_error) = if missing.is_empty() {
+            measure!("run_postinstall_hook", {
+                info!("all tools are installed");
+                // Nothing was installed, but postinstall still runs (idempotent
+                // project setup relies on it); MISE_INSTALLED_TOOLS is [] so hooks
+                // can guard on actual installs. (#10574)
+                let ts_owned;
+                let ts = if self.is_dry_run() {
+                    // Preview mode only needs the hook-selection context. Avoid
+                    // resolving the full toolset solely to describe the hook.
+                    ts_owned = Toolset::from(trs.clone());
+                    &ts_owned
+                } else if self.monorepo {
+                    ts_owned =
+                        Self::resolved_toolset_from_trs(&install_config, trs.clone()).await?;
+                    &ts_owned
+                } else {
+                    install_config.get_toolset().await?
+                };
+                hooks::run_one_hook_with_context(
+                    &install_config,
+                    ts,
+                    Hooks::Postinstall,
+                    None,
+                    Some(&[]),
+                    self.is_dry_run(),
+                )
+                .await;
+                (vec![], Ok(()))
+            })
+        } else {
+            let mut ts = Toolset::from(trs.clone());
+            measure!("install_all_versions", {
+                split_install_result(
+                    ts.install_all_versions(&mut install_config, missing, &self.install_opts()?)
+                        .await,
+                )
+            })
+        };
+        if self.is_dry_run() {
+            if self.dry_run_code && has_missing {
+                exit::exit(1);
+            }
+            return install_error;
+        }
+        if install_error.is_ok() || !versions.is_empty() {
+            measure!("rebuild_shims_and_runtime_symlinks", {
+                let rebuild_config = self.effective_config(&install_config, None).await?;
+                let ts_owned;
+                let ts = if self.monorepo {
+                    ts_owned =
+                        Self::resolved_toolset_from_trs(&rebuild_config, trs.clone()).await?;
+                    &ts_owned
+                } else {
+                    rebuild_config.get_toolset().await?
+                };
+                config::rebuild_shims_and_runtime_symlinks(
+                    &rebuild_config,
+                    ts,
+                    &versions,
+                    crate::lockfile::LockfileUpdateMode::Normal,
+                )
+                .await?;
+            });
+        }
+        install_error?;
         Ok(())
+    }
+
+    async fn effective_config(
+        &self,
+        config: &Arc<Config>,
+        monorepo_union: Option<&config::MonorepoUnion>,
+    ) -> Result<Arc<Config>> {
+        if !self.monorepo {
+            return Ok(config.clone());
+        }
+        let config_files = match monorepo_union {
+            Some(union) => union.config_files.clone(),
+            None => config.monorepo_union().await?.config_files,
+        };
+        Ok(config.with_config_files(config_files))
+    }
+
+    async fn resolved_toolset_from_trs(
+        config: &Arc<Config>,
+        trs: ToolRequestSet,
+    ) -> Result<Toolset> {
+        let mut ts: Toolset = trs.into();
+        ts.resolve(config).await?;
+        Ok(ts)
     }
 }
 

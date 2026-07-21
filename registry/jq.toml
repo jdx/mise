@@ -1,0 +1,3 @@
+backends = ["aqua:jqlang/jq", "asdf:mise-plugins/asdf-jq"]
+description = "Command-line JSON processor"
+test = { cmd = "jq --version", expected = "jq-{{version}}" }

@@ -1,0 +1,2 @@
+backends = ["aqua:snyk/driftctl", "asdf:nlamirault/asdf-driftctl"]
+description = "Detect, track and alert on infrastructure drift"

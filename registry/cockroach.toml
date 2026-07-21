@@ -1,0 +1,3 @@
+backends = ["aqua:cockroachdb/cockroach", "asdf:salasrod/asdf-cockroach"]
+description = "A distributed SQL database designed for speed, scale, and survival"
+test = { cmd = "cockroach version", expected = "v{{version}}" }

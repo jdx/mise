@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# Test that precompiled_flavor setting is respected in lockfile generation
+# Regression test for https://github.com/jdx/mise/discussions/8739
+export MISE_LOCKFILE=1
+
+detect_platform
+
+cat <<EOF >mise.toml
+[tools]
+python = "3.13.5"
+
+[settings.python]
+precompiled_flavor = "install_only_stripped"
+EOF
+
+rm -f mise.lock
+
+mise lock --platform "$MISE_PLATFORM"
+
+# Verify lockfile does NOT contain freethreaded URLs
+assert_not_contains "cat mise.lock" "freethreaded"
+
+# Verify lockfile contains the correct flavor
+assert_contains "cat mise.lock" "install_only_stripped"
+
+rm -f mise.lock mise.toml
+
+echo "Python lockfile flavor test passed!"

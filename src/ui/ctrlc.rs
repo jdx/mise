@@ -1,47 +1,41 @@
 use crate::exit;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
 
 use crate::cmd::CmdLineRunner;
 use console::Term;
-use signal_hook::consts::SIGINT;
-use signal_hook::iterator::Signals;
 
 static EXIT: AtomicBool = AtomicBool::new(true);
 static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
+static CANCELLED: AtomicBool = AtomicBool::new(false);
 // static HANDLERS: OnceCell<Vec<Box<dyn Fn() + Send + Sync + 'static>>> = OnceCell::new();
 
 pub fn init() {
-    thread::spawn(move || {
-        let mut signals = Signals::new([SIGINT]).unwrap();
-        let _handle = signals.handle();
-        while let Some(_signal) = signals.forever().next() {
+    tokio::spawn(async move {
+        loop {
+            tokio::signal::ctrl_c().await.unwrap();
             if SHOW_CURSOR.load(Ordering::Relaxed) {
                 let _ = Term::stderr().show_cursor();
             }
-            // for handler in HANDLERS.get().unwrap_or(&Vec::new()) {
-            //     handler();
-            // }
             CmdLineRunner::kill_all(nix::sys::signal::SIGINT);
-            if EXIT.swap(true, Ordering::Relaxed) {
+            if EXIT.load(Ordering::Relaxed) || CANCELLED.load(Ordering::Relaxed) {
                 debug!("Ctrl-C pressed, exiting...");
                 exit(1);
-            } else {
-                warn!(
-                    "Ctrl-C pressed, please wait for tasks to finish or press Ctrl-C again to force exit"
-                );
             }
+            // First ctrl-c when EXIT is false: mark as cancelled so a second
+            // ctrl-c will force-exit and in-process operations can check the flag.
+            CANCELLED.store(true, Ordering::Relaxed);
         }
     });
 }
 
-// pub fn add_handler(func: impl Fn() + Send + Sync + 'static) {
-//     let mut handlers = HANDLERS.get_or_init(Vec::new);
-//     handlers.push(Box::new(func));
-// }
-
 pub fn exit_on_ctrl_c(do_exit: bool) {
     EXIT.store(do_exit, Ordering::Relaxed);
+    CANCELLED.store(false, Ordering::Relaxed);
+}
+
+/// Returns true if ctrl-c has been received
+pub fn is_cancelled() -> bool {
+    CANCELLED.load(Ordering::Relaxed)
 }
 
 /// ensures cursor is displayed on ctrl-c

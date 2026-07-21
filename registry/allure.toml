@@ -1,0 +1,3 @@
+backends = ["github:allure-framework/allure2", "asdf:mise-plugins/mise-allure"]
+description = "Allure Report is a popular open source tool for visualizing the results of a test run"
+test = { cmd = "allure --version", expected = "{{version}}" }

@@ -1,0 +1,2 @@
+backends = ["pipx:sshuttle", "asdf:mise-plugins/mise-sshuttle"]
+description = "sshuttle: where transparent proxy meets VPN meets ssh"

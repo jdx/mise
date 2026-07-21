@@ -1,0 +1,2 @@
+backends = ["vfox:mise-plugins/vfox-leiningen", "asdf:mise-plugins/mise-lein"]
+description = "for automating Clojure projects without setting your hair on fire"

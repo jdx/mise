@@ -1,0 +1,6 @@
+backends = [
+  "aqua:grpc/grpc-go/protoc-gen-go-grpc",
+  "asdf:pbr0ck3r/asdf-protoc-gen-go-grpc",
+]
+description = "This tool generates Go language bindings of services in protobuf definition files for gRPC"
+test = { cmd = "protoc-gen-go-grpc --version", expected = "protoc-gen-go-grpc {{version}}" }

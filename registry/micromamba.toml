@@ -1,0 +1,3 @@
+backends = ["github:mamba-org/micromamba-releases"]
+description = "Lightweight conda-compatible package manager"
+test = { cmd = "micromamba --version", expected = "{{ version | split(pat='-') | first }}" }

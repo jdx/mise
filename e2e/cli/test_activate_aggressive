@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-ORIG_PATH="$PATH"
 eval "$(mise activate bash)"
 export PATH="/added:$PATH"
 

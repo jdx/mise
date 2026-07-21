@@ -1,0 +1,18 @@
+description = "Daytona is a Secure and Elastic Infrastructure for Running AI-Generated Code"
+test = { cmd = "daytona version", expected = "Daytona CLI version v{{version}}" }
+
+[[backends]]
+full = "github:daytonaio/daytona"
+
+[backends.options]
+asset_pattern = "daytona-{{ os(macos='darwin') }}-{{ arch(x64='amd64') }}{% if os() == 'windows' %}.exe{% endif %}"
+bin = "daytona"
+
+[backends.options.platforms.windows-x64]
+bin = "daytona.exe"
+
+[backends.options.platforms.windows-arm64]
+bin = "daytona.exe"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-daytona"

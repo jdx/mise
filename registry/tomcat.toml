@@ -1,0 +1,2 @@
+backends = ["aqua:apache/tomcat", "asdf:mise-plugins/mise-tomcat"]
+description = "The Apache Tomcat® software is an open source implementation of the Jakarta Servlet, Jakarta Pages, Jakarta Expression Language, Jakarta WebSocket, Jakarta Annotations and Jakarta Authentication specifications. These specifications are part of the Jakarta EE platform"

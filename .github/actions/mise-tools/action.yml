@@ -1,0 +1,17 @@
+name: "Setup mise tools"
+description: "Cache and install mise tools with rate limit handling"
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+        restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-
+        path: |
+          ~/.local/share/mise
+          ~/.cache/mise
+    - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
+      shell: bash
+    - run: mise install
+      shell: bash

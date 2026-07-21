@@ -1,0 +1,3 @@
+backends = ["aqua:pulumi/pulumi", "asdf:canha/asdf-pulumi"]
+description = "Pulumi - Infrastructure as Code in any programming language"
+test = { cmd = "pulumi version", expected = "v{{version}}" }

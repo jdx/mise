@@ -1,0 +1,3 @@
+backends = ["aqua:trzsz/trzsz-go", "github:trzsz/trzsz-go"]
+description = "trzsz-go is the go version of trzsz, makes all terminals that support local shell to support trzsz ( trz / tsz )"
+test = { cmd = "trzsz --version", expected = "trzsz go {{version}}" }

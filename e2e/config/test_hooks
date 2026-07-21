@@ -5,15 +5,17 @@ cat <<EOF >mise.toml
 [tools]
 dummy = 'latest'
 [hooks]
-enter = 'echo HOOK-ENTER'
-leave = 'echo HOOK-LEAVE'
-cd = 'echo HOOK-CD'
-preinstall = 'echo PREINSTALL'
-postinstall = 'echo POSTINSTALL'
+enter = { run = 'echo HOOK-ENTER' }
+leave = { run = 'echo HOOK-LEAVE' }
+cd = { run = 'echo HOOK-CD' }
+preinstall = { run = 'echo PREINSTALL' }
+postinstall = { run = 'echo POSTINSTALL' }
 EOF
 
+# preinstall + postinstall hooks fire when installing
 assert_contains "mise i 2>&1" "PREINSTALL"
 assert_contains "mise i dummy@1 2>&1" "POSTINSTALL"
+# `mise i` with nothing missing still runs postinstall (MISE_INSTALLED_TOOLS=[], #10574)
 assert_contains "mise i 2>&1" "POSTINSTALL"
 assert_contains "mise i dummy@1 2>&1" "POSTINSTALL"
 eval "$(mise hook-env)"

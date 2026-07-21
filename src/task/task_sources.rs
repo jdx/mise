@@ -1,13 +1,23 @@
 use crate::dirs;
 use crate::task::Task;
+use crate::tera::{TeraEngine, contains_template_syntax, render_str};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::path::Path;
 
 #[derive(Debug, Clone, Eq, PartialEq, strum::EnumIs)]
 pub enum TaskOutputs {
     Files(Vec<String>),
     Auto,
+}
+
+/// Stores raw (pre-render) output templates and the original env context so they
+/// can be re-rendered when dependency env overrides are applied after initial rendering.
+#[derive(Debug, Clone, Default)]
+pub struct RawOutputTemplates {
+    pub templates: Option<Vec<String>>,
+    pub original_env: Option<std::collections::BTreeMap<String, String>>,
 }
 
 impl Default for TaskOutputs {
@@ -17,17 +27,49 @@ impl Default for TaskOutputs {
 }
 
 impl TaskOutputs {
-    pub fn paths(&self, task: &Task) -> Vec<String> {
+    pub fn is_empty(&self) -> bool {
         match self {
-            TaskOutputs::Files(files) => files.clone(),
-            TaskOutputs::Auto => vec![self.auto_path(task)],
+            TaskOutputs::Files(files) => files.is_empty(),
+            TaskOutputs::Auto => false,
         }
     }
 
-    fn auto_path(&self, task: &Task) -> String {
+    pub fn patterns(&self) -> Vec<String> {
+        match self {
+            TaskOutputs::Files(files) => files.clone(),
+            TaskOutputs::Auto => vec![],
+        }
+    }
+
+    pub fn paths(&self, task: &Task, root: &Path) -> Vec<String> {
+        match self {
+            TaskOutputs::Files(files) => files.clone(),
+            TaskOutputs::Auto => vec![self.auto_path(task, root)],
+        }
+    }
+
+    pub fn has_tera_template(&self) -> bool {
+        match self {
+            TaskOutputs::Files(files) => files.iter().any(|file| contains_template_syntax(file)),
+            TaskOutputs::Auto => false,
+        }
+    }
+
+    pub fn raw_templates_without_env(&self) -> RawOutputTemplates {
+        match self {
+            TaskOutputs::Files(files) => RawOutputTemplates {
+                templates: Some(files.clone()),
+                original_env: None,
+            },
+            TaskOutputs::Auto => RawOutputTemplates::default(),
+        }
+    }
+
+    fn auto_path(&self, task: &Task, root: &Path) -> String {
         let mut hasher = DefaultHasher::new();
         task.hash(&mut hasher);
-        task.config_source.hash(&mut hasher);
+        task.config_sources().hash(&mut hasher);
+        root.hash(&mut hasher);
         let hash = format!("{:x}", hasher.finish());
         dirs::STATE
             .join("task-auto-outputs")
@@ -36,14 +78,68 @@ impl TaskOutputs {
             .to_string()
     }
 
-    pub fn render(&mut self, tera: &mut tera::Tera, ctx: &tera::Context) -> eyre::Result<()> {
+    pub fn render(
+        &mut self,
+        tera: &mut TeraEngine,
+        ctx: &tera::Context,
+    ) -> eyre::Result<RawOutputTemplates> {
         match self {
             TaskOutputs::Files(files) => {
+                let raw = files.clone();
+                let original_env = ctx
+                    .get("env")
+                    .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok());
                 for file in files.iter_mut() {
-                    *file = tera.render_str(file, ctx)?;
+                    if contains_template_syntax(file) {
+                        *file = render_str(tera, file, ctx)?;
+                    }
                 }
+                Ok(RawOutputTemplates {
+                    templates: Some(raw),
+                    original_env,
+                })
             }
-            TaskOutputs::Auto => {}
+            TaskOutputs::Auto => Ok(RawOutputTemplates::default()),
+        }
+    }
+
+    /// Re-render output templates with additional env vars injected into the
+    /// tera context. Used after dependency env overrides are applied.
+    pub fn re_render_with_env(
+        &mut self,
+        raw: &RawOutputTemplates,
+        env: &indexmap::IndexMap<String, String>,
+        config_root: &std::path::Path,
+    ) -> eyre::Result<()> {
+        if let TaskOutputs::Files(files) = self
+            && let Some(raw_templates) = raw.templates.as_ref()
+        {
+            if raw_templates
+                .iter()
+                .any(|tmpl| contains_template_syntax(tmpl))
+            {
+                let mut tera = crate::tera::get_tera(Some(config_root));
+                let mut ctx = tera::Context::new();
+                // Start with original env from initial render, then overlay dependency env
+                let mut env_map = raw.original_env.clone().unwrap_or_default();
+                for (k, v) in env {
+                    env_map.insert(k.clone(), v.clone());
+                }
+                ctx.insert("env", &env_map);
+                ctx.insert("config_root", &config_root.to_string_lossy().to_string());
+                *files = raw_templates
+                    .iter()
+                    .map(|tmpl| {
+                        if contains_template_syntax(tmpl) {
+                            render_str(&mut tera, tmpl, &ctx)
+                        } else {
+                            Ok(tmpl.clone())
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+            } else {
+                *files = raw_templates.clone();
+            }
         }
         Ok(())
     }

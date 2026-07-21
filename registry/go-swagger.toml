@@ -1,0 +1,4 @@
+backends = ["aqua:go-swagger/go-swagger", "asdf:jfreeland/asdf-go-swagger"]
+description = "Swagger 2.0 implementation for go"
+os = ["linux", "macos"]
+test = { cmd = "swagger version", expected = "version: v{{version}}" }

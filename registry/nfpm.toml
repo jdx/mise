@@ -1,0 +1,3 @@
+backends = ["aqua:goreleaser/nfpm", "asdf:ORCID/asdf-nfpm"]
+description = "nFPM is Not FPM - a simple deb, rpm and apk packager written in Go"
+test = { cmd = "nfpm --version", expected = "{{version}}" }

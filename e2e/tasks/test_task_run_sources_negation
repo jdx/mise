@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+# Negation prefix in `sources`
+cat <<EOF >mise.toml
+[tasks.build]
+sources = ["src/**/*.txt", "!src/**/*.test.txt"]
+outputs = ["out.txt"]
+run = "echo built > out.txt && echo built"
+EOF
+
+mkdir -p src
+touch src/a.txt
+assert "mise -q build" "built"
+assert_empty "mise -q build"
+
+# Editing an excluded file does NOT trigger a rebuild.
+# Use `sleep 1` between mtime-sensitive operations so the test is reliable on
+# filesystems with 1-second mtime granularity (older Linux kernels, HFS+, etc).
+sleep 1
+touch src/a.test.txt
+assert_empty "mise -q build"
+
+# Editing an included file DOES trigger a rebuild
+sleep 1
+touch src/a.txt
+assert "mise -q build" "built"
+
+# Multiple `!`-prefixed entries compose as a union of exclusions
+cat <<EOF >mise.toml
+[tasks.build]
+sources = ["src/**/*.txt", "!src/**/*.test.txt", "!src/**/*.spec.txt"]
+outputs = ["out.txt"]
+run = "echo built > out.txt && echo built"
+EOF
+
+assert "mise -q build" "built"
+assert_empty "mise -q build"
+sleep 1
+touch src/a.test.txt
+assert_empty "mise -q build"
+sleep 1
+touch src/a.spec.txt
+assert_empty "mise -q build"
+sleep 1
+touch src/a.txt
+assert "mise -q build" "built"
+
+# `!mise.toml` must not silently disable invalidation: editing the config still re-runs
+cat <<EOF >mise.toml
+[tasks.build]
+sources = ["src/**/*.txt", "!mise.toml"]
+outputs = ["out.txt"]
+run = "echo built > out.txt && echo built"
+EOF
+
+assert "mise -q build" "built"
+assert_empty "mise -q build"
+sleep 1
+touch mise.toml
+assert "mise -q build" "built"
+
+# A later non-negated entry re-includes a file an earlier `!` excluded
+# (gitignore-style ordering: latest matching rule wins).
+cat <<EOF >mise.toml
+[tasks.build]
+sources = ["src/**/*.txt", "!src/**/*.test.txt", "src/keep.test.txt"]
+outputs = ["out.txt"]
+run = "echo built > out.txt && echo built"
+EOF
+
+assert "mise -q build" "built"
+assert_empty "mise -q build"
+# Editing a still-excluded test file does NOT trigger a rebuild
+sleep 1
+touch src/a.test.txt
+assert_empty "mise -q build"
+# Editing the re-included file DOES trigger a rebuild
+sleep 1
+touch src/keep.test.txt
+assert "mise -q build" "built"

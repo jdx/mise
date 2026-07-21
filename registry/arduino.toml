@@ -1,0 +1,4 @@
+aliases = ["arduino-cli"]
+backends = ["aqua:arduino/arduino-cli", "asdf:egnor/asdf-arduino-cli"]
+description = "Arduino command line tool"
+test = { cmd = "arduino-cli version", expected = "arduino-cli  Version: {{version}}" }

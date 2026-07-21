@@ -1,0 +1,3 @@
+backends = ["aqua:air-verse/air", "asdf:pdemagny/asdf-air"]
+description = "Live reload for Go apps"
+test = { cmd = "air -v", expected = "{{version}}" }

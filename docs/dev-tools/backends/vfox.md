@@ -1,12 +1,23 @@
-# Vfox Backend <Badge type="warning" text="experimental" />
+# Vfox Backend
+
+::: tip
+Vfox is the recommended plugin system for mise. It provides cross-platform support, built-in modules, and a modern hook-based architecture.
+:::
 
 [Vfox](https://github.com/version-fox/vfox) plugins may be used in mise to install tools.
+
+## Why vfox?
+
+- **Cross-platform** — plugins work on Windows, macOS, and Linux without platform-specific code
+- **Built-in modules** — HTTP, JSON, HTML parsing, archive extraction, semver comparison, and logging are all available out of the box, no external dependencies needed
+- **Security** — [tool plugins](../../tool-plugin-development.md) support attestation verification (GitHub artifact attestations, cosign signatures, SLSA provenance) for downloaded artifacts. When a tool plugin's `PreInstall` hook returns an `attestation` table, mise verifies it during install and records the result in `mise.lock`, protecting against downgrade attacks on subsequent installs. Backend plugins do not currently support attestation
+- **Modern architecture** — structured hooks with typed contexts, backend plugins for multi-tool management, rolling version checksums, and lock file support
 
 The code for this is inside the mise repository at [`./src/backend/vfox.rs`](https://github.com/jdx/mise/blob/main/src/backend/vfox.rs).
 
 ## Dependencies
 
-No dependencies are required for vfox. Vfox lua code is read via a lua interpreter built into mise.
+No extra system packages are required to _run_ the vfox backend. Vfox Lua code is executed by the interpreter built into mise.
 
 ## Usage
 
@@ -27,39 +38,83 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ## Default plugin backend
 
-If you'd like to use vfox plugins by default like on Windows, set the following settings:
+On Windows, mise uses vfox plugins by default.
+If you'd like to use plugins by default even on Linux/macOS, set the following settings:
 
 ```sh
-mise settings asdf=false
-mise settings vfox=true
+mise settings add disable_backends asdf
 ```
 
 Now you can list available plugins with `mise registry`:
 
 ```sh
 $ mise registry | grep vfox:
-clang          vfox:version-fox/vfox-clang
-cmake          vfox:version-fox/vfox-cmake
-crystal        vfox:yanecc/vfox-crystal
-dart           vfox:version-fox/vfox-dart
-dotnet         vfox:version-fox/vfox-dotnet
-elixir         vfox:version-fox/vfox-elixir
-etcd           vfox:version-fox/vfox-etcd
-flutter        vfox:version-fox/vfox-flutter
-golang         vfox:version-fox/vfox-golang
-gradle         vfox:version-fox/vfox-gradle
-groovy         vfox:version-fox/vfox-groovy
-julia          vfox:ahai-code/vfox-julia
-kotlin         vfox:version-fox/vfox-kotlin
-kubectl        vfox:ahai-code/vfox-kubectl
-maven          vfox:version-fox/vfox-maven
-mongo          vfox:yeshan333/vfox-mongo
-php            vfox:version-fox/vfox-php
-protobuf       vfox:ahai-code/vfox-protobuf
-scala          vfox:version-fox/vfox-scala
-terraform      vfox:enochchau/vfox-terraform
-vlang          vfox:ahai-code/vfox-vlang
+clang                         vfox:mise-plugins/vfox-clang
+cmake                         vfox:mise-plugins/vfox-cmake
+crystal                       vfox:mise-plugins/vfox-crystal
+dart                          vfox:mise-plugins/vfox-dart
+dotnet                        vfox:mise-plugins/vfox-dotnet
+etcd                          aqua:etcd-io/etcd vfox:mise-plugins/vfox-etcd
+flutter                       vfox:mise-plugins/vfox-flutter
+gradle                        aqua:gradle/gradle vfox:mise-plugins/vfox-gradle
+groovy                        vfox:mise-plugins/vfox-groovy
+kotlin                        vfox:mise-plugins/vfox-kotlin
+maven                         aqua:apache/maven vfox:mise-plugins/vfox-maven
+php                           vfox:mise-plugins/vfox-php
+scala                         vfox:mise-plugins/vfox-scala
+terraform                     aqua:hashicorp/terraform vfox:mise-plugins/vfox-terraform
+vlang                         vfox:mise-plugins/vfox-vlang
 ```
 
 And they will be installed when running commands such as `mise use -g cmake` without needing to
 specify `vfox:cmake`.
+
+## Plugins
+
+In addition to the standard vfox plugins, mise supports modern plugins that can manage multiple tools using the `plugin:tool` format. These plugins are perfect for:
+
+- Installing tools from private repositories
+- Package managers (npm, pip, etc.)
+- Custom tool families
+
+### Example: Plugin Usage
+
+```bash
+# Install a plugin
+mise plugin install my-plugin https://github.com/username/my-plugin
+
+# Use the plugin:tool format
+mise install my-plugin:some-tool@1.0.0
+mise use my-plugin:some-tool@latest
+```
+
+### Install from Zip File
+
+```bash
+# Install a plugin from a zip file over HTTPS
+mise plugin install <plugin-name> <zip-url>
+# Example: Installing a plugin from a zip file
+mise plugin install vfox-cmake https://github.com/mise-plugins/vfox-cmake/archive/refs/heads/main.zip
+```
+
+For more information, see:
+
+- [Using Plugins](../../plugin-usage.md) - End-user guide
+- [Plugin Development](../../tool-plugin-development.md) - Developer guide
+- [Plugin Template](https://github.com/jdx/mise-tool-plugin-template) - Quick start template for creating plugins
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `vfox` backend—these
+go in `[tools]` in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for commands that a vfox plugin starts with `cmd.exec`
+during install hooks. vfox's built-in Lua HTTP, archive, and JSON helpers do not
+use these variables directly.
+
+```toml
+[tools]
+"vfox:version-fox/vfox-cmake" = { version = "latest", install_env = { HTTPS_PROXY = "http://proxy.example" } }
+```

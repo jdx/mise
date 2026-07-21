@@ -1,0 +1,4 @@
+aliases = ["pack", "buildpacks"]
+backends = ["aqua:buildpacks/pack", "asdf:johnlayton/asdf-buildpack"]
+description = "CLI for building apps using Cloud Native Buildpacks"
+test = { cmd = "pack --version", expected = "{{version}}" }

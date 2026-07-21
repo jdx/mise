@@ -1,0 +1,2 @@
+backends = ["aqua:swaggo/swag", "asdf:behoof4mind/asdf-swag"]
+description = "Automatically generate RESTful API documentation with Swagger 2.0 for Go"

@@ -1,0 +1,3 @@
+backends = ["aqua:pvolok/mprocs"]
+description = "Run multiple commands in parallel"
+test = { cmd = "mprocs --version", expected = "mprocs {{version}}" }

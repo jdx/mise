@@ -1,0 +1,6 @@
+backends = [
+  "aqua:pivotal-cf/pivnet-cli",
+  "asdf:mise-plugins/tanzu-plug-in-for-asdf",
+]
+description = "CLI to interact with Tanzu Network API V2 interface"
+test = { cmd = "pivnet version", expected = "{{version}}" }

@@ -1,0 +1,3 @@
+backends = ["github:moul/assh", "asdf:mise-plugins/mise-assh"]
+description = "make your ssh client smarter"
+test = { cmd = "assh --version", expected = "assh version " } # 2.16.0 reports version n/a

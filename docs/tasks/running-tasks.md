@@ -2,9 +2,9 @@
 
 See available tasks with `mise tasks`. To show tasks hidden with property `hide=true`, use the option `--hidden`.
 
-List dependencies of tasks with `mise task deps [tasks]...`.
+List dependencies of tasks with `mise tasks deps [tasks]...`.
 
-Run a task with `mise task run <task>`, `mise run <task>`, `mise r <task>`, or just `mise <task>`—however
+Run a task with `mise tasks run <task>`, `mise run <task>`, `mise r <task>`, or just `mise <task>`—however
 that last one you should never put into scripts or documentation because if mise ever adds a command with that name in a
 future mise version, the task will be shadowed and must be run with one of the other forms.
 
@@ -15,10 +15,16 @@ By default, tasks will execute with a maximum of 4 parallel jobs. Customize this
 label. By printing line-by-line we avoid interleaving output from parallel executions. However, if
 --jobs == 1, the output will be set to `interleave`.
 
-To just print stdout/stderr directly, use `--interleave`, the `task_output` setting, or `MISE_TASK_OUTPUT=interleave`.
+To just print stdout/stderr directly, use `--output interleave`, the `task.output` setting, or `MISE_TASK_OUTPUT=interleave`.
+
+The output _style_ (`prefix`, `interleave`, `keep-order`, …) is independent of _verbosity_
+(`--quiet`/`--silent`, the `quiet`/`silent` settings, or the per-task `quiet`/`silent` fields).
+They combine: e.g. `MISE_TASK_OUTPUT=prefix` with `--quiet` keeps the task-name prefixes while
+suppressing mise's own messages. `--quiet` no longer forces un-prefixed output — use
+`--output quiet` (or `-o interleave`) if you want the old un-prefixed behavior.
 
 Stdin is not read by default. To enable this, set `raw = true` on the task that needs it. This will prevent
-it running in parallel with any other task-a RWMutex will get a write lock in this case. This also prevents redactions applied to the output.
+it running in parallel with any other task—a RWMutex will get a write lock in this case. This also prevents redactions applied to the output.
 
 Extra arguments will be passed to the task, for example, if we want to run in release mode:
 
@@ -59,6 +65,16 @@ can also be used to further refine groups and simplify pattern matching.
 For example running `mise run test:**:local` will match`test:units:local`,
 `test:integration:local` and `test:e2e:happy:local`
 (See [Wildcards](#wildcards) for more information).
+
+::: tip
+Since TOML keys can't contain colons without quoting, use quoted keys in `mise.toml`:
+
+```toml
+[tasks."test:unit"]
+run = 'cargo test --lib'
+```
+
+:::
 
 ## Wildcards
 
@@ -122,3 +138,37 @@ This may change in the future.)
 Tasks can be run with `mise run <TASK>` or `mise <TASK>`—if the name doesn't conflict with a mise command.
 Because mise may later add a command with a conflicting name, it's recommended to use `mise run <TASK>` in
 scripts and documentation.
+
+## Execution order
+
+You can use [depends](/tasks/task-configuration.html#depends), [wait_for](/tasks/task-configuration.html#wait-for) and [depends_post](/tasks/task-configuration.html#depends-post) to control the order of execution.
+
+```toml
+[tasks.build]
+run = "echo 'build'"
+
+[tasks.test]
+run = "echo 'test'"
+depends = ["build"]
+```
+
+This will ensure that the `build` task is run before the `test` task.
+
+You can also define a mise task to run other tasks in parallel or in series:
+
+```toml
+[tasks.example1]
+run = "echo 'example1'"
+
+[tasks.example2]
+run = "mise example2"
+
+[tasks.example3]
+run = "echo 'example3'"
+
+[tasks.one_by_one]
+run = [
+    { task = "example1" }, # will wait for example1 to finish before running the next step
+    { tasks = ["example2", "example3"] }, # these 2 are run in parallel
+]
+```

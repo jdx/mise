@@ -1,0 +1,3 @@
+backends = ["aqua:Azure/aks-engine", "asdf:robsonpeixoto/asdf-aks-engine"]
+description = "AKS Engine deploys and manages Kubernetes clusters in Azure"
+test = { cmd = "aks-engine version", expected = "Version: v{{version}}" }

@@ -1,0 +1,3 @@
+backends = ["github:sheeki03/tirith", "cargo:tirith"]
+description = "Terminal security - catches homograph attacks, pipe-to-shell, ANSI injection"
+test = { cmd = "tirith --version", expected = "tirith {{version}}" }

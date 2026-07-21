@@ -1,0 +1,3 @@
+backends = ["aqua:bitwarden/clients", "asdf:vixus0/asdf-bitwarden"]
+description = "Bitwarden CLI"
+test = { cmd = "bw --version", expected = "{{version}}" }

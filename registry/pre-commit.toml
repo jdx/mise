@@ -1,0 +1,7 @@
+backends = [
+  "aqua:pre-commit/pre-commit",
+  "asdf:jonathanmorley/asdf-pre-commit",
+  "pipx:pre-commit",
+]
+description = "A framework for managing and maintaining multi-language pre-commit hooks"
+test = { cmd = "pre-commit --version", expected = "pre-commit {{version}}" }

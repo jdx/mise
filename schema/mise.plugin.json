@@ -1,15 +1,30 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mise.jdx.dev/schema/mise.plugin.json",
+  "$id": "https://mise.en.dev/schema/mise.plugin.json",
   "title": "mise-plugin",
   "description": "config file for a mise plugin",
   "type": "object",
-  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "$defs": {
+    "plugin-script-config": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "cache-key": {
+          "description": "cache the script results separately based on these values",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
   "properties": {
     "list-aliases": {
       "description": "configuration for bin/list-aliases script",
       "type": "object",
-      "additionalProperties": false,
+      "unevaluatedProperties": false,
       "properties": {
         "data": {
           "description": "list of aliases to add",
@@ -20,7 +35,18 @@
     "list-legacy-filenames": {
       "description": "configuration for bin/list-legacy-filenames script",
       "type": "object",
-      "additionalProperties": false,
+      "unevaluatedProperties": false,
+      "properties": {
+        "data": {
+          "description": "list of idiomatic filenames to check for",
+          "type": "string"
+        }
+      }
+    },
+    "list-idiomatic-filenames": {
+      "description": "configuration for idiomatic filename discovery",
+      "type": "object",
+      "unevaluatedProperties": false,
       "properties": {
         "data": {
           "description": "list of idiomatic filenames to check for",
@@ -30,23 +56,34 @@
     },
     "list-bin-paths": {
       "description": "configuration for bin/list-bin-paths script",
-      "additionalProperties": false,
+      "$ref": "#/$defs/plugin-script-config"
+    },
+    "exec-env": {
+      "description": "configuration for bin/exec-env script",
+      "$ref": "#/$defs/plugin-script-config"
+    },
+    "package-manager": {
+      "description": "configuration for a package-manager plugin",
+      "type": "object",
+      "unevaluatedProperties": false,
       "properties": {
-        "cache-key": {
-          "description": "cache the results of bin/exec-env separately based on these values",
+        "requires": {
+          "description": "host binaries required by the package-manager plugin",
           "type": "array",
           "items": {
             "type": "string"
           }
-        }
-      }
-    },
-    "exec-env": {
-      "description": "configuration for bin/exec-env script",
-      "additionalProperties": false,
-      "properties": {
-        "cache-key": {
-          "description": "cache the results of bin/exec-env separately based on these values",
+        },
+        "supports_version_pins": {
+          "description": "whether the package manager supports version-pinned requests",
+          "type": "boolean"
+        },
+        "supports-version-pins": {
+          "description": "whether the package manager supports version-pinned requests",
+          "type": "boolean"
+        },
+        "os": {
+          "description": "operating systems supported by the package-manager plugin",
           "type": "array",
           "items": {
             "type": "string"

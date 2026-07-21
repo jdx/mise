@@ -1,0 +1,2 @@
+backends = ["conda:vim", "asdf:mise-plugins/mise-vim"]
+description = "Vim is an advanced text editor that seeks to provide the power of the de-facto Unix editor 'Vi', with a more complete feature set. It's useful whether you're already using vi or using a different editor"

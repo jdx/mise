@@ -1,0 +1,7 @@
+backends = [
+  "aqua:dandavison/delta",
+  "asdf:andweeb/asdf-delta",
+  "cargo:git-delta",
+]
+description = "A syntax-highlighting pager for git, diff, and grep output"
+test = { cmd = "delta --version", expected = "delta {{version}}" }

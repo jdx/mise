@@ -31,4 +31,4 @@ _mise_hook
 
 # assert
 assert "poetry --version" "Poetry (version 1.7.1)"
-assert "poetry run -- python3 -V" "$python_version"
+assert_contains "poetry run -- python3 -V" "$python_version"

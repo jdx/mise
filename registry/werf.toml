@@ -1,0 +1,3 @@
+backends = ["aqua:werf/werf"]
+description = "A solution for implementing efficient and consistent software delivery to Kubernetes facilitating best practices"
+test = { cmd = "werf version", expected = "v{{version}}" }

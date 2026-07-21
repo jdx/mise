@@ -1,0 +1,16 @@
+---
+description: how to test the mise codebase
+alwaysApply: false
+---
+
+Testing and linting commands should be run via `mise run`.
+
+- `mise run test:e2e [test_filename]...` executes an e2e test
+- `mise run test:unit` executes the unit tests
+- `mise run lint` runs the linting commands
+- `mise run lint-fix` runs the linting commands and fixes the issues
+- `mise --cd crates/vfox run test` executes the tests for the vfox crate
+- `mise --cd crates/vfox run lint` runs the linting commands for the vfox crate
+- `mise --cd crates/vfox run lint-fix` runs the linting commands and fixes the issues for the vfox crate
+
+Other tasks can be found by running `mise task ls`

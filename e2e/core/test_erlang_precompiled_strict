@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "Skipping Linux-specific test on non-Linux OS"
+  exit 0
+fi
+
+cat <<'EOF' >mise.toml
+[settings.erlang]
+compile = false
+EOF
+
+if output="$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 ImageOS=nobara-43 mise install erlang@28.5 2>&1)"; then
+  fail "expected erlang install to fail when precompiled binaries are unavailable"
+fi
+
+[[ $output == *"precompiled erlang is not available: unsupported OS version: nobara-43"* ]] ||
+  fail "expected unsupported OS error, got: $output"
+
+[[ $output != *"build-install"* ]] ||
+  fail "erlang.compile=false should not fall back to kerl build-install: $output"

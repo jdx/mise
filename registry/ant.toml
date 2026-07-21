@@ -1,0 +1,3 @@
+backends = ["vfox:mise-plugins/vfox-ant"]
+description = "Apache Ant is a Java library and command-line tool whose mission is to drive processes described in build files as targets and extension points dependent upon each other"
+test = { cmd = "ant -version", expected = "Apache Ant(TM) version {{version}}" }

@@ -1,0 +1,4 @@
+backends = ["aqua:kdabir/has", "asdf:sylvainmetayer/asdf-has"]
+description = "checks presence of various command line tools and their versions on the path"
+os = ["linux", "macos"]
+test = { cmd = "has --version", expected = "v{{version}}" }

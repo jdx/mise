@@ -1,0 +1,4 @@
+backends = ["aqua:specstoryai/getspecstory"]
+description = "You don’t write prompts. You author intent. Enhance your AI development workflow with SpecStory"
+os = ["linux", "macos"]
+test = { cmd = "specstory --version", expected = "{{version}} (SpecStory)" }

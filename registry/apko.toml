@@ -1,0 +1,3 @@
+backends = ["aqua:chainguard-dev/apko", "asdf:omissis/asdf-apko"]
+description = "Build OCI images from APK packages directly without Dockerfile"
+test = { cmd = "apko version", expected = "GitVersion:    v{{version}}" }

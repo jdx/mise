@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+
+# Test mise token github command
+
+# Clear any pre-existing token env vars
+unset GITHUB_TOKEN GITHUB_API_TOKEN MISE_GITHUB_TOKEN MISE_GITHUB_ENTERPRISE_TOKEN
+
+# Test 1: No token configured — should return (none)
+assert_contains "mise token github" "(none)"
+
+# Test 1b: local credential_command is ignored and must not execute
+LOCAL_CREDENTIAL_PROOF_DIR="$(mktemp -d)"
+LOCAL_CREDENTIAL_PROOF="$LOCAL_CREDENTIAL_PROOF_DIR/proof"
+trap 'rm -rf "$LOCAL_CREDENTIAL_PROOF_DIR"' EXIT
+cat >.mise.toml <<EOF
+[settings.github]
+credential_command = "echo local-credential-command-ran > '$LOCAL_CREDENTIAL_PROOF'; echo local-credential-token"
+EOF
+assert_contains "mise token github --unmask" "(none)"
+assert_fail "test -f '$LOCAL_CREDENTIAL_PROOF'"
+rm -rf "$LOCAL_CREDENTIAL_PROOF_DIR"
+rm .mise.toml
+
+# --raw with no token should exit non-zero (so $(...) capture fails loudly)
+assert_fail "mise token github --raw"
+
+# Test 2: GITHUB_TOKEN env var
+assert_contains "GITHUB_TOKEN=env-test-token mise token github --unmask" "env-test-token"
+assert_contains "GITHUB_TOKEN=env-test-token mise token github --unmask" "GITHUB_TOKEN"
+
+# Test 3: MISE_GITHUB_TOKEN takes precedence over GITHUB_TOKEN
+assert_contains "MISE_GITHUB_TOKEN=mise-token GITHUB_TOKEN=other mise token github --unmask" "mise-token"
+assert_contains "MISE_GITHUB_TOKEN=mise-token GITHUB_TOKEN=other mise token github --unmask" "MISE_GITHUB_TOKEN"
+
+# Test 4: github_tokens.toml
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/github_tokens.toml" <<'EOF'
+[tokens."github.com"]
+token = "toml-test-token"
+
+[tokens."ghe.example.com"]
+token = "ghe-toml-token"
+EOF
+assert_contains "mise token github --unmask" "toml-test-token"
+assert_contains "mise token github --unmask" "github_tokens.toml"
+assert_contains "mise token github ghe.example.com --unmask" "ghe-toml-token"
+
+# Test 5: Env var beats toml file
+assert_contains "GITHUB_TOKEN=env-wins mise token github --unmask" "env-wins"
+assert_not_contains "GITHUB_TOKEN=env-wins mise token github --unmask" "toml-test-token"
+
+# Test 6: gh CLI hosts.yml
+rm "$MISE_CONFIG_DIR/github_tokens.toml"
+mkdir -p "$HOME/.config/gh"
+cat >"$HOME/.config/gh/hosts.yml" <<'EOF'
+github.com:
+  oauth_token: gh-cli-token
+  user: test
+EOF
+assert_contains "mise token github --unmask" "gh-cli-token"
+assert_contains "mise token github --unmask" "gh CLI"
+
+# Test 7: Token masking (default, no --unmask)
+assert_not_contains "GITHUB_TOKEN=ghp_abcdefghijklmnop mise token github" "ghp_abcdefghijklmnop"
+assert_contains "GITHUB_TOKEN=ghp_abcdefghijklmnop mise token github" "ghp_"
+
+# Test 8: credential_command (with gh CLI hosts.yml still present)
+# credential_command should beat gh CLI token
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise token github --unmask" "cred-cmd-token"
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise token github --unmask" "credential_command"
+rm "$HOME/.config/gh/hosts.yml"
+
+# Test 8b: credential_command beats github_tokens.toml
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/github_tokens.toml" <<'EOF'
+[tokens."github.com"]
+token = "toml-test-token"
+EOF
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise token github --unmask" "cred-cmd-token"
+assert_not_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise token github --unmask" "toml-test-token"
+rm "$MISE_CONFIG_DIR/github_tokens.toml"
+
+# Test 8c: credential_command takes priority over git credential fill
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' MISE_GITHUB_USE_GIT_CREDENTIALS=true mise token github --unmask" "cred-cmd-token"
+
+# Test 8d: env var still beats credential_command
+assert_contains "GITHUB_TOKEN=env-wins MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise token github --unmask" "env-wins"
+
+# Test 8e: credential_command still receives host as deprecated $1 compatibility
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo token-for-\$1' mise token github ghe.example.com --unmask" "token-for-ghe.example.com"
+
+# Test 8f: credential_command receives host and provider as env vars
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo \$MISE_CREDENTIAL_PROVIDER-\$MISE_CREDENTIAL_HOST' mise token github ghe.example.com --unmask" "github-ghe.example.com"
+
+# Test 8g: credential_command uses the configured default inline shell
+cat >"$HOME/credential-shell" <<'SCRIPT'
+#!/bin/sh
+echo "custom-shell-token"
+SCRIPT
+chmod +x "$HOME/credential-shell"
+assert_contains "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS='$HOME/credential-shell -c' MISE_GITHUB_CREDENTIAL_COMMAND='ignored' mise token github --unmask" "custom-shell-token"
+
+# Test 9a: OAuth configured but no cached token — must not prompt for device flow
+# during normal token resolution (would hang on the unreachable URL otherwise).
+NO_DEVICE_OAUTH="MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:1/login MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:1/api"
+assert_contains "$NO_DEVICE_OAUTH mise token github 127.0.0.1" "(none)"
+
+# Test 9: native GitHub OAuth device flow via token alias
+MOCK_PORT_FILE="$HOME/mock-github-oauth-port"
+MOCK_GITHUB_OAUTH_PORT_FILE="$MOCK_PORT_FILE" python3 "$ROOT/e2e/fixtures/mock-github-oauth.py" &
+MOCK_PID=$!
+for _ in $(seq 1 30); do
+  if [ -f "$MOCK_PORT_FILE" ]; then
+    break
+  fi
+  sleep 0.1
+done
+MOCK_PORT="$(cat "$MOCK_PORT_FILE")"
+OAUTH_ENV="MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:$MOCK_PORT/login MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:$MOCK_PORT/api"
+assert_contains "$OAUTH_ENV mise token github 127.0.0.1 --oauth --raw" "ghu-native-oauth-token"
+assert_contains "$OAUTH_ENV mise token github 127.0.0.1 --unmask" "GitHub OAuth"
+
+# Test 9b: cached OAuth token is auto-exported as GITHUB_TOKEN
+assert_contains "$OAUTH_ENV mise env --shell bash" "export GITHUB_TOKEN=ghu-native-oauth-token"
+
+# Test 9c: oauth_export_env can pick a different variable name
+assert_contains "$OAUTH_ENV MISE_GITHUB_OAUTH_EXPORT_ENV=GH_TOKEN mise env --shell bash" "export GH_TOKEN=ghu-native-oauth-token"
+
+# Test 9d: empty oauth_export_env disables auto-export
+assert_not_contains "$OAUTH_ENV MISE_GITHUB_OAUTH_EXPORT_ENV= mise env --shell bash" "ghu-native-oauth-token"
+
+# Test 9e: an explicit GITHUB_TOKEN in [env] must take precedence over the OAuth-injected token
+mkdir -p "$MISE_CONFIG_DIR"
+cat >mise.toml <<'EOF'
+[env]
+GITHUB_TOKEN = "user-set-token"
+EOF
+assert_contains "$OAUTH_ENV mise env --shell bash" "export GITHUB_TOKEN=user-set-token"
+assert_not_contains "$OAUTH_ENV mise env --shell bash" "ghu-native-oauth-token"
+rm mise.toml
+
+kill "$MOCK_PID"
+
+# Test 10: git credential fill
+
+# Create a standalone credential helper script
+cat >"$HOME/git-cred-helper" <<'SCRIPT'
+#!/bin/sh
+echo "username=token"
+echo "password=git-cred-token"
+SCRIPT
+chmod +x "$HOME/git-cred-helper"
+
+# Write credential helper config to $HOME/.gitconfig so git finds it naturally
+git config -f "$HOME/.gitconfig" credential.helper "$HOME/git-cred-helper"
+
+GIT_CRED_ENV="GIT_CONFIG_NOSYSTEM=1 MISE_GITHUB_USE_GIT_CREDENTIALS=true"
+assert_contains "$GIT_CRED_ENV mise token github --unmask" "git-cred-token"
+assert_contains "$GIT_CRED_ENV mise token github --unmask" "git credential fill"
+
+# Test 11: git credential disabled via setting
+assert_contains "GIT_CONFIG_NOSYSTEM=1 MISE_GITHUB_USE_GIT_CREDENTIALS=false mise token github" "(none)"

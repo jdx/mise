@@ -1,0 +1,3 @@
+backends = ["aqua:redpanda-data/redpanda"]
+description = "Redpanda CLI and toolbox"
+test = { cmd = "rpk --version", expected = "rpk version (Redpanda CLI): v{{version}}" }

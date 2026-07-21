@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mise.en.dev/schema/mise-settings.json",
+  "title": "Mise Settings Schema",
+  "description": "JSON schema for mise settings.toml configuration file",
+  "type": "object",
+  "patternProperties": {
+    "^[a-zA-Z0-9_]+$": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/setting"
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^[a-zA-Z0-9_]+$": {
+              "$ref": "#/$defs/setting"
+            }
+          },
+          "unevaluatedProperties": false
+        }
+      ]
+    }
+  },
+  "unevaluatedProperties": false,
+  "$defs": {
+    "setting": {
+      "type": "object",
+      "properties": {
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Alternative names for this setting"
+        },
+        "default": {
+          "description": "Default value for this setting"
+        },
+        "default_docs": {
+          "type": "string",
+          "description": "Documentation for the default value shown in docs"
+        },
+        "deprecated": {
+          "type": "string",
+          "description": "Deprecation message if this setting is deprecated"
+        },
+        "deprecated_warn_at": {
+          "type": "string",
+          "description": "Mise version at which the deprecation warning starts showing (e.g. \"2026.8.0\")"
+        },
+        "deprecated_remove_at": {
+          "type": "string",
+          "description": "Mise version at which the deprecated code should be removed (triggers debug_assert, e.g. \"2027.2.0\")"
+        },
+        "description": {
+          "type": "string",
+          "description": "Brief description of what this setting does"
+        },
+        "deserialize_with": {
+          "type": "string",
+          "description": "Custom deserialization function to use"
+        },
+        "docs": {
+          "type": "string",
+          "description": "Detailed documentation for this setting"
+        },
+        "enum": {
+          "type": "array",
+          "description": "List of allowed values for this setting",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ],
+                    "description": "The enum value"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Description of this enum value"
+                  }
+                },
+                "required": ["value"],
+                "unevaluatedProperties": false
+              }
+            ]
+          }
+        },
+        "env": {
+          "type": "string",
+          "description": "Environment variable name that can set this setting"
+        },
+        "hide": {
+          "type": "boolean",
+          "description": "Whether to hide this setting from documentation"
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "Whether this setting is optional"
+        },
+        "parse_env": {
+          "type": "string",
+          "enum": [
+            "bool_string",
+            "list_by_comma",
+            "list_by_colon",
+            "list_by_os_path_separator",
+            "set_by_comma",
+            "parse_url_replacements"
+          ],
+          "description": "How to parse the environment variable value"
+        },
+        "rc": {
+          "type": "boolean",
+          "description": "Whether this setting can be set in .miserc.toml for early initialization"
+        },
+        "rust_type": {
+          "type": "string",
+          "description": "Rust type used internally for this setting"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "Bool",
+            "String",
+            "Integer",
+            "Path",
+            "Url",
+            "Duration",
+            "ListString",
+            "ListPath",
+            "SetString",
+            "IndexMap<String, String>",
+            "BoolOrString"
+          ],
+          "description": "Type of this setting"
+        }
+      },
+      "required": ["description"],
+      "unevaluatedProperties": false
+    }
+  }
+}

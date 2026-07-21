@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Test that mistyped CLI commands suggest the correct command instead of
+# showing a confusing "no tasks defined" error.
+# See: https://github.com/jdx/mise/discussions/8278
+
+set -euo pipefail
+export RUST_BACKTRACE=0
+export MISE_FRIENDLY_ERROR=1
+
+# Test: Typo of a known command should suggest the correct command
+assert_fail "mise bin-path" "Did you mean"
+assert_fail "mise bin-path" "bin-paths"
+
+# Test: Another typo should suggest the correct command
+assert_fail "mise instal" "install"
+
+# Test: Should say "unknown command" not "no tasks defined" for command typos
+assert_fail "mise bin-path" "unknown command"

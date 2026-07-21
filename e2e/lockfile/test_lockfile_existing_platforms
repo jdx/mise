@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+# === Test 1: mise lock respects existing platform subset ===
+# If a lockfile already has a curated subset of platforms,
+# running `mise lock` without --platform should only target those.
+
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF
+
+# Create lockfile with only the current platform
+mise lock --platform "$PLATFORM"
+assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
+assert_not_contains "cat mise.lock" "platforms.windows-x64"
+
+# Running mise lock again should only target the same platform
+mise lock
+assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
+assert_not_contains "cat mise.lock" "platforms.windows-x64"
+
+# === Test 2: mise lock with empty lockfile targets all common platforms ===
+
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF
+
+rm -f mise.lock
+touch mise.lock
+mise lock
+assert_contains "cat mise.lock" "platforms.linux-x64"
+assert_contains "cat mise.lock" "platforms.macos-arm64"
+
+# === Test 3: mise lock --platform overrides existing platforms ===
+
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF
+
+rm -f mise.lock
+mise lock --platform "$PLATFORM"
+assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
+
+# Now override with a different explicit set
+mise lock --platform "$PLATFORM,windows-x64"
+assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
+assert_contains "cat mise.lock" "platforms.windows-x64"
+
+rm -f mise.toml mise.lock

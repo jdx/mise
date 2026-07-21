@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+# Regression test: when not_found_auto_install preserves shims in PATH,
+# `mise x -- tool` should resolve the real tool binary, not a shim,
+# preventing infinite recursion.
+
+# Create a real tool binary
+tooldir="$HOME/toolbin"
+mkdir -p "$tooldir"
+cat >"$tooldir/mytool" <<'TOOL'
+#!/bin/sh
+echo REAL_TOOL_OUTPUT
+TOOL
+chmod +x "$tooldir/mytool"
+
+# Create a fake shim that would be found first if shims aren't stripped
+shimdir="$MISE_DATA_DIR/shims"
+mkdir -p "$shimdir"
+cat >"$shimdir/mytool" <<'SHIM'
+#!/bin/sh
+echo SHIM_NOT_REAL
+SHIM
+chmod +x "$shimdir/mytool"
+
+# Put shims BEFORE tooldir in PATH (the problematic ordering)
+export PATH="$shimdir:$tooldir:$PATH"
+
+# mise x should strip shims from lookup path and find the real tool
+assert_contains "mise x -- mytool" "REAL_TOOL_OUTPUT"
+assert_not_contains "mise x -- mytool" "SHIM_NOT_REAL"
+
+# An active shim outside the configured shim directories must be excluded by
+# identity, not by excluding its entire parent directory. File shims can
+# coexist with a real executable of the same stem but a different extension.
+mixed_dir="$HOME/mixed-bin"
+mkdir -p "$mixed_dir"
+cat >"$mixed_dir/siblingtool" <<'TOOL'
+#!/bin/sh
+if [ -n "${__MISE_SHIM_PATH:-}" ]; then
+  echo SHIM_PATH_LEAKED
+  exit 1
+fi
+echo SAME_DIRECTORY_REAL_TOOL
+TOOL
+chmod +x "$mixed_dir/siblingtool"
+touch "$mixed_dir/siblingtool.cmd"
+export PATH="$mixed_dir:$PATH"
+
+assert_contains \
+  "__MISE_SHIM_PATH='$mixed_dir/siblingtool.cmd' mise x -- siblingtool" \
+  "SAME_DIRECTORY_REAL_TOOL"
+assert_not_contains \
+  "__MISE_SHIM_PATH='$mixed_dir/siblingtool.cmd' mise x -- siblingtool" \
+  "SHIM_PATH_LEAKED"
+
+# deny-env clears the process environment before lookup. The active shim marker
+# must be captured first so the exact shim is still skipped in that mode.
+active_dir="$HOME/active-bin"
+real_dir="$HOME/real-bin"
+mkdir -p "$active_dir" "$real_dir"
+cat >"$active_dir/guardedtool" <<'SHIM'
+#!/bin/sh
+echo WRONG_ACTIVE_SHIM
+SHIM
+cat >"$real_dir/guardedtool" <<'TOOL'
+#!/bin/sh
+if [ -n "${__MISE_SHIM_PATH:-}" ]; then
+  echo SHIM_PATH_LEAKED
+  exit 1
+fi
+echo DENY_ENV_REAL_TOOL
+TOOL
+chmod +x "$active_dir/guardedtool" "$real_dir/guardedtool"
+export PATH="$active_dir:$real_dir:$PATH"
+
+assert_contains \
+  "__MISE_SHIM_PATH='$active_dir/guardedtool' mise x --deny-env --allow-env PATH -- guardedtool" \
+  "DENY_ENV_REAL_TOOL"
+assert_not_contains \
+  "__MISE_SHIM_PATH='$active_dir/guardedtool' mise x --deny-env --allow-env PATH -- guardedtool" \
+  "WRONG_ACTIVE_SHIM"

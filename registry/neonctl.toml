@@ -1,0 +1,3 @@
+backends = ["aqua:neondatabase/neonctl"]
+description = "Neon CLI tool. The Neon CLI is a command-line interface that lets you manage Neon Serverless Postgres directly from the terminal"
+test = { cmd = "neonctl --version", expected = "{{version}}" }

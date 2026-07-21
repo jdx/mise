@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# Regression test for aqua-backed tools pinned with a leading v prefix.
+# `mise upgrade --bump` used to derive the fuzzy latest query `v3` from
+# `v3.12.0`, but aqua normalizes shfmt releases to bare versions like 3.13.1.
+# That mismatch triggered: "no latest version found".
+cat <<'TOML' >mise.toml
+[tools]
+shfmt = "v3.12.0"
+TOML
+
+assert_not_contains "mise upgrade shfmt --bump --dry-run 2>&1" "no latest version found"
+assert_contains "mise upgrade shfmt --bump --dry-run 2>&1" "Would bump shfmt@v3.13.1 in ~/workdir/mise.toml"

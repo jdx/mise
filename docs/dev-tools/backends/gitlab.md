@@ -1,0 +1,416 @@
+# GitLab Backend
+
+You may install GitLab release assets directly using the `gitlab` backend. This backend downloads release assets from GitLab repositories and is ideal for tools that distribute pre-built binaries through GitLab releases.
+
+The code for this is inside of the mise repository at [`./src/backend/github.rs`](https://github.com/jdx/mise/blob/main/src/backend/github.rs).
+
+## Usage
+
+The following installs the latest version of gitlab-runner from GitLab releases
+and sets it as the active version on PATH:
+
+```sh
+$ mise use -g gitlab:gitlab-org/gitlab-runner
+$ gitlab-runner --version
+gitlab-runner 16.8.0
+```
+
+The version will be set in `~/.config/mise/config.toml` with the following format:
+
+```toml
+[tools]
+"gitlab:gitlab-org/gitlab-runner" = { version = "latest", asset_pattern = "gitlab-runner-linux-x64" }
+```
+
+## Authentication
+
+For private repositories or higher API limits, mise supports several GitLab token sources.
+
+### Token priority
+
+mise checks these sources in order and uses the first token found:
+
+1. `MISE_GITLAB_ENTERPRISE_TOKEN` (for non-`gitlab.com` hosts)
+2. `MISE_GITLAB_TOKEN`
+3. `GITLAB_TOKEN`
+4. `credential_command` (if set)
+5. `gitlab_tokens.toml` (per host)
+6. glab CLI config (`config.yml`, if enabled)
+7. `git credential fill` (if `gitlab.use_git_credentials=true`)
+
+### Environment variables
+
+```sh
+export MISE_GITLAB_TOKEN="glpat-xxxxxxxx"
+```
+
+For self-hosted GitLab instances:
+
+```sh
+export MISE_GITLAB_ENTERPRISE_TOKEN="glpat-yyyyyyyy"
+```
+
+### Token file (`gitlab_tokens.toml`)
+
+```toml
+# ~/.config/mise/gitlab_tokens.toml
+[tokens."gitlab.com"]
+token = "glpat-xxxxxxxx"
+
+[tokens."gitlab.mycompany.com"]
+token = "glpat-yyyyyyyy"
+```
+
+### `credential_command`
+
+You can provide a shell command that prints a token to stdout:
+
+```toml
+[settings.gitlab]
+credential_command = "op read 'op://Private/GitLab Token/credential'"
+```
+
+mise executes this command with the configured default inline shell. The target hostname is available as `MISE_CREDENTIAL_HOST`, and the provider name (`gitlab`) is available as `MISE_CREDENTIAL_PROVIDER`. For compatibility, recognized sh-compatible shells (`ash`, `bash`, `dash`, `ksh`, `sh`, and `zsh`) also receive the hostname as `$1`/`${1}`.
+
+:::: warning Planned deprecation
+The legacy `$1`/`${1}` hostname argument is deprecated. Use `MISE_CREDENTIAL_HOST` instead. mise will start warning in `2026.11.0`, and `$1` compatibility will be removed in `2027.11.0`.
+::::
+
+### glab CLI integration
+
+mise can read tokens from [glab](https://gitlab.com/gitlab-org/cli) config as a fallback. It checks:
+
+1. `$GLAB_CONFIG_DIR/config.yml`
+2. `$XDG_CONFIG_HOME/glab-cli/config.yml` (defaults to `~/.config/glab-cli/config.yml`)
+3. `~/Library/Application Support/glab-cli/config.yml` (macOS)
+
+Disable this fallback with:
+
+```toml
+[settings.gitlab]
+glab_cli_tokens = false
+```
+
+### `git credential fill` fallback
+
+As a last resort, mise can query git credential helpers:
+
+```toml
+[settings.gitlab]
+use_git_credentials = true
+```
+
+This uses `git credential fill` and supports credentials stored by helpers such as macOS Keychain.
+
+### Debugging token resolution
+
+Use `mise token gitlab` to see which token mise would use for a given host:
+
+```sh
+mise token gitlab
+mise token gitlab --unmask
+mise token gitlab gitlab.mycompany.com
+```
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `gitlab` backend—these
+go in `[tools]` in `mise.toml`.
+
+### Asset Autodetection
+
+When no `asset_pattern` is specified, mise automatically selects the best asset for your platform. The system scores assets based on:
+
+- **OS compatibility** (linux, macos, windows)
+- **Architecture compatibility** (x64, arm64, x86, arm)
+- **Libc variant** (gnu or musl for Linux, msvc for Windows)
+- **Archive format preference** (tar.gz, zip, etc.)
+- **Build type** (avoids debug/test builds)
+
+For most tools, you can simply install without specifying patterns:
+
+```sh
+mise install gitlab:user/repo
+```
+
+::: tip
+The autodetection logic is implemented in [`src/backend/asset_matcher.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_matcher.rs), which is shared by the GitHub, GitLab, and Forgejo backends.
+:::
+
+### `asset_pattern`
+
+Specifies the pattern to match against release asset names. This is useful when there are multiple assets for your OS/arch combination or when you need to override autodetection.
+
+```toml
+[tools."gitlab:gitlab-org/gitlab-runner"]
+version = "latest"
+asset_pattern = "gitlab-runner-linux-x64"
+```
+
+### `matching`
+
+Narrows asset selection to names containing the given substring, **while keeping platform autodetection**. Unlike [`asset_pattern`](#asset_pattern) (which replaces autodetection entirely), `matching` only refines the candidate set — autodetection still chooses the correct OS/arch from the narrowed list, so a single config stays portable across platforms.
+
+This is the option to reach for when a repository ships **multiple binaries as separate per-platform assets** and autodetection can't tell which one you want.
+
+```toml
+[tools]
+# When a release ships several binaries per platform (e.g. `mytool-cli` and
+# `mytool-server`), matching picks one on every OS/arch without hardcoding a
+# platform-specific asset_pattern.
+"gitlab:owner/repo" = { version = "latest", matching = "mytool-cli" }
+```
+
+Tool options can also be passed inline on the command line using `[key=value]` syntax:
+
+```sh
+mise use "gitlab:owner/repo[matching=mytool-cli]"
+```
+
+`matching` is a case-sensitive substring test, so a value that is also a substring of another asset's name (e.g. `matching = "tool"` when both `tool-*` and `tool-extras-*` are published) won't uniquely select your binary. Use [`matching_regex`](#matching_regex) with an anchor when you need a precise match.
+
+If [`asset_pattern`](#asset_pattern) is also set, it takes precedence and `matching`/`matching_regex` are ignored — `asset_pattern` replaces autodetection entirely, so there is no candidate set left for them to narrow. They are ignored silently: when `asset_pattern` is set, a `matching_regex` is never consulted and an invalid one is not reported, since mise does not error on a superseded option.
+
+### `matching_regex`
+
+Like [`matching`](#matching), but the asset name must match the given regular expression. Use this when a substring isn't selective enough. The match is case-sensitive; use an inline `(?i)` flag for case-insensitive matching.
+
+```toml
+[tools]
+"gitlab:owner/repo" = { version = "latest", matching_regex = "^mytool-cli-" }
+```
+
+If both `matching` and `matching_regex` are set, an asset must satisfy **both** (logical AND)
+to remain a candidate.
+
+::: warning
+`matching`/`matching_regex` are **not** part of the install path — it is keyed by the tool
+name (`owner/repo`, or a `tool_alias`) and version. To install two binaries from the same
+release, give each its own [`tool_alias`](/dev-tools/backends/github.html#multiple-assets-from-the-same-release)
+so they get distinct install directories; reusing the same `gitlab:owner/repo` string with
+different `matching` values resolves to the same directory and the second install overwrites
+the first.
+:::
+
+### `version_prefix`
+
+Specifies a custom version prefix for release tags. By default, mise handles the common `v` prefix (e.g., `v1.0.0`), but some repositories use different prefixes like `release-`, `version-`, or no prefix at all.
+
+When `version_prefix` is configured, mise will:
+
+- Filter available versions with the prefix and strip it
+- Add the prefix when searching for releases
+- Try both prefixed and non-prefixed versions during installation
+
+```toml
+[tools]
+"gitlab:user/repo" = { version = "latest", version_prefix = "release-" }
+```
+
+**Examples:**
+
+- With `version_prefix = "release-"`:
+  - User specifies `1.0.0` → mise searches for `release-1.0.0` tag
+  - Available versions show as `1.0.0` (prefix stripped)
+- With `version_prefix = ""` (empty string):
+  - User specifies `1.0.0` → mise searches for `1.0.0` tag (no prefix)
+  - Useful for repositories that don't use any prefix
+
+### Platform-specific Asset Patterns
+
+For different asset patterns per platform:
+
+```toml
+[tools."gitlab:gitlab-org/gitlab-runner"]
+version = "latest"
+
+[tools."gitlab:gitlab-org/gitlab-runner".platforms]
+linux-x64 = { asset_pattern = "gitlab-runner-linux-x64" }
+macos-arm64 = { asset_pattern = "gitlab-runner-macos-arm64" }
+```
+
+### `checksum`
+
+Verify the downloaded file with a checksum:
+
+```toml
+[tools."gitlab:owner/repo"]
+version = "1.0.0"
+asset_pattern = "tool-1.0.0-x64.tar.gz"
+checksum = "sha256:a1b2c3d4e5f6789..."
+```
+
+_Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mise-lock) to manage checksums._
+
+### Platform-specific Checksums
+
+```toml
+[tools."gitlab:gitlab-org/gitlab-runner"]
+version = "latest"
+
+[tools."gitlab:gitlab-org/gitlab-runner".platforms]
+linux-x64 = {
+  asset_pattern = "gitlab-runner-linux-x64",
+  checksum = "sha256:a1b2c3d4e5f6789...",
+}
+macos-arm64 = {
+  asset_pattern = "gitlab-runner-macos-arm64",
+  checksum = "sha256:b2c3d4e5f6789...",
+}
+```
+
+### `size`
+
+Verify the downloaded asset size:
+
+```toml
+[tools]
+"gitlab:gitlab-org/gitlab-runner" = { version = "latest", size = "12345678" }
+```
+
+### Platform-specific Size
+
+You can specify different sizes for different platforms:
+
+```toml
+[tools."gitlab:gitlab-org/gitlab-runner"]
+version = "latest"
+
+[tools."gitlab:gitlab-org/gitlab-runner".platforms]
+linux-x64 = { size = "12345678" }
+macos-arm64 = { size = "9876543" }
+```
+
+### `strip_components`
+
+Number of directory components to strip when extracting archives:
+
+```toml
+[tools]
+"gitlab:gitlab-org/gitlab-runner" = { version = "latest", strip_components = 1 }
+```
+
+::: info
+If `strip_components` is not explicitly set, mise will automatically detect when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
+:::
+
+### `bin`
+
+Rename the downloaded binary to a specific name. This is useful when downloading single binaries that have platform-specific names:
+
+```toml
+[tools."gitlab:myorg/mytool"]
+version = "1.0.0"
+asset_pattern = "mytool-linux-x86_64"
+bin = "mytool"  # Rename from mytool-linux-x86_64 to mytool
+```
+
+::: info
+When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `mytool-linux-x86_64` becomes `mytool` automatically. Use the `bin` option only when you need a specific custom name.
+:::
+
+### `rename_exe`
+
+Rename the executable after extraction from an archive. This is useful when the archive contains a binary with a platform-specific name that you want to rename:
+
+```toml
+[tools."gitlab:myorg/mytool"]
+version = "latest"
+asset_pattern = "mytool_linux.zip"
+rename_exe = "mytool"  # Rename the extracted binary to mytool
+```
+
+::: tip
+Use `rename_exe` for archives where the binary inside has a different name than desired. Use `bin` for single binary downloads (non-archives).
+:::
+
+### `no_app`
+
+Skip macOS .app bundle assets during autodetection and prefer standalone CLI binaries instead. This is useful when a repository provides both a macOS .app bundle (often an Xcode extension or GUI application) and a standalone command-line tool:
+
+```toml
+[tools."gitlab:myorg/mytool"]
+version = "latest"
+no_app = true
+```
+
+When `no_app = true`:
+
+- Assets containing `.app.` (e.g., `Tool.app.zip`, `Tool.for.Xcode.app.zip`) are penalized during autodetection
+- Standalone archives are preferred
+- This is mainly useful for macOS asset selection; non-macOS `.app.` assets are already penalized by platform matching
+- Only affects autodetection; explicit `asset_pattern` values are used as-is
+
+### `bin_path`
+
+::: v-pre
+Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with variables like `{{ version }}`, `{{ os }}`, `{{ arch }}`, and arch aliases (`{{ darwin_os }}`, `{{ amd64_arch }}`, `{{ x86_64_arch }}`, `{{ gnu_arch }}`):
+:::
+
+```toml
+[tools."gitlab:gitlab-org/gitlab-runner"]
+version = "latest"
+bin_path = "gitlab-runner-{{ version }}/bin" # expands to gitlab-runner-1.0.0/bin
+```
+
+**Binary path lookup order:**
+
+1. If `bin_path` is specified, use that directory
+2. If `bin_path` is not set, look for a `bin/` directory in the install path
+3. If the install path root contains an executable file, use the install path root
+4. If no `bin/` directory exists, search subdirectories for `bin/` directories
+5. If no `bin/` directories are found, searches immediate subdirectories for any executable files. If an executable is found directly within a subdirectory, that entire subdirectory is considered a binary path.
+6. If no executables are found, use the root of the extracted directory
+
+### `filter_bins`
+
+List of binaries to symlink into a filtered `.mise-bins` directory. This is useful when the tool comes with extra binaries that you do not want to expose on PATH.
+
+```toml
+[tools]
+"gitlab:myorg/mytool" = { version = "1.0.0", filter_bins = "mybin" }
+"gitlab:myorg/other-tool" = { version = "1.0.0", filter_bins = ["mybin", "helper"] }
+```
+
+When enabled:
+
+- A `.mise-bins` subdirectory is created with symlinks only to the specified binaries
+- Other binaries are not exposed on PATH
+
+### `api_url`
+
+For self-hosted GitLab instances, specify the API URL. mise uses this URL for release listing and release asset lookup, and may also use it to download assets when browser download URLs are not reachable or when using custom/private instances:
+
+```toml
+[tools]
+"gitlab:myorg/mytool" = { version = "latest", api_url = "https://gitlab.mycompany.com/api/v4" }
+```
+
+## Private GitLab repositories
+
+If you want to install a tool from a private repository on `gitlab.com`, set the `MISE_GITLAB_TOKEN` environment variable for authentication:
+
+```sh
+export MISE_GITLAB_TOKEN="your-token"
+```
+
+## Self-hosted GitLab
+
+If you are using a self-hosted GitLab instance, set the `api_url` tool option and optionally the `MISE_GITLAB_ENTERPRISE_TOKEN` environment variable for authentication:
+
+```sh
+export MISE_GITLAB_ENTERPRISE_TOKEN="your-token"
+```
+
+## Supported GitLab Syntax
+
+- **GitLab shorthand for latest release version:** `gitlab:gitlab-org/gitlab-runner`
+- **GitLab shorthand for specific release version:** `gitlab:gitlab-org/gitlab-runner@16.8.0`
+
+## Settings
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+
+<Settings child="gitlab" :level="3" />

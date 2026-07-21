@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+mkdir -p "$HOME/bin"
+export CHSH_LOG="$PWD/chsh.log"
+rm -f "$CHSH_LOG"
+cat <<'EOF' >"$HOME/bin/chsh"
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$CHSH_LOG"
+EOF
+chmod +x "$HOME/bin/chsh"
+export MISE_TEST_SHELLS_FILE="$PWD/shells"
+
+cat <<EOF >mise.toml
+[bootstrap.user]
+login_shell = "/bin/sh"
+EOF
+
+current="$(mise bootstrap user status --json | jq -r '.login_shell.current')"
+assert_not_empty "printf '%s' '$current'"
+printf '%s\n' "$current" >"$MISE_TEST_SHELLS_FILE"
+
+# Matching login shell is in sync and bootstrap is a no-op.
+cat <<EOF >mise.toml
+[bootstrap.user]
+login_shell = "$current"
+EOF
+assert_succeed "mise bootstrap user status --missing"
+assert_contains "mise bootstrap user status --json" '"state": "set"'
+assert_succeed "mise bootstrap --yes"
+assert_not_contains "mise bootstrap --yes" "bootstrap: follow-up"
+assert_fail "test -f '$CHSH_LOG'"
+
+# A local config overrides the global login shell.
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[bootstrap.user]
+login_shell = "/tmp/global-shell"
+EOF
+cat <<EOF >mise.toml
+[bootstrap.user]
+login_shell = " /tmp/local-shell "
+EOF
+assert_contains "mise bootstrap user status --json | jq -r '.login_shell.shell'" "/tmp/local-shell"
+rm "$MISE_CONFIG_DIR/config.toml"
+
+# Invalid local values are skipped, so a valid global value can still apply.
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[bootstrap.user]
+login_shell = "/tmp/global-shell"
+EOF
+cat <<EOF >mise.toml
+[bootstrap.user]
+login_shell = "relative-shell"
+EOF
+assert_contains "mise bootstrap user status --json 2>&1" "shell must be an absolute path"
+assert_contains "mise bootstrap user status --json | jq -r '.login_shell.shell'" "/tmp/global-shell"
+rm "$MISE_CONFIG_DIR/config.toml"
+
+# package install does not change the login shell; bootstrap does.
+cat <<EOF >mise.toml
+[bootstrap.user]
+login_shell = "/tmp/mise-test-shell"
+EOF
+assert_fail "mise bootstrap user status --missing"
+assert_contains "mise bootstrap user status --json" '"shell_listed": false'
+assert_succeed "mise bootstrap packages apply --dry-run --yes"
+assert_not_contains "mise bootstrap packages apply --dry-run --yes" "chsh -s /tmp/mise-test-shell"
+assert_contains "mise bootstrap user apply --dry-run --yes" "chsh -s /tmp/mise-test-shell"
+assert_contains "mise bootstrap --dry-run --yes" "chsh -s /tmp/mise-test-shell"
+assert_contains "mise bootstrap --dry-run --yes" "bootstrap: follow-up if applied"
+assert_contains "mise bootstrap --dry-run --yes" "start a new login session for /tmp/mise-test-shell to take effect"
+assert_fail "test -f '$CHSH_LOG'"
+assert_fail "grep -q /tmp/mise-test-shell '$MISE_TEST_SHELLS_FILE'"
+
+# If a later phase fails after the shell was changed, bootstrap still prints
+# the accumulated follow-up before returning the failure.
+cat <<'EOF' >>mise.toml
+
+[bootstrap.hooks.final]
+run = "exit 7"
+EOF
+failed_bootstrap_status=0
+failed_bootstrap_output="$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 mise bootstrap --yes 2>&1)" || failed_bootstrap_status=$?
+if [[ $failed_bootstrap_status -eq 0 ]]; then
+  fail "mise bootstrap --yes succeeded but was expected to fail"
+fi
+assert_contains_text "$failed_bootstrap_output" "bootstrap: follow-up"
+assert_contains_text "$failed_bootstrap_output" "start a new login session for /tmp/mise-test-shell to take effect"
+assert_contains "cat '$MISE_TEST_SHELLS_FILE'" "/tmp/mise-test-shell"
+assert "cat '$CHSH_LOG'" "-s /tmp/mise-test-shell"
+rm -f "$CHSH_LOG"
+
+# If the account shell already matches but is missing from /etc/shells,
+# bootstrap still applies a change and should keep the follow-up visible.
+cat <<EOF >mise.toml
+[bootstrap.user]
+login_shell = "$current"
+EOF
+printf '/tmp/other-shell\n' >"$MISE_TEST_SHELLS_FILE"
+assert_contains "mise bootstrap --dry-run --yes" "chsh -s $current"
+assert_contains "mise bootstrap --dry-run --yes" "start a new login session for $current to take effect"
+
+# Real apply lists the shell first, then invokes chsh with the requested shell.
+cat <<EOF >mise.toml
+[bootstrap.user]
+login_shell = "/tmp/mise-test-shell"
+EOF
+assert_succeed "mise bootstrap user apply --yes"
+assert_contains "cat '$MISE_TEST_SHELLS_FILE'" "/tmp/mise-test-shell"
+assert "cat '$CHSH_LOG'" "-s /tmp/mise-test-shell"
+
+# Invalid values warn and are skipped like other malformed [bootstrap.user] entries.
+cat <<EOF >mise.toml
+[bootstrap.user]
+login_shell = "relative-shell"
+EOF
+assert_succeed "mise bootstrap user status"
+assert_contains "mise bootstrap user status 2>&1" "shell must be an absolute path"

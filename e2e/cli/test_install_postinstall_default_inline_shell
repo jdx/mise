@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# Test that tool-level postinstall hooks use the configured default inline shell.
+
+shell="$PWD/default-inline-shell"
+cat >"$shell" <<'SCRIPT'
+#!/usr/bin/env bash
+if [[ "$1" != "-c" ]]; then
+  echo "unexpected shell args: $*" >&2
+  exit 1
+fi
+shift
+echo "CUSTOM_INLINE_SHELL=yes"
+exec sh -c "$@"
+SCRIPT
+chmod +x "$shell"
+
+cat <<EOF >mise.toml
+[tools]
+dummy = { version = "latest", postinstall = "echo POSTINSTALL_RAN=yes" }
+EOF
+
+rm -rf "$MISE_DATA_DIR/installs/dummy"
+
+output=$(MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS="$shell -c" mise install dummy 2>&1)
+
+if [[ $output == *"CUSTOM_INLINE_SHELL=yes"* && $output == *"POSTINSTALL_RAN=yes"* ]]; then
+  echo "tool-level postinstall used default inline shell"
+else
+  echo "tool-level postinstall did not use default inline shell"
+  echo "Output: $output"
+  exit 1
+fi

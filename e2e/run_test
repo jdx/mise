@@ -5,9 +5,21 @@ ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
 
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
+# shellcheck source-path=SCRIPTDIR
+source "$SCRIPT_DIR/helpers.sh"
 
 TEST="$1"
-TEST_SCRIPT="$SCRIPT_DIR/$TEST"
+# Handle both relative and absolute paths
+if [[ $TEST == /* ]]; then
+  # If it's an absolute path, use it as is
+  TEST_SCRIPT="$TEST"
+elif [[ $TEST == e2e/* ]]; then
+  # If it starts with e2e/, treat it as relative to the project root
+  TEST_SCRIPT="$ROOT/$TEST"
+else
+  # Otherwise, treat it as relative to the e2e directory
+  TEST_SCRIPT="$SCRIPT_DIR/$TEST"
+fi
 
 setup_isolated_env() {
   TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
@@ -36,36 +48,60 @@ create_isolated_env() {
   # Create the required directories
   mkdir -p "$TEST_HOME/bin" "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
 
-  # The dummy plugin is required for some tests
+  # The dummy and needs-dummy plugins are required for some tests
   mkdir -p "$MISE_DATA_DIR/plugins"
   ln -s "$ROOT/test/data/plugins/dummy" "$MISE_DATA_DIR/plugins/dummy"
+  ln -s "$ROOT/test/data/plugins/needs-dummy" "$MISE_DATA_DIR/plugins/needs-dummy"
 }
 
 remove_isolated_env() {
-  rm -rf "$TEST_ISOLATED_DIR" &
+  if [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
+    rm -rf "$TEST_ISOLATED_DIR"
+  else
+    rm -rf "$TEST_ISOLATED_DIR" &
+  fi
 }
 
 within_isolated_env() {
-  _env \
-    --ignore-environment \
-    --chdir="$TEST_WORKDIR" \
+  local proxy_vars=()
+  [[ -n ${http_proxy:-} ]] && proxy_vars+=(http_proxy="$http_proxy")
+  [[ -n ${https_proxy:-} ]] && proxy_vars+=(https_proxy="$https_proxy")
+  [[ -n ${HTTP_PROXY:-} ]] && proxy_vars+=(HTTP_PROXY="$HTTP_PROXY")
+  [[ -n ${HTTPS_PROXY:-} ]] && proxy_vars+=(HTTPS_PROXY="$HTTPS_PROXY")
+  [[ -n ${no_proxy:-} ]] && proxy_vars+=(no_proxy="$no_proxy")
+  [[ -n ${NO_PROXY:-} ]] && proxy_vars+=(NO_PROXY="$NO_PROXY")
+
+  env \
+    -i \
+    -C "$TEST_WORKDIR" \
     - \
     CARGO_HOME="$CARGO_HOME" \
     CARGO_LLVM_COV="${CARGO_LLVM_COV:-}" \
     CARGO_LLVM_COV_SHOW_ENV="${CARGO_LLVM_COV_SHOW_ENV:-}" \
     CARGO_LLVM_COV_TARGET_DIR="${CARGO_LLVM_COV_TARGET_DIR:-}" \
+    GIT_AUTHOR_NAME="test" \
+    GIT_AUTHOR_EMAIL="test@test.com" \
+    GIT_COMMITTER_NAME="test" \
+    GIT_COMMITTER_EMAIL="test@test.com" \
     GITHUB_ACTION="${GITHUB_ACTION:-}" \
+    MISE_GITHUB_TOKEN="${MISE_GITHUB_TOKEN:-}" \
     GITHUB_TOKEN="${GITHUB_TOKEN:-}" \
     GOPROXY="${GOPROXY:-}" \
     HOME="$TEST_HOME" \
+    LANG="${LANG:-C.UTF-8}" \
+    LC_ALL="${LC_ALL:-}" \
     LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
     LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
+    ${proxy_vars[@]+"${proxy_vars[@]}"} \
     MISE_CACHE_DIR="$MISE_CACHE_DIR" \
+    MISE_URL_REPLACEMENTS="${MISE_URL_REPLACEMENTS:-}" \
     MISE_CACHE_PRUNE_AGE="0" \
     MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \
     MISE_DATA_DIR="$MISE_DATA_DIR" \
     MISE_DEBUG="${MISE_DEBUG:-0}" \
     MISE_EXPERIMENTAL=1 \
+    MISE_GPG_VERIFY="${MISE_GPG_VERIFY:-}" \
+    MISE_HTTP_TEST_PORT_FILE="$TEST_TMPDIR/mise_http_test_port" \
     MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}" \
     MISE_STATE_DIR="$MISE_STATE_DIR" \
     MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \
@@ -74,8 +110,9 @@ within_isolated_env() {
     MISE_TRACE="${MISE_TRACE:-0}" \
     MISE_TRUSTED_CONFIG_PATHS="$TEST_ISOLATED_DIR" \
     MISE_USE_VERSIONS_HOST="${MISE_USE_VERSIONS_HOST:-1}" \
+    MISE_USE_VERSIONS_HOST_TRACK=0 \
     MISE_YES=1 \
-    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" \
+    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" \
     ROOT="$ROOT" \
     RUSTUP_HOME="$RUSTUP_HOME" \
     RUST_BACKTRACE="${RUST_BACKTRACE:-1}" \
@@ -86,23 +123,48 @@ within_isolated_env() {
     TEST_SCRIPT="$TEST_SCRIPT" \
     TMPDIR="$TEST_TMPDIR" \
     EXCLUDE_FROM_CI="${CI:-}" \
+    MISE_E2E_INSIDE_DOCKER="${MISE_E2E_INSIDE_DOCKER:-}" \
     "$@" || return $?
 }
 
 run_test() {
+  # Check for problematic /tmp/mise.toml that can interfere with tests
+  if [[ -f /tmp/mise.toml ]]; then
+    err "/tmp/mise.toml exists and will interfere with e2e tests. Please remove it."
+    return 1
+  fi
+
   setup_isolated_env
   create_isolated_env
 
   local status=0
 
   START="$(date +%s)"
-  within_isolated_env bash --noprofile --norc -euo pipefail -c "source $SCRIPT_DIR/assert.sh && source $TEST_SCRIPT" || status=$?
+  # Check shebang to determine which shell to use
+  local shebang
+  shebang="$(head -n 1 "$TEST_SCRIPT")"
+  if [[ $shebang == "#!/usr/bin/env zsh"* ]]; then
+    within_isolated_env zsh -f -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+  elif [[ $shebang == "#!/usr/bin/env fish"* ]]; then
+    within_isolated_env fish --no-config "$TEST_SCRIPT" || status=$?
+  else
+    within_isolated_env bash --noprofile --norc -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+  fi
   END="$(date +%s)"
   DURATION=$((END - START))s
 
   echo "$TEST: $DURATION" >&2
 
-  if [[ "$status" == 0 ]]; then
+  # Check if test took >20s and isn't marked as slow
+  DURATION_NUM="${DURATION%s}"
+  if [[ $DURATION_NUM -gt 20 && ! $TEST =~ "_slow"$ ]]; then
+    warn "Test $TEST took ${DURATION} (>20s) but is not marked as slow. Consider renaming to ${TEST}_slow"
+    if [[ -n ${GITHUB_ACTIONS:-} ]]; then
+      echo "::warning title=Slow test not marked::Test $TEST took ${DURATION} (>20s). Consider renaming to ${TEST}_slow to improve CI performance." >&2
+    fi
+  fi
+
+  if [[ $status == 0 ]]; then
     remove_isolated_env
     summary "$TEST" "$DURATION" ":white_check_mark:"
   else
@@ -114,14 +176,6 @@ run_test() {
   return "$status"
 }
 
-_env() {
-  if type genv >/dev/null 2>&1; then
-    genv "$@"
-  else
-    env "$@"
-  fi
-}
-
 os() {
   case "$(uname -s)" in
     Darwin) echo "macos" ;;
@@ -130,4 +184,66 @@ os() {
   esac
 }
 
-as_group "E2E $TEST" run_test
+run_in_docker() {
+  local image="${MISE_E2E_DOCKER_IMAGE:-ghcr.io/jdx/mise:e2e}"
+  local mise_bin
+  mise_bin="$(resolve_mise_bin)"
+
+  if ! file "$mise_bin" | grep -q "ELF"; then
+    err "The mise binary at '$mise_bin' is not a Linux ELF. On macOS, set MISE_E2E_BIN to a Linux-compiled mise binary."
+    return 1
+  fi
+
+  # Bind-mount disk-backed host dirs for /tmp and /root instead of using
+  # `--tmpfs` (which is RAM-backed and capped at ~half of RAM). Multi-GB tool
+  # installs (e.g. swift) do not fit in tmpfs and fail with ENOSPC. On
+  # namespace/GHA runners RUNNER_TEMP lives on the workspace disk.
+  local host_tmp_root="${MISE_E2E_HOST_TMP:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}}"
+  local host_tmp host_root host_home
+  host_tmp="$(mktemp -d "$host_tmp_root/mise-e2e-tmp.XXXXXX")"
+  host_root="$(mktemp -d "$host_tmp_root/mise-e2e-root.XXXXXX")"
+  host_home="$(mktemp -d "$host_tmp_root/mise-e2e-home.XXXXXX")"
+  chmod 777 "$host_tmp" "$host_root" "$host_home"
+
+  local docker_args=(
+    docker run --rm
+  )
+  # tests that install real system packages (e.g. apt) must write to /var and
+  # /usr and declare that with an "# e2e:writable-rootfs" marker; the container
+  # is still ephemeral and the host mounts below stay read-only
+  if ! grep -q '^# e2e:writable-rootfs' "$TEST_SCRIPT"; then
+    docker_args+=(--read-only)
+  fi
+  docker_args+=(
+    -v "$host_root:/root"
+    -v "$host_tmp:/tmp"
+    # writable /home so tests can create /home/linuxbrew (rootfs is read-only)
+    -v "$host_home:/home"
+    -v "$ROOT:/mise-src:ro"
+    -v "$mise_bin:/usr/local/lib/mise/debug/mise:ro"
+    -e ROOT=/mise-src
+    -e CI="${CI:-}"
+    -e GITHUB_ACTION="${GITHUB_ACTION:-}"
+    -e MISE_GITHUB_TOKEN="${MISE_GITHUB_TOKEN:-}"
+    -e GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+    -e MISE_DEBUG="${MISE_DEBUG:-0}"
+    -e MISE_TRACE="${MISE_TRACE:-0}"
+    -e MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}"
+    -e RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
+    -e MISE_E2E_INSIDE_DOCKER=1
+    -e CARGO_TARGET_DIR=/usr/local/lib/mise
+  )
+
+  local rc=0
+  "${docker_args[@]}" "$image" bash /mise-src/e2e/run_test "$TEST" || rc=$?
+  rm -rf "$host_tmp" "$host_root" "$host_home" 2>/dev/null || true
+  return "$rc"
+}
+
+if [[ ${MISE_E2E_DOCKER:-0} == 1 ]]; then
+  as_group "E2E $TEST" run_in_docker
+elif [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
+  run_test
+else
+  as_group "E2E $TEST" run_test
+fi

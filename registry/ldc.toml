@@ -1,0 +1,3 @@
+backends = ["github:ldc-developers/ldc"]
+description = "LLVM-based compiler for the D programming language"
+test = { cmd = "ldc2 --version", expected = "{{version}}" }

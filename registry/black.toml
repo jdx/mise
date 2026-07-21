@@ -1,0 +1,3 @@
+backends = ["aqua:psf/black"]
+description = "The uncompromising Python code formatter"
+test = { cmd = "black --version", expected = "black, {{version}}" }

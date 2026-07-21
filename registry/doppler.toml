@@ -1,0 +1,8 @@
+description = "The official CLI for interacting with your Doppler secrets and configuration"
+test = { cmd = "doppler --version", expected = "v{{version}}" }
+
+[[backends]]
+full = "github:DopplerHQ/cli"
+
+[[backends]]
+full = "asdf:takutakahashi/asdf-doppler"

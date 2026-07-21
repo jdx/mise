@@ -1,0 +1,4 @@
+backends = ["github:XCTestHTMLReport/XCTestHTMLReport"]
+description = "Xcode-like HTML report for Unit and UI Tests"
+os = ["macos"]
+test = { cmd = "xchtmlreport --version", expected = "{{version}}" }

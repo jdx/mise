@@ -1,0 +1,7 @@
+backends = [
+  "aqua:topgrade-rs/topgrade",
+  "github:topgrade-rs/topgrade",
+  "cargo:topgrade",
+]
+description = "Upgrade all the things"
+test = { cmd = "topgrade --version", expected = "topgrade {{version}}" }

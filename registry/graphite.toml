@@ -1,0 +1,8 @@
+description = "Code review for the age of AI"
+test = { cmd = "gt --version", expected = "{{version}}" }
+
+[[backends]]
+full = "github:withgraphite/homebrew-tap"
+
+[[backends]]
+full = "npm:@withgraphite/graphite-cli"

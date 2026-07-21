@@ -1,0 +1,11 @@
+description = "Podman: A tool for managing OCI containers and pods"
+test = { cmd = "podman-remote --version", expected = "podman-remote version {{version}}" }
+
+[[backends]]
+full = "github:podman-container-tools/podman"
+
+[backends.options]
+rename_exe = "podman-remote"
+
+[[backends]]
+full = "asdf:tvon/asdf-podman"

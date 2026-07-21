@@ -1,0 +1,3 @@
+backends = ["aqua:pemistahl/grex", "asdf:ouest/asdf-grex", "cargo:grex"]
+description = "A command-line tool and library for generating regular expressions from user-provided test cases"
+test = { cmd = "grex --version", expected = "grex {{version}}" }

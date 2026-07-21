@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Regression test for the dual-dir gap left by #8475.
+#
+# #8475 fixed `dependency_env` to strip the user shims dir (`dirs::SHIMS`) so
+# backend version-resolution subprocesses don't recurse through a mise shim.
+# But it only stripped the user dir — when tools are installed via
+# `mise install --system` (devcontainer / Docker setups), there's a *second*
+# shims dir at `$MISE_SYSTEM_DATA_DIR/shims` that's also on PATH. The npm
+# backend's `npm view yarn versions time --json` call found that system shim,
+# re-entered mise, and the same fork bomb fired — reported as "ws agent run
+# OOMs the sandbox" when an `npm:yarn = "1"` pin met an uninstalled node.
+#
+# This test mirrors `test_go_shim_recursion` but uses the SYSTEM shims dir
+# specifically to validate the dual-dir fix.
+
+# Version queries only shell out to `npm view` in legacy mode now; the
+# default path queries the registry over HTTP and never spawns npm. Pin the
+# legacy mode so this test keeps covering the shim-recursion guard.
+export MISE_NPM_USE_NPM_VIEW=1
+
+export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
+mkdir -p "$MISE_SYSTEM_DATA_DIR/shims"
+
+# Fake npm shim in the SYSTEM shims dir (not the user one). Mirrors how
+# `mise install --system node@lts` creates `/usr/local/share/mise/shims/npm`
+# pointing at the mise binary.
+cat >"$MISE_SYSTEM_DATA_DIR/shims/npm" <<'SHIM'
+#!/usr/bin/env bash
+exec mise exec -- npm "$@"
+SHIM
+chmod +x "$MISE_SYSTEM_DATA_DIR/shims/npm"
+
+# System shims dir on PATH, exactly as a wsdev/devcontainer image would
+# have it via `ENV PATH=".../usr/local/share/mise/shims:..."`.
+export PATH="$MISE_SYSTEM_DATA_DIR/shims:$PATH"
+
+# Configure an npm:* backend tool + node uninstalled, so the npm backend's
+# _list_remote_versions runs `npm view ... --json` and the only `npm` on
+# PATH is the system shim we just planted. Use a real-but-uninstalled node
+# version (matches the pattern in test_go_shim_recursion using
+# `go = "1.23.3"`) — picking a nonexistent version like `99.0.0` would risk
+# `mise ls` failing on version resolution and masking a fork-bomb regression.
+cat >>mise.toml <<'EOF'
+[tools]
+"npm:left-pad" = "latest"
+node = "22.0.0"
+EOF
+mise trust --yes
+
+# Empty the remote-version cache so `_list_remote_versions` actually shells
+# out to `npm view` instead of returning a cached list.
+mise cache clear
+
+# Without the fix: dependency_env leaves the SYSTEM shims dir on PATH, the
+# `npm view` call resolves to our fake shim, that shim re-runs `mise exec`,
+# which re-resolves the toolset, calls `npm view` again — fork bomb until
+# the timeout kills us.
+# With the fix: both shim dirs are stripped, no `npm` is reachable in the
+# dependency PATH, `npm view` fails cleanly, mise reports the resolution
+# failure and exits.
+#
+# `|| true` keeps the test focused on "no fork bomb" rather than "ls returns
+# zero" — `mise ls` may exit non-zero when npm:left-pad's version resolution
+# fails (the expected failure when shims are stripped), and we don't want
+# that to be confused with a recursion regression. The `assert_contains`
+# on the actual output still verifies mise made it past resolution.
+output="$(run_with_timeout 15 mise ls --json -c || true)"
+assert_contains "echo '$output'" '"node"'

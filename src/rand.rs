@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use rand::distr::Alphanumeric;
 
 pub fn random_string(length: usize) -> String {

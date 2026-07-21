@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Test that task_config.dir is inherited by included TOML tasks and file tasks
+
+mkdir -p mywork tasks
+
+# Create an included TOML task file
+cat <<EOF >tasks/included.toml
+[b]
+run = "pwd"
+EOF
+
+# Create a file task (script)
+cat <<'SCRIPT' >tasks/c
+#!/usr/bin/env bash
+pwd
+SCRIPT
+chmod +x tasks/c
+
+# Create main config with task_config.dir and an inline task
+cat <<EOF >mise.toml
+[task_config]
+dir = "{{config_root}}/mywork"
+includes = ["tasks/included.toml", "tasks"]
+
+[tasks.a]
+run = "pwd"
+EOF
+
+# Inline task should use task_config.dir
+assert "mise run a" "$(pwd)/mywork"
+
+# Included TOML task should inherit task_config.dir
+assert "mise run b" "$(pwd)/mywork"
+
+# File task should inherit task_config.dir
+assert "mise run c" "$(pwd)/mywork"
+
+# tasks ls --json should report the resolved dir for all inherited tasks
+# Check file task specifically to ensure template is rendered, not stored raw
+assert_not_contains "mise tasks ls --json" "{{config_root}}"
+assert_contains "mise tasks ls --json" "$(pwd)/mywork"

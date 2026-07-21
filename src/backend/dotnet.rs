@@ -1,22 +1,48 @@
-use crate::backend::Backend;
+use std::sync::Arc;
+
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::BackendOptions;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::http::HTTP_FETCH;
+use crate::toolset::ToolVersionOptions;
+use crate::{backend::Backend, config::Config};
+use async_trait::async_trait;
 use eyre::eyre;
+
+pub const EXPERIMENTAL: bool = false;
 
 #[derive(Debug)]
 pub struct DotnetBackend {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct DotnetOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> DotnetOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn prerelease(&self) -> bool {
+        self.values.bool("prerelease")
+    }
+}
+
+#[async_trait]
 impl Backend for DotnetBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Dotnet
     }
 
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
@@ -24,18 +50,25 @@ impl Backend for DotnetBackend {
         Ok(vec!["dotnet"])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        let feed_url = self.get_search_url()?;
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
 
-        let feed: NugetFeedSearch = HTTP_FETCH.json(format!(
-            "{}?q={}&packageType=dotnettool&take=1&prerelease={}",
-            feed_url,
-            &self.tool_name(),
-            SETTINGS
-                .dotnet
-                .package_flags
-                .contains(&"prerelease".to_string())
-        ))?;
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+        let feed_url = self.get_search_url().await?;
+
+        let feed: NugetFeedSearch = HTTP_FETCH
+            .json(format!(
+                // semVerLevel=2.0.0 matches the official dotnet CLI: without it NuGet's
+                // search API hides packages whose versions are all SemVer 2.0.0 (e.g.
+                // roslyn-language-server), and omits SemVer2 versions from the returned
+                // version arrays of packages that are visible.
+                "{}?q={}&packageType=dotnettool&take=1&prerelease={}&semVerLevel=2.0.0",
+                feed_url,
+                &self.tool_name(),
+                true
+            ))
+            .await?;
 
         if feed.total_hits == 0 {
             return Err(eyre!("No tool found"));
@@ -48,15 +81,43 @@ impl Backend for DotnetBackend {
             return Err(eyre!("Tool {} not found", &self.tool_name()));
         }
 
-        Ok(data.versions.iter().map(|x| x.version.clone()).collect())
+        Ok(data
+            .versions
+            .iter()
+            .map(|x| VersionInfo {
+                version: x.version.clone(),
+                ..Default::default()
+            })
+            .collect())
     }
 
-    fn install_version_(
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> eyre::Result<Option<String>> {
+        // NuGet allows legacy 4-part versions, which do not parse as semver
+        // and keep using remote discovery. A full semver request is exact;
+        // `dotnet tool install --version` fails when it does not exist
+        // upstream.
+        Ok(versions::SemVer::new(version).map(|_| version.to_string()))
+    }
+
+    async fn install_version_(
         &self,
         ctx: &crate::install_context::InstallContext,
         tv: crate::toolset::ToolVersion,
     ) -> eyre::Result<crate::toolset::ToolVersion> {
-        SETTINGS.ensure_experimental("dotnet backend")?;
+        // Check if dotnet is available
+        self.warn_if_dependency_missing(
+            &ctx.config,
+            "dotnet",
+            &["dotnet"],
+            "To use dotnet tools with mise, you need to install .NET SDK first:\n\
+              mise use dotnet@latest\n\n\
+            Or install .NET SDK via https://dotnet.microsoft.com/download",
+        )
+        .await;
 
         let mut cli = CmdLineRunner::new("dotnet")
             .arg("tool")
@@ -69,32 +130,65 @@ impl Backend for DotnetBackend {
             cli = cli.arg("--version").arg(&tv.version);
         }
 
-        cli.with_pr(&ctx.pr)
-            .envs(self.dependency_env()?)
+        cli.with_pr(ctx.pr.as_ref())
+            .envs(self.dependency_env(&ctx.config).await?)
+            .env_values(tv.install_env())
             .execute()?;
 
         Ok(tv)
+    }
+
+    fn include_prereleases(&self, opts: &ToolVersionOptions) -> bool {
+        if Settings::get().prereleases {
+            return true;
+        }
+
+        DotnetOptions::new(opts).prerelease() || dotnet_legacy_prerelease_package_flag_enabled()
     }
 }
 
 impl DotnetBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba }
+        Self { ba: Arc::new(ba) }
     }
 
-    fn get_search_url(&self) -> eyre::Result<String> {
-        let nuget_registry = SETTINGS.dotnet.registry_url.as_str();
+    async fn get_search_url(&self) -> eyre::Result<String> {
+        let settings = Settings::get();
+        let nuget_registry = settings.dotnet.registry_url.as_str();
 
-        let services: NugetFeed = HTTP_FETCH.json(nuget_registry)?;
+        let services: NugetFeed = HTTP_FETCH.json(nuget_registry).await?;
 
         let feed = services
             .resources
             .iter()
             .find(|x| x.service_type == "SearchQueryService/3.5.0")
-            .ok_or_else(|| eyre!("No SearchQueryService/3.5.0 found"))?;
+            .or_else(|| {
+                services
+                    .resources
+                    .iter()
+                    .find(|x| x.service_type == "SearchQueryService")
+            })
+            .ok_or_else(|| eyre!("No SearchQueryService found"))?;
 
         Ok(feed.id.clone())
     }
+}
+
+fn dotnet_legacy_prerelease_package_flag_enabled() -> bool {
+    let enabled = Settings::get()
+        .dotnet
+        .package_flags
+        .iter()
+        .any(|flag| flag == "prerelease");
+    if enabled {
+        deprecated_at!(
+            "2026.11.0",
+            "2027.11.0",
+            "setting.dotnet.package_flags.prerelease",
+            "`dotnet.package_flags = [\"prerelease\"]` is deprecated. Use the `prerelease = true` tool option instead."
+        );
+    }
+    enabled
 }
 
 #[derive(serde::Deserialize)]
@@ -126,4 +220,82 @@ struct NugetFeedSearchData {
 #[derive(serde::Deserialize)]
 struct NugetFeedSearchDataVersion {
     version: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opts_with_prerelease(value: toml::Value) -> ToolVersionOptions {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert("prerelease".to_string(), value);
+        opts
+    }
+
+    #[tokio::test]
+    async fn exact_semver_versions_resolve_without_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = DotnetBackend::from_arg("dotnet:GitVersion.Tool".into());
+
+        assert_eq!(
+            backend
+                .resolve_exact_version(&config, "5.12.0")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("5.12.0")
+        );
+    }
+
+    #[tokio::test]
+    async fn non_semver_versions_require_remote_discovery() {
+        let config = Config::get().await.unwrap();
+        let backend = DotnetBackend::from_arg("dotnet:GitVersion.Tool".into());
+
+        // Legacy 4-part NuGet versions are not semver and must keep
+        // resolving against the remote version list.
+        for version in ["latest", "5", "5.12", "1.2.3.4"] {
+            assert_eq!(
+                backend
+                    .resolve_exact_version(&config, version)
+                    .await
+                    .unwrap(),
+                None,
+                "{version} should use remote discovery"
+            );
+        }
+    }
+
+    #[test]
+    fn dotnet_options_reads_prerelease() {
+        assert!(!DotnetOptions::new(&ToolVersionOptions::default()).prerelease());
+        assert!(DotnetOptions::new(&opts_with_prerelease(toml::Value::Boolean(true))).prerelease());
+        assert!(
+            !DotnetOptions::new(&opts_with_prerelease(toml::Value::Boolean(false))).prerelease()
+        );
+        assert!(
+            DotnetOptions::new(&opts_with_prerelease(toml::Value::String(
+                "true".to_string()
+            )))
+            .prerelease()
+        );
+        assert!(
+            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String(
+                "FALSE".to_string()
+            )))
+            .prerelease()
+        );
+        assert!(
+            DotnetOptions::new(&opts_with_prerelease(toml::Value::String("1".to_string())))
+                .prerelease()
+        );
+        assert!(
+            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String("0".to_string())))
+                .prerelease()
+        );
+        assert!(
+            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String("00".to_string())))
+                .prerelease()
+        );
+    }
 }

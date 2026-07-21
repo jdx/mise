@@ -13,3 +13,38 @@ mise config set env._.python.venv.path '.venv'
 assert "mise config get env._.python.venv.path" ".venv"
 mise config set env._.python.venv.create true
 assert "mise config get env._.python.venv.create" "true"
+mise config set settings.disable_tools node,rust,node
+assert "mise config get settings.disable_tools" '["node", "rust"]'
+assert_contains "cat mise.toml" 'disable_tools = ["node", "rust"]'
+mise config set settings.disable_tools ""
+assert "mise config get settings.disable_tools" "[]"
+mise config set settings.disable_tools node
+mise config set settings.disable_tools "[]"
+assert "mise config get settings.disable_tools" "[]"
+mise config set settings.disable_tools node
+mise config set settings.disable_tools " [] "
+assert "mise config get settings.disable_tools" "[]"
+mise config set settings.disable_tools "node,, rust,"
+assert "mise config get settings.disable_tools" '["node", "rust"]'
+mise config set settings.task.skip build,test,build
+assert "mise config get settings.task.skip" '["build", "test"]'
+
+# test "config set key=value" format
+mise config set env._.python.venv.path=.venv2
+assert "mise config get env._.python.venv.path" ".venv2"
+
+# test "config set" with no value and no = fails
+assert_fail "mise config set tools.node"
+
+# regression test for https://github.com/jdx/mise/discussions/3820:
+# descending into a key whose value is already a non-table scalar must fail
+# cleanly instead of panicking (>=2 levels) or silently doing nothing (1 level).
+printf '[env]\nFOO = "bar"\n' >mise.toml
+assert_fail "mise config set env.FOO.BAZ.QUX hello" "non-table value"
+assert_fail "mise config set env.FOO.BAZ hello" "non-table value"
+
+# descending into a pre-existing inline table updates the field and keeps siblings.
+printf '[env]\n_.python.venv = { path = ".venv", create = true }\n' >mise.toml
+mise config set env._.python.venv.path .venv2
+assert "mise config get env._.python.venv.path" ".venv2"
+assert "mise config get env._.python.venv.create" "true"

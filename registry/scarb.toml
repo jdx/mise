@@ -1,0 +1,2 @@
+backends = ["github:software-mansion/scarb", "asdf:software-mansion/asdf-scarb"]
+description = "The Cairo package manager"

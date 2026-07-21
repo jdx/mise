@@ -3,22 +3,27 @@ source: src/shell/xonsh.rs
 expression: "xonsh.activate(exe, \" --status\".into())"
 snapshot_kind: text
 ---
-from os               import environ
-import subprocess
-from xonsh.built_ins  import XSH
-
-def listen_prompt(): # Hook Events
-  execx($(/some/dir/mise hook-env --status -s xonsh))
-
-envx = XSH.env
-envx[   'MISE_SHELL'] = 'xonsh'
-environ['MISE_SHELL'] = envx.get_detyped('MISE_SHELL')
-XSH.builtins.events.on_pre_prompt(listen_prompt) # Activate hook: before showing the prompt
+from xonsh.built_ins import XSH
 
 def _mise(args):
   if args and args[0] in ('deactivate', 'shell', 'sh'):
-    execx(subprocess.run(['command', 'mise', *args], stdout=subprocess.PIPE).stdout.decode())
+    execx($(mise @(args)))
   else:
-    subprocess.run(['command', 'mise', *args])
+    mise @(args)
 
+XSH.env['MISE_SHELL'] = 'xonsh'
 XSH.aliases['mise'] = _mise
+import shlex
+import subprocess
+
+extra_args = shlex.split(' --status')
+def mise_hook(**kwargs): # Hook Events
+    script = subprocess.run(
+        ['/some/dir/mise', 'hook-env', *extra_args, '-s', 'xonsh'],
+        env=XSH.env.detype(),
+        stdout=subprocess.PIPE,
+    ).stdout.decode()
+    execx(script)
+
+XSH.builtins.events.on_pre_prompt(mise_hook) # Activate hook: before showing the prompt
+XSH.builtins.events.on_chdir(mise_hook) # Activate hook: when the working directory changes

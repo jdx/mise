@@ -1,0 +1,2 @@
+backends = ["github:jondot/hygen", "asdf:brentjanderson/asdf-hygen"]
+description = "The simple, fast, and scalable code generator that lives in your project"

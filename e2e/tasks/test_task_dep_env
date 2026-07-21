@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Test passing env vars to task dependencies
+
+# Test shell-style env var syntax: "FOO=bar mytask"
+cat <<EOF >mise.toml
+[tasks.show-env]
+run = 'echo "FOO=\$FOO BAZ=\$BAZ"'
+
+[tasks.with-env-string]
+depends = ["FOO=hello show-env"]
+run = 'echo done'
+
+[tasks.with-multiple-env]
+depends = ["FOO=hello BAZ=world show-env"]
+run = 'echo done'
+EOF
+
+assert_contains "mise run with-env-string" "FOO=hello"
+assert_contains "mise run with-multiple-env" "FOO=hello BAZ=world"
+
+# Test structured object syntax: { task = "mytask", env = { FOO = "bar" } }
+cat <<EOF >mise.toml
+[tasks.show-env]
+run = 'echo "FOO=\$FOO BAZ=\$BAZ"'
+
+[tasks.with-env-object]
+depends = [{ task = "show-env", env = { FOO = "hello", BAZ = "world" } }]
+run = 'echo done'
+
+[tasks.with-env-and-args]
+depends = [{ task = "echo-args", env = { FOO = "test" }, args = ["arg1", "arg2"] }]
+run = 'echo done'
+
+[tasks.echo-args]
+run = 'echo "FOO=\$FOO" && echo'
+EOF
+
+assert_contains "mise run with-env-object" "FOO=hello BAZ=world"
+assert_contains "mise run with-env-and-args" "FOO=test"
+# Args are appended to the command line, verify they appear in output
+assert_contains "mise run with-env-and-args" "arg1 arg2"

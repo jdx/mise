@@ -1,0 +1,5 @@
+backends = [
+  "aqua:LuaLS/lua-language-server",
+  "asdf:bellini666/asdf-lua-language-server",
+]
+description = "A language server that offers Lua language support - programmed in Lua"

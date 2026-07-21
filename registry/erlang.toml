@@ -1,0 +1,2 @@
+backends = ["core:erlang"]
+description = "erlang"

@@ -1,48 +1,37 @@
-use crate::hash;
-use std::collections::BTreeMap;
-use std::fs;
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::io::Write;
+use crate::errors::Error;
+use std::collections::HashSet;
 use std::iter::once;
-use std::ops::Deref;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
-use std::{panic, thread};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
 use super::args::ToolArg;
-use crate::cli::Cli;
-use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS};
-use crate::env_diff::EnvMap;
-use crate::errors::Error;
+use crate::cli::{Cli, unescape_task_args};
+use crate::config::{Config, Settings};
+use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
+use crate::duration;
+use crate::env;
 use crate::file::display_path;
-use crate::task::task_file_providers::TaskFileProvidersBuilder;
-use crate::task::{Deps, GetMatchingExt, Task};
-use crate::toolset::{InstallOptions, ToolsetBuilder};
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::SingleReport;
-use crate::ui::{ctrlc, prompt, style, time};
-use crate::{dirs, env, exit, file, ui};
+use crate::task::has_any_usage_spec;
+use crate::task::task_helpers::task_needs_permit;
+use crate::task::task_list::{get_task_lists, resolve_depends};
+use crate::task::task_output::TaskOutput;
+use crate::task::task_output_handler::OutputHandler;
+use crate::task::{Deps, Task};
+use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
+use crate::ui::{ctrlc, info, style};
 use clap::{CommandFactory, ValueHint};
-use console::Term;
-use crossbeam_channel::{select, unbounded};
-use demand::{DemandOption, Select};
-use duct::IntoExecutablePath;
-use eyre::{Result, bail, ensure, eyre};
-use glob::glob;
-use indexmap::IndexMap;
+use eyre::{Result, bail, eyre};
+use futures_util::FutureExt;
 use itertools::Itertools;
-#[cfg(unix)]
-use nix::sys::signal::SIGTERM;
-use xx::regex;
+use std::panic::AssertUnwindSafe;
+use tokio::sync::Mutex;
 
 /// Run task(s)
 ///
-/// This command will run a tasks, or multiple tasks in parallel.
+/// This command will run a task, or multiple tasks in parallel.
 /// Tasks may have dependencies on other tasks or on source files.
-/// If source is configured on a tasks, it will only run if the source
+/// If source is configured on a task, it will only run if the source
 /// files have changed.
 ///
 /// Tasks can be defined in mise.toml or as standalone scripts.
@@ -84,58 +73,17 @@ pub struct Run {
     #[clap(allow_hyphen_values = true, hide = true, last = true)]
     pub args_last: Vec<String>,
 
-    /// Change to this directory before executing the command
-    #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
-    pub cd: Option<PathBuf>,
-
     /// Continue running tasks even if one fails
     #[clap(long, short = 'c', verbatim_doc_comment)]
     pub continue_on_error: bool,
 
-    /// Don't actually run the tasks(s), just print them in order of execution
-    #[clap(long, short = 'n', verbatim_doc_comment)]
-    pub dry_run: bool,
+    /// Change to this directory before executing the command
+    #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
+    pub cd: Option<PathBuf>,
 
     /// Force the tasks to run even if outputs are up to date
     #[clap(long, short, verbatim_doc_comment)]
     pub force: bool,
-
-    /// Print stdout/stderr by line, prefixed with the task's label
-    /// Defaults to true if --jobs > 1
-    /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
-    #[clap(
-        long,
-        short,
-        verbatim_doc_comment,
-        hide = true,
-        overrides_with = "interleave"
-    )]
-    pub prefix: bool,
-
-    /// Print directly to stdout/stderr instead of by line
-    /// Defaults to true if --jobs == 1
-    /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
-    #[clap(
-        long,
-        short,
-        verbatim_doc_comment,
-        hide = true,
-        overrides_with = "prefix"
-    )]
-    pub interleave: bool,
-
-    /// Shell to use to run toml tasks
-    ///
-    /// Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
-    /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
-    /// Or it can be overridden with the `shell` property on a task.
-    #[clap(long, short, verbatim_doc_comment)]
-    pub shell: Option<String>,
-
-    /// Tool(s) to run in addition to what is in mise.toml files
-    /// e.g.: node@20 python@3.10
-    #[clap(short, long, value_name = "TOOL@VERSION")]
-    pub tool: Vec<ToolArg>,
 
     /// Number of tasks to run in parallel
     /// [default: 4]
@@ -143,37 +91,9 @@ pub struct Run {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
-    /// Read/write directly to stdin/stdout/stderr instead of by line
-    /// Redactions are not applied with this option
-    /// Configure with `raw` config or `MISE_RAW` env var
-    #[clap(long, short, verbatim_doc_comment)]
-    pub raw: bool,
-
-    /// Shows elapsed time after each task completes
-    ///
-    /// Default to always show with `MISE_TASK_TIMINGS=1`
-    #[clap(long, alias = "timing", verbatim_doc_comment, hide = true)]
-    pub timings: bool,
-
-    /// Hides elapsed time after each task completes
-    ///
-    /// Default to always hide with `MISE_TASK_TIMINGS=0`
-    #[clap(long, alias = "no-timing", verbatim_doc_comment)]
-    pub no_timings: bool,
-
-    /// Don't show extra output
-    #[clap(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
-    pub quiet: bool,
-
-    /// Don't show any output except for errors
-    #[clap(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
-    pub silent: bool,
-
-    #[clap(skip)]
-    pub is_linear: bool,
-
-    #[clap(skip)]
-    pub failed_tasks: Mutex<Vec<(Task, i32)>>,
+    /// Don't actually run the task(s), just print them in order of execution
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    pub dry_run: bool,
 
     /// Change how tasks information is output when running tasks
     ///
@@ -187,27 +107,129 @@ pub struct Run {
     #[clap(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
     pub output: Option<TaskOutput>,
 
+    /// Don't show extra output
+    #[clap(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
+    pub quiet: bool,
+
+    /// Read/write directly to stdin/stdout/stderr instead of by line
+    /// Redactions are not applied with this option
+    /// Configure with `raw` config or `MISE_RAW` env var
+    #[clap(long, short, verbatim_doc_comment)]
+    pub raw: bool,
+
+    /// Shell to use to run toml tasks
+    ///
+    /// Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
+    /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
+    /// Or it can be overridden with the `shell` property on a task.
+    #[clap(long, short, verbatim_doc_comment)]
+    pub shell: Option<String>,
+
+    /// Don't show any output except for errors
+    #[clap(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
+    pub silent: bool,
+
+    /// Tool(s) to run in addition to what is in mise.toml files
+    /// e.g.: node@20 python@3.10
+    #[clap(short, long, value_name = "TOOL@VERSION")]
+    pub tool: Vec<ToolArg>,
+
+    #[clap(skip)]
+    pub is_linear: bool,
+
+    /// Allow specific env var through (implies --deny-env for everything else)
+    /// Supports wildcards, e.g. --allow-env='MYAPP_*'
+    #[clap(long, value_name = "VAR", verbatim_doc_comment)]
+    pub allow_env: Vec<String>,
+
+    /// Allow network to specific host (implies --deny-net for everything else)
+    #[clap(long, value_name = "HOST", verbatim_doc_comment)]
+    pub allow_net: Vec<String>,
+
+    /// Allow reads from specific path (implies --deny-read for everything else)
+    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_read: Vec<std::path::PathBuf>,
+
+    /// Allow writes to specific path (implies --deny-write for everything else)
+    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_write: Vec<std::path::PathBuf>,
+
+    /// Block reads, writes, network, and env vars
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_all: bool,
+
+    /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_env: bool,
+
+    /// Block all network access
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_net: bool,
+
+    /// Block filesystem reads (system libs and tool dirs still accessible)
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_read: bool,
+
+    /// Block all filesystem writes
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_write: bool,
+
+    /// Bypass the environment cache and recompute the environment
+    #[clap(long)]
+    pub fresh_env: bool,
+
+    /// Do not use cache on remote tasks
+    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
+    pub no_cache: bool,
+
+    /// Skip automatic dependency preparation
+    #[clap(long)]
+    pub no_deps: bool,
+
+    /// Hides elapsed time after each task completes
+    ///
+    /// Default to always hide with `MISE_TASK_TIMINGS=0`
+    #[clap(long, alias = "no-timing", verbatim_doc_comment)]
+    pub no_timings: bool,
+
+    /// Run only the specified tasks skipping all dependencies
+    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_SKIP_DEPENDS")]
+    pub skip_deps: bool,
+
+    /// Skip installing tools before running tasks
+    ///
+    /// Can also be set persistently with the `task.run_auto_install` setting
+    /// or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
+    #[clap(long, verbatim_doc_comment)]
+    pub skip_tools: bool,
+
+    /// Timeout for the task to complete
+    /// e.g.: 30s, 5m
+    #[clap(long, verbatim_doc_comment)]
+    pub timeout: Option<String>,
+
+    /// Shows elapsed time after each task completes
+    ///
+    /// Default to always show with `MISE_TASK_TIMINGS=1`
+    #[clap(long, alias = "timing", verbatim_doc_comment, hide = true)]
+    pub timings: bool,
+
     #[clap(skip)]
     pub tmpdir: PathBuf,
 
     #[clap(skip)]
-    pub keep_order_output: Mutex<IndexMap<Task, KeepOrderOutputs>>,
+    pub output_handler: Option<OutputHandler>,
 
     #[clap(skip)]
-    pub task_prs: IndexMap<Task, Arc<Box<dyn SingleReport>>>,
+    pub context_builder: crate::task::task_context_builder::TaskContextBuilder,
 
     #[clap(skip)]
-    pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, String)>>>,
-
-    // Do not use cache on remote tasks
-    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
-    pub no_cache: bool,
+    pub executor: Option<crate::task::task_executor::TaskExecutor>,
 }
 
-type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
-
 impl Run {
-    pub fn run(mut self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
+        // Check help flags before doing any work
         if self.task == "-h" {
             self.get_clap_command().print_help()?;
             return Ok(());
@@ -216,16 +238,218 @@ impl Run {
             self.get_clap_command().print_long_help()?;
             return Ok(());
         }
+
+        Settings::ensure_not_safe("running tasks")?;
+
+        // Unescape task args early so we can check for help flags
+        self.args = unescape_task_args(&self.args);
+        self.args_last = unescape_task_args(&self.args_last);
+
+        // Temporarily unset cache key to force fresh env computation
+        if self.fresh_env {
+            env::reset_env_cache_key();
+        }
+
+        // Check if --help or -h is in the task args BEFORE toolset/deps
+        // NOTE: Only check self.args, not self.args_last, because args_last contains
+        // arguments after explicit -- which should always be passed through to the task
+        let has_help_in_task_args =
+            self.args.contains(&"--help".to_string()) || self.args.contains(&"-h".to_string());
+
+        let mut config = Config::get().await?;
+
+        // Handle task help early to avoid unnecessary toolset/deps work
+        if has_help_in_task_args {
+            // Build args list to get the task (filter out --help/-h for task lookup)
+            let args = once(self.task.clone())
+                .chain(
+                    self.args
+                        .iter()
+                        .filter(|a| *a != "--help" && *a != "-h")
+                        .cloned(),
+                )
+                .collect_vec();
+
+            let task_list = get_task_lists(&config, &args, false, false).await?;
+
+            if let Some(task) = task_list.first() {
+                // raw_args tasks act as proxies for tools that handle their
+                // own --help — fall through to normal execution so the flag
+                // reaches the underlying command instead of mise.
+                if !task.raw_args {
+                    // Get usage spec to check if task has defined args/flags
+                    let spec = task.parse_usage_spec_for_display(&config).await?;
+
+                    if has_any_usage_spec(&spec) {
+                        // Task has usage spec defined, render help using usage library
+                        println!("{}", render_usage_help(&spec, &self.args));
+                    } else {
+                        // Task has no usage defined, show basic task info
+                        display_task_help(task)?;
+                    }
+                    return Ok(());
+                }
+            } else {
+                // No task found, show run command help
+                self.get_clap_command().print_long_help()?;
+                return Ok(());
+            }
+        }
+
+        if !self.skip_deps {
+            self.skip_deps = Settings::get().task.skip_depends;
+        }
+
         time!("run init");
         let tmpdir = tempfile::tempdir()?;
         self.tmpdir = tmpdir.path().to_path_buf();
+
+        // Build args list - don't include args_last yet, they'll be added after task resolution
         let args = once(self.task.clone())
             .chain(self.args.clone())
-            .chain(self.args_last.clone())
             .collect_vec();
-        let task_list = get_task_lists(&args, true)?;
+
+        let mut task_list = get_task_lists(&config, &args, true, self.skip_deps).await?;
+
+        // Args after -- go directly to tasks (no prefix). They are also
+        // recorded on `trailing_args` so the task renderer can detect
+        // `-- --help` / `-- -h` and bypass the usage parser for them.
+        if !self.args_last.is_empty() {
+            for task in &mut task_list {
+                task.args.extend(self.args_last.clone());
+                task.trailing_args = self.args_last.clone();
+            }
+        }
+
+        // Fetch remote task files before parsing usage specs, so that
+        // file-based remote tasks have their files resolved to local cache.
+        let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
+        fetcher.fetch_tasks(&config, &mut task_list).await?;
+
+        // Re-render dependency templates with parent task's usage arg/flag values.
+        // This enables patterns like: depends = ["child {{usage.app}}"]
+        for task in &mut task_list {
+            let has_usage_deps = |raw: &Option<Vec<_>>| {
+                raw.as_ref()
+                    .is_some_and(|r| r.iter().any(crate::task::dep_has_usage_ref))
+            };
+            if has_usage_deps(&task.depends_raw)
+                || has_usage_deps(&task.depends_post_raw)
+                || has_usage_deps(&task.wait_for_raw)
+            {
+                let usage_values = crate::task::parse_usage_values_from_task(&config, task).await?;
+                if !usage_values.is_empty() {
+                    task.render_depends_with_usage(&config, &usage_values)
+                        .await?;
+                }
+            }
+        }
         time!("run get_task_lists");
-        self.parallelize_tasks(task_list)?;
+
+        // Resolve transitive dependencies once upfront so we can:
+        // 1. Discover deps providers from monorepo subdirectory configs
+        // 2. Include monorepo subdirectory tools in the toolset before installing
+        // 3. Reuse the resolved list for execution (avoiding duplicate work)
+        let resolved_tasks = resolve_depends(&config, task_list).await?;
+
+        // Collect subdirectory config files from all resolved tasks. In
+        // monorepos these come from sub mise.toml files referenced via the
+        // `//sub:taskname` syntax — they aren't in `config.config_files`.
+        let subdir_configs: Vec<_> = resolved_tasks
+            .iter()
+            .filter_map(|task| task.cf.clone())
+            .collect();
+
+        // Build the toolset using root config files plus subdir configs from
+        // resolved tasks, so tools declared in monorepo subdirs are installed
+        // before deps (e.g. `[deps.bun] auto=true`) try to use them.
+        let mut combined_configs = config.config_files.clone();
+        for cf in &subdir_configs {
+            combined_configs
+                .entry(cf.get_path().to_path_buf())
+                .or_insert_with(|| cf.clone());
+        }
+
+        // Build and install toolset only after tasks resolve. A naked run that
+        // does not match any task should fail without installing project tools.
+        // Task startup should not fetch remote version metadata just to build
+        // the environment. If tools are missing and auto-install is enabled,
+        // install_missing_versions re-resolves those specific requests online.
+        let resolve_options = ResolveOptions {
+            offline: true,
+            ..Default::default()
+        };
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .with_default_to_latest(true)
+            .with_config_files(combined_configs)
+            .with_resolve_options(resolve_options)
+            .build(&config)
+            .await?;
+
+        let opts = InstallOptions {
+            jobs: self.jobs,
+            raw: self.raw,
+            dry_run: self.dry_run,
+            missing_args_only: !Settings::get().task.run_auto_install,
+            skip_auto_install: !Settings::get().task.run_auto_install
+                || !Settings::get().auto_install,
+            ..Default::default()
+        };
+        let previewed_tools = if !self.skip_tools {
+            let (installed, _) = ts.install_missing_versions(&mut config, &opts).await?;
+            if self.dry_run {
+                installed.into_iter().collect()
+            } else {
+                HashSet::new()
+            }
+        } else {
+            HashSet::new()
+        };
+
+        // Run auto-enabled deps steps (unless --no-deps)
+        if !self.no_deps {
+            let env = ts.env_with_path(&config).await?;
+            let mut engine = DepsEngine::new(&config)?;
+
+            if !subdir_configs.is_empty() {
+                engine.add_config_files(subdir_configs);
+            }
+
+            let result = engine
+                .run(DepsOptions {
+                    auto_only: true, // Only run providers with auto=true
+                    dry_run: self.dry_run,
+                    env,
+                    ..Default::default()
+                })
+                .await?;
+            for step in result.steps {
+                if let DepsStepResult::WouldRun(id, reason) = step {
+                    info!("[dry-run] Would install dependency: {id} ({reason})");
+                }
+            }
+        }
+
+        // Apply global timeout for entire run if configured
+        let timeout = if let Some(timeout_str) = &self.timeout {
+            Some(duration::parse_duration(timeout_str)?)
+        } else {
+            Settings::get().task_timeout_duration()
+        };
+
+        if let Some(timeout) = timeout {
+            tokio::time::timeout(
+                timeout,
+                self.parallelize_tasks(config, resolved_tasks, previewed_tools),
+            )
+            .await
+            .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
+        } else {
+            self.parallelize_tasks(config, resolved_tasks, previewed_tools)
+                .await?
+        }
+
         time!("run done");
         Ok(())
     }
@@ -238,14 +462,257 @@ impl Run {
             .clone()
     }
 
-    fn parallelize_tasks(mut self, mut tasks: Vec<Task>) -> Result<()> {
-        time!("paralellize_tasks start");
+    async fn parallelize_tasks(
+        mut self,
+        mut config: Arc<Config>,
+        tasks: Vec<Task>,
+        previewed_tools: HashSet<ToolVersion>,
+    ) -> Result<()> {
+        time!("parallelize_tasks start");
 
+        // Step 1: Prepare tasks (resolve dependencies, fetch, validate)
+        let tasks = self.prepare_tasks(&config, tasks).await?;
+        let num_tasks = tasks.all().count();
+
+        // Step 2: Setup output handler and validate tasks
+        self.setup_output_and_validate(&tasks)?;
+        self.output = Some(self.output(None));
+
+        // Step 3: Install tools needed by tasks
+        if !self.skip_tools {
+            self.install_task_tools(&mut config, &tasks, &previewed_tools)
+                .await?;
+        }
+
+        // Step 4: Create TaskExecutor after tool installation
+        self.setup_executor()?;
+
+        // Disable exit-on-ctrl-c so tasks can handle SIGINT gracefully
         ctrlc::exit_on_ctrl_c(false);
 
-        if self.output(None) == TaskOutput::Timed {
-            let timed_outputs = self.timed_outputs.clone();
-            thread::spawn(move || {
+        let timer = std::time::Instant::now();
+        let this = Arc::new(self);
+        let config = config.clone();
+
+        // Step 4: Initialize scheduler and run tasks
+        let mut scheduler = crate::task::task_scheduler::Scheduler::new(this.jobs());
+        let main_deps = Arc::new(Mutex::new(tasks));
+
+        // Pump deps leaves into scheduler
+        let mut main_done_rx = scheduler.pump_deps(main_deps.clone()).await;
+        let spawn_context = scheduler.spawn_context(config.clone());
+        scheduler
+            .run_loop(
+                &mut main_done_rx,
+                main_deps.clone(),
+                || this.is_stopping(),
+                this.continue_on_error,
+                |task, deps_for_remove| {
+                    let this = this.clone();
+                    let spawn_context = spawn_context.clone();
+                    async move {
+                        Self::spawn_sched_job(this, task, deps_for_remove, spawn_context).await
+                    }
+                },
+            )
+            .await?;
+
+        scheduler.join_all(this.continue_on_error).await?;
+
+        // Step 5: Display results and handle failures
+        let results_display = crate::task::task_results_display::TaskResultsDisplay::new(
+            this.output_handler.clone().unwrap(),
+            this.executor.as_ref().unwrap().failed_tasks.clone(),
+            this.continue_on_error,
+            this.timings(),
+        );
+        results_display.display_results(num_tasks, timer);
+        time!("parallelize_tasks done");
+
+        Ok(())
+    }
+
+    async fn spawn_sched_job(
+        this: Arc<Self>,
+        task: Task,
+        deps_for_remove: Arc<Mutex<Deps>>,
+        ctx: crate::task::task_scheduler::SpawnContext,
+    ) -> Result<()> {
+        // If we're already stopping due to a previous failure and not in
+        // continue-on-error mode, do not launch this task unless it's a
+        // post-dependency (cleanup task that should run even on failure).
+        if this.is_stopping() && !this.continue_on_error {
+            let mut deps = deps_for_remove.lock().await;
+            if !deps.is_runnable_post_dep(&task) {
+                trace!(
+                    "aborting spawn before start (not continue-on-error): {} {}",
+                    task.name,
+                    task.args.join(" ")
+                );
+                deps.remove(&task);
+                return Ok(());
+            }
+            drop(deps);
+        }
+        let needs_permit = task_needs_permit(&task);
+        let permit_opt = if needs_permit {
+            let wait_start = std::time::Instant::now();
+            let p = Some(ctx.semaphore.clone().acquire_owned().await?);
+            trace!(
+                "semaphore acquired for {} after {}ms",
+                task.name,
+                wait_start.elapsed().as_millis()
+            );
+            // If a failure occurred while we were waiting for a permit and we're not
+            // in continue-on-error mode, skip launching this task unless it's a
+            // post-dependency (cleanup task). This prevents subsequently queued
+            // tasks from running after failure, while still allowing cleanup.
+            if this.is_stopping() && !this.continue_on_error {
+                let mut deps = deps_for_remove.lock().await;
+                if !deps.is_runnable_post_dep(&task) {
+                    trace!(
+                        "aborting spawn after failure (not continue-on-error): {} {}",
+                        task.name,
+                        task.args.join(" ")
+                    );
+                    // Remove from deps so the scheduler can drain and not hang
+                    deps.remove(&task);
+                    return Ok(());
+                }
+                drop(deps);
+            }
+            p
+        } else {
+            trace!("no semaphore needed for orchestrator task: {}", task.name);
+            None
+        };
+
+        ctx.in_flight
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let in_flight_c = ctx.in_flight.clone();
+        trace!("running task: {task}");
+        // Mark task as executed synchronously before spawning so that the
+        // scheduler's failure-cleanup path (which checks is_runnable_post_dep)
+        // always sees the parent in `executed` — avoiding a race where a
+        // concurrent task fails between spawn and first poll.
+        deps_for_remove.lock().await.mark_executed(&task);
+        let semaphore = ctx.semaphore.clone();
+        ctx.jset.lock().await.spawn(async move {
+            let mut permit = permit_opt;
+            let (completed, dep_ran) = {
+                let deps = deps_for_remove.lock().await;
+                (deps.handled_task_keys(), deps.any_dep_ran(&task))
+            };
+            let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(
+                &task,
+                &ctx.config,
+                ctx.sched_tx.clone(),
+                completed,
+                dep_ran,
+                semaphore,
+                &mut permit,
+            ))
+            .catch_unwind()
+            .await
+            {
+                Ok(result) => (result, false),
+                Err(payload) => (
+                    Err(eyre!("task panicked: {}", panic_payload_message(&payload))),
+                    true,
+                ),
+            };
+            // If the task actually ran (not skipped) and has sources defined,
+            // mark it so dependents' source freshness checks are invalidated.
+            // Tasks without sources always run and should not trigger invalidation.
+            if let Ok(true) = &result
+                && !task.sources.is_empty()
+            {
+                deps_for_remove.lock().await.mark_ran(&task);
+            }
+            if let Err(err) = &result {
+                let status = if panicked {
+                    Some(1)
+                } else {
+                    Error::get_exit_status(err)
+                };
+                if !this.is_stopping() && (panicked || status.is_none()) {
+                    let prefix = task.estyled_prefix();
+                    if Settings::get().verbose {
+                        this.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
+                    } else {
+                        this.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
+                        let mut current_err = err.source();
+                        while let Some(e) = current_err {
+                            this.eprint(&task, &prefix, &format!("{} {e}", style::ered("ERROR")));
+                            current_err = e.source();
+                        }
+                    };
+                }
+                this.add_failed_task(task.clone(), status);
+                // SIGTERM any still-running siblings so we exit promptly on
+                // failure instead of waiting for them to finish naturally.
+                // run_loop only sees `is_stopping` when it next iterates,
+                // which doesn't happen while it's awaiting an idle select —
+                // so the kill has to be triggered from here.
+                if !this.continue_on_error {
+                    debug!("task {} failed, killing siblings", task.name);
+                    #[cfg(unix)]
+                    crate::cmd::CmdLineRunner::kill_all(nix::sys::signal::SIGTERM);
+                    #[cfg(windows)]
+                    crate::cmd::CmdLineRunner::kill_all();
+                }
+            }
+            if let Some(oh) = &this.output_handler
+                && oh.output(Some(&task)) == TaskOutput::KeepOrder
+            {
+                oh.keep_order_state.lock().unwrap().on_task_finished(&task);
+            }
+            deps_for_remove.lock().await.remove(&task);
+            trace!("deps removed: {} {}", task.name, task.args.join(" "));
+            in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            result.map(|_| ())
+        });
+
+        Ok(())
+    }
+
+    // ============================================================================
+    // High-level workflow methods
+    // ============================================================================
+
+    /// Prepare tasks: fetch remote tasks and create dependency graph
+    /// Dependencies should already be resolved via resolve_depends() before calling this.
+    async fn prepare_tasks(&mut self, config: &Arc<Config>, mut tasks: Vec<Task>) -> Result<Deps> {
+        let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
+        fetcher.fetch_tasks(config, &mut tasks).await?;
+        let mut tasks = Deps::new(config, tasks).await?;
+        tasks.mark_ambiguous_prefixes();
+        self.is_linear = tasks.is_linear();
+        Ok(tasks)
+    }
+
+    /// Initialize output handler and validate tasks
+    fn setup_output_and_validate(&mut self, tasks: &Deps) -> Result<()> {
+        // Initialize OutputHandler AFTER is_linear is determined
+        let output_config = crate::task::task_output_handler::OutputHandlerConfig {
+            output: self.output,
+            silent: self.silent,
+            quiet: self.quiet,
+            raw: self.raw,
+            is_linear: self.is_linear,
+            jobs: self.jobs,
+        };
+        self.output_handler = Some(OutputHandler::new(output_config));
+
+        // Spawn the timed-output printer if any task resolves to the Timed style
+        // (run-wide default OR a per-task `output = "timed"` override).
+        let any_timed = tasks
+            .all()
+            .any(|task| self.output(Some(task)) == TaskOutput::Timed);
+        if any_timed {
+            let timed_outputs = self.output_handler.as_ref().unwrap().timed_outputs.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_millis(100));
                 loop {
                     {
                         let mut outputs = timed_outputs.lock().unwrap();
@@ -261,846 +728,258 @@ impl Run {
                             }
                         }
                     }
-                    thread::sleep(Duration::from_millis(100));
+                    interval.tick().await;
                 }
             });
         }
 
-        self.fetch_tasks(&mut tasks)?;
-        let tasks = Deps::new(tasks)?;
+        // Validate and initialize task output
         for task in tasks.all() {
             self.validate_task(task)?;
-            match self.output(Some(task)) {
-                TaskOutput::KeepOrder => {
-                    self.keep_order_output
-                        .lock()
-                        .unwrap()
-                        .insert(task.clone(), Default::default());
-                }
-                TaskOutput::Replacing => {
-                    let pr = MultiProgressReport::get().add(&task.estyled_prefix());
-                    self.task_prs.insert(task.clone(), Arc::new(pr));
-                }
-                _ => {}
-            }
+            self.output_handler.as_mut().unwrap().init_task(task);
         }
-
-        let num_tasks = tasks.all().count();
-        self.is_linear = tasks.is_linear();
-        self.output = Some(self.output(None));
-
-        let mut all_tools = self.tool.clone();
-        for t in tasks.all() {
-            for (k, v) in &t.tools {
-                all_tools.push(format!("{}@{}", k, v).parse()?);
-            }
-        }
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&all_tools)
-            .build(&Config::get())?;
-
-        ts.install_missing_versions(&InstallOptions {
-            missing_args_only: !SETTINGS.task_run_auto_install,
-            ..Default::default()
-        })?;
-
-        let tasks = Mutex::new(tasks);
-        let timer = std::time::Instant::now();
-
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(self.jobs() + 1)
-            .build()?;
-        pool.scope(|s| {
-            let (tx_err, rx_err) = unbounded();
-            let run = |task: &Task| {
-                let t = task.clone();
-                let tx_err = tx_err.clone();
-                s.spawn(|_| {
-                    let task = t;
-                    let tx_err = tx_err;
-                    let prefix = task.estyled_prefix();
-                    panic::set_hook(Box::new(move |info| {
-                        prefix_eprintln!(prefix, "panic in task: {info}");
-                        exit(1);
-                    }));
-                    if !self.is_stopping() {
-                        trace!("running task: {task}");
-                        if let Err(err) = self.run_task(&task) {
-                            let status = Error::get_exit_status(&err);
-                            if !self.is_stopping() && status.is_none() {
-                                // only show this if it's the first failure, or we haven't killed all the remaining tasks
-                                // otherwise we'll get unhelpful error messages about being killed by mise which we expect
-                                let prefix = task.estyled_prefix();
-                                let err_body = if SETTINGS.verbose {
-                                    format!("{} {err:?}", style::ered("ERROR"))
-                                } else {
-                                    format!("{} {err}", style::ered("ERROR"))
-                                };
-                                self.eprint(&task, &prefix, &err_body);
-                            }
-                            let _ = tx_err.send((task.clone(), status));
-                        }
-                    }
-                    tasks.lock().unwrap().remove(&task);
-                });
-            };
-            let rx = tasks.lock().unwrap().subscribe();
-            while !self.is_stopping() {
-                select! {
-                    recv(rx) -> task => { // receive a task from Deps
-                        if let Some(task) = task.unwrap() {
-                            run(&task);
-                        }else {
-                            // we get the None value which means the channel closes
-                            break;
-                        }
-                    }
-                    recv(rx_err) -> task => { // a task errored
-                        let (task, status) = task.unwrap();
-                        self.add_failed_task(task, status);
-                        if !self.continue_on_error {
-                            #[cfg(unix)]
-                            CmdLineRunner::kill_all(SIGTERM); // start killing other running tasks
-                            #[cfg(windows)]
-                            CmdLineRunner::kill_all();
-                        }
-                    }
-                }
-            }
-        });
-
-        if let Some((task, status)) = self.failed_tasks.lock().unwrap().first() {
-            let prefix = task.estyled_prefix();
-            self.eprint(
-                task,
-                &prefix,
-                &format!("{} task failed", style::ered("ERROR")),
-            );
-            exit(*status);
-        }
-
-        if self.timings() && num_tasks > 1 && *env::MISE_TASK_LEVEL == 0 {
-            let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
-            eprintln!("{}", style::edim(msg));
-        };
-
-        if self.output(None) == TaskOutput::KeepOrder {
-            // TODO: display these as tasks complete in order somehow rather than waiting until everything is done
-            let output = self.keep_order_output.lock().unwrap();
-            for (out, err) in output.values() {
-                for (prefix, line) in out {
-                    if console::colors_enabled() {
-                        prefix_println!(prefix, "{line}\x1b[0m");
-                    } else {
-                        prefix_println!(prefix, "{line}");
-                    }
-                }
-                for (prefix, line) in err {
-                    if console::colors_enabled_stderr() {
-                        prefix_eprintln!(prefix, "{line}\x1b[0m");
-                    } else {
-                        prefix_eprintln!(prefix, "{line}");
-                    }
-                }
-            }
-        }
-        time!("parallelize_tasks done");
 
         Ok(())
     }
+
+    /// Create TaskExecutor after tool installation to ensure caches are populated
+    fn setup_executor(&mut self) -> Result<()> {
+        let executor_config = crate::task::task_executor::TaskExecutorConfig {
+            force: self.force,
+            cd: self.cd.clone(),
+            shell: self.shell.clone(),
+            tool: self.tool.clone(),
+            timings: self.timings,
+            continue_on_error: self.continue_on_error,
+            dry_run: self.dry_run,
+            skip_deps: self.skip_deps,
+            sandbox: crate::sandbox::SandboxConfig::from_settings_and_cli(
+                &Settings::get().sandbox,
+                self.deny_all,
+                crate::sandbox::SandboxConfig {
+                    deny_read: self.deny_read,
+                    deny_write: self.deny_write,
+                    deny_net: self.deny_net,
+                    deny_env: self.deny_env,
+                    allow_read: self.allow_read.clone(),
+                    allow_write: self.allow_write.clone(),
+                    allow_net: self.allow_net.clone(),
+                    allow_env: self.allow_env.clone(),
+                },
+            ),
+        };
+        self.executor = Some(crate::task::task_executor::TaskExecutor::new(
+            self.context_builder.clone(),
+            self.output_handler.clone().unwrap(),
+            executor_config,
+        ));
+
+        Ok(())
+    }
+
+    /// Collect and install all tools needed by tasks
+    async fn install_task_tools(
+        &self,
+        config: &mut Arc<Config>,
+        tasks: &Deps,
+        previewed_tools: &HashSet<ToolVersion>,
+    ) -> Result<()> {
+        let installer = crate::task::task_tool_installer::TaskToolInstaller::new(
+            &self.context_builder,
+            &self.tool,
+        );
+        installer
+            .install_tools(config, tasks, self.dry_run, previewed_tools)
+            .await
+    }
+
+    // ============================================================================
+    // Helper methods
+    // ============================================================================
 
     fn eprint(&self, task: &Task, prefix: &str, line: &str) {
-        match self.output(Some(task)) {
-            TaskOutput::Replacing => {
-                let pr = self.task_prs.get(task).unwrap().clone();
-                pr.set_message(format!("{} {}", prefix, line));
-            }
-            _ => {
-                prefix_eprintln!(prefix, "{line}");
-            }
-        }
-    }
-
-    fn run_task(&self, task: &Task) -> Result<()> {
-        let prefix = task.estyled_prefix();
-        if SETTINGS.task_skip.contains(&task.name) {
-            if !self.quiet(Some(task)) {
-                self.eprint(task, &prefix, "skipping task");
-            }
-            return Ok(());
-        }
-        if !self.force && self.sources_are_fresh(task)? {
-            if !self.quiet(Some(task)) {
-                self.eprint(task, &prefix, "sources up-to-date, skipping");
-            }
-            return Ok(());
-        }
-        if let Some(message) = &task.confirm {
-            if !SETTINGS.yes && !ui::confirm(message).unwrap_or(true) {
-                return Err(eyre!("task cancelled"));
-            }
-        }
-
-        let config = Config::get();
-        let mut tools = self.tool.clone();
-        for (k, v) in &task.tools {
-            tools.push(format!("{}@{}", k, v).parse()?);
-        }
-        let ts = ToolsetBuilder::new().with_args(&tools).build(&config)?;
-        let mut env = task.render_env(&ts)?;
-        let output = self.output(Some(task));
-        env.insert("MISE_TASK_OUTPUT".into(), output.to_string());
-        if output == TaskOutput::Prefix {
-            env.insert(
-                "MISE_TASK_LEVEL".into(),
-                (*env::MISE_TASK_LEVEL + 1).to_string(),
-            );
-        }
-        if !self.timings {
-            env.insert("MISE_TASK_TIMINGS".to_string(), "0".to_string());
-        }
-        if let Some(cwd) = &*dirs::CWD {
-            env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
-        }
-        if let Some(root) = config.project_root.clone().or(task.config_root.clone()) {
-            env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
-        }
-        env.insert("MISE_TASK_NAME".into(), task.name.clone());
-        let task_file = task.file.as_ref().unwrap_or(&task.config_source);
-        env.insert("MISE_TASK_FILE".into(), task_file.display().to_string());
-        if let Some(dir) = task_file.parent() {
-            env.insert("MISE_TASK_DIR".into(), dir.display().to_string());
-        }
-        if let Some(config_root) = &task.config_root {
-            env.insert("MISE_CONFIG_ROOT".into(), config_root.display().to_string());
-        }
-        let timer = std::time::Instant::now();
-
-        if let Some(file) = &task.file {
-            self.exec_file(file, task, &env, &prefix)?;
-        } else {
-            let rendered_run_scripts =
-                task.render_run_scripts_with_args(self.cd.clone(), &task.args, &env)?;
-
-            let get_args = || {
-                [String::new()]
-                    .iter()
-                    .chain(task.args.iter())
-                    .cloned()
-                    .collect()
-            };
-            self.parse_usage_spec_and_init_env(task, &mut env, get_args)?;
-
-            for (script, args) in rendered_run_scripts {
-                self.exec_script(&script, &args, task, &env, &prefix)?;
-            }
-        }
-
-        if self.timings() && (task.file.as_ref().is_some() || !task.run().is_empty()) {
-            self.eprint(
-                task,
-                &prefix,
-                &format!("Finished in {}", time::format_duration(timer.elapsed())),
-            );
-        }
-
-        self.save_checksum(task)?;
-
-        Ok(())
-    }
-
-    fn exec_script(
-        &self,
-        script: &str,
-        args: &[String],
-        task: &Task,
-        env: &BTreeMap<String, String>,
-        prefix: &str,
-    ) -> Result<()> {
-        let config = Config::get();
-        let script = script.trim_start();
-        let cmd = style::ebold(format!("$ {script} {args}", args = args.join(" ")))
-            .bright()
-            .to_string();
-        if !self.quiet(Some(task)) {
-            let msg = trunc(prefix, config.redact(cmd).trim());
-            self.eprint(task, prefix, &msg)
-        }
-
-        if script.starts_with("#!") {
-            let dir = tempfile::tempdir()?;
-            let file = dir.path().join("script");
-            let mut tmp = std::fs::File::create(&file)?;
-            tmp.write_all(script.as_bytes())?;
-            tmp.flush()?;
-            drop(tmp);
-            file::make_executable(&file)?;
-            self.exec(&file, args, task, env, prefix)
-        } else {
-            let (program, args) = self.get_cmd_program_and_args(script, task, args)?;
-            self.exec_program(&program, &args, task, env, prefix)
-        }
-    }
-
-    fn get_file_program_and_args(
-        &self,
-        file: &Path,
-        task: &Task,
-        args: &[String],
-    ) -> Result<(String, Vec<String>)> {
-        let display = file.display().to_string();
-        if file::is_executable(file) && !SETTINGS.use_file_shell_for_executable_tasks {
-            if cfg!(windows) && file.extension().is_some_and(|e| e == "ps1") {
-                let args = vec!["-File".to_string(), display]
-                    .into_iter()
-                    .chain(args.iter().cloned())
-                    .collect_vec();
-                return Ok(("pwsh".to_string(), args));
-            }
-            return Ok((display, args.to_vec()));
-        }
-        let shell = task.shell().unwrap_or(SETTINGS.default_file_shell()?);
-        trace!("using shell: {}", shell.join(" "));
-        let mut full_args = shell.clone();
-        full_args.push(display);
-        if !args.is_empty() {
-            full_args.extend(args.iter().cloned());
-        }
-        Ok((shell[0].clone(), full_args[1..].to_vec()))
-    }
-
-    fn get_cmd_program_and_args(
-        &self,
-        script: &str,
-        task: &Task,
-        args: &[String],
-    ) -> Result<(String, Vec<String>)> {
-        let shell = task.shell().unwrap_or(self.clone_default_inline_shell()?);
-        trace!("using shell: {}", shell.join(" "));
-        let mut full_args = shell.clone();
-        let mut script = script.to_string();
-        if !args.is_empty() {
-            #[cfg(windows)]
-            {
-                script = format!("{script} {}", args.join(" "));
-            }
-            #[cfg(unix)]
-            {
-                script = format!("{script} {}", shell_words::join(args));
-            }
-        }
-        full_args.push(script);
-        Ok((full_args[0].clone(), full_args[1..].to_vec()))
-    }
-
-    fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
-        if let Some(shell) = &self.shell {
-            Ok(shell_words::split(shell)?)
-        } else {
-            SETTINGS.default_inline_shell()
-        }
-    }
-
-    fn exec_file(&self, file: &Path, task: &Task, env: &EnvMap, prefix: &str) -> Result<()> {
-        let config = Config::get();
-        let mut env = env.clone();
-        let command = file.to_string_lossy().to_string();
-        let args = task.args.iter().cloned().collect_vec();
-        let get_args = || once(command.clone()).chain(args.clone()).collect_vec();
-        self.parse_usage_spec_and_init_env(task, &mut env, get_args)?;
-
-        if !self.quiet(Some(task)) {
-            let cmd = format!("{} {}", display_path(file), args.join(" "))
-                .trim()
-                .to_string();
-            let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
-            let cmd = trunc(prefix, config.redact(cmd).trim());
-            self.eprint(task, prefix, &cmd);
-        }
-
-        self.exec(file, &args, task, &env, prefix)
-    }
-
-    fn exec(
-        &self,
-        file: &Path,
-        args: &[String],
-        task: &Task,
-        env: &BTreeMap<String, String>,
-        prefix: &str,
-    ) -> Result<()> {
-        let (program, args) = self.get_file_program_and_args(file, task, args)?;
-        self.exec_program(&program, &args, task, env, prefix)
-    }
-
-    fn exec_program(
-        &self,
-        program: &str,
-        args: &[String],
-        task: &Task,
-        env: &BTreeMap<String, String>,
-        prefix: &str,
-    ) -> Result<()> {
-        let config = Config::get();
-        let program = program.to_executable();
-        let redactions = config.redactions();
-        let raw = self.raw(Some(task));
-        let mut cmd = CmdLineRunner::new(program.clone())
-            .args(args)
-            .envs(env)
-            .redact(redactions.deref().clone())
-            .raw(raw);
-        if raw && !redactions.is_empty() {
-            hint!(
-                "raw_redactions",
-                "--raw will prevent mise from being able to use redactions",
-                ""
-            );
-        }
-        let output = self.output(Some(task));
-        cmd.with_pass_signals();
-        match output {
-            TaskOutput::Prefix => {
-                cmd = cmd.with_on_stdout(|line| {
-                    if console::colors_enabled() {
-                        prefix_println!(prefix, "{line}\x1b[0m");
-                    } else {
-                        prefix_println!(prefix, "{line}");
-                    }
-                });
-                cmd = cmd.with_on_stderr(|line| {
-                    if console::colors_enabled() {
-                        self.eprint(task, prefix, &format!("{line}\x1b[0m"));
-                    } else {
-                        self.eprint(task, prefix, &line);
-                    }
-                });
-            }
-            TaskOutput::KeepOrder => {
-                cmd = cmd.with_on_stdout(|line| {
-                    self.keep_order_output
-                        .lock()
-                        .unwrap()
-                        .get_mut(task)
-                        .unwrap()
-                        .0
-                        .push((prefix.to_string(), line));
-                });
-                cmd = cmd.with_on_stderr(|line| {
-                    self.keep_order_output
-                        .lock()
-                        .unwrap()
-                        .get_mut(task)
-                        .unwrap()
-                        .1
-                        .push((prefix.to_string(), line));
-                });
-            }
-            TaskOutput::Replacing => {
-                let pr = self.task_prs.get(task).unwrap().clone();
-                cmd = cmd.with_pr_arc(pr);
-            }
-            TaskOutput::Timed => {
-                let timed_outputs = self.timed_outputs.clone();
-                cmd = cmd.with_on_stdout(move |line| {
-                    timed_outputs
-                        .lock()
-                        .unwrap()
-                        .insert(prefix.to_string(), (SystemTime::now(), line));
-                });
-                cmd = cmd.with_on_stderr(|line| {
-                    if console::colors_enabled() {
-                        self.eprint(task, prefix, &format!("{line}\x1b[0m"));
-                    } else {
-                        self.eprint(task, prefix, &line);
-                    }
-                });
-            }
-            TaskOutput::Silent => {
-                cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
-            }
-            TaskOutput::Quiet | TaskOutput::Interleave => {
-                if raw || redactions.is_empty() {
-                    cmd = cmd
-                        .stdin(Stdio::inherit())
-                        .stdout(Stdio::inherit())
-                        .stderr(Stdio::inherit())
-                }
-            }
-        }
-        let dir = self.cwd(task)?;
-        if !dir.exists() {
-            self.eprint(
-                task,
-                prefix,
-                &format!(
-                    "{} task directory does not exist: {}",
-                    style::eyellow("WARN"),
-                    display_path(&dir)
-                ),
-            );
-        }
-        cmd = cmd.current_dir(dir);
-        if self.dry_run {
-            return Ok(());
-        }
-        cmd.execute()?;
-        trace!("{prefix} exited successfully");
-        Ok(())
+        self.output_handler
+            .as_ref()
+            .unwrap()
+            .eprint(task, prefix, line);
     }
 
     fn output(&self, task: Option<&Task>) -> TaskOutput {
-        if let Some(o) = self.output {
-            o
-        } else if self.silent(task) {
-            TaskOutput::Silent
-        } else if self.quiet(task) {
-            TaskOutput::Quiet
-        } else if self.prefix {
-            TaskOutput::Prefix
-        } else if self.interleave {
-            TaskOutput::Interleave
-        } else if let Some(output) = SETTINGS.task_output {
-            output
-        } else if self.raw(task) || self.jobs() == 1 || self.is_linear {
-            TaskOutput::Interleave
-        } else {
-            TaskOutput::Prefix
-        }
-    }
-
-    fn silent(&self, task: Option<&Task>) -> bool {
-        self.silent
-            || SETTINGS.silent
-            || self.output.is_some_and(|o| o.is_silent())
-            || task.is_some_and(|t| t.silent)
-    }
-
-    fn quiet(&self, task: Option<&Task>) -> bool {
-        self.quiet
-            || SETTINGS.quiet
-            || self.output.is_some_and(|o| o.is_quiet())
-            || task.is_some_and(|t| t.quiet)
-            || self.silent(task)
-    }
-
-    fn raw(&self, task: Option<&Task>) -> bool {
-        self.raw || SETTINGS.raw || task.is_some_and(|t| t.raw)
+        self.output_handler.as_ref().unwrap().output(task)
     }
 
     fn jobs(&self) -> usize {
-        if self.raw {
-            1
-        } else {
-            self.jobs.unwrap_or(SETTINGS.jobs)
+        self.output_handler.as_ref().unwrap().jobs()
+    }
+
+    fn is_stopping(&self) -> bool {
+        self.executor
+            .as_ref()
+            .map(|e| e.is_stopping())
+            .unwrap_or(false)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn run_task_sched(
+        &self,
+        task: &Task,
+        config: &Arc<Config>,
+        sched_tx: Arc<tokio::sync::mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        completed_tasks: std::collections::HashSet<crate::task::TaskKey>,
+        dep_ran: bool,
+        semaphore: Arc<tokio::sync::Semaphore>,
+        permit: &mut Option<tokio::sync::OwnedSemaphorePermit>,
+    ) -> Result<bool> {
+        self.executor
+            .as_ref()
+            .expect("executor must be initialized before running tasks")
+            .run_task_sched(
+                task,
+                config,
+                sched_tx,
+                completed_tasks,
+                dep_ran,
+                semaphore,
+                permit,
+            )
+            .await
+    }
+
+    fn add_failed_task(&self, task: Task, status: Option<i32>) {
+        if let Some(executor) = &self.executor {
+            executor.add_failed_task(task, status);
         }
     }
 
     fn validate_task(&self, task: &Task) -> Result<()> {
-        if let Some(path) = &task.file {
-            if path.exists() && !file::is_executable(path) {
-                let dp = display_path(path);
-                let msg = format!("Script `{dp}` is not executable. Make it executable?");
-                if ui::confirm(msg)? {
-                    file::make_executable(path)?;
-                } else {
-                    bail!("`{dp}` is not executable")
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn parse_usage_spec_and_init_env(
-        &self,
-        task: &Task,
-        env: &mut EnvMap,
-        get_args: impl Fn() -> Vec<String>,
-    ) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(self.cd.clone(), env)?;
-        if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
-            let args: Vec<String> = get_args();
-            debug!("Parsing usage spec for {:?}", args);
-            let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;
-            for (k, v) in po.as_env() {
-                debug!("Adding key {} value {} in env", k, v);
-                env.insert(k, v);
-            }
-        } else {
-            debug!("Usage spec has no args or flags");
-        }
-
-        Ok(())
-    }
-
-    fn sources_are_fresh(&self, task: &Task) -> Result<bool> {
-        let outputs = task.outputs.paths(task);
-        if task.sources.is_empty() && outputs.is_empty() {
-            return Ok(false);
-        }
-        // TODO: We should benchmark this and find out if it might be possible to do some caching around this or something
-        // perhaps using some manifest in a state directory or something, maybe leveraging atime?
-        let run = || -> Result<bool> {
-            let root = self.cwd(task)?;
-            let mut sources = task.sources.clone();
-            sources.push(task.config_source.to_string_lossy().to_string());
-            let source_metadatas = self.get_file_metadatas(&root, &sources)?;
-            let source_metadata_hash = self.file_metadatas_to_hash(&source_metadatas);
-            let source_metadata_hash_path = self.sources_hash_path(task);
-            if let Some(dir) = source_metadata_hash_path.parent() {
-                file::create_dir_all(dir)?;
-            }
-            if self
-                .source_metadata_existing_hash(task)
-                .is_some_and(|h| h != source_metadata_hash)
-            {
-                debug!(
-                    "source metadata hash mismatch in {}",
-                    source_metadata_hash_path.display()
-                );
-                file::write(&source_metadata_hash_path, &source_metadata_hash)?;
-                return Ok(false);
-            }
-            let sources = self.get_last_modified_from_metadatas(&source_metadatas);
-            let outputs = self.get_last_modified(&root, &outputs)?;
-            file::write(&source_metadata_hash_path, &source_metadata_hash)?;
-            trace!("sources: {sources:?}, outputs: {outputs:?}");
-            match (sources, outputs) {
-                (Some(sources), Some(outputs)) => Ok(sources < outputs),
-                _ => Ok(false),
-            }
-        };
-        Ok(run().unwrap_or_else(|err| {
-            warn!("sources_are_fresh: {err:?}");
-            false
-        }))
-    }
-
-    fn sources_hash_path(&self, task: &Task) -> PathBuf {
-        let mut hasher = DefaultHasher::new();
-        task.hash(&mut hasher);
-        task.config_source.hash(&mut hasher);
-        let hash = format!("{:x}", hasher.finish());
-        dirs::STATE.join("task-sources").join(&hash)
-    }
-
-    fn source_metadata_existing_hash(&self, task: &Task) -> Option<String> {
-        let path = self.sources_hash_path(task);
-        if path.exists() {
-            Some(file::read_to_string(&path).unwrap_or_default())
-        } else {
-            None
-        }
-    }
-
-    fn add_failed_task(&self, task: Task, status: Option<i32>) {
-        self.failed_tasks
-            .lock()
-            .unwrap()
-            .push((task, status.unwrap_or(1)));
-    }
-
-    fn is_stopping(&self) -> bool {
-        !self.failed_tasks.lock().unwrap().is_empty()
-    }
-
-    fn get_file_metadatas(
-        &self,
-        root: &Path,
-        patterns_or_paths: &[String],
-    ) -> Result<Vec<(PathBuf, fs::Metadata)>> {
-        if patterns_or_paths.is_empty() {
-            return Ok(vec![]);
-        }
-        let (patterns, paths): (Vec<&String>, Vec<&String>) =
-            patterns_or_paths.iter().partition(|p| is_glob_pattern(p));
-
-        let mut metadatas = BTreeMap::new();
-        for pattern in patterns {
-            let files = glob(root.join(pattern).to_str().unwrap())?;
-            for file in files.flatten() {
-                if let Ok(metadata) = file.metadata() {
-                    metadatas.insert(file, metadata);
-                }
-            }
-        }
-
-        for path in paths {
-            let file = root.join(path);
-            if let Ok(metadata) = file.metadata() {
-                metadatas.insert(file, metadata);
-            }
-        }
-
-        let metadatas = metadatas
-            .into_iter()
-            .filter(|(_, m)| m.is_file())
-            .collect_vec();
-
-        Ok(metadatas)
-    }
-
-    fn file_metadatas_to_hash(&self, metadatas: &[(PathBuf, fs::Metadata)]) -> String {
-        let paths: Vec<_> = metadatas.iter().map(|(p, _)| p).collect();
-        hash::hash_to_str(&paths)
-    }
-
-    fn get_last_modified_from_metadatas(
-        &self,
-        metadatas: &[(PathBuf, fs::Metadata)],
-    ) -> Option<SystemTime> {
-        metadatas.iter().flat_map(|(_, m)| m.modified()).max()
-    }
-
-    fn get_last_modified(
-        &self,
-        root: &Path,
-        patterns_or_paths: &[String],
-    ) -> Result<Option<SystemTime>> {
-        if patterns_or_paths.is_empty() {
-            return Ok(None);
-        }
-        let (patterns, paths): (Vec<&String>, Vec<&String>) =
-            patterns_or_paths.iter().partition(|p| is_glob_pattern(p));
-
-        let last_mod = std::cmp::max(
-            last_modified_glob_match(root, &patterns)?,
-            last_modified_path(root, &paths)?,
-        );
-
-        trace!(
-            "last_modified of {}: {last_mod:?}",
-            patterns_or_paths.iter().join(" ")
-        );
-        Ok(last_mod)
-    }
-
-    fn cwd(&self, task: &Task) -> Result<PathBuf> {
-        if let Some(d) = &self.cd {
-            Ok(d.clone())
-        } else if let Some(d) = task.dir()? {
-            Ok(d)
-        } else {
-            Ok(Config::get()
-                .project_root
-                .clone()
-                .or_else(|| dirs::CWD.clone())
-                .unwrap_or_default())
-        }
-    }
-
-    fn save_checksum(&self, task: &Task) -> Result<()> {
-        if task.sources.is_empty() {
-            return Ok(());
-        }
-        if task.outputs.is_auto() {
-            for p in task.outputs.paths(task) {
-                debug!("touching auto output file: {p}");
-                file::touch_file(&PathBuf::from(&p))?;
+        use crate::file;
+        use crate::ui;
+        if let Some(path) = &task.file
+            && path.exists()
+            && !file::is_executable(path)
+        {
+            let dp = crate::file::display_path(path);
+            let msg = format!("Script `{dp}` is not executable. Make it executable?");
+            if ui::confirm(msg)? {
+                file::make_executable(path)?;
+            } else {
+                bail!("`{dp}` is not executable")
             }
         }
         Ok(())
     }
 
     fn timings(&self) -> bool {
-        !self.quiet(None)
-            && !self.no_timings
-            && SETTINGS
-                .task_timings
-                .unwrap_or(self.output == Some(TaskOutput::Prefix))
+        !self.quiet(None) && !self.no_timings
     }
 
-    fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
-        let no_cache = self.no_cache || SETTINGS.task_remote_no_cache.unwrap_or(false);
-        let task_file_providers = TaskFileProvidersBuilder::new()
-            .with_cache(!no_cache)
-            .build();
+    fn quiet(&self, task: Option<&Task>) -> bool {
+        self.output_handler.as_ref().unwrap().quiet(task)
+    }
+}
 
-        for t in tasks {
-            if let Some(file) = &t.file {
-                let source = file.to_string_lossy().to_string();
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    if let Some(message) = payload.downcast_ref::<&'static str>() {
+        message
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.as_str()
+    } else {
+        "unknown panic payload"
+    }
+}
 
-                let provider = task_file_providers.get_provider(&source);
+fn display_task_help(task: &Task) -> Result<()> {
+    let name = if task.display_name.is_empty() {
+        &task.name
+    } else {
+        &task.display_name
+    };
+    info::inline_section("Task", name)?;
+    if !task.aliases.is_empty() {
+        info::inline_section("Aliases", task.aliases.join(", "))?;
+    }
+    if !task.description.is_empty() {
+        info::inline_section("Description", &task.description)?;
+    }
+    info::inline_section(
+        "Source",
+        task.config_sources().iter().map(display_path).join(", "),
+    )?;
+    if !task.depends.is_empty() {
+        info::inline_section("Depends on", task.depends.iter().join(", "))?;
+    }
+    let run = task.run();
+    if !run.is_empty() {
+        info::section("Run", run.iter().map(|e| e.to_string()).join("\n"))?;
+    }
+    miseprintln!();
+    miseprintln!("This task does not accept any arguments.");
+    let hint = if task.file.is_some() {
+        "To define arguments, add #USAGE comments to the script file."
+    } else {
+        "To define arguments, add a `usage` field to the task definition in the config file."
+    };
+    miseprintln!("{hint}");
+    miseprintln!("See https://mise.en.dev/tasks/task-configuration.html for more information.");
+    Ok(())
+}
 
-                if provider.is_none() {
-                    bail!("No provider found for file: {}", source);
-                }
+fn render_usage_help(spec: &usage::Spec, args: &[String]) -> String {
+    let cmd = usage_command_for_args(spec, args);
+    usage::docs::cli::render_help(spec, cmd, true)
+}
 
-                let local_path = provider.unwrap().get_local_path(&source).unwrap();
+fn usage_command_for_args<'a>(spec: &'a usage::Spec, args: &[String]) -> &'a usage::SpecCommand {
+    let mut cmd = &spec.cmd;
+    let mut idx = 0;
+    let mut used_default_subcommand = false;
 
-                t.file = Some(local_path);
+    while idx < args.len() {
+        let arg = &args[idx];
+        if arg == "-h" || arg == "--help" {
+            break;
+        }
+        if let Some(subcommand) = cmd.find_subcommand(arg) {
+            cmd = subcommand;
+            idx += 1;
+            continue;
+        }
+        if arg.starts_with('-') {
+            if !arg.contains('=')
+                && (flag_takes_value(&spec.cmd, arg) || flag_takes_value(cmd, arg))
+            {
+                idx += 1;
             }
+            idx += 1;
+            continue;
         }
-
-        Ok(())
-    }
-}
-
-fn is_glob_pattern(path: &str) -> bool {
-    // This is the character set used for glob
-    // detection by glob
-    let glob_chars = ['*', '{', '}'];
-
-    path.chars().any(|c| glob_chars.contains(&c))
-}
-
-fn last_modified_path(root: &Path, paths: &[&String]) -> Result<Option<SystemTime>> {
-    let files = paths.iter().map(|p| {
-        let base = Path::new(p);
-        if base.is_relative() {
-            Path::new(&root).join(base)
-        } else {
-            base.to_path_buf()
+        if !used_default_subcommand
+            && let Some(default_name) = &spec.default_subcommand
+            && let Some(subcommand) = cmd.find_subcommand(default_name)
+        {
+            cmd = subcommand;
+            used_default_subcommand = true;
+            continue;
         }
-    });
-
-    last_modified_file(files)
-}
-
-fn last_modified_glob_match(
-    root: impl AsRef<Path>,
-    patterns: &[&String],
-) -> Result<Option<SystemTime>> {
-    if patterns.is_empty() {
-        return Ok(None);
+        break;
     }
-    let files = patterns
-        .iter()
-        .flat_map(|pattern| {
-            glob(
-                root.as_ref()
-                    .join(pattern)
-                    .to_str()
-                    .expect("Conversion to string path failed"),
-            )
-            .unwrap()
-        })
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.metadata()
-                .expect("Metadata call failed")
-                .file_type()
-                .is_file()
-        });
 
-    last_modified_file(files)
+    cmd
 }
 
-fn last_modified_file(files: impl IntoIterator<Item = PathBuf>) -> Result<Option<SystemTime>> {
-    Ok(files
-        .into_iter()
-        .unique()
-        .filter(|p| p.exists())
-        .map(|p| {
-            p.metadata()
-                .map_err(|err| eyre!("{}: {}", display_path(p), err))
-        })
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .map(|m| m.modified().map_err(|err| eyre!(err)))
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .max())
+fn flag_takes_value(cmd: &usage::SpecCommand, flag: &str) -> bool {
+    let flag = flag.split_once('=').map(|(flag, _)| flag).unwrap_or(flag);
+    if let Some(long) = flag.strip_prefix("--") {
+        cmd.flags
+            .iter()
+            .any(|f| f.arg.is_some() && f.long.iter().any(|f| f == long))
+    } else if let Some(short) = flag.strip_prefix('-').and_then(|f| f.chars().next()) {
+        cmd.flags
+            .iter()
+            .any(|f| f.arg.is_some() && f.short.contains(&short))
+    } else {
+        false
+    }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -1111,169 +990,39 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise run lint</bold>
 
     # Forces the "build" tasks to run even if its sources are up-to-date.
-    $ <bold>mise run build --force</bold>
+    $ <bold>mise run --force build</bold>
 
     # Run "test" with stdin/stdout/stderr all connected to the current terminal.
     # This forces `--jobs=1` to prevent interleaving of output.
-    $ <bold>mise run test --raw</bold>
+    $ <bold>mise run --raw test</bold>
 
     # Runs the "lint", "test", and "check" tasks in parallel.
     $ <bold>mise run lint ::: test ::: check</bold>
 
     # Execute multiple tasks each with their own arguments.
-    $ <bold>mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
+    $ <bold>mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
 "#
 );
 
-#[derive(
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    strum::Display,
-    strum::EnumString,
-    strum::EnumIs,
-    serde::Serialize,
-    serde::Deserialize,
-)]
-#[serde(rename_all = "kebab-case")]
-#[strum(serialize_all = "kebab-case")]
-pub enum TaskOutput {
-    Interleave,
-    KeepOrder,
-    #[default]
-    Prefix,
-    Replacing,
-    Timed,
-    Quiet,
-    Silent,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn trunc(prefix: &str, msg: &str) -> String {
-    let prefix_len = console::measure_text_width(prefix);
-    let msg = msg.lines().next().unwrap_or_default();
-    console::truncate_str(msg, *env::TERM_WIDTH - prefix_len - 1, "…").to_string()
-}
-
-fn err_no_task(name: &str) -> Result<()> {
-    if Config::get().tasks().is_ok_and(|t| t.is_empty()) {
-        bail!(
-            "no tasks defined in {}. Are you in a project directory?",
-            display_path(dirs::CWD.clone().unwrap_or_default())
-        );
+    #[test]
+    fn test_panic_payload_message_from_static_str() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new("panic message");
+        assert_eq!(panic_payload_message(&*payload), "panic message");
     }
-    if let Some(cwd) = &*dirs::CWD {
-        let includes = Config::get().task_includes_for_dir(cwd);
-        let path = includes
-            .iter()
-            .map(|d| d.join(name))
-            .find(|d| d.is_file() && !file::is_executable(d));
-        if let Some(path) = path {
-            if !cfg!(windows) {
-                warn!(
-                    "no task {} found, but a non-executable file exists at {}",
-                    style::ered(name),
-                    display_path(&path)
-                );
-                let yn = prompt::confirm(
-                    "Mark this file as executable to allow it to be run as a task?",
-                )?;
-                if yn {
-                    file::make_executable(&path)?;
-                    info!("marked as executable, try running this task again");
-                }
-            }
-        }
-    }
-    bail!("no task {} found", style::ered(name));
-}
 
-fn prompt_for_task() -> Result<Task> {
-    let config = Config::get();
-    let tasks = config.tasks()?;
-    ensure!(
-        !tasks.is_empty(),
-        "no tasks defined. see {url}",
-        url = style::eunderline("https://mise.jdx.dev/tasks/")
-    );
-    let mut s = Select::new("Tasks")
-        .description("Select a task to run")
-        .filtering(true)
-        .filterable(true);
-    for t in tasks.values().filter(|t| !t.hide) {
-        s = s.option(
-            DemandOption::new(&t.name)
-                .label(&t.display_name())
-                .description(&t.description),
-        );
+    #[test]
+    fn test_panic_payload_message_from_string() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new(String::from("panic message"));
+        assert_eq!(panic_payload_message(&*payload), "panic message");
     }
-    ctrlc::show_cursor_after_ctrl_c();
-    match s.run() {
-        Ok(name) => match tasks.get(name) {
-            Some(task) => Ok(task.clone()),
-            None => bail!("no tasks {} found", style::ered(name)),
-        },
-        Err(err) => {
-            Term::stderr().show_cursor()?;
-            Err(eyre!(err))
-        }
+
+    #[test]
+    fn test_panic_payload_message_from_unknown_payload() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new(123usize);
+        assert_eq!(panic_payload_message(&*payload), "unknown panic payload");
     }
-}
-
-pub fn get_task_lists(args: &[String], prompt: bool) -> Result<Vec<Task>> {
-    args.iter()
-        .map(|s| vec![s.to_string()])
-        .coalesce(|a, b| {
-            if b == vec![":::".to_string()] {
-                Err((a, b))
-            } else if a == vec![":::".to_string()] {
-                Ok(b)
-            } else {
-                Ok(a.into_iter().chain(b).collect_vec())
-            }
-        })
-        .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
-        .map(|(t, args)| {
-            // can be any of the following:
-            // - ./path/to/script
-            // - ~/path/to/script
-            // - /path/to/script
-            // - ../path/to/script
-            // - C:\path\to\script
-            // - .\path\to\script
-            if regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#).is_match(&t) {
-                let path = PathBuf::from(&t);
-                if path.exists() {
-                    let config_root = Config::get()
-                        .project_root
-                        .clone()
-                        .or_else(|| dirs::CWD.clone())
-                        .unwrap_or_default();
-                    let task = Task::from_path(&path, &PathBuf::new(), &config_root)?;
-                    return Ok(vec![task.with_args(args)]);
-                }
-            }
-            let config = Config::get();
-            let tasks = config
-                .tasks_with_aliases()?
-                .get_matching(&t)?
-                .into_iter()
-                .cloned()
-                .collect_vec();
-            if tasks.is_empty() {
-                if t != "default" || !prompt || !console::user_attended_stderr() {
-                    err_no_task(&t)?;
-                }
-
-                Ok(vec![prompt_for_task()?])
-            } else {
-                Ok(tasks
-                    .into_iter()
-                    .map(|t| t.clone().with_args(args.to_vec()))
-                    .collect())
-            }
-        })
-        .flatten_ok()
-        .collect()
 }

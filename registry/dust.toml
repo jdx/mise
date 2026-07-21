@@ -1,0 +1,3 @@
+backends = ["aqua:bootandy/dust", "asdf:looztra/asdf-dust", "cargo:du-dust"]
+description = "A more intuitive version of du in rust"
+test = { cmd = "dust --version", expected = "Dust {{version}}" }

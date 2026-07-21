@@ -1,1 +1,6 @@
 zipsign.pub binary
+src/gpg_testdata/node_v20.11.0_SHASUMS256.txt text eol=lf
+vendor/aqua-registry/** linguist-vendored
+crates/vfox/embedded-plugins/** linguist-vendored
+schema/mise-task.json linguist-generated=true
+schema/miserc.json linguist-generated=true

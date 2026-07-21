@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-shellcheck -x "$PWD"{/scripts,/e2e}/*.sh "$PWD"/e2e/{test_,run_}*

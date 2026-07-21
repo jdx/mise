@@ -1,13 +1,12 @@
-use color_eyre::eyre::{Result, eyre};
+use color_eyre::eyre::{Result, bail, eyre};
 use console::style;
-use heck::ToShoutySnakeCase;
 use indoc::formatdoc;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::env;
 use crate::shell::get_shell;
-use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder, tool_env_var_name};
 
 /// Sets a tool version for the current session.
 ///
@@ -27,19 +26,19 @@ pub struct Shell {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets --jobs=1
-    #[clap(long, overrides_with = "jobs")]
-    raw: bool,
-
     /// Removes a previously set version
     #[clap(long, short)]
     unset: bool,
+
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal
+    /// Implies --jobs=1
+    #[clap(long, overrides_with = "jobs")]
+    raw: bool,
 }
 
 impl Shell {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let mut config = Config::get().await?;
         if !env::is_activated() {
             err_inactive()?;
         }
@@ -48,29 +47,38 @@ impl Shell {
 
         if self.unset {
             for ta in &self.tool {
-                let op = shell.unset_env(&format!(
-                    "MISE_{}_VERSION",
-                    ta.ba.short.to_shouty_snake_case()
-                ));
+                let op = shell.unset_env(&tool_env_var_name(&ta.ba.short));
                 print!("{op}");
             }
             return Ok(());
         }
 
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
+        for ta in &self.tool {
+            if ta.tvr.is_none() {
+                bail!(
+                    "no version specified for tool {tool}\nuse `mise shell {tool}@VERSION` to set a version",
+                    tool = ta.ba.short,
+                );
+            }
+        }
+
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .build(&config)
+            .await?;
         let opts = InstallOptions {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
             ..Default::default()
         };
-        ts.install_missing_versions(&opts)?;
-        ts.notify_if_versions_missing();
+        let (_, missing) = ts.install_missing_versions(&mut config, &opts).await?;
+        ts.notify_missing_versions(missing);
 
-        for (p, tv) in ts.list_current_installed_versions() {
-            let source = &ts.versions.get(p.ba()).unwrap().source;
+        for (p, tv) in ts.list_current_installed_versions(&config) {
+            let source = &ts.versions.get(p.ba().as_ref()).unwrap().source;
             if matches!(source, ToolSource::Argument) {
-                let k = format!("MISE_{}_VERSION", p.id().to_shouty_snake_case());
+                let k = tool_env_var_name(p.id());
                 let op = shell.set_env(&k, &tv.version);
                 print!("{op}");
             }

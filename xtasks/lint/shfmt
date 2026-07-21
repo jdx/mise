@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-shfmt -d -i 2 -ci -bn "$PWD"/{e2e,scripts}

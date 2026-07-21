@@ -1,0 +1,2 @@
+backends = ["vfox:mise-plugins/vfox-redis", "asdf:mise-plugins/mise-redis"]
+description = "Cache & in-memory datastore"

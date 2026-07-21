@@ -1,0 +1,2 @@
+backends = ["aqua:marp-team/marp-cli", "asdf:xataz/asdf-marp-cli"]
+description = "A CLI interface for Marp and Marpit based converters"

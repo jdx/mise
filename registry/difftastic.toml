@@ -1,0 +1,7 @@
+backends = [
+  "aqua:Wilfred/difftastic",
+  "asdf:volf52/asdf-difftastic",
+  "cargo:difftastic",
+]
+description = "a structural diff that understands syntax"
+test = { cmd = "difft --version", expected = "Difftastic {{version}}" }

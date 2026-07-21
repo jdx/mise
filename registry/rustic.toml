@@ -1,0 +1,3 @@
+backends = ["aqua:rustic-rs/rustic", "cargo:rustic-rs"]
+description = "rustic - fast, encrypted, and deduplicated backups powered by Rust"
+test = { cmd = "rustic --version", expected = "rustic v{{version}}" }

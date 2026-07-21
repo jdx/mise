@@ -1,0 +1,3 @@
+backends = ["aqua:istio/istio/istioctl", "asdf:virtualstaticvoid/asdf-istioctl"]
+description = "Istio configuration command line utility for service operators to debug and diagnose their Istio mesh"
+test = { cmd = "istioctl version --remote=false", expected = "client version: {{version}}" }

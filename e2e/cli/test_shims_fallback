@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+eval "$(mise activate bash --shims)"
+mise i dummy@1.0.0 tiny@1.0.0
+
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+tiny = "1.0.1"
+EOF
+
+assert_contains "dummy-exec-tiny" "1.0.1"

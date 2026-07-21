@@ -1,0 +1,11 @@
+description = "Compiler for Elm, a functional language for reliable webapps"
+test = { cmd = "elm --version", expected = "{{version}}" }
+
+[[backends]]
+full = "github:elm/compiler"
+
+[backends.options]
+bin = "elm"
+
+[[backends]]
+full = "asdf:asdf-community/asdf-elm"

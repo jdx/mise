@@ -1,0 +1,7 @@
+backends = [
+  "aqua:sagiegurari/cargo-make",
+  "asdf:mise-plugins/asdf-cargo-make",
+  "cargo:cargo-make",
+]
+description = "Rust task runner and build tool"
+test = { cmd = "makers --version", expected = "cargo-make {{version}}" }

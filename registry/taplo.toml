@@ -1,0 +1,3 @@
+backends = ["aqua:tamasfe/taplo", "cargo:taplo-cli"]
+description = "A TOML toolkit written in Rust"
+test = { cmd = "taplo --version", expected = "taplo {{version}}" }

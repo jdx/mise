@@ -1,0 +1,6 @@
+backends = [
+  "aqua:kubernetes/kubernetes/kubectl",
+  "asdf:asdf-community/asdf-kubectl",
+]
+description = "kubectl cli"
+test = { cmd = "kubectl version --client", expected = "Client Version: v{{version}}" }

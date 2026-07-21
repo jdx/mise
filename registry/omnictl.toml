@@ -1,0 +1,3 @@
+backends = ["aqua:siderolabs/omni/omnictl"]
+description = "CLI for Omni - SideroLabs' Kubernetes management platform for bare metal deployments"
+test = { cmd = "omnictl --version", expected = "omnictl version v{{version}}" }

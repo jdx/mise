@@ -1,0 +1,8 @@
+backends = [
+  "aqua:ClementTsang/bottom",
+  "asdf:carbonteq/asdf-btm",
+  "cargo:bottom",
+]
+description = "Yet another cross-platform graphical process/system monitor"
+# TODO: re-enable once latest resolves to a release whose binary reports the same version string.
+# test = { cmd = "btm --version", expected = "bottom {{version}}" }

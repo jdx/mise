@@ -8,3 +8,113 @@ assert_fail "mise set FOO" "Environment variable FOO not found"
 
 assert "mise set --file .test.mise.toml FOO=bar" ""
 assert "mise set --file .test.mise.toml FOO" "bar"
+
+# Test -E flag for environment-specific config files
+assert "mise set -E staging STAGING_VAR=staging_value" ""
+assert "mise set -E staging STAGING_VAR" "staging_value"
+assert "mise set -E staging" "STAGING_VAR  staging_value ~/workdir/mise.staging.toml"
+
+# Test that -E flag only shows vars from that environment file
+assert "mise set -E production PROD_VAR=prod_value" ""
+assert "mise set -E production" "PROD_VAR  prod_value ~/workdir/mise.production.toml"
+# STAGING_VAR should not appear when reading production env
+assert_not_contains "mise set -E production" "STAGING_VAR"
+
+# Test that regular set doesn't show env-specific vars
+assert_not_contains "mise set" "STAGING_VAR"
+assert_not_contains "mise set" "PROD_VAR"
+
+# Test that mise set writes to mise.toml (lowest precedence) instead of mise.local.toml
+# when both exist. See: https://github.com/jdx/mise/discussions/6475
+rm -f mise.toml mise.local.toml
+echo '[env]' >mise.toml
+echo 'BASE_VAR = "base"' >>mise.toml
+echo '[env]' >mise.local.toml
+echo 'LOCAL_VAR = "local"' >>mise.local.toml
+assert "mise set NEW_VAR=new_value" ""
+assert_contains "cat mise.toml" "NEW_VAR"
+assert_not_contains "cat mise.local.toml" "NEW_VAR"
+
+# Test that mise set writes to the nearest config directory, not the lowest
+# precedence TOML file across the entire hierarchy.
+rm -rf parent
+mkdir -p parent/myproject/inner
+touch parent/mise.toml parent/myproject/mise.toml
+assert "cd parent/myproject/inner && mise set SOMETHING=from_inner" ""
+assert_contains "cat parent/myproject/mise.toml" "SOMETHING"
+assert_not_contains "cat parent/mise.toml" "SOMETHING"
+
+# Test that ignored config directories are not selected as write targets.
+ignored_child="$(pwd)/parent/myproject"
+assert "cd parent/myproject/inner && MISE_IGNORED_CONFIG_PATHS=$ignored_child mise set IGNORED_CHILD=skipped" ""
+assert_contains "cat parent/mise.toml" "IGNORED_CHILD"
+assert_not_contains "cat parent/myproject/mise.toml" "IGNORED_CHILD"
+rm -rf parent
+
+# Test --stdin reads multiline value
+assert "printf 'line1\nline2' | mise set --stdin MULTI_LINE" ""
+assert "mise set MULTI_LINE" "line1
+line2"
+assert "mise set --rm MULTI_LINE" ""
+
+# Test --stdin strips trailing newline
+assert "printf 'hello\n' | mise set --stdin TRAILING_NL" ""
+assert "mise set TRAILING_NL" "hello"
+assert "mise set --rm TRAILING_NL" ""
+
+# Test --stdin fails with multiple keys
+assert_fail "printf 'val' | mise set --stdin KEY1 KEY2"
+
+# Test --stdin fails with KEY=VALUE syntax
+assert_fail "printf 'val' | mise set --stdin KEY1=value"
+
+# Test that `mise set` redacts values marked with redact=true
+rm -f mise.toml
+cat <<EOF >mise.toml
+[env]
+SECRET = {value = "my_secret_value", redact = true}
+NORMAL = "normal_value"
+EOF
+assert_contains "mise set" "[redacted]"
+assert_not_contains "mise set" "my_secret_value"
+assert_contains "mise set" "normal_value"
+
+# Test --no-redact shows raw values
+assert_contains "mise set --no-redact" "my_secret_value"
+assert_not_contains "mise set --no-redact" "[redacted]"
+
+# Test redactions array with mise set
+rm -f mise.toml
+cat <<EOF >mise.toml
+redactions = ["DB_*"]
+[env]
+DB_PASSWORD = "super_secret"
+USERNAME = "john"
+EOF
+assert_contains "mise set" "[redacted]"
+assert_not_contains "mise set" "super_secret"
+assert_contains "mise set" "john"
+assert_contains "mise set --no-redact" "super_secret"
+
+# Test redaction with --file flag
+rm -f mise.toml
+cat <<EOF >mise.toml
+[env]
+FILE_SECRET = {value = "file_secret_val", redact = true}
+EOF
+assert_contains "mise set --file mise.toml" "[redacted]"
+assert_not_contains "mise set --file mise.toml" "file_secret_val"
+assert_contains "mise set --file mise.toml --no-redact" "file_secret_val"
+
+# Test redaction with --file pointing outside config hierarchy
+tmpfile="$(mktemp)"
+cat <<EOF >"$tmpfile"
+[env]
+OUT_SECRET = {value = "out_of_hierarchy_secret", redact = true}
+OUT_NORMAL = "out_normal"
+EOF
+assert_contains "mise set --file $tmpfile" "[redacted]"
+assert_not_contains "mise set --file $tmpfile" "out_of_hierarchy_secret"
+assert_contains "mise set --file $tmpfile" "out_normal"
+assert_contains "mise set --file $tmpfile --no-redact" "out_of_hierarchy_secret"
+rm -f "$tmpfile"

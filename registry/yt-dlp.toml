@@ -1,0 +1,11 @@
+description = "A feature-rich command-line audio/video downloader"
+test = { cmd = "yt-dlp --version", expected = "{{version}}" }
+
+[[backends]]
+full = "github:yt-dlp/yt-dlp"
+
+[backends.options]
+rename_exe = "yt-dlp"
+
+[[backends]]
+full = "asdf:duhow/asdf-yt-dlp"

@@ -1,0 +1,3 @@
+backends = ["aqua:hashicorp/vault", "asdf:mise-plugins/mise-hashicorp"]
+description = "A tool for secrets management, encryption as a service, and privileged access management"
+test = { cmd = "vault version", expected = "Vault v{{version}}" }

@@ -1,0 +1,3 @@
+backends = ["aqua:sxyazi/yazi", "cargo:yazi-fm"]
+description = "Blazing fast terminal file manager written in Rust, based on async I/O"
+test = { cmd = "yazi --version", expected = "Yazi {{version}}" }

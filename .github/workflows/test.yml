@@ -2,7 +2,7 @@ name: test
 on:
   push:
     tags: ["v*"]
-    branches: ["main", "mise"]
+    branches: ["main", "mise", "release"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -18,70 +18,50 @@ env:
   MISE_EXPERIMENTAL: 1
   MISE_LOCKFILE: 1
   RUST_BACKTRACE: 1
-  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
-  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
+  MISE_GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
 
 permissions:
-  pull-requests: write
+  contents: read
 
 jobs:
   build-ubuntu:
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
-          submodules: true
-      - uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: build
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
-      - name: check for mold linker
-        run: readelf -p .comment target/debug/mise
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mise-ubuntu-latest
           path: target/debug/mise
-      - uses: actions/cache@v4
-        with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - run: mise i
-
-  build-macos:
-    runs-on: macos-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: build
-      - run: |
-          cargo build --all-features
-          echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - run: mise -v
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mise-macos-latest
-          path: target/debug/mise
-      - uses: actions/cache@v4
-        with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise i
-      - run: mise x -- wait-for-gh-rate-limit
+      - uses: ./.github/actions/mise-tools
+      - run: sccache --show-stats
+        if: always()
 
   build-windows:
     runs-on: windows-latest
@@ -90,105 +70,167 @@ jobs:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
         with:
           shared-key: build
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
       - shell: pwsh
         run: |
-          cargo build
+          cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
+          cargo build -p mise-shim
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - run: mise -v
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mise-windows-latest
-          path: target/debug/mise.exe
-      - uses: actions/cache@v4
-        with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
           path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - run: mise i
+            target/debug/mise.exe
+            target/debug/mise-shim.exe
+      - uses: ./.github/actions/mise-tools
 
   unit:
-    strategy:
-      fail-fast: false
-      # matrix: { os: [ubuntu-latest, macos-latest] }
-      matrix: { os: [macos-latest] }
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    permissions:
-      contents: write
-    needs: [build-ubuntu, build-macos]
+    name: unit-macos
+    runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-          submodules: true
-      - uses: rui314/setup-mold@v1
-        if: ${{ matrix.os == 'ubuntu-latest' }}
-      - uses: taiki-e/install-action@v2
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
-          tool: cargo-deny,cargo-msrv,cargo-machete
-      - run: rustup component add llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: unit
-      - uses: actions/download-artifact@v4
-        with:
-          name: mise-${{ matrix.os }}
-          path: target/debug
-      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
-      - uses: actions/cache@v4
-        with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
           path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - run: mise install
-      - run: mise x -- bun i
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
+      - name: Install fd
+        run: brew install fd
+      - run: |
+          cargo build --all-features
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/mise-tools
       - run: mise x -- cargo test --all-features
-      - run: cargo deny check
-      - run: cargo msrv verify
-      - run: cargo machete --with-metadata
-      - run: ./scripts/test-standalone.sh
-      - run: mise run lint
+      - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
+      - run: sccache --show-stats
+        if: always()
 
   nightly:
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux-nightly
     timeout-minutes: 10
+    # Track rolling nightly for early rustc regressions without blocking PRs on upstream compiler ICEs.
+    continue-on-error: true
     steps:
-      - uses: rui314/setup-mold@v1
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
       - run: rustup default nightly
-      - uses: Swatinem/rust-cache@v2
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
-          shared-key: nightly
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - uses: actions/cache@v4
-        with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - run: mise install
-      - run: mise run test:shuffle
+      - uses: ./.github/actions/mise-tools
+      - run: mise run test
+      - run: sccache --show-stats
+        if: always()
 
-  coverage:
-    name: coverage-${{matrix.tranche}}
-    runs-on: ubuntu-latest
+  lint:
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    timeout-minutes: 20
+    needs: [build-ubuntu]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.head_ref }}
+      - name: Install mold
+        run: sudo apt-get update && sudo apt-get install -y mold
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with:
+          tool: cargo-deny,cargo-msrv,cargo-machete
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: mise-ubuntu-latest
+          path: target/debug
+      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      - uses: ./.github/actions/mise-tools
+      - run: mise x -- bun i
+      - run: mise run render
+      - name: assert render produces no diff
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::'mise run render' produced changes. Run it locally and commit."
+            git status
+            git diff HEAD
+            exit 1
+          fi
+      - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
+      - run: cargo msrv verify
+      - run: cargo machete --with-metadata
+      - run: ./scripts/test-standalone.sh
+      - run: mise run lint
+      - run: cargo clippy -- -D warnings
+      - run: cargo clippy --all-features --all-targets -- -D warnings
+      - run: sccache --show-stats
+        if: always()
+
+  e2e:
+    name: e2e-${{matrix.tranche}}
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     needs: [build-ubuntu]
     timeout-minutes: 30
     strategy:
@@ -196,47 +238,42 @@ jobs:
       matrix:
         tranche: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
-      - name: Install build and test dependencies
+      - name: Fetch token from pool
+        id: token
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Set GitHub token from pool
+        if: steps.token.outputs.token
         run: |
-          sudo apt-get install \
-            bison \
-            build-essential \
-            direnv \
-            fd-find \
-            fish \
-            pipx \
-            python3-venv \
-            zsh
-      - run: |
-          mkdir -p "$HOME/.local/bin"
-          ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: actions/download-artifact@v4
+          {
+            echo "MISE_GITHUB_TOKEN=${{ steps.token.outputs.token }}"
+            echo "GITHUB_TOKEN=${{ steps.token.outputs.token }}"
+          } >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise-ubuntu-latest
           path: target/debug
-      - uses: actions/cache@v4
-        with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - name: Test w/ coverage
-        uses: nick-fields/retry@v3
+      - uses: ./.github/actions/mise-tools
+      - name: Pull e2e Docker image
+        run: docker pull ghcr.io/jdx/mise:e2e
+      - name: Test in Docker
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         env:
+          MISE_E2E_DOCKER: "1"
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 8
-          TEST_ALL: ${{github.head_ref == 'release' && '1' || '0'}}
+          TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
-          command: mise run test:coverage
+          command: ./e2e/run_all_tests
+
   windows-unit:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -244,12 +281,13 @@ jobs:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
         with:
-          shared-key: unit
+          shared-key: build
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
       - name: cargo test
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30
@@ -257,78 +295,72 @@ jobs:
           command: cargo test
   windows-e2e:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     needs: [build-windows]
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise-windows-latest
           path: target/debug
       - run: ls target\debug
       - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
-      - uses: actions/cache@v4
-        with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - run: mise install
+      - uses: ./.github/actions/mise-tools
       - name: e2e
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
           command: pwsh e2e-win\run.ps1
-#  disabled until I can get gh rate limits under control
-#  tools:
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        os: [windows-latest, macos-latest]
-#        tranche: [0, 1, 2, 3]
-#    needs: [build-macos, build-windows]
-#    runs-on: ${{ matrix.os }}
-#    timeout-minutes: 20
-#    if: github.head_ref == 'release'
-#    env:
-#      TEST_TRANCHE: ${{matrix.tranche}}
-#      TEST_TRANCHE_COUNT: 4
-#      TEST_ALL: ${{github.head_ref == 'release' && '1' || '0'}}
-#      MISE_DATA_DIR: ~/.local/share/mise
-#      MISE_CACHE_DIR: ~/.cache/mise
-#      MISE_DISABLE_TOOLS: |
-#        1password-cli,
-#        adr-tools
-#    steps:
-#      - uses: actions/checkout@v4
-#      - uses: actions/download-artifact@v4
-#        with:
-#          name: mise-${{ matrix.os }}
-#          path: target/debug
-#      - if: ${{ matrix.os != 'windows-latest' }}
-#        run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
-#      - if: ${{ matrix.os == 'windows-latest' }}
-#        shell: pwsh
-#        run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
-#      - uses: actions/cache/restore@v4
-#        with:
-#          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
-#          path: |
-#            ~/.local/share/mise
-#            ~/.cache/mise
-#      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-#      - run: mise install
-#      - uses: nick-fields/retry@v3
-#        with:
-#          timeout_minutes: 30
-#          retry_wait_seconds: 30
-#          max_attempts: 2
-#          command: mise test-tool --all
-#        env:
-#          MISE_USE_VERSIONS_HOST: 0
+
+  test-ci:
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    timeout-minutes: 1
+    needs:
+      - build-ubuntu
+      - build-windows
+      - unit
+      - nightly
+      - lint
+      - e2e
+      - windows-unit
+      - windows-e2e
+    # Run on success or upstream failure but skip when the workflow is cancelled
+    # — `always()` would override `cancel-in-progress` and waste a runner.
+    if: ${{ !cancelled() }}
+    steps:
+      - name: Check CI job results
+        run: |
+          if [ "${{ needs.build-ubuntu.result }}" != "success" ]; then
+            echo "build-ubuntu failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.build-windows.result }}" != "success" ]; then
+            echo "build-windows failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.unit.result }}" != "success" ]; then
+            echo "unit failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.lint.result }}" != "success" ]; then
+            echo "lint failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.e2e.result }}" != "success" ]; then
+            echo "e2e failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.windows-unit.result }}" != "success" ]; then
+            echo "windows-unit failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.windows-e2e.result }}" != "success" ]; then
+            echo "windows-e2e failed or was skipped"
+            exit 1
+          fi
+          echo "All CI jobs completed successfully"

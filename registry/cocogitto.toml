@@ -1,0 +1,3 @@
+backends = ["aqua:cocogitto/cocogitto"]
+description = "The Conventional Commits toolbox"
+test = { cmd = "cog --version", expected = "cog {{version}}" }

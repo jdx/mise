@@ -1,63 +1,464 @@
 #!/usr/bin/env bash
+#MISE description="Release with release-plz"
 set -euxo pipefail
+
+# Ensure this script is only run in GitHub Actions
+if [[ -z ${GITHUB_ACTIONS:-} ]]; then
+	echo "Error: This script must be run in GitHub Actions"
+	echo "The release-plz script should only be executed in the CI/CD pipeline"
+	exit 1
+fi
 
 git config user.name mise-en-dev
 git config user.email release@mise.jdx.dev
 
-cur_version="$(cargo pkgid mise | cut -d# -f2)"
-if ! curl https://crates.io/api/v1/crates/mise | jq -r '.versions[0].num' | grep -q "$cur_version"; then
-  echo "Releasing $cur_version"
-  cargo publish
-  changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
-  changelog="$(echo "$changelog" | tail -n +3)"
-  git tag "v$cur_version" -s -m "$changelog"
-  git push --tags
-  gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog" --draft
-  exit 0
+# Check if the most recent tag has a matching GitHub Release.
+# If not, the previous release workflow likely failed to fire — re-trigger it.
+latest_tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1 || true)"
+if [[ -n $latest_tag ]]; then
+	if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$latest_tag" --silent 2>/dev/null; then
+		# Don't stack dispatches. release-plz runs on every push to main, so without
+		# this guard each merge re-triggers release.yml for the same tag. That trips
+		# the workflow's `release-<ref>` concurrency group, which cancels the still
+		# -pending prior attempt — so during a busy merge window no run ever survives
+		# long enough to finish and the release can never publish (a self-perpetuating
+		# loop, since a missing release keeps re-arming this very check). Only
+		# re-trigger when nothing is already queued or in progress for this tag.
+		#
+		# Tag-dispatched runs report the tag as `headBranch`, so filter on that.
+		# `gh run list --branch` is documented for branches only and its behavior
+		# with tags is unspecified, so match in jq rather than relying on it.
+		active_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release.yml --limit 60 --json status,headBranch 2>/dev/null | jq --arg tag "$latest_tag" '[.[] | select(.headBranch == $tag and .status != "completed")] | length' 2>/dev/null || echo 0)"
+		if [[ ${active_runs:-0} -gt 0 ]]; then
+			echo "Release workflow already active for $latest_tag ($active_runs queued/running) — not re-triggering"
+		else
+			echo "Tag $latest_tag has no GitHub Release — triggering release workflow"
+			gh workflow run release.yml --ref "$latest_tag"
+		fi
+	fi
 fi
 
-git submodule update --remote
+exists_on_crates() {
+	crate="$1"
+	version="$2"
+	if cargo info --registry "crates-io" --color never --quiet "$crate@$version" 2>/dev/null | grep -qE "^version:\s+$version\b"; then
+		return 0
+	fi
+	if curl -fsSL "https://crates.io/api/v1/crates/$crate/$version" >/dev/null 2>&1; then
+		return 0
+	fi
+	return 1
+}
+
+# Git pathspecs used to decide whether a subcrate has meaningfully changed.
+# Some crates embed vendored/generated content that the release process refreshes
+# on every run (e.g. vfox's embedded-plugins are deleted and re-cloned each
+# release). Counting that churn as a change would bump, tag, and publish the crate
+# on every single release even when its hand-written source is untouched, producing
+# a flood of pointless `<crate>-v*` tags. Excluding that content here means a new
+# subcrate version is only cut when the real source actually changes.
+# Populates the caller-declared `pathspec` array (bash 3.2 compatible).
+subcrate_diff_pathspec() {
+	local crate_name="$1"
+	local crate_dir="$2"
+	pathspec=("$crate_dir")
+	case "$crate_name" in
+	vfox)
+		pathspec+=(":(exclude)${crate_dir}/embedded-plugins")
+		;;
+	esac
+}
+
+# Check if a subcrate has changes since its last tagged release
+# Returns 0 if changes exist (should publish), 1 if no changes
+has_crate_changes() {
+	local crate_name="$1"
+	local crate_dir="$2"
+
+	# Get the latest tag for this crate
+	local latest_tag
+	latest_tag=$(git tag --list "${crate_name}-v*" --sort=-v:refname | head -1 || true)
+
+	if [[ -z $latest_tag ]]; then
+		echo "No previous tag found for $crate_name, will publish"
+		return 0
+	fi
+
+	# Check if there are changes in the crate directory since the tag,
+	# ignoring vendored/generated content (see subcrate_diff_pathspec).
+	local pathspec
+	subcrate_diff_pathspec "$crate_name" "$crate_dir"
+	if git diff --quiet "$latest_tag" -- "${pathspec[@]}"; then
+		echo "No source changes in $crate_name since $latest_tag"
+		return 1
+	else
+		echo "Source changes detected in $crate_name since $latest_tag"
+		return 0
+	fi
+}
+
+# Get the latest published version of a crate from crates.io
+get_latest_crates_version() {
+	local crate="$1"
+	cargo info --registry "crates-io" --color never --quiet "$crate" 2>/dev/null | grep "^version:" | cut -d' ' -f2 || echo ""
+}
+
+use_published_aqua_registry() {
+	local version="$1"
+
+	cargo rm aqua-registry
+	cargo rm --build aqua-registry
+	cargo add "aqua-registry@$version"
+	cargo add --build "aqua-registry@$version"
+}
+
+# Check if the given git pathspecs have uncommitted changes (staged or unstaged)
+has_uncommitted_changes() {
+	# Args: one or more git pathspecs (e.g. a crate dir plus `:(exclude)` entries).
+	# --porcelain covers staged, unstaged, and untracked changes in one check.
+	if [[ -z $(git status --porcelain -- "$@" 2>/dev/null) ]]; then
+		return 1 # No changes
+	fi
+	return 0 # Has changes
+}
+
+# Bump subcrate version if it has uncommitted changes (for prep phase)
+bump_subcrate_if_changed() {
+	local crate_name="$1"
+	local crate_dir="$2"
+
+	# Ignore vendored/generated content (see subcrate_diff_pathspec) so refreshed
+	# embedded content doesn't force an otherwise-unnecessary version bump.
+	local pathspec
+	subcrate_diff_pathspec "$crate_name" "$crate_dir"
+	if ! has_uncommitted_changes "${pathspec[@]}"; then
+		echo "No uncommitted changes in $crate_name, keeping current version"
+		return
+	fi
+
+	echo "Uncommitted changes detected in $crate_name, bumping version"
+	local cur_version
+	cur_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
+
+	# Use calver: YYYY.M.PATCH
+	local year month
+	year="$(date +%Y)"
+	month="$(date +%-m)"
+
+	if echo "$cur_version" | grep -qE "^$year\.$month\."; then
+		# Same year.month, bump patch (e.g., 2025.12.0 -> 2025.12.1)
+		cargo set-version --bump patch -p "$crate_name"
+	else
+		# New month or new year, start fresh at YYYY.MM.0
+		cargo set-version "$year.$month.0" -p "$crate_name"
+	fi
+
+	local new_version
+	new_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
+	echo "Bumped $crate_name from $cur_version to $new_version"
+}
+
+# Bump and publish a subcrate if it has changes
+# Sets PUBLISHED_<CRATE>_VERSION variable with the version to use
+bump_and_publish_subcrate() {
+	local crate_name="$1"
+	local crate_dir="$2"
+	local var_name="$3" # Variable name to set (e.g., VFOX_VERSION)
+
+	local cur_version
+	cur_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
+
+	if ! has_crate_changes "$crate_name" "$crate_dir"; then
+		# No changes - use the current published version
+		local published_version
+		published_version=$(get_latest_crates_version "$crate_name")
+		if [[ -n $published_version ]]; then
+			echo "Using existing $crate_name@$published_version (no changes)"
+			eval "$var_name=$published_version"
+		else
+			echo "Warning: $crate_name not found on crates.io, using current version"
+			eval "$var_name=$cur_version"
+		fi
+		return
+	fi
+
+	# Has changes - bump version and publish
+	# Use calver: YYYY.M.PATCH
+	local year month
+	year="$(date +%Y)"
+	month="$(date +%-m)"
+
+	if echo "$cur_version" | grep -qE "^$year\.$month\."; then
+		# Same year.month, bump patch (e.g., 2025.12.0 -> 2025.12.1)
+		cargo set-version --bump patch -p "$crate_name"
+	else
+		# New month or new year, start fresh at YYYY.MM.0
+		cargo set-version "$year.$month.0" -p "$crate_name"
+	fi
+
+	local new_version
+	new_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
+
+	# Keep bumping if the version already exists on crates.io
+	# This handles cases where a version was published but local code has changed since
+	while exists_on_crates "$crate_name" "$new_version"; do
+		echo "$crate_name@$new_version already on crates.io, bumping again"
+		cargo set-version --bump patch -p "$crate_name"
+		new_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
+	done
+
+	echo "Publishing $crate_name@$new_version"
+	cargo publish --allow-dirty -p "$crate_name"
+
+	# Create tag for this subcrate release
+	local tag_name="${crate_name}-v${new_version}"
+	if git rev-parse -q --verify "refs/tags/$tag_name" >/dev/null ||
+		git ls-remote --exit-code --tags origin "$tag_name" >/dev/null 2>&1; then
+		echo "Tag $tag_name already exists, skipping tag creation"
+	else
+		git tag "$tag_name" -s -m "Release $crate_name $new_version"
+	fi
+
+	eval "$var_name=$new_version"
+}
+
+cur_version="$(cargo pkgid mise | cut -d# -f2)"
+latest_version="$(cargo info --registry "crates-io" --color never --quiet mise | grep "^version:" | cut -d' ' -f2)"
+if [[ $cur_version != "$latest_version" ]]; then
+	echo "Releasing mise $cur_version"
+
+	# Handle subcrates with independent versioning
+	VFOX_VERSION=""
+	AQUA_REGISTRY_VERSION=""
+	INTERACTIVE_CONFIG_VERSION=""
+	MISE_SIGSTORE_VERSION=""
+
+	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
+	cargo add -p mise "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
+	cargo add -p vfox "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
+
+	bump_and_publish_subcrate "vfox" "crates/vfox" "VFOX_VERSION"
+	cargo add "vfox@$VFOX_VERSION"
+
+	bump_and_publish_subcrate "aqua-registry" "crates/aqua-registry" "AQUA_REGISTRY_VERSION"
+	use_published_aqua_registry "$AQUA_REGISTRY_VERSION"
+
+	# Copy schema into crate directory so cargo publish verification can find it
+	cp schema/mise.json crates/mise-interactive-config/mise.json
+	bump_and_publish_subcrate "mise-interactive-config" "crates/mise-interactive-config" "INTERACTIVE_CONFIG_VERSION"
+	rm -f crates/mise-interactive-config/mise.json
+	cargo add "mise-interactive-config@$INTERACTIVE_CONFIG_VERSION"
+
+	if exists_on_crates mise "$cur_version"; then
+		echo "mise@$cur_version already on crates.io, skipping publish"
+	else
+		cargo publish --allow-dirty -p mise
+	fi
+
+	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
+	changelog="$(echo "$changelog" | tail -n +3)"
+	if git rev-parse -q --verify "refs/tags/v$cur_version" >/dev/null ||
+		git ls-remote --exit-code --tags origin "v$cur_version" >/dev/null 2>&1; then
+		echo "Tag v$cur_version already exists, skipping tag creation"
+	else
+		git tag "v$cur_version" -s -m "$changelog"
+	fi
+
+	# Push all tags (mise + any subcrate tags)
+	git push --tags
+	exit 0
+fi
 
 year="$(date +%Y)"
 month="$(date +%-m)"
 if echo "$cur_version" | grep -e "^$year\.$month\."; then
-  cargo set-version --bump patch
+	cargo set-version --bump patch -p mise
 elif echo "$cur_version" | grep -e "^$year\."; then
-  cargo set-version --bump minor
+	cargo set-version --bump minor -p mise
 else
-  cargo set-version "$year.1.0"
+	cargo set-version "$year.1.0" -p mise
 fi
 
 version="$(cargo pkgid mise | cut -d# -f2)"
-git cliff --tag "v$version" -o CHANGELOG.md
-changelog="$(git cliff --tag "v$version" --unreleased --strip all)"
-changelog="$(echo "$changelog" | tail -n +3)"
-sed -i.bak "s/^[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\? macos-arm64 (a1b2d3e [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\})$/$version macos-arm64 (a1b2d3e $(date +%Y-%m-%d))/" README.md
+sed -i.bak "s/^[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\? macos-arm64 ([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\})$/$version macos-arm64 ($(date +%Y-%m-%d))/" README.md
 sed -i.bak "s/^Version: [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/Version: $version/" packaging/rpm/mise.spec
 sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/version = \"$version\";/" default.nix
+sed -i.bak "s/version: \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\"$/version: \"$version\"/" snapcraft.yaml
 
+# Update GitHub star count using gh CLI
+stars_raw="$(gh api repos/jdx/mise --jq '.stargazers_count')"
+if [[ -n $stars_raw ]]; then
+	if [[ $stars_raw -ge 1000 ]]; then
+		# Format as k notation (e.g., 19346 -> 19.3k)
+		stars_formatted="$(awk -v n="$stars_raw" 'BEGIN { printf "%.1fk", n/1000 }')"
+		# Remove trailing .0k
+		stars_formatted="${stars_formatted/.0k/k}"
+	else
+		stars_formatted="$stars_raw"
+	fi
+
+	# Update the stars data file
+	cat >docs/.vitepress/stars.data.ts <<EOF
+// This file is auto-updated by xtasks/release-plz
+// Current star count from GitHub API
+export default {
+  load() {
+    return {
+      stars: "$stars_formatted",
+    };
+  },
+};
+EOF
+	echo "Updated star count to $stars_formatted"
+fi
+
+# fetch-gpg-keys must run before render (which includes build) since it
+# recreates src/assets/gpg/ which is read at compile time via include_str!
+mise run fetch-gpg-keys
 mise run render ::: lint-fix
 
-mise up
-cargo update
+AQUA_REGISTRY_DIR="vendor/aqua-registry"
+AQUA_REGISTRY_METADATA="$AQUA_REGISTRY_DIR/metadata.json"
+AQUA_REGISTRY_FILE="$AQUA_REGISTRY_DIR/registry.yml"
+AQUA_REGISTRY_REPO="aquaproj/aqua-registry"
+
+# Capture current aqua-registry ref before updating
+OLD_AQUA_REGISTRY_TAG=""
+if [[ -f $AQUA_REGISTRY_METADATA ]]; then
+	OLD_AQUA_REGISTRY_TAG="$(jq -r '.tag // empty' "$AQUA_REGISTRY_METADATA")"
+fi
+NEW_AQUA_REGISTRY_TAG="$(gh api "repos/$AQUA_REGISTRY_REPO/commits/main" --jq .sha)"
+
+rm -rf "$AQUA_REGISTRY_DIR"
+mkdir -p "$AQUA_REGISTRY_DIR"
+curl -fsSL "https://raw.githubusercontent.com/$AQUA_REGISTRY_REPO/$NEW_AQUA_REGISTRY_TAG/registry.yaml" \
+	-o "$AQUA_REGISTRY_FILE"
+curl -fsSL "https://raw.githubusercontent.com/$AQUA_REGISTRY_REPO/$NEW_AQUA_REGISTRY_TAG/LICENSE" \
+	-o "$AQUA_REGISTRY_DIR/LICENSE"
+cat >"$AQUA_REGISTRY_METADATA" <<EOF
+{
+  "repository": "$AQUA_REGISTRY_REPO",
+  "tag": "$NEW_AQUA_REGISTRY_TAG"
+}
+EOF
+
+# Generate aqua-registry changelog section for both CHANGELOG.md and PR body
+AQUA_CHANGELOG_MD="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_REGISTRY_TAG" "$NEW_AQUA_REGISTRY_TAG" "###" || true)"
+AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_REGISTRY_TAG" "$NEW_AQUA_REGISTRY_TAG" "##" || true)"
+
+# Generate changelog using git-cliff with explicit calver version (not --bump which uses semver)
+# LLM editorialization happens in release.yml after merge
+# Use --unreleased --prepend to only add the new release entry, preserving existing content
+# (including previously injected aqua-registry sections from older releases)
+git cliff --tag "v$version" --unreleased --prepend CHANGELOG.md
+
+# Get the unreleased notes for PR body (strip version header since PR title has version)
+PR_NOTES="$(git cliff --tag "v$version" --unreleased --strip all | tail -n +3)"
+
+# Inject aqua-registry updates into CHANGELOG.md if there are any
+if [[ -n $AQUA_CHANGELOG_MD ]]; then
+	# Find the FIRST release section (the one we just added) and inject aqua section at the end, before the next release
+	# Use ENVIRON instead of -v to avoid awk interpreting backslash escape sequences
+	export AQUA_CHANGELOG_MD
+	awk '
+		/^## \[/ {
+			if (release_count == 1 && !inserted) {
+				# We are at the second release, inject aqua section before it
+				print ENVIRON["AQUA_CHANGELOG_MD"]
+				print ""
+				inserted = 1
+			}
+			release_count++
+		}
+		{print}
+		END {
+			# If we never hit a second release (only one release in file), append at end
+			if (release_count == 1 && !inserted) {
+				print ""
+				print ENVIRON["AQUA_CHANGELOG_MD"]
+			}
+		}
+	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+fi
+
+# TODO: re-enable once fd v10.4.0 asset is fixed (missing fd-v10.4.0-x86_64-unknown-linux-musl.tar.gz)
+# mise up
+mise lock
+# Refresh PATH after mise up, since upgraded tools have new install paths
+eval "$(mise env)"
+
+# Update embedded vfox plugins (delete all and re-clone fresh, similar to aqua-registry)
+EMBEDDED_PLUGINS_DIR="crates/vfox/embedded-plugins"
+rm -rf "$EMBEDDED_PLUGINS_DIR"
+mkdir -p "$EMBEDDED_PLUGINS_DIR"
+
+# Clone mise-plugins vfox tools when vfox is the default backend or the
+# fallback after an asdf default backend.
+mise registry | awk '
+	$2 ~ /^vfox:mise-plugins\// {
+		print $2
+	}
+	$2 ~ /^asdf:/ && $3 ~ /^vfox:mise-plugins\// {
+		print $3
+	}
+' | sed 's|vfox:||' | sort -u | while read -r repo_path; do
+	plugin="$(basename "$repo_path")"
+	echo "Cloning $plugin from https://github.com/$repo_path"
+	TEMP_DIR="$(mktemp -d)"
+	git clone --depth 1 "https://github.com/$repo_path.git" "$TEMP_DIR" 2>&1 | grep -v "^Cloning" || true
+	DEST_DIR="$EMBEDDED_PLUGINS_DIR/$plugin"
+	mkdir -p "$DEST_DIR/hooks"
+	cp "$TEMP_DIR/metadata.lua" "$DEST_DIR/"
+	cp "$TEMP_DIR/hooks/"*.lua "$DEST_DIR/hooks/" 2>/dev/null || true
+	if [[ -d "$TEMP_DIR/lib" ]]; then
+		mkdir -p "$DEST_DIR/lib"
+		cp "$TEMP_DIR/lib/"*.lua "$DEST_DIR/lib/" 2>/dev/null || true
+	fi
+	rm -rf "$TEMP_DIR"
+done
+
+# Bump subcrate versions if they have changes (from aqua-registry/vfox updates)
+bump_subcrate_if_changed "aqua-registry" "crates/aqua-registry"
+bump_subcrate_if_changed "vfox" "crates/vfox"
+bump_subcrate_if_changed "mise-interactive-config" "crates/mise-interactive-config"
+bump_subcrate_if_changed "mise-sigstore" "crates/mise-sigstore"
+
+git status
+# cargo update
 git add \
-  Cargo.lock \
-  Cargo.toml \
-  CHANGELOG.md \
-  README.md \
-  aqua-registry \
-  default.nix \
-  packaging/rpm/mise.spec \
-  mise.usage.kdl \
-  completions \
-  man/
+	Cargo.lock \
+	Cargo.toml \
+	CHANGELOG.md \
+	README.md \
+	vendor/aqua-registry \
+	crates/aqua-registry/Cargo.toml \
+	crates/vfox/embedded-plugins \
+	crates/vfox/Cargo.toml \
+	crates/mise-interactive-config/Cargo.toml \
+	crates/mise-sigstore/Cargo.toml \
+	default.nix \
+	snapcraft.yaml \
+	docs/.vitepress/stars.data.ts \
+	packaging/rpm/mise.spec \
+	mise.usage.kdl \
+	completions \
+	mise.lock \
+	man/ \
+	src/assets/gpg/
 git clean -df
 git checkout -B release
 git commit -m "chore: release $version"
 git push origin release --force
 
-if [[ "$(gh pr list --label release)" == "" ]]; then
-  gh pr create --title "chore: release $version" --body "$changelog" --label "release" --head release
+# Append aqua-registry updates to PR body if available
+PR_BODY="$PR_NOTES"
+if [[ -n $AQUA_CHANGELOG_PR ]]; then
+	PR_BODY="$PR_NOTES"$'\n\n'"$AQUA_CHANGELOG_PR"
+fi
+
+# Check for existing PR from the release branch specifically (not by label repo-wide)
+if [[ "$(gh pr list --head release --state open)" == "" ]]; then
+	gh pr create --title "chore: release $version" --body "$PR_BODY" --label "release" --head release
 else
-  gh pr edit --title "chore: release $version" --body "$changelog"
+	gh pr edit release --title "chore: release $version" --body "$PR_BODY"
 fi

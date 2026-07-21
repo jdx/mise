@@ -1,9 +1,11 @@
 use std::path::{Path, PathBuf};
 
+use crate::config::Settings;
 use crate::env::PATH_KEY;
-use crate::file::touch_dir;
+use crate::file::{canonicalize_cached, canonicalize_or_self, touch_dir};
 use crate::path_env::PathEnv;
 use crate::shell::{ActivateOptions, ActivatePrelude, Shell, ShellType, get_shell};
+use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, env};
 use eyre::Result;
 use itertools::Itertools;
@@ -28,30 +30,16 @@ use itertools::Itertools;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Activate {
     /// Shell type to generate the script for
-    #[clap(long, short, hide = true)]
-    shell: Option<ShellType>,
-
-    /// Shell type to generate the script for
     #[clap()]
     shell_type: Option<ShellType>,
-
-    /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
-    #[clap(long, hide = true)]
-    status: bool,
-
-    /// Use shims instead of modifying PATH
-    /// Effectively the same as:
-    ///
-    ///     PATH="$HOME/.local/share/mise/shims:$PATH"
-    ///
-    /// `mise activate --shims` does not support all the features of `mise activate`.
-    /// See https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information
-    #[clap(long, verbatim_doc_comment)]
-    shims: bool,
 
     /// Suppress non-error messages
     #[clap(long, short)]
     quiet: bool,
+
+    /// Shell type to generate the script for
+    #[clap(long, short, hide = true)]
+    shell: Option<ShellType>,
 
     /// Do not automatically call hook-env
     ///
@@ -61,6 +49,20 @@ pub struct Activate {
     /// information or just see the values that hook-env is outputting.
     #[clap(long)]
     no_hook_env: bool,
+
+    /// Use shims instead of modifying PATH
+    /// Effectively the same as:
+    ///
+    ///     PATH="$HOME/.local/share/mise/shims:$PATH"
+    ///
+    /// `mise activate --shims` does not support all the features of `mise activate`.
+    /// See https://mise.en.dev/dev-tools/shims.html#shims-vs-path for more information
+    #[clap(long, verbatim_doc_comment)]
+    shims: bool,
+
+    /// Show "mise: <TOOL>@<VERSION>" message when changing directories
+    #[clap(long, hide = true)]
+    status: bool,
 }
 
 impl Activate {
@@ -73,7 +75,19 @@ impl Activate {
 
         let mise_bin = if cfg!(target_os = "linux") {
             // linux dereferences symlinks, so use argv0 instead
-            PathBuf::from(&*env::ARGV0)
+            let argv0 = PathBuf::from(&*env::ARGV0);
+            let path = if argv0.is_absolute() {
+                argv0
+            } else {
+                which::which(&*env::ARGV0).unwrap_or_else(|_| env::MISE_BIN.clone())
+            };
+            if path.is_absolute() {
+                path
+            } else {
+                std::env::current_dir()
+                    .map(|cwd| cwd.join(path))
+                    .unwrap_or_else(|_| env::MISE_BIN.clone())
+            }
         } else {
             env::MISE_BIN.clone()
         };
@@ -88,10 +102,17 @@ impl Activate {
     fn activate_shims(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
         let exe_dir = mise_bin.parent().unwrap();
         let mut prelude = vec![];
+        // The shims dir is always (move-)prepended so it stays at the front of PATH
+        // even when activation is re-sourced (e.g. VS Code terminals) — see #8757.
+        // The mise executable's own dir only needs to be present so `mise` is
+        // callable, so it uses the guarded prepend: this avoids re-prepending (and
+        // thereby reordering) a system dir such as /usr/bin that is already in PATH
+        // for deb/rpm installs, which would otherwise move it ahead of
+        // /usr/local/bin (#10264).
         if let Some(p) = self.prepend_path(exe_dir) {
             prelude.push(p);
         }
-        if let Some(p) = self.prepend_path(&dirs::SHIMS) {
+        if let Some(p) = self.shims_prepend_path(shell, &dirs::SHIMS) {
             prelude.push(p);
         }
         miseprint!("{}", shell.format_activate_prelude(&prelude))?;
@@ -114,6 +135,17 @@ impl Activate {
         if let Some(prepend_path) = self.prepend_path(exe_dir) {
             prelude.push(prepend_path);
         }
+
+        // Generate encryption key for env cache if caching is enabled
+        // This key is session-scoped and lost when the shell closes
+        if Settings::get().env_cache {
+            let key = CachedEnv::ensure_encryption_key();
+            prelude.push(ActivatePrelude::SetEnv(
+                "__MISE_ENV_CACHE_KEY".to_string(),
+                key,
+            ));
+        }
+
         miseprint!(
             "{}",
             shell.activate(ActivateOptions {
@@ -136,15 +168,40 @@ impl Activate {
             None
         }
     }
+
+    /// Used by activate_shims for the shims directory. Always prepends the path to
+    /// the front, even if already present (accepting a duplicate entry), so the
+    /// shims dir wins on re-source. For shells with native path dedup (fish), uses
+    /// MovePrependEnv to reorder without duplicating.
+    fn shims_prepend_path(&self, shell: &dyn Shell, p: &Path) -> Option<ActivatePrelude> {
+        if !is_dir_not_in_nix(p) || p.is_relative() {
+            return None;
+        }
+        if shell.supports_move_path() {
+            Some(ActivatePrelude::MovePrependEnv(
+                PATH_KEY.to_string(),
+                p.to_string_lossy().to_string(),
+            ))
+        } else {
+            Some(ActivatePrelude::PrependEnv(
+                PATH_KEY.to_string(),
+                p.to_string_lossy().to_string(),
+            ))
+        }
+    }
 }
 
 fn remove_shims() -> std::io::Result<Option<ActivatePrelude>> {
-    let shims = dirs::SHIMS
-        .canonicalize()
-        .unwrap_or(dirs::SHIMS.to_path_buf());
+    // When not_found_auto_install is enabled, preserve shims in PATH so they can
+    // trigger auto-install for tools that aren't installed yet
+    if Settings::get().not_found_auto_install {
+        return Ok(None);
+    }
+
+    let shims = canonicalize_or_self(&dirs::SHIMS);
     if env::PATH
         .iter()
-        .filter_map(|p| p.canonicalize().ok())
+        .filter_map(|p| canonicalize_cached(p))
         .contains(&shims)
     {
         let path_env = PathEnv::from_iter(env::PATH.clone());
@@ -157,17 +214,15 @@ fn remove_shims() -> std::io::Result<Option<ActivatePrelude>> {
 }
 
 fn is_dir_in_path(dir: &Path) -> bool {
-    let dir = dir.canonicalize().unwrap_or(dir.to_path_buf());
+    let dir = canonicalize_or_self(dir);
     env::PATH
         .clone()
         .into_iter()
-        .any(|p| p.canonicalize().unwrap_or(p) == dir)
+        .any(|p| canonicalize_or_self(&p) == dir)
 }
 
 fn is_dir_not_in_nix(dir: &Path) -> bool {
-    !dir.canonicalize()
-        .unwrap_or(dir.to_path_buf())
-        .starts_with("/nix/")
+    !canonicalize_or_self(dir).starts_with("/nix/")
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

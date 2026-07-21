@@ -1,0 +1,5 @@
+backends = [
+  "aqua:operator-framework/operator-sdk",
+  "asdf:Medium/asdf-operator-sdk",
+]
+description = "SDK for building Kubernetes applications. Provides high level APIs, useful abstractions, and project scaffolding"

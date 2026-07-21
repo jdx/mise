@@ -1,0 +1,3 @@
+backends = ["aqua:denisidoro/navi", "cargo:navi"]
+description = "An interactive cheatsheet tool for the command-line"
+test = { cmd = "navi --version", expected = "navi {{version}}" }

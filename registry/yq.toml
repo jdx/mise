@@ -1,0 +1,7 @@
+backends = [
+  "aqua:mikefarah/yq",
+  "asdf:sudermanjr/asdf-yq",
+  "go:github.com/mikefarah/yq/v4",
+]
+description = "yq is a portable command-line YAML processor"
+test = { cmd = "yq --version", expected = "version v{{version}}" }

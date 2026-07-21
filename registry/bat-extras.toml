@@ -1,0 +1,3 @@
+backends = ["aqua:eth-p/bat-extras", "asdf:mise-plugins/mise-bat-extras"]
+description = "Bash scripts that integrate bat with various command line tools"
+test = { cmd = "batman --version", expected = "batman {{version}}" }

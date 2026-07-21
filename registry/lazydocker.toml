@@ -1,0 +1,3 @@
+backends = ["aqua:jesseduffield/lazydocker"]
+description = "The lazier way to manage everything docker"
+test = { cmd = "lazydocker --version", expected = "Version: {{version}}" }

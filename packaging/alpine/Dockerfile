@@ -1,4 +1,4 @@
-FROM alpine:edge
+FROM alpine:edge@sha256:9a341ff2287c54b86425cbee0141114d811ae69d88a36019087be6d896cef241
 
 RUN apk add --no-cache sudo build-base alpine-sdk bash direnv glab atools github-cli jq nodejs \
       && apk fix \

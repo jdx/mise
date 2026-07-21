@@ -1,7 +1,12 @@
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
+use crate::backend::normalize_idiomatic_contents;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -12,20 +17,21 @@ use crate::install_context::InstallContext;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, github, plugins};
-use eyre::Result;
+use async_trait::async_trait;
+use eyre::{Result, bail};
 use itertools::Itertools;
 use versions::Versioning;
 use xx::regex;
 
 #[derive(Debug)]
 pub struct RubyPlugin {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
 impl RubyPlugin {
     pub fn new() -> Self {
         Self {
-            ba: plugins::core::new_backend_arg("ruby"),
+            ba: plugins::core::new_backend_arg("ruby").into(),
         }
     }
 
@@ -37,26 +43,33 @@ impl RubyPlugin {
         tv.install_path().join("bin").join("gem.cmd")
     }
 
-    fn install_default_gems(
+    async fn install_default_gems(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
     ) -> Result<()> {
         let settings = Settings::get();
         let default_gems_file = file::replace_path(&settings.ruby.default_packages_file);
         let body = file::read_to_string(&default_gems_file).unwrap_or_default();
-        for package in body.lines() {
-            let package = package.split('#').next().unwrap_or_default().trim();
-            if package.is_empty() {
-                continue;
-            }
+        let mut packages = body
+            .lines()
+            .filter_map(Settings::parse_default_package_line)
+            .peekable();
+        if packages.peek().is_some() {
+            Settings::warn_default_package_file_deprecated(
+                "ruby.default_packages_file",
+                "ruby gem",
+            );
+        }
+        for package in packages {
             pr.set_message(format!("install default gem: {}", package));
             let gem = self.gem_path(tv);
             let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)
                 .arg("install")
-                .envs(config.env()?);
+                .envs(config.env().await?)
+                .env_values(tv.install_env());
             match package.split_once(' ') {
                 Some((name, "--pre")) => cmd = cmd.arg(name).arg("--pre"),
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
@@ -68,26 +81,33 @@ impl RubyPlugin {
         Ok(())
     }
 
-    fn test_ruby(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
+    async fn test_ruby(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        pr: &dyn SingleReport,
+    ) -> Result<()> {
         pr.set_message("ruby -v".into());
         CmdLineRunner::new(self.ruby_path(tv))
             .with_pr(pr)
             .arg("-v")
-            .envs(Config::get().env()?)
+            .envs(config.env().await?)
+            .env_values(tv.install_env())
             .execute()
     }
 
-    fn test_gem(
+    async fn test_gem(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
     ) -> Result<()> {
         pr.set_message("gem -v".into());
         CmdLineRunner::new(self.gem_path(tv))
             .with_pr(pr)
             .arg("-v")
-            .envs(config.env()?)
+            .envs(config.env().await?)
+            .env_values(tv.install_env())
             .env(&*PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()
     }
@@ -100,28 +120,29 @@ impl RubyPlugin {
         Ok(())
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
-        let arch = arch();
-        let url = format!(
-            "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-{version}-1/rubyinstaller-{version}-1-{arch}.7z",
-            version = tv.version,
-        );
-        let filename = url.split('/').last().unwrap();
+    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+        let url = super::ruby_common::rubyinstaller_url(&tv.version);
+        let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("downloading {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr))?;
+        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
 
         Ok(tarball_path)
     }
 
-    fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
+    async fn install(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        tarball_path: &Path,
+    ) -> Result<()> {
         let arch = arch();
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
-        file::un7z(tarball_path, &tv.download_path())?;
-        file::rename(
+        file::un7z(tarball_path, &tv.download_path(), &Default::default())?;
+        file::move_file(
             tv.download_path()
                 .join(format!("rubyinstaller-{}-1-{arch}", tv.version)),
             tv.install_path(),
@@ -129,78 +150,95 @@ impl RubyPlugin {
         Ok(())
     }
 
-    fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
-        self.test_ruby(tv, &ctx.pr)
+    async fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        self.test_ruby(&ctx.config, tv, ctx.pr.as_ref()).await
     }
 }
 
+#[async_trait]
 impl Backend for RubyPlugin {
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         // TODO: use windows set of versions
         //  match self.core.fetch_remote_versions_from_mise() {
         //      Ok(Some(versions)) => return Ok(versions),
         //      Ok(None) => {}
         //      Err(e) => warn!("failed to fetch remote versions: {}", e),
         //  }
-        let releases: Vec<GithubRelease> = github::list_releases("oneclick/rubyinstaller2")?;
+        let releases: Vec<GithubRelease> = github::list_releases("oneclick/rubyinstaller2").await?;
         let versions = releases
             .into_iter()
-            .map(|r| r.tag_name)
-            .filter_map(|v| {
+            .filter_map(|r| {
                 regex!(r"RubyInstaller-([0-9.]+)-.*")
-                    .replace(&v, "$1")
-                    .parse()
+                    .replace(&r.tag_name, "$1")
+                    .parse::<String>()
                     .ok()
+                    .map(|version| VersionInfo {
+                        version,
+                        created_at: Some(r.created_at),
+                        ..Default::default()
+                    })
             })
-            .unique()
-            .sorted_by_cached_key(|s: &String| (Versioning::new(s), s.to_string()))
+            .unique_by(|v| v.version.clone())
+            .sorted_by_cached_key(|v| (Versioning::new(&v.version), v.version.clone()))
             .collect();
         Ok(versions)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".ruby-version".into(), "Gemfile".into()])
     }
 
-    fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+    async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let v = match path.file_name() {
             Some(name) if name == "Gemfile" => parse_gemfile(&file::read_to_string(path)?),
             _ => {
                 // .ruby-version
-                let body = file::read_to_string(path)?;
+                let body = normalize_idiomatic_contents(&file::read_to_string(path)?);
                 body.trim()
                     .trim_start_matches("ruby-")
                     .trim_start_matches('v')
                     .to_string()
             }
         };
-        Ok(v)
+        if v.is_empty() {
+            return Ok(vec![]);
+        }
+        Ok(vec![v])
     }
 
-    fn install_version_(
+    async fn install_version_(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let config = Config::get();
-        let tarball = self.download(&tv, &ctx.pr)?;
+        if !super::ruby_common::is_mri_version(&tv.version) {
+            bail!(
+                "Ruby engine '{}' is not supported on Windows.\n\
+                 Only standard MRI Ruby versions can be installed via RubyInstaller2.",
+                tv.version
+            );
+        }
+        let tarball = self.download(&tv, ctx.pr.as_ref()).await?;
         self.verify_checksum(ctx, &mut tv, &tarball)?;
-        self.install(ctx, &tv, &tarball)?;
-        self.verify(ctx, &tv)?;
+        self.install(ctx, &tv, &tarball).await?;
+        self.verify(ctx, &tv).await?;
         self.install_rubygems_hook(&tv)?;
-        self.test_gem(&config, &tv, &ctx.pr)?;
-        if let Err(err) = self.install_default_gems(&config, &tv, &ctx.pr) {
+        self.test_gem(&ctx.config, &tv, ctx.pr.as_ref()).await?;
+        if let Err(err) = self
+            .install_default_gems(&ctx.config, &tv, ctx.pr.as_ref())
+            .await
+        {
             warn!("failed to install default ruby gems {err:#}");
         }
         Ok(tv)
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
-        _config: &Config,
+        _config: &Arc<Config>,
         _ts: &Toolset,
         _tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
@@ -248,28 +286,36 @@ fn arch() -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::Config;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
     use super::*;
 
-    #[test]
-    fn test_list_versions_matching() {
+    #[tokio::test]
+    async fn test_list_versions_matching() {
+        let config = Config::get().await.unwrap();
         let plugin = RubyPlugin::new();
         assert!(
-            !plugin.list_versions_matching("3").unwrap().is_empty(),
+            !plugin
+                .list_versions_matching(&config, "3")
+                .await
+                .unwrap()
+                .is_empty(),
             "versions for 3 should not be empty"
         );
         assert!(
             !plugin
-                .list_versions_matching("truffleruby-24")
+                .list_versions_matching(&config, "truffleruby-24")
+                .await
                 .unwrap()
                 .is_empty(),
             "versions for truffleruby-24 should not be empty"
         );
         assert!(
             !plugin
-                .list_versions_matching("truffleruby+graalvm-24")
+                .list_versions_matching(&config, "truffleruby+graalvm-24")
+                .await
                 .unwrap()
                 .is_empty(),
             "versions for truffleruby+graalvm-24 should not be empty"

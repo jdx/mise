@@ -1,0 +1,2 @@
+backends = ["aqua:oras-project/oras", "asdf:bodgit/asdf-oras"]
+description = "ORAS CLI"

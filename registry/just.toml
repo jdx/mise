@@ -1,0 +1,3 @@
+backends = ["aqua:casey/just", "asdf:olofvndrhr/asdf-just", "cargo:just"]
+description = "Just a command runner"
+test = { cmd = "just --version", expected = "just {{version}}" }

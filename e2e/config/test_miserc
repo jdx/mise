@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2209
+
+# Test that .miserc.toml can set MISE_ENV
+
+echo "tools.dummy = '1'" >mise.toml
+echo "tools.dummy = '2'" >mise.test.toml
+echo 'env = ["test"]' >.miserc.toml
+
+# .miserc.toml should set MISE_ENV=test, loading mise.test.toml
+assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/mise.test.toml  2"
+
+# Env var should override .miserc.toml
+MISE_ENV=ci assert "mise ls dummy" "dummy  1.1.0 (missing)  ~/workdir/mise.toml  1"
+
+# Test ceiling_paths in .miserc.toml - subdirectory should pick up parent miserc
+rm -f .miserc.toml
+
+# Invalid global miserc TOML should be reported instead of silently ignored.
+cat >"$MISE_CONFIG_DIR/miserc.toml" <<'EOF'
+ceiling_paths = ["{{ env.HOME }}"]
+fdsfads
+EOF
+assert_fail "mise config ls" "Invalid TOML in config file:"
+assert_fail "mise config ls" "~/.config/mise/miserc.toml:2:8"
+assert_fail "mise config ls" "key with no value, expected"
+rm -f "$MISE_CONFIG_DIR/miserc.toml"
+echo 'env = ["test"]' >.miserc.toml
+mkdir -p subdir
+cd subdir || exit 1
+
+# Should still pick up parent .miserc.toml and mise.test.toml
+assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/mise.test.toml  2"
+
+cd .. || exit 1
+
+# MISE_CEILING_PATHS should also limit early .miserc.toml discovery.
+rm -f .miserc.toml
+mkdir -p ceiling-parent/child/grandchild
+echo 'env = ["test"]' >ceiling-parent/.miserc.toml
+echo "tools.dummy = '1'" >ceiling-parent/child/grandchild/mise.toml
+echo "tools.dummy = '2'" >ceiling-parent/child/grandchild/mise.test.toml
+cd ceiling-parent/child/grandchild || exit 1
+export MISE_CEILING_PATHS="$HOME/workdir/ceiling-parent/child"
+assert "mise ls dummy" "dummy  1.1.0 (missing)  ~/workdir/ceiling-parent/child/grandchild/mise.toml  1"
+unset MISE_CEILING_PATHS
+
+cd ../../.. || exit 1
+
+# Test Tera template support in .miserc.toml
+# ceiling_paths with {{ env.HOME }} should expand and stop config traversal
+rm -f .miserc.toml
+echo 'ceiling_paths = ["{{ env.HOME }}"]' >.miserc.toml
+
+# mise.toml exists here; from a subdir, it should still be found (we're within HOME)
+mkdir -p subdir2
+cd subdir2 || exit 1
+assert "mise ls dummy" "dummy  1.1.0 (missing)  ~/workdir/mise.toml  1"
+cd .. || exit 1
+
+# Test os() function in .miserc.toml - template should render (no raw {{ }} in result)
+rm -f .miserc.toml
+echo 'ceiling_paths = ["{{ env.HOME }}/{{ os() }}-work"]' >.miserc.toml
+# Rendered path won't match HOME exactly, so ceiling won't block — config still found
+assert "mise ls dummy" "dummy  1.1.0 (missing)  ~/workdir/mise.toml  1"
+
+rm -f .miserc.toml

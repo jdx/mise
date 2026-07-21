@@ -1,0 +1,3 @@
+backends = ["aqua:turbot/tailpipe"]
+description = "select * from logs! Tailpipe is an open source SIEM for instant log insights, powered by DuckDB. Analyze millions of events in seconds, right from your terminal"
+test = { cmd = "tailpipe --version", expected = "Tailpipe v{{version}}" }

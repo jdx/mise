@@ -1,0 +1,3 @@
+backends = ["aqua:carthage-software/mago"]
+description = "A blazing fast linter, formatter, and static analyzer for PHP, written in Rust"
+test = { cmd = "mago --version", expected = "mago {{version}}" }

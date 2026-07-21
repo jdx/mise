@@ -1,0 +1,7 @@
+backends = [
+  "aqua:sharkdp/fd",
+  "asdf:https://gitlab.com/wt0f/asdf-fd",
+  "cargo:fd-find",
+]
+description = "A simple, fast and user-friendly alternative to 'find'"
+test = { cmd = "fd --version", expected = "fd {{version}}" }

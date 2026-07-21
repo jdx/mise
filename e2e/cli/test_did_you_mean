@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Test "Did you mean?" suggestions for unknown tools
+
+set -euo pipefail
+export RUST_BACKTRACE=0
+export MISE_FRIENDLY_ERROR=1
+
+# Test: Typo of a known mise registry tool should suggest the correct name
+assert_fail "mise use nod" "Did you mean?"
+assert_fail "mise use nod" "node"
+
+# Test: Typo of python should suggest python
+assert_fail "mise use pythn" "python"
+
+# Test: Completely unrelated name should not show suggestions
+assert_fail "mise use somethingnonexistent" "not found in mise tool registry"

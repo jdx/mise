@@ -1,0 +1,3 @@
+backends = ["aqua:kubernetes/kompose", "asdf:technikhil314/asdf-kompose"]
+description = "Go from Docker Compose to Kubernetes"
+test = { cmd = "kompose version", expected = "{{version}}" }

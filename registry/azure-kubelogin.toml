@@ -1,0 +1,3 @@
+backends = ["aqua:Azure/kubelogin", "asdf:sechmann/asdf-kubelogin"]
+description = "A Kubernetes credential (exec) plugin implementing azure authentication"
+test = { cmd = "kubelogin --version", expected = "git hash: v{{version}}" }

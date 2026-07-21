@@ -4,3 +4,27 @@ assert "mise use erlang@27.2"
 assert_contains "mise x -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell" "27"
 assert_contains "mise x elixir@1.17.3 -- elixir --version 2>&1" "Elixir 1.17.3"
 assert_contains "mise x elixir@1.17.3 -- mix --version 2>&1" "Mix 1.17.3"
+
+assert_not_contains "mise env" "MIX_HOME"
+assert_not_contains "mise env" "MIX_ARCHIVES"
+assert "mise use elixir@1.17.3"
+assert_contains "mise env" "MIX_HOME"
+assert_contains "mise env" "MIX_ARCHIVES"
+
+# Test that MIX_HOME is not overridden when set via mise set
+assert "mise set MIX_HOME=/mise/set/mix/home"
+assert_contains "mise env" "MIX_HOME=/mise/set/mix/home"
+assert "mise unset MIX_HOME"
+
+# Test that MIX_ARCHIVES is not overridden when set via mise set
+assert "mise set MIX_ARCHIVES=/mise/set/mix/archives"
+assert_contains "mise env" "MIX_ARCHIVES=/mise/set/mix/archives"
+assert "mise unset MIX_ARCHIVES"
+
+# Test that MIX_HOME is not overridden when set in pristine environment
+# When env var is already set, mise won't set it, so it won't appear in mise env output
+assert_not_contains "MIX_HOME=/custom/mix/home mise env" "MIX_HOME="
+
+# Test that MIX_ARCHIVES is not overridden when set in pristine environment
+# When env var is already set, mise won't set it, so it won't appear in mise env output
+assert_not_contains "MIX_ARCHIVES=/custom/mix/archives mise env" "MIX_ARCHIVES="

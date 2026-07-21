@@ -1,60 +1,522 @@
-use crate::config::Config;
-use crate::config::config_file::toml::{TomlParser, deserialize_arr};
-use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
-use crate::tera::get_tera;
+use crate::cli::args::{BackendArg, ToolArg};
+use crate::config::config_file::mise_toml::{EnvList, ParsedToolMap, deserialize_vars};
+use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
+use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
+use crate::config::{self, Config};
+use crate::path_env::PathEnv;
+use crate::task::task_script_parser::TaskScriptParser;
+use crate::tera::{TeraEngine, contains_template_syntax, get_tera, render_str};
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
-use console::{Color, truncate_str};
-use either::Either;
-use eyre::{Result, eyre};
+use console::{measure_text_width, truncate_str};
+use eyre::{Result, bail, eyre};
 use globset::GlobBuilder;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use petgraph::prelude::*;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::LazyLock as Lazy;
 use std::{ffi, fmt, path};
 use xx::regex;
 
+static TASK_VARS_CACHE: Lazy<std::sync::Mutex<IndexMap<PathBuf, IndexMap<String, String>>>> =
+    Lazy::new(|| std::sync::Mutex::new(IndexMap::new()));
+
+static TASK_ENV_CACHE: Lazy<std::sync::Mutex<IndexMap<PathBuf, EnvMap>>> =
+    Lazy::new(|| std::sync::Mutex::new(IndexMap::new()));
+
+pub(crate) fn reset() {
+    TASK_VARS_CACHE.lock().unwrap().clear();
+    TASK_ENV_CACHE.lock().unwrap().clear();
+}
+
+/// Type alias for tracking failed tasks with their exit codes
+pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
+
 mod deps;
+pub mod task_confirm;
+pub mod task_context_builder;
 mod task_dep;
+pub mod task_executor;
+pub mod task_fetcher;
 pub mod task_file_providers;
+pub mod task_helpers;
+pub mod task_list;
+mod task_load_context;
+pub mod task_output;
+pub mod task_output_handler;
+pub mod task_results_display;
+pub mod task_scheduler;
 mod task_script_parser;
+pub mod task_source_checker;
 pub mod task_sources;
+pub mod task_template;
+pub mod task_tool_installer;
+
+pub use task_confirm::TaskConfirm;
+pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
+pub use task_output::TaskOutput;
+pub use task_script_parser::{has_any_args_defined, has_any_usage_spec};
+pub use task_template::TaskTemplate;
 
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::toolset::Toolset;
+use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, Toolset};
 use crate::ui::style;
-pub use deps::Deps;
+pub use deps::{Deps, TaskKey};
 use task_dep::TaskDep;
-use task_sources::TaskOutputs;
+use task_sources::{RawOutputTemplates, TaskOutputs};
+
+/// Represents a tool value in task-level tools field.
+/// Supports both string syntax (e.g., "1.0.0") and object syntax
+/// (e.g., { version = "1.0.0", targets = ["x86_64"] })
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum TaskToolValue {
+    String(String),
+    Map(TaskToolValueMap),
+}
+
+impl<'de> Deserialize<'de> for TaskToolValue {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct TaskToolValueVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for TaskToolValueVisitor {
+            type Value = TaskToolValue;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a task tool definition as a string or table")
+            }
+
+            fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(TaskToolValue::String(value.to_string()))
+            }
+
+            fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(TaskToolValue::String(value))
+            }
+
+            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                let parsed =
+                    ParsedToolMap::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(TaskToolValue::Map(parsed.into()))
+            }
+        }
+
+        deserializer.deserialize_any(TaskToolValueVisitor)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TaskToolValueMap {
+    pub version: String,
+    #[serde(flatten)]
+    pub opts: IndexMap<String, toml::Value>,
+}
+
+impl From<ParsedToolMap> for TaskToolValueMap {
+    fn from(parsed: ParsedToolMap) -> Self {
+        Self {
+            version: parsed.request,
+            opts: parsed.options,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TaskToolValueMap {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(ParsedToolMap::deserialize(deserializer)?.into())
+    }
+}
+
+impl TaskToolValue {
+    fn value_has_template(value: &toml::Value) -> bool {
+        match value {
+            toml::Value::String(value) => contains_template_syntax(value),
+            toml::Value::Array(values) => values.iter().any(Self::value_has_template),
+            toml::Value::Table(values) => values.values().any(Self::value_has_template),
+            _ => false,
+        }
+    }
+
+    pub fn to_tool_arg(&self, tool: &str) -> Result<ToolArg> {
+        match self {
+            Self::String(version) => format!("{tool}@{version}").parse(),
+            Self::Map(map) => {
+                let mut task_options = ToolVersionOptions::default();
+                for (key, value) in &map.opts {
+                    task_options
+                        .insert_option(key.clone(), value.clone())
+                        .map_err(|err| eyre!(err))?;
+                }
+
+                let mut backend: BackendArg = tool.parse()?;
+                let mut explicit_options = backend.explicit_opts().cloned().unwrap_or_default();
+                explicit_options.apply_overrides(&task_options);
+                if !explicit_options.is_empty() {
+                    backend.set_opts(Some(explicit_options));
+                }
+                let backend = Arc::new(backend);
+                let request =
+                    ToolRequest::new(backend.clone(), &map.version, ToolSource::Argument)?;
+                Ok(ToolArg {
+                    short: backend.short.clone(),
+                    ba: backend,
+                    version: Some(map.version.clone()),
+                    version_type: map.version.parse()?,
+                    tvr: Some(request),
+                })
+            }
+        }
+    }
+
+    fn has_template(&self) -> bool {
+        match self {
+            Self::String(version) => contains_template_syntax(version),
+            Self::Map(map) => {
+                contains_template_syntax(&map.version)
+                    || map.opts.values().any(Self::value_has_template)
+            }
+        }
+    }
+
+    fn render_templates(&mut self, tera: &mut TeraEngine, context: &tera::Context) -> Result<()> {
+        fn render_value(
+            value: &mut toml::Value,
+            tera: &mut TeraEngine,
+            context: &tera::Context,
+        ) -> Result<()> {
+            match value {
+                toml::Value::String(value) if contains_template_syntax(value) => {
+                    *value = render_str(tera, value, context)?;
+                }
+                toml::Value::Array(values) => {
+                    for value in values {
+                        if TaskToolValue::value_has_template(value) {
+                            render_value(value, tera, context)?;
+                        }
+                    }
+                }
+                toml::Value::Table(values) => {
+                    for (_, value) in values.iter_mut() {
+                        if TaskToolValue::value_has_template(value) {
+                            render_value(value, tera, context)?;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            Ok(())
+        }
+
+        match self {
+            Self::String(version) => {
+                if contains_template_syntax(version) {
+                    *version = render_str(tera, version, context)?;
+                }
+            }
+            Self::Map(map) => {
+                if contains_template_syntax(&map.version) {
+                    map.version = render_str(tera, &map.version, context)?;
+                }
+                for value in map.opts.values_mut() {
+                    if Self::value_has_template(value) {
+                        render_value(value, tera, context)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RunEntry {
+    /// Shell script entry
+    Script(String),
+    /// Run a single task with optional args and env
+    SingleTask {
+        task: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        args: Vec<String>,
+        #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+        env: IndexMap<String, String>,
+    },
+    /// Run multiple tasks in parallel
+    TaskGroup { tasks: Vec<String> },
+}
+
+impl std::hash::Hash for RunEntry {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            RunEntry::Script(s) => {
+                0u8.hash(state);
+                s.hash(state);
+            }
+            RunEntry::SingleTask { task, args, env } => {
+                1u8.hash(state);
+                task.hash(state);
+                args.hash(state);
+                let mut pairs: Vec<_> = env.iter().collect();
+                pairs.sort_by_key(|(k, _)| k.as_str());
+                for (k, v) in pairs {
+                    k.hash(state);
+                    v.hash(state);
+                }
+            }
+            RunEntry::TaskGroup { tasks } => {
+                2u8.hash(state);
+                tasks.hash(state);
+            }
+        }
+    }
+}
+
+impl RunEntry {
+    pub fn render(&self, tera: &mut TeraEngine, tera_ctx: &tera::Context) -> crate::Result<Self> {
+        match self {
+            RunEntry::Script(s) => Ok(RunEntry::Script(s.clone())),
+            RunEntry::SingleTask { task, args, env } => {
+                let task = if contains_template_syntax(task) {
+                    render_str(tera, task, tera_ctx)?
+                } else {
+                    task.clone()
+                };
+                let args = args
+                    .iter()
+                    .map(|a| {
+                        if contains_template_syntax(a) {
+                            render_str(tera, a, tera_ctx)
+                        } else {
+                            Ok(a.clone())
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let env = env
+                    .iter()
+                    .map(|(k, v)| {
+                        Ok((
+                            k.clone(),
+                            if contains_template_syntax(v) {
+                                render_str(tera, v, tera_ctx)?
+                            } else {
+                                v.clone()
+                            },
+                        ))
+                    })
+                    .collect::<Result<IndexMap<_, _>, tera::Error>>()?;
+                Ok(RunEntry::SingleTask { task, args, env })
+            }
+            RunEntry::TaskGroup { tasks } => {
+                let tasks = tasks
+                    .iter()
+                    .map(|t| {
+                        if contains_template_syntax(t) {
+                            render_str(tera, t, tera_ctx)
+                        } else {
+                            Ok(t.clone())
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(RunEntry::TaskGroup { tasks })
+            }
+        }
+    }
+
+    pub fn has_tera_template(&self) -> bool {
+        match self {
+            RunEntry::Script(_) => false,
+            RunEntry::SingleTask { task, args, env } => {
+                contains_template_syntax(task)
+                    || args.iter().any(|a| contains_template_syntax(a))
+                    || env.values().any(|v| contains_template_syntax(v))
+            }
+            RunEntry::TaskGroup { tasks } => tasks.iter().any(|t| contains_template_syntax(t)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub enum Silent {
+    #[default]
+    Off,
+    Bool(bool),
+    Stdout,
+    Stderr,
+}
+
+impl Silent {
+    pub fn is_silent(&self) -> bool {
+        matches!(self, Silent::Bool(true) | Silent::Stdout | Silent::Stderr)
+    }
+
+    pub fn suppresses_stdout(&self) -> bool {
+        matches!(self, Silent::Bool(true) | Silent::Stdout)
+    }
+
+    pub fn suppresses_stderr(&self) -> bool {
+        matches!(self, Silent::Bool(true) | Silent::Stderr)
+    }
+
+    pub fn suppresses_both(&self) -> bool {
+        matches!(self, Silent::Bool(true))
+    }
+}
+
+impl Serialize for Silent {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Silent::Off | Silent::Bool(false) => serializer.serialize_bool(false),
+            Silent::Bool(true) => serializer.serialize_bool(true),
+            Silent::Stdout => serializer.serialize_str("stdout"),
+            Silent::Stderr => serializer.serialize_str("stderr"),
+        }
+    }
+}
+
+impl From<bool> for Silent {
+    fn from(b: bool) -> Self {
+        if b { Silent::Bool(true) } else { Silent::Off }
+    }
+}
+
+impl std::str::FromStr for Silent {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "true" => Ok(Silent::Bool(true)),
+            "false" => Ok(Silent::Off),
+            "stdout" => Ok(Silent::Stdout),
+            "stderr" => Ok(Silent::Stderr),
+            _ => Err(format!(
+                "invalid silent value: {}, expected true, false, 'stdout', or 'stderr'",
+                s
+            )),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Silent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct SilentVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for SilentVisitor {
+            type Value = Silent;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a boolean or a string ('stdout' or 'stderr')")
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<Silent, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Silent::from(value))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Silent, E>
+            where
+                E: serde::de::Error,
+            {
+                match value {
+                    "stdout" => Ok(Silent::Stdout),
+                    "stderr" => Ok(Silent::Stderr),
+                    _ => Err(E::custom(format!(
+                        "invalid silent value: '{}', expected 'stdout' or 'stderr'",
+                        value
+                    ))),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(SilentVisitor)
+    }
+}
+
+impl std::str::FromStr for RunEntry {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(RunEntry::Script(s.to_string()))
+    }
+}
+
+impl Display for RunEntry {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            RunEntry::Script(s) => write!(f, "{}", s),
+            RunEntry::SingleTask { task, args, env } => {
+                for (k, v) in env {
+                    write!(f, "{}={} ", k, v)?;
+                }
+                write!(f, "task: {task}")?;
+                if !args.is_empty() {
+                    write!(f, " {}", args.join(" "))?;
+                }
+                Ok(())
+            }
+            RunEntry::TaskGroup { tasks } => write!(f, "tasks: {}", tasks.join(", ")),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Task {
     #[serde(skip)]
     pub name: String,
+    #[serde(skip)]
+    pub display_name: String,
     #[serde(default)]
     pub description: String,
     #[serde(default, rename = "alias", deserialize_with = "deserialize_arr")]
     pub aliases: Vec<String>,
     #[serde(skip)]
     pub config_source: PathBuf,
+    /// Additional files that contributed to this task's definition.
+    ///
+    /// The primary definition remains in `config_source`; this contains
+    /// metadata overlays merged from same-named `[tasks.<name>]` blocks.
+    #[serde(skip)]
+    pub additional_config_sources: Vec<PathBuf>,
     #[serde(skip)]
     pub cf: Option<Arc<dyn ConfigFile>>,
     #[serde(skip)]
     pub config_root: Option<PathBuf>,
     #[serde(default)]
-    pub confirm: Option<String>,
+    pub confirm: Option<TaskConfirm>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends: Vec<TaskDep>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -62,34 +524,69 @@ pub struct Task {
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub wait_for: Vec<TaskDep>,
     #[serde(default)]
-    pub env: BTreeMap<String, EitherStringOrIntOrBool>,
+    pub env: EnvList,
+    #[serde(default, deserialize_with = "deserialize_vars")]
+    pub vars: EnvList,
+    /// Env vars inherited from parent tasks at runtime (not used for task identity/deduplication)
+    #[serde(skip)]
+    pub inherited_env: EnvList,
+    /// Env directives contributed by a `[tasks.<name>]` TOML block that overlays
+    /// this (file) task. Each entry keeps the config path of the overlay source
+    /// so path-based directives like `_.file = ".env"` resolve relative to the
+    /// TOML file, not the file task's script path. Populated by
+    /// [`Task::merge_toml_overlay`]; empty otherwise.
+    #[serde(skip)]
+    pub overlay_env: Vec<(EnvDirective, PathBuf)>,
+    /// Vars contributed by a `[tasks.<name>]` TOML overlay; same path-preservation
+    /// as `overlay_env`.
+    #[serde(skip)]
+    pub overlay_vars: Vec<(EnvDirective, PathBuf)>,
     #[serde(default)]
     pub dir: Option<String>,
     #[serde(default)]
     pub hide: bool,
     #[serde(default)]
+    pub global: bool,
+    #[serde(default)]
     pub raw: bool,
+    /// When true, mise does not parse arguments to the task at all:
+    /// the usage spec parser is bypassed and `--help`/`-h` are passed through
+    /// to the underlying command instead of being intercepted by mise.
+    /// Useful when the task is a thin proxy for a tool that already has its
+    /// own argument parser (e.g. `next build`, Django manage.py, argparse).
+    #[serde(default)]
+    pub raw_args: bool,
+    #[serde(default)]
+    pub interactive: bool,
     #[serde(default)]
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
+    #[serde(skip)]
+    pub raw_outputs: RawOutputTemplates,
     #[serde(default)]
     pub shell: Option<String>,
     #[serde(default)]
     pub quiet: bool,
     #[serde(default)]
-    pub silent: bool,
+    pub silent: Silent,
+    /// Per-task output *style* override (prefix/interleave/keep-order/…).
+    /// Orthogonal to `quiet`/`silent` verbosity; see [`TaskOutput`].
     #[serde(default)]
-    pub tools: IndexMap<String, String>,
+    pub output: Option<TaskOutput>,
+    #[serde(default)]
+    pub tools: IndexMap<String, TaskToolValue>,
     #[serde(default)]
     pub usage: String,
+    #[serde(default)]
+    pub timeout: Option<String>,
 
     // normal type
     #[serde(default, deserialize_with = "deserialize_arr")]
-    pub run: Vec<String>,
+    pub run: Vec<RunEntry>,
 
     #[serde(default, deserialize_with = "deserialize_arr")]
-    pub run_windows: Vec<String>,
+    pub run_windows: Vec<RunEntry>,
 
     // command type
     // pub command: Option<String>,
@@ -102,41 +599,258 @@ pub struct Task {
     // file type
     #[serde(default)]
     pub file: Option<PathBuf>,
+
+    // Store the original remote file source (git::/http:/https:) before it's replaced with local path
+    // This is used to determine if the task should use monorepo config file context
+    #[serde(skip)]
+    pub remote_file_source: Option<String>,
+
+    /// Block reads, writes, network, and env vars
+    #[serde(default)]
+    pub deny_all: bool,
+    /// Block filesystem reads
+    #[serde(default)]
+    pub deny_read: bool,
+    /// Block all filesystem writes
+    #[serde(default)]
+    pub deny_write: bool,
+    /// Block all network access
+    #[serde(default)]
+    pub deny_net: bool,
+    /// Block env var inheritance
+    #[serde(default)]
+    pub deny_env: bool,
+    /// Allow reads from specific paths
+    #[serde(default)]
+    pub allow_read: Vec<std::path::PathBuf>,
+    /// Allow writes to specific paths
+    #[serde(default)]
+    pub allow_write: Vec<std::path::PathBuf>,
+    /// Allow network to specific hosts
+    #[serde(default)]
+    pub allow_net: Vec<String>,
+    /// Allow specific env vars through
+    #[serde(default)]
+    pub allow_env: Vec<String>,
+
+    /// Name of the task template to extend
+    #[serde(default)]
+    pub extends: Option<String>,
+
+    /// When true, include args in the output prefix to disambiguate tasks
+    /// with the same display_name but different arguments.
+    #[serde(skip)]
+    pub show_args_in_prefix: bool,
+
+    /// Original unrendered dependency templates, preserved so they can be
+    /// re-rendered later with parent task args/flags (usage context) available.
+    #[serde(skip)]
+    pub depends_raw: Option<Vec<TaskDep>>,
+    #[serde(skip)]
+    pub depends_post_raw: Option<Vec<TaskDep>>,
+    #[serde(skip)]
+    pub wait_for_raw: Option<Vec<TaskDep>>,
+
+    /// Args supplied after a literal `--` separator on the command line.
+    /// Tracked separately from `args` so the usage parser can be bypassed
+    /// when these contain `--help`/`-h`, restoring the documented escape
+    /// hatch for passing help through to the underlying command.
+    #[serde(skip)]
+    pub trailing_args: Vec<String>,
 }
 
-#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct EitherStringOrIntOrBool(
-    #[serde(with = "either::serde_untagged")] pub Either<String, EitherIntOrBool>,
-);
+/// Parse the `#MISE key=value` (and `// MISE`, `:: MISE`, `[MISE]`) header
+/// lines out of a task script into their decoded TOML values.
+fn parse_mise_header_toml(body: &str) -> Result<Vec<toml::Value>> {
+    body.lines()
+        .filter_map(|line| {
+            regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z0-9_.-]+\s*=\s*[^\n]+)$").captures(line)
+        })
+        .map(|captures| captures.extract().1)
+        .map(|[toml]| {
+            toml::de::from_str::<toml::Value>(toml)
+                .map_err(|e| eyre::eyre!("failed to parse task header TOML {toml:?}: {e}"))
+        })
+        .collect()
+}
 
-#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct EitherIntOrBool(#[serde(with = "either::serde_untagged")] pub Either<i64, bool>);
-
-impl Display for EitherIntOrBool {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.0 {
-            Either::Left(i) => write!(f, "{i}"),
-            Either::Right(b) => write!(f, "{b}"),
-        }
+/// Whether a task include file contains Tera template syntax only after TOML
+/// decoding (e.g. `{{` written as `{{`). Such escapes pass a
+/// raw-text scan but decode to real templates that render — and can `exec()` —
+/// at load time, so they must still require trust. `.toml` task files are
+/// checked whole; script files are checked through their `#MISE` headers (the
+/// only part parsed and rendered at load).
+pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
+    use crate::config::config_file::mise_toml::toml_value_has_template;
+    if path.extension().is_some_and(|e| e == "toml") {
+        // Unparseable TOML won't load as a task file (it errors before any
+        // render), so it doesn't need trust on this account.
+        toml::from_str::<toml::Value>(body).is_ok_and(|v| toml_value_has_template(&v))
+    } else {
+        parse_mise_header_toml(body)
+            .unwrap_or_default()
+            .iter()
+            .any(toml_value_has_template)
     }
 }
 
-impl Display for EitherStringOrIntOrBool {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.0 {
-            Either::Left(s) => write!(f, "\"{s}\""),
-            Either::Right(b) => write!(f, "{b}"),
-        }
+fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
+    let script = std::fs::read_to_string(file)?;
+    let raw = extract_usage_from_comments(&script);
+    if raw.trim().is_empty() {
+        return usage::Spec::parse_script(file);
     }
+    parse_task_usage_raw(file, &hoist_root_usage_mounts(&raw).unwrap_or(raw))
 }
 
-impl Debug for EitherStringOrIntOrBool {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
+fn parse_task_usage_raw(file: &Path, raw: &str) -> usage::Result<usage::Spec> {
+    let mut spec: usage::Spec = raw.parse()?;
+    if spec.bin.is_empty()
+        && let Some(name) = file.file_name().and_then(|n| n.to_str())
+    {
+        spec.bin = name.to_string();
+    }
+    if spec.name.is_empty() {
+        spec.name.clone_from(&spec.bin);
+    }
+    if let Some(mount_cmd) = spec.cmd.subcommands.shift_remove("__mise_task_root_mounts") {
+        spec.cmd.mounts.extend(mount_cmd.mounts);
+    }
+    Ok(spec)
+}
+
+fn extract_usage_from_comments(full: &str) -> String {
+    let usage_regex = regex!(r"^(?:#|//|::)\s*(?:(USAGE|MISE)|\[(USAGE|MISE)\])(.*)$");
+    let blank_comment_regex = regex!(r"^(?:#|//|::)\s*$");
+    let mise_header_regex = regex!(r"^[a-z0-9_.-]+\s*=");
+    let mut usage = vec![];
+    let mut found = false;
+    for line in full.lines() {
+        if let Some(captures) = usage_regex.captures(line) {
+            let marker = captures
+                .get(1)
+                .or_else(|| captures.get(2))
+                .map_or("", |m| m.as_str());
+            let content = captures.get(3).map_or("", |m| m.as_str());
+            if marker == "MISE" && mise_header_regex.is_match(content.trim()) {
+                continue;
+            }
+            usage.push(content.trim());
+            found = true;
+        } else if found {
+            if blank_comment_regex.is_match(line) {
+                continue;
+            }
+            break;
+        }
+    }
+    usage.join("\n")
+}
+
+fn hoist_root_usage_mounts(raw: &str) -> Option<String> {
+    let mut output = vec![];
+    let mut mounts = vec![];
+    let mut depth = 0_i32;
+    let lines = raw.lines().collect::<Vec<_>>();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        if depth == 0 && is_mount_node(trimmed) {
+            let (mount, next) = collect_mount_node(&lines, i);
+            mounts.push(mount);
+            i = next;
+            continue;
+        } else {
+            output.push(line.to_string());
+        }
+        depth = (depth + structural_brace_delta(line)).max(0);
+        i += 1;
+    }
+    if mounts.is_empty() {
+        return None;
+    }
+    output.push("cmd \"__mise_task_root_mounts\" {".to_string());
+    for mount in mounts {
+        output.extend(mount.lines().map(|line| format!("    {line}")));
+    }
+    output.push("}".to_string());
+    Some(output.join("\n"))
+}
+
+fn collect_mount_node(lines: &[&str], start: usize) -> (String, usize) {
+    let mut node = vec![normalize_root_mount_node(lines[start].trim_start())];
+    let mut depth = structural_brace_delta(lines[start]).max(0);
+    let mut next = start + 1;
+    while depth > 0 && next < lines.len() {
+        node.push(lines[next].trim_start().to_string());
+        depth = (depth + structural_brace_delta(lines[next])).max(0);
+        next += 1;
+    }
+    (node.join("\n"), next)
+}
+
+fn structural_brace_delta(line: &str) -> i32 {
+    let mut delta = 0;
+    let mut chars = line.chars().peekable();
+    let mut in_string = false;
+    let mut escaped = false;
+    while let Some(ch) = chars.next() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '/' if chars.peek() == Some(&'/') => break,
+            '{' => delta += 1,
+            '}' => delta -= 1,
+            _ => {}
+        }
+    }
+    delta
+}
+
+fn is_mount_node(line: &str) -> bool {
+    line.strip_prefix("mount")
+        .is_some_and(|rest| match rest.chars().next() {
+            None => true,
+            Some(c) => c.is_whitespace() || c == '{',
+        })
+}
+
+fn normalize_root_mount_node(line: &str) -> String {
+    let Some(rest) = line.strip_prefix("mount") else {
+        return line.to_string();
+    };
+    let rest = rest.trim_start();
+    if rest.starts_with('"') || rest.starts_with("r#") {
+        format!("mount run={rest}")
+    } else {
+        line.to_string()
     }
 }
 
 impl Task {
+    pub fn config_sources(&self) -> Vec<&Path> {
+        once(self.config_source.as_path())
+            .chain(self.additional_config_sources.iter().map(PathBuf::as_path))
+            .collect()
+    }
+
+    pub(crate) fn tool_args(&self) -> Result<Vec<ToolArg>> {
+        self.tools
+            .iter()
+            .map(|(tool, value)| value.to_tool_arg(tool))
+            .collect()
+    }
+
     pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
         Ok(Self {
             name: name_from_path(prefix, path)?,
@@ -146,38 +860,94 @@ impl Task {
         })
     }
 
-    pub fn from_path(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
+    pub async fn from_path(
+        config: &Arc<Config>,
+        path: &Path,
+        prefix: &Path,
+        config_root: &Path,
+    ) -> Result<Task> {
+        Self::from_path_with_cf(config, path, prefix, config_root, None).await
+    }
+
+    pub async fn from_path_with_cf(
+        config: &Arc<Config>,
+        path: &Path,
+        prefix: &Path,
+        config_root: &Path,
+        cf: Option<Arc<dyn ConfigFile>>,
+    ) -> Result<Task> {
+        let mut task = Self::from_path_unrendered_with_cf(path, prefix, config_root, cf)?;
+        task.render(config, config_root).await?;
+        Ok(task)
+    }
+
+    pub(crate) fn from_path_unrendered_with_cf(
+        path: &Path,
+        prefix: &Path,
+        config_root: &Path,
+        cf: Option<Arc<dyn ConfigFile>>,
+    ) -> Result<Task> {
         let mut task = Task::new(path, prefix, config_root)?;
-        let info = file::read_to_string(path)?
-            .lines()
-            .filter_map(|line| {
-                regex!(r"^(#|//) mise ([a-z_]+=.+)$")
-                    .captures(line)
-                    .or_else(|| regex!(r"^(#|//|::)MISE ([a-z_]+=.+)$").captures(line))
-            })
-            .map(|captures| captures.extract().1)
-            .flat_map(|[_, toml]| {
-                toml.parse::<toml::Value>()
-                    .map_err(|e| debug!("failed to parse toml: {e}"))
-            })
+        task.cf = cf;
+        let info = parse_mise_header_toml(&file::read_to_string(path)?)?
+            .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
             .flatten()
             .fold(toml::Table::new(), |mut map, (key, value)| {
-                map.insert(key, value);
+                // Deep-merge tables when both existing and new values are tables
+                // This allows multiple #MISE lines like:
+                //   #MISE tools.terraform="1"
+                //   #MISE tools.tflint="0"
+                // to be merged into a single tools table
+                // See: https://github.com/jdx/mise/discussions/7839
+                if let Some(existing) = map.get_mut(&key) {
+                    if let (toml::Value::Table(existing_table), toml::Value::Table(new_table)) =
+                        (existing, &value)
+                    {
+                        for (k, v) in new_table {
+                            existing_table.insert(k.clone(), v.clone());
+                        }
+                    } else {
+                        map.insert(key, value);
+                    }
+                } else {
+                    map.insert(key, value);
+                }
                 map
             });
         let info = toml::Value::Table(info);
-        let p = TomlParser::new(&info);
+
+        let mut p = TrackingTomlParser::new(&info);
         // trace!("task info: {:#?}", info);
 
         task.description = p.parse_str("description").unwrap_or_default();
+        // Check for multiple alias fields before parsing
+        let alias_fields: Vec<&str> = ["alias", "aliases"]
+            .iter()
+            .filter(|&field| info.get(field).is_some())
+            .copied()
+            .collect();
+
+        if alias_fields.len() > 1 {
+            return Err(eyre::eyre!(
+                "Cannot define both 'alias' and 'aliases' fields in task file header: {}. Use only one.",
+                display_path(path)
+            ));
+        }
+
         task.aliases = p
             .parse_array("alias")
             .or(p.parse_array("aliases"))
             .or(p.parse_str("alias").map(|s| vec![s]))
             .or(p.parse_str("aliases").map(|s| vec![s]))
             .unwrap_or_default();
-        task.confirm = p.parse_str("confirm");
+        task.confirm = p
+            .get_raw("confirm")
+            .map(|v| {
+                TaskConfirm::deserialize(v.clone())
+                    .map_err(|e| eyre!("failed to parse confirm field in task header: {e}"))
+            })
+            .transpose()?;
         task.depends = p.parse_array("depends").unwrap_or_default();
         task.depends_post = p.parse_array("depends_post").unwrap_or_default();
         task.wait_for = p.parse_array("wait_for").unwrap_or_default();
@@ -185,34 +955,90 @@ impl Task {
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
         task.raw = p.parse_bool("raw").unwrap_or_default();
+        task.raw_args = p.parse_bool("raw_args").unwrap_or_default();
+        task.interactive = p.parse_bool("interactive").unwrap_or_default();
         task.sources = p.parse_array("sources").unwrap_or_default();
-        task.outputs = info.get("outputs").map(|to| to.into()).unwrap_or_default();
+        task.outputs = p.get_raw("outputs").map(|to| to.into()).unwrap_or_default();
         task.file = Some(path.to_path_buf());
         task.shell = p.parse_str("shell");
         task.quiet = p.parse_bool("quiet").unwrap_or_default();
-        task.silent = p.parse_bool("silent").unwrap_or_default();
+        task.silent = p
+            .get_raw("silent")
+            .and_then(|v| Silent::deserialize(v.clone()).ok())
+            .unwrap_or_default();
+        task.output = p
+            .get_raw("output")
+            .and_then(|v| TaskOutput::deserialize(v.clone()).ok());
         task.tools = p
             .parse_table("tools")
-            .map(|t| t.into_iter().map(|(k, v)| (k, v.to_string())).collect())
+            .map(|t| {
+                t.into_iter()
+                    .map(|(tool, value)| {
+                        TaskToolValue::deserialize(value)
+                            .map(|value| (tool.clone(), value))
+                            .map_err(|err| eyre!("failed to parse task tool `{tool}`: {err}"))
+                    })
+                    .collect::<Result<IndexMap<_, _>>>()
+            })
+            .transpose()?
             .unwrap_or_default();
-        task.render(config_root)?;
+
+        let mut unparsed = p.unparsed_keys();
+        unparsed.sort();
+
+        if !unparsed.is_empty() {
+            return Err(eyre::eyre!(
+                "unknown field(s) {:?} in task file header: {}",
+                unparsed,
+                display_path(path)
+            ));
+        }
+
+        #[cfg(test)]
+        {
+            let fields: Vec<String> = p.parsed_keys().map(|s| s.to_string()).collect();
+            tests::capture_parsed_fields(fields);
+        }
         Ok(task)
     }
 
+    /// Add env vars that were inherited from parent tasks (e.g., via `run = [{ task = "..." }]`)
+    /// These do NOT affect task identity/deduplication
+    pub fn derive_env(&self, env_directives: &[EnvDirective]) -> Self {
+        let mut new_task = self.clone();
+        new_task.inherited_env.0.extend_from_slice(env_directives);
+        new_task
+    }
+
+    /// Add env vars specified in dependency declarations (e.g., `depends = ["FOO=bar task"]`)
+    /// These DO affect task identity/deduplication
+    pub fn with_dependency_env(&self, env_directives: &[EnvDirective]) -> Self {
+        let mut new_task = self.clone();
+        new_task.env.0.extend_from_slice(env_directives);
+        new_task
+    }
+
     /// prints the task name without an extension
-    pub fn display_name(&self) -> String {
-        let display_name = self
-            .name
-            .rsplitn(2, '.')
-            .last()
-            .unwrap_or_default()
-            .to_string();
-        let config = Config::get();
-        if config
-            .tasks()
-            .map(|t| t.contains_key(&display_name))
-            .unwrap_or_default()
-        {
+    pub fn display_name(&self, all_tasks: &BTreeMap<String, Task>) -> String {
+        // For task names, only strip extensions after the last colon (:)
+        // This handles monorepo task names like "//projects/my.app:build.sh"
+        // where we want to strip ".sh" but keep "my.app" intact
+        let display_name = if let Some((prefix, task_part)) = self.name.rsplit_once(':') {
+            // Has a colon separator (e.g., "//projects/my.app:build.sh")
+            // Strip extension from the task part only
+            let task_without_ext = task_part.rsplitn(2, '.').last().unwrap_or_default();
+            format!("{}:{}", prefix, task_without_ext)
+        } else {
+            // No colon separator (e.g., "build.sh")
+            // Strip extension from the whole name
+            self.name
+                .rsplitn(2, '.')
+                .last()
+                .unwrap_or_default()
+                .to_string()
+        };
+
+        if all_tasks.contains_key(&display_name) {
             // this means another task has the name without an extension so use the full name
             self.name.clone()
         } else {
@@ -224,21 +1050,40 @@ impl Task {
         if self.name == pat || self.aliases.contains(&pat.to_string()) {
             return true;
         }
-        let pat = pat.rsplitn(2, '.').last().unwrap_or_default();
-        self.name.rsplitn(2, '.').last().unwrap_or_default() == pat
-            || self.aliases.contains(&pat.to_string())
+
+        // For pattern matching, we need to handle several cases:
+        // 1. Simple pattern (e.g., "build") should match monorepo tasks (e.g., "//projects/my.app:build")
+        // 2. Full pattern (e.g., "//projects/my.app:build") should only match exact path
+        // 3. Extensions should be stripped for comparison
+
+        let matches = if let Some((prefix, task_part)) = self.name.rsplit_once(':') {
+            // Task name has a colon (e.g., "//projects/my.app:build.sh")
+            let task_stripped = task_part.rsplitn(2, '.').last().unwrap_or_default();
+
+            if let Some((pat_prefix, pat_task)) = pat.rsplit_once(':') {
+                // Pattern also has a colon - compare full paths
+                let pat_task_stripped = pat_task.rsplitn(2, '.').last().unwrap_or_default();
+                prefix == pat_prefix && task_stripped == pat_task_stripped
+            } else {
+                // Pattern is simple (no colon) - just compare task names
+                let pat_stripped = pat.rsplitn(2, '.').last().unwrap_or_default();
+                task_stripped == pat_stripped
+            }
+        } else {
+            // Simple task name without colon (e.g., "build.sh")
+            let name_stripped = self.name.rsplitn(2, '.').last().unwrap_or_default();
+            let pat_stripped = pat.rsplitn(2, '.').last().unwrap_or_default();
+            name_stripped == pat_stripped
+        };
+
+        matches || self.aliases.contains(&pat.to_string())
     }
 
-    pub fn task_dir() -> PathBuf {
-        let config = Config::get();
+    pub async fn task_dir() -> Result<PathBuf> {
+        let config = Config::get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        for dir in config.task_includes_for_dir(&project_root) {
-            if dir.is_dir() && project_root.join(&dir).exists() {
-                return project_root.join(dir);
-            }
-        }
-        project_root.join("mise-tasks")
+        config::task_creation_dir_for_dir(&project_root, &config.config_files)
     }
 
     pub fn with_args(mut self, args: Vec<String>) -> Self {
@@ -247,10 +1092,17 @@ impl Task {
     }
 
     pub fn prefix(&self) -> String {
-        format!("[{}]", self.display_name())
+        let max_width = 40;
+        let inner = if self.show_args_in_prefix && !self.args.is_empty() {
+            let s = format!("{} {}", self.display_name, self.args.join(" "));
+            s.trim().to_string()
+        } else {
+            self.display_name.clone()
+        };
+        format!("[{}]", console::truncate_str(&inner, max_width, "…"))
     }
 
-    pub fn run(&self) -> &Vec<String> {
+    pub fn run(&self) -> &Vec<RunEntry> {
         if cfg!(windows) && !self.run_windows.is_empty() {
             &self.run_windows
         } else {
@@ -258,19 +1110,52 @@ impl Task {
         }
     }
 
-    pub fn all_depends(&self) -> Result<Vec<Task>> {
-        let config = Config::get();
-        let tasks = config.tasks_with_aliases()?;
+    /// Returns only the script strings from the run entries (without rendering)
+    pub fn run_script_strings(&self) -> Vec<String> {
+        self.run()
+            .iter()
+            .filter_map(|e| match e {
+                RunEntry::Script(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn all_depends(&self, tasks: &BTreeMap<String, Task>) -> Result<Vec<Task>> {
+        let tasks_ref = build_task_ref_map(tasks.iter());
+        let mut path = vec![self.name.clone()];
+        self.all_depends_recursive(&tasks_ref, &mut path)
+    }
+
+    fn all_depends_recursive(
+        &self,
+        tasks: &BTreeMap<String, &Task>,
+        path: &mut Vec<String>,
+    ) -> Result<Vec<Task>> {
         let mut depends: Vec<Task> = self
             .depends
             .iter()
             .chain(self.depends_post.iter())
-            .map(|td| match_tasks(&tasks, td))
+            .filter(|td| !dep_has_usage_ref(td))
+            .map(|td| match_tasks_with_context(tasks, td, Some(self)))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
+
+        // Collect transitive dependencies with cycle detection
         for dep in depends.clone() {
-            let mut extra = dep.all_depends()?;
+            if path.contains(&dep.name) {
+                // Circular dependency detected - build path string for error message
+                let cycle_path = path
+                    .iter()
+                    .skip_while(|&name| name != &dep.name)
+                    .chain(std::iter::once(&dep.name))
+                    .join(" -> ");
+                return Err(eyre!("circular dependency detected: {}", cycle_path));
+            }
+            path.push(dep.name.clone());
+            let mut extra = dep.all_depends_recursive(tasks, path)?;
+            path.pop(); // Remove from path after processing this branch
             extra.retain(|t| t.name != self.name); // prevent depending on ourself
             depends.extend(extra);
         }
@@ -278,26 +1163,81 @@ impl Task {
         Ok(depends)
     }
 
-    pub fn resolve_depends(&self, tasks_to_run: &[Task]) -> Result<(Vec<Task>, Vec<Task>)> {
-        let config = Config::get();
+    pub async fn resolve_depends(
+        &self,
+        config: &Arc<Config>,
+        tasks_to_run: &[Task],
+    ) -> Result<(Vec<Task>, Vec<Task>)> {
+        use crate::task::TaskLoadContext;
+
         let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
-        let tasks = config.tasks_with_aliases()?;
+
+        // Build context with path hints from self, tasks_to_run, and dependency patterns
+        // Resolve patterns before extracting paths to handle local deps (e.g., ":A")
+        let path_hints: Vec<String> = once(&self.name)
+            .chain(tasks_to_run.iter().map(|t| &t.name))
+            .filter_map(|name| extract_monorepo_path(name))
+            .chain(
+                self.depends
+                    .iter()
+                    .chain(self.wait_for.iter())
+                    .chain(self.depends_post.iter())
+                    .map(|td| resolve_task_pattern(&td.task, Some(self)))
+                    .filter_map(|resolved| extract_monorepo_path(&resolved)),
+            )
+            .unique()
+            .collect();
+
+        let ctx = if !path_hints.is_empty() {
+            Some(TaskLoadContext {
+                path_hints,
+                load_all: false,
+            })
+        } else {
+            None
+        };
+
+        let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+        let tasks = build_task_ref_map(all_tasks.iter());
+        // Skip deps with unresolved {{usage.*}} references — they'll be resolved
+        // later when render_depends_with_usage() is called with actual arg values.
         let depends = self
             .depends
             .iter()
-            .map(|td| match_tasks(&tasks, td))
+            .filter(|td| !dep_has_usage_ref(td))
+            .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
             .flatten_ok()
             .collect_vec();
         let wait_for = self
             .wait_for
             .iter()
-            .map(|td| match_tasks(&tasks, td))
+            .filter(|td| !dep_has_usage_ref(td))
+            .map(|td| {
+                match_tasks_with_context(&tasks, td, Some(self))
+                    .map(|tasks| tasks.into_iter().map(|t| (t, td)).collect_vec())
+            })
             .flatten_ok()
-            .filter_ok(|t| tasks_to_run.contains(t))
+            .filter_map_ok(|(t, td)| {
+                if td.env.is_empty() && td.args.is_empty() {
+                    // Name-based matching: wait for any running instance of this task
+                    // regardless of env/args variant (e.g., "VERBOSE=1 setup" matches "setup").
+                    // Return the actual task from tasks_to_run so the dependency graph
+                    // gets the correct env/args-variant node.
+                    tasks_to_run
+                        .iter()
+                        .find(|tr| tr.name == t.name)
+                        .map(|tr| (*tr).clone())
+                } else {
+                    // Full identity matching: user explicitly wants a specific env/args variant
+                    tasks_to_run.contains(&t).then_some(t)
+                }
+            })
             .collect_vec();
-        let depends_post = tasks_to_run
+        let depends_post = self
+            .depends_post
             .iter()
-            .flat_map(|t| t.depends_post.iter().map(|td| match_tasks(&tasks, td)))
+            .filter(|td| !dep_has_usage_ref(td))
+            .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
@@ -309,32 +1249,28 @@ impl Task {
         Ok((depends, depends_post))
     }
 
-    pub fn parse_usage_spec(
-        &self,
-        cwd: Option<PathBuf>,
-        env: &EnvMap,
-    ) -> Result<(usage::Spec, Vec<String>)> {
-        let (mut spec, scripts) = if let Some(file) = &self.file {
-            let spec = usage::Spec::parse_script(file)
-                .inspect_err(|e| {
-                    warn!(
-                        "failed to parse task file {} with usage: {e:?}",
-                        file::display_path(file)
-                    )
-                })
-                .unwrap_or_default();
-            (spec, vec![])
-        } else {
-            let (scripts, spec) =
-                TaskScriptParser::new(cwd).parse_run_scripts(self, self.run(), env)?;
-            (spec, scripts)
-        };
-        spec.name = self.display_name();
-        spec.bin = self.display_name();
+    /// True when mise should not run the usage parser against this task's
+    /// args. Either the task opted in via `raw_args = true`, or the user
+    /// passed `--help`/`-h` after `--` for an ad-hoc passthrough.
+    ///
+    /// The `--` separator is the boundary between mise parsing and task
+    /// parsing, so task-side help flags remain literal task arguments.
+    pub fn should_bypass_usage_parser(&self) -> bool {
+        if self.raw_args {
+            return true;
+        }
+        self.trailing_args
+            .iter()
+            .any(|a| a == "--help" || a == "-h")
+    }
+
+    fn populate_spec_metadata(&self, spec: &mut usage::Spec) {
+        spec.name = self.display_name.clone();
+        spec.bin = self.display_name.clone();
         if spec.cmd.help.is_none() {
             spec.cmd.help = Some(self.description.clone());
         }
-        spec.cmd.name = self.display_name();
+        spec.cmd.name = self.display_name.clone();
         spec.cmd.aliases = self.aliases.clone();
         if spec.cmd.before_help.is_none()
             && spec.cmd.before_help_long.is_none()
@@ -344,24 +1280,130 @@ impl Task {
                 Some(format!("- Depends: {}", self.depends.iter().join(", ")));
         }
         spec.cmd.usage = spec.cmd.usage();
+    }
+
+    fn populate_usage_about(&self, spec: &mut usage::Spec) {
+        let has_usage_spec = has_any_args_defined(spec)
+            || has_any_usage_spec(spec)
+            || !self.usage.trim().is_empty()
+            || !spec.cmd.usage.is_empty();
+        if has_usage_spec
+            && !self.description.is_empty()
+            && spec.cmd.help.as_deref() == Some(self.description.as_str())
+        {
+            if spec.about.is_none() {
+                spec.about = Some(
+                    self.description
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .to_string(),
+                );
+            }
+            if spec.about_long.is_none() && self.description.contains('\n') {
+                spec.about_long = Some(self.description.clone());
+            }
+        }
+    }
+    pub async fn parse_usage_spec_with_vars(
+        &self,
+        config: &Arc<Config>,
+        cwd: Option<PathBuf>,
+        env: &EnvMap,
+        extra_vars: Option<IndexMap<String, String>>,
+    ) -> Result<(usage::Spec, Vec<String>)> {
+        let mut env = env.clone();
+        if !self.raw_args {
+            clear_usage_env(&mut env);
+        }
+        let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
+            let spec = parse_task_script_usage(&file)
+                .inspect_err(|e| {
+                    warn!(
+                        "failed to parse task file {} with usage: {e:?}",
+                        file::display_path(&file)
+                    )
+                })
+                .unwrap_or_default();
+            (spec, vec![])
+        } else {
+            let scripts_only = self.run_script_strings();
+            let parser_dir = match cwd {
+                Some(cwd) => Some(cwd),
+                None => self.dir(config).await?,
+            };
+            let (scripts, spec) = Self::make_script_parser(parser_dir, extra_vars)
+                .parse_run_scripts(config, self, &scripts_only, &env)
+                .await?;
+            (spec, scripts)
+        };
+        self.populate_spec_metadata(&mut spec);
+        self.populate_usage_about(&mut spec);
         Ok((spec, scripts))
     }
 
-    pub fn render_run_scripts_with_args(
+    fn make_script_parser(
+        cwd: Option<PathBuf>,
+        extra_vars: Option<IndexMap<String, String>>,
+    ) -> TaskScriptParser {
+        let parser = TaskScriptParser::new(cwd);
+        match extra_vars {
+            Some(vars) => parser.with_extra_vars(vars),
+            None => parser,
+        }
+    }
+
+    /// Parse usage spec for display purposes without expensive environment rendering
+    pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
+        let dir = self.dir(config).await?;
+        let mut spec = if let Some(file) = self.file_path(config).await? {
+            parse_task_script_usage(&file)
+                .inspect_err(|e| {
+                    warn!(
+                        "failed to parse task file {} with usage: {e:?}",
+                        file::display_path(&file)
+                    )
+                })
+                .unwrap_or_default()
+        } else {
+            let scripts_only = self.run_script_strings();
+            TaskScriptParser::new(dir)
+                .parse_run_scripts_for_spec_only(config, self, &scripts_only)
+                .await?
+        };
+        self.populate_spec_metadata(&mut spec);
+        self.populate_usage_about(&mut spec);
+        Ok(spec)
+    }
+
+    pub async fn render_run_scripts_with_args(
         &self,
+        config: &Arc<Config>,
         cwd: Option<PathBuf>,
         args: &[String],
         env: &EnvMap,
+        extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let (spec, scripts) = self.parse_usage_spec(cwd.clone(), env)?;
-        if has_any_args_defined(&spec) {
-            let scripts = TaskScriptParser::new(cwd).parse_run_scripts_with_args(
-                self,
-                self.run(),
-                env,
-                args,
-                &spec,
-            )?;
+        let (spec, scripts) = self
+            .parse_usage_spec_with_vars(config, cwd.clone(), env, extra_vars.clone())
+            .await?;
+        // Skip the usage parser entirely when the task opts into raw arg
+        // passthrough, or when the user explicitly asked for `--help`/`-h`
+        // to reach the underlying command via `mise run task -- --help`.
+        // Without this bypass the usage crate intercepts `--help` even after
+        // `--`, which breaks proxy tasks that wrap tools with their own
+        // argument parsers.
+        if !self.should_bypass_usage_parser() && has_any_args_defined(&spec) {
+            let mut env = env.clone();
+            clear_usage_env(&mut env);
+            let parser_dir = match cwd {
+                Some(cwd) => Some(cwd),
+                None => self.dir(config).await?,
+            };
+            let scripts_only = self.run_script_strings();
+            let scripts = Self::make_script_parser(parser_dir, extra_vars)
+                .parse_run_scripts_with_args(config, self, &scripts_only, &env, args, &spec)
+                .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
             Ok(scripts
@@ -369,7 +1411,7 @@ impl Task {
                 .enumerate()
                 .map(|(i, script)| {
                     // only pass args to the last script if no formal args are defined
-                    match i == self.run().len() - 1 {
+                    match i == self.run_script_strings().len() - 1 {
                         true => (script.clone(), args.iter().cloned().collect_vec()),
                         false => (script.clone(), vec![]),
                     }
@@ -378,9 +1420,11 @@ impl Task {
         }
     }
 
-    pub fn render_markdown(&self, ts: &Toolset, dir: &Path) -> Result<String> {
-        let env = self.render_env(ts)?;
-        let (spec, _) = self.parse_usage_spec(Some(dir.to_path_buf()), &env)?;
+    pub async fn render_markdown(&self, config: &Arc<Config>) -> Result<String> {
+        let mut spec = self.parse_usage_spec_for_display(config).await?;
+        if spec.about.is_some() && spec.cmd.help.as_deref() == Some(self.description.as_str()) {
+            spec.cmd.help = None;
+        }
         let ctx = usage::docs::markdown::MarkdownRenderer::new(spec)
             .with_replace_pre_with_code_fences(true)
             .with_header_level(2);
@@ -388,44 +1432,23 @@ impl Task {
     }
 
     pub fn estyled_prefix(&self) -> String {
-        static COLORS: Lazy<Vec<Color>> = Lazy::new(|| {
-            vec![
-                Color::Blue,
-                Color::Magenta,
-                Color::Cyan,
-                Color::Green,
-                Color::Yellow,
-                Color::Red,
-            ]
-        });
-        let idx = self
-            .display_name()
-            .chars()
-            .map(|c| c as usize)
-            .sum::<usize>()
-            % COLORS.len();
-        let prefix = style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string();
-        if *env::MISE_TASK_LEVEL > 0 {
-            format!(
-                "MISE_TASK_UNNEST:{}:MISE_TASK_UNNEST {prefix}",
-                *env::MISE_TASK_LEVEL
-            )
-        } else {
-            prefix
-        }
+        style::prefix(self.prefix(), &self.display_name, true)
     }
 
-    pub fn dir(&self) -> Result<Option<PathBuf>> {
-        let config = Config::get();
+    pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
         if let Some(dir) = self.dir.clone().or_else(|| {
-            self.cf(&config)
+            self.cf(config)
                 .as_ref()
                 .and_then(|cf| cf.task_config().dir.clone())
         }) {
-            let config_root = self.config_root.clone().unwrap_or_default();
-            let mut tera = get_tera(Some(&config_root));
-            let tera_ctx = self.tera_ctx()?;
-            let dir = tera.render_str(&dir, &tera_ctx)?;
+            let dir = if contains_template_syntax(&dir) {
+                let config_root = self.config_root.clone().unwrap_or_default();
+                let mut tera = get_tera(Some(&config_root));
+                let tera_ctx = self.tera_ctx(config).await?;
+                render_str(&mut tera, &dir, &tera_ctx)?
+            } else {
+                dir
+            };
             let dir = file::replace_path(&dir);
             if dir.is_absolute() {
                 Ok(Some(dir.to_path_buf()))
@@ -439,55 +1462,614 @@ impl Task {
         }
     }
 
-    pub fn tera_ctx(&self) -> Result<tera::Context> {
-        let config = Config::get();
-        let ts = config.get_toolset()?;
-        let mut tera_ctx = ts.tera_ctx()?.clone();
-        tera_ctx.insert("config_root", &self.config_root);
-        Ok(tera_ctx)
-    }
-
-    pub fn cf<'a>(&self, config: &'a Config) -> Option<&'a Box<dyn ConfigFile>> {
-        config.config_files.get(&self.config_source)
-    }
-
-    pub fn shell(&self) -> Option<Vec<String>> {
-        self.shell.as_ref().and_then(|shell| {
-            let shell_cmd = shell
-                .split_whitespace()
-                .map(|s| s.to_string())
-                .collect::<Vec<_>>();
-            if shell_cmd.is_empty() || shell_cmd[0].trim().is_empty() {
-                warn!("invalid shell '{shell}', expected '<program> <argument>' (e.g. sh -c)");
-                None
+    pub async fn file_path(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
+        if let Some(file) = &self.file {
+            let file_str = file.to_string_lossy().to_string();
+            let rendered = if contains_template_syntax(&file_str) {
+                let config_root = self.config_root.clone().unwrap_or_default();
+                let mut tera = get_tera(Some(&config_root));
+                let tera_ctx = self.tera_ctx(config).await?;
+                render_str(&mut tera, &file_str, &tera_ctx)?
             } else {
-                Some(shell_cmd)
+                file_str
+            };
+            let rendered_path = file::replace_path(&rendered);
+            if rendered_path.is_absolute() {
+                Ok(Some(rendered_path))
+            } else if let Some(root) = &self.config_root {
+                Ok(Some(root.join(rendered_path)))
+            } else {
+                Ok(Some(rendered_path))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Get file path without templating (for display purposes)
+    /// This is a non-async version used when we just need the path for display
+    fn file_path_raw(&self) -> Option<PathBuf> {
+        self.file.as_ref().map(|file| {
+            if file.is_absolute() {
+                file.clone()
+            } else if let Some(root) = &self.config_root {
+                root.join(file)
+            } else {
+                file.clone()
             }
         })
     }
 
-    pub fn render(&mut self, config_root: &Path) -> Result<()> {
-        let mut tera = get_tera(Some(config_root));
-        let tera_ctx = self.tera_ctx()?;
-        for a in &mut self.aliases {
-            *a = tera.render_str(a, &tera_ctx)?;
+    pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<tera::Context> {
+        self.build_tera_ctx(config, false).await
+    }
+
+    pub(crate) async fn tera_ctx_for_usage(&self, config: &Arc<Config>) -> Result<tera::Context> {
+        self.build_tera_ctx(config, !self.raw_args).await
+    }
+
+    async fn build_tera_ctx(
+        &self,
+        config: &Arc<Config>,
+        sanitize_usage_env: bool,
+    ) -> Result<tera::Context> {
+        let ts = config.get_toolset().await?;
+        let mut tera_ctx = ts.tera_ctx(config).await?.clone();
+        if sanitize_usage_env {
+            clear_usage_env_from_tera_ctx(&mut tera_ctx);
         }
-        self.description = tera.render_str(&self.description, &tera_ctx)?;
-        for s in &mut self.sources {
-            *s = tera.render_str(s, &tera_ctx)?;
+        let mut vars = self.resolve_base_vars(config).await?;
+        // Insert base vars first so that task-level var templates can reference them
+        // (e.g. a task var `foo = "{{vars.bar}}"` can read a config-level `bar`).
+        tera_ctx.insert("vars", &vars);
+        self.resolve_base_env(config, &mut tera_ctx).await?;
+        if sanitize_usage_env {
+            // A task from another config hierarchy may replace the env map.
+            clear_usage_env_from_tera_ctx(&mut tera_ctx);
         }
-        self.outputs.render(&mut tera, &tera_ctx)?;
+        vars.extend(self.resolve_task_vars(config, &tera_ctx).await?);
+        // Re-insert with task-level vars merged in so callers see the final combined map,
+        // with task-level values taking precedence over config-level ones.
+        tera_ctx.insert("vars", &vars);
+        tera_ctx.insert("config_root", &self.config_root);
+        Ok(tera_ctx)
+    }
+
+    async fn resolve_base_vars(&self, config: &Arc<Config>) -> Result<IndexMap<String, String>> {
+        let Some(task_cf) = self.cf(config) else {
+            return Ok(config.vars.clone());
+        };
+
+        if task_cf.project_root() == config.project_root {
+            return Ok(config.vars.clone());
+        }
+
+        let config_path = task_cf.get_path().to_path_buf();
+        if let Some(vars) = TASK_VARS_CACHE.lock().unwrap().get(&config_path) {
+            return Ok(vars.clone());
+        }
+
+        let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
+        let (config_paths, idiomatic_filenames) =
+            crate::config::load_config_hierarchy_from_dir(task_dir).await?;
+        let task_config_files =
+            crate::config::load_config_files_from_paths(&config_paths, &idiomatic_filenames)
+                .await?;
+        let vars_results =
+            crate::config::resolve_vars_from_config_files(config, &task_config_files).await?;
+        let vars: IndexMap<String, String> = vars_results
+            .vars
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        config.add_redactions(
+            vars_results.redactions.iter().cloned(),
+            &vars.clone().into_iter().collect(),
+        );
+        TASK_VARS_CACHE
+            .lock()
+            .unwrap()
+            .insert(config_path, vars.clone());
+        Ok(vars)
+    }
+
+    /// For tasks belonging to a different config hierarchy than the current one
+    /// (monorepo subproject tasks loaded from outside their directory), replace the
+    /// `env` in the tera context with env resolved from the task's own config
+    /// hierarchy. Otherwise templates like `{{env.FOO}}` in `sources`/`outputs`
+    /// only see the caller's env and fail or render stale values
+    /// (https://github.com/jdx/mise/discussions/10126).
+    async fn resolve_base_env(
+        &self,
+        config: &Arc<Config>,
+        tera_ctx: &mut tera::Context,
+    ) -> Result<()> {
+        if config::Settings::no_env() || config::Settings::get().no_env.unwrap_or(false) {
+            return Ok(());
+        }
+        // Remote tasks use the full config hierarchy, not a task-local one
+        if self.is_remote() {
+            return Ok(());
+        }
+        let Some(task_cf) = self.cf(config) else {
+            return Ok(());
+        };
+        // Global/system configs have no project root; their env is already in the
+        // base context. Only tasks from a *different* project hierarchy need this.
+        let Some(task_project_root) = task_cf.project_root() else {
+            return Ok(());
+        };
+        if Some(&task_project_root) == config.project_root.as_ref() {
+            return Ok(());
+        }
+
+        let config_path = task_cf.get_path().to_path_buf();
+        if let Some(env) = TASK_ENV_CACHE.lock().unwrap().get(&config_path) {
+            tera_ctx.insert("env", env);
+            return Ok(());
+        }
+
+        let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
+        let (config_paths, idiomatic_filenames) =
+            crate::config::load_config_hierarchy_from_dir(task_dir).await?;
+        let task_config_files =
+            crate::config::load_config_files_from_paths(&config_paths, &idiomatic_filenames)
+                .await?;
+        let entries: Vec<(EnvDirective, PathBuf)> = task_config_files
+            .iter()
+            .rev()
+            .map(|(source, cf)| {
+                cf.env_entries()
+                    .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        let mut env: EnvMap = env::PRISTINE_ENV.clone();
+        let mut resolve_ctx = tera_ctx.clone();
+        resolve_ctx.insert("config_root", &task_project_root);
+        let results = EnvResults::resolve(
+            config,
+            resolve_ctx,
+            &env,
+            entries,
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::NonToolsOnly,
+                warn_on_missing_required: false,
+            },
+        )
+        .await?;
+        for (k, (v, _)) in results.env {
+            env.insert(k, v);
+        }
+        for key in &results.env_remove {
+            env.remove(key);
+        }
+        if !results.env_paths.is_empty() {
+            let mut path_env = PathEnv::from_iter(env::split_paths(
+                &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
+            ));
+            for path in results.env_paths {
+                path_env.add(path);
+            }
+            env.insert(env::PATH_KEY.to_string(), path_env.to_string());
+        }
+        if !results.redactions.is_empty() {
+            config.add_redactions(results.redactions, &env);
+        }
+        TASK_ENV_CACHE
+            .lock()
+            .unwrap()
+            .insert(config_path, env.clone());
+        tera_ctx.insert("env", &env);
+        Ok(())
+    }
+
+    async fn resolve_task_vars(
+        &self,
+        config: &Arc<Config>,
+        tera_ctx: &tera::Context,
+    ) -> Result<IndexMap<String, String>> {
+        if self.vars.0.is_empty() && self.overlay_vars.is_empty() {
+            return Ok(IndexMap::new());
+        }
+
+        let mut directives: Vec<(EnvDirective, PathBuf)> = self
+            .vars
+            .0
+            .iter()
+            .cloned()
+            .map(|directive| (directive, self.config_source.clone()))
+            .collect();
+        directives.extend(self.overlay_vars.iter().cloned());
+        let template_env: EnvMap = tera_ctx
+            .get("env")
+            .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok())
+            .unwrap_or_else(|| env::PRISTINE_ENV.clone());
+        let results = EnvResults::resolve(
+            config,
+            tera_ctx.clone(),
+            &template_env,
+            directives,
+            EnvResolveOptions {
+                vars: true,
+                tools: ToolsFilter::NonToolsOnly,
+                warn_on_missing_required: false,
+            },
+        )
+        .await?;
+
+        let vars: IndexMap<String, String> = results
+            .vars
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        let mut redaction_vars: EnvMap = tera_ctx
+            .get("vars")
+            .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok())
+            .unwrap_or_default();
+        redaction_vars.extend(vars.clone());
+        config.add_redactions(results.redactions.iter().cloned(), &redaction_vars);
+        Ok(vars)
+    }
+
+    pub fn cf<'a>(&'a self, config: &'a Config) -> Option<&'a Arc<dyn ConfigFile>> {
+        // For monorepo tasks, use the stored config file reference
+        if let Some(ref cf) = self.cf {
+            return Some(cf);
+        }
+        // Fallback to looking up in config.config_files
+        config.config_files.get(&self.config_source)
+    }
+
+    /// Check if this task is a remote task (loaded from git:// or http:// URL)
+    /// Remote tasks should not use monorepo config file context because they need
+    /// access to tools from the full config hierarchy, not just the local config file
+    pub fn is_remote(&self) -> bool {
+        // Check the stored remote file source (set before file is replaced with local path)
+        if let Some(source) = &self.remote_file_source {
+            return source.starts_with("git::")
+                || source.starts_with("http://")
+                || source.starts_with("https://");
+        }
+        false
+    }
+
+    pub fn shell(&self) -> eyre::Result<Option<Vec<String>>> {
+        let Some(shell) = self.shell.as_ref() else {
+            return Ok(None);
+        };
+        // A malformed explicit shell (e.g. an unbalanced quote in a path with
+        // spaces) must fail loudly rather than silently falling back to the
+        // default shell and running the task under the wrong interpreter.
+        let shell_cmd = crate::path::split_shell_command(shell)?;
+        if shell_cmd.is_empty() || shell_cmd[0].trim().is_empty() {
+            warn!("invalid shell '{shell}', expected '<program> <argument>' (e.g. sh -c)");
+            Ok(None)
+        } else {
+            Ok(Some(shell_cmd))
+        }
+    }
+
+    /// Overlay metadata from a `[tasks.<name>]` TOML block onto this task.
+    ///
+    /// Used when a file task (auto-discovered executable script) and a TOML
+    /// `[tasks.<name>]` block share the same name: the TOML block is treated
+    /// as a metadata overlay on top of the file task, so users can add env,
+    /// description, dependencies, etc. in `mise.toml` without having to move
+    /// the script out of the auto-discovered tasks directory.
+    ///
+    /// `self` is the file-task base (keeps its `run`/`file`/`config_source`);
+    /// `other` contributes its non-default fields.
+    ///
+    /// Env/vars directives from `other` are stored in [`overlay_env`] /
+    /// [`overlay_vars`] alongside the overlay's own config path, so path-based
+    /// directives (e.g. `_.file = ".env"`) keep resolving relative to the
+    /// TOML file they were written in rather than the file task's script path.
+    pub fn merge_toml_overlay(&mut self, other: Task) {
+        for source in other.config_sources() {
+            if source != self.config_source
+                && !self
+                    .additional_config_sources
+                    .iter()
+                    .any(|existing| existing == source)
+            {
+                self.additional_config_sources.push(source.to_path_buf());
+            }
+        }
+        if !other.description.is_empty() {
+            self.description = other.description;
+        }
+        for alias in other.aliases {
+            if !self.aliases.contains(&alias) {
+                self.aliases.push(alias);
+            }
+        }
+        // Preserve each env/var directive's origin so relative paths resolve
+        // correctly against the config file they were declared in.
+        let overlay_src = other.config_source.clone();
+        self.overlay_env
+            .extend(other.env.0.into_iter().map(|d| (d, overlay_src.clone())));
+        self.overlay_vars
+            .extend(other.vars.0.into_iter().map(|d| (d, overlay_src.clone())));
+        // Keep the *_raw (pre-render) snapshots in sync with the live deps
+        // so `render_depends_with_usage` re-renders the merged set rather
+        // than silently dropping overlay deps. Prefer the overlay's raw
+        // (unrendered) templates so `{{usage.*}}` refs survive re-rendering;
+        // fall back to the rendered form if raw wasn't captured.
+        // Compute/initialize the *_raw snapshots BEFORE extending the live
+        // deps, so if a snapshot is missing we seed it from just self's
+        // pre-overlay deps rather than the already-extended list.
+        let other_depends_raw = other
+            .depends_raw
+            .clone()
+            .unwrap_or_else(|| other.depends.clone());
+        let other_depends_post_raw = other
+            .depends_post_raw
+            .clone()
+            .unwrap_or_else(|| other.depends_post.clone());
+        let other_wait_for_raw = other
+            .wait_for_raw
+            .clone()
+            .unwrap_or_else(|| other.wait_for.clone());
+        self.depends_raw
+            .get_or_insert_with(|| self.depends.clone())
+            .extend(other_depends_raw);
+        self.depends_post_raw
+            .get_or_insert_with(|| self.depends_post.clone())
+            .extend(other_depends_post_raw);
+        self.wait_for_raw
+            .get_or_insert_with(|| self.wait_for.clone())
+            .extend(other_wait_for_raw);
+        self.depends.extend(other.depends);
+        self.depends_post.extend(other.depends_post);
+        self.wait_for.extend(other.wait_for);
+        if other.dir.is_some() {
+            self.dir = other.dir;
+        }
+        if other.hide {
+            self.hide = true;
+        }
+        if other.raw {
+            self.raw = true;
+        }
+        if other.raw_args {
+            self.raw_args = true;
+        }
+        if other.interactive {
+            self.interactive = true;
+        }
+        if other.quiet {
+            self.quiet = true;
+        }
+        if !matches!(other.silent, Silent::Off) {
+            self.silent = other.silent;
+        }
+        if other.output.is_some() {
+            self.output = other.output;
+        }
+        self.sources.extend(other.sources);
+        if !other.outputs.is_empty() {
+            self.outputs = other.outputs;
+        }
+        if other.raw_outputs.templates.is_some() {
+            self.raw_outputs = other.raw_outputs;
+        }
+        if other.shell.is_some() {
+            self.shell = other.shell;
+        }
+        if other.timeout.is_some() {
+            self.timeout = other.timeout;
+        }
+        if other.confirm.is_some() {
+            self.confirm = other.confirm;
+        }
+        for (k, v) in other.tools {
+            self.tools.insert(k, v);
+        }
+        if !other.usage.is_empty() {
+            self.usage = other.usage;
+        }
+        // Sandbox fields — deny is OR (any deny wins), allow lists extend.
+        self.deny_all |= other.deny_all;
+        self.deny_read |= other.deny_read;
+        self.deny_write |= other.deny_write;
+        self.deny_net |= other.deny_net;
+        self.deny_env |= other.deny_env;
+        self.allow_read.extend(other.allow_read);
+        self.allow_write.extend(other.allow_write);
+        self.allow_net.extend(other.allow_net);
+        self.allow_env.extend(other.allow_env);
+    }
+
+    fn has_render_templates(&self) -> bool {
+        fn path_contains_template(path: &Path) -> bool {
+            path.to_str().is_some_and(contains_template_syntax)
+        }
+
+        let deps_have_template = |deps: &[TaskDep]| {
+            deps.iter().any(|dep| {
+                contains_template_syntax(&dep.task)
+                    || dep.args.iter().any(|arg| contains_template_syntax(arg))
+                    || dep
+                        .env
+                        .values()
+                        .any(|value| contains_template_syntax(value))
+            })
+        };
+        let tools_have_template = self.tools.values().any(TaskToolValue::has_template);
+
+        self.aliases.iter().any(|s| contains_template_syntax(s))
+            || contains_template_syntax(&self.description)
+            || self.sources.iter().any(|s| contains_template_syntax(s))
+            || self.outputs.has_tera_template()
+            || deps_have_template(&self.depends)
+            || deps_have_template(&self.depends_post)
+            || deps_have_template(&self.wait_for)
+            || self
+                .dir
+                .as_ref()
+                .is_some_and(|s| contains_template_syntax(s))
+            || self
+                .shell
+                .as_ref()
+                .is_some_and(|s| contains_template_syntax(s))
+            || self
+                .timeout
+                .as_ref()
+                .is_some_and(|s| contains_template_syntax(s))
+            || self.allow_read.iter().any(|p| path_contains_template(p))
+            || self.allow_write.iter().any(|p| path_contains_template(p))
+            || tools_have_template
+    }
+
+    fn store_raw_render_inputs(&mut self) {
+        if !self.sources.is_empty() && self.outputs.is_empty() {
+            self.outputs = TaskOutputs::Auto;
+        }
+        self.raw_outputs = self.outputs.raw_templates_without_env();
+        // Save unrendered dependency templates so they can be re-rendered later
+        // with parent task args available (for passing args to dependencies).
+        self.depends_raw = Some(self.depends.clone());
+        self.depends_post_raw = Some(self.depends_post.clone());
+        self.wait_for_raw = Some(self.wait_for.clone());
+    }
+
+    fn parse_plain_depends(&mut self) -> Result<()> {
         for d in &mut self.depends {
-            d.render(&mut tera, &tera_ctx)?;
+            d.parse_shell_style_env()?;
         }
         for d in &mut self.depends_post {
-            d.render(&mut tera, &tera_ctx)?;
+            d.parse_shell_style_env()?;
         }
         for d in &mut self.wait_for {
-            d.render(&mut tera, &tera_ctx)?;
+            d.parse_shell_style_env()?;
         }
-        if let Some(dir) = &mut self.dir {
-            *dir = tera.render_str(dir, &tera_ctx)?;
+        Ok(())
+    }
+
+    pub async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
+        if !self.has_render_templates() {
+            self.store_raw_render_inputs();
+            self.parse_plain_depends()?;
+            return Ok(());
+        }
+
+        let mut tera = get_tera(Some(config_root));
+        let tera_ctx = self.tera_ctx(config).await?;
+        for a in &mut self.aliases {
+            if contains_template_syntax(a) {
+                *a = render_str(&mut tera, a, &tera_ctx)?;
+            }
+        }
+
+        if contains_template_syntax(&self.description) {
+            self.description = render_str(&mut tera, &self.description, &tera_ctx)?;
+        }
+        for s in &mut self.sources {
+            if contains_template_syntax(s) {
+                *s = render_str(&mut tera, s, &tera_ctx)?;
+            }
+        }
+        self.store_raw_render_inputs();
+        self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx)?;
+        // Render deps that don't contain {{usage.*}} references. Deps with usage
+        // references are deferred until render_depends_with_usage() is called with
+        // the actual arg values from CLI or parent dependency.
+        render_task_deps(&mut self.depends, &mut tera, &tera_ctx, true)?;
+        render_task_deps(&mut self.depends_post, &mut tera, &tera_ctx, true)?;
+        render_task_deps(&mut self.wait_for, &mut tera, &tera_ctx, true)?;
+        if let Some(dir) = &mut self.dir
+            && contains_template_syntax(dir)
+        {
+            *dir = render_str(&mut tera, dir, &tera_ctx)?;
+        }
+        if let Some(shell) = &mut self.shell
+            && contains_template_syntax(shell)
+        {
+            *shell = render_str(&mut tera, shell, &tera_ctx)?;
+        }
+        if let Some(timeout) = &mut self.timeout
+            && contains_template_syntax(timeout)
+        {
+            *timeout = render_str(&mut tera, timeout, &tera_ctx)?;
+        }
+        let mut render_sandbox_paths = |paths: &mut Vec<PathBuf>| -> Result<()> {
+            let mut rendered = Vec::with_capacity(paths.len());
+            for p in paths.drain(..) {
+                if let Some(path) = p.to_str()
+                    && contains_template_syntax(path)
+                {
+                    let path = render_str(&mut tera, path, &tera_ctx)?;
+                    if !path.trim().is_empty() {
+                        rendered.push(PathBuf::from(path));
+                    }
+                } else {
+                    rendered.push(p);
+                }
+            }
+            *paths = rendered;
+            Ok(())
+        };
+        // Tilde expansion is applied later when task and CLI sandbox paths are normalized.
+        render_sandbox_paths(&mut self.allow_read)?;
+        render_sandbox_paths(&mut self.allow_write)?;
+        for tool in self.tools.values_mut() {
+            tool.render_templates(&mut tera, &tera_ctx)?;
+        }
+        Ok(())
+    }
+
+    /// Re-render dependency templates with usage args/flags from the parent task.
+    /// This allows `depends = ["child {{usage.app}}"]` to resolve when the parent
+    /// task receives `--app=foo` from the CLI.
+    pub async fn render_depends_with_usage(
+        &mut self,
+        config: &Arc<Config>,
+        usage_values: &IndexMap<String, tera::Value>,
+    ) -> Result<()> {
+        if usage_values.is_empty() {
+            return Ok(());
+        }
+        let has_usage_deps = |raw: &Option<Vec<_>>| {
+            raw.as_ref()
+                .is_some_and(|deps| deps.iter().any(dep_has_usage_ref))
+        };
+        if !has_usage_deps(&self.depends_raw)
+            && !has_usage_deps(&self.depends_post_raw)
+            && !has_usage_deps(&self.wait_for_raw)
+        {
+            return Ok(());
+        }
+        let config_root = self.config_root.clone().unwrap_or_default();
+        let mut tera = get_tera(Some(&config_root));
+        let mut tera_ctx = self.tera_ctx(config).await?;
+        // Insert usage values into the tera context so templates like
+        // {{usage.app}} resolve to the actual CLI arg value.
+        tera_ctx.insert("usage", usage_values);
+
+        // Re-render from raw templates (not from already-rendered values).
+        // Only restore from raw if the field is non-empty — skip_deps clears
+        // depends/depends_post/wait_for and we must not undo that.
+        if !self.depends.is_empty()
+            && let Some(raw) = &self.depends_raw
+        {
+            self.depends = raw.clone();
+            render_task_deps(&mut self.depends, &mut tera, &tera_ctx, false)?;
+        }
+        if !self.depends_post.is_empty()
+            && let Some(raw) = &self.depends_post_raw
+        {
+            self.depends_post = raw.clone();
+            render_task_deps(&mut self.depends_post, &mut tera, &tera_ctx, false)?;
+        }
+        if !self.wait_for.is_empty()
+            && let Some(raw) = &self.wait_for_raw
+        {
+            self.wait_for = raw.clone();
+            render_task_deps(&mut self.wait_for, &mut tera, &tera_ctx, false)?;
         }
         Ok(())
     }
@@ -496,40 +2078,116 @@ impl Task {
         self.name.replace(':', path::MAIN_SEPARATOR_STR).into()
     }
 
-    pub fn render_env(&self, ts: &Toolset) -> Result<EnvMap> {
-        let config = Config::get();
-        let mut tera = get_tera(self.config_root.as_deref());
-        let mut tera_ctx = ts.tera_ctx()?.clone();
-        let mut env = ts.full_env(&config)?;
+    pub async fn render_env(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+    ) -> Result<(EnvMap, Vec<(String, String)>)> {
+        let mut tera_ctx = ts.tera_ctx(config).await?.clone();
+        let mut env = ts.full_env(config).await?;
         if let Some(root) = &config.project_root {
             tera_ctx.insert("config_root", &root);
         }
-        let task_env: Vec<(String, String)> = self
-            .env
-            .iter()
-            .filter_map(|(k, v)| match &v.0 {
-                Either::Left(v) => Some((k.to_string(), v.to_string())),
-                Either::Right(EitherIntOrBool(Either::Left(v))) => {
-                    Some((k.to_string(), v.to_string()))
-                }
-                _ => None,
-            })
-            .collect_vec();
-        for (k, v) in task_env {
-            tera_ctx.insert("env", &env);
-            env.insert(k, tera.render_str(&v, &tera_ctx)?);
-        }
-        let rm_env = self
-            .env
-            .iter()
-            .filter(|(_, v)| v.0 == Either::Right(EitherIntOrBool(Either::Right(false))))
-            .map(|(k, _)| k)
-            .collect::<HashSet<_>>();
 
-        Ok(env
+        // Convert task env directives to (EnvDirective, PathBuf) pairs
+        // Use the config file path as source for proper path resolution
+        // Include inherited_env first (so task's own env can override it)
+        let mut env_directives: Vec<_> = self
+            .inherited_env
+            .0
+            .iter()
+            .chain(self.env.0.iter())
+            .map(|directive| (directive.clone(), self.config_source.clone()))
+            .collect();
+        // Append overlay entries last so TOML-block env overrides file task env
+        // on key collision; each carries its own source path so directives like
+        // `_.file = ".env"` resolve relative to the overlay's config file.
+        env_directives.extend(self.overlay_env.iter().cloned());
+
+        // Resolve environment directives using the same system as global env
+        let env_results = EnvResults::resolve(
+            config,
+            tera_ctx.clone(),
+            &env,
+            env_directives,
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await?;
+        // Register task-specific redactions with the global redactor
+        // Include config-level redaction patterns so they also cover task-specific env vars
+        let redact_keys = config
+            .redaction_keys()
             .into_iter()
-            .filter(|(k, _)| !rm_env.contains(k))
-            .collect())
+            .chain(env_results.redactions.iter().cloned());
+        let task_env_map: EnvMap = env_results
+            .env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        config.add_redactions(redact_keys, &task_env_map);
+
+        let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
+        // Apply the resolved environment variables
+        env.extend(task_env.clone());
+
+        // Remove environment variables that were explicitly unset
+        for key in &env_results.env_remove {
+            env.remove(key);
+        }
+
+        // Apply path additions from _.path directives
+        if !env_results.env_paths.is_empty() {
+            let mut path_env = PathEnv::from_iter(env::split_paths(
+                &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
+            ));
+            for path in env_results.env_paths {
+                path_env.add(path);
+            }
+            env.insert(env::PATH_KEY.to_string(), path_env.to_string());
+        }
+
+        Ok((env, task_env.collect()))
+    }
+}
+
+pub(crate) fn clear_usage_env(env: &mut EnvMap) {
+    env.retain(|key, _| !is_usage_env_key(key));
+}
+
+fn clear_usage_env_from_tera_ctx(tera_ctx: &mut tera::Context) {
+    let mut env: EnvMap = tera_ctx
+        .get("env")
+        .and_then(|value| serde::Deserialize::deserialize(value.clone()).ok())
+        .unwrap_or_default();
+    clear_usage_env(&mut env);
+    tera_ctx.insert("env", &env);
+}
+
+pub(crate) fn is_usage_env_key(key: &str) -> bool {
+    #[cfg(windows)]
+    {
+        key.get(.."usage_".len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("usage_"))
+    }
+    #[cfg(not(windows))]
+    {
+        key.starts_with("usage_")
+    }
+}
+
+pub(crate) fn env_contains_key(env: &EnvMap, key: &str) -> bool {
+    #[cfg(windows)]
+    {
+        env.keys()
+            .any(|candidate| candidate.eq_ignore_ascii_case(key))
+    }
+    #[cfg(not(windows))]
+    {
+        env.contains_key(key)
     }
 }
 
@@ -550,25 +2208,146 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
         .map(ffi::OsStr::to_string_lossy)
         .map(|s| s.replace(':', "_"))
         .join(":");
-    if let Some(name) = name.strip_suffix(":_default") {
-        Ok(name.to_string())
-    } else {
-        Ok(name)
+    if let Some((parent, last)) = name.rsplit_once(':')
+        && strip_extension(last) == "_default"
+    {
+        return Ok(parent.to_string());
     }
+    Ok(name)
 }
 
-fn match_tasks(tasks: &BTreeMap<String, &Task>, td: &TaskDep) -> Result<Vec<Task>> {
+/// Extract monorepo path from a task name
+/// e.g., "//projects/frontend:test" -> Some("projects/frontend")
+/// e.g., "//projects/frontend:test:nested" -> Some("projects/frontend")
+/// Returns None if the task name doesn't have monorepo syntax
+pub(crate) fn extract_monorepo_path(name: &str) -> Option<String> {
+    name.strip_prefix("//").and_then(|stripped| {
+        // Find the FIRST colon after "//" prefix to handle task names with colons like "do:item-1"
+        stripped.find(':').map(|idx| stripped[..idx].to_string())
+    })
+}
+
+/// Build a map of task names and aliases to task references
+/// For monorepo tasks, creates entries for both prefixed and unprefixed aliases
+/// e.g., task "//:format" with alias "fmt" creates both "//:fmt" and "fmt"
+pub(crate) fn build_task_ref_map<'a, I>(tasks: I) -> BTreeMap<String, &'a Task>
+where
+    I: Iterator<Item = (&'a String, &'a Task)> + 'a,
+{
+    tasks
+        .flat_map(|(_, t)| {
+            t.aliases
+                .iter()
+                .flat_map(|a| {
+                    // For monorepo tasks, create entries for both prefixed and unprefixed aliases
+                    // This allows references like "fmt" to resolve to "//:format"
+                    if let Some(path) = extract_monorepo_path(&t.name) {
+                        vec![(format!("//{}:{}", path, a), t), (a.to_string(), t)]
+                    } else {
+                        // Non-monorepo task, use alias as-is
+                        vec![(a.to_string(), t)]
+                    }
+                })
+                .chain(once((t.name.clone(), t)))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Resolve a task dependency pattern, optionally relative to a parent task
+/// If pattern starts with ":" and parent_task is provided, resolve relative to parent's path
+/// For example: parent "//projects/frontend:test" with pattern ":build" -> "//projects/frontend:build"
+pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) -> String {
+    // Check if this is a bare task name that should be treated as relative
+    let is_bare_name =
+        !pattern.starts_with("//") && !pattern.starts_with("::") && !pattern.starts_with(':');
+
+    // If pattern starts with ":" or is a bare name in monorepo context, resolve relatively
+    let should_resolve_relatively = pattern.starts_with(':') && !pattern.starts_with("::")
+        || (is_bare_name && parent_task.is_some_and(|p| p.name.starts_with("//")));
+
+    if should_resolve_relatively && let Some(parent) = parent_task {
+        // Extract the path portion from the parent task name
+        // For monorepo tasks like "//projects/frontend:test:nested", we need to extract "//projects/frontend"
+        // by finding the FIRST colon after the "//" prefix, not the last one
+        if let Some(stripped) = parent.name.strip_prefix("//") {
+            // Find the first colon after "//" prefix
+            if let Some(colon_idx) = stripped.find(':') {
+                let path = format!("//{}", &stripped[..colon_idx]);
+                // If pattern is a bare name, add the colon prefix
+                return if is_bare_name {
+                    format!("{}:{}", path, pattern)
+                } else {
+                    format!("{}{}", path, pattern)
+                };
+            }
+        } else if let Some((path, _)) = parent.name.rsplit_once(':') {
+            // For non-monorepo tasks, use the old logic
+            return format!("{}{}", path, pattern);
+        }
+    }
+    pattern.to_string()
+}
+
+fn match_tasks_with_context(
+    tasks: &BTreeMap<String, &Task>,
+    td: &TaskDep,
+    parent_task: Option<&Task>,
+) -> Result<Vec<Task>> {
+    let resolved_pattern = resolve_task_pattern(&td.task, parent_task);
     let matches = tasks
-        .get_matching(&td.task)?
+        .get_matching(&resolved_pattern)?
         .into_iter()
         .map(|t| {
             let mut t = (*t).clone();
             t.args = td.args.clone();
-            t
+            // Apply env vars from dependency - these affect task identity/deduplication
+            if !td.env.is_empty() {
+                let env_directives: Vec<EnvDirective> = td
+                    .env
+                    .iter()
+                    .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
+                    .collect();
+                t = t.with_dependency_env(&env_directives);
+                if let Some(config_root) = &t.config_root {
+                    let config_root = config_root.clone();
+                    t.outputs
+                        .re_render_with_env(&t.raw_outputs.clone(), &td.env, &config_root)?;
+                }
+            }
+            Ok(t)
         })
-        .collect_vec();
+        .collect::<Result<Vec<_>>>()?;
     if matches.is_empty() {
-        return Err(eyre!("task not found: {td}"));
+        let mut err_msg = format!("task not found: {}", td.task);
+
+        // In monorepo mode, suggest similar tasks using fuzzy matching
+        if resolved_pattern.starts_with("//") {
+            let mut matcher = FuzzyMatcher::default();
+            let resolved_pattern = resolved_pattern.to_lowercase();
+            let pattern = FuzzyPattern::new(&resolved_pattern);
+            let similar: Vec<String> = tasks
+                .keys()
+                .filter(|k| k.starts_with("//"))
+                .filter_map(|k| {
+                    matcher
+                        .score_pattern(&k.to_lowercase(), &pattern)
+                        .map(|score| (score, k.clone()))
+                })
+                .sorted_by_key(|(score, _)| std::cmp::Reverse(*score))
+                .take(5)
+                .map(|(_, k)| k)
+                .collect();
+
+            if !similar.is_empty() {
+                err_msg.push_str("\n\nDid you mean one of these?");
+                for task_name in similar {
+                    err_msg.push_str(&format!("\n  - {}", task_name));
+                }
+            }
+        }
+
+        return Err(eyre!(err_msg));
     };
 
     Ok(matches)
@@ -578,23 +2357,35 @@ impl Default for Task {
     fn default() -> Self {
         Task {
             name: "".to_string(),
+            display_name: "".to_string(),
             description: "".to_string(),
             aliases: vec![],
             config_source: PathBuf::new(),
+            additional_config_sources: vec![],
             cf: None,
             config_root: None,
             confirm: None,
             depends: vec![],
             depends_post: vec![],
             wait_for: vec![],
-            env: BTreeMap::new(),
+            env: Default::default(),
+            vars: Default::default(),
+            inherited_env: Default::default(),
+            overlay_env: vec![],
+            overlay_vars: vec![],
             dir: None,
             hide: false,
+            global: false,
             raw: false,
+            raw_args: false,
+            trailing_args: vec![],
+            interactive: false,
             sources: vec![],
             outputs: Default::default(),
+            raw_outputs: Default::default(),
             shell: None,
-            silent: false,
+            silent: Silent::Off,
+            output: None,
             run: vec![],
             run_windows: vec![],
             args: vec![],
@@ -602,21 +2393,44 @@ impl Default for Task {
             quiet: false,
             tools: Default::default(),
             usage: "".to_string(),
+            timeout: None,
+            remote_file_source: None,
+            deny_all: false,
+            deny_read: false,
+            deny_write: false,
+            deny_net: false,
+            deny_env: false,
+            allow_read: vec![],
+            allow_write: vec![],
+            allow_net: vec![],
+            allow_env: vec![],
+            extends: None,
+            show_args_in_prefix: false,
+            depends_raw: None,
+            depends_post_raw: None,
+            wait_for_raw: None,
         }
     }
 }
 
 impl Display for Task {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let cmd = if let Some(command) = self.run().first() {
-            Some(command.to_string())
-        } else {
-            self.file.as_ref().map(display_path)
-        };
+        let cmd = self
+            .run()
+            .iter()
+            .map(|e| e.to_string())
+            .next()
+            .or_else(|| self.file_path_raw().as_ref().map(display_path));
 
         if let Some(cmd) = cmd {
             let cmd = cmd.lines().next().unwrap_or_default();
-            write!(f, "{} {}", self.prefix(), truncate_str(cmd, 60, "…"))
+            let prefix = self.prefix();
+            let prefix_len = measure_text_width(&prefix);
+            // Ensure we have at least 20 characters for the command, even with very long prefixes
+            let available_width = (*env::TERM_WIDTH).saturating_sub(prefix_len + 4); // 4 chars buffer for spacing and ellipsis
+            let max_width = available_width.max(20); // Always show at least 20 chars of command
+            let truncated_cmd = truncate_str(cmd, max_width, "…");
+            write!(f, "{} {}", prefix, truncated_cmd)
         } else {
             write!(f, "{}", self.prefix())
         }
@@ -629,10 +2443,27 @@ impl PartialOrd for Task {
     }
 }
 
+/// Extract sorted env key-value pairs from task's own env (not inherited_env)
+/// Used for consistent comparison/hashing of task identity
+fn env_key(task: &Task) -> Vec<(&String, &String)> {
+    task.env
+        .0
+        .iter()
+        .filter_map(|d| match d {
+            EnvDirective::Val(k, v, _) => Some((k, v)),
+            _ => None,
+        })
+        .sorted()
+        .collect()
+}
+
 impl Ord for Task {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.name.cmp(&other.name) {
-            Ordering::Equal => self.args.cmp(&other.args),
+            Ordering::Equal => match self.args.cmp(&other.args) {
+                Ordering::Equal => env_key(self).cmp(&env_key(other)),
+                o => o,
+            },
             o => o,
         }
     }
@@ -642,13 +2473,18 @@ impl Hash for Task {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
         self.args.iter().for_each(|arg| arg.hash(state));
+        // Include task's own env (not inherited_env) for deduplication
+        for (k, v) in env_key(self) {
+            k.hash(state);
+            v.hash(state);
+        }
     }
 }
 
 impl Eq for Task {}
 impl PartialEq for Task {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.args == other.args
+        self.name == other.name && self.args == other.args && env_key(self) == env_key(other)
     }
 }
 
@@ -657,12 +2493,12 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
 
     fn write_self(&self) -> std::io::Result<()> {
         if let Some(w) = self.0.node_weight(self.1) {
-            miseprint!("{}", w.display_name())?;
+            miseprint!("{}", w.display_name)?;
         }
         Ok(())
     }
 
-    fn children(&self) -> Cow<[Self::Child]> {
+    fn children(&self) -> Cow<'_, [Self::Child]> {
         let v: Vec<_> = self.0.neighbors(self.1).map(|i| (self.0, i)).collect();
         Cow::from(v)
     }
@@ -672,60 +2508,648 @@ pub trait GetMatchingExt<T> {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
 }
 
+/// Helper function to strip file extension from a task name
+/// e.g., "test.js" -> "test", "build" -> "build"
+/// Special case: hidden files like ".hidden" are preserved to avoid empty strings
+pub(crate) fn strip_extension(name: &str) -> &str {
+    let result = name.rsplitn(2, '.').last().unwrap_or(name);
+    // Don't strip extension if it would result in empty string (hidden files)
+    if result.is_empty() { name } else { result }
+}
+
 impl<T> GetMatchingExt<T> for BTreeMap<String, T>
 where
     T: Eq + Hash,
 {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
-        let normalized = pat.split(':').collect::<PathBuf>();
-        let matcher = GlobBuilder::new(&normalized.to_string_lossy())
-            .literal_separator(true)
-            .build()?
-            .compile_matcher();
+        // === Monorepo pattern matching ===
+        // Only patterns starting with '//' or ':' are monorepo patterns
+        // Reject patterns that look like monorepo paths but use wrong syntax (have / and : but don't start with // or :)
+        if !pat.starts_with("//") && !pat.starts_with(':') {
+            // Check if this looks like an attempt at a monorepo path with wrong syntax
+            if pat.contains('/') && pat.contains(':') {
+                bail!(
+                    "relative path syntax '{}' is not supported, use '//{}'  or ':task' for current directory",
+                    pat,
+                    pat
+                )
+            }
+            // If it doesn't contain wildcards or ':', it's a simple task name
+            if !pat.contains('*') && !pat.contains("...") && !pat.contains(':') {
+                // Prefer exact name matches; only fall back to extension-stripped
+                // matches when there is no exact match. Otherwise a TOML task
+                // "hello" and an auto-discovered file task "hello.sh" would both
+                // match `mise run hello` and run the script twice (#10298).
+                let exact: Vec<&T> = self
+                    .iter()
+                    .filter(|(k, _)| k.as_str() == pat)
+                    .map(|(_, v)| v)
+                    .collect();
+                if !exact.is_empty() {
+                    return Ok(exact);
+                }
+                return Ok(self
+                    .iter()
+                    .filter(|(k, _)| strip_extension(k) == pat)
+                    .map(|(_, v)| v)
+                    .collect());
+            }
+            // Has wildcards or colon but no /, so it's a regular task pattern like "render:*" or "build:linux"
+            // Process with glob matching below
+        }
 
+        // === Parse monorepo pattern ===
+        let normalized_pat = if pat.starts_with("//") {
+            pat.to_string()
+        } else if pat.starts_with(':') {
+            // Special case: :task should have been expanded before calling get_matching
+            // If we reach here, it means the expansion didn't happen properly
+            bail!("':task' pattern should be expanded before matching")
+        } else {
+            pat.to_string()
+        };
+
+        // Split pattern into path and task parts
+        // Pattern format: //path/...:task* or //path:task*
+        let parts: Vec<&str> = normalized_pat.splitn(2, ':').collect();
+        if pat.starts_with("//") && parts.len() == 1 {
+            bail!(
+                "missing task name in monorepo path '{}', use '{}:<task>' or '{}:*' to run all tasks in that path",
+                pat,
+                pat,
+                pat
+            );
+        }
+        let has_explicit_task_glob = parts.len() > 1;
+        let (path_pattern, task_pattern) = match parts.as_slice() {
+            [path, task] => (*path, *task),
+            [path] => (*path, "*"),
+            _ => (normalized_pat.as_str(), "*"),
+        };
+
+        // === Convert ellipsis to glob syntax ===
+        // Convert ellipsis (...) to glob pattern (**)
+        // //... matches everything, //foo/... matches foo and all subdirs
+        let path_glob = path_pattern.replace("...", "**");
+
+        // For task patterns, * only matches within the task name portion (after final :)
+        // e.g., test:* matches test:unit, test:integration, etc.
+        let task_glob = task_pattern;
+
+        // === Build glob matchers once (performance optimization) ===
+        // Build path matcher for absolute patterns
+        let path_matcher = GlobBuilder::new(&path_glob)
+            .literal_separator(true)
+            .build()
+            .ok()
+            .map(|b| b.compile_matcher());
+
+        // Build task matcher if not wildcard
+        let task_matcher = if task_glob != "*" {
+            GlobBuilder::new(task_glob)
+                .literal_separator(false) // Allow * to match : in task names
+                .build()
+                .ok()
+                .map(|b| b.compile_matcher())
+        } else {
+            None
+        };
+
+        // Build relative pattern matchers if needed
+        let (rel_path_matcher, rel_task_matcher) = if !pat.starts_with("//") {
+            let rel_path_pattern = path_pattern.strip_prefix("//").unwrap_or(path_pattern);
+            let rel_path_glob = rel_path_pattern.replace("...", "**");
+
+            let rel_path = GlobBuilder::new(&rel_path_glob)
+                .literal_separator(true)
+                .build()
+                .ok()
+                .map(|b| b.compile_matcher());
+
+            let rel_task = if task_glob != "*" {
+                GlobBuilder::new(task_glob)
+                    .literal_separator(false)
+                    .build()
+                    .ok()
+                    .map(|b| b.compile_matcher())
+            } else {
+                None
+            };
+
+            (rel_path, rel_task)
+        } else {
+            (None, None)
+        };
+
+        // === Match tasks ===
+        // Whether a key matches the pattern. `allow_ext_strip` enables the
+        // extension-stripped fallback for the task part; we run an exact pass first
+        // and only fall back to stripping when nothing matched exactly, so a toml
+        // task `//pkg:hello` is not joined by a file task `//pkg:hello.sh` for the
+        // pattern `//pkg:hello` (which would run the script twice — #10298). The
+        // path part and wildcard (`*`) task patterns are unaffected by the flag.
+        let entry_matches = |k: &str, allow_ext_strip: bool| -> bool {
+            // Split task name into path and task parts
+            let key_parts: Vec<&str> = k.splitn(2, ':').collect();
+            let (key_path, key_task) = match key_parts.as_slice() {
+                [path, task] => (*path, *task),
+                [path] => (*path, ""),
+                _ => (k, ""),
+            };
+
+            // Match path part with ellipsis support
+            let path_matches = if let Some(ref matcher) = path_matcher {
+                matcher.is_match(key_path)
+            } else {
+                false
+            };
+
+            // Match task part with asterisk support and (optional) extension stripping.
+            // When the pattern explicitly uses a wildcard after `:` (e.g., "test:*"),
+            // require the key to actually have a task part (i.e., contain a `:`
+            // separator). This prevents "test" from matching "test:*", which would
+            // cause circular dependencies. Implicit wildcards (bare names like "test")
+            // should still match the exact task.
+            let task_matches = if task_glob == "*" {
+                !has_explicit_task_glob || !key_task.is_empty()
+            } else if let Some(ref matcher) = task_matcher {
+                matcher.is_match(key_task)
+                    || (allow_ext_strip && matcher.is_match(strip_extension(key_task)))
+            } else {
+                false
+            };
+
+            // Try matching without // prefix for relative patterns
+            let relative_match = if !pat.starts_with("//") {
+                let stripped_key = k.strip_prefix("//").unwrap_or(k);
+                let stripped_parts: Vec<&str> = stripped_key.splitn(2, ':').collect();
+                let (stripped_path, stripped_task) = match stripped_parts.as_slice() {
+                    [path, task] => (*path, *task),
+                    [path] => (*path, ""),
+                    _ => (stripped_key, ""),
+                };
+
+                let rel_path_matches = if let Some(ref matcher) = rel_path_matcher {
+                    matcher.is_match(stripped_path)
+                } else {
+                    false
+                };
+
+                let rel_task_matches = if task_glob == "*" {
+                    !has_explicit_task_glob || !stripped_task.is_empty()
+                } else if let Some(ref matcher) = rel_task_matcher {
+                    matcher.is_match(stripped_task)
+                        || (allow_ext_strip && matcher.is_match(strip_extension(stripped_task)))
+                } else {
+                    false
+                };
+
+                rel_path_matches && rel_task_matches
+            } else {
+                false
+            };
+
+            (path_matches && task_matches) || relative_match
+        };
+
+        // Prefer exact task-name matches; fall back to extension-stripped matches
+        // only when no key matched exactly.
+        let exact: Vec<&T> = self
+            .iter()
+            .filter(|(k, _)| entry_matches(k.as_str(), false))
+            .map(|(_, t)| t)
+            .unique()
+            .collect();
+        if !exact.is_empty() {
+            return Ok(exact);
+        }
         Ok(self
             .iter()
-            .filter(|(k, _)| {
-                let path: PathBuf = k.split(':').collect();
-                if matcher.is_match(&path) {
-                    return true;
-                }
-                if let Some(stem) = path.file_stem() {
-                    let base_path = path.with_file_name(stem);
-                    return matcher.is_match(&base_path);
-                }
-                false
-            })
+            .filter(|(k, _)| entry_matches(k.as_str(), true))
             .map(|(_, t)| t)
             .unique()
             .collect())
     }
 }
 
+/// Check if a TaskDep contains Tera `usage` references that need deferred rendering.
+pub(crate) fn dep_has_usage_ref(dep: &TaskDep) -> bool {
+    tera_template_has_usage_ref(&dep.task)
+        || dep.args.iter().any(|a| tera_template_has_usage_ref(a))
+        || dep.env.values().any(|v| tera_template_has_usage_ref(v))
+}
+
+fn render_task_deps(
+    deps: &mut Vec<TaskDep>,
+    tera: &mut TeraEngine,
+    tera_ctx: &tera::Context,
+    defer_usage: bool,
+) -> Result<()> {
+    let mut rendered = Vec::with_capacity(deps.len());
+    for mut dep in std::mem::take(deps) {
+        if (defer_usage && dep_has_usage_ref(&dep)) || dep.render(tera, tera_ctx)? {
+            rendered.push(dep);
+        }
+    }
+    *deps = rendered;
+    Ok(())
+}
+
+fn tera_template_has_usage_ref(s: &str) -> bool {
+    const TAGS: [(&str, &str); 2] = [("{{", "}}"), ("{%", "%}")];
+    for (open, close) in TAGS {
+        let mut rest = s;
+        while let Some(start) = rest.find(open) {
+            rest = &rest[start + open.len()..];
+            let Some(end) = rest.find(close) else {
+                break;
+            };
+            if tera_tag_has_usage_ref(&rest[..end]) {
+                return true;
+            }
+            rest = &rest[end + close.len()..];
+        }
+    }
+    false
+}
+
+fn tera_tag_has_usage_ref(tag: &str) -> bool {
+    ["usage.", "usage["].iter().any(|needle| {
+        tag.match_indices(needle).any(|(idx, _)| {
+            tag[..idx]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '.')
+        })
+    })
+}
+
+/// Parse a task's usage spec against its current args and return a map of named
+/// arg/flag values preserving their Tera types (e.g., strings and booleans).
+/// Used to provide `{{usage.*}}` context when rendering dependency templates.
+pub async fn parse_usage_values_from_task(
+    config: &Arc<Config>,
+    task: &Task,
+) -> Result<IndexMap<String, tera::Value>> {
+    let ts = config.get_toolset().await?;
+    let env = ts.full_env(config).await?;
+    let (spec, _) = task
+        .parse_usage_spec_with_vars(config, None, &env, None)
+        .await?;
+    if spec.cmd.args.is_empty() && spec.cmd.flags.is_empty() && spec.cmd.subcommands.is_empty() {
+        return Ok(IndexMap::new());
+    }
+    // Build args list with empty first element (usage parser expects argv[0] to be the command)
+    let args: Vec<String> = once(String::new())
+        .chain(task.args.iter().cloned())
+        .collect();
+    let po = match usage::Parser::new(&spec).parse(&args) {
+        Ok(po) => po,
+        Err(e) => {
+            debug!("usage parse failed for task '{}': {e}", task.name);
+            return Ok(IndexMap::new());
+        }
+    };
+    let mut values: IndexMap<String, tera::Value> =
+        TaskScriptParser::make_usage_ctx(&po).into_iter().collect();
+    // `make_usage_ctx` only inserts `cmd` when a subcommand was actually selected.
+    // Templates referencing `{{ usage.cmd }}` should still resolve (to "") when
+    // subcommands are defined in the spec but none was selected.
+    if !spec.cmd.subcommands.is_empty() && !values.contains_key("cmd") {
+        values.insert("cmd".to_string(), tera::Value::from(String::new()));
+    }
+    Ok(values)
+}
+
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
 
-    use crate::dirs;
-    use crate::task::Task;
+    use crate::task::{RunEntry, Task};
+    use crate::{config::Config, dirs};
+    use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
 
-    use super::name_from_path;
+    #[cfg(unix)]
+    use super::TaskConfirm;
+    #[cfg(unix)]
+    use super::TaskOutput;
+    use super::{
+        clear_usage_env, env_contains_key, name_from_path, tera_tag_has_usage_ref,
+        tera_template_has_usage_ref,
+    };
 
     #[test]
-    fn test_from_path() {
-        let test_cases = [(".mise/tasks/filetask", "filetask", vec!["ft"])];
+    fn test_merge_toml_overlay_tracks_definition_sources() {
+        let mut file_task = Task {
+            config_source: PathBuf::from(".mise/tasks/build"),
+            file: Some(PathBuf::from(".mise/tasks/build")),
+            ..Default::default()
+        };
+        let overlay = Task {
+            config_source: PathBuf::from("mise.toml"),
+            depends: vec!["lint".to_string().into()],
+            ..Default::default()
+        };
 
+        file_task.merge_toml_overlay(overlay);
+
+        assert_eq!(
+            file_task.config_sources(),
+            vec![Path::new(".mise/tasks/build"), Path::new("mise.toml")]
+        );
+    }
+
+    // Thread-local storage to capture parser state during tests
+    thread_local! {
+        static CAPTURED_PARSER_FIELDS: Mutex<Option<Vec<String>>> = const { Mutex::new(None) };
+    }
+
+    pub(super) fn capture_parsed_fields(fields: Vec<String>) {
+        CAPTURED_PARSER_FIELDS.with(|captured| {
+            *captured.lock().unwrap() = Some(fields);
+        });
+    }
+
+    #[test]
+    fn test_clear_usage_env_uses_platform_key_semantics() {
+        let mut env = [
+            ("usage_model".to_string(), "lower".to_string()),
+            ("USAGE_TARGET".to_string(), "upper".to_string()),
+            ("OTHER".to_string(), "keep".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        assert!(env_contains_key(&env, "usage_model"));
+        #[cfg(windows)]
+        assert!(env_contains_key(&env, "Usage_Model"));
+
+        clear_usage_env(&mut env);
+
+        assert!(!env.contains_key("usage_model"));
+        #[cfg(windows)]
+        assert!(!env.contains_key("USAGE_TARGET"));
+        #[cfg(not(windows))]
+        assert_eq!(env.get("USAGE_TARGET").map(String::as_str), Some("upper"));
+        assert_eq!(env.get("OTHER").map(String::as_str), Some("keep"));
+    }
+
+    #[test]
+    fn test_file_has_decoded_template() {
+        use super::file_has_decoded_template;
+        let toml = Path::new("ci.toml");
+        let script = Path::new("script.sh");
+
+        // plain template-free includes do not need trust
+        assert!(!file_has_decoded_template(
+            toml,
+            "[hello]\nrun = \"echo hi\"\ndescription = \"a plain task\"\n"
+        ));
+        assert!(!file_has_decoded_template(
+            script,
+            "#!/usr/bin/env bash\n#MISE description=\"a plain task\"\necho hi\n"
+        ));
+
+        // escaped delimiters ({ == '{', } == '}') decode to a template
+        assert!(file_has_decoded_template(
+            toml,
+            "[hello]\nrun = \"echo hi\"\ndescription = \"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\n"
+        ));
+        assert!(file_has_decoded_template(
+            script,
+            "#!/usr/bin/env bash\n#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
+        ));
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_hoists_root_mount() {
+        use std::io::Write;
+
+        for marker in ["#USAGE", "# USAGE"] {
+            let mut tmp = tempfile::NamedTempFile::new().unwrap();
+            tmp.write_all(
+                format!(
+                    r#"#!/usr/bin/env bash
+{marker} flag "--verbose" help="Show extra output"
+{marker} mount "shapeme --usage-spec"
+exec shapeme "$@"
+"#
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+
+            let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+
+            assert_eq!(spec.cmd.flags.len(), 1);
+            assert_eq!(spec.cmd.mounts.len(), 1);
+            assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
+            assert!(!spec.cmd.subcommands.contains_key("__mise_task_root_mounts"));
+        }
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_hoists_mise_root_mount() {
+        use std::io::Write;
+
+        for marker in ["#MISE", "# MISE"] {
+            let mut tmp = tempfile::NamedTempFile::new().unwrap();
+            tmp.write_all(
+                format!(
+                    r#"#!/usr/bin/env bash
+#USAGE flag "--verbose" help="Show extra output"
+{marker} flag "--mise" help="MISE flag"
+{marker} description="Run the mounted CLI"
+{marker} mount "shapeme --usage-spec"
+exec shapeme "$@"
+"#
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+
+            let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+
+            assert_eq!(spec.cmd.flags.len(), 2);
+            assert_eq!(spec.cmd.mounts.len(), 1);
+            assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
+        }
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_hoists_root_mount_block() {
+        use std::io::Write;
+
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(
+            r#"#!/usr/bin/env bash
+#USAGE flag "--template <template>" help="Use {name} template"
+#USAGE mount {
+#USAGE   run "first --usage-spec"
+#USAGE }
+#USAGE mount "second --usage-spec"
+exec shapeme "$@"
+"#
+            .as_bytes(),
+        )
+        .unwrap();
+
+        let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+
+        assert_eq!(spec.cmd.flags.len(), 1);
+        assert_eq!(spec.cmd.mounts.len(), 2);
+        assert_eq!(spec.cmd.mounts[0].run, "first --usage-spec");
+        assert_eq!(spec.cmd.mounts[1].run, "second --usage-spec");
+    }
+
+    #[test]
+    fn test_task_usage_comment_extraction_matches_usage_lib() {
+        use std::io::Write;
+
+        let script = r#"#!/usr/bin/env bash
+#USAGE flag "--verbose" help="Show extra output"
+#USAGE arg "<file>" help="Input file"
+exec tool "$@"
+"#;
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(script.as_bytes()).unwrap();
+
+        let parsed_by_usage_lib = usage::Spec::parse_script(tmp.path()).unwrap();
+        let raw = super::extract_usage_from_comments(script);
+        let parsed_by_fallback: usage::Spec = raw.parse().unwrap();
+
+        assert_eq!(
+            parsed_by_usage_lib.cmd.flags.len(),
+            parsed_by_fallback.cmd.flags.len()
+        );
+        assert_eq!(
+            parsed_by_usage_lib.cmd.args.len(),
+            parsed_by_fallback.cmd.args.len()
+        );
+        assert_eq!(
+            parsed_by_usage_lib.cmd.flags[0].usage(),
+            parsed_by_fallback.cmd.flags[0].usage()
+        );
+        assert_eq!(
+            parsed_by_usage_lib.cmd.args[0].usage,
+            parsed_by_fallback.cmd.args[0].usage
+        );
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_preserves_nested_mount() {
+        use std::io::Write;
+
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(
+            r#"#!/usr/bin/env bash
+#USAGE cmd "proxy" {
+#USAGE   mount run="proxy --usage-spec"
+#USAGE }
+exec proxy "$@"
+"#
+            .as_bytes(),
+        )
+        .unwrap();
+
+        let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+
+        assert!(spec.cmd.mounts.is_empty());
+        assert_eq!(
+            spec.cmd.subcommands["proxy"].mounts[0].run,
+            "proxy --usage-spec"
+        );
+    }
+
+    #[cfg(unix)]
+    fn take_captured_fields() -> Option<Vec<String>> {
+        CAPTURED_PARSER_FIELDS.with(|captured| captured.lock().unwrap().take())
+    }
+
+    #[test]
+    fn test_tera_template_has_usage_ref() {
+        assert!(tera_template_has_usage_ref("{{ usage.app }}"));
+        assert!(tera_template_has_usage_ref(
+            "{%- if usage.run_post -%}post{%- endif -%}"
+        ));
+        assert!(tera_template_has_usage_ref("{{ usage['app'] }}"));
+        assert!(!tera_template_has_usage_ref(
+            "{{ env.DEPLOY_ENV }} usage.docs"
+        ));
+        assert!(!tera_template_has_usage_ref("{{ config.usage.something }}"));
+        assert!(!tera_template_has_usage_ref("{# usage.app #}"));
+        assert!(tera_tag_has_usage_ref("if(usage.run_post)"));
+        assert!(!tera_tag_has_usage_ref("ifusage.run_post"));
+    }
+
+    #[tokio::test]
+    async fn test_from_path() {
+        let test_cases = [(".mise/tasks/filetask", "filetask", vec!["ft"])];
+        let config = Config::get().await.unwrap();
         for (path, name, aliases) in test_cases {
             let t = Task::from_path(
+                &config,
                 Path::new(path),
                 Path::new(".mise/tasks"),
                 Path::new(dirs::CWD.as_ref().unwrap()),
             )
+            .await
             .unwrap();
             assert_eq!(t.name, name);
             assert_eq!(t.aliases, aliases);
         }
+    }
+
+    #[tokio::test]
+    async fn test_render_sandbox_allow_paths() {
+        let config = Config::get().await.unwrap();
+        let mut task = Task {
+            allow_read: vec![Path::new("{{ env.HOME }}/read").into()],
+            allow_write: vec![
+                Path::new("{{ \"\" }}").into(),
+                Path::new("{{ env.HOME }}/write").into(),
+            ],
+            ..Default::default()
+        };
+
+        task.render(&config, Path::new(".")).await.unwrap();
+
+        assert_eq!(task.allow_read, vec![crate::env::HOME.join("read")]);
+        assert_eq!(task.allow_write, vec![crate::env::HOME.join("write")]);
+    }
+
+    #[tokio::test]
+    async fn test_usage_task_description_populates_help_metadata() {
+        let config = Config::get().await.unwrap();
+        let description = indoc::indoc! {"
+            Format the changed files
+
+            If you just want to check the files without automatically fixing them, use the check task.
+        "}
+        .trim()
+        .to_string();
+        let task = Task {
+            name: "format".to_string(),
+            display_name: "format".to_string(),
+            description: description.clone(),
+            usage: r#"arg "<file>""#.to_string(),
+            run: vec![RunEntry::Script("echo {{ usage.file }}".to_string())],
+            ..Default::default()
+        };
+
+        let spec = task.parse_usage_spec_for_display(&config).await.unwrap();
+
+        assert_eq!(spec.about.as_deref(), Some("Format the changed files"));
+        assert_eq!(spec.about_long.as_deref(), Some(description.as_str()));
+        assert_eq!(spec.cmd.help.as_deref(), Some(description.as_str()));
+
+        let help = usage::docs::cli::render_help(&spec, &spec.cmd, true);
+        assert!(help.contains("Format the changed files"));
+        assert!(help.contains("If you just want to check the files"));
     }
 
     #[test]
@@ -737,6 +3161,11 @@ mod tests {
             (("/.mise/tasks", "/.mise/tasks/a/b/c"), "a:b:c"),
             (("/.mise/tasks", "/.mise/tasks/a:b"), "a_b"),
             (("/.mise/tasks", "/.mise/tasks/a:b/c"), "a_b:c"),
+            (("/.mise/tasks", "/.mise/tasks/a/_default"), "a"),
+            (("/.mise/tasks", "/.mise/tasks/a/_default.sh"), "a"),
+            (("/.mise/tasks", "/.mise/tasks/a/_default.js"), "a"),
+            (("/.mise/tasks", "/.mise/tasks/a/b/_default"), "a:b"),
+            (("/.mise/tasks", "/.mise/tasks/a/b/_default.sh"), "a:b"),
         ];
 
         for ((root, path), expected) in test_cases {
@@ -750,6 +3179,1479 @@ mod tests {
 
         for (root, path) in test_cases {
             assert!(name_from_path(root, path).is_err())
+        }
+    }
+
+    #[test]
+    fn test_shell_parses_and_validates() {
+        let mut task = Task {
+            shell: Some("bash -c".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            task.shell().unwrap(),
+            Some(vec!["bash".to_string(), "-c".to_string()])
+        );
+
+        // Whitespace-only is invalid → Ok(None).
+        task.shell = Some("   ".to_string());
+        assert_eq!(task.shell().unwrap(), None);
+
+        // No shell configured → Ok(None).
+        task.shell = None;
+        assert_eq!(task.shell().unwrap(), None);
+    }
+
+    #[test]
+    fn test_shell_unbalanced_quote_fails_loudly() {
+        // A malformed explicit shell (unbalanced quote) must error, not silently
+        // fall back to the default shell and run under the wrong interpreter.
+        // Codex review of #9932.
+        let task = Task {
+            shell: Some("\"unterminated".to_string()),
+            ..Default::default()
+        };
+        assert!(task.shell().is_err());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_shell_parses_explicit_windows_path() {
+        // #9932: a backslash path stays one token, and a double-quoted path with
+        // spaces is one token. (POSIX parsing is covered in path.rs tests.)
+        let task = Task {
+            shell: Some(r"C:\msys64\usr\bin\bash.exe -c".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            task.shell().unwrap(),
+            Some(vec![
+                r"C:\msys64\usr\bin\bash.exe".to_string(),
+                "-c".to_string()
+            ])
+        );
+
+        let task = Task {
+            shell: Some("\"C:\\Program Files\\Git\\bin\\bash.exe\" -c".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            task.shell().unwrap(),
+            Some(vec![
+                r"C:\Program Files\Git\bin\bash.exe".to_string(),
+                "-c".to_string()
+            ])
+        );
+    }
+
+    // This test verifies that resolve_depends correctly uses self.depends_post
+    // instead of iterating through all tasks_to_run (which was the bug)
+    #[tokio::test]
+    async fn test_resolve_depends_post_uses_self_only() {
+        use crate::task::task_dep::TaskDep;
+
+        // Create a task with depends_post
+        let task_with_post_deps = Task {
+            name: "task_with_post".to_string(),
+            depends_post: vec![
+                TaskDep {
+                    task: "post1".to_string(),
+                    args: vec![],
+                    env: Default::default(),
+                },
+                TaskDep {
+                    task: "post2".to_string(),
+                    args: vec![],
+                    env: Default::default(),
+                },
+            ],
+            ..Default::default()
+        };
+
+        // Create another task with different depends_post
+        let other_task = Task {
+            name: "other_task".to_string(),
+            depends_post: vec![TaskDep {
+                task: "other_post".to_string(),
+                args: vec![],
+                env: Default::default(),
+            }],
+            ..Default::default()
+        };
+
+        // Verify that task_with_post_deps has the expected depends_post
+        assert_eq!(task_with_post_deps.depends_post.len(), 2);
+        assert_eq!(task_with_post_deps.depends_post[0].task, "post1");
+        assert_eq!(task_with_post_deps.depends_post[1].task, "post2");
+
+        // Verify that other_task doesn't interfere (would have before the fix)
+        assert_eq!(other_task.depends_post.len(), 1);
+        assert_eq!(other_task.depends_post[0].task, "other_post");
+    }
+
+    #[tokio::test]
+    async fn test_from_path_toml_headers() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("test_task");
+
+        fs::write(
+            &task_path,
+            r#"#!/bin/bash
+#MISE description="Build the CLI"
+# MISE alias="b"
+# [MISE] sources=["Cargo.toml", "src/**/*.rs"]
+echo "hello world"
+"#,
+        )
+        .unwrap();
+
+        let result = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path()).await;
+        let mut expected = Task::new(&task_path, temp_dir.path(), temp_dir.path()).unwrap();
+        expected.description = "Build the CLI".to_string();
+        expected.aliases = vec!["b".to_string()];
+        expected.sources = vec!["Cargo.toml".to_string(), "src/**/*.rs".to_string()];
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_from_path_env_file_with_spaces_around_equals() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let ts = config.get_toolset().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("hello");
+        let env_path = temp_dir.path().join("env.yaml");
+
+        fs::write(&env_path, "USR: World!\n").unwrap();
+        fs::write(
+            &task_path,
+            r#"#!/usr/bin/env bash
+#MISE env._.file = "env.yaml"
+echo "Hello $USR"
+"#,
+        )
+        .unwrap();
+
+        let task = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
+            .await
+            .unwrap();
+        let (env, task_env) = task.render_env(&config, ts).await.unwrap();
+
+        assert_eq!(task_env, vec![("USR".to_string(), "World!".to_string())]);
+        assert_eq!(env.get("USR"), Some(&"World!".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_from_path_invalid_toml() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("test_task");
+
+        // Create a task file with invalid TOML in the header
+        fs::write(
+            &task_path,
+            r#"#!/bin/bash
+#MISE description="test task"
+#MISE env={invalid=toml=here}
+echo "hello world"
+"#,
+        )
+        .unwrap();
+
+        let result = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path()).await;
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("failed to parse task header TOML")
+        );
+    }
+
+    #[test]
+    fn test_resolve_task_pattern() {
+        use super::resolve_task_pattern;
+
+        // Test 1: Relative pattern with monorepo parent task
+        let parent_task = Task {
+            name: "//projects/frontend:test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern(":build", Some(&parent_task)),
+            "//projects/frontend:build"
+        );
+
+        // Test 2: Relative pattern with different parent
+        let parent_task = Task {
+            name: "//libs/shared:lint".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern(":compile", Some(&parent_task)),
+            "//libs/shared:compile"
+        );
+
+        // Test 3: Absolute pattern should not be modified
+        let parent_task = Task {
+            name: "//projects/frontend:test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern("//projects/backend:build", Some(&parent_task)),
+            "//projects/backend:build"
+        );
+
+        // Test 4: Simple task name with monorepo parent should resolve relatively (NEW BEHAVIOR)
+        assert_eq!(
+            resolve_task_pattern("build", Some(&parent_task)),
+            "//projects/frontend:build"
+        );
+
+        // Test 5: Relative pattern without parent task (no resolution)
+        assert_eq!(resolve_task_pattern(":build", None), ":build");
+
+        // Test 6: Non-monorepo task - colon pattern should not resolve
+        let parent_task = Task {
+            name: "test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(resolve_task_pattern(":build", Some(&parent_task)), ":build");
+
+        // Test 6a: Non-monorepo task - bare name should not resolve
+        assert_eq!(resolve_task_pattern("build", Some(&parent_task)), "build");
+
+        // Test 7: Root monorepo task (empty path)
+        let parent_task = Task {
+            name: "//:root-task".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern(":other", Some(&parent_task)),
+            "//:other"
+        );
+
+        // Test 8: Double colon should not be treated as relative
+        let parent_task = Task {
+            name: "//projects/frontend:test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern("::global", Some(&parent_task)),
+            "::global"
+        );
+
+        // Test 9: Pattern with wildcards
+        let parent_task = Task {
+            name: "//projects/frontend:test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern(":test*", Some(&parent_task)),
+            "//projects/frontend:test*"
+        );
+
+        // Test 10: Deep nested path
+        let parent_task = Task {
+            name: "//a/b/c/d:task".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern(":dep", Some(&parent_task)),
+            "//a/b/c/d:dep"
+        );
+
+        // Test 11: Task name with colon (e.g., "do:item-1")
+        // This is the bug that was fixed - we need to split on the FIRST colon after //
+        let parent_task = Task {
+            name: "//submodule:do:item-1".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern(":before", Some(&parent_task)),
+            "//submodule:before"
+        );
+
+        // Test 12: Another task name with multiple colons
+        let parent_task = Task {
+            name: "//project:test:unit:fast".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern(":setup", Some(&parent_task)),
+            "//project:setup"
+        );
+
+        // Test 13: Bare name without parent task (no resolution)
+        assert_eq!(resolve_task_pattern("build", None), "build");
+
+        // Test 14: Bare name with different monorepo parent
+        let parent_task = Task {
+            name: "//libs/shared:lint".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern("compile", Some(&parent_task)),
+            "//libs/shared:compile"
+        );
+
+        // Test 15: Bare name with root monorepo task
+        let parent_task = Task {
+            name: "//:root-task".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern("other", Some(&parent_task)),
+            "//:other"
+        );
+
+        // Test 16: Bare name with task containing colons
+        let parent_task = Task {
+            name: "//submodule:do:item-1".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern("before", Some(&parent_task)),
+            "//submodule:before"
+        );
+
+        // Test 17: Absolute path should not be modified even with monorepo parent
+        let parent_task = Task {
+            name: "//projects/frontend:test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern("//other/module:task", Some(&parent_task)),
+            "//other/module:task"
+        );
+
+        // Test 18: Global task (::) should not be modified
+        assert_eq!(
+            resolve_task_pattern("::global", Some(&parent_task)),
+            "::global"
+        );
+    }
+
+    #[test]
+    fn test_extract_monorepo_path() {
+        use super::extract_monorepo_path;
+
+        // Test 1: Simple monorepo task
+        assert_eq!(
+            extract_monorepo_path("//projects/frontend:test"),
+            Some("projects/frontend".to_string())
+        );
+
+        // Test 2: Root level task
+        assert_eq!(extract_monorepo_path("//:root-task"), Some("".to_string()));
+
+        // Test 3: Deep nested path
+        assert_eq!(
+            extract_monorepo_path("//a/b/c/d:task"),
+            Some("a/b/c/d".to_string())
+        );
+
+        // Test 4: Non-monorepo task (no // prefix)
+        assert_eq!(extract_monorepo_path("regular-task"), None);
+
+        // Test 5: Task name with colon (e.g., "do:item-1")
+        // This was the bug - we need to extract based on FIRST colon after //
+        assert_eq!(
+            extract_monorepo_path("//submodule:do:item-1"),
+            Some("submodule".to_string())
+        );
+
+        // Test 6: Multiple colons in task name
+        assert_eq!(
+            extract_monorepo_path("//project:test:unit:fast"),
+            Some("project".to_string())
+        );
+
+        // Test 7: Complex path with colons in task name
+        assert_eq!(
+            extract_monorepo_path("//apps/backend:build:prod"),
+            Some("apps/backend".to_string())
+        );
+    }
+
+    #[test]
+    fn test_strip_extension() {
+        use super::strip_extension;
+
+        // Test 1: Single extension
+        assert_eq!(strip_extension("task.sh"), "task");
+        assert_eq!(strip_extension("build.js"), "build");
+        assert_eq!(strip_extension("test.py"), "test");
+
+        // Test 2: Multiple extensions (only strips rightmost one)
+        assert_eq!(strip_extension("backup.test.js"), "backup.test");
+        assert_eq!(strip_extension("file.tar.gz"), "file.tar");
+        assert_eq!(strip_extension("archive.tar.bz2"), "archive.tar");
+
+        // Test 3: No extension
+        assert_eq!(strip_extension("task"), "task");
+        assert_eq!(strip_extension("build"), "build");
+
+        // Test 4: Hidden files (starting with dot)
+        // Now preserved to avoid empty strings
+        assert_eq!(strip_extension(".hidden"), ".hidden");
+        assert_eq!(strip_extension(".gitignore"), ".gitignore");
+
+        // Test 5: Hidden files with extension
+        assert_eq!(strip_extension(".hidden.sh"), ".hidden");
+        assert_eq!(strip_extension(".config.json"), ".config");
+
+        // Test 6: Empty string
+        assert_eq!(strip_extension(""), "");
+
+        // Test 7: Only extension separator (preserved to avoid empty string)
+        assert_eq!(strip_extension("."), ".");
+
+        // Test 8: Multiple dots with extension
+        assert_eq!(strip_extension("my.task.name.js"), "my.task.name");
+
+        // Test 9: Path-like names (shouldn't treat / as special)
+        assert_eq!(strip_extension("path/to/task.sh"), "path/to/task");
+        assert_eq!(strip_extension("path/task"), "path/task");
+
+        // Test 10: Task names with dots in the middle
+        assert_eq!(strip_extension("test.unit"), "test");
+        assert_eq!(strip_extension("build.prod.js"), "build.prod");
+    }
+
+    #[test]
+    fn test_circular_dependency_detection() {
+        use super::Task;
+        use std::collections::BTreeMap;
+
+        let mut tasks = BTreeMap::new();
+
+        // Create circular dependency: task_a -> task_b -> task_a
+        let task_a = Task {
+            name: "task_a".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "task_b".to_string(),
+                args: vec![],
+                env: Default::default(),
+            }],
+            ..Default::default()
+        };
+
+        let task_b = Task {
+            name: "task_b".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "task_a".to_string(),
+                args: vec![],
+                env: Default::default(),
+            }],
+            ..Default::default()
+        };
+
+        tasks.insert("task_a".to_string(), task_a.clone());
+        tasks.insert("task_b".to_string(), task_b);
+
+        // Should detect circular dependency
+        let result = task_a.all_depends(&tasks);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("circular dependency detected"));
+    }
+
+    #[test]
+    fn test_transitive_circular_dependency_detection() {
+        use super::Task;
+        use std::collections::BTreeMap;
+
+        let mut tasks = BTreeMap::new();
+
+        // Create transitive circular dependency: a -> b -> c -> a
+        let task_a = Task {
+            name: "task_a".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "task_b".to_string(),
+                args: vec![],
+                env: Default::default(),
+            }],
+            ..Default::default()
+        };
+
+        let task_b = Task {
+            name: "task_b".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "task_c".to_string(),
+                args: vec![],
+                env: Default::default(),
+            }],
+            ..Default::default()
+        };
+
+        let task_c = Task {
+            name: "task_c".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "task_a".to_string(),
+                args: vec![],
+                env: Default::default(),
+            }],
+            ..Default::default()
+        };
+
+        tasks.insert("task_a".to_string(), task_a.clone());
+        tasks.insert("task_b".to_string(), task_b);
+        tasks.insert("task_c".to_string(), task_c);
+
+        // Should detect circular dependency
+        let result = task_a.all_depends(&tasks);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("circular dependency detected"));
+    }
+
+    #[test]
+    fn test_no_false_positive_for_diamond_dependency() {
+        use super::Task;
+        use std::collections::BTreeMap;
+
+        let mut tasks = BTreeMap::new();
+
+        // Create diamond dependency (NOT circular): root -> [a, b] -> common
+        let root = Task {
+            name: "root".to_string(),
+            depends: vec![
+                crate::task::task_dep::TaskDep {
+                    task: "task_a".to_string(),
+                    args: vec![],
+                    env: Default::default(),
+                },
+                crate::task::task_dep::TaskDep {
+                    task: "task_b".to_string(),
+                    args: vec![],
+                    env: Default::default(),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let task_a = Task {
+            name: "task_a".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "common".to_string(),
+                args: vec![],
+                env: Default::default(),
+            }],
+            ..Default::default()
+        };
+
+        let task_b = Task {
+            name: "task_b".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "common".to_string(),
+                args: vec![],
+                env: Default::default(),
+            }],
+            ..Default::default()
+        };
+
+        let common = Task {
+            name: "common".to_string(),
+            ..Default::default()
+        };
+
+        tasks.insert("root".to_string(), root.clone());
+        tasks.insert("task_a".to_string(), task_a);
+        tasks.insert("task_b".to_string(), task_b);
+        tasks.insert("common".to_string(), common);
+
+        // Should NOT detect circular dependency (diamond is OK)
+        let result = root.all_depends(&tasks);
+        assert!(result.is_ok());
+        let deps = result.unwrap();
+        // Should have task_a, task_b, and common (deduplicated)
+        assert_eq!(deps.len(), 3);
+    }
+
+    #[test]
+    fn test_file_path_raw_absolute() {
+        use std::path::PathBuf;
+
+        let task = Task {
+            name: "test".to_string(),
+            file: Some(PathBuf::from("/absolute/path/script.sh")),
+            config_root: Some(PathBuf::from("/project/root")),
+            ..Default::default()
+        };
+
+        let result = task.file_path_raw();
+        assert_eq!(result, Some(PathBuf::from("/absolute/path/script.sh")));
+    }
+
+    #[test]
+    fn test_file_path_raw_relative() {
+        use std::path::PathBuf;
+
+        let task = Task {
+            name: "test".to_string(),
+            file: Some(PathBuf::from("scripts/test.sh")),
+            config_root: Some(PathBuf::from("/project/root")),
+            ..Default::default()
+        };
+
+        let result = task.file_path_raw();
+        assert_eq!(result, Some(PathBuf::from("/project/root/scripts/test.sh")));
+    }
+
+    #[test]
+    fn test_file_path_raw_relative_no_config_root() {
+        use std::path::PathBuf;
+
+        let task = Task {
+            name: "test".to_string(),
+            file: Some(PathBuf::from("scripts/test.sh")),
+            config_root: None,
+            ..Default::default()
+        };
+
+        let result = task.file_path_raw();
+        assert_eq!(result, Some(PathBuf::from("scripts/test.sh")));
+    }
+
+    #[test]
+    fn test_file_path_raw_none() {
+        let task = Task {
+            name: "test".to_string(),
+            file: None,
+            config_root: None,
+            ..Default::default()
+        };
+
+        let result = task.file_path_raw();
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_file_path_absolute() {
+        use std::path::PathBuf;
+
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            name: "test".to_string(),
+            file: Some(PathBuf::from("/absolute/path/script.sh")),
+            config_root: Some(PathBuf::from("/project/root")),
+            ..Default::default()
+        };
+
+        let result = task.file_path(&config).await.unwrap();
+        assert_eq!(result, Some(PathBuf::from("/absolute/path/script.sh")));
+    }
+
+    #[tokio::test]
+    async fn test_file_path_relative() {
+        use std::path::PathBuf;
+
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            name: "test".to_string(),
+            file: Some(PathBuf::from("scripts/test.sh")),
+            config_root: Some(PathBuf::from("/project/root")),
+            ..Default::default()
+        };
+
+        let result = task.file_path(&config).await.unwrap();
+        assert_eq!(result, Some(PathBuf::from("/project/root/scripts/test.sh")));
+    }
+
+    #[tokio::test]
+    async fn test_file_path_none() {
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            name: "test".to_string(),
+            file: None,
+            config_root: None,
+            ..Default::default()
+        };
+
+        let result = task.file_path(&config).await.unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_file_path_with_templating() {
+        use std::path::PathBuf;
+
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            name: "test".to_string(),
+            file: Some(PathBuf::from("scripts/{{config_root}}/test.sh")),
+            config_root: Some(PathBuf::from("/project/root")),
+            ..Default::default()
+        };
+
+        // This test verifies that templating is processed in file_path
+        let result = task.file_path(&config).await;
+        // Should succeed (not error on template rendering)
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_parses_all_fields() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        // Create a temporary directory for the test
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let task_file = tasks_dir.join("test-task");
+
+        // Create a file task with ALL possible header fields
+        let script_content = r#"#!/usr/bin/env bash
+#MISE description="Test task with all fields"
+#MISE aliases=["alias1", "alias2"]
+#MISE depends=["dep1", "dep2"]
+#MISE depends_post=["post1"]
+#MISE wait_for=["wait1"]
+#MISE env={TEST_VAR="value"}
+#MISE dir="/some/dir"
+#MISE hide=true
+#MISE raw=true
+#MISE raw_args=true
+#MISE interactive=true
+#MISE sources=["src1.txt", "src2.txt"]
+#MISE outputs=["out1.txt"]
+#MISE shell="bash -c"
+#MISE quiet=true
+#MISE silent=true
+#MISE output="prefix"
+#MISE tools={node={prefix="20"}, python="3.11"}
+#MISE confirm="Are you sure?"
+echo "test"
+"#;
+        fs::write(&task_file, script_content).unwrap();
+        fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = Config::get().await.unwrap();
+        let task = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+            .await
+            .unwrap();
+
+        assert_eq!(task.description, "Test task with all fields");
+        assert_eq!(task.aliases, vec!["alias1", "alias2"]);
+        assert_eq!(task.depends.len(), 2);
+        assert_eq!(task.depends_post.len(), 1);
+        assert_eq!(task.wait_for.len(), 1);
+        assert_eq!(task.dir, Some("/some/dir".to_string()));
+        assert_eq!(task.hide, true);
+        assert_eq!(task.raw, true);
+        assert_eq!(task.raw_args, true);
+        assert_eq!(task.interactive, true);
+        assert_eq!(task.sources, vec!["src1.txt", "src2.txt"]);
+        assert_eq!(task.shell, Some("bash -c".to_string()));
+        assert_eq!(task.quiet, true);
+        assert_eq!(task.output, Some(TaskOutput::Prefix));
+        assert!(!task.tools.is_empty());
+        assert_eq!(
+            task.tools.get("node"),
+            Some(&super::TaskToolValue::Map(super::TaskToolValueMap {
+                version: "prefix:20".to_string(),
+                opts: IndexMap::new(),
+            }))
+        );
+        assert_eq!(
+            task.confirm,
+            Some(TaskConfirm::Message("Are you sure?".to_string()))
+        );
+
+        let mut parsed_fields =
+            take_captured_fields().expect("Parser fields should have been captured");
+
+        // Group "alias" and "aliases" as they are alternate forms (count as 1)
+        let has_alias = parsed_fields.iter().any(|k| k == "alias");
+        parsed_fields.retain(|k| k != "aliases" || !has_alias);
+
+        // Count property lines in script (exclude shebang and echo command)
+        let script_lines = script_content.lines().count() - 2;
+
+        assert_eq!(
+            parsed_fields.len(),
+            script_lines,
+            "Parser looks for {} properties but test script has {} field lines.\n\
+             If you added (or removed) parseable fields, add it to the test script.\n\
+             Parser fields: {:?}",
+            parsed_fields.len(),
+            script_lines,
+            parsed_fields
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_file_task_reports_tool_selector_errors() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let task_file = tasks_dir.join("invalid-tools");
+        fs::write(
+            &task_file,
+            "#!/usr/bin/env bash\n#MISE tools={node={version=\"20\", prefix=\"20\"}}\n",
+        )
+        .unwrap();
+        fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = Config::get().await.unwrap();
+        let err = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains(
+                "failed to parse task tool `node`: tool definition cannot specify both `version` and `prefix`"
+            ),
+            "{err}"
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_multi_line_tools_merge() {
+        // Regression test for https://github.com/jdx/mise/discussions/7839
+        // Multiple #MISE tools.X=Y lines should be merged into a single tools table
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::tempdir;
+
+        use super::TaskToolValue;
+
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let task_file = tasks_dir.join("multi-tools-task");
+
+        // Create a file task with multiple tools on separate lines
+        let script_content = r#"#!/usr/bin/env bash
+#MISE tools.node="20"
+#MISE tools.python="3.11"
+#MISE tools.ruby="3.2"
+echo "test"
+"#;
+        fs::write(&task_file, script_content).unwrap();
+        fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = Config::get().await.unwrap();
+        let task = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+            .await
+            .unwrap();
+
+        // All three tools should be present
+        assert_eq!(
+            task.tools.len(),
+            3,
+            "Expected 3 tools, got: {:?}",
+            task.tools
+        );
+        assert!(
+            task.tools.contains_key("node"),
+            "Expected 'node' in tools: {:?}",
+            task.tools
+        );
+        assert!(
+            task.tools.contains_key("python"),
+            "Expected 'python' in tools: {:?}",
+            task.tools
+        );
+        assert!(
+            task.tools.contains_key("ruby"),
+            "Expected 'ruby' in tools: {:?}",
+            task.tools
+        );
+        assert_eq!(
+            task.tools.get("node").unwrap(),
+            &TaskToolValue::String("20".to_string())
+        );
+        assert_eq!(
+            task.tools.get("python").unwrap(),
+            &TaskToolValue::String("3.11".to_string())
+        );
+        assert_eq!(
+            task.tools.get("ruby").unwrap(),
+            &TaskToolValue::String("3.2".to_string())
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_hyphenated_and_numeric_tool_names() {
+        // Test that tool names with hyphens and numbers are parsed correctly
+        // e.g., git-cliff, 1password
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::tempdir;
+
+        use super::TaskToolValue;
+
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let task_file = tasks_dir.join("hyphenated-tools-task");
+
+        // Create a file task with hyphenated and numeric tool names
+        let script_content = r#"#!/usr/bin/env bash
+#MISE tools.git-cliff="1.0"
+#MISE tools.1password-cli="2.0"
+echo "test"
+"#;
+        fs::write(&task_file, script_content).unwrap();
+        fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = Config::get().await.unwrap();
+        let task = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+            .await
+            .unwrap();
+
+        // Both tools should be present
+        assert_eq!(
+            task.tools.len(),
+            2,
+            "Expected 2 tools, got: {:?}",
+            task.tools
+        );
+        assert!(
+            task.tools.contains_key("git-cliff"),
+            "Expected 'git-cliff' in tools: {:?}",
+            task.tools
+        );
+        assert!(
+            task.tools.contains_key("1password-cli"),
+            "Expected '1password-cli' in tools: {:?}",
+            task.tools
+        );
+        assert_eq!(
+            task.tools.get("git-cliff").unwrap(),
+            &TaskToolValue::String("1.0".to_string())
+        );
+        assert_eq!(
+            task.tools.get("1password-cli").unwrap(),
+            &TaskToolValue::String("2.0".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_to_tool_arg_preserves_scalar_options() {
+        use indexmap::IndexMap;
+
+        use crate::config::Config;
+
+        use super::{TaskToolValue, TaskToolValueMap};
+
+        let _config = Config::get().await.unwrap();
+
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "query".to_string(),
+            toml::Value::String("first,second=value".to_string()),
+        );
+        opts.insert(
+            "pattern".to_string(),
+            toml::Value::String(r#"a"b"#.to_string()),
+        );
+        opts.insert(
+            "bin_path".to_string(),
+            toml::Value::String("bin[debug]".to_string()),
+        );
+        opts.insert("strip_components".to_string(), toml::Value::Integer(1));
+        opts.insert(
+            "github_attestations".to_string(),
+            toml::Value::Boolean(true),
+        );
+        opts.insert("allow_builds".to_string(), toml::Value::Boolean(true));
+        opts.insert(
+            "numeric_string".to_string(),
+            toml::Value::String("1e2".to_string()),
+        );
+        opts.insert("os".to_string(), toml::Value::String("linux".to_string()));
+        opts.insert(
+            "depends".to_string(),
+            toml::Value::String("node".to_string()),
+        );
+        opts.insert(
+            "targets".to_string(),
+            toml::Value::Array(vec![toml::Value::String("x86_64".to_string())]),
+        );
+        opts.insert(
+            "platforms".to_string(),
+            toml::Value::Table(toml::map::Map::new()),
+        );
+
+        let tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts,
+        });
+
+        let request = tool.to_tool_arg("http:hello").unwrap().tvr.unwrap();
+        let options = request.options();
+        assert_eq!(options.get("query"), Some("first,second=value"));
+        assert_eq!(options.get("pattern"), Some(r#"a"b"#));
+        assert_eq!(options.get("bin_path"), Some("bin[debug]"));
+        assert_eq!(options.get_string("strip_components"), Some("1".into()));
+        assert_eq!(
+            options.opts.get("github_attestations"),
+            Some(&toml::Value::String("true".to_string()))
+        );
+        assert_eq!(
+            options.opts.get("allow_builds"),
+            Some(&toml::Value::Boolean(true))
+        );
+        assert_eq!(options.get("numeric_string"), Some("1e2"));
+        assert_eq!(
+            options.opts.get("targets"),
+            Some(&toml::Value::Array(vec![toml::Value::String(
+                "x86_64".to_string()
+            )]))
+        );
+        assert_eq!(
+            options.opts.get("platforms"),
+            Some(&toml::Value::Table(toml::map::Map::new()))
+        );
+        assert_eq!(options.os, Some(vec!["linux".to_string()]));
+        assert_eq!(options.depends, Some(vec!["node".to_string()]));
+    }
+
+    #[test]
+    fn test_task_tool_map_selectors() {
+        use serde::Deserialize;
+
+        use super::TaskToolValue;
+
+        #[derive(Deserialize)]
+        struct TaskTools {
+            tools: IndexMap<String, TaskToolValue>,
+        }
+
+        let parsed: TaskTools = toml::from_str(
+            r#"
+            [tools]
+            node = { version = "20", backend_options = { nested = [1, true] } }
+            go = { prefix = "1.22" }
+            python = { ref = "main" }
+            shellcheck = { path = "/opt/shellcheck" }
+            "#,
+        )
+        .unwrap();
+
+        for (tool, expected) in [
+            ("node", "20"),
+            ("go", "prefix:1.22"),
+            ("python", "ref:main"),
+            ("shellcheck", "path:/opt/shellcheck"),
+        ] {
+            let TaskToolValue::Map(value) = &parsed.tools[tool] else {
+                panic!("expected mapped task tool for {tool}");
+            };
+            assert_eq!(value.version, expected);
+        }
+
+        let TaskToolValue::Map(node) = &parsed.tools["node"] else {
+            panic!("expected mapped node task tool");
+        };
+        assert_eq!(
+            node.opts["backend_options"]["nested"].as_array(),
+            Some(&vec![toml::Value::Integer(1), toml::Value::Boolean(true)])
+        );
+
+        for (invalid, expected) in [
+            (
+                "[tools]\nnode = { version = \"20\", prefix = \"20\" }\n",
+                "tool definition cannot specify both `version` and `prefix`",
+            ),
+            (
+                "[tools]\nnode = { os = \"linux\" }\n",
+                "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`",
+            ),
+            (
+                "[tools]\nnode = { prefix = 20 }\n",
+                "tool selector `prefix` must be a string",
+            ),
+        ] {
+            let err = match toml::from_str::<TaskTools>(invalid) {
+                Ok(_) => panic!("expected task tool selector validation to fail"),
+                Err(err) => err,
+            };
+            assert!(err.to_string().contains(expected), "{err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_to_tool_arg_preserves_structured_core_options() {
+        use indexmap::IndexMap;
+
+        use crate::config::Config;
+
+        use super::{TaskToolValue, TaskToolValueMap};
+
+        let _config = Config::get().await.unwrap();
+        let tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts: IndexMap::from([
+                (
+                    "os".to_string(),
+                    toml::Value::Array(vec![toml::Value::String("linux".to_string())]),
+                ),
+                (
+                    "depends".to_string(),
+                    toml::Value::Array(vec![toml::Value::String("node".to_string())]),
+                ),
+            ]),
+        });
+
+        let options = tool
+            .to_tool_arg("http:task-tool-options")
+            .unwrap()
+            .tvr
+            .unwrap()
+            .options();
+
+        assert_eq!(options.os, Some(vec!["linux".to_string()]));
+        assert_eq!(options.depends, Some(vec!["node".to_string()]));
+    }
+
+    #[tokio::test]
+    async fn test_task_tool_options_survive_toolset_build() {
+        use indexmap::IndexMap;
+
+        use crate::config::Config;
+        use crate::toolset::ToolsetBuilder;
+
+        use super::{TaskToolValue, TaskToolValueMap};
+
+        let config = Config::get().await.unwrap();
+        let tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts: IndexMap::from([(
+                "query".to_string(),
+                toml::Value::String("first,second=value".to_string()),
+            )]),
+        });
+        let arg = tool.to_tool_arg("http:task-tool-options").unwrap();
+
+        let toolset = ToolsetBuilder::new()
+            .with_args(&[arg])
+            .build(&config)
+            .await
+            .unwrap();
+        let request = toolset
+            .list_current_requests()
+            .into_iter()
+            .find(|request| request.ba().short == "http:task-tool-options")
+            .unwrap();
+
+        assert_eq!(request.options().get("query"), Some("first,second=value"));
+    }
+
+    #[tokio::test]
+    async fn test_to_tool_arg_preserves_options_for_all_request_types() {
+        use indexmap::IndexMap;
+
+        use crate::config::Config;
+
+        use super::{TaskToolValue, TaskToolValueMap};
+
+        let _config = Config::get().await.unwrap();
+        for version in [
+            "1.0.0",
+            "prefix:1",
+            "ref:main",
+            "path:/tmp/task-tool-options",
+            "sub-foo:1.0.0",
+            "system",
+        ] {
+            let tool = TaskToolValue::Map(TaskToolValueMap {
+                version: version.to_string(),
+                opts: IndexMap::from([(
+                    "query".to_string(),
+                    toml::Value::String("value".to_string()),
+                )]),
+            });
+
+            let request = tool
+                .to_tool_arg("http:task-tool-options")
+                .unwrap()
+                .tvr
+                .unwrap();
+
+            assert_eq!(request.options().get("query"), Some("value"), "{version}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_tool_renders_nested_options() {
+        use indexmap::IndexMap;
+
+        use super::{TaskToolValue, TaskToolValueMap};
+        use crate::config::Config;
+        use crate::tera::TeraEngine;
+
+        let _config = Config::get().await.unwrap();
+
+        let mut platform = toml::map::Map::new();
+        platform.insert(
+            "bin".to_string(),
+            toml::Value::String("bin/{{ target }}".to_string()),
+        );
+        let mut platforms = toml::map::Map::new();
+        platforms.insert("linux-x64".to_string(), toml::Value::Table(platform));
+
+        let mut opts = IndexMap::new();
+        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
+        opts.insert(
+            "matching".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("{{ target }}".to_string()),
+                toml::Value::String("static".to_string()),
+            ]),
+        );
+        let mut tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "{{ version }}".to_string(),
+            opts,
+        });
+
+        let mut context = tera::Context::new();
+        context.insert("target", "tool");
+        context.insert("version", "1.0.0");
+        let mut tera = TeraEngine::V2(Box::default());
+        tool.render_templates(&mut tera, &context).unwrap();
+
+        let request = tool.to_tool_arg("http:hello").unwrap().tvr.unwrap();
+        assert_eq!(request.version(), "1.0.0");
+        assert_eq!(
+            request
+                .options()
+                .get_nested_string("platforms.linux-x64.bin"),
+            Some("bin/tool".to_string())
+        );
+        assert_eq!(
+            request.options().opts.get("matching"),
+            Some(&toml::Value::Array(vec![
+                toml::Value::String("tool".to_string()),
+                toml::Value::String("static".to_string()),
+            ]))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_task_render_detects_nested_tool_option_templates() {
+        use indexmap::IndexMap;
+
+        use super::{Task, TaskToolValue, TaskToolValueMap};
+        use crate::config::Config;
+
+        let config = Config::get().await.unwrap();
+        let nested_options = |value| {
+            let mut platform = toml::map::Map::new();
+            platform.insert("bin".to_string(), toml::Value::String(value));
+            let mut platforms = toml::map::Map::new();
+            platforms.insert("linux-x64".to_string(), toml::Value::Table(platform));
+            IndexMap::from([("platforms".to_string(), toml::Value::Table(platforms))])
+        };
+
+        let mut task = Task {
+            tools: IndexMap::from([(
+                "http:hello".to_string(),
+                TaskToolValue::Map(TaskToolValueMap {
+                    version: "1.0.0".to_string(),
+                    opts: nested_options("{{ env.HOME }}-bin".to_string()),
+                }),
+            )]),
+            ..Default::default()
+        };
+        task.render(&config, Path::new(".")).await.unwrap();
+
+        let TaskToolValue::Map(tool) = task.tools.get("http:hello").unwrap() else {
+            panic!("expected mapped task tool value");
+        };
+        let expected = format!("{}-bin", crate::env::HOME.display());
+        assert_eq!(
+            tool.opts["platforms"]["linux-x64"]["bin"].as_str(),
+            Some(expected.as_str())
+        );
+
+        let mut invalid_task = Task {
+            tools: IndexMap::from([(
+                "http:hello".to_string(),
+                TaskToolValue::Map(TaskToolValueMap {
+                    version: "1.0.0".to_string(),
+                    opts: nested_options("{{".to_string()),
+                }),
+            )]),
+            ..Default::default()
+        };
+        assert!(invalid_task.render(&config, Path::new(".")).await.is_err());
+    }
+
+    #[test]
+    fn test_get_matching_wildcard_does_not_match_parent() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("test".to_string(), "test".to_string());
+        tasks.insert("test:foo".to_string(), "test:foo".to_string());
+        tasks.insert("test:bar".to_string(), "test:bar".to_string());
+
+        // "test:*" should match "test:foo" and "test:bar" but NOT "test" itself
+        let matches = tasks.get_matching("test:*").unwrap();
+        assert_eq!(
+            matches,
+            vec![&"test:bar".to_string(), &"test:foo".to_string()]
+        );
+
+        // Bare name "test" should still match the "test" task (implicit wildcard)
+        let matches = tasks.get_matching("test").unwrap();
+        assert!(matches.contains(&&"test".to_string()));
+    }
+
+    #[test]
+    fn test_get_matching_prefers_exact_over_extension_stripped() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        // #10298: a TOML task "hello" and an auto-discovered file task "hello.sh"
+        // coexist; `mise run hello` must match only the exact "hello", not also
+        // "hello.sh" (which would run the script twice).
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("hello".to_string(), "hello".to_string());
+        tasks.insert("hello.sh".to_string(), "hello.sh".to_string());
+
+        let matches = tasks.get_matching("hello").unwrap();
+        assert_eq!(matches, vec![&"hello".to_string()]);
+
+        // Exact match for the file task's own name still works.
+        let matches = tasks.get_matching("hello.sh").unwrap();
+        assert_eq!(matches, vec![&"hello.sh".to_string()]);
+
+        // Extension-stripped fallback still applies when there is no exact match
+        // (e.g. `mise run build` runs a `build.js` file task).
+        let mut only_file: BTreeMap<String, String> = BTreeMap::new();
+        only_file.insert("build.js".to_string(), "build.js".to_string());
+        let matches = only_file.get_matching("build").unwrap();
+        assert_eq!(matches, vec![&"build.js".to_string()]);
+    }
+
+    #[test]
+    fn test_get_matching_prefers_exact_monorepo() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        // #10298 in monorepo form: `//pkg:hello` (toml) and `//pkg:hello.sh` (file)
+        // coexist; the monorepo pattern must match only the exact task part, not
+        // also the extension-stripped file task.
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("//pkg:hello".to_string(), "//pkg:hello".to_string());
+        tasks.insert("//pkg:hello.sh".to_string(), "//pkg:hello.sh".to_string());
+
+        let matches = tasks.get_matching("//pkg:hello").unwrap();
+        assert_eq!(matches, vec![&"//pkg:hello".to_string()]);
+
+        let matches = tasks.get_matching("//pkg:hello.sh").unwrap();
+        assert_eq!(matches, vec![&"//pkg:hello.sh".to_string()]);
+
+        // Extension-stripped fallback still applies in monorepo form when there is
+        // no exact match (e.g. `//pkg:migrate` resolving a `migrate.sh` file task).
+        let mut only_file: BTreeMap<String, String> = BTreeMap::new();
+        only_file.insert(
+            "//pkg:migrate.sh".to_string(),
+            "//pkg:migrate.sh".to_string(),
+        );
+        let matches = only_file.get_matching("//pkg:migrate").unwrap();
+        assert_eq!(matches, vec![&"//pkg:migrate.sh".to_string()]);
+    }
+
+    #[test]
+    fn test_get_matching_resolves_aliases() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("pr:remove".to_string(), "pr:remove".to_string());
+        tasks.insert("prr".to_string(), "pr:remove".to_string());
+
+        let matches = tasks.get_matching("prr").unwrap();
+        assert_eq!(matches, vec![&"pr:remove".to_string()]);
+
+        let matches = tasks.get_matching("pr:remove").unwrap();
+        assert_eq!(matches, vec![&"pr:remove".to_string()]);
+    }
+
+    #[test]
+    fn test_get_matching_resolves_monorepo_aliases() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("//:pr:remove".to_string(), "//:pr:remove".to_string());
+        tasks.insert("//:prr".to_string(), "//:pr:remove".to_string());
+        tasks.insert("prr".to_string(), "//:pr:remove".to_string());
+
+        let matches = tasks.get_matching("//:prr").unwrap();
+        assert_eq!(matches, vec![&"//:pr:remove".to_string()]);
+
+        let matches = tasks.get_matching("prr").unwrap();
+        assert_eq!(matches, vec![&"//:pr:remove".to_string()]);
+
+        let matches = tasks.get_matching("//:pr:remove").unwrap();
+        assert_eq!(matches, vec![&"//:pr:remove".to_string()]);
+    }
+
+    #[test]
+    fn test_estyled_prefix_no_red_or_yellow() {
+        let names = [
+            "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india",
+            "juliet", "kilo", "lima", "mike", "november", "oscar", "papa", "build", "test", "lint",
+            "deploy", "clean", "start", "stop", "check",
+        ];
+        let red_fg = "\x1b[31m";
+        let yellow_fg = "\x1b[33m";
+        let bright_red = "\x1b[38;5;9m";
+        let bright_yellow = "\x1b[38;5;11m";
+
+        for name in &names {
+            let task = Task {
+                display_name: name.to_string(),
+                ..Default::default()
+            };
+            let styled = task.estyled_prefix();
+            assert!(
+                !styled.contains(red_fg),
+                "task {name:?} prefix contains red"
+            );
+            assert!(
+                !styled.contains(yellow_fg),
+                "task {name:?} prefix contains yellow"
+            );
+            assert!(
+                !styled.contains(bright_red),
+                "task {name:?} prefix contains bright red"
+            );
+            assert!(
+                !styled.contains(bright_yellow),
+                "task {name:?} prefix contains bright yellow"
+            );
         }
     }
 }

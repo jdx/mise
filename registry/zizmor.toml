@@ -1,0 +1,3 @@
+backends = ["aqua:zizmorcore/zizmor", "cargo:zizmor"]
+description = "Static analysis for GitHub Actions"
+test = { cmd = "zizmor --version", expected = "zizmor {{version}}" }

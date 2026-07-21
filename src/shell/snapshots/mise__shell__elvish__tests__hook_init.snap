@@ -1,13 +1,12 @@
 ---
 source: src/shell/elvish.rs
-expression: "elvish.activate(exe, \" --status\".into())"
-snapshot_kind: text
+expression: elvish.activate(opts)
 ---
 var hook-enabled = $false
 
 fn hook-env {
   if $hook-enabled {
-    eval (/some/dir/mise hook-env --status -s elvish | slurp)
+    eval ((external /some/dir/mise) hook-env --status -s elvish | slurp)
   }
 }
 
@@ -22,19 +21,19 @@ fn activate {
 
 fn deactivate {
   set hook-enabled = $false
-  eval (/some/dir/mise deactivate | slurp)
+  eval ((external /some/dir/mise) deactivate | slurp)
 }
 
 fn mise {|@a|
   if (== (count $a) 0) {
-    /some/dir/mise
+    (external /some/dir/mise)
     return
   }
 
   if (not (or (has-value $a -h) (has-value $a --help))) {
     var command = $a[0]
     if (==s $command shell) {
-      try { eval (/some/dir/mise $@a) } catch { }
+      try { eval ((external /some/dir/mise) $@a) } catch { }
       return
     } elif (==s $command deactivate) {
       deactivate
@@ -44,5 +43,5 @@ fn mise {|@a|
       return
     }
   }
-  /some/dir/mise $@a
+  (external /some/dir/mise) $@a
 }

@@ -1,4 +1,3 @@
-use std::env::{join_paths, split_paths};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -8,6 +7,7 @@ use indoc::formatdoc;
 use once_cell::sync::OnceCell;
 
 use crate::env::PATH_KEY;
+use crate::path_env::PathEnv;
 use crate::{env, file};
 
 pub fn setup() -> color_eyre::Result<PathBuf> {
@@ -35,14 +35,12 @@ pub fn setup() -> color_eyre::Result<PathBuf> {
 }
 
 pub fn get_path_with_fake_asdf() -> String {
-    let mut path = split_paths(&env::var_os(&*PATH_KEY).unwrap_or_default()).collect::<Vec<_>>();
+    let mut path_env = PathEnv::from_iter(env::split_paths(
+        &env::var_os(&*PATH_KEY).unwrap_or_default(),
+    ));
     match setup() {
-        Ok(fake_asdf_path) => {
-            path.insert(0, fake_asdf_path);
-        }
-        Err(e) => {
-            warn!("Failed to setup fake asdf: {:#}", e);
-        }
+        Ok(fake_asdf_path) => path_env.add(fake_asdf_path),
+        Err(e) => warn!("Failed to setup fake asdf: {:#}", e),
     };
-    join_paths(path).unwrap().to_string_lossy().to_string()
+    path_env.to_string()
 }

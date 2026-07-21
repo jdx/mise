@@ -1,0 +1,4 @@
+backends = ["github:a7ex/xcresultparser"]
+description = "Parse the binary xcresult bundle from Xcode builds and testruns"
+os = ["macos"]
+test = { cmd = "xcresultparser --help", expected = "OVERVIEW: xcresultparser" }

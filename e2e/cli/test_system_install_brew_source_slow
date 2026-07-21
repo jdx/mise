@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# Source-build pipeline test: builds GNU hello from source with mise's
+# formula shim (mise-managed ruby, no Homebrew installed). Uses a throwaway
+# prefix, so no root is needed. Requires network and a C toolchain.
+if [[ "$(uname)" != "Linux" ]] || ! command -v cc >/dev/null 2>&1; then
+  exit 0
+fi
+case "$(uname -m)" in
+  x86_64 | aarch64) ;;
+  *) exit 0 ;;
+esac
+
+export MISE_SYSTEM_BREW_PREFIX="$HOME/brew-source-prefix"
+# hello has bottles everywhere; force it down the source-build path
+export MISE_SYSTEM_BREW_FORCE_SOURCE=hello
+
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew:hello" = "latest"
+EOF
+
+assert_contains "mise bootstrap packages status" "missing"
+assert_contains "mise bootstrap packages apply --dry-run" "build hello/"
+
+mise bootstrap packages apply --yes
+assert_contains "mise bootstrap packages status" "installed"
+
+# the built binary runs from the prefix and the keg carries a receipt
+assert_contains "$MISE_SYSTEM_BREW_PREFIX/bin/hello --greeting=mise" "mise"
+assert_contains "cat $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/INSTALL_RECEIPT.json" '"poured_from_bottle":false'
+
+# idempotent
+assert_contains "mise bootstrap packages apply --yes 2>&1" "already"

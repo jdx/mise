@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# Test that when a tool exists in both base and env-specific configs,
+# it goes into both lockfiles independently (no cross-contamination)
+
+export MISE_LOCKFILE=1
+
+echo "=== Setup: tiny in both base and dev config ==="
+
+cat >mise.toml <<'EOF'
+[settings]
+lockfile = true
+
+[tools]
+tiny = "1"
+EOF
+
+cat >mise.dev.toml <<'EOF'
+[tools]
+tiny = "1"
+EOF
+
+touch mise.lock mise.dev.lock
+
+# Install with base config first
+assert "mise install tiny@1.0.1"
+
+echo "=== Test: MISE_ENV=dev should create entries in both lockfiles ==="
+
+assert "MISE_ENV=dev mise install"
+
+# The base lockfile should have the tool
+assert_contains "cat mise.lock" '[[tools.tiny]]'
+# The dev lockfile should also have the tool
+assert_contains "cat mise.dev.lock" '[[tools.tiny]]'
+# Neither should have env field (env is encoded in filename)
+assert_not_contains "cat mise.lock" 'env = '
+assert_not_contains "cat mise.dev.lock" 'env = '
+
+echo "=== Test: tool only in env config should only be in env lockfile ==="
+
+# Remove tiny from base config
+cat >mise.toml <<'EOF'
+[settings]
+lockfile = true
+EOF
+
+rm -f mise.lock mise.dev.lock
+touch mise.dev.lock
+
+assert "MISE_ENV=dev mise install"
+
+# Base lockfile should not exist or not have tiny (no tools in mise.toml)
+assert_fail "grep -q 'tools.tiny' mise.lock 2>/dev/null"
+# Dev lockfile should have tiny
+assert_contains "cat mise.dev.lock" '[[tools.tiny]]'
+
+echo "=== Cleanup ==="
+rm -f mise.lock mise.dev.lock mise.toml mise.dev.toml
+
+echo "lockfile env base override tests passed!"

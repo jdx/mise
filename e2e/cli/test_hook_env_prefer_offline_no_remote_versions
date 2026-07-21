@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+make_plugin() {
+  local name="$1"
+  local plugin_dir="$MISE_DATA_DIR/plugins/$name"
+  mkdir -p "$plugin_dir/bin"
+
+  cat >"$plugin_dir/bin/list-all" <<'LISTALL'
+#!/usr/bin/env bash
+echo "$MISE_TOOL_NAME list-all" >>"$HOME/list-all-called"
+exit 1
+LISTALL
+  chmod +x "$plugin_dir/bin/list-all"
+
+  cat >"$plugin_dir/bin/install" <<'INSTALL'
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+INSTALL
+  chmod +x "$plugin_dir/bin/install"
+}
+
+make_plugin hookconcrete
+make_plugin hookdate
+
+cat >mise.toml <<EOF
+[tools]
+hookconcrete = "1.2.3"
+hookdate = "2026.05.28"
+EOF
+
+assert_succeed "mise hook-env -s bash --force"
+assert_fail "test -f '$HOME/list-all-called'"
+
+credential_marker="$HOME/github-credential-command-called"
+credential_command="$HOME/fake-github-credential-command"
+cat >"$credential_command" <<EOF
+#!/usr/bin/env bash
+touch "$credential_marker"
+echo fake-token
+EOF
+chmod +x "$credential_command"
+
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings]
+github.credential_command = "$credential_command"
+minimum_release_age = "3d"
+EOF
+
+cat >mise.toml <<EOF
+[tools]
+"github:cli/cli" = "latest"
+EOF
+
+assert_succeed "mise hook-env -s bash --force"
+assert_fail "test -f '$credential_marker'"
+
+rm -f "$credential_marker"
+offline_current="$(MISE_OFFLINE=1 mise current github:cli/cli 2>/dev/null || true)"
+assert_not_contains_text "$offline_current" "latest"
+assert_fail "test -f '$credential_marker'"

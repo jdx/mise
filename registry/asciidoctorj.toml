@@ -1,0 +1,6 @@
+backends = [
+  "vfox:mise-plugins/vfox-asciidoctorj",
+  "asdf:mise-plugins/mise-asciidoctorj",
+]
+description = "AsciidoctorJ is the official library for running Asciidoctor on the JVM. Using AsciidoctorJ, you can convert AsciiDoc content or analyze the structure of a parsed AsciiDoc document from Java and other JVM languages"
+test = { cmd = "asciidoctorj --version", expected = "AsciidoctorJ {{version}}" }

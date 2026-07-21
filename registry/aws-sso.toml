@@ -1,0 +1,3 @@
+backends = ["aqua:synfinatic/aws-sso-cli", "asdf:adamcrews/asdf-aws-sso-cli"]
+description = "A powerful tool for using AWS Identity Center for the CLI and web console"
+test = { cmd = "aws-sso version", expected = "AWS SSO CLI Version {{version}}" }

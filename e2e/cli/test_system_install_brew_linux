@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# Linuxbrew pour test: requires Linux x86_64/arm64 running as root (the CI
+# container case — root can create /home/linuxbrew without sudo) and network
+if [[ "$(uname)" != "Linux" ]] || [[ "$(id -u)" != 0 ]] || [[ -d /home/linuxbrew ]]; then
+  exit 0
+fi
+case "$(uname -m)" in
+  x86_64 | aarch64) ;;
+  *) exit 0 ;;
+esac
+
+# the guard above skips when /home/linuxbrew exists, so clean up even when
+# an assertion fails mid-test — otherwise a failed run masks later ones
+trap 'rm -rf /home/linuxbrew' EXIT
+
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew:xz" = "latest"
+EOF
+
+assert_contains "mise bootstrap packages status" "missing"
+
+mise bootstrap packages apply --yes
+assert_contains "mise bootstrap packages status" "installed"
+
+# the poured binary runs at the canonical prefix (relocation + linking worked)
+assert_contains "/home/linuxbrew/.linuxbrew/bin/xz --version" "xz"
+
+# idempotent
+assert_contains "mise bootstrap packages apply --yes 2>&1" "already"
+
+# import previews and writes the currently installed requested formula
+assert_contains "mise bootstrap packages import --manager brew --dry-run --path imported.toml" '"brew:xz" = "latest"'
+mise bootstrap packages import --manager brew --path imported.toml
+assert_contains "cat imported.toml" '"brew:xz" = "latest"'
+
+# prune is a no-op while the formula is still configured
+assert_contains "mise bootstrap packages prune --manager brew --dry-run 2>&1" "nothing to prune"
+
+# after removing it from config, prune previews and removes the linked formula
+cat <<EOF >mise.toml
+[bootstrap.packages]
+EOF
+assert_contains "mise bootstrap packages prune --manager brew --dry-run" "remove brew:xz"
+mise bootstrap packages prune --manager brew --yes
+assert_fail "test -e /home/linuxbrew/.linuxbrew/opt/xz"

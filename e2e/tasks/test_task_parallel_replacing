@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# Regression test: parallel sub-tasks with "replacing" output mode should not
+# panic due to missing progress reporter entries (GitHub discussion #8985).
+
+cat <<EOF >mise.toml
+[settings.task]
+output = "replacing"
+
+[tasks.parallel]
+description = "Run tasks in parallel via direct tasks array"
+run = [{ tasks = ["t:1", "t:2", "t:3"] }]
+
+[tasks."t:1"]
+run = "echo 'task 1 done'"
+
+[tasks."t:2"]
+run = "echo 'task 2 done'"
+
+[tasks."t:3"]
+run = "echo 'task 3 done'"
+EOF
+
+# Should complete without panicking
+assert "mise run parallel"

@@ -1,0 +1,3 @@
+backends = ["aqua:argoproj/argo-cd", "asdf:beardix/asdf-argocd"]
+description = "Declarative continuous deployment for Kubernetes"
+test = { cmd = "argocd version --client", expected = "argocd: v{{version}}" }

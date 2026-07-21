@@ -1,0 +1,6 @@
+backends = [
+  "aqua:vi/websocat",
+  "asdf:bdellegrazie/asdf-websocat",
+  "cargo:websocat",
+]
+description = "Command-line client for WebSockets, like netcat (or curl) for ws:// with advanced socat-like functions"

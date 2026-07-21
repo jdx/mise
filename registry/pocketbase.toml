@@ -1,0 +1,3 @@
+backends = ["github:pocketbase/pocketbase"]
+description = "Open Source realtime backend in 1 file"
+test = { cmd = "pocketbase --version", expected = "pocketbase version {{version}}" }

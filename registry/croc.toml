@@ -1,0 +1,3 @@
+backends = ["aqua:schollz/croc"]
+description = "Easily and securely send things from one computer to another 🐊 📦"
+test = { cmd = "croc --version", expected = "croc version v{{version}}" }

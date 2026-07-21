@@ -1,0 +1,7 @@
+backends = [
+  "aqua:starship/starship",
+  "asdf:gr1m0h/asdf-starship",
+  "cargo:starship",
+]
+description = "The minimal, blazing-fast, and infinitely customizable prompt for any shell"
+test = { cmd = "starship --version", expected = "starship {{version}}" }

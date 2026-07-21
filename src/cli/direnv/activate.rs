@@ -3,7 +3,7 @@ use indoc::indoc;
 
 /// Output direnv function to use mise inside direnv
 ///
-/// See https://mise.jdx.dev/direnv.html for more information
+/// See https://mise.en.dev/direnv.html for more information
 ///
 /// Because this generates the idiomatic files based on currently installed plugins,
 /// you should run this command after installing new plugins. Otherwise
@@ -13,7 +13,7 @@ use indoc::indoc;
 pub struct DirenvActivate {}
 
 impl DirenvActivate {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         miseprintln!(
             //       source_env "$(mise direnv envrc "$@")"
             indoc! {r#"

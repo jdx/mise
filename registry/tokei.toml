@@ -1,0 +1,8 @@
+backends = [
+  # v13.0.0 doesn't have binaries
+  "cargo:tokei",
+  "aqua:XAMPPRocky/tokei",
+  "asdf:gasuketsu/asdf-tokei",
+]
+description = "Count your code, quickly"
+test = { cmd = "tokei --version", expected = "tokei {{version}}" }

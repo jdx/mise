@@ -1,0 +1,4 @@
+aliases = ["balena-cli"]
+backends = ["github:balena-io/balena-cli", "asdf:jaredallard/asdf-balena-cli"]
+description = "The balena CLI is a Command Line Interface for balenaCloud or openBalena"
+test = { cmd = "balena --version", expected = "{{version}}" }

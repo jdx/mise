@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+install_dir="$MISE_DATA_DIR/installs/npm-cowsay/1.6.0"
+
+assert_contains "mise x node@20.11.1 aube@latest npm:cowsay@1.6.0 -- cowsay hello" "hello"
+assert_succeed "test -d '$install_dir/global-aube'"
+lockfile="$(find "$install_dir/global-aube" -mindepth 2 -maxdepth 2 -name aube-lock.yaml -print -quit)"
+assert_succeed "test -f '$lockfile'"
+assert_contains "cat '$lockfile'" "cowsay@1.6.0"

@@ -1,0 +1,2 @@
+backends = ["aqua:controlplaneio/kubesec", "asdf:vitalis/asdf-kubesec"]
+description = "Security risk analysis for Kubernetes resources"

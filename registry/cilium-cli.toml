@@ -1,0 +1,3 @@
+backends = ["aqua:cilium/cilium-cli", "asdf:carnei-ro/asdf-cilium-cli"]
+description = "CLI to install, manage & troubleshoot Kubernetes clusters running Cilium"
+test = { cmd = "cilium version", expected = "cilium-cli: v{{version}}" }

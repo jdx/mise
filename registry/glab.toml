@@ -1,0 +1,13 @@
+description = "gitlab cli"
+test = { cmd = "glab version", expected = "glab {{version}}" }
+
+[[backends]]
+full = "gitlab:gitlab-org/cli"
+platforms = ["linux", "macos"]
+
+[[backends]]
+full = "gitlab:gitlab-org/cli"
+platforms = ["windows"]
+
+[[backends]]
+full = "asdf:mise-plugins/mise-glab"

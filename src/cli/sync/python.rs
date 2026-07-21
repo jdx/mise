@@ -2,8 +2,8 @@ use eyre::Result;
 use itertools::sorted;
 use std::env::consts::{ARCH, OS};
 
-use crate::env::PYENV_ROOT;
 use crate::{backend, config, dirs, env, file};
+use crate::{config::Config, env::PYENV_ROOT};
 
 /// Symlinks all tool versions from an external tool into mise
 ///
@@ -23,17 +23,26 @@ pub struct SyncPython {
 }
 
 impl SyncPython {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if self.pyenv {
-            self.pyenv()?;
+            self.pyenv().await?;
         }
         if self.uv {
-            self.uv()?;
+            self.uv().await?;
         }
-        config::rebuild_shims_and_runtime_symlinks(&[])
+        let config = Config::get().await?;
+        let ts = config.get_toolset().await?;
+        config::rebuild_shims_and_runtime_symlinks(
+            &config,
+            ts,
+            &[],
+            crate::lockfile::LockfileUpdateMode::Normal,
+        )
+        .await?;
+        Ok(())
     }
 
-    fn pyenv(&self) -> Result<()> {
+    async fn pyenv(&self) -> Result<()> {
         let python = backend::get(&"python".into()).unwrap();
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");
@@ -55,7 +64,7 @@ impl SyncPython {
         Ok(())
     }
 
-    fn uv(&self) -> Result<()> {
+    async fn uv(&self) -> Result<()> {
         let python = backend::get(&"python".into()).unwrap();
         let uv_versions_path = &*env::UV_PYTHON_INSTALL_DIR;
         let installed_python_versions_path = dirs::INSTALLS.join("python");
@@ -101,6 +110,9 @@ impl SyncPython {
             };
             let dst = uv_versions_path.join(format!("cpython-{v}-{os}-{arch}"));
             if !dst.exists() {
+                if !uv_versions_path.exists() {
+                    file::create_dir_all(uv_versions_path)?;
+                }
                 // TODO: uv doesn't support symlinked dirs
                 // https://github.com/astral-sh/uv/blob/e65a273f1b6b7c3ab129d902e93adeda4da20636/crates/uv-python/src/managed.rs#L196
                 file::clone_dir(&src, &dst)?;

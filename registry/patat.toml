@@ -1,0 +1,2 @@
+backends = ["github:jaspervdj/patat", "asdf:airtonix/asdf-patat"]
+description = "Terminal-based presentations using Pandoc"

@@ -1,0 +1,3 @@
+backends = ["aqua:kubernetes-sigs/kustomize", "asdf:Banno/asdf-kustomize"]
+description = "Customization of kubernetes YAML configurations"
+test = { cmd = "kustomize version", expected = "v{{version}}" }

@@ -1,0 +1,3 @@
+backends = ["github:jdx/fnox"]
+description = "Fort Knox for your secrets"
+test = { cmd = "fnox --version", expected = "fnox {{version}}" }

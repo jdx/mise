@@ -1,41 +1,29 @@
-use regex::Regex;
 use std::collections::HashSet;
 use std::sync::LazyLock;
 use std::sync::Mutex;
 
-pub static UNNEST_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"MISE_TASK_UNNEST:(\d+):MISE_TASK_UNNEST (.*)"#).unwrap());
+/// Like `eprintln!`, but ignores write failures instead of panicking when
+/// stderr is unwritable (e.g. the process that spawned mise closed its end
+/// of the pipe).
+#[macro_export]
+macro_rules! safe_eprintln {
+    ($($arg:tt)*) => {{
+        let _ = calm_io::stderrln!($($arg)*);
+    }};
+}
 
 #[macro_export]
 macro_rules! prefix_println {
     ($prefix:expr, $($arg:tt)*) => {{
         let msg = format!($($arg)*);
-        if let Some(msg) = $crate::output::UNNEST_RE.captures(&msg) {
-            let level = msg.get(1).unwrap().as_str().parse::<usize>().unwrap();
-            if level > 1 {
-                println!("MISE_TASK_UNNEST:{}:MISE_TASK_UNNEST {}", level - 1, msg.get(2).unwrap().as_str());
-            } else {
-                println!("{}", msg.get(2).unwrap().as_str());
-            }
-        } else {
-            println!("{} {}", $prefix, msg);
-        }
+        let _ = calm_io::stdoutln!("{} {}", $prefix, msg);
     }};
 }
 #[macro_export]
 macro_rules! prefix_eprintln {
     ($prefix:expr, $($arg:tt)*) => {{
         let msg = format!($($arg)*);
-        if let Some(msg) = $crate::output::UNNEST_RE.captures(&msg) {
-            let level = msg.get(1).unwrap().as_str().parse::<usize>().unwrap();
-            if level > 1 {
-                eprintln!("MISE_TASK_UNNEST:{}:MISE_TASK_UNNEST {}", level - 1, msg.get(2).unwrap().as_str());
-            } else {
-                eprintln!("{}", msg.get(2).unwrap().as_str());
-            }
-        } else {
-            eprintln!("{} {}", $prefix, msg);
-        }
+        $crate::safe_eprintln!("{} {}", $prefix, msg);
     }};
 }
 
@@ -176,6 +164,33 @@ macro_rules! deprecated {
     ($id:tt, $($arg:tt)*) => {{
         if $crate::output::DEPRECATED.lock().unwrap().insert($id) {
             warn!("deprecated [{}]: {}", $id, format!($($arg)*));
+        }
+    }};
+}
+
+/// Emits a deprecation warning when mise version >= warn_at, and fires a debug_assert
+/// when version >= remove_at to remind developers to remove the deprecated code.
+/// The removal version is automatically appended to the warning message.
+///
+/// # Example
+/// ```ignore
+/// deprecated_at!("2026.3.0", "2027.3.0", "legacy-syntax", "Use {{version}} instead of {version}");
+/// ```
+#[macro_export]
+macro_rules! deprecated_at {
+    ($warn_at:tt, $remove_at:tt, $id:tt, $($arg:tt)*) => {{
+        use versions::Versioning;
+        let warn_version = Versioning::new($warn_at).expect("invalid warn_at version in deprecated_at!");
+        let remove_version = Versioning::new($remove_at).expect("invalid remove_at version in deprecated_at!");
+        debug_assert!(
+            *$crate::cli::version::V < remove_version,
+            "Deprecated code [{}] should have been removed in version {}. Please remove this deprecated functionality.",
+            $id, $remove_at
+        );
+        if *$crate::cli::version::V >= warn_version {
+            if $crate::output::DEPRECATED.lock().unwrap().insert($id) {
+                warn!("deprecated [{}]: {} This will be removed in mise {}.", $id, format!($($arg)*), $remove_at);
+            }
         }
     }};
 }

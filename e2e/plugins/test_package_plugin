@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+
+mkdir -p fake-package-plugin/hooks
+
+cat >fake-package-plugin/metadata.lua <<'EOF'
+PLUGIN = {
+  name = "fake",
+  version = "0.1.0",
+  homepage = "",
+  license = "MIT",
+  description = "fake package manager",
+  minRuntimeVersion = "0.3.0",
+  notes = {},
+  legacyFilenames = {},
+}
+EOF
+
+cat >fake-package-plugin/mise.plugin.toml <<'EOF'
+[package-manager]
+supports_version_pins = true
+EOF
+
+cat >fake-package-plugin/hooks/package_installed.lua <<'EOF'
+function PLUGIN:PackageInstalled(ctx)
+  local cmd = require("cmd")
+  local packages = {}
+  for _, package in ipairs(ctx.packages) do
+    local path = os.getenv("HOME") .. "/.fake-packages/" .. package.name
+    local ok, version = pcall(cmd.exec, "test -f " .. path .. " && cat " .. path)
+    if ok then
+      table.insert(packages, { name = package.name, state = "installed", version = version:gsub("%s+$", "") })
+    else
+      table.insert(packages, { name = package.name, state = "missing" })
+    end
+  end
+  return { packages = packages }
+end
+EOF
+
+cat >fake-package-plugin/hooks/package_install.lua <<'EOF'
+function PLUGIN:PackageInstall(ctx)
+  local cmd = require("cmd")
+  if ctx.dry_run then return {} end
+  cmd.exec("mkdir -p " .. os.getenv("HOME") .. "/.fake-packages")
+  for _, package in ipairs(ctx.packages) do
+    local version = package.version or "latest"
+    cmd.exec("printf '%s' '" .. version .. "' > " .. os.getenv("HOME") .. "/.fake-packages/" .. package.name)
+  end
+  return {}
+end
+EOF
+
+assert "mise plugin link -f fake $PWD/fake-package-plugin" ""
+assert_contains "mise plugin ls" "fake"
+
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"fake:extension" = "1.0"
+EOF
+
+assert_contains "mise bootstrap packages status" "missing"
+assert "mise bootstrap packages apply --yes" ""
+assert "cat $HOME/.fake-packages/extension" "1.0"
+assert_contains "mise bootstrap packages status" "installed"
+assert "mise bootstrap packages apply --yes" ""
+
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"fake:extension" = "2.0"
+EOF
+
+assert_contains "mise bootstrap packages status" "version mismatch"
+assert "mise bootstrap packages apply --yes" ""
+assert "cat $HOME/.fake-packages/extension" "2.0"
+
+cat >fake-package-plugin/mise.plugin.toml <<'EOF'
+[package-manager]
+requires = ["definitely-not-a-real-binary"]
+EOF
+
+assert_contains "mise bootstrap packages status" "required binary"
+assert_fail "mise bootstrap packages apply --manager fake --yes" "not available"
+
+# Without plugin packages, post-packages retains its original position before
+# the tools phase.
+cat >mise.toml <<'EOF'
+[bootstrap.hooks.post-packages]
+run = "touch post-packages-ran"
+
+[bootstrap.hooks.pre-tools]
+run = "test -f post-packages-ran"
+EOF
+assert "mise bootstrap --yes" ""
+
+# A disabled plugin manager has no late package work, so post-packages still
+# runs before tools.
+rm -f post-packages-ran
+cat >mise.toml <<'EOF'
+[settings]
+system_packages.managers = []
+
+[bootstrap.packages]
+"fake:disabled" = "latest"
+
+[bootstrap.hooks.post-packages]
+run = "touch post-packages-ran"
+
+[bootstrap.hooks.pre-tools]
+run = "test -f post-packages-ran"
+EOF
+assert "mise bootstrap --yes" ""
+
+cp -R fake-package-plugin declared-package-plugin
+cat >declared-package-plugin/mise.plugin.toml <<'EOF'
+[package-manager]
+supports_version_pins = true
+EOF
+git -C declared-package-plugin init -q
+git -C declared-package-plugin add .
+git -C declared-package-plugin -c user.name=test -c user.email=test@example.com commit -qm init
+
+cat >mise.toml <<EOF
+[bootstrap.plugins]
+declared = "file://$PWD/declared-package-plugin"
+
+[bootstrap.packages]
+"declared:self-provisioned" = "3.0"
+EOF
+
+assert_contains "mise bootstrap --dry-run --yes 2>&1" "declared: would install self-provisioned@3.0"
+assert_fail "test -d $MISE_DATA_DIR/plugins/declared"
+assert "mise bootstrap --yes" ""
+assert_contains "mise plugin ls" "declared"
+assert "cat $HOME/.fake-packages/self-provisioned" "3.0"
+assert_contains "mise bootstrap plugins status" "installed"
+assert_contains \
+  "mise plugin install package:declared file://$PWD/declared-package-plugin 2>&1" \
+  "Use --force to install anyway"
+
+# A required binary supplied only by the global toolset must pass the async
+# availability gate even when the configured shims directory is empty.
+assert_succeed "mise use --global dummy@1.0.0"
+cat >"$MISE_DATA_DIR/plugins/declared/mise.plugin.toml" <<'EOF'
+[package-manager]
+requires = ["dummy"]
+supports_version_pins = true
+EOF
+assert_contains "MISE_SHIMS_DIR=$HOME/empty-shims mise bootstrap packages status" "installed"
+
+cat >mise.toml <<EOF
+[bootstrap.plugins]
+apt = "file://$PWD/declared-package-plugin"
+EOF
+assert_fail "mise bootstrap plugins apply" "collides with a built-in package manager"

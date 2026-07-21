@@ -11,9 +11,13 @@ use eyre::{Result, eyre};
 use crate::cli::args::ToolArg;
 #[cfg(any(test, windows))]
 use crate::cmd;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
+use crate::deps::{DepsEngine, DepsOptions};
 use crate::env;
-use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::env_diff::EnvDiff;
+use crate::sandbox::SandboxConfig;
+use crate::toolset::env_cache::CachedEnv;
+use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
 ///
@@ -45,21 +49,94 @@ pub struct Exec {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets --jobs=1
+    /// Allow specific env var through (implies --deny-env for everything else)
+    /// Supports wildcards, e.g. --allow-env='MYAPP_*'
+    #[clap(long, value_name = "VAR", verbatim_doc_comment)]
+    pub allow_env: Vec<String>,
+
+    /// Allow network to specific host (implies --deny-net for everything else)
+    /// macOS only in v1; on Linux falls back to allowing all network
+    #[clap(long, value_name = "HOST", verbatim_doc_comment)]
+    pub allow_net: Vec<String>,
+
+    /// Allow reads from specific path (implies --deny-read for everything else)
+    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_read: Vec<std::path::PathBuf>,
+
+    /// Allow writes to specific path (implies --deny-write for everything else)
+    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_write: Vec<std::path::PathBuf>,
+
+    /// Block reads, writes, network, and env vars
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_all: bool,
+
+    /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_env: bool,
+
+    /// Block all network access
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_net: bool,
+
+    /// Block filesystem reads (system libs and tool dirs still accessible)
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_read: bool,
+
+    /// Block all filesystem writes
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_write: bool,
+
+    /// Bypass the environment cache and recompute the environment
+    #[clap(long)]
+    pub fresh_env: bool,
+
+    /// Skip automatic dependency preparation
+    #[clap(long)]
+    pub no_deps: bool,
+
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal
+    /// Implies --jobs=1
     #[clap(long, overrides_with = "jobs")]
     pub raw: bool,
 }
 
 impl Exec {
-    pub fn run(self) -> Result<()> {
-        let config = Config::get();
+    #[async_backtrace::framed]
+    pub async fn run(self) -> eyre::Result<()> {
+        // Temporarily unset cache key to force fresh env computation
+        if self.fresh_env {
+            env::reset_env_cache_key();
+        }
+
+        let mut config = Config::get().await?;
+
+        // Check if any tool arg explicitly specified @latest
+        // If so, resolve to the actual latest version from the registry (not just latest installed)
+        let has_explicit_latest = self
+            .tool
+            .iter()
+            .any(|t| t.tvr.as_ref().is_some_and(|tvr| tvr.version() == "latest"));
+
+        let resolve_options = if has_explicit_latest {
+            ResolveOptions {
+                latest_versions: true,
+                use_locked_version: false,
+                ..Default::default()
+            }
+        } else {
+            Default::default()
+        };
+
         let mut ts = measure!("toolset", {
             ToolsetBuilder::new()
                 .with_args(&self.tool)
                 .with_default_to_latest(true)
-                .build(&config)?
+                .with_resolve_options(resolve_options.clone())
+                .build(&config)
+                .await?
         });
+
         let opts = InstallOptions {
             force: false,
             jobs: self.jobs,
@@ -68,21 +145,73 @@ impl Exec {
             // also don't autoinstall if at least 1 tool is specified
             // in that case the user probably just wants that one tool
             missing_args_only: !self.tool.is_empty()
-                || !SETTINGS.exec_auto_install
-                || !console::user_attended_stderr()
+                || !Settings::get().exec_auto_install
                 || *env::__MISE_SHIM,
-            resolve_options: Default::default(),
+            skip_auto_install: !Settings::get().exec_auto_install || !Settings::get().auto_install,
+            resolve_options,
             ..Default::default()
         };
-        measure!("install_arg_versions", {
-            ts.install_missing_versions(&opts)?
+        let (_, missing) = measure!("install_arg_versions", {
+            ts.install_missing_versions(&mut config, &opts).await?
         });
+
+        // If we installed new versions for explicit @latest, re-resolve to pick up the installed versions
+        if has_explicit_latest {
+            ts.resolve_with_opts(&config, &opts.resolve_options).await?;
+        }
+
         measure!("notify_if_versions_missing", {
-            ts.notify_if_versions_missing()
+            ts.notify_missing_versions(missing);
         });
 
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
-        let env = measure!("env_with_path", { ts.env_with_path(&config)? });
+
+        let mut env = measure!("env_with_path", { ts.env_with_path(&config).await? });
+
+        // Run auto-enabled deps steps (unless --no-deps)
+        if !self.no_deps {
+            let engine = DepsEngine::new(&config)?;
+            engine
+                .run(DepsOptions {
+                    auto_only: true, // Only run providers with auto=true
+                    env: env.clone(),
+                    ..Default::default()
+                })
+                .await?;
+        }
+
+        // Ensure MISE_ENV is set in the spawned shell if it was specified via -E flag
+        if !env::MISE_ENV.is_empty() {
+            env.insert("MISE_ENV".to_string(), env::MISE_ENV.join(","));
+        }
+
+        // Ensure cache key is propagated to subprocesses for env caching
+        if Settings::get().env_cache && !self.fresh_env {
+            let key = CachedEnv::ensure_encryption_key();
+            env.insert("__MISE_ENV_CACHE_KEY".to_string(), key);
+        }
+
+        // Embed __MISE_DIFF so a nested mise invocation can recover the pristine
+        // env (and pristine PATH) instead of stacking our tool dirs on top of its
+        // own. Without this, `mise -C <new> exec -- ...` invoked from inside our
+        // child process would inherit our tool dirs as user-pre-PATH and they
+        // would outrank the inner toolset's resolved tool. See discussion #9754.
+        // Computed after all env modifications so the diff fully describes what
+        // mise added (matches task_executor.rs).
+        let removed_mise_env = if !env::MISE_ENV.is_empty() {
+            // Keep explicit -E profiles active if the child shell sources `mise activate`.
+            env.remove("MISE_ENV")
+        } else {
+            None
+        };
+        env.remove("__MISE_DIFF");
+        let serialized = EnvDiff::from_final_env(&env::PRISTINE_ENV, &env).serialize();
+        if let Some(mise_env) = removed_mise_env {
+            env.insert("MISE_ENV".to_string(), mise_env);
+        }
+        if let Ok(serialized) = serialized {
+            env.insert("__MISE_DIFF".to_string(), serialized);
+        }
 
         if program.rsplit('/').next() == Some("fish") {
             let mut cmd = vec![];
@@ -94,8 +223,8 @@ impl Exec {
                 ));
             }
             // TODO: env is being calculated twice with final_env and env_with_path
-            let (_, env_results) = ts.final_env(&config)?;
-            for p in ts.list_final_paths(&config, env_results)? {
+            let (_, env_results) = ts.final_env(&config).await?;
+            for p in ts.list_final_paths(&config, env_results).await? {
                 cmd.push(format!(
                     "fish_add_path -gm {}",
                     shell_escape::escape(p.to_string_lossy())
@@ -105,65 +234,283 @@ impl Exec {
             args.insert(0, "-C".into());
         }
 
+        // Build sandbox config from settings and CLI flags.
+        let mut sandbox = SandboxConfig::from_settings_and_cli(
+            &Settings::get().sandbox,
+            self.deny_all,
+            SandboxConfig {
+                deny_read: self.deny_read,
+                deny_write: self.deny_write,
+                deny_net: self.deny_net,
+                deny_env: self.deny_env,
+                allow_read: self.allow_read,
+                allow_write: self.allow_write,
+                allow_net: self.allow_net,
+                allow_env: self.allow_env,
+            },
+        );
+        sandbox.resolve_paths();
+
+        if sandbox.is_active() {
+            env = sandbox.filter_env(&env);
+        }
+
         time!("exec");
-        self.exec(program, args, env)
+        // shell_body_mode: true only for the `-c`/`--command` path, where
+        // parse_command synthesized `shell + [flags.., body]`. A positional
+        // command must not be reinterpreted as a shell body.
+        exec_program(program, args, env, &sandbox, self.c.is_some()).await
     }
+}
 
-    #[cfg(all(not(test), unix))]
-    fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
-    where
-        T: IntoExecutablePath,
-        U: IntoIterator,
-        U::Item: Into<OsString>,
-    {
-        for (k, v) in env.iter() {
-            env::set_var(k, v);
+#[cfg(all(not(test), unix))]
+pub async fn exec_program<T, U>(
+    program: T,
+    args: U,
+    env: BTreeMap<String, String>,
+    sandbox: &SandboxConfig,
+    _shell_body_mode: bool,
+) -> Result<()>
+where
+    T: IntoExecutablePath,
+    U: IntoIterator,
+    U::Item: Into<OsString>,
+{
+    // Capture the marker before deny-env removes variables from the process.
+    // The lazy state must retain the dispatching shim for candidate filtering.
+    drop(env::MISE_SHIM_PATH.read().unwrap());
+    if sandbox.effective_deny_env() {
+        // When env is sandboxed, clear all vars and only set the filtered ones
+        for (k, _) in std::env::vars() {
+            if !env.contains_key(&k) {
+                env::remove_var(&k);
+            }
         }
-        let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
-        let program = program.to_executable();
-        let err = exec::Command::new(program.clone()).args(&args).exec();
-        bail!("{:?} {err}", program.to_string_lossy())
     }
-
-    #[cfg(all(windows, not(test)))]
-    fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
-    where
-        T: IntoExecutablePath,
-        U: IntoIterator,
-        U::Item: Into<OsString>,
-    {
+    for (k, v) in env.iter() {
+        env::set_var(k, v);
+    }
+    let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    let program = program.to_executable();
+    let program = if program.to_string_lossy().contains('/') {
+        // Already a path, no need to resolve
+        program
+    } else {
         let cwd = crate::dirs::CWD.clone().unwrap_or_default();
-        let program = program.to_executable();
-        let path = env.get(&*env::PATH_KEY).map(OsString::from);
-        let program = which::which_in(program, path, cwd)?;
-        let mut cmd = cmd::cmd(program, args);
-        for (k, v) in env.iter() {
-            cmd = cmd.env(k, v);
+        let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
+            // For program resolution, reorder PATH so that paths added by mise
+            // (tool bins, _.path entries) come before paths from the original
+            // system PATH. This prevents wrapper scripts in the system PATH
+            // (e.g. .devcontainer/bin/tool) from being found before the real
+            // tool binary, which would cause infinite recursion and E2BIG.
+            //
+            // User-configured paths (_.path/venv) maintain their position
+            // relative to tool paths since both are "mise-added".
+            // The child process still inherits the full unmodified PATH.
+            let pristine: std::collections::HashSet<_> = crate::env::PATH.iter().collect();
+            let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
+            // Mise-added paths first (preserving relative order)
+            let mise_added: Vec<_> = all_paths
+                .iter()
+                .filter(|p| !pristine.contains(p) && !crate::file::is_mise_shims_dir(p))
+                .cloned()
+                .collect();
+            // Then original system paths (minus shims)
+            let original: Vec<_> = all_paths
+                .iter()
+                .filter(|p| pristine.contains(p) && !crate::file::is_mise_shims_dir(p))
+                .cloned()
+                .collect();
+            std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
+        });
+        match which::which_in_all(&program, lookup_path, cwd) {
+            Ok(mut candidates) => {
+                match candidates.find(|candidate| !crate::file::is_active_mise_shim(candidate)) {
+                    Some(resolved) => resolved.into_os_string(),
+                    None if env::MISE_SHIM_PATH.read().unwrap().is_some() => {
+                        return Err(which::Error::CannotFindBinaryPath.into());
+                    }
+                    None => program, // Fall back to original if resolution fails
+                }
+            }
+            Err(err) if env::MISE_SHIM_PATH.read().unwrap().is_some() => return Err(err.into()),
+            Err(_) => program, // Fall back to original if resolution fails
         }
-        let res = cmd.unchecked().run()?;
-        match res.status.code() {
-            Some(0) => Ok(()),
-            Some(code) => Err(eyre!("command failed: exit code {}", code)),
-            None => Err(eyre!("command failed: terminated by signal")),
+    };
+    if crate::file::is_active_mise_shim(std::path::Path::new(&program)) {
+        return Err(eyre::eyre!(
+            "recursive shim invocation detected: {}",
+            program.to_string_lossy()
+        ));
+    }
+    env::remove_var(env::MISE_SHIM_PATH_ENV);
+    // Apply sandbox (Landlock/seccomp on Linux, sandbox-exec on macOS)
+    let args_str: Vec<String> = args
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    if let Some(sandboxed) = sandbox.apply(&program.to_string_lossy(), &args_str).await? {
+        // macOS: exec through sandbox-exec
+        let err = exec::Command::new(&sandboxed.program)
+            .args(&sandboxed.args)
+            .exec();
+        bail!("{} {err}", sandboxed.program);
+    }
+
+    let err = exec::Command::new(program.clone()).args(&args).exec();
+    bail!("{:?} {err}", program.to_string_lossy())
+}
+
+#[cfg(all(windows, not(test)))]
+pub async fn exec_program<T, U>(
+    program: T,
+    args: U,
+    env: BTreeMap<String, String>,
+    sandbox: &SandboxConfig,
+    shell_body_mode: bool,
+) -> Result<()>
+where
+    T: IntoExecutablePath,
+    U: IntoIterator,
+    U::Item: Into<OsString>,
+{
+    if sandbox.is_active() {
+        warn!("sandbox is not supported on Windows, running unsandboxed");
+    }
+    for (k, v) in env.iter() {
+        env::set_var(k, v);
+    }
+    let cwd = crate::dirs::CWD.clone().unwrap_or_default();
+    let program = program.to_executable();
+    // Reorder PATH for program resolution: mise-added paths first, then
+    // original system paths (minus shims). See Unix version for full rationale.
+    let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
+        let pristine: std::collections::HashSet<_> = crate::env::PATH
+            .iter()
+            .map(|p| {
+                crate::file::replace_path(p)
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .replace('/', "\\")
+            })
+            .collect();
+        let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
+        let mise_added: Vec<_> = all_paths
+            .iter()
+            .filter(|p| {
+                let normalized = crate::file::replace_path(p)
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .replace('/', "\\");
+                !pristine.contains(&normalized) && !crate::file::is_mise_shims_dir(p)
+            })
+            .cloned()
+            .collect();
+        let original: Vec<_> = all_paths
+            .iter()
+            .filter(|p| {
+                let normalized = crate::file::replace_path(p)
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .replace('/', "\\");
+                pristine.contains(&normalized) && !crate::file::is_mise_shims_dir(p)
+            })
+            .cloned()
+            .collect();
+        std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
+    });
+    let program = which::which_in_all(program, lookup_path, cwd)?
+        .find(|candidate| !crate::file::is_active_mise_shim(candidate))
+        .ok_or(which::Error::CannotFindBinaryPath)?;
+    env::remove_var(env::MISE_SHIM_PATH_ENV);
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+
+    // Windows does not support exec in the same way as Unix,
+    // so we emulate it instead by not handling Ctrl-C and letting
+    // the child process deal with it instead.
+    win_exec::set_ctrlc_handler()?;
+
+    // `mise exec -c "<cmd>"` spawns the configured shell as `cmd /c <cmd>`. For
+    // cmd, pass the command verbatim so inner double quotes survive (#9355).
+    // Gated on `shell_body_mode` (the `-c`/`--command` path) so a positional
+    // `mise exec -- cmd /c "echo one" two` is not reinterpreted as a shell body.
+    // cwd is intentionally inherited from the process here, matching the duct
+    // fallback below; the resolved `cwd` above governs program lookup only.
+    if shell_body_mode {
+        if let (Some(prog), [.., last]) = (program.to_str(), args.as_slice()) {
+            let flags: Vec<String> = args[..args.len() - 1]
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            let body = last.to_string_lossy();
+            if let Some(mut c) = crate::path::cmd_verbatim_command(prog, &flags, &body) {
+                match c.status()?.code() {
+                    Some(code) => std::process::exit(code),
+                    None => return Err(eyre!("command failed: terminated by signal")),
+                }
+            }
         }
     }
 
-    #[cfg(test)]
-    fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
-    where
-        T: IntoExecutablePath,
-        U: IntoIterator,
-        U::Item: Into<OsString>,
-    {
-        let mut cmd = cmd::cmd(program, args);
-        for (k, v) in env.iter() {
-            cmd = cmd.env(k, v);
+    let cmd = cmd::cmd(program, args);
+    let res = cmd.unchecked().run()?;
+    match res.status.code() {
+        Some(code) => {
+            std::process::exit(code);
         }
-        let res = cmd.unchecked().run()?;
-        match res.status.code() {
-            Some(0) => Ok(()),
-            Some(code) => Err(eyre!("command failed: exit code {}", code)),
-            None => Err(eyre!("command failed: terminated by signal")),
+        None => Err(eyre!("command failed: terminated by signal")),
+    }
+}
+
+#[cfg(test)]
+pub async fn exec_program<T, U>(
+    program: T,
+    args: U,
+    env: BTreeMap<String, String>,
+    _sandbox: &SandboxConfig,
+    _shell_body_mode: bool,
+) -> Result<()>
+where
+    T: IntoExecutablePath,
+    U: IntoIterator,
+    U::Item: Into<OsString>,
+{
+    let mut cmd = cmd::cmd(program, args);
+    for (k, v) in env.iter() {
+        cmd = cmd.env(k, v);
+    }
+    let res = cmd.unchecked().run()?;
+    match res.status.code() {
+        Some(0) => Ok(()),
+        Some(code) => Err(eyre!("command failed: exit code {}", code)),
+        None => Err(eyre!("command failed: terminated by signal")),
+    }
+}
+
+#[cfg(all(windows, not(test)))]
+mod win_exec {
+    use eyre::{Result, eyre};
+    use winapi::shared::minwindef::{BOOL, DWORD, FALSE, TRUE};
+    use winapi::um::consoleapi::SetConsoleCtrlHandler;
+    // Windows way of creating a process is to just go ahead and pop a new process
+    // with given program and args into existence. But in unix-land, it instead happens
+    // in a two-step process where you first fork the process and then exec the new program,
+    // essentially replacing the current process with the new one.
+    // We use Windows API to set a Ctrl-C handler that does nothing, essentially attempting
+    // to emulate the ctrl-c behavior by not handling it ourselves, and propagating it to
+    // the child process to handle it instead.
+    // This is the same way cargo does it in cargo run.
+    unsafe extern "system" fn ctrlc_handler(_: DWORD) -> BOOL {
+        // This is a no-op handler to prevent Ctrl-C from terminating the process.
+        // It allows the child process to handle Ctrl-C instead.
+        TRUE
+    }
+
+    pub(super) fn set_ctrlc_handler() -> Result<()> {
+        if unsafe { SetConsoleCtrlHandler(Some(ctrlc_handler), TRUE) } == FALSE {
+            Err(eyre!("Could not set Ctrl-C handler."))
+        } else {
+            Ok(())
         }
     }
 }
@@ -178,7 +525,10 @@ fn parse_command(
             let (program, args) = command.split_first().unwrap();
             (program.clone(), args.into())
         }
-        _ => (shell.into(), vec!["-c".into(), c.clone().unwrap()]),
+        _ => (
+            shell.into(),
+            vec![env::SHELL_COMMAND_FLAG.into(), c.clone().unwrap()],
+        ),
     }
 }
 

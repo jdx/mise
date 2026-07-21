@@ -3,27 +3,38 @@
 use std::fmt::Display;
 
 use indoc::formatdoc;
+use shell_escape::unix::escape;
 
 use crate::config::Settings;
 use crate::shell::bash::Bash;
-use crate::shell::{ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
 pub struct Zsh {}
+
+impl Zsh {}
 
 impl Shell for Zsh {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.to_string_lossy();
+
+        let exe = escape(exe.to_string_lossy());
         let mut out = String::new();
+
+        out.push_str(&shell::build_deactivation_script(self));
+
         out.push_str(&self.format_activate_prelude(&opts.prelude));
 
         // much of this is from direnv
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_zsh.go#L10-L22
         out.push_str(&formatdoc! {r#"
             export MISE_SHELL=zsh
-            export __MISE_ORIG_PATH="$PATH"
+            if [ -z "${{__MISE_ORIG_PATH:-}}" ]; then
+              export __MISE_ORIG_PATH="$PATH"
+            fi
+            export __MISE_ZSH_PRECMD_RUN=0
+            export __MISE_ZSH_CHPWD_RAN=0
 
             mise() {{
               local command
@@ -50,19 +61,45 @@ impl Shell for Zsh {
         if !opts.no_hook_env {
             out.push_str(&formatdoc! {r#"
 
+            autoload -Uz add-zsh-hook
             _mise_hook() {{
-              eval "$({exe} hook-env{flags} -s zsh)";
+              eval "$({exe} hook-env{flags} -s zsh "$@")";
             }}
-            typeset -ag precmd_functions;
-            if [[ -z "${{precmd_functions[(r)_mise_hook]+1}}" ]]; then
-              precmd_functions=( _mise_hook ${{precmd_functions[@]}} )
-            fi
-            typeset -ag chpwd_functions;
-            if [[ -z "${{chpwd_functions[(r)_mise_hook]+1}}" ]]; then
-              chpwd_functions=( _mise_hook ${{chpwd_functions[@]}} )
-            fi
+            _mise_hook_env_state() {{
+              local -a keys=(${{(ok)parameters[(I)MISE_*]}})
+              if (( $#keys > 0 )); then
+                typeset -p "${{keys[@]}}" 2>/dev/null
+              fi
+            }}
+            _mise_hook_precmd() {{
+              if [[ "${{__MISE_ZSH_CHPWD_RAN:-0}}" == "1" ]]; then
+                export __MISE_ZSH_CHPWD_RAN=0
+                unset __MISE_ZSH_ACTIVATE_PATH
+                unset __MISE_ZSH_ACTIVATE_ENV
+                return
+              fi
+              if [[ "${{__MISE_ZSH_PRECMD_RUN:-0}}" == "0" &&
+                    "$PATH" == "${{__MISE_ZSH_ACTIVATE_PATH:-}}" &&
+                    "$(_mise_hook_env_state)" == "${{__MISE_ZSH_ACTIVATE_ENV:-}}" ]]; then
+                export __MISE_ZSH_PRECMD_RUN=1
+                unset __MISE_ZSH_ACTIVATE_PATH
+                unset __MISE_ZSH_ACTIVATE_ENV
+                return
+              fi
+              unset __MISE_ZSH_ACTIVATE_PATH
+              unset __MISE_ZSH_ACTIVATE_ENV
+              _mise_hook --reason precmd
+            }}
+            _mise_hook_chpwd() {{
+              export __MISE_ZSH_CHPWD_RAN=1
+              _mise_hook --reason chpwd
+            }}
+            add-zsh-hook precmd _mise_hook_precmd
+            add-zsh-hook chpwd _mise_hook_chpwd
 
             _mise_hook
+            export __MISE_ZSH_ACTIVATE_PATH="$PATH"
+            export __MISE_ZSH_ACTIVATE_ENV="$(_mise_hook_env_state)"
             "#});
         }
         if Settings::get().not_found_auto_install {
@@ -91,13 +128,21 @@ impl Shell for Zsh {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-        precmd_functions=( ${{precmd_functions:#_mise_hook}} )
-        chpwd_functions=( ${{chpwd_functions:#_mise_hook}} )
-        unset -f _mise_hook
-        unset -f mise
+        autoload -Uz add-zsh-hook
+        add-zsh-hook -d precmd _mise_hook_precmd 2>/dev/null
+        add-zsh-hook -d chpwd _mise_hook_chpwd 2>/dev/null
+        (( $+functions[_mise_hook_precmd] )) && unset -f _mise_hook_precmd
+        (( $+functions[_mise_hook_chpwd] )) && unset -f _mise_hook_chpwd
+        (( $+functions[_mise_hook] )) && unset -f _mise_hook
+        (( $+functions[_mise_hook_env_state] )) && unset -f _mise_hook_env_state
+        (( $+functions[mise] )) && unset -f mise
         unset MISE_SHELL
         unset __MISE_DIFF
         unset __MISE_SESSION
+        unset __MISE_ZSH_PRECMD_RUN
+        unset __MISE_ZSH_CHPWD_RAN
+        unset __MISE_ZSH_ACTIVATE_PATH
+        unset __MISE_ZSH_ACTIVATE_ENV
         "#}
     }
 
@@ -111,6 +156,14 @@ impl Shell for Zsh {
 
     fn unset_env(&self, k: &str) -> String {
         Bash::default().unset_env(k)
+    }
+
+    fn set_alias(&self, name: &str, cmd: &str) -> String {
+        Bash::default().set_alias(name, cmd)
+    }
+
+    fn unset_alias(&self, name: &str) -> String {
+        Bash::default().unset_alias(name)
     }
 }
 
@@ -132,6 +185,12 @@ mod tests {
 
     #[test]
     fn test_activate() {
+        // Unset __MISE_ORIG_PATH to avoid PATH restoration logic in output
+        unsafe {
+            std::env::remove_var("__MISE_ORIG_PATH");
+            std::env::remove_var("__MISE_DIFF");
+        }
+
         let zsh = Zsh::default();
         let exe = Path::new("/some/dir/mise");
         let opts = ActivateOptions {

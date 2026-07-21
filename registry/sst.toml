@@ -1,0 +1,3 @@
+backends = ["github:sst/sst"]
+description = "Build full-stack apps on your own infrastructure"
+test = { cmd = "sst version", expected = "sst {{version}}" }

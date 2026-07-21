@@ -3,14 +3,16 @@ use std::{fmt::Debug, path::PathBuf};
 mod local_task;
 mod remote_task_git;
 mod remote_task_http;
-
+use crate::Result;
+use async_trait::async_trait;
 use local_task::LocalTask;
 use remote_task_git::RemoteTaskGitBuilder;
 use remote_task_http::RemoteTaskHttpBuilder;
 
-pub trait TaskFileProvider: Debug {
+#[async_trait]
+pub trait TaskFileProvider: Debug + Send + Sync {
     fn is_match(&self, file: &str) -> bool;
-    fn get_local_path(&self, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>>;
+    async fn get_local_path(&self, file: &str) -> Result<PathBuf>;
 }
 
 pub struct TaskFileProvidersBuilder {
@@ -108,7 +110,7 @@ mod tests {
     fn test_git_file_match_git_remote_task_provider() {
         let task_file_providers = TaskFileProvidersBuilder::new().build();
         let cases = vec![
-            "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
+            "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0",
             "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0",
             "git::ssh://user@myserver.com/example.git//subfolder/myfile.py",
             "git::https://myserver.com/example.git//subfolder/myfile.sh",

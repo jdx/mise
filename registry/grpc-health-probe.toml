@@ -1,0 +1,7 @@
+backends = [
+  "aqua:grpc-ecosystem/grpc-health-probe",
+  "asdf:zufardhiyaulhaq/asdf-grpc-health-probe",
+]
+description = "A command-line tool to perform health-checks for gRPC applications in Kubernetes and elsewhere"
+os = ["linux", "macos"]
+test = { cmd = "grpc_health_probe --version", expected = "{{version}}" }

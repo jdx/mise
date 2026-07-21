@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+export MISE_DEFAULT_CONFIG_FILENAME=mise.config.toml
+
+mise use tiny
+
+assert_contains "mise config" "mise.config.toml"

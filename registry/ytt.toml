@@ -1,0 +1,3 @@
+backends = ["aqua:carvel-dev/ytt", "asdf:vmware-tanzu/asdf-carvel"]
+description = "YAML templating tool that works on YAML structure instead of text"
+test = { cmd = "ytt --version", expected = "ytt version {{version}}" }

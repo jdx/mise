@@ -1,0 +1,11 @@
+description = "Modern diagram scripting language that turns text to diagrams"
+test = { cmd = "d2 --version", expected = "v{{version}}" }
+
+[[backends]]
+full = "aqua:terrastruct/d2"
+
+[[backends]]
+full = "github:terrastruct/d2"
+
+[backends.options]
+strip_components = "1"

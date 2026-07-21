@@ -1,24 +1,25 @@
+use std::sync::Arc;
+
 use color_eyre::eyre::{Result, bail, eyre};
 use contracts::ensures;
 use heck::ToKebabCase;
-use rayon::ThreadPoolBuilder;
-use rayon::prelude::*;
+use tokio::{sync::Semaphore, task::JoinSet};
 use url::Url;
 
-use crate::backend::unalias_backend;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::dirs;
-use crate::plugins::Plugin;
-use crate::plugins::asdf_plugin::AsdfPlugin;
+use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
+use crate::plugins::warn_if_env_plugin_shadows_registry;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
+use crate::{backend::unalias_backend, config::Settings};
 
 /// Install a plugin
 ///
-/// note that mise automatically can install plugins when you install a tool
-/// e.g.: `mise install node@20` will autoinstall the node plugin
+/// note that mise can automatically install plugins when you install a tool
+/// e.g.: `mise install cmake@3.30` will autoinstall the cmake plugin
 ///
 /// This behavior can be modified in ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
@@ -26,20 +27,19 @@ use crate::ui::style;
 )]
 pub struct PluginsInstall {
     /// The name of the plugin to install
-    /// e.g.: node, ruby
-    /// Can specify multiple plugins: `mise plugins install node ruby python`
+    /// e.g.: cmake, poetry
+    /// Can specify multiple plugins: `mise plugins install cmake poetry`
     #[clap(required_unless_present = "all", verbatim_doc_comment)]
     new_plugin: Option<String>,
 
     /// The git url of the plugin
-    /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+    /// e.g.: https://github.com/mise-plugins/vfox-cmake.git
     #[clap(help = "The git url of the plugin", value_hint = clap::ValueHint::Url, verbatim_doc_comment
     )]
     git_url: Option<String>,
 
-    /// Reinstall even if plugin exists
-    #[clap(short, long, verbatim_doc_comment)]
-    force: bool,
+    #[clap(hide = true)]
+    rest: Vec<String>,
 
     /// Install all missing plugins
     /// This will only install plugins that have matching shorthands.
@@ -47,23 +47,28 @@ pub struct PluginsInstall {
     #[clap(short, long, conflicts_with_all = ["new_plugin", "force"], verbatim_doc_comment)]
     all: bool,
 
+    /// Reinstall even if plugin exists
+    #[clap(short, long, verbatim_doc_comment)]
+    force: bool,
+
+    /// Number of jobs to run in parallel
+    #[clap(long, short, verbatim_doc_comment)]
+    jobs: Option<usize>,
+
     /// Show installation output
     #[clap(long, short, action = clap::ArgAction::Count, verbatim_doc_comment)]
     verbose: u8,
-
-    #[clap(hide = true)]
-    rest: Vec<String>,
 }
 
 impl PluginsInstall {
-    pub fn run(self, config: &Config) -> Result<()> {
-        let mpr = MultiProgressReport::get();
-        if self.all {
-            return self.install_all_missing_plugins(config, &mpr);
+    pub async fn run(self, config: &Arc<Config>) -> Result<()> {
+        let this = Arc::new(self);
+        if this.all {
+            return this.install_all_missing_plugins(config).await;
         }
-        let (name, git_url) = get_name_and_url(&self.new_plugin.clone().unwrap(), &self.git_url)?;
+        let (name, git_url) = get_name_and_url(&this.new_plugin.clone().unwrap(), &this.git_url)?;
         if git_url.is_some() {
-            self.install_one(name, git_url, &mpr)?;
+            this.install_one(config, name, git_url).await?;
         } else {
             let is_core = CORE_PLUGINS.contains_key(&name);
             if is_core {
@@ -71,60 +76,98 @@ impl PluginsInstall {
                 bail!("{name} is a core plugin and does not need to be installed");
             }
             let mut plugins: Vec<String> = vec![name];
-            if let Some(second) = self.git_url.clone() {
+            if let Some(second) = this.git_url.clone() {
                 plugins.push(second);
             };
-            plugins.extend(self.rest.clone());
-            self.install_many(plugins, &mpr)?;
+            plugins.extend(this.rest.clone());
+            this.install_many(config, plugins).await?;
         }
 
         Ok(())
     }
 
-    fn install_all_missing_plugins(
-        &self,
-        config: &Config,
-        mpr: &MultiProgressReport,
-    ) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(config)?;
+    async fn install_all_missing_plugins(self: Arc<Self>, config: &Arc<Config>) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(config).await?;
         let missing_plugins = ts.list_missing_plugins();
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");
         }
-        self.install_many(missing_plugins, mpr)?;
+        self.install_many(config, missing_plugins).await?;
         Ok(())
     }
 
-    fn install_many(&self, plugins: Vec<String>, mpr: &MultiProgressReport) -> Result<()> {
-        ThreadPoolBuilder::new()
-            .num_threads(Settings::get().jobs)
-            .build()?
-            .install(|| -> Result<()> {
-                plugins
-                    .into_par_iter()
-                    .map(|plugin| self.install_one(plugin, None, mpr))
-                    .collect::<Result<Vec<_>>>()?;
-                Ok(())
-            })
-    }
-
-    fn install_one(
-        &self,
-        name: String,
-        git_url: Option<String>,
-        mpr: &MultiProgressReport,
+    async fn install_many(
+        self: Arc<Self>,
+        config: &Arc<Config>,
+        plugins: Vec<String>,
     ) -> Result<()> {
-        let path = dirs::PLUGINS.join(name.to_kebab_case());
-        let mut plugin = AsdfPlugin::new(name.clone(), path);
-        plugin.repo_url = git_url;
-        if !self.force && plugin.is_installed() {
-            warn!("Plugin {name} already installed");
-            warn!("Use --force to install anyway");
-        } else {
-            plugin.ensure_installed(mpr, self.force)?;
+        let mut jset: JoinSet<Result<()>> = JoinSet::new();
+        let semaphore = Arc::new(Semaphore::new(self.jobs.unwrap_or(Settings::get().jobs)));
+        for plugin in plugins {
+            let this = self.clone();
+            let config = config.clone();
+            let permit = semaphore.clone().acquire_owned().await?;
+            jset.spawn(async move {
+                let _permit = permit;
+                println!("installing {plugin}");
+                this.install_one(&config, plugin, None).await
+            });
+        }
+        while let Some(result) = jset.join_next().await {
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    return Err(e);
+                }
+                Err(e) => {
+                    return Err(eyre!(e));
+                }
+            }
         }
         Ok(())
     }
+
+    async fn install_one(
+        self: Arc<Self>,
+        config: &Arc<Config>,
+        name: String,
+        git_url: Option<String>,
+    ) -> Result<()> {
+        install_plugin(config, &name, git_url, self.force, false).await
+    }
+}
+
+pub(crate) async fn install_plugin(
+    config: &Arc<Config>,
+    name: &str,
+    git_url: Option<String>,
+    force: bool,
+    dry_run: bool,
+) -> Result<()> {
+    let (plugin_type, name) = PluginType::from_plugin_config(name);
+    let name = name.to_string();
+    if plugin_type == PluginType::Package && crate::system::packages::is_builtin_manager_name(&name)
+    {
+        bail!("package plugin '{name}' collides with a built-in package manager");
+    }
+    let path = dirs::PLUGINS.join(name.to_kebab_case());
+    let plugin = plugin_type.plugin(name.clone());
+    if let Some(url) = git_url {
+        plugin.set_remote_url(url);
+    }
+    if !force && plugin.is_installed() {
+        warn!("Plugin {name} already installed");
+        warn!("Use --force to install anyway");
+    } else {
+        let mpr = MultiProgressReport::get();
+        plugin
+            .ensure_installed(config, &mpr, force, dry_run)
+            .await?;
+        if !dry_run {
+            warn_if_env_plugin_shadows_registry(&name, &path);
+        }
+    }
+    Ok(())
 }
 
 #[ensures(!ret.as_ref().is_ok_and(|(r, _)| r.is_empty()), "plugin name is empty")]
@@ -159,24 +202,25 @@ fn get_name_from_url(url: &str) -> Result<String> {
     let name = name.strip_prefix("asdf-").unwrap_or(&name);
     let name = name.strip_prefix("rtx-").unwrap_or(name);
     let name = name.strip_prefix("mise-").unwrap_or(name);
+    let name = name.strip_prefix("vfox-").unwrap_or(name);
     Ok(unalias_backend(name).to_string())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    # install the node via shorthand
-    $ <bold>mise plugins install node</bold>
+    # install the poetry via shorthand
+    $ <bold>mise plugins install poetry</bold>
 
-    # install the node plugin using a specific git url
-    $ <bold>mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git</bold>
+    # install the poetry plugin using a specific git url
+    $ <bold>mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git</bold>
 
-    # install the node plugin using the git url only
-    # (node is inferred from the url)
-    $ <bold>mise plugins install https://github.com/mise-plugins/rtx-nodejs.git</bold>
+    # install the poetry plugin using the git url only
+    # (poetry is inferred from the url)
+    $ <bold>mise plugins install https://github.com/mise-plugins/mise-poetry.git</bold>
 
-    # install the node plugin using a specific ref
-    $ <bold>mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git#v1.0.0</bold>
+    # install the poetry plugin using a specific ref
+    $ <bold>mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git#11d0c1e</bold>
 "#
 );
 

@@ -5,48 +5,132 @@ use crate::backend::Backend;
 use crate::config::{Alias, Config};
 use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
-use crate::{backend, file};
+use crate::semver::split_version_prefix;
+use crate::toolset::{ToolRequest, Toolset};
+use crate::{backend, env, file};
 use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use versions::Versioning;
-use xx::regex;
 
-pub fn rebuild(config: &Config) -> Result<()> {
-    for backend in backend::list() {
-        let symlinks = list_symlinks(config, backend.clone())?;
-        let installs_dir = &backend.ba().installs_path;
-        for (from, to) in symlinks {
-            let from = installs_dir.join(from);
-            if from.exists() {
-                if is_runtime_symlink(&from) && file::resolve_symlink(&from)? != to {
-                    trace!("Removing existing symlink: {}", from.display());
-                    file::remove_file(&from)?;
-                } else {
-                    continue;
-                }
-            }
-            make_symlink_or_file(&to, &from)?;
+pub async fn rebuild_for_toolset(config: &Config, ts: &Toolset) -> Result<()> {
+    for backend in ts.list_cached_and_current_backends() {
+        for installs_dir in install_dirs_for(&backend) {
+            rebuild_symlinks_in_dir(config, ts, &backend, &installs_dir)?;
         }
-        remove_missing_symlinks(backend.clone())?;
-        // remove install dir if empty (ignore metadata)
-        file::remove_dir_ignore(installs_dir, vec![".mise.backend.json", ".mise.backend"])?;
     }
     Ok(())
 }
 
-fn list_symlinks(config: &Config, backend: Arc<dyn Backend>) -> Result<IndexMap<String, PathBuf>> {
-    // TODO: make this a pure function and add test cases
+pub async fn migrate_real_dirs(config: &Config) -> Result<()> {
+    for backend in backend::list() {
+        for installs_dir in install_dirs_for(&backend) {
+            migrate_real_dirs_in_dir(config, &backend, &installs_dir)?;
+        }
+    }
+    Ok(())
+}
+
+/// All install directories to consider for a backend: the backend's primary
+/// installs_path plus any shared/system dirs that contain the tool. Per-dir
+/// rebuilds are no-ops when desired state already matches actual state, so
+/// dirs we have no write access to (read-only system installs) only error
+/// out when we actually need to change something there.
+fn install_dirs_for(backend: &Arc<dyn Backend>) -> Vec<PathBuf> {
+    let ba = backend.ba();
+    let mut dirs = vec![ba.installs_path.clone()];
+    let tool_dir_name = ba.tool_dir_name();
+    for shared_dir in env::shared_install_dirs() {
+        let dir = shared_dir.join(&tool_dir_name);
+        if dir.is_dir() && !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    dirs
+}
+
+fn rebuild_symlinks_in_dir(
+    config: &Config,
+    ts: &Toolset,
+    backend: &Arc<dyn Backend>,
+    installs_dir: &Path,
+) -> Result<()> {
+    let concrete_installs = installed_versions_in_dir(installs_dir)
+        .into_iter()
+        .filter(|v| is_concrete_install(v))
+        .collect::<std::collections::HashSet<_>>();
+    let symlinks = list_symlinks_for_dir(config, Some(ts), backend, installs_dir);
+    for (from, to) in symlinks {
+        let from_name = from.clone();
+        let from = installs_dir.join(from);
+        if from.exists() {
+            if is_runtime_symlink(&from) {
+                // Existing runtime symlink: only rewrite if the target changed.
+                if file::resolve_symlink(&from)?.unwrap_or_default() == to {
+                    continue;
+                }
+                trace!("Removing existing symlink: {}", from.display());
+                file::remove_file(&from)?;
+            } else if from
+                .file_name()
+                .zip(to.file_name())
+                .is_some_and(|(f, t)| f != t)
+                && !concrete_installs.contains(&from_name)
+            {
+                // Real (non-symlink) directory at a runtime-symlink slot —
+                // legacy stale state from the 2026.4 regression. Replace it.
+                trace!("Replacing stale runtime dir: {}", from.display());
+                file::remove_all(&from)?;
+            } else {
+                continue;
+            }
+        }
+        make_symlink_or_file(&to, &from)?;
+    }
+    remove_missing_symlinks_in_dir(installs_dir)?;
+    Ok(())
+}
+
+fn migrate_real_dirs_in_dir(
+    config: &Config,
+    backend: &Arc<dyn Backend>,
+    installs_dir: &Path,
+) -> Result<()> {
+    let concrete_installs = installed_versions_in_dir(installs_dir)
+        .into_iter()
+        .filter(|v| is_concrete_install(v))
+        .collect::<std::collections::HashSet<_>>();
+    let symlinks = list_symlinks_for_dir(config, None, backend, installs_dir);
+    for (from, to) in symlinks {
+        let from_name = from.clone();
+        let from = installs_dir.join(from);
+        if !from.exists() || is_runtime_symlink(&from) || concrete_installs.contains(&from_name) {
+            continue;
+        }
+        trace!("Replacing stale runtime dir: {}", from.display());
+        file::remove_all(&from)?;
+        make_symlink_or_file(&to, &from)?;
+    }
+    Ok(())
+}
+
+/// Build symlinks for versions found in a specific install directory.
+fn list_symlinks_for_dir(
+    config: &Config,
+    ts: Option<&Toolset>,
+    backend: &Arc<dyn Backend>,
+    installs_dir: &Path,
+) -> IndexMap<String, PathBuf> {
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
-    let re = regex!(r"^[a-zA-Z0-9]+-");
-    for v in installed_versions(&backend)? {
-        let prefix = re
-            .find(&v)
-            .map(|s| s.as_str().to_string())
-            .unwrap_or_default();
-        let sans_prefix = v.trim_start_matches(&prefix);
-        let versions = Versioning::new(sans_prefix).unwrap_or_default();
+    for v in installed_versions_in_dir(installs_dir) {
+        if is_temporary_runtime_label(&v) {
+            continue;
+        }
+        let (prefix, version) = split_version_prefix(&v);
+        let Some(versions) = Versioning::new(version) else {
+            continue;
+        };
         let mut partial = vec![];
         while versions.nth(partial.len()).is_some() && versions.nth(partial.len() + 1).is_some() {
             let version = versions.nth(partial.len()).unwrap();
@@ -70,41 +154,156 @@ fn list_symlinks(config: &Config, backend: Arc<dyn Backend>) -> Result<IndexMap<
             symlinks.insert(format!("{prefix}{from}"), rel_path(&v));
         }
     }
+    if let Some(ts) = ts {
+        for (b, tv) in ts.list_current_versions() {
+            if b.ba() != backend.ba() {
+                continue;
+            }
+            if !matches!(tv.request, ToolRequest::Sub { .. }) {
+                continue;
+            }
+            let Some(from) = tv.runtime_pathname() else {
+                continue;
+            };
+            let install_path = tv.install_path();
+            if install_path.parent() != Some(installs_dir) || !install_path.exists() {
+                continue;
+            }
+            if let Some(to) = install_path
+                .file_name()
+                .map(|to| PathBuf::from(".").join(to))
+            {
+                symlinks.insert(from, to);
+            }
+        }
+    }
     symlinks = symlinks
         .into_iter()
         .sorted_by_cached_key(|(k, _)| (Versioning::new(k), k.to_string()))
         .collect();
-    Ok(symlinks)
+    symlinks
 }
 
-fn installed_versions(backend: &Arc<dyn Backend>) -> Result<Vec<String>> {
-    let versions = backend
-        .list_installed_versions()?
+/// List real (non-symlink) installed versions in a specific directory.
+fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
+    if !installs_dir.is_dir() {
+        return vec![];
+    }
+    file::dir_subdirs(installs_dir)
+        .unwrap_or_default()
         .into_iter()
+        .filter(|v| !v.starts_with('.'))
+        .filter(|v| !is_runtime_symlink(&installs_dir.join(v)))
+        .filter(|v| !installs_dir.join(v).join("incomplete").exists())
         .filter(|v| !VERSION_REGEX.is_match(v))
-        .collect();
-    Ok(versions)
+        .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+        .collect()
 }
 
-fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
-    let installs_dir = &backend.ba().installs_path;
+fn is_concrete_install(v: &str) -> bool {
+    let (_, version) = split_version_prefix(v);
+    version.chars().any(|c| c.is_ascii_digit()) && Versioning::new(version).is_some()
+}
+
+fn is_temporary_runtime_label(v: &str) -> bool {
+    debug_assert!(
+        {
+            let remove_version = Versioning::new("2026.10.0").unwrap();
+            *crate::cli::version::V < remove_version
+        },
+        "Temporary runtime symlink migration guard should be removed in version 2026.10.0."
+    );
+    // The 2026.4 runtime symlink regression created real "latest" dirs. Treat
+    // only that literal label as generated state: numeric prefixes like "25"
+    // may be concrete installs requested by users and must not be migrated.
+    v == "latest"
+}
+
+pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
+    remove_missing_symlinks_in_dir(&backend.ba().installs_path)
+}
+
+fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> {
     if !installs_dir.exists() {
         return Ok(());
     }
     for entry in std::fs::read_dir(installs_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if is_runtime_symlink(&path) && !path.exists() {
+        // On Windows runtime symlinks are regular files containing the relative
+        // target, so `path.exists()` cannot detect a dangling pointer — resolve
+        // the stored target and check that instead. On unix this is equivalent
+        // to following the symlink. (#5260)
+        if let Some(target) = runtime_symlink_target(&path)
+            && !installs_dir.join(target).exists()
+        {
             trace!("Removing missing symlink: {}", path.display());
             file::remove_file(path)?;
         }
     }
+    // remove install dir if empty (ignore metadata)
+    file::remove_dir_ignore(installs_dir, vec![".mise.backend.json", ".mise.backend"])?;
     Ok(())
 }
 
 pub fn is_runtime_symlink(path: &Path) -> bool {
-    if let Ok(link) = file::resolve_symlink(path) {
-        return link.starts_with("./");
+    runtime_symlink_target(path).is_some()
+}
+
+/// Returns the (relative) target a runtime symlink points to, or None if
+/// `path` is not a runtime symlink.
+fn runtime_symlink_target(path: &Path) -> Option<PathBuf> {
+    if let Ok(Some(link)) = file::resolve_symlink(path)
+        && link.starts_with("./")
+    {
+        return Some(link);
     }
-    false
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    // https://github.com/jdx/mise/discussions/5260 — on Windows runtime
+    // symlinks are regular files containing the target, so dangling pointers
+    // were never detected as missing.
+    #[test]
+    fn remove_missing_symlinks_in_dir_removes_dangling_pointers() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        fs::create_dir_all(installs_dir.join("1.0.0"))?;
+        // valid pointer -> concrete install
+        make_symlink_or_file(Path::new("./1.0.0"), &installs_dir.join("1"))?;
+        // dangling pointer -> version that no longer exists
+        make_symlink_or_file(Path::new("./2.0.0"), &installs_dir.join("2"))?;
+
+        remove_missing_symlinks_in_dir(&installs_dir)?;
+
+        // a dangling unix symlink still has metadata even though `exists()` is
+        // false, so this asserts actual removal on both platforms
+        assert!(fs::symlink_metadata(installs_dir.join("2")).is_err());
+        // concrete install and valid pointer retained
+        assert!(installs_dir.join("1.0.0").is_dir());
+        assert!(is_runtime_symlink(&installs_dir.join("1")));
+        Ok(())
+    }
+
+    #[test]
+    fn remove_missing_symlinks_in_dir_removes_dir_when_only_dangling_pointers_remain() -> Result<()>
+    {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        fs::create_dir_all(&installs_dir)?;
+        fs::write(installs_dir.join(".mise.backend.json"), "{}")?;
+        make_symlink_or_file(Path::new("./2.0.0"), &installs_dir.join("2"))?;
+        make_symlink_or_file(Path::new("./2.0.0"), &installs_dir.join("latest"))?;
+
+        remove_missing_symlinks_in_dir(&installs_dir)?;
+
+        // all pointers were dangling -> whole dir removed (metadata ignored)
+        assert!(!installs_dir.exists());
+        Ok(())
+    }
 }

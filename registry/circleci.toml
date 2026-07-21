@@ -1,0 +1,4 @@
+aliases = ["circleci-cli"]
+backends = ["aqua:CircleCI-Public/circleci-cli", "asdf:ucpr/asdf-circleci-cli"]
+description = "Use CircleCI from the command line"
+test = { cmd = "circleci version", expected = "{{version}}" }

@@ -1,0 +1,3 @@
+backends = ["aqua:kubernetes-sigs/kwok/kwokctl"]
+description = "kwokctl is a CLI tool designed to streamline the creation and management of clusters, with nodes simulated by kwok"
+test = { cmd = "kwokctl --version", expected = "kwok version v{{version}}" }

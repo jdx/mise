@@ -1,0 +1,3 @@
+backends = ["github:vespa-engine/vespa"]
+description = "The command-line tool for Vespa.ai."
+test = { cmd = "vespa version", expected = "Vespa CLI version {{version}}" }

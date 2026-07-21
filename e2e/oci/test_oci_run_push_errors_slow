@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Tests error paths for `mise oci run` and `mise oci push` — the ones we can
+# exercise without docker/podman available in CI. The happy paths are
+# covered by test_oci_build_slow plus manual testing; this file just asserts
+# that argument validation and engine-detection errors surface with useful
+# messages rather than panics.
+
+export MISE_EXPERIMENTAL=1
+
+cat >mise.toml <<EOF
+[tools]
+jq = "1.8.1"
+EOF
+mise install >/dev/null 2>&1
+
+# --- experimental gate ---
+assert_fail "env -u MISE_EXPERIMENTAL mise oci run -- true" "experimental"
+assert_fail "env -u MISE_EXPERIMENTAL mise oci push ghcr.io/x/y:z" "experimental"
+
+# --- push: reference must be fully qualified ---
+assert_fail "mise oci push justname" "fully-qualified reference"
+
+# --- push: --image-dir must look like a layout ---
+mkdir -p ./not-a-layout
+assert_fail "mise oci push --image-dir ./not-a-layout ghcr.io/x/y:z" "OCI image layout"
+
+# --- push: unreachable registry fails with a useful error, not a panic ---
+# Build a real (base-less, offline) layout, then push at a loopback port
+# that is never listening; the native push client should surface the
+# connection failure while probing /v2/.
+mise oci build --from scratch --no-mise -o ./img >/dev/null 2>&1
+assert_fail "mise oci push --image-dir ./img 127.0.0.1:1/x/y:z" "127.0.0.1:1"
+
+# --- run: --image-dir must look like a layout ---
+assert_fail "mise oci run --image-dir ./not-a-layout -- true" "OCI image layout"
+
+# --- run: --engine forces detection and errors clearly when missing ---
+# Force an engine that definitely isn't installed in CI (we don't ship
+# podman/docker in the test image). We don't assert a specific message
+# because the output differs based on what's available.
+if ! command -v podman >/dev/null 2>&1; then
+  assert_fail "mise oci run --engine podman -- true" "podman"
+fi
+if ! command -v docker >/dev/null 2>&1; then
+  assert_fail "mise oci run --engine docker -- true" "docker"
+fi

@@ -1,0 +1,2 @@
+backends = ["aqua:sqldef/sqldef/sqlite3def"]
+description = "The easiest idempotent SQLite3 Server schema management by SQL"

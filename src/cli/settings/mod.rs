@@ -44,19 +44,19 @@ impl Commands {
 }
 
 impl Settings {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or_else(|| {
             if let Some(value) = self.value {
                 Commands::Set(set::SettingsSet {
                     setting: self.ls.setting.unwrap(),
-                    value,
+                    value: Some(value),
                     local: self.ls.local,
                 })
             } else if let Some(setting) = self.ls.setting {
                 if let Some((setting, value)) = setting.split_once('=') {
                     Commands::Set(set::SettingsSet {
                         setting: setting.to_string(),
-                        value: value.to_string(),
+                        value: Some(value.to_string()),
                         local: self.ls.local,
                     })
                 } else {

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# soft min_version: should warn and succeed, showing instructions
+cat >instructions.toml <<'TOML'
+message = "To update, run brew upgrade mise"
+TOML
+
+cat >mise.toml <<'TOML'
+min_version = { soft = "9999.0.0" }
+TOML
+
+assert_contains 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTIONS=./instructions.toml MISE_LOG_LEVEL=warn mise ls 2>&1' 'recommended'
+assert_contains 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTIONS=./instructions.toml MISE_LOG_LEVEL=warn mise ls 2>&1' 'brew upgrade mise'
+
+# hard min_version: should fail and include instructions
+cat >mise.toml <<'TOML'
+min_version = { hard = "9999.0.0" }
+TOML
+
+assert_fail 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTIONS=./instructions.toml mise ls 2>&1' 'is required'
+assert_fail 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTIONS=./instructions.toml mise ls 2>&1' 'brew upgrade mise'

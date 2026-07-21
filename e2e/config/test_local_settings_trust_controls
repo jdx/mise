@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+marker="$MISE_TMP_DIR/local-settings-trust-controls"
+
+cat >poc.sh <<EOF
+echo trusted_paths_hookenv > "$marker"
+EOF
+
+cat >.mise.toml <<EOF
+[settings]
+ci = "true"
+paranoid = false
+trusted_config_paths = ["/"]
+yes = true
+
+[env]
+_.source = ["./poc.sh"]
+EOF
+
+set +e
+output=$(MISE_YES=0 MISE_PARANOID=1 mise hook-env -s bash --force 2>&1)
+status=$?
+set -e
+
+if [[ $status -eq 0 ]]; then
+  echo "FAIL: expected hook-env to reject untrusted local config"
+  echo "Output: $output"
+  exit 1
+fi
+
+if [[ -f $marker ]]; then
+  echo "FAIL: local trust-control settings allowed untrusted env source execution"
+  echo "Output: $output"
+  exit 1
+fi
+
+if ! echo "$output" | grep -qi "not trusted"; then
+  echo "FAIL: expected untrusted config error, got: $output"
+  exit 1
+fi

@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+
+# Test env attribute with tera templates for args
+cat <<'EOF' >mise.toml
+[tasks.tera-arg-env]
+usage = '''
+arg "<input>" env="MY_INPUT" help="Input file"
+arg "<output>" env="MY_OUTPUT" help="Output file" default="out.txt"
+'''
+run = [
+  'echo "Command 1: $usage_input $usage_output"',
+  'echo "Command 2: {{arg(name="input")}} {{arg(name="output")}}"',
+]
+EOF
+
+# Test with CLI args (highest priority)
+assert "mise run tera-arg-env foo bar" "Command 1: foo bar
+Command 2: foo bar"
+
+# Test with env vars (middle priority)
+assert "MY_INPUT=env-input MY_OUTPUT=env-output mise run tera-arg-env" "Command 1: env-input env-output
+Command 2: env-input env-output"
+
+# Test with default (lowest priority)
+assert "MY_INPUT=env-input mise run tera-arg-env" "Command 1: env-input out.txt
+Command 2: env-input out.txt"
+
+# Test CLI overrides env var
+assert "MY_INPUT=env-input mise run tera-arg-env cli-input" "Command 1: cli-input out.txt
+Command 2: cli-input out.txt"
+
+# Test env attribute with tera templates for flags
+cat <<'EOF' >mise.toml
+[tasks.tera-flag-env]
+usage = '''
+flag "-u --user <user>" env="MY_USER" help="User to run as"
+flag "-p --port <port>" env="MY_PORT" help="Port to run on" default="8080"
+'''
+run = [
+  'echo "Command 1: $usage_user $usage_port"',
+  'echo "Command 2: {{flag(name="user", default="")}} {{flag(name="port", default="8080")}}"',
+]
+EOF
+
+# Test with CLI flags (highest priority)
+assert "mise run tera-flag-env --user=cli-user --port=3000" "Command 1: cli-user 3000
+Command 2: cli-user 3000"
+
+# Test with env vars (middle priority)
+assert "MY_USER=env-user MY_PORT=9000 mise run tera-flag-env" "Command 1: env-user 9000
+Command 2: env-user 9000"
+
+# Test with default (lowest priority)
+assert "MY_USER=env-user mise run tera-flag-env" "Command 1: env-user 8080
+Command 2: env-user 8080"
+
+# Test CLI overrides env var
+assert "MY_USER=env-user mise run tera-flag-env --user=cli-user" "Command 1: cli-user 8080
+Command 2: cli-user 8080"
+
+# Test mixed usage - env var and tera template with different defaults
+cat <<'EOF' >mise.toml
+[tasks.tera-mixed]
+usage = '''
+flag "-v --verbose" env="MY_VERBOSE" help="Verbose mode" default="false"
+'''
+run = [
+  'echo "Env var: $usage_verbose"',
+  'echo "Tera: {{flag(name="verbose", default="false")}}"',
+]
+EOF
+
+# Without env var or flag
+assert "mise run tera-mixed" "Env var: false
+Tera: false"
+
+# With env var
+assert "MY_VERBOSE=true mise run tera-mixed" "Env var: true
+Tera: true"
+
+# TODO: Boolean flags with env vars don't currently convert to $usage_* environment variables correctly
+# The usage-lib's as_env() method doesn't properly handle boolean flag values
+# These tests are commented out until this is fixed
+# # With CLI flag
+# assert "mise run tera-mixed --verbose" "Env var: true
+# Tera: true"
+
+# # CLI overrides env var
+# assert "MY_VERBOSE=false mise run tera-mixed --verbose" "Env var: true
+# Tera: true"

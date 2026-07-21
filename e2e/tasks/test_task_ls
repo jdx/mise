@@ -35,40 +35,83 @@ cat <<'EOF' >mytasks/filetask3.sh
 EOF
 chmod +x mytasks/filetask3.sh
 
-assert "mise task ls" "filetask2
+mkdir -p .config/mise/conf.d
+cat <<'EOF' >.config/mise/conf.d/confdtask-config.toml
+[tasks.confdtask]
+run = 'echo "confdtask"'
+EOF
+
+assert "mise tasks ls" "confdtask
+filetask2
 filetask3
 lint
 test
 test-with-args"
 
-assert "mise task -x ls" "filetask2          ./mytasks/filetask2
+assert "mise tasks -x ls" "confdtask          ./.config/mise/conf.d/confdtask-config.toml
+filetask2          ./mytasks/filetask2
 filetask3          ./mytasks/filetask3.sh
 lint               ./mise.toml
 test               ./tasks.toml
 test-with-args     ./tasks.toml"
 
-assert_json "mise task ls --json" "$(
+assert_json "mise tasks ls --json" "$(
   cat <<EOF
 [
-  {
-   "name": "filetask2",
+ {
+   "name": "confdtask",
    "aliases": [],
    "description": "",
-   "source": "$(pwd)/mytasks/filetask2",
+   "source": "$(pwd)/.config/mise/conf.d/confdtask-config.toml",
+   "config_sources": ["$(pwd)/.config/mise/conf.d/confdtask-config.toml"],
    "depends": [],
    "depends_post": [],
    "wait_for": [],
-   "env": {},
-   "dir": null,
+   "env": [],
+   "dir": "$(pwd)",
    "hide": false,
+   "global": false,
    "raw": false,
+   "interactive": false,
    "sources": [],
    "outputs": [],
    "shell": null,
    "quiet": false,
    "silent": false,
    "tools": {},
+   "usage": "",
+   "timeout": null,
+   "run": [
+     "echo \"confdtask\""
+   ],
+   "args": [],
+   "file": null
+ },
+ {
+   "name": "filetask2",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/mytasks/filetask2",
+   "config_sources": ["$(pwd)/mytasks/filetask2"],
+   "depends": [],
+   "depends_post": [],
+   "wait_for": [],
+   "env": [],
+   "dir": "$(pwd)",
+   "hide": false,
+   "global": false,
+   "raw": false,
+   "interactive": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "usage": "",
+   "timeout": null,
    "run": [],
+   "args": [],
    "file": "$(pwd)/mytasks/filetask2"
  },
  {
@@ -76,20 +119,26 @@ assert_json "mise task ls --json" "$(
    "aliases": [],
    "description": "",
    "source": "$(pwd)/mytasks/filetask3.sh",
+   "config_sources": ["$(pwd)/mytasks/filetask3.sh"],
    "depends": [],
    "depends_post": [],
    "wait_for": [],
-   "env": {},
-   "dir": null,
+   "env": [],
+   "dir": "$(pwd)",
    "hide": false,
+   "global": false,
    "raw": false,
+   "interactive": false,
    "sources": [],
    "outputs": [],
    "shell": null,
    "quiet": false,
    "silent": false,
    "tools": {},
+   "usage": "",
+   "timeout": null,
    "run": [],
+   "args": [],
    "file": "$(pwd)/mytasks/filetask3.sh"
  },
  {
@@ -97,22 +146,28 @@ assert_json "mise task ls --json" "$(
    "aliases": [],
    "description": "",
    "source": "$(pwd)/mise.toml",
+   "config_sources": ["$(pwd)/mise.toml"],
    "depends": [],
    "depends_post": [],
    "wait_for": [],
-   "env": {},
-   "dir": null,
+   "env": [],
+   "dir": "$(pwd)",
    "hide": false,
+   "global": false,
    "raw": false,
+   "interactive": false,
    "sources": [],
    "outputs": [],
    "shell": null,
    "quiet": false,
    "silent": false,
    "tools": {},
+   "usage": "",
+   "timeout": null,
    "run": [
      "echo \"linting!\""
    ],
+   "args": [],
    "file": null
  },
  {
@@ -120,22 +175,28 @@ assert_json "mise task ls --json" "$(
    "aliases": [],
    "description": "",
    "source": "$(pwd)/tasks.toml",
+   "config_sources": ["$(pwd)/tasks.toml"],
    "depends": [],
    "depends_post": [],
    "wait_for": [],
-   "env": {},
-   "dir": null,
+   "env": [],
+   "dir": "$(pwd)",
    "hide": false,
+   "global": false,
    "raw": false,
+   "interactive": false,
    "sources": [],
    "outputs": [],
    "shell": null,
    "quiet": false,
    "silent": false,
    "tools": {},
+   "usage": "",
+   "timeout": null,
    "run": [
      "echo \"testing!\""
    ],
+   "args": [],
    "file": null
  },
  {
@@ -143,25 +204,31 @@ assert_json "mise task ls --json" "$(
    "aliases": [],
    "description": "",
    "source": "$(pwd)/tasks.toml",
+   "config_sources": ["$(pwd)/tasks.toml"],
    "depends": [
       ["test","-v"],
       "test"
    ],
    "depends_post": [],
    "wait_for": [],
-   "env": {},
-   "dir": null,
+   "env": [],
+   "dir": "$(pwd)",
    "hide": false,
+   "global": false,
    "raw": false,
+   "interactive": false,
    "sources": [],
    "outputs": [],
    "shell": null,
    "quiet": false,
    "silent": false,
    "tools": {},
+   "usage": "",
+   "timeout": null,
    "run": [
      "echo \"{{arg()}} {{flag(name=\"force\")}} {{option(name=\"user\")}}\""
    ],
+   "args": [],
    "file": null
  }
 ]

@@ -1,6 +1,6 @@
 use crate::cmd::cmd;
 use crate::config::Config;
-use crate::toolset::ToolsetBuilder;
+use crate::toolset::{ResolveOptions, ToolsetBuilder};
 use clap::ValueEnum;
 use clap::builder::PossibleValue;
 use eyre::Result;
@@ -18,6 +18,13 @@ pub struct Completion {
     #[clap(long = "shell", short = 's', hide = true)]
     shell_type: Option<Shell>,
 
+    /// Include the bash completion library in the bash completion script
+    ///
+    /// This is required for completions to work in bash, but it is not included by default
+    /// you may source it separately or enable this flag to enable it in the script.
+    #[clap(long, verbatim_doc_comment)]
+    include_bash_completion_lib: bool,
+
     /// Always use usage for completions.
     /// Currently, usage is the default for fish and bash but not zsh since it has a few quirks
     /// to work out first.
@@ -26,20 +33,13 @@ pub struct Completion {
     /// https://usage.jdx.dev
     #[clap(long, verbatim_doc_comment, hide = true)]
     usage: bool,
-
-    /// Include the bash completion library in the bash completion script
-    ///
-    /// This is required for completions to work in bash, but it is not included by default
-    /// you may source it separately or enable this flag to include it in the script.
-    #[clap(long, verbatim_doc_comment)]
-    include_bash_completion_lib: bool,
 }
 
 impl Completion {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let shell = self.shell.or(self.shell_type).unwrap();
 
-        let script = match self.call_usage(shell) {
+        let script = match self.call_usage(shell).await {
             Ok(script) => script,
             Err(e) => {
                 debug!("usage command failed, falling back to prerendered completions");
@@ -52,8 +52,17 @@ impl Completion {
         Ok(())
     }
 
-    fn call_usage(&self, shell: Shell) -> Result<String> {
-        let toolset = ToolsetBuilder::new().build(&Config::get())?;
+    async fn call_usage(&self, shell: Shell) -> Result<String> {
+        let config = Config::get().await?;
+        // Completion generation only needs enough of the local tool environment to find `usage`;
+        // offline resolution avoids shell-startup network fetches.
+        let toolset = ToolsetBuilder::new()
+            .with_resolve_options(ResolveOptions {
+                offline: true,
+                ..Default::default()
+            })
+            .build(&config)
+            .await?;
         let mut args = vec![
             "generate".into(),
             "completion".into(),
@@ -67,9 +76,8 @@ impl Completion {
         if self.include_bash_completion_lib {
             args.push("--include-bash-completion-lib".into());
         }
-        let config = Config::get();
         let output = cmd("usage", args)
-            .full_env(toolset.full_env(&config)?)
+            .full_env(toolset.full_env(&config).await?)
             .read()?;
         Ok(output)
     }
@@ -78,6 +86,7 @@ impl Completion {
         match shell {
             Shell::Bash => include_str!("../../completions/mise.bash"),
             Shell::Fish => include_str!("../../completions/mise.fish"),
+            Shell::PowerShell => include_str!("../../completions/mise.ps1"),
             Shell::Zsh => include_str!("../../completions/_mise"),
         }
         .to_string()
@@ -87,23 +96,27 @@ impl Completion {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise completion bash > /etc/bash_completion.d/mise</bold>
+    $ <bold>mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise</bold>
     $ <bold>mise completion zsh  > /usr/local/share/zsh/site-functions/_mise</bold>
     $ <bold>mise completion fish > ~/.config/fish/completions/mise.fish</bold>
+    $ <bold>mise completion powershell >> $PROFILE</bold>
 "#
 );
 
 #[derive(Debug, Clone, Copy, EnumString, strum::Display)]
 #[strum(serialize_all = "snake_case")]
+#[allow(clippy::enum_variant_names)] // PowerShell is a proper noun
 enum Shell {
     Bash,
     Fish,
+    #[strum(serialize = "powershell")]
+    PowerShell,
     Zsh,
 }
 
 impl ValueEnum for Shell {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Bash, Self::Fish, Self::Zsh]
+        &[Self::Bash, Self::Fish, Self::PowerShell, Self::Zsh]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(PossibleValue::new(self.to_string()))

@@ -1,0 +1,3 @@
+backends = ["aqua:mike-engel/jwt-cli", "cargo:jwt-cli"]
+description = "A super fast CLI tool to decode and encode JWTs built in Rust"
+test = { cmd = "jwt --version", expected = "jwt {{version}}" }

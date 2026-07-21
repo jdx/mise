@@ -1,25 +1,30 @@
-use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::platform::linux_os_release;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
+use crate::{backend::Backend, backend::VersionInfo, config::Config};
 use crate::{file, github, gpg, plugins};
+use async_trait::async_trait;
 use eyre::Result;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tempfile::tempdir_in;
 
 #[derive(Debug)]
 pub struct SwiftPlugin {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
 impl SwiftPlugin {
     pub fn new() -> Self {
         Self {
-            ba: plugins::core::new_backend_arg("swift"),
+            ba: Arc::new(plugins::core::new_backend_arg("swift")),
         }
     }
 
@@ -30,19 +35,21 @@ impl SwiftPlugin {
     fn test_swift(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("swift --version".into());
         CmdLineRunner::new(self.swift_bin(tv))
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .arg("--version")
+            .env_values(tv.install_env())
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+        let settings = Settings::get();
         let url = format!(
             "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
             version = tv.version,
             platform = platform(),
             platform_directory = platform_directory(),
             extension = extension(),
-            architecture = match architecture() {
+            architecture = match architecture(&settings) {
                 Some(arch) => format!("-{arch}"),
                 None => "".into(),
             }
@@ -51,14 +58,13 @@ impl SwiftPlugin {
         let tarball_path = tv.download_path().join(filename);
         if !tarball_path.exists() {
             pr.set_message(format!("download {filename}"));
-            HTTP.download_file(&url, &tarball_path, Some(pr))?;
+            HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
         }
 
         Ok(tarball_path)
     }
 
     fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
-        SETTINGS.ensure_experimental("swift")?;
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         let version = &tv.version;
         ctx.pr.set_message(format!("extract {filename}"));
@@ -68,11 +74,12 @@ impl SwiftPlugin {
                     .path()
                     .to_path_buf()
             };
-            CmdLineRunner::new("pkgutil")
+            CmdLineRunner::new(pkgutil_path())
                 .arg("--expand-full")
                 .arg(tarball_path)
                 .arg(&tmp)
-                .with_pr(&ctx.pr)
+                .with_pr(ctx.pr.as_ref())
+                .env_values(tv.install_env())
                 .execute()?;
             file::remove_all(tv.install_path())?;
             file::rename(
@@ -86,10 +93,11 @@ impl SwiftPlugin {
             file::untar(
                 tarball_path,
                 &tv.install_path(),
-                &file::TarOptions {
-                    format: file::TarFormat::TarGz,
-                    pr: Some(&ctx.pr),
+                file::ExtractionFormat::TarGz,
+                &file::ExtractOptions {
                     strip_components: 1,
+                    pr: Some(ctx.pr.as_ref()),
+                    ..Default::default()
                 },
             )?;
         }
@@ -112,68 +120,139 @@ impl SwiftPlugin {
         Ok(())
     }
 
-    fn verify_gpg(
+    async fn verify_gpg(
         &self,
         ctx: &InstallContext,
         tv: &ToolVersion,
         tarball_path: &Path,
     ) -> Result<()> {
-        if file::which_non_pristine("gpg").is_none() && SETTINGS.swift.gpg_verify.is_none() {
-            ctx.pr
-                .println("gpg not found, skipping verification".to_string());
-            return Ok(());
-        }
-        gpg::add_keys_swift(ctx)?;
         let sig_path = PathBuf::from(format!("{}.sig", tarball_path.to_string_lossy()));
-        HTTP.download_file(format!("{}.sig", url(tv)), &sig_path, Some(&ctx.pr))?;
-        self.gpg(ctx)
-            .arg("--quiet")
-            .arg("--trust-model")
-            .arg("always")
-            .arg("--verify")
-            .arg(&sig_path)
-            .arg(tarball_path)
-            .execute()?;
+        // Unlike Node (which skips a missing .sig), this path only runs on Linux, where swift.org
+        // publishes a detached signature for every release tarball. A missing .sig is therefore
+        // unexpected, so surface the download error rather than silently skipping verification.
+        HTTP.download_file(format!("{}.sig", url(tv)), &sig_path, Some(ctx.pr.as_ref()))
+            .await?;
+        let signature = file::read(&sig_path)?;
+        gpg::verify_swift(tarball_path, &signature)?;
         Ok(())
     }
 
     fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         self.test_swift(ctx, tv)
     }
+}
 
-    fn gpg<'a>(&self, ctx: &'a InstallContext) -> CmdLineRunner<'a> {
-        CmdLineRunner::new("gpg").with_pr(&ctx.pr)
+#[cfg(macos)]
+fn pkgutil_path() -> PathBuf {
+    resolve_pkgutil_path(file::which("pkgutil"))
+}
+
+#[cfg(not(macos))]
+fn pkgutil_path() -> PathBuf {
+    PathBuf::from("pkgutil")
+}
+
+#[cfg(macos)]
+fn resolve_pkgutil_path(which_result: Option<PathBuf>) -> PathBuf {
+    if let Some(path) = which_result {
+        return path;
+    }
+    let fallback = PathBuf::from("/usr/sbin/pkgutil");
+    if file::is_executable(&fallback) {
+        fallback
+    } else {
+        PathBuf::from("pkgutil")
     }
 }
 
+#[cfg(all(test, macos))]
+mod tests {
+    use super::resolve_pkgutil_path;
+    use crate::file;
+    use std::path::PathBuf;
+
+    #[test]
+    fn resolve_pkgutil_path_prefers_discovered_path() {
+        let discovered = PathBuf::from("/tmp/custom/pkgutil");
+        assert_eq!(resolve_pkgutil_path(Some(discovered.clone())), discovered);
+    }
+
+    #[test]
+    fn resolve_pkgutil_path_falls_back_to_system_location() {
+        let resolved = resolve_pkgutil_path(None);
+        let fallback = PathBuf::from("/usr/sbin/pkgutil");
+        if file::is_executable(&fallback) {
+            assert_eq!(resolved, fallback);
+        } else {
+            assert_eq!(resolved, PathBuf::from("pkgutil"));
+        }
+    }
+}
+
+#[async_trait]
 impl Backend for SwiftPlugin {
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        let versions = github::list_releases("swiftlang/swift")?
+    /// Swift download URLs are derived from the build host: OS, arch, and—on
+    /// Linux—the specific distro (e.g. `ubuntu24.04`, `amazonlinux2`,
+    /// `fedora39`, `ubi9`). The generic `<os>-<arch>` lock platform key can't
+    /// encode the distro, so a foreign-platform URL can't be resolved or
+    /// persisted to the lockfile from another host. Opt out of the `--locked`
+    /// URL requirement so installs don't hard-fail on platforms missing from
+    /// the lockfile; checksums are still verified at install time.
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        let mut features = vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }];
+
+        // GPG verification is available on Linux (built-in, no external gpg required)
+        if cfg!(target_os = "linux") && Settings::get().swift.gpg_verify != Some(false) {
+            features.push(SecurityFeature::Gpg);
+        }
+
+        features
+    }
+
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        let versions = github::list_releases("swiftlang/swift")
+            .await?
             .into_iter()
-            .map(|r| r.tag_name)
-            .filter_map(|v| v.strip_prefix("swift-").map(|v| v.to_string()))
-            .filter_map(|v| v.strip_suffix("-RELEASE").map(|v| v.to_string()))
+            .filter_map(|r| {
+                r.tag_name
+                    .strip_prefix("swift-")
+                    .and_then(|v| v.strip_suffix("-RELEASE"))
+                    .map(|v| (v.to_string(), r.created_at))
+            })
             .rev()
+            .map(|(version, created_at)| VersionInfo {
+                version,
+                created_at: Some(created_at),
+                ..Default::default()
+            })
             .collect();
         Ok(versions)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
-        if SETTINGS.experimental {
-            Ok(vec![".swift-version".into()])
-        } else {
-            Ok(vec![])
-        }
+    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
+        Ok(vec![".swift-version".into()])
     }
 
-    fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, &ctx.pr)?;
-        if cfg!(target_os = "linux") && SETTINGS.swift.gpg_verify != Some(false) {
-            self.verify_gpg(ctx, &tv, &tarball_path)?;
+    async fn install_version_(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<ToolVersion> {
+        let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
+        if cfg!(target_os = "linux") && Settings::get().swift.gpg_verify != Some(false) {
+            self.verify_gpg(ctx, &tv, &tarball_path).await?;
         }
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path)?;
@@ -193,10 +272,15 @@ fn platform_directory() -> String {
         "xcode".into()
     } else if cfg!(windows) {
         "windows10".into()
-    } else if let Ok(os_release) = &*os_release::OS_RELEASE {
-        let arch = SETTINGS.arch();
-        if os_release.id == "ubuntu" && arch == "aarch64" {
-            let retval = format!("{}{}-{}", os_release.id, os_release.version_id, arch);
+    } else if let Some(os_release) = linux_os_release() {
+        let settings = Settings::get();
+        let arch = settings.arch();
+        if os_release.id == "ubuntu" && arch == "arm64" {
+            let retval = format!(
+                "{}{}-aarch64",
+                os_release.id,
+                ubuntu_swift_version(&os_release.version_id)
+            );
             retval.replace(".", "")
         } else {
             platform().replace(".", "")
@@ -207,20 +291,22 @@ fn platform_directory() -> String {
 }
 
 fn platform() -> String {
-    if let Some(platform) = &SETTINGS.swift.platform {
+    if let Some(platform) = &Settings::get().swift.platform {
         return platform.clone();
     }
     if cfg!(macos) {
         "osx".to_string()
     } else if cfg!(windows) {
         "windows10".to_string()
-    } else if let Ok(os_release) = &*os_release::OS_RELEASE {
+    } else if let Some(os_release) = linux_os_release() {
         if os_release.id == "amzn" {
             format!("amazonlinux{}", os_release.version_id)
         } else if os_release.id == "ubi" {
             "ubi9".to_string() // only 9 is available
         } else if os_release.id == "fedora" {
             "fedora39".to_string() // only 39 is available
+        } else if os_release.id == "ubuntu" {
+            format!("ubuntu{}", ubuntu_swift_version(&os_release.version_id))
         } else {
             format!("{}{}", os_release.id, os_release.version_id)
         }
@@ -239,24 +325,38 @@ fn extension() -> &'static str {
     }
 }
 
-fn architecture() -> Option<&'static str> {
-    let arch = SETTINGS.arch();
-    if cfg!(target_os = "linux") && arch != "x86_64" {
-        return Some(arch);
-    } else if cfg!(windows) && arch == "aarch64" {
+fn architecture(settings: &Settings) -> Option<&str> {
+    let arch = settings.arch();
+    if cfg!(target_os = "linux") {
+        return match arch {
+            "x64" => None,
+            "arm64" => Some("aarch64"),
+            _ => Some(arch),
+        };
+    } else if cfg!(windows) && arch == "arm64" {
         return Some("arm64");
     }
     None
 }
 
+/// Swift only provides Ubuntu binaries for specific versions.
+/// Map unsupported Ubuntu versions to the latest supported one.
+fn ubuntu_swift_version(version_id: &str) -> &str {
+    match version_id {
+        "20.04" | "22.04" | "24.04" => version_id,
+        _ => "24.04",
+    }
+}
+
 fn url(tv: &ToolVersion) -> String {
+    let settings = Settings::get();
     format!(
         "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
         version = tv.version,
         platform = platform(),
         platform_directory = platform_directory(),
         extension = extension(),
-        architecture = match architecture() {
+        architecture = match architecture(&settings) {
             Some(arch) => format!("-{arch}"),
             None => "".into(),
         }

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Test cache path command and its alias
+
+# Test `mise cache` shows cache directory
+assert_contains "mise cache" "$MISE_CACHE_DIR"
+
+# Test `mise cache path` shows cache directory
+assert_contains "mise cache path" "$MISE_CACHE_DIR"
+
+# Test `mise cache dir` alias shows cache directory
+assert_contains "mise cache dir" "$MISE_CACHE_DIR"
+
+# Test with custom cache directory
+export MISE_CACHE_DIR=/tmp/test-mise-cache
+assert_contains "mise cache path" "/tmp/test-mise-cache"
+assert_contains "mise cache dir" "/tmp/test-mise-cache"

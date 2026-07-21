@@ -1,0 +1,2 @@
+backends = ["aqua:goss-org/goss", "asdf:raimon49/asdf-goss"]
+description = "Quick and Easy server testing/validation"

@@ -11,3 +11,36 @@ cat <<EOF >mise.toml
 WHICH={value="{{ exec(command='which which') }}", tools=true}
 EOF
 assert_contains "mise hook-env -s bash" "export WHICH=$(which which)"
+
+cat <<EOF >mise.toml
+[tools]
+tiny = "latest"
+
+[env]
+TINY_V = { value = "{{ tools.tiny.version }}", tools = true }
+TINY_P = { value = "{{ tools.tiny.path }}", tools = true }
+EOF
+mise install tiny
+TINY_VERSION=$(mise latest tiny)
+TINY_PATH=$(mise where tiny)
+assert_contains "mise hook-env -s bash" "export TINY_V=$TINY_VERSION"
+assert_contains "mise hook-env -s bash" "export TINY_P=$TINY_PATH"
+
+# test multiple versions of the same tool (array access)
+cat <<EOF >mise.toml
+[tools]
+tiny = ["3", "2"]
+
+[env]
+TINY_V0 = { value = "{{ tools.tiny[0].version }}", tools = true }
+TINY_P0 = { value = "{{ tools.tiny[0].path }}", tools = true }
+TINY_V1 = { value = "{{ tools.tiny[1].version }}", tools = true }
+TINY_P1 = { value = "{{ tools.tiny[1].path }}", tools = true }
+EOF
+mise install tiny@3 tiny@2
+TINY_PATH0=$(mise where tiny@3)
+TINY_PATH1=$(mise where tiny@2)
+assert_contains "mise hook-env -s bash" "export TINY_V0=3"
+assert_contains "mise hook-env -s bash" "export TINY_P0=$TINY_PATH0"
+assert_contains "mise hook-env -s bash" "export TINY_V1=2"
+assert_contains "mise hook-env -s bash" "export TINY_P1=$TINY_PATH1"

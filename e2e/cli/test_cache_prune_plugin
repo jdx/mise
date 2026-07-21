@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+mkdir -p "$MISE_CACHE_DIR/node" "$MISE_CACHE_DIR/python"
+printf node >"$MISE_CACHE_DIR/node/old"
+printf python >"$MISE_CACHE_DIR/python/old"
+touch -t 202001010000 "$MISE_CACHE_DIR/node/old" "$MISE_CACHE_DIR/python/old"
+
+MISE_CACHE_PRUNE_AGE=1s mise cache prune node
+
+if [[ -e $MISE_CACHE_DIR/node/old ]]; then
+  fail "node cache was not pruned"
+fi
+
+if [[ ! -e $MISE_CACHE_DIR/python/old ]]; then
+  fail "python cache was pruned"
+fi
+
+ok "cache prune only pruned the requested tool"

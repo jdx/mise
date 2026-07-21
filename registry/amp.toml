@@ -1,0 +1,6 @@
+backends = [
+  { full = "npm:@ampcode/cli", options = { allow_builds = [
+    "@ampcode/cli",
+  ] } },
+]
+description = "An agentic coding tool built by Sourcegraph"

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Regression test: tools with cosign opts-only config should not record
+# cosign provenance in the lockfile, since we can't verify it natively.
+# See: https://github.com/jdx/mise/discussions/8547
+
+export MISE_LOCKFILE=1
+export MISE_AQUA_COSIGN=true
+export MISE_AQUA_SLSA=false
+export MISE_GITHUB_ATTESTATIONS=0
+export MISE_AQUA__GITHUB_ATTESTATIONS=0
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+echo "=== Testing cosign opts-only tool does not record cosign provenance ==="
+
+# yamlfmt uses cosign with only opts (no key or bundle), which we can't verify natively
+cat <<EOF >mise.toml
+[tools]
+yamlfmt = "0.21.0"
+EOF
+
+mise lock --platform "$PLATFORM"
+assert "test -f mise.lock"
+
+# The lockfile should NOT contain cosign provenance for this tool
+assert_not_contains "cat mise.lock" 'provenance = "cosign"'
+
+echo "=== Testing install works without cosign provenance mismatch ==="
+# This would fail with "Lockfile requires cosign provenance ... but no verification was used"
+# before the fix, since the lockfile recorded cosign provenance that can't be verified natively
+mise install
+
+echo "=== Cleanup ==="
+rm -f mise.lock mise.toml
+mise uninstall yamlfmt@0.21.0 || true
+
+echo "cosign opts-only lockfile test passed!"

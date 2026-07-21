@@ -6,9 +6,9 @@ run = 'echo build'
 [tasks.all]
 depends = ['build a', 'build b', 'build c']
 EOF
-assert "mise run all | sort" "[build] build a
-[build] build b
-[build] build c"
+assert "mise run all | sort" "[build a] build a
+[build b] build b
+[build c] build c"
 
 cat <<EOF >mise.toml
 [tasks.build1]

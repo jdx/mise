@@ -1,0 +1,9 @@
+aliases = ["azure-cli"]
+description = "azure-cli (az)"
+test = { cmd = "az --version", expected = "azure-cli                         {{version}}" }
+
+[[backends]]
+full = "pipx:azure-cli"
+
+[backends.options]
+uvx_args = "--prerelease=allow"

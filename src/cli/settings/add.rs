@@ -1,4 +1,4 @@
-use eyre::Result;
+use eyre::{Result, eyre};
 
 use crate::cli::settings::set::set;
 
@@ -12,8 +12,8 @@ pub struct SettingsAdd {
     /// The setting to set
     #[clap()]
     pub setting: String,
-    /// The value to set
-    pub value: String,
+    /// The value to set (optional if provided as KEY=VALUE)
+    pub value: Option<String>,
     /// Use the local config file instead of the global one
     #[clap(long, short)]
     pub local: bool,
@@ -21,7 +21,17 @@ pub struct SettingsAdd {
 
 impl SettingsAdd {
     pub fn run(self) -> Result<()> {
-        set(&self.setting, &self.value, true, self.local)
+        match self.value {
+            Some(value) => set(&self.setting, &value, true, self.local),
+            None => {
+                let (key, value) = self.setting.split_once('=').ok_or_else(|| {
+                    eyre!(
+                        "Usage: mise settings add <KEY>=<VALUE> or mise settings add <KEY> <VALUE>"
+                    )
+                })?;
+                set(key, value, true, self.local)
+            }
+        }
     }
 }
 

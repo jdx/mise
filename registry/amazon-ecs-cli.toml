@@ -1,0 +1,4 @@
+aliases = ["ecs-cli"]
+backends = ["aqua:aws/amazon-ecs-cli"]
+description = "The Amazon ECS CLI enables users to run their applications on ECS/Fargate using the Docker Compose file format, quickly provision resources, push/pull images in ECR, and monitor running applications on ECS/Fargate."
+test = { cmd = "ecs-cli --version", expected = "ecs-cli version {{version}}" }

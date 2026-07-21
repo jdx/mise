@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+
+# Cross-platform `mise lock` for the http backend resolving published checksums
+# from a JSON manifest via `checksum_expr`. The expression must evaluate to an
+# `algo:hash` string; the manifest is fetched once and shared across platforms,
+# and no artifact is downloaded. Covers:
+#   - the three manifest shapes used by registry entries (platform-keyed object,
+#     filename filter, version-keyed + url match), exercising the os/arch/
+#     version/url/filename template vars exposed to the expression;
+#   - the fail-closed rule that a bare-hash result (no `algo:`) is rejected
+#     rather than silently locked without verification;
+#   - an algorithm taken from the manifest (sha512), and case-insensitive
+#     normalization of the algorithm name and hex.
+
+export MISE_LOCKFILE=1
+
+SRV="$PWD/srv"
+mkdir -p "$SRV"
+
+# Published sha256/sha512 values embedded in the served manifests. `mise lock`
+# only fetches the manifest (checksum_url) and evaluates the expression; it never
+# downloads the artifact, so these are manifest data, not artifact hashes.
+# platform-keyed object (claude shape), linux-x64 / macos-x64 (darwin-x64 key)
+A_LINUX="90cf53c033071b194c3dd79d00c390afb8b79faadc486b6fd50101409134fdc4"
+A_MACOS="de494e8d180cc5ee5d67c4d2c39b383dd4f3261620c99c3c8a2e9e3e3768a368"
+# filename filter (flutter shape), linux / macos
+B_LINUX="13bbd2c8c52d1724f8036c3e36b4a134f3c9d130ce8aa2ed54df55d3c946faf4"
+B_MACOS="790617f1a756760762e2e73f92c28b412b031c65bf4e9e02d5ee7f9d19f0e3c5"
+# version-keyed + url match (julia shape), linux-x64 / macos-x64
+C_LINUX="4140664dfd1d31f89f4114e45c4956be36d9b59e10da978489d3e08839b01ca5"
+C_MACOS="a583fafff7ee5ac0a056f1e90001c8d7e8c5d9341b42ded610f692ce81acbfee"
+# bare-hash negative case
+BARE_SHA="678eee372a3e8e207b3780d258e14e5c46fb7c7b28340b35ecc896ca9b3dd18b"
+# uppercase normalization: same value stored uppercase, expected lowercased
+UPPER_LOWER="69b59884ac4d802179d77dbcd43b3d475e2d0a4f82afd0dc43f7b2301ba40259"
+UPPER_UPPER="69B59884AC4D802179D77DBCD43B3D475E2D0A4F82AFD0DC43F7B2301BA40259"
+# algorithm taken from the manifest (sha512)
+ALGO512="f073412a6d4865a42afcfd465fa0d60d7fca7c37ef2d0c4f602e0411f0ba5c10dba925ffa1b6f67a5d696194a64eb04f739b33e4beb55c68c998e4dbda92529e"
+
+# Start a static file server on an ephemeral port
+PORT_FILE="$TMPDIR/mise_lock_expr_port"
+python3 - "$SRV" "$PORT_FILE" <<'PY' &
+import http.server, socketserver, sys, os
+srv, port_file = sys.argv[1], sys.argv[2]
+os.chdir(srv)
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
+    with open(port_file, "w") as f:
+        f.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "lock expr port file" 30 "$SERVER_PID"
+PORT=$(cat "$PORT_FILE")
+
+# === Test 1: platform-keyed object (claude shape) ===
+# manifest.platforms.<os-arch>.checksum, where os maps macos->darwin /
+# windows->win32. The expression builds the key from the target os/arch vars.
+cat >"$SRV/a_manifest.json" <<JSON
+{ "platforms": {
+    "linux-x64":  { "checksum": "${A_LINUX}" },
+    "darwin-x64": { "checksum": "${A_MACOS}" }
+} }
+JSON
+
+rm -f mise.lock
+cat >mise.toml <<EOF
+[tools."http:expr-platform-keyed"]
+version = "1.0.0"
+url = 'http://127.0.0.1:${PORT}/atool_{{ version }}_{{ os(macos="darwin") }}-{{ arch() }}.bin'
+checksum_url = "http://127.0.0.1:${PORT}/a_manifest.json"
+checksum_expr = '"sha256:" + fromJSON(body).platforms[(os == "macos" ? "darwin" : (os == "windows" ? "win32" : "linux")) + "-" + arch].checksum'
+EOF
+mise lock --platform linux-x64,macos-x64
+assert_contains "cat mise.lock" "sha256:${A_LINUX}"
+assert_contains "cat mise.lock" "sha256:${A_MACOS}"
+
+# === Test 2: filename filter, per-OS manifest (flutter shape) ===
+# The sha256 lives in an OS-specific manifest (checksum_url is per platform),
+# matched against the resolved artifact filename via `endsWith`.
+cat >"$SRV/b_linux.json" <<JSON
+{ "releases": [ { "archive": "stable/linux/btool_1.0.0_linux.tar.xz", "sha256": "${B_LINUX}" } ] }
+JSON
+cat >"$SRV/b_macos.json" <<JSON
+{ "releases": [ { "archive": "stable/macos/btool_1.0.0_macos.zip", "sha256": "${B_MACOS}" } ] }
+JSON
+
+rm -f mise.lock
+cat >mise.toml <<EOF
+[tools."http:expr-filename-filter"]
+version = "1.0.0"
+checksum_expr = '"sha256:" + filter(fromJSON(body).releases, { #.archive endsWith filename })[0].sha256'
+
+[tools."http:expr-filename-filter".platforms.linux-x64]
+checksum_url = "http://127.0.0.1:${PORT}/b_linux.json"
+url = "http://127.0.0.1:${PORT}/btool_{{ version }}_linux.tar.xz"
+
+[tools."http:expr-filename-filter".platforms.macos-x64]
+checksum_url = "http://127.0.0.1:${PORT}/b_macos.json"
+url = "http://127.0.0.1:${PORT}/btool_{{ version }}_macos.zip"
+EOF
+mise lock --platform linux-x64,macos-x64
+assert_contains "cat mise.lock" "sha256:${B_LINUX}"
+assert_contains "cat mise.lock" "sha256:${B_MACOS}"
+
+# === Test 3: version-keyed manifest + url match (julia shape) ===
+# manifest[version].files[].url is the fully-resolved artifact URL; the entry is
+# selected by matching the `url` var, exercising both the version and url vars.
+cat >"$SRV/c_versions.json" <<JSON
+{ "1.0.0": { "files": [
+    { "url": "http://127.0.0.1:${PORT}/ctool_1.0.0_linux-x64.tar.gz", "sha256": "${C_LINUX}" },
+    { "url": "http://127.0.0.1:${PORT}/ctool_1.0.0_macos-x64.tar.gz", "sha256": "${C_MACOS}" }
+] } }
+JSON
+
+rm -f mise.lock
+cat >mise.toml <<EOF
+[tools."http:expr-version-keyed"]
+version = "1.0.0"
+url = "http://127.0.0.1:${PORT}/ctool_{{ version }}_{{ os() }}-{{ arch() }}.tar.gz"
+checksum_url = "http://127.0.0.1:${PORT}/c_versions.json"
+checksum_expr = '"sha256:" + filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256'
+EOF
+mise lock --platform linux-x64,macos-x64
+assert_contains "cat mise.lock" "sha256:${C_LINUX}"
+assert_contains "cat mise.lock" "sha256:${C_MACOS}"
+
+# === Test 4: bare-hash result is rejected (fail closed) ===
+# An expression that returns a bare hash (no `algo:`) must NOT be locked: mise
+# stores checksums as algo:hash everywhere and refuses to guess. The platform is
+# still locked URL-only, with a warning, rather than writing an unusable value.
+cat >"$SRV/bare_manifest.json" <<JSON
+{ "platforms": { "linux-x64": { "checksum": "${BARE_SHA}" } } }
+JSON
+
+rm -f mise.lock
+cat >mise.toml <<EOF
+[tools."http:expr-bare-hash"]
+version = "1.0.0"
+checksum_url = "http://127.0.0.1:${PORT}/bare_manifest.json"
+checksum_expr = 'fromJSON(body).platforms[os + "-" + arch].checksum'
+
+[tools."http:expr-bare-hash".platforms.linux-x64]
+url = "http://127.0.0.1:${PORT}/baretool_{{ version }}_linux-x64.tar.gz"
+EOF
+output="$(mise lock --platform linux-x64 2>&1)"
+# The artifact is still locked (URL present)...
+assert_contains "cat mise.lock" "baretool_1.0.0_linux-x64.tar.gz"
+# ...but the bare hash is never written as a checksum.
+assert_not_contains "cat mise.lock" "${BARE_SHA}"
+assert_contains "echo '$output'" "could not resolve a checksum"
+
+# === Test 5: algorithm taken from the manifest (sha512) ===
+# When the manifest carries the algorithm, the expression builds the prefix from
+# it (algo + ":" + hash). A non-sha256 algorithm round-trips as algo:hash.
+cat >"$SRV/algo_manifest.json" <<JSON
+{ "platforms": { "linux-x64": { "algo": "sha512", "hash": "${ALGO512}" } } }
+JSON
+
+rm -f mise.lock
+cat >mise.toml <<EOF
+[tools."http:expr-manifest-algo"]
+version = "1.0.0"
+checksum_url = "http://127.0.0.1:${PORT}/algo_manifest.json"
+checksum_expr = 'fromJSON(body).platforms[os + "-" + arch].algo + ":" + fromJSON(body).platforms[os + "-" + arch].hash'
+
+[tools."http:expr-manifest-algo".platforms.linux-x64]
+url = "http://127.0.0.1:${PORT}/algotool_{{ version }}_linux-x64.tar.gz"
+EOF
+mise lock --platform linux-x64
+assert_contains "cat mise.lock" "sha512:${ALGO512}"
+
+# === Test 6: algorithm name and hex are normalized case-insensitively ===
+# An uppercase algorithm (SHA256) and uppercase hex from a manifest are lowered
+# to the canonical algo:hash form mise stores.
+cat >"$SRV/upper_manifest.json" <<JSON
+{ "platforms": { "linux-x64": { "algo": "SHA256", "hash": "${UPPER_UPPER}" } } }
+JSON
+
+rm -f mise.lock
+cat >mise.toml <<EOF
+[tools."http:expr-uppercase-algo"]
+version = "1.0.0"
+checksum_url = "http://127.0.0.1:${PORT}/upper_manifest.json"
+checksum_expr = 'fromJSON(body).platforms[os + "-" + arch].algo + ":" + fromJSON(body).platforms[os + "-" + arch].hash'
+
+[tools."http:expr-uppercase-algo".platforms.linux-x64]
+url = "http://127.0.0.1:${PORT}/uppertool_{{ version }}_linux-x64.tar.gz"
+EOF
+mise lock --platform linux-x64
+assert_contains "cat mise.lock" "sha256:${UPPER_LOWER}"
+assert_not_contains "cat mise.lock" "SHA256:${UPPER_UPPER}"

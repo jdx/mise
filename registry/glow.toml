@@ -1,0 +1,2 @@
+backends = ["aqua:charmbracelet/glow", "asdf:mise-plugins/asdf-glow"]
+description = "Render markdown on the CLI, with pizzazz"

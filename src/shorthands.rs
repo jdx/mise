@@ -65,27 +65,38 @@ mod tests {
 
     #[cfg(unix)]
     use pretty_assertions::assert_str_eq;
-    use test_log::test;
+
+    use crate::config::Config;
 
     use super::*;
 
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn test_get_shorthands() {
+    async fn test_get_shorthands() {
+        use crate::config::Config;
+
+        let _config = Config::get().await.unwrap();
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("../fixtures/shorthands.toml".into());
         let shorthands = get_shorthands(&settings);
+        assert_str_eq!(shorthands["aapt2"][0], "vfox:mise-plugins/vfox-aapt2");
+        assert_str_eq!(shorthands["scala"][0], "vfox:mise-plugins/vfox-scala");
+        assert_str_eq!(shorthands["groovy"][0], "vfox:jdx/vfox-groovy");
+        assert_str_eq!(shorthands["mongodb"][0], "vfox:jdx/vfox-mongod");
+        assert_str_eq!(shorthands["emsdk"][0], "vfox:jdx/vfox-emsdk");
         assert_str_eq!(
-            shorthands["ephemeral-postgres"][0],
-            "asdf:mise-plugins/mise-ephemeral-postgres"
+            shorthands["teleport-community"][0],
+            "vfox:jdx/vfox-teleport-community"
         );
+        assert_str_eq!(shorthands["tinytex"][0], "vfox:jdx/vfox-tinytex");
         assert_str_eq!(shorthands["node"][0], "https://node");
         assert_str_eq!(shorthands["xxxxxx"][0], "https://xxxxxx");
     }
 
-    #[test]
-    fn test_get_shorthands_missing_file() {
+    #[tokio::test]
+    async fn test_get_shorthands_missing_file() {
+        let _config = Config::get().await.unwrap();
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("test/fixtures/missing.toml".into());

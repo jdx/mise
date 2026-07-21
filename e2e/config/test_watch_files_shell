@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+cat >"$HOME/watch-fallback-shell" <<'SCRIPT'
+#!/usr/bin/env bash
+if [[ $1 != "-c" ]]; then
+  exit 99
+fi
+echo WATCH_FALLBACK_SHELL
+exec bash -c "$2"
+SCRIPT
+chmod +x "$HOME/watch-fallback-shell"
+
+cat >"$HOME/watch-explicit-shell" <<'SCRIPT'
+#!/usr/bin/env bash
+if [[ $1 != "-c" ]]; then
+  exit 99
+fi
+echo WATCH_EXPLICIT_SHELL
+exec bash -c "$2"
+SCRIPT
+chmod +x "$HOME/watch-explicit-shell"
+
+cat <<EOF >mise.toml
+[settings]
+unix_default_inline_shell_args = "$HOME/watch-fallback-shell -c"
+
+[[watch_files]]
+patterns = ["fallback.txt"]
+run = "echo WATCH_FALLBACK_RUN"
+
+[[watch_files]]
+patterns = ["explicit.txt"]
+run = "echo WATCH_EXPLICIT_RUN"
+shell = "$HOME/watch-explicit-shell -c"
+EOF
+
+touch fallback.txt explicit.txt
+eval "$(mise hook-env)"
+
+sleep 1
+printf "changed" >>fallback.txt
+printf "changed" >>explicit.txt
+
+mise hook-env >hook-env.out 2>&1
+
+assert_contains "cat hook-env.out" "WATCH_FALLBACK_SHELL"
+assert_contains "cat hook-env.out" "WATCH_FALLBACK_RUN"
+assert_contains "cat hook-env.out" "WATCH_EXPLICIT_SHELL"
+assert_contains "cat hook-env.out" "WATCH_EXPLICIT_RUN"

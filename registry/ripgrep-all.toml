@@ -1,0 +1,3 @@
+backends = ["aqua:phiresky/ripgrep-all", "cargo:ripgrep_all"]
+description = "rga: ripgrep, but also search in PDFs, E-Books, Office documents, zip, tar.gz, etc"
+test = { cmd = "rga --version", expected = "ripgrep-all {{version}}" }

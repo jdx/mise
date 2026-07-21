@@ -1,4 +1,4 @@
-# Go Backend <Badge type="warning" text="experimental" />
+# Go Backend
 
 You may install packages directly via [go install](https://go.dev/doc/install) even if there
 isn't an asdf plugin for it.
@@ -27,4 +27,46 @@ sets it as the active version on PATH:
 $ mise use -g go:github.com/DarthSim/hivemind
 $ hivemind --help
 Hivemind version 1.1.0
+```
+
+You can also pin a specific Go module version, including an unreleased
+pseudo-version:
+
+```toml
+[tools]
+"go:github.com/grafana/oats" = "v0.7.1-0.20260703092802-96201f1b8136"
+```
+
+If you need to resolve an unreleased revision directly from VCS instead of the
+module proxy, combine the pinned version with [`install_env`](#install_env):
+
+```toml
+[tools]
+"go:github.com/grafana/oats" = { version = "v0.7.1-0.20260703092802-96201f1b8136", install_env = { GOPROXY = "direct", GONOSUMDB = "github.com/grafana/oats" } }
+```
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `go` backend—these
+go in `[tools]` in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for the `go install` command. mise still sets `GOBIN`
+to the tool install directory after applying `install_env`.
+
+```toml
+[tools]
+"go:github.com/DarthSim/hivemind" = { version = "latest", install_env = { GOPRIVATE = "github.com/acme/*" } }
+```
+
+### `tags`
+
+Specify go build tags (passed as `go install -tags`):
+
+```toml
+[tools]
+"go:github.com/golang-migrate/migrate/v4/cmd/migrate" = { version = "latest", tags = "postgres" }
+# equivalent array form:
+# "go:github.com/golang-migrate/migrate/v4/cmd/migrate" = { version = "latest", tags = ["postgres", "mysql"] }
 ```

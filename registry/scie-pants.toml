@@ -1,0 +1,2 @@
+backends = ["github:pantsbuild/scie-pants", "asdf:robzr/asdf-scie-pants"]
+description = "Protects your Pants from the elements"

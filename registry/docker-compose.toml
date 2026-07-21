@@ -1,0 +1,3 @@
+backends = ["github:docker/compose"]
+description = "Define and run multi-container applications with Docker"
+test = { cmd = "docker-compose --version", expected = "Docker Compose version" }

@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+
+# Test passing arguments to task dependencies via {{usage.*}} templates
+
+# Basic test: parent task passes its arg to a dependency
+cat <<'EOF' >mise.toml
+[tasks.build]
+usage = 'arg "<app>"'
+run = 'echo "building {{usage.app}}"'
+
+[tasks.deploy]
+usage = 'arg "<app>"'
+depends = [{ task = "build", args = ["{{usage.app}}"] }]
+run = 'echo "deploying {{usage.app}}"'
+EOF
+
+assert_contains "mise run deploy myapp" "building myapp"
+assert_contains "mise run deploy myapp" "deploying myapp"
+
+# Test with flag syntax
+cat <<'EOF' >mise.toml
+[tasks.compile]
+usage = 'flag "--target <target>"'
+run = 'echo "compiling for $usage_target"'
+
+[tasks.package]
+usage = 'flag "--target <target>"'
+depends = [{ task = "compile", args = ["--target", "{{usage.target}}"] }]
+run = 'echo "packaging for $usage_target"'
+EOF
+
+assert_contains "mise run package --target linux" "compiling for linux"
+assert_contains "mise run package --target linux" "packaging for linux"
+
+# Test conditionally passing a boolean flag with structured dependency syntax
+cat <<'EOF' >mise.toml
+[tasks."lint:check"]
+usage = 'flag "--fix" default=#false'
+run = 'echo "fix=$usage_fix"'
+
+[tasks.lint]
+usage = 'flag "--fix" default=#false'
+depends = [{ task = "lint:check", args = ["{% if usage.fix %}--fix{% endif %}"] }]
+EOF
+
+assert_contains "mise run lint" "fix=false"
+assert_contains "mise run lint --fix" "fix=true"
+
+# Skip dependency entries whose task name template renders empty, both during
+# initial rendering and deferred usage rendering.
+cat <<'EOF' >mise.toml
+[tasks.initial-dependency]
+run = 'echo "initial dependency ran"'
+
+[tasks.usage-dependency]
+run = 'echo "usage dependency ran"'
+
+[tasks.usage-post-dependency]
+run = 'echo "usage post-dependency ran"'
+
+[tasks.usage-wait-task]
+run = 'sleep 0.3; echo wait >> wait-order.txt; echo "usage wait task ran"'
+
+[tasks.optional]
+usage = 'flag "--enabled" default=#false'
+depends = [
+    "{% if false %}initial-dependency{% endif %}",
+    "{% if true %}initial-dependency{% endif %}",
+    "{% if usage.enabled %}usage-dependency{% endif %}",
+]
+depends_post = [
+    "{% if false %}initial-post-dependency{% endif %}",
+    "{% if usage.enabled %}usage-post-dependency{% endif %}",
+]
+wait_for = [
+    "{% if false %}initial-wait-task{% endif %}",
+    "{% if usage.enabled %}usage-wait-task{% endif %}",
+]
+run = 'echo optional >> wait-order.txt; echo "optional ran"'
+EOF
+
+assert_contains "mise run optional" "optional ran"
+assert_contains "mise run optional" "initial dependency ran"
+output=$(mise run optional --enabled 2>&1)
+assert_contains_text "$output" "usage dependency ran"
+assert_contains_text "$output" "usage post-dependency ran"
+assert_contains_text "$output" "optional ran"
+
+rm -f wait-order.txt
+mise run optional --enabled ::: usage-wait-task
+assert "cat wait-order.txt" "wait
+optional"
+
+# Literal empty task names remain invalid rather than being treated as an
+# optional templated dependency.
+cat <<'EOF' >mise.toml
+[tasks.invalid]
+depends = [""]
+run = 'echo "should not run"'
+EOF
+
+assert_fail "mise run invalid" "task not found:"
+
+# Test with multiple args
+cat <<'EOF' >mise.toml
+[tasks.start-backend]
+usage = 'arg "<app>"'
+run = 'echo "backend {{usage.app}}"'
+
+[tasks.start-frontend]
+usage = 'arg "<app>"'
+run = 'echo "frontend {{usage.app}}"'
+
+[tasks.start]
+usage = 'arg "<app>"'
+depends = [
+    { task = "start-backend", args = ["{{usage.app}}"] },
+    { task = "start-frontend", args = ["{{usage.app}}"] },
+]
+run = 'echo "started {{usage.app}}"'
+EOF
+
+output=$(mise run start myapp 2>&1)
+assert_contains "echo \"$output\"" "backend myapp"
+assert_contains "echo \"$output\"" "frontend myapp"
+assert_contains "echo \"$output\"" "started myapp"
+
+# Test with string syntax for depends args
+cat <<'EOF' >mise.toml
+[tasks.greet]
+usage = 'arg "<name>"'
+run = 'echo "hello {{usage.name}}"'
+
+[tasks.welcome]
+usage = 'arg "<name>"'
+depends = ["greet {{usage.name}}"]
+run = 'echo "welcome {{usage.name}}"'
+EOF
+
+assert_contains "mise run welcome world" "hello world"
+assert_contains "mise run welcome world" "welcome world"
+
+# Test dependency chaining: A -> B -> C, args flow through
+cat <<'EOF' >mise.toml
+[tasks.step1]
+usage = 'arg "<val>"'
+run = 'echo "step1 {{usage.val}}"'
+
+[tasks.step2]
+usage = 'arg "<val>"'
+depends = [{ task = "step1", args = ["{{usage.val}}"] }]
+run = 'echo "step2 {{usage.val}}"'
+
+[tasks.step3]
+usage = 'arg "<val>"'
+depends = [{ task = "step2", args = ["{{usage.val}}"] }]
+run = 'echo "step3 {{usage.val}}"'
+EOF
+
+output=$(mise run step3 hello 2>&1)
+assert_contains "echo \"$output\"" "step1 hello"
+assert_contains "echo \"$output\"" "step2 hello"
+assert_contains "echo \"$output\"" "step3 hello"
+
+# Test Tera statement tags and boolean usage values in dependency templates
+cat <<'EOF' >mise.toml
+[tasks.noop]
+run = 'echo "noop"'
+
+[tasks."postlint:check"]
+run = 'echo "postlint ran"'
+
+[tasks.lint]
+usage = 'flag "--run-post" default=#false'
+depends_post = ['''
+    {%- if usage.run_post -%}
+        postlint:**
+    {%- else -%}
+        noop
+    {%- endif -%}
+''']
+run = 'echo "lint ran"'
+EOF
+
+assert_contains "mise run lint" "noop"
+assert_not_contains "mise run lint" "postlint ran"
+assert_contains "mise run lint --run-post" "postlint ran"
+assert_not_contains "mise run lint --run-post" "noop"
+
+# Test usage.cmd in dependency templates with subcommand-only spec
+# (regression test: previously the early-return for empty root args/flags meant
+# usage.cmd was never populated for tasks that only define subcommands)
+cat <<'EOF' >mise.toml
+[tasks.noop]
+run = 'echo "noop ran"'
+
+[tasks."deploy-staging"]
+run = 'echo "staging deploy"'
+
+[tasks."deploy-production"]
+run = 'echo "prod deploy"'
+
+[tasks.dispatch]
+usage = '''
+cmd "staging" {
+    arg "<version>"
+}
+cmd "production" {
+    arg "<version>"
+}
+'''
+depends = ['''
+    {%- if usage.cmd == "staging" -%}
+        deploy-staging
+    {%- elif usage.cmd == "production" -%}
+        deploy-production
+    {%- else -%}
+        noop
+    {%- endif -%}
+''']
+run = 'echo "dispatched"'
+EOF
+
+assert_contains "mise run dispatch staging v1" "staging deploy"
+assert_not_contains "mise run dispatch staging v1" "prod deploy"
+assert_contains "mise run dispatch production v2" "prod deploy"
+assert_not_contains "mise run dispatch production v2" "staging deploy"

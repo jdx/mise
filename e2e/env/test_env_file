@@ -6,6 +6,7 @@ mise.file = ['.test-env']
 EOF
 echo FOO_FROM_FILE=foo_from_file >.test-env
 echo TEST_ENV2=foo >.test-env2
+assert_contains "mise env 2>&1" "deprecated [config.env.mise]"
 assert "mise x -- env | grep FOO_FROM_FILE" "FOO_FROM_FILE=foo_from_file"
 assert "MISE_ENV_FILE=.test-env2 mise x -- env | grep TEST_ENV2" "TEST_ENV2=foo"
 
@@ -17,7 +18,73 @@ assert "mise env" # does not error
 
 cat <<EOF >mise.toml
 [env]
+_.file = 'a'
+EOF
+echo 'export A=1' >a
+assert "mise env | grep -v PATH" "export A=1"
+
+cat <<EOF >mise.toml
+[env]
+_.file = { value = 'b.json' }
+EOF
+echo '{"B": 2}' >b.json
+assert_contains "mise env 2>&1" "deprecated [config.directive.value]"
+assert "mise env | grep -v PATH" "export B=2"
+
+cat <<EOF >mise.toml
+[env]
+_.file = { values = ['a', 'b.json'] }
+EOF
+assert_contains "mise env 2>&1" "deprecated [config.directive.values]"
+assert "mise env | grep -v PATH" "export A=1
+export B=2"
+
+cat <<EOF >mise.toml
+[env]
+_.file = 'c.toml'
+EOF
+cat <<EOF >c.toml
+C = "see"
+D = 2
+E = true
+EOF
+assert "mise env | grep -v PATH" "export C=see
+export D=2
+export E=true"
+
+cat <<EOF >mise.toml
+[env]
+_.file = 'nested.toml'
+EOF
+cat <<EOF >nested.toml
+[DATABASE]
+HOST = "localhost"
+EOF
+assert_fail "mise env" "unsupported toml value"
+
+cat <<EOF >mise.toml
+[env]
 _.file = ['a', 'b.json']
+EOF
+echo 'export A=1' >a
+echo '{"B": 2}' >b.json
+assert "mise env | grep -v PATH" "export A=1
+export B=2"
+
+cat <<EOF >mise.toml
+[env]
+_.file = ['a', {path = 'b.json', tools = true}]
+EOF
+echo 'export A=1' >a
+echo '{"B": 2}' >b.json
+assert "mise env | grep -v PATH" "export A=1
+export B=2"
+
+cat <<EOF >mise.toml
+[[env]]
+_.file = 'a'
+[[env]]
+_.file = [{ path = ['b.json'], tools = true }]
 EOF
 echo 'export A=1' >a
 echo '{"B": 2}' >b.json

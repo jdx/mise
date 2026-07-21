@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# Tests `mise oci build` — per-tool layers, reproducibility, delta behavior.
+# Runs against a scratch base (no network) so it stays fast and offline.
+
+export MISE_EXPERIMENTAL=1
+
+cat >mise.toml <<EOF
+[tools]
+jq = "1.8.1"
+EOF
+
+mise install >/dev/null 2>&1
+assert "mise current jq" "1.8.1"
+
+export SOURCE_DATE_EPOCH=1700000000
+
+# --- 1. Build to ./out-a ---
+assert_succeed "mise oci build -o ./out-a --from scratch"
+assert "test -f ./out-a/oci-layout && echo yes" "yes"
+assert "test -f ./out-a/index.json && echo yes" "yes"
+assert "ls ./out-a/blobs/sha256/ | wc -l | tr -d ' '" "5"
+
+# index.json points at a manifest of the correct media type
+assert_contains "cat ./out-a/index.json" '"application/vnd.oci.image.manifest.v1+json"'
+
+# --- 2. Reproducibility: build again, tool layer digest must match ---
+assert_succeed "mise oci build -o ./out-b --from scratch"
+layer_a="$(jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "jq") | .digest' "./out-a/blobs/sha256/$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-a/index.json)")"
+layer_b="$(jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "jq") | .digest' "./out-b/blobs/sha256/$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-b/index.json)")"
+assert "echo $layer_a" "$layer_b"
+
+# With SOURCE_DATE_EPOCH pinned the *entire* manifest should be identical too.
+mf_a="$(jq -r '.manifests[0].digest' ./out-a/index.json)"
+mf_b="$(jq -r '.manifests[0].digest' ./out-b/index.json)"
+assert "echo $mf_a" "$mf_b"
+
+# --- 3. Image config has expected PATH + labels ---
+config_digest="$(jq -r '.config.digest | ltrimstr("sha256:")' "./out-a/blobs/sha256/$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-a/index.json)")"
+assert_contains "jq -r '.config.Env | join(\"\n\")' ./out-a/blobs/sha256/$config_digest" "MISE_DATA_DIR=/mise"
+# PATH should contain the in-image install path of jq. Exact tail (/bin, /,
+# install root) depends on the backend's list_bin_paths.
+assert_contains "jq -r '.config.Env | join(\"\n\")' ./out-a/blobs/sha256/$config_digest" "/mise/installs/jq/1.8.1"
+assert_contains "jq -r '.config.Labels | to_entries | map(.key) | join(\"\n\")' ./out-a/blobs/sha256/$config_digest" "dev.mise.tools.jq"
+
+# --- 4. Delta: bump version, only the tool layer digest changes ---
+cat >mise.toml <<EOF
+[tools]
+jq = "1.7.1"
+EOF
+mise install >/dev/null 2>&1
+assert_succeed "mise oci build -o ./out-c --from scratch"
+layer_c="$(jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "jq") | .digest' "./out-c/blobs/sha256/$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-c/index.json)")"
+# different version → different tool layer digest
+assert_not "test \"$layer_a\" = \"$layer_c\" && echo same" "same"
+
+# --- 5. asdf/vfox backends are rejected ---
+cat >mise.toml <<EOF
+[tools]
+"asdf:some-plugin" = "1.0.0"
+EOF
+assert_fail "mise oci build --from scratch -o ./out-bad" "does not support asdf/vfox"
+
+# --- 6. Global config tools are NOT packaged by default (#9690) ---
+# Pin mise.toml back to a buildable project, then drop a *different* tool
+# into the global config. The global tool isn't installed; if the project
+# scope filter regresses, mise oci build will try to package it and fail.
+cat >mise.toml <<EOF
+[tools]
+jq = "1.8.1"
+EOF
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+"asdf:some-plugin" = "1.0.0"
+EOF
+assert_succeed "mise oci build -o ./out-scope --from scratch"
+# Only the project tool (jq) should be in the manifest — the asdf plugin from
+# the global config must be filtered out, both as a packaged layer and as a
+# trigger for the asdf/vfox rejection check.
+mf="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-scope/index.json)"
+assert "jq -r '[.layers[] | select(.annotations.\"dev.mise.tool.short\") | .annotations.\"dev.mise.tool.short\"] | sort | unique | join(\",\")' ./out-scope/blobs/sha256/$mf" "jq"
+
+# --- 7. --include-global reverses the scope filter ---
+# With the asdf plugin now back in scope, the asdf/vfox rejection should fire.
+assert_fail "mise oci build --include-global -o ./out-incl --from scratch" "does not support asdf/vfox"
+
+# --- 8. [oci] settings from global config are also project-scoped by default ---
+# Replace the asdf-plugin-in-global with a bogus [oci].from that would fail to
+# resolve if it were inherited. With project-only scope (the default) the
+# project's own --from scratch wins, so the build succeeds. With
+# --include-global the global from would be merged in and shadowed by --from
+# anyway, so this test asserts the *non-include* path doesn't even read the
+# global [oci].
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[oci]
+mount_point = "/should-not-appear"
+EOF
+assert_succeed "mise oci build -o ./out-oci-scope --from scratch"
+mf_oci="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-oci-scope/index.json)"
+config_oci_digest="$(jq -r '.config.digest | ltrimstr("sha256:")' "./out-oci-scope/blobs/sha256/$mf_oci")"
+assert_not_contains "jq -r '.config.Env | join(\"\n\")' ./out-oci-scope/blobs/sha256/$config_oci_digest" "/should-not-appear"
+
+# --- 9. [dotfiles] is baked into its own image layer ---
+cat >profile.sh <<EOF
+export PROJECT_READY=1
+EOF
+cat >app.tmpl <<EOF
+tool={{env.MISE_ENV | default(value="dev")}}
+EOF
+cat >mise.toml <<EOF
+[tools]
+jq = "1.8.1"
+
+[dotfiles]
+"/etc/profile.d/project.sh" = { source = "profile.sh", mode = "copy" }
+"~/.config/app/config.toml" = { source = "app.tmpl", mode = "template" }
+EOF
+export MISE_ENV=dev
+assert_succeed "mise oci build -o ./out-files --from scratch"
+unset MISE_ENV
+mf_files="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-files/index.json)"
+files_layer="$(jq -r '.layers[] | select(.annotations."dev.mise.dotfiles" == "true") | .digest | ltrimstr("sha256:")' ./out-files/blobs/sha256/"$mf_files")"
+assert_contains "tar -tzf ./out-files/blobs/sha256/$files_layer" "etc/profile.d/project.sh"
+assert_contains "tar -tzf ./out-files/blobs/sha256/$files_layer" "root/.config/app/config.toml"
+assert_contains "tar -xOzf ./out-files/blobs/sha256/$files_layer etc/profile.d/project.sh" "PROJECT_READY=1"
+assert_contains "tar -xOzf ./out-files/blobs/sha256/$files_layer root/.config/app/config.toml" "tool=dev"
+
+# --- 10. --copy and [[oci.copy]] each produce an annotated layer ---
+mkdir -p assets copy-subdir
+echo "from-cli" >copy-subdir/cli-copy.txt
+echo "from-config" >assets/config-copy.txt
+cat >mise.toml <<EOF
+[tools]
+jq = "1.8.1"
+
+[[oci.copy]]
+host = "assets"
+image = "/srv/assets"
+EOF
+assert_succeed "mise --cd copy-subdir oci build -o ../out-copy --from scratch --copy cli-copy.txt:/etc/cli-copy.txt"
+mf_copy="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-copy/index.json)"
+assert "jq -r '[.layers[] | select(.annotations.\"dev.mise.copy\") | .annotations.\"dev.mise.copy\"] | join(\",\")' ./out-copy/blobs/sha256/$mf_copy" "/srv/assets,/etc/cli-copy.txt"
+config_copy_layer="$(jq -r '.layers[] | select(.annotations."dev.mise.copy" == "/srv/assets") | .digest | ltrimstr("sha256:")' ./out-copy/blobs/sha256/"$mf_copy")"
+cli_copy_layer="$(jq -r '.layers[] | select(.annotations."dev.mise.copy" == "/etc/cli-copy.txt") | .digest | ltrimstr("sha256:")' ./out-copy/blobs/sha256/"$mf_copy")"
+assert_contains "tar -tzf ./out-copy/blobs/sha256/$config_copy_layer" "srv/assets/config-copy.txt"
+assert_contains "tar -xOzf ./out-copy/blobs/sha256/$config_copy_layer srv/assets/config-copy.txt" "from-config"
+assert "tar -xOzf ./out-copy/blobs/sha256/$cli_copy_layer etc/cli-copy.txt" "from-cli"
+
+# --- 11. [bootstrap.packages] participates in OCI builds ---
+# scratch has no apt metadata, so this exercises the OCI package path without
+# requiring network access in the e2e test environment.
+cat >mise.toml <<EOF
+[bootstrap.packages]
+"apt:curl" = "latest"
+EOF
+assert_fail "mise oci build -o ./out-system-packages --from scratch" "requires an apt-based base image"
+
+# --- 12. No project config + no --include-global → clear error ---
+# Error message is shared between build/run/push, so it must NOT name a
+# specific subcommand (just "mise oci").
+rm -f mise.toml
+assert_fail "mise oci build -o ./out-none --from scratch" "no project mise config"
+assert_fail "mise oci build -o ./out-none --from scratch" "mise oci:"
+
+# Cleanup so later assertions in this file (none currently, but also so a
+# rerun under the same workdir doesn't carry global state forward) start fresh.
+rm -f "$MISE_CONFIG_DIR/config.toml"

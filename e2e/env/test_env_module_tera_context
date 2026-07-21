@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+# Test that env vars returned by a vfox env plugin (MiseEnv hook) are
+# available in {{env.VAR}} Tera templates in subsequent [[env]] blocks.
+
+# Create a vfox env plugin that returns a known value
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/test-tera-ctx"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'EOFMETA'
+PLUGIN = {}
+PLUGIN.name = "test-tera-ctx"
+PLUGIN.version = "1.0.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "Test plugin for Tera context propagation"
+PLUGIN.minRuntimeVersion = "0.3.0"
+EOFMETA
+
+cat >"$PLUGIN_DIR/hooks/mise_env.lua" <<'EOFHOOK'
+function PLUGIN:MiseEnv(ctx)
+    return {
+        env = {
+            {key = "PLUGIN_SECRET", value = "s3cret"},
+            {key = "PLUGIN_HOST", value = "db.example.com"}
+        },
+        cacheable = false,
+        watch_files = {}
+    }
+end
+EOFHOOK
+
+# Test 1: plugin vars available in Tera in a subsequent [[env]] block
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[[env]]
+_.test-tera-ctx = {}
+
+[[env]]
+DERIVED = "host={{env.PLUGIN_HOST}}"
+EOF
+
+assert_contains "mise env -s bash" 'PLUGIN_SECRET=s3cret'
+assert_contains "mise env -s bash" 'DERIVED=host=db.example.com'
+
+# Test 2: plugin vars do NOT clobber later Val overrides
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[[env]]
+_.test-tera-ctx = {}
+
+[[env]]
+PLUGIN_HOST = "override.example.com"
+
+[[env]]
+DERIVED = "host={{env.PLUGIN_HOST}}"
+EOF
+
+assert_contains "mise env -s bash" 'DERIVED=host=override.example.com'
+
+# Test 3: Module wins over a PRIOR Val for the same key (later directive wins,
+# consistent with how File/Source/Val all override earlier directives).
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[[env]]
+PLUGIN_HOST = "user-override.example.com"
+
+[[env]]
+_.test-tera-ctx = {}
+EOF
+
+assert_contains "mise env -s bash" 'PLUGIN_HOST=db.example.com'

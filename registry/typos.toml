@@ -1,0 +1,7 @@
+backends = [
+  "aqua:crate-ci/typos",
+  "asdf:aschiavon91/asdf-typos",
+  "cargo:typos-cli",
+]
+description = "Source code spell checker"
+test = { cmd = "typos --version", expected = "typos-cli {{version}}" }

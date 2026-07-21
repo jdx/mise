@@ -1,0 +1,9 @@
+backends = [
+  { full = "aqua:segmentio/golines", platforms = [
+    "linux",
+    "macos",
+  ] },
+  "go:github.com/segmentio/golines",
+]
+description = "A golang formatter that fixes long lines"
+test = { cmd = "golines --version", expected = "golines v{{version}}" }

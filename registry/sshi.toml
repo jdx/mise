@@ -1,0 +1,3 @@
+backends = ["aqua:aakso/ssh-inscribe/sshi"]
+description = "SSH CA Client/Server"
+test = { cmd = "sshi version", expected = "local: {{version}}" }

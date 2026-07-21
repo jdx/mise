@@ -1,7 +1,7 @@
 # Tasks
 
-> Like [make](https://www.gnu.org/software/make/manual/make.html) it manages _tasks_ used
-> to build and test projects.
+> Define and run project _tasks_ for building, testing, linting, deploying, and
+> everyday development workflows.
 
 You can define tasks in `mise.toml` files or as standalone shell scripts. These are useful for
 things like running linters, tests, builders, servers, and other tasks that are specific to a
@@ -17,7 +17,7 @@ Here's my favorite features about mise's task runner:
 - ability to write tasks as actual bash script files and not inside yml/json/toml strings that lack
   syntax highlighting and linting/checking support
 
-There are 2 ways to define tasks: [inside of `mise.toml` files](./toml-tasks.html) or as [standalone shell scripts](./file-tasks.html).
+There are 2 ways to define tasks: [inside of `mise.toml` files](./toml-tasks.html) or as [standalone shell scripts](./file-tasks.html). You can also use [task templates](./templates.html) to create reusable task definitions.
 
 ## Tasks in `mise.toml` files
 
@@ -53,7 +53,8 @@ The following environment variables are passed to the task:
 
 - `MISE_ORIGINAL_CWD`: The original working directory from where the task was run.
 - `MISE_CONFIG_ROOT`: The directory containing the `mise.toml` file where the task was defined or if the config path is something like `~/src/myproj/.config/mise.toml`, it will be `~/src/myproj`.
-- `MISE_PROJECT_ROOT`: The root of the project.
+- `MISE_PROJECT_ROOT`: The root of the project that defines the task. For monorepo subproject tasks this is the subproject's directory and is stable regardless of the directory the task is invoked from.
+- `MISE_MONOREPO_ROOT`: The root of the monorepo (the directory containing the config with `monorepo_root = true`). Only set inside a monorepo.
 - `MISE_TASK_NAME`: The name of the task being run.
 - `MISE_TASK_DIR`: The directory containing the task script.
 - `MISE_TASK_FILE`: The full path to the task script.

@@ -1,0 +1,3 @@
+backends = ["aqua:FiloSottile/age", "asdf:threkk/asdf-age"]
+description = "A simple, modern and secure encryption tool (and Go library) with small explicit keys, no config options, and UNIX-style composability"
+test = { cmd = "age --version", expected = "v{{version}}" }

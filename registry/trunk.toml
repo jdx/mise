@@ -1,0 +1,3 @@
+backends = ["npm:@trunkio/launcher"]
+description = "Trunk is a comprehensive code quality tool that runs linters, formatters, and security scanners to help maintain high-quality codebases (https://trunk.io)"
+test = { cmd = "trunk --help", expected = "trunk [flags] [subcommand]" } # --version can't be used because we know the launcher version, but we get the binary version

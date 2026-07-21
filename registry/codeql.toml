@@ -1,0 +1,23 @@
+description = "CodeQL CLI"
+test = { cmd = "codeql --version", expected = "CodeQL command-line toolchain release {{version}}" }
+
+[[backends]]
+full = "github:github/codeql-cli-binaries"
+
+[backends.options]
+bin_path = "codeql"
+
+[backends.options.platforms.macos-x64]
+asset_pattern = "codeql-osx64.zip"
+
+[backends.options.platforms.macos-arm64]
+asset_pattern = "codeql-osx64.zip"
+
+[backends.options.platforms.linux-x64]
+asset_pattern = "codeql-linux64.zip"
+
+[backends.options.platforms.windows-x64]
+asset_pattern = "codeql-win64.zip"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-codeql"

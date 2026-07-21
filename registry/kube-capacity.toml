@@ -1,0 +1,2 @@
+backends = ["aqua:robscott/kube-capacity", "asdf:looztra/asdf-kube-capacity"]
+description = "A simple CLI that provides an overview of the resource requests, limits, and utilization in a Kubernetes cluster"

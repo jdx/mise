@@ -13,6 +13,20 @@ EOF
 assert "mise env -s bash | grep MISE_TEST_SOURCE" "export MISE_TEST_SOURCE=1234"
 assert_contains "mise env -s bash | grep PATH" "export PATH='$HOME/newbin:"
 
+# Verify that sourcing a script that prepends to PATH does not inject the config root
+# See: https://github.com/jdx/mise/discussions/8931
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.source = "{{ env.MISE_CONFIG_DIR }}/source.sh"
+EOF
+
+cat >"$MISE_CONFIG_DIR/source.sh" <<EOF
+export PATH="/custom-test-dir:\$PATH"
+EOF
+
+path_output=$(mise env -s bash | grep PATH)
+assert_not_contains "$path_output" "$MISE_CONFIG_DIR"
+
 # TODO: this fails because of https://github.com/jdx/mise/blob/53c9144df8ef5d7d75f19c949be6231a05f7405a/src/config/config_file/mise_toml.rs#L838
 #cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
 #[env]

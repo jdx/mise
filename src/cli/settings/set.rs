@@ -1,20 +1,23 @@
 use eyre::{Result, bail, eyre};
 use toml_edit::DocumentMut;
 
-use crate::config::settings::{SETTINGS_META, SettingsFile, SettingsType};
+use crate::config::settings::{SETTINGS_META, SettingsFile, SettingsType, parse_url_replacements};
+use crate::toml::dedup_toml_array;
 use crate::{config, duration, file};
 
 /// Add/update a setting
 ///
-/// This modifies the contents of ~/.config/mise/config.toml
+/// This modifies the contents of ~/.config/mise/config.toml by default.
+/// With `--local`, modifies the local config file instead.
+/// See https://mise.en.dev/configuration.html#target-file-for-write-operations
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsSet {
     /// The setting to set
     #[clap()]
     pub setting: String,
-    /// The value to set
-    pub value: String,
+    /// The value to set (optional if provided as KEY=VALUE)
+    pub value: Option<String>,
     /// Use the local config file instead of the global one
     #[clap(long, short)]
     pub local: bool,
@@ -22,22 +25,38 @@ pub struct SettingsSet {
 
 impl SettingsSet {
     pub fn run(self) -> Result<()> {
-        set(&self.setting, &self.value, false, self.local)
+        match self.value {
+            Some(value) => set(&self.setting, &value, false, self.local),
+            None => {
+                let (key, value) = self.setting.split_once('=').ok_or_else(|| {
+                    eyre!(
+                        "Usage: mise settings set <KEY>=<VALUE> or mise settings set <KEY> <VALUE>"
+                    )
+                })?;
+                set(key, value, false, self.local)
+            }
+        }
     }
 }
 
 pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
-    let value = if let Some(meta) = SETTINGS_META.get(key) {
-        match meta.type_ {
-            SettingsType::Bool => parse_bool(value)?,
-            SettingsType::Integer => parse_i64(value)?,
-            SettingsType::Duration => parse_duration(value)?,
-            SettingsType::Url | SettingsType::Path | SettingsType::String => value.into(),
-            SettingsType::ListString => parse_list_by_comma(value)?,
-            SettingsType::ListPath => parse_list_by_colon(value)?,
+    let meta = match SETTINGS_META.get(key) {
+        Some(meta) => meta,
+        None => {
+            bail!("Unknown setting: {}", key);
         }
-    } else {
-        bail!("Unknown setting: {}", key);
+    };
+
+    let value = match meta.type_ {
+        SettingsType::Bool => parse_bool(value)?,
+        SettingsType::Integer => parse_i64(value)?,
+        SettingsType::Duration => parse_duration(value)?,
+        SettingsType::Url | SettingsType::Path | SettingsType::String => value.into(),
+        SettingsType::ListString => parse_list_by_comma(value)?,
+        SettingsType::ListPath => parse_list_by_colon(value)?,
+        SettingsType::SetString => parse_set_by_comma(value)?,
+        SettingsType::IndexMap => parse_indexmap_by_json(value)?,
+        SettingsType::BoolOrString => parse_bool(value).unwrap_or_else(|_| value.into()),
     };
 
     let path = if local {
@@ -49,7 +68,9 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
     let raw = file::read_to_string(&path).unwrap_or_default();
     let mut config: DocumentMut = raw.parse()?;
     if !config.contains_key("settings") {
-        config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
+        let mut settings = toml_edit::Table::new();
+        settings.set_implicit(true);
+        config["settings"] = toml_edit::Item::Table(settings);
     }
     if let Some(mut settings) = config["settings"].as_table_mut() {
         if let Some((parent_key, child_key)) = key.split_once('.') {
@@ -65,11 +86,15 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
                 .unwrap();
         }
 
-        let value = match settings.get(key).map(|c| c.as_array()) {
-            Some(Some(array)) if add => {
-                let mut array = array.clone();
-                array.extend(value.as_array().unwrap().iter().cloned());
-                array.into()
+        let value = match settings.get(key) {
+            Some(current) if add && current.as_array().is_some() => {
+                let array = current.as_array().unwrap();
+                let mut new_array = array.clone();
+                new_array.extend(value.as_array().unwrap().iter().cloned());
+                match meta.type_ {
+                    SettingsType::SetString => dedup_toml_array(&new_array).into(),
+                    _ => new_array.into(),
+                }
             }
             _ => value,
         };
@@ -84,11 +109,31 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
 }
 
 fn parse_list_by_comma(value: &str) -> Result<toml_edit::Value> {
+    if value.is_empty() || value == "[]" {
+        return Ok(toml_edit::Array::new().into());
+    }
     Ok(value.split(',').map(|s| s.trim().to_string()).collect())
 }
 
 fn parse_list_by_colon(value: &str) -> Result<toml_edit::Value> {
+    if value.is_empty() || value == "[]" {
+        return Ok(toml_edit::Array::new().into());
+    }
     Ok(value.split(':').map(|s| s.trim().to_string()).collect())
+}
+
+fn parse_set_by_comma(value: &str) -> Result<toml_edit::Value> {
+    let value = value.trim();
+    if value.is_empty() || value == "[]" {
+        return Ok(toml_edit::Array::new().into());
+    }
+    let array: toml_edit::Array = value
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+    Ok(dedup_toml_array(&array).into())
 }
 
 fn parse_bool(value: &str) -> Result<toml_edit::Value> {
@@ -109,6 +154,18 @@ fn parse_i64(value: &str) -> Result<toml_edit::Value> {
 fn parse_duration(value: &str) -> Result<toml_edit::Value> {
     duration::parse_duration(value)?;
     Ok(value.into())
+}
+
+fn parse_indexmap_by_json(value: &str) -> Result<toml_edit::Value> {
+    let index_map = parse_url_replacements(value)
+        .map_err(|e| eyre!("Failed to parse JSON for IndexMap: {}", e))?;
+    Ok(toml_edit::Value::InlineTable({
+        let mut table = toml_edit::InlineTable::new();
+        for (k, v) in index_map {
+            table.insert(&k, toml_edit::Value::String(toml_edit::Formatted::new(v)));
+        }
+        table
+    }))
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

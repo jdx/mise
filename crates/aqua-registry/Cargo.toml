@@ -1,0 +1,41 @@
+[package]
+name = "aqua-registry"
+version = "2026.5.3"
+edition = "2024"
+description = "Aqua registry backend for mise"
+authors = ["Jeff Dickey (@jdx)"]
+license = "MIT"
+repository = "https://github.com/jdx/mise"
+homepage = "https://mise.en.dev"
+readme = "README.md"
+keywords = ["mise", "aqua", "registry", "package-manager"]
+categories = ["development-tools"]
+include = ["/README.md", "/src/**/*.rs"]
+
+[package.metadata.cargo-machete]
+ignored = ["serde"]
+
+[features]
+default = []
+
+[dependencies]
+# Core dependencies
+blake3 = "1"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+thiserror = "2"
+eyre = "0.6"
+indexmap = { version = "2", features = ["serde"] }
+itertools = "0.15"
+rkyv = { version = "0.8", features = ["unaligned"] }
+siphasher = "1"
+strum = { version = "0.28", features = ["derive"] }
+tempfile = "3"
+
+# Template parsing and evaluation
+expr-lang = "1"
+heck = "0.5"
+versions = { version = "7", features = ["serde"] }
+
+# Logging
+log = "0.4"

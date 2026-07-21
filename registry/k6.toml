@@ -1,0 +1,3 @@
+backends = ["aqua:grafana/k6", "asdf:gr1m0h/asdf-k6"]
+description = "A modern load testing tool, using Go and JavaScript"
+test = { cmd = "k6 --version", expected = "k6 v{{version}}" }

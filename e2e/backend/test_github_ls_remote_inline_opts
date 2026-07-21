@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/pull/8902
+# Inline CLI backend options must survive the installed-tool backend cache.
+
+mkdir -p "$MISE_DATA_DIR/installs/github-jdx-mise-test-fixtures/1.0.0/bin"
+cat <<'EOF' >"$MISE_DATA_DIR/installs/.mise-installs.toml"
+[github-jdx-mise-test-fixtures]
+short = "github:jdx/mise-test-fixtures"
+full = "github:jdx/mise-test-fixtures"
+explicit_backend = true
+EOF
+
+cat <<'EOF' >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+api_url = "http://127.0.0.1:1/api/v3"
+EOF
+
+assert_contains "mise ls-remote --no-versions-host 'github:jdx/mise-test-fixtures[api_url=https://api.github.com]'" "1.0.0"

@@ -1,0 +1,3 @@
+backends = ["aqua:EpicGames/lore"]
+description = "A next-generation open source version control system from Epic Games"
+test = { cmd = "lore --version", expected = "{{version}}" }

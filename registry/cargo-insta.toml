@@ -1,0 +1,3 @@
+backends = ["aqua:mitsuhiko/insta", "cargo:insta"]
+description = "A snapshot testing library for rust"
+test = { cmd = "cargo insta --version", expected = "cargo-insta {{version}}" }

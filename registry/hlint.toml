@@ -1,0 +1,3 @@
+backends = ["github:ndmitchell/hlint"]
+description = "Haskell source code suggestions"
+test = { cmd = "hlint --version", expected = "HLint v{{version}}" }

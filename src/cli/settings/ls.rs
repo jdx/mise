@@ -1,6 +1,6 @@
 use crate::config;
 use crate::config::settings::{SETTINGS_META, SettingsPartial, SettingsType};
-use crate::config::{ALL_TOML_CONFIG_FILES, SETTINGS, Settings};
+use crate::config::{ALL_TOML_CONFIG_FILES, Settings};
 use crate::file::display_path;
 use crate::ui::table;
 use eyre::Result;
@@ -12,7 +12,7 @@ use tabled::{Table, Tabled};
 /// This is the contents of ~/.config/mise/config.toml
 ///
 /// Note that aliases are also stored in this file
-/// but managed separately with `mise aliases`
+/// but managed separately with `mise tool-alias`
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsLs {
@@ -23,30 +23,31 @@ pub struct SettingsLs {
     #[clap(long, short)]
     all: bool,
 
-    /// Print all settings with descriptions for shell completions
-    #[clap(long, hide = true)]
-    complete: bool,
+    /// Output in JSON format
+    #[clap(long, short = 'J', group = "output")]
+    json: bool,
 
     /// Use the local config file instead of the global one
     #[clap(long, short, global = true)]
     pub local: bool,
 
-    /// Output in JSON format
-    #[clap(long, short = 'J', group = "output")]
-    json: bool,
+    /// Output in TOML format
+    #[clap(long, short = 'T', group = "output")]
+    toml: bool,
+
+    /// Print all settings with descriptions for shell completions
+    #[clap(long, hide = true)]
+    complete: bool,
 
     /// Output in JSON format with sources
     #[clap(long, group = "output")]
     json_extended: bool,
-
-    /// Output in TOML format
-    #[clap(long, short = 'T', group = "output")]
-    toml: bool,
 }
 
 fn settings_type_to_string(st: &SettingsType) -> String {
     match st {
         SettingsType::Bool => "boolean".to_string(),
+        SettingsType::BoolOrString => "boolean | string".to_string(),
         SettingsType::String => "string".to_string(),
         SettingsType::Integer => "number".to_string(),
         SettingsType::Duration => "number".to_string(),
@@ -54,6 +55,8 @@ fn settings_type_to_string(st: &SettingsType) -> String {
         SettingsType::Url => "string".to_string(),
         SettingsType::ListString => "array".to_string(),
         SettingsType::ListPath => "array".to_string(),
+        SettingsType::SetString => "array".to_string(),
+        SettingsType::IndexMap => "object".to_string(),
     }
 }
 
@@ -69,7 +72,7 @@ impl SettingsLs {
         } else {
             let mut rows = vec![];
             if self.all {
-                for (k, v) in SETTINGS.as_dict()? {
+                for (k, v) in Settings::get().as_dict()? {
                     rows.extend(Row::from_toml(k.to_string(), v, None));
                 }
             }
@@ -200,7 +203,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 struct Row {
     key: String,
     value: String,
-    #[tabled(display_with = "Self::display_option_path")]
+    #[tabled(display = "Self::display_option_path")]
     source: Option<PathBuf>,
     #[tabled(skip)]
     toml_value: toml::Value,

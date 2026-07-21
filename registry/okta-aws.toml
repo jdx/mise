@@ -1,0 +1,6 @@
+aliases = ["okta-aws-cli"]
+backends = [
+  "aqua:okta/okta-aws-cli",
+  "asdf:bennythejudge/asdf-plugin-okta-aws-cli",
+]
+description = "A CLI for having Okta as the IdP for AWS CLI operations"

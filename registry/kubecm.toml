@@ -1,0 +1,2 @@
+backends = ["aqua:sunny0826/kubecm", "asdf:samhvw8/asdf-kubecm"]
+description = "Manage your kubeconfig more easily"

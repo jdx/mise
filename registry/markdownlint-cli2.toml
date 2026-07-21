@@ -1,0 +1,6 @@
+backends = [
+  "npm:markdownlint-cli2",
+  "asdf:paulo-ferraz-oliveira/asdf-markdownlint-cli2",
+]
+description = "A fast, flexible, configuration-based command-line interface for linting Markdown/CommonMark files with the markdownlint library"
+test = { cmd = "markdownlint-cli2 --version", expected = "markdownlint-cli2 v{{version}}" }

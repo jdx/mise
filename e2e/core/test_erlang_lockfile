@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+
+# Test that core:erlang locks precompiled and source install outcomes.
+export MISE_LOCKFILE=1
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "Skipping Linux-specific test on non-Linux OS"
+  exit 0
+fi
+if type -P ldd >/dev/null && ldd --version 2>&1 | grep -qi musl; then
+  echo "Skipping Erlang precompiled lockfile test on musl Linux"
+  exit 0
+fi
+
+detect_platform
+CURRENT_PLATFORM="$MISE_PLATFORM"
+if [[ -z $CURRENT_PLATFORM ]]; then
+  echo "Failed to detect platform: MISE_PLATFORM is empty" >&2
+  exit 1
+fi
+
+cat <<'EOF' >mise.toml
+[tools]
+erlang = "28.3"
+EOF
+
+rm -f mise.lock
+mise uninstall erlang@28.3 2>/dev/null || true
+
+export ImageOS=ubuntu24
+mise lock --platform "$CURRENT_PLATFORM"
+
+assert_contains "cat mise.lock" '[[tools.erlang]]'
+assert_contains "cat mise.lock" 'version = "28.3"'
+assert_contains "cat mise.lock" '[tools.erlang.options]'
+assert_contains "cat mise.lock" 'precompiled_os = "ubuntu-24.04"'
+assert_not_contains "cat mise.lock" 'precompiled = '
+assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
+assert_matches "cat mise.lock" 'url = "https://builds\.hex\.pm/builds/otp/(amd64|arm64)/ubuntu-24\.04/OTP-28\.3\.tar\.gz"'
+assert_not_contains "cat mise.lock" 'install = "source"'
+
+assert "mise install --locked --dry-run"
+
+echo "=== default fallback records the source artifact ==="
+rm -f mise.lock
+export ImageOS=nobara-43
+mise lock --platform "$CURRENT_PLATFORM"
+
+assert_contains "cat mise.lock" '[[tools.erlang]]'
+assert_contains "cat mise.lock" 'version = "28.3"'
+assert_not_contains "cat mise.lock" '[tools.erlang.options]'
+assert_not_contains "cat mise.lock" 'precompiled = '
+assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
+assert_contains "awk '/\[tools.erlang.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'install = "source"'
+assert_contains "awk '/\[tools.erlang.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'checksum = "sha256:'
+assert_contains "awk '/\[tools.erlang.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'url = "https://github.com/erlang/otp/releases/download/OTP-28.3/otp_src_28.3.tar.gz"'
+
+assert "mise install --locked --dry-run"
+
+echo "=== compile=true records a source outcome on supported platforms ==="
+cat <<'EOF' >mise.toml
+[tools]
+erlang = "28.3"
+
+[settings.erlang]
+compile = true
+EOF
+
+rm -f mise.lock
+export ImageOS=ubuntu24
+mise lock --platform "$CURRENT_PLATFORM"
+
+assert_contains "cat mise.lock" '[tools.erlang.options]'
+assert_contains "cat mise.lock" 'compile = "true"'
+assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
+assert_contains "awk '/\[tools.erlang.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'install = "source"'
+assert_contains "awk '/\[tools.erlang.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'checksum = "sha256:'
+assert_contains "awk '/\[tools.erlang.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'url = "https://github.com/erlang/otp/releases/download/OTP-28.3/otp_src_28.3.tar.gz"'
+
+assert "mise install --locked --dry-run"
+
+echo "=== locked source outcome without a URL fails ==="
+cat <<EOF >mise.lock
+$LOCKFILE_HEADER
+
+[[tools.erlang]]
+version = "28.3"
+backend = "core:erlang"
+
+[tools.erlang.options]
+compile = "true"
+
+[tools.erlang."platforms.$CURRENT_PLATFORM"]
+install = "source"
+EOF
+
+assert_fail "mise install --locked --dry-run" "No lockfile URL found"

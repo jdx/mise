@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 
 export MISE_LOCKFILE=1
-export MISE_EXPERIMENTAL=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
 
 touch mise.lock
 mise use tiny
 cat <<EOF >mise.lock
-[tools.tiny]
+[[tools.tiny]]
 version = "1.0.0"
 EOF
 rm -rf "$MISE_DATA_DIR/installs/tiny"
@@ -17,15 +19,24 @@ assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.0"
 # validates checksum
 mise use gh@2.62.0
 cat mise.lock
-assert_contains "cat mise.lock" "[tools.gh.checksums]"
+assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
+assert_contains "cat mise.lock" 'checksum = "sha256:'
+
+# Test rewriting existing lockfile section with same content
+# Using inline table format
+GH_URL="https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_$(
+  case "$PLATFORM" in
+    linux-x64) echo "linux_amd64" ;;
+    linux-arm64) echo "linux_arm64" ;;
+    macos-x64) echo "macOS_amd64" ;;
+    macos-arm64) echo "macOS_arm64" ;;
+    *) echo "$PLATFORM" ;;
+  esac
+).zip"
 cat <<EOF >mise.lock
-[tools.gh]
+[[tools.gh]]
 version = "2.62.0"
-[tools.gh.checksums]
-"gh_2.62.0_macOS_arm64.zip" = "sha512:0000000000"
-"gh_2.62.0_windows_arm64.zip" = "sha512:0000000000"
-"gh_2.62.0_linux_arm64.tar.gz" = "sha512:0000000000"
-"gh_2.62.0_windows_amd64.zip" = "sha512:0000000000"
-"gh_2.62.0_linux_amd64.tar.gz" = "sha512:0000000000"
+backend = "aqua:cli/cli"
+"platforms.$PLATFORM" = { checksum = "blake3:aaaaa", url = "$GH_URL" }
 EOF
 assert_fail "mise i gh -f"

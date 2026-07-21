@@ -1,0 +1,3 @@
+backends = ["aqua:nektos/act", "asdf:gr1m0h/asdf-act"]
+description = "Run your GitHub Actions locally"
+test = { cmd = "act --version", expected = "act version {{version}}" }

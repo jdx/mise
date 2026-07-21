@@ -1,0 +1,2 @@
+backends = ["aqua:uutils/coreutils"]
+description = "Cross-platform Rust rewrite of the GNU coreutils"

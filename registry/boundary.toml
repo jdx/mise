@@ -1,0 +1,3 @@
+backends = ["aqua:hashicorp/boundary", "asdf:mise-plugins/mise-hashicorp"]
+description = "Boundary enables identity-based access management for dynamic infrastructure"
+test = { cmd = "boundary version", expected = "Version Number:      {{version}}" }

@@ -1,0 +1,12 @@
+description = "clusterawsadm provides helpers for bootstrapping Kubernetes Cluster API Provider AWS"
+test = { cmd = "cluster-api-provider-aws version", expected = "clusterawsadm version:" }
+
+[[backends]]
+full = "github:kubernetes-sigs/cluster-api-provider-aws"
+
+[backends.options]
+asset_pattern = "clusterawsadm-{darwin_os}-{amd64_arch}"
+bin = "cluster-api-provider-aws"
+
+[[backends]]
+full = "asdf:kahun/asdf-clusterawsadm"

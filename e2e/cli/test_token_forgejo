@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+# Test mise token forgejo command
+
+unset FORGEJO_TOKEN MISE_FORGEJO_TOKEN MISE_FORGEJO_ENTERPRISE_TOKEN MISE_FORGEJO_FJ_CLI_TOKENS
+
+# Test 1: No token configured
+assert_contains "mise token forgejo" "(none)"
+
+# Test 2: FORGEJO_TOKEN env var
+assert_contains "FORGEJO_TOKEN=env-test-token mise token forgejo --unmask" "env-test-token"
+assert_contains "FORGEJO_TOKEN=env-test-token mise token forgejo --unmask" "FORGEJO_TOKEN"
+
+# Test 3: MISE_FORGEJO_TOKEN takes precedence over FORGEJO_TOKEN
+assert_contains "MISE_FORGEJO_TOKEN=mise-token FORGEJO_TOKEN=other mise token forgejo --unmask" "mise-token"
+assert_contains "MISE_FORGEJO_TOKEN=mise-token FORGEJO_TOKEN=other mise token forgejo --unmask" "MISE_FORGEJO_TOKEN"
+
+# Test 4: forgejo_tokens.toml
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/forgejo_tokens.toml" <<'EOF'
+[tokens."codeberg.org"]
+token = "toml-test-token"
+
+[tokens."forgejo.example.com"]
+token = "enterprise-toml-token"
+EOF
+assert_contains "mise token forgejo --unmask" "toml-test-token"
+assert_contains "mise token forgejo --unmask" "forgejo_tokens.toml"
+assert_contains "mise token forgejo forgejo.example.com --unmask" "enterprise-toml-token"
+
+# Test 5: Env var beats toml file
+assert_contains "FORGEJO_TOKEN=env-wins mise token forgejo --unmask" "env-wins"
+assert_not_contains "FORGEJO_TOKEN=env-wins mise token forgejo --unmask" "toml-test-token"
+
+# Test 6: fj CLI config fallback
+rm "$MISE_CONFIG_DIR/forgejo_tokens.toml"
+mkdir -p "$HOME/.local/share/forgejo-cli"
+cat >"$HOME/.local/share/forgejo-cli/keys.json" <<'EOF'
+{
+  "hosts": {
+    "codeberg.org": {
+      "type": "Application",
+      "name": "testuser",
+      "token": "fj-cli-token"
+    }
+  }
+}
+EOF
+assert_contains "mise token forgejo --unmask" "fj-cli-token"
+assert_contains "mise token forgejo --unmask" "fj CLI"
+
+# Test 7: fj CLI can be disabled
+assert_contains "MISE_FORGEJO_FJ_CLI_TOKENS=false mise token forgejo" "(none)"
+
+# Test 8: Token masking
+TOKEN="a18099ca69064be387fbe37b8ad1d333758361f6"
+assert_not_contains "FORGEJO_TOKEN=$TOKEN mise token forgejo" "$TOKEN"
+assert_contains "FORGEJO_TOKEN=$TOKEN mise token forgejo" "a180"
+assert_contains "FORGEJO_TOKEN=$TOKEN mise token forgejo" "61f6"
+
+# Test 9: Enterprise env var for non-codeberg host
+assert_contains "MISE_FORGEJO_ENTERPRISE_TOKEN=ent-token mise token forgejo forgejo.example.com --unmask" "ent-token"
+assert_contains "MISE_FORGEJO_ENTERPRISE_TOKEN=ent-token mise token forgejo forgejo.example.com --unmask" "MISE_FORGEJO_ENTERPRISE_TOKEN"

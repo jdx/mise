@@ -1,0 +1,3 @@
+backends = ["aqua:twpayne/chezmoi", "asdf:joke/asdf-chezmoi"]
+description = "Manage your dotfiles across multiple diverse machines, securely"
+test = { cmd = "chezmoi --version", expected = "chezmoi version v{{version}}" }

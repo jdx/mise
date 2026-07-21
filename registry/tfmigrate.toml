@@ -1,0 +1,2 @@
+backends = ["aqua:minamijoyo/tfmigrate", "asdf:dex4er/asdf-tfmigrate"]
+description = "A Terraform / OpenTofu state migration tool for GitOps"

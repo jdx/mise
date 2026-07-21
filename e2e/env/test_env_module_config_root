@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+# Test that env module plugins receive ctx.config_root pointing to the
+# directory of the mise.toml that defines the module directive.
+# config_root resolves to the project root (not the config file's directory),
+# matching the behavior of built-in directives like _.file.
+
+# Create a vfox env plugin that returns config_root as an env var
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/test-config-root"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'EOFMETA'
+PLUGIN = {}
+PLUGIN.name = "test-config-root"
+PLUGIN.version = "1.0.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "Test plugin for config_root access"
+PLUGIN.minRuntimeVersion = "0.3.0"
+EOFMETA
+
+cat >"$PLUGIN_DIR/hooks/mise_env.lua" <<'EOFHOOK'
+function PLUGIN:MiseEnv(ctx)
+    -- ctx.config_root should be the project root for the config file
+    local config_root = ctx.config_root or "NIL"
+    local version_file = ctx.options.version_file or ""
+
+    -- Resolve relative path against config_root
+    local resolved = ""
+    if config_root ~= "NIL" and version_file ~= "" then
+        resolved = config_root .. "/" .. version_file
+    end
+
+    return {
+        env = {
+            {key = "TEST_CONFIG_ROOT", value = config_root},
+            {key = "TEST_RESOLVED_PATH", value = resolved}
+        },
+        cacheable = false,
+        watch_files = {}
+    }
+end
+EOFHOOK
+
+# Test 1: config_root is set when using global config
+# Global config at $MISE_CONFIG_DIR/config.toml -> config_root is $HOME
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[env]
+_.test-config-root = { version_file = ".xcode-version" }
+EOF
+
+eval "$(mise env -s bash)"
+assert "echo $TEST_CONFIG_ROOT" "$HOME"
+assert "echo $TEST_RESOLVED_PATH" "$HOME/.xcode-version"
+
+# Test 2: project-level mise.toml uses its own directory as config_root
+PROJECT_DIR="$HOME/myproject"
+mkdir -p "$PROJECT_DIR"
+cat >"$PROJECT_DIR/mise.toml" <<'EOF'
+[env]
+_.test-config-root = { version_file = ".config/.xcode-version" }
+EOF
+
+cd "$PROJECT_DIR"
+eval "$(mise env -s bash)"
+assert "echo $TEST_CONFIG_ROOT" "$PROJECT_DIR"
+assert "echo $TEST_RESOLVED_PATH" "$PROJECT_DIR/.config/.xcode-version"
+
+# Test 3: config_root is stable regardless of cwd
+SUBDIR="$PROJECT_DIR/deep/sub"
+mkdir -p "$SUBDIR"
+cd "$SUBDIR"
+eval "$(mise env -s bash)"
+# Should still point to the project dir where mise.toml lives
+assert "echo $TEST_CONFIG_ROOT" "$PROJECT_DIR"

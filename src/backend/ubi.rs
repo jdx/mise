@@ -1,147 +1,324 @@
-use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::BackendOptions;
+use crate::backend::platform_target::PlatformTarget;
+use crate::backend::runtime_path_for_install_path;
+use crate::backend::static_helpers::try_with_v_prefix;
 use crate::cli::args::BackendArg;
-use crate::config::SETTINGS;
-use crate::env::GITHUB_TOKEN;
+use crate::config::{Config, Settings};
+use crate::env::{
+    GITHUB_TOKEN, GITLAB_TOKEN, MISE_GITHUB_ENTERPRISE_TOKEN, MISE_GITLAB_ENTERPRISE_TOKEN,
+};
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
-use crate::tokio::RUNTIME;
-use crate::toolset::ToolVersion;
-use crate::{file, github, hash};
-use eyre::bail;
-use itertools::Itertools;
+use crate::toolset::{ToolRequest, ToolVersion};
+use crate::{backend::Backend, toolset::ToolVersionOptions};
+use crate::{file, github, gitlab, hash};
+use async_trait::async_trait;
+use eyre::{Result, bail};
 use regex::Regex;
-use std::env;
-use std::fmt::Debug;
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::sync::OnceLock;
+use std::{fmt::Debug, sync::LazyLock};
 use ubi::{ForgeType, UbiBuilder};
 use xx::regex;
 
 #[derive(Debug)]
 pub struct UbiBackend {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
-// Uses ubi for installations https://github.com/houseabsolute/ubi
+#[derive(Debug, Clone, Copy)]
+struct UbiOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> UbiOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn provider(&self) -> eyre::Result<ForgeType> {
+        match self.values.str("provider") {
+            Some(forge) => Ok(ForgeType::from_str(forge)?),
+            None => Ok(ForgeType::default()),
+        }
+    }
+
+    fn api_url_override(&self) -> Option<&'a str> {
+        self.values.str("api_url")
+    }
+
+    fn api_url(&self, forge: &ForgeType) -> eyre::Result<String> {
+        match self.api_url_override() {
+            Some(api_url) => Ok(api_url.strip_suffix('/').unwrap_or(api_url).to_string()),
+            None => match forge {
+                ForgeType::GitHub => Ok(github::API_URL.to_string()),
+                ForgeType::GitLab => Ok(gitlab::API_URL.to_string()),
+                _ => bail!("Unsupported forge type {:?}", forge),
+            },
+        }
+    }
+
+    fn tag_regex(&self) -> Option<&'a str> {
+        self.values.str("tag_regex")
+    }
+
+    fn bin_path(&self) -> Option<String> {
+        self.values.platform_string("bin_path")
+    }
+
+    fn extract_all(&self) -> bool {
+        self.values.bool("extract_all")
+    }
+
+    fn exe(&self) -> Option<&'a str> {
+        self.values.str("exe")
+    }
+
+    fn rename_exe(&self) -> Option<&'a str> {
+        self.values.str("rename_exe")
+    }
+
+    fn matching(&self) -> Option<&'a str> {
+        self.values.str("matching")
+    }
+
+    fn matching_regex(&self) -> Option<&'a str> {
+        self.values.str("matching_regex")
+    }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        let mut result = BTreeMap::new();
+        for key in ["exe", "matching", "matching_regex", "provider"] {
+            if let Some(value) = self.values.str(key) {
+                result.insert(key.to_string(), value.to_string());
+            }
+        }
+        result
+    }
+}
+
+#[async_trait]
 impl Backend for UbiBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Ubi
     }
 
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["provider", "api_url", "tag_regex"]
+    }
+
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+        deprecated_at!(
+            "2026.4.0",
+            "2027.1.0",
+            "ubi",
+            "The ubi backend is deprecated. Use the github backend instead (e.g., github:owner/repo)."
+        );
         if name_is_url(&self.tool_name()) {
-            Ok(vec!["latest".to_string()])
+            Ok(vec![VersionInfo {
+                version: "latest".to_string(),
+                ..Default::default()
+            }])
         } else {
-            let opts = self.ba.opts();
-            let tag_regex = OnceLock::new();
-            let mut versions = github::list_releases(&self.tool_name())?
-                .into_iter()
-                .map(|r| r.tag_name)
-                .collect::<Vec<String>>();
-            if versions.is_empty() {
-                versions = github::list_tags(&self.tool_name())?.into_iter().collect();
-            }
-            Ok(versions
-                .into_iter()
-                // trim 'v' prefixes if they exist
-                .map(|t| match regex!(r"^v[0-9]").is_match(&t) {
-                    true => t[1..].to_string(),
-                    false => t,
-                })
-                .sorted_by_cached_key(|v| !regex!(r"^[0-9]").is_match(v))
-                .filter(|v| {
-                    if let Some(re) = opts.get("tag_regex") {
-                        let re = tag_regex.get_or_init(|| Regex::new(re).unwrap());
-                        re.is_match(v)
+            let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+            let opts = UbiOptions::new(&raw_opts);
+            let forge = opts.provider()?;
+            let api_url = opts.api_url(&forge)?;
+            let tag_regex = opts.tag_regex();
+
+            let tag_regex_cell = OnceLock::new();
+
+            // Build release URL base based on forge type and api_url
+            let release_url_base = match forge {
+                ForgeType::GitHub => {
+                    if api_url == github::API_URL {
+                        format!("https://github.com/{}", self.tool_name())
                     } else {
-                        true
+                        // Enterprise GitHub - derive web URL from API URL
+                        let web_url = api_url.replace("/api/v3", "").replace("api.", "");
+                        format!("{}/{}", web_url, self.tool_name())
                     }
-                })
-                .rev()
-                .collect())
+                }
+                ForgeType::GitLab => {
+                    if api_url == gitlab::API_URL {
+                        format!("https://gitlab.com/{}", self.tool_name())
+                    } else {
+                        // Enterprise GitLab - derive web URL from API URL
+                        let web_url = api_url.replace("/api/v4", "");
+                        format!("{}/{}", web_url, self.tool_name())
+                    }
+                }
+                _ => bail!("Unsupported forge type {:?}", forge),
+            };
+
+            // Helper to check if tag matches tag_regex (if provided)
+            let matches_tag_regex = |tag: &str| -> bool {
+                if let Some(re_str) = tag_regex {
+                    let re = tag_regex_cell.get_or_init(|| Regex::new(re_str).unwrap());
+                    re.is_match(tag)
+                } else {
+                    true
+                }
+            };
+
+            // Helper to strip 'v' prefix from version
+            let strip_v_prefix = |tag: &str| -> String {
+                if regex!(r"^v[0-9]").is_match(tag) {
+                    tag[1..].to_string()
+                } else {
+                    tag.to_string()
+                }
+            };
+
+            let mut version_infos: Vec<VersionInfo> = match forge {
+                ForgeType::GitHub => {
+                    let releases =
+                        github::list_releases_from_url(&api_url, &self.tool_name()).await?;
+                    if releases.is_empty() {
+                        // Fall back to tags (no created_at available)
+                        github::list_tags_from_url(&api_url, &self.tool_name())
+                            .await?
+                            .into_iter()
+                            .filter(|tag| matches_tag_regex(tag))
+                            .map(|tag| {
+                                let release_url =
+                                    format!("{}/releases/tag/{}", release_url_base, tag);
+                                VersionInfo {
+                                    version: strip_v_prefix(&tag),
+                                    release_url: Some(release_url),
+                                    ..Default::default()
+                                }
+                            })
+                            .collect()
+                    } else {
+                        releases
+                            .into_iter()
+                            .filter(|r| matches_tag_regex(&r.tag_name))
+                            .map(|r| {
+                                let release_url =
+                                    format!("{}/releases/tag/{}", release_url_base, r.tag_name);
+                                VersionInfo {
+                                    version: strip_v_prefix(&r.tag_name),
+                                    created_at: Some(r.created_at),
+                                    release_url: Some(release_url),
+                                    ..Default::default()
+                                }
+                            })
+                            .collect()
+                    }
+                }
+                ForgeType::GitLab => {
+                    let releases =
+                        gitlab::list_releases_from_url(&api_url, &self.tool_name()).await?;
+                    if releases.is_empty() {
+                        // Fall back to tags (no created_at available)
+                        gitlab::list_tags_from_url(&api_url, &self.tool_name())
+                            .await?
+                            .into_iter()
+                            .filter(|tag| matches_tag_regex(tag))
+                            .map(|tag| {
+                                // Use /-/tags/ for tag-only URLs (no release exists)
+                                let release_url = format!("{}/-/tags/{}", release_url_base, tag);
+                                VersionInfo {
+                                    version: strip_v_prefix(&tag),
+                                    release_url: Some(release_url),
+                                    ..Default::default()
+                                }
+                            })
+                            .collect()
+                    } else {
+                        releases
+                            .into_iter()
+                            .filter(|r| matches_tag_regex(&r.tag_name))
+                            .map(|r| {
+                                let release_url =
+                                    format!("{}/-/releases/{}", release_url_base, r.tag_name);
+                                VersionInfo {
+                                    version: strip_v_prefix(&r.tag_name),
+                                    created_at: r.released_at,
+                                    release_url: Some(release_url),
+                                    ..Default::default()
+                                }
+                            })
+                            .collect()
+                    }
+                }
+                _ => bail!("Unsupported forge type {:?}", forge),
+            };
+
+            // Sort: versions starting with digits first, then reverse
+            version_infos.sort_by_cached_key(|vi| !regex!(r"^[0-9]").is_match(&vi.version));
+            version_infos.reverse();
+
+            Ok(version_infos)
         }
     }
 
-    fn install_version_(
+    async fn install_version_(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let mut v = tv.version.to_string();
-        let opts = tv.request.options();
-        let extract_all = opts.get("extract_all").is_some_and(|v| v == "true");
+        deprecated_at!(
+            "2026.4.0",
+            "2027.1.0",
+            "ubi",
+            "The ubi backend is deprecated. Use the github backend instead (e.g., github:owner/repo)."
+        );
+        // Check if lockfile has URL for this platform
+        let platform_key = self.get_platform_key();
+        let lockfile_url = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|p| p.url.clone());
+
+        let v = tv.version.to_string();
+        let raw_opts = tv.request.options();
+        let opts = UbiOptions::new(&raw_opts);
+        let bin_path = opts.bin_path().unwrap_or_else(|| "bin".to_string());
+        let extract_all = opts.extract_all();
         let bin_dir = tv.install_path();
 
-        if let Err(err) = github::get_release(&self.tool_name(), &tv.version) {
-            // this can fail with a rate limit error or 404, either way, try prefixing and if it fails, try without the prefix
-            // if http::error_code(&err) == Some(404) {
-            debug!(
-                "Failed to get release for {}, trying with 'v' prefix: {}",
-                tv, err
-            );
-            v = format!("v{v}");
-            // }
+        // Use lockfile URL if available, otherwise fall back to standard resolution
+        if let Some(url) = &lockfile_url {
+            install(url, &v, &bin_dir, extract_all, &opts).await?;
+        } else if name_is_url(&self.tool_name()) {
+            install(&self.tool_name(), &v, &bin_dir, extract_all, &opts).await?;
+        } else {
+            try_with_v_prefix(&v, None, |candidate| {
+                let bin_dir = bin_dir.clone();
+                async move {
+                    install(
+                        &self.tool_name(),
+                        &candidate,
+                        &bin_dir,
+                        extract_all,
+                        &opts,
+                    )
+                    .await
+                }
+            })
+            .await?;
         }
 
-        let install = |v: &str| {
-            // Workaround because of not knowing how to pull out the value correctly without quoting
-            let name = self.tool_name();
-
-            let mut builder = UbiBuilder::new().project(&name).install_dir(&bin_dir);
-
-            if let Some(token) = &*GITHUB_TOKEN {
-                builder = builder.token(token);
-            }
-
-            if v != "latest" {
-                builder = builder.tag(v);
-            }
-
-            if extract_all {
-                builder = builder.extract_all();
-            } else {
-                if let Some(exe) = opts.get("exe") {
-                    builder = builder.exe(exe);
-                }
-                if let Some(rename_exe) = opts.get("rename_exe") {
-                    builder = builder.rename_exe_to(rename_exe)
-                }
-            }
-            if let Some(matching) = opts.get("matching") {
-                builder = builder.matching(matching);
-            }
-            if let Some(forge) = opts.get("forge") {
-                builder = builder.forge(ForgeType::from_str(forge)?);
-            }
-
-            let mut ubi = builder.build().map_err(|e| eyre::eyre!(e))?;
-
-            RUNTIME
-                .block_on(ubi.install_binary())
-                .map_err(|e| eyre::eyre!(e))
-        };
-
-        install(&v).or_else(|err: eyre::Error| {
-            debug!(
-                "Failed to install with ubi version '{}': {}, trying with '{}'",
-                v, err, tv
-            );
-            install(&tv.version).or_else(|_| {
-                bail!("Failed to install with ubi '{}': {}", tv, err);
-            })
-        })?;
-
         let mut possible_exes = vec![
-            tv.request
-                .options()
-                .get("exe")
-                .cloned()
+            opts.exe()
+                .map(str::to_string)
                 .unwrap_or(tv.ba().short.to_string()),
         ];
         if cfg!(windows) {
@@ -154,6 +331,10 @@ impl Backend for UbiBackend {
         {
             bin_file
         } else {
+            let mut bin_dir = bin_dir.to_path_buf();
+            if extract_all && bin_dir.join(&bin_path).exists() {
+                bin_dir = bin_dir.join(&bin_path);
+            }
             file::ls(&bin_dir)?
                 .into_iter()
                 .find(|f| {
@@ -167,27 +348,32 @@ impl Backend for UbiBackend {
         Ok(tv)
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+    fn fuzzy_match_filter(
+        &self,
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
         let escaped_query = regex::escape(query);
         let query = if query == "latest" {
             "\\D*[0-9].*"
         } else {
             &escaped_query
         };
-        let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
-        let versions = versions
+        let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
+
+        versions
             .into_iter()
             .filter(|v| {
                 if query == v {
                     return true;
                 }
-                if VERSION_REGEX.is_match(v) {
+                if filter_prereleases && VERSION_REGEX.is_match(v) {
                     return false;
                 }
                 query_regex.is_match(v)
             })
-            .collect();
-        Ok(versions)
+            .collect()
     }
 
     fn verify_checksum(
@@ -196,54 +382,222 @@ impl Backend for UbiBackend {
         tv: &mut ToolVersion,
         file: &Path,
     ) -> eyre::Result<()> {
-        let mut checksum_key = file.file_name().unwrap().to_string_lossy().to_string();
-        if let Some(exe) = tv.request.options().get("exe") {
-            checksum_key = format!("{}-{}", checksum_key, exe);
+        // For ubi backend, generate a more specific platform key that includes tool-specific options
+        let mut platform_key = self.get_platform_key();
+        let filename = file.file_name().unwrap().to_string_lossy().to_string();
+        let raw_opts = tv.request.options();
+        let opts = UbiOptions::new(&raw_opts);
+
+        if let Some(exe) = opts.exe() {
+            platform_key = format!("{platform_key}-{exe}");
         }
-        if let Some(matching) = tv.request.options().get("matching") {
-            checksum_key = format!("{}-{}", checksum_key, matching);
+        if let Some(matching) = opts.matching() {
+            platform_key = format!("{platform_key}-{matching}");
         }
-        checksum_key = format!("{}-{}-{}", checksum_key, env::consts::OS, env::consts::ARCH);
-        if let Some(checksum) = &tv.checksums.get(&checksum_key) {
+        // Include filename to distinguish different downloads for the same platform
+        platform_key = format!("{platform_key}-{filename}");
+
+        // Get or create platform info for this platform key
+        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
+
+        if let Some(checksum) = &platform_info.checksum {
             ctx.pr
-                .set_message(format!("checksum verify {checksum_key}"));
+                .set_message(format!("checksum verify {platform_key}"));
             if let Some((algo, check)) = checksum.split_once(':') {
-                hash::ensure_checksum(file, check, Some(&ctx.pr), algo)?;
+                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
             } else {
-                bail!("Invalid checksum: {checksum_key}");
+                bail!("Invalid checksum: {platform_key}");
             }
-        } else if SETTINGS.lockfile && SETTINGS.experimental {
+        } else if Settings::get().lockfile_enabled() {
             ctx.pr
-                .set_message(format!("checksum generate {checksum_key}"));
-            let hash = hash::file_hash_sha256(file, Some(&ctx.pr))?;
-            tv.checksums.insert(checksum_key, format!("sha256:{hash}"));
+                .set_message(format!("checksum generate {platform_key}"));
+            let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
+            platform_info.checksum = Some(format!("blake3:{hash}"));
         }
         Ok(())
     }
 
-    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<std::path::PathBuf>> {
-        let opts = tv.request.options();
-        if let Some(bin_path) = opts.get("bin_path") {
-            Ok(vec![tv.install_path().join(bin_path)])
-        } else if opts.get("extract_all").is_some_and(|v| v == "true") {
-            Ok(vec![tv.install_path()])
+    async fn list_bin_paths(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> eyre::Result<Vec<std::path::PathBuf>> {
+        let raw_opts = tv.request.options();
+        let opts = UbiOptions::new(&raw_opts);
+        if let Some(bin_path) = opts.bin_path() {
+            // bin_path should always point to a directory containing binaries
+            Ok(vec![runtime_path_for_install_path(
+                tv,
+                tv.install_path().join(&bin_path),
+            )])
+        } else if opts.extract_all() {
+            Ok(vec![tv.runtime_path()])
         } else {
             let bin_path = tv.install_path().join("bin");
             if bin_path.exists() {
-                Ok(vec![bin_path])
+                Ok(vec![runtime_path_for_install_path(tv, bin_path)])
             } else {
-                Ok(vec![tv.install_path()])
+                Ok(vec![tv.runtime_path()])
             }
         }
     }
+
+    /// UBI is deprecated in favor of the github backend and doesn't resolve download URLs
+    /// at lock time. Return false so --locked mode doesn't error for ubi tools.
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> Result<BTreeMap<String, String>> {
+        let raw_opts = request.options();
+        Ok(UbiOptions::new(&raw_opts).lockfile_options())
+    }
+}
+
+/// Returns install-time-only option keys for UBI backend.
+pub fn install_time_option_keys() -> Vec<String> {
+    vec![
+        "exe".into(),
+        "matching".into(),
+        "matching_regex".into(),
+        "provider".into(),
+    ]
 }
 
 impl UbiBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba }
+        Self { ba: Arc::new(ba) }
     }
 }
 
 fn name_is_url(n: &str) -> bool {
     n.starts_with("http")
+}
+
+fn set_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> UbiBuilder<'a> {
+    match forge {
+        ForgeType::GitHub => {
+            if let Some(token) = &*GITHUB_TOKEN {
+                builder = builder.token(token)
+            }
+            builder
+        }
+        ForgeType::GitLab => {
+            if let Some(token) = &*GITLAB_TOKEN {
+                builder = builder.token(token)
+            }
+            builder
+        }
+        _ => builder,
+    }
+}
+
+fn set_enterprise_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> UbiBuilder<'a> {
+    match forge {
+        ForgeType::GitHub => {
+            if let Some(token) = &*MISE_GITHUB_ENTERPRISE_TOKEN {
+                builder = builder.token(token);
+            }
+            builder
+        }
+        ForgeType::GitLab => {
+            if let Some(token) = &*MISE_GITLAB_ENTERPRISE_TOKEN {
+                builder = builder.token(token);
+            }
+            builder
+        }
+        _ => builder,
+    }
+}
+
+async fn install(
+    name: &str,
+    v: &str,
+    bin_dir: &Path,
+    extract_all: bool,
+    opts: &UbiOptions<'_>,
+) -> eyre::Result<()> {
+    let mut builder = UbiBuilder::new().install_dir(bin_dir);
+
+    if name_is_url(name) {
+        builder = builder.url(name);
+    } else {
+        builder = builder.project(name);
+        builder = builder.tag(v);
+    }
+
+    if extract_all {
+        builder = builder.extract_all();
+    } else {
+        if let Some(exe) = opts.exe() {
+            builder = builder.exe(exe);
+        }
+        if let Some(rename_exe) = opts.rename_exe() {
+            builder = builder.rename_exe_to(rename_exe)
+        }
+    }
+    if let Some(matching) = opts.matching() {
+        builder = builder.matching(matching);
+    }
+    if let Some(matching_regex) = opts.matching_regex() {
+        builder = builder.matching_regex(matching_regex);
+    }
+
+    let forge = opts.provider()?;
+    builder = builder.forge(forge.clone());
+    builder = set_token(builder, &forge);
+
+    if let Some(api_url) = opts.api_url_override()
+        && !api_url.contains("github.com")
+        && !api_url.contains("gitlab.com")
+    {
+        builder = builder.api_base_url(api_url.strip_suffix("/").unwrap_or(api_url));
+        builder = set_enterprise_token(builder, &forge);
+    }
+
+    let mut ubi = builder.build().map_err(|e| eyre::eyre!("{e:#}"))?;
+
+    // TODO: hacky but does not compile without it
+    tokio::task::block_in_place(|| {
+        static RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+        });
+        RT.block_on(async { ubi.install_binary().await })
+            .map_err(|e| eyre::eyre!("{e:#}"))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_all_accepts_native_bool_or_string() {
+        let mut bool_opts = ToolVersionOptions::default();
+        bool_opts
+            .opts
+            .insert("extract_all".to_string(), toml::Value::Boolean(true));
+        assert!(UbiOptions::new(&bool_opts).extract_all());
+
+        let mut string_opts = ToolVersionOptions::default();
+        string_opts.opts.insert(
+            "extract_all".to_string(),
+            toml::Value::String("true".to_string()),
+        );
+        assert!(UbiOptions::new(&string_opts).extract_all());
+
+        let mut invalid_opts = ToolVersionOptions::default();
+        invalid_opts.opts.insert(
+            "extract_all".to_string(),
+            toml::Value::String("yes".to_string()),
+        );
+        assert!(!UbiOptions::new(&invalid_opts).extract_all());
+    }
 }

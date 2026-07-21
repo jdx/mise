@@ -28,10 +28,11 @@ echo $PATH
 If using [`mise activate`](/cli/activate.html), `mise` will automatically add the required tools to `PATH`.
 
 ```sh
-PATH="$HOME/.local/share/mise/installs/python/3.13.0/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+PATH="$HOME/.local/share/mise/installs/python/3.15.0/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 ```
 
 In this example, the python `bin` directory was added at the beginning of the `PATH`, making it available in the current shell session.
+When a fuzzy version like `python = "3.15"` or `node = "26"` is active, this path may use the requested-version symlink, such as `~/.local/share/mise/installs/python/3.15/bin`, instead of the fully resolved patch version.
 
 While the `PATH` design of `mise` works great in most cases, there are some situations where `shims` are preferable. This is the case when you are not using an interactive shell (for example, when using `mise` in an IDE or a script).
 
@@ -49,7 +50,7 @@ ls -l ~/.local/share/mise/shims/node
 # [...] ~/.local/share/mise/shims/node -> ~/.local/bin/mise
 ```
 
-By default, the shim directory is located at `~/.local/share/mise/shims`. When installing a tool (for example, `node`), `mise` will add some entries for every binary provided by this tool in the `shims` directory (for example, `~/.local/share/mise/shims/node`).
+By default, the shim directory is located at `~/.local/share/mise/shims` (on Windows: `%LOCALAPPDATA%\mise\shims`). When installing a tool (for example, `node`), `mise` will add some entries for every binary provided by this tool in the `shims` directory (for example, `~/.local/share/mise/shims/node`).
 
 ```sh
 mise use -g node@20
@@ -93,7 +94,7 @@ echo 'eval "$(mise activate zsh)"' >> ~/.zshrc    # this sets up interactive ses
 
 ```sh [fish]
 echo 'mise activate fish --shims | source' >> ~/.config/fish/config.fish
-echo 'mise activate fish | source' >> ~/.config/fish/fish.config
+echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 
 :::
@@ -170,11 +171,11 @@ In general, [tasks](/tasks/) are a good way to ensure that the mise environment 
 
 ### Hooks and shims
 
-The [hooks](/hooks.html) `cd`, `enter`, `exit`, and `watch_files` only trigger with `mise activate`. However `preinstall` and `postinstall` still work with shims because they don't require shell integration.
+The [hooks](/hooks.html) `cd`, `enter`, and `leave` only trigger with `mise activate`. The separate [`watch_files`](/hooks.html#watch-files-hook) configuration also requires `mise activate`. However `preinstall` and `postinstall` still work with shims because they don't require shell integration.
 
 ### `which`
 
-`which` is a command that a lot of users find great value in. Using shims effectively "break" `which` and cause it to show the location of the shim. A workaround is to use `mise which` will show the actual location. Some users prefer the "cleanliness" of running `which node` and getting back a real path with a version number inside of it. e.g:
+`which` is a command that a lot of users find great value in. Using shims effectively "break" `which` and cause it to show the location of the shim. A workaround is to use `mise which`, which will show the actual location. Some users prefer the "cleanliness" of running `which node` and getting back a real path with a version number inside of it. e.g:
 
 ```sh
 $ which node
@@ -207,6 +208,7 @@ those PATH entries will be before the shim directory.
 
 In other words, which is better in terms of performance just depends on how you're calling mise. Really
 though most users will not notice a few ms lag on their terminal caused by `mise activate`.
+See [Troubleshooting: Slow shell prompts](/troubleshooting.html#slow-shell-prompts) for how to diagnose performance issues.
 
 The only difference between these would be that using `hook-env` you will need to call
 it again if you change directories but with shims that won't be necessary. The shims directory will be
@@ -228,19 +230,9 @@ The obvious downside is that anytime one wants to use `mise` they need to prefix
   not to use it to manage anything else on your system. Using a shell extension for that use-case
   would be overkill.
 
-::: info This is the method Jeff uses
-
-> Part of the reason for this is I often need to make sure I'm on my development version of mise. If you
-> work on mise yourself I would recommend working in a similar way and disabling `mise activate` or shims
-> while you are working on it.
->
-> See [How I use mise](https://mise.jdx.dev/how-i-use-mise.html) for more information.
-
-:::
-
 ## Hook on `cd` {#hook-on-cd}
 
-For some shells (`bash`, `zsh`, `fish`), `mise` hooks into the `cd` command, while in others, it only runs when the prompt is displayed. This relies on `chpwd` in `zsh`, `PROMPT_COMMAND` in `bash`, and `fish_prompt` in `fish`.
+For some shells (`bash`, `zsh`, `fish`, `xonsh`), `mise` hooks into the `cd` command, while in others, it only runs when the prompt is displayed. This relies on `chpwd` in `zsh`, `PROMPT_COMMAND` in `bash`, `fish_prompt` in `fish`, and `on_chdir` in `xonsh`.
 
 The upside is that it doesn't run as frequently but since mise is written in Rust the cost for executing
 mise is negligible (a few ms).

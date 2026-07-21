@@ -1,0 +1,3 @@
+backends = ["aqua:replicatedhq/kots", "asdf:ganta/asdf-kubectl-kots"]
+description = "KOTS provides the framework, tools and integrations that enable the delivery and management of 3rd-party Kubernetes applications, a.k.a. Kubernetes Off-The-Shelf (KOTS) Software"
+test = { cmd = "kots version", expected = "Replicated KOTS {{version}}" }

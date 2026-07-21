@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::toolset::ToolsetBuilder;
 use crate::toolset::outdated_info::OutdatedInfo;
+use crate::toolset::{ConfigScope, ResolveOptions, ToolsetBuilder};
 use crate::ui::table;
 use eyre::Result;
 use indexmap::IndexMap;
@@ -22,6 +22,10 @@ pub struct Outdated {
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 
+    /// Output in JSON format
+    #[clap(short = 'J', long, verbatim_doc_comment)]
+    pub json: bool,
+
     /// Compares against the latest versions available, not what matches the current config
     ///
     /// For example, if you have `node = "20"` in your config by default `mise outdated` will only
@@ -31,9 +35,22 @@ pub struct Outdated {
     #[clap(long, short = 'l', verbatim_doc_comment)]
     pub bump: bool,
 
-    /// Output in JSON format
-    #[clap(short = 'J', long, verbatim_doc_comment)]
-    pub json: bool,
+    /// Show outdated tools including installed-but-inactive tools not present in the current config
+    ///
+    /// By default, `mise outdated` only shows tools that come from the current config.
+    #[clap(long, verbatim_doc_comment, conflicts_with = "local")]
+    pub inactive: bool,
+
+    /// Only show outdated tools defined in local config files
+    ///
+    /// This will only show tools that are defined in project-local mise.toml and
+    /// will skip tools defined in the global config (~/.config/mise/config.toml).
+    #[clap(long, verbatim_doc_comment)]
+    pub local: bool,
+
+    /// Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet.
+    #[clap(long, verbatim_doc_comment)]
+    pub monorepo: bool,
 
     /// Don't show table header
     #[clap(long)]
@@ -41,10 +58,21 @@ pub struct Outdated {
 }
 
 impl Outdated {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
+        if self.monorepo {
+            unimplemented!("mise outdated --monorepo is not implemented yet");
+        }
+        let config = Config::get().await?;
+        let scope = if self.local {
+            ConfigScope::LocalOnly
+        } else {
+            ConfigScope::All
+        };
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
-            .build(&Config::get())?;
+            .with_scope(scope)
+            .build(&config)
+            .await?;
         let tool_set = self
             .tool
             .iter()
@@ -52,12 +80,21 @@ impl Outdated {
             .collect::<HashSet<_>>();
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));
-        let outdated = ts.list_outdated_versions(self.bump);
-        self.display(outdated)?;
+        let outdated = ts
+            .list_outdated_versions(
+                &config,
+                self.bump,
+                &ResolveOptions {
+                    inactive: self.inactive,
+                    ..Default::default()
+                },
+            )
+            .await;
+        self.display(outdated).await?;
         Ok(())
     }
 
-    fn display(&self, outdated: Vec<OutdatedInfo>) -> Result<()> {
+    async fn display(&self, outdated: Vec<OutdatedInfo>) -> Result<()> {
         match self.json {
             true => self.display_json(outdated)?,
             false => self.display_table(outdated)?,
@@ -110,5 +147,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise outdated --json</bold>
     {"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
+
+    $ <bold>mise outdated --local</bold>
+    Plugin  Requested  Current  Latest
+    node    20         20.0.0   20.1.0
 "#
 );

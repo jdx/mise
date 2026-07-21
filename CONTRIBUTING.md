@@ -1,1 +1,3 @@
-<https://mise.jdx.dev/contributing.html>
+# Contributing
+
+See the [contributing guide](https://mise.en.dev/contributing).

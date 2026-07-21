@@ -1,0 +1,3 @@
+backends = ["aqua:go-task/task", "asdf:particledecay/asdf-task"]
+description = "A task runner / simpler Make alternative written in Go"
+test = { cmd = "task --version", expected = "{{version}}" }

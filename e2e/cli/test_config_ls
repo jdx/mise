@@ -3,3 +3,18 @@
 assert "mise set FOO=bar"
 assert "mise env"
 assert "mise cfg --tracked-configs" "$PWD/mise.toml"
+
+# env files from MISE_ENV_FILE setting appear in config ls output
+echo "MY_VAR=hello" >.test-env
+assert_contains "MISE_ENV_FILE=.test-env mise cfg ls" ".test-env"
+assert_contains "MISE_ENV_FILE=.test-env mise cfg ls" "(none)"
+
+# -v shows the env var keys set by the env file
+assert_contains "MISE_ENV_FILE=.test-env mise cfg ls -v" "MY_VAR"
+
+# env files from mise.toml [env] directive also appear
+cat <<EOF >mise.toml
+[env]
+_.file = '.test-env'
+EOF
+assert_contains "mise cfg ls" ".test-env"

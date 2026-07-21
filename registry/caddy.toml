@@ -1,0 +1,3 @@
+backends = ["aqua:caddyserver/caddy", "asdf:salasrod/asdf-caddy"]
+description = "Fast, multi-platform web server with automatic HTTPS"
+test = { cmd = "caddy --version", expected = "v{{version}}" }

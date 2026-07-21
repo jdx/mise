@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# Test that multiple -E/--env flags work correctly
+# This tests the fix for: https://github.com/jdx/mise/discussions/8597
+
+cat >mise.toml <<EOF
+[env]
+TTT_BASE_VAR = "base_value"
+EOF
+
+cat >mise.dev.toml <<EOF
+[env]
+TTT_DEV_VAR = "dev_value"
+TTT_SHARED_VAR = "from_dev"
+EOF
+
+cat >mise.staging.toml <<EOF
+[env]
+TTT_STAGING_VAR = "staging_value"
+TTT_SHARED_VAR = "from_staging"
+EOF
+
+# Test 1: Multiple -E flags load both environments
+assert_contains "mise -E dev -E staging env" "TTT_DEV_VAR=dev_value"
+assert_contains "mise -E dev -E staging env" "TTT_STAGING_VAR=staging_value"
+
+# Test 2: Last environment wins for conflicting variables
+assert_contains "mise -E dev -E staging env" "TTT_SHARED_VAR=from_staging"
+assert_contains "mise -E staging -E dev env" "TTT_SHARED_VAR=from_dev"
+
+# Test 3: Multiple --env long flags work too
+assert_contains "mise --env dev --env staging env" "TTT_DEV_VAR=dev_value"
+assert_contains "mise --env dev --env staging env" "TTT_STAGING_VAR=staging_value"
+
+# Test 4: Mixed short and long flags work
+assert_contains "mise -E dev --env staging env" "TTT_DEV_VAR=dev_value"
+assert_contains "mise -E dev --env staging env" "TTT_STAGING_VAR=staging_value"
+
+# Test 5: Single -E still works
+assert_contains "mise -E dev env" "TTT_DEV_VAR=dev_value"
+assert_not_contains "mise -E dev env" "TTT_STAGING_VAR"
+
+# Test 6: Base config is always loaded
+assert_contains "mise -E dev -E staging env" "TTT_BASE_VAR=base_value"

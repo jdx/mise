@@ -1,0 +1,3 @@
+backends = ["aqua:helmfile/helmfile", "asdf:feniix/asdf-helmfile"]
+description = "Declaratively deploy your Kubernetes manifests, Kustomize configs, and Charts as Helm releases. Generate all-in-one manifests for use with ArgoCD"
+test = { cmd = "helmfile --version", expected = "helmfile version {{version}}" }

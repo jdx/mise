@@ -1,0 +1,4 @@
+backends = ["core:bun"]
+description = "Bun is a fast JavaScript all-in-one toolkit"
+detect = ["bun.lock", "bun.lockb", "bunfig.toml"]
+test = { cmd = "bun --version", expected = "{{version}}" }

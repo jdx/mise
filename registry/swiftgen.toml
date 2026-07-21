@@ -1,0 +1,7 @@
+description = "The Swift code generator for your assets, storyboards, Localizable.strings, … — Get rid of all String-based APIs!"
+
+[[backends]]
+full = "github:SwiftGen/SwiftGen"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-swiftgen"

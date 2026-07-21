@@ -31,6 +31,16 @@ run = 'echo secret: \$SECRET_FOO'
 EOF
 assert "mise run a" "secret: [redacted]"
 
+cat <<'TOML' >mise.toml
+redactions = ["*_KEY"]
+[env]
+DISABLE_FEEDBACK_SURVEY = "1"
+
+[tasks.a]
+run = 'echo "version 1.2.3"'
+TOML
+assert "mise run a" "version 1.2.3"
+
 cat <<EOF >mise.toml
 [env]
 SECRET= {value = "my_secret", redact = true}
@@ -48,4 +58,41 @@ _.file = {path = ".env.json", redact = true}
 [tasks.a]
 run = 'echo secret: \$SECRET'
 EOF
+assert "mise run a" "secret: [redacted]"
+
+cat <<'TOML' >mise.toml
+[env]
+EMPTY_SECRET = { value = "", redact = true }
+
+[tasks.empty_redaction]
+run = 'echo "Hello $EMPTY_SECRET"'
+TOML
+assert "mise run empty_redaction" "Hello "
+
+cat <<'TOML' >mise.toml
+[env]
+SECRET_WITH_TOOLS = { value = "tools_secret", tools = true, redact = true }
+
+[tasks.a]
+run = 'echo secret: $SECRET_WITH_TOOLS'
+TOML
+assert "mise run a" "secret: [redacted]"
+
+# Test task-specific env._.file with redactions pattern
+echo '{ "NOTIFY_AVATAR": "task_file_secret" }' >.env.json
+cat <<'TOML' >mise.toml
+redactions = ["NOTIFY_*"]
+[tasks.a]
+run = "echo secret: $NOTIFY_AVATAR"
+env._.file = ".env.json"
+TOML
+assert "mise run a" "secret: [redacted]"
+
+# Test task-specific env._.file with redact=true
+echo '{ "TASK_SECRET": "task_secret_val" }' >.env.json
+cat <<'TOML' >mise.toml
+[tasks.a]
+run = "echo secret: $TASK_SECRET"
+env._.file = {path = ".env.json", redact = true}
+TOML
 assert "mise run a" "secret: [redacted]"

@@ -1,0 +1,3 @@
+backends = ["aqua:luau-lang/luau"]
+description = "A fast, small, safe, gradually typed embeddable scripting language derived from Lua"
+test = { cmd = "echo 'print(_VERSION)' | luau", expected = "Luau" }

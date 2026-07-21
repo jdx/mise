@@ -1,0 +1,3 @@
+backends = ["aqua:JanDeDobbeleer/oh-my-posh"]
+description = "The most customizable and fastest prompt engine for any shell"
+test = { cmd = "oh-my-posh version", expected = "{{version}}" }

@@ -1,0 +1,6 @@
+backends = [
+  "aqua:projectcalico/calico/calicoctl",
+  "asdf:TheCubicleJockey/asdf-calicoctl",
+]
+description = "Cloud native networking and network security"
+test = { cmd = "calicoctl version", expected = "Client Version:    v{{version}}" }

@@ -1,0 +1,3 @@
+backends = ["aqua:jmespath/jp", "asdf:skyzyx/asdf-jmespath"]
+description = "Command line interface to JMESPath - http://jmespath.org"
+test = { cmd = "jp --version", expected = "jp version {{version}}" }

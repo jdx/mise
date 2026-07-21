@@ -1,8 +1,15 @@
-# Ubi Backend
+# Ubi Backend <Badge type="danger" text="deprecated" />
+
+::: warning
+The ubi backend is **deprecated**. Please use the [GitHub backend](/dev-tools/backends/github) instead.
+
+The GitHub backend offers several advantages over ubi including provenance verification, download progress reports, and fewer dependencies. To migrate, replace `ubi:owner/repo` with `github:owner/repo` in your configuration files. The [`matching`](/dev-tools/backends/github.html#matching) and [`matching_regex`](/dev-tools/backends/github.html#matching_regex) options carry over. One behavioral difference is worth noting: ubi applies the substring `matching` only as a tiebreaker among assets that already match your OS/arch, and skips it when a single asset matches the platform. The GitHub backend applies `matching` as a pre-filter before autodetection, so for multi-binary releases you get the binary your filter names, or a clear error naming the filter if it isn't published for your platform.
+
+One migration gotcha: ubi folds `matching` into the install path, so you can install several binaries from one repo via separate `matching` values on the same `ubi:owner/repo` string. The GitHub backend keeps the install path keyed by tool name + version only, so two `github:owner/repo` entries with different `matching` values resolve to the **same** directory and the second overwrites the first. If you rely on that ubi pattern, give each binary its own [`tool_alias`](/dev-tools/backends/github.html#multiple-assets-from-the-same-release) on GitHub so each gets its own install directory.
+:::
 
 You may install GitHub Releases and URL packages directly using [ubi](https://github.com/houseabsolute/ubi) backend. ubi is directly compiled into
-the mise codebase so it does not need to be installed separately to be used. ubi is preferred over
-asdf/vfox for new tools since it doesn't require a plugin, supports Windows, and is really easy to use.
+the mise codebase so it does not need to be installed separately to be used.
 
 ubi doesn't require plugins or even any configuration for each tool. What it does is try to deduce what
 the proper binary/tarball is from GitHub releases and downloads the right one. As long as the vendor
@@ -60,7 +67,7 @@ use the `rename_exe` option to specify the target executable name:
 ### `matching`
 
 Set a string to match against the release filename when there are multiple files for your
-OS/arch, i.e. "gnu" or "musl". Note that this is only used when there is more than one
+OS/arch, i.e. "gnu", "musl", or "msvc". Note that this is only used when there is more than one
 matching release filename for your OS/arch. If only one release asset matches your OS/arch,
 then this will be ignored.
 
@@ -69,13 +76,48 @@ then this will be ignored.
 "ubi:BurntSushi/ripgrep" = { version = "latest", matching = "musl" }
 ```
 
+### `matching_regex`
+
+Set a regular expression string that will be matched against release filenames before matching
+against OS/arch. If the pattern yields a single match, that release will be selected. If no matches
+are found, this will result in an error.
+
+```toml
+[tools]
+"ubi:shader-slang/slang" = { version = "latest", matching_regex = "\\d+\\.tar" }
+```
+
+### `provider`
+
+Set the provider type to use for fetching assets and release information. Either `github` or `gitlab` (default is `github`).
+Ensure the `provider` is set to the correct type if you use `api_url` as the type probably cannot be derived correctly
+from the URL.
+
+```toml
+[tools]
+"ubi:gitlab-org/cli" = { version = "latest", exe = "glab", provider = "gitlab" }
+```
+
+### `api_url`
+
+Set the URL for the provider's API. This is useful when using a self-hosted instance.
+
+```toml
+[tools]
+"ubi:acme/my-tool" = {
+  version = "latest",
+  provider = "gitlab",
+  api_url = "https://gitlab.acme.com/api/v4",
+}
+```
+
 ### `extract_all`
 
 Set to `true` to extract all files in the tarball instead of just the "bin". Not compatible with `exe` nor `rename_exe`.
 
 ```toml
 [tools]
-"ubi:helix-editor/helix" = { version = "latest", extract_all = "true" }
+"ubi:helix-editor/helix" = { version = "latest", extract_all = true }
 ```
 
 ### `bin_path`
@@ -85,8 +127,19 @@ This only makes sense when `extract_all` is set to `true`.
 
 ```toml
 [tools]
-"ubi:BurntSushi/ripgrep" = { version = "latest", extract_all = "true", bin_path = "target/release" }
+"ubi:BurntSushi/ripgrep" = {
+  version = "latest",
+  extract_all = true,
+  bin_path = "target/release",
+}
 ```
+
+**Binary path lookup order:**
+
+1. If `bin_path` is specified, use that directory
+2. If `extract_all` is set to `true`, use the install path root
+3. If `bin_path` is not set, look for a `bin/` directory in the install path
+4. If no `bin/` directory exists, use the root of the extracted directory
 
 ### `tag_regex`
 
@@ -97,8 +150,14 @@ releases.
 
 ```toml
 [tools]
-"ubi:cargo-bins/cargo-binstall" = { version = "latest", tag_regex = "^\d+\." }
+"ubi:cargo-bins/cargo-binstall" = { version = "latest", tag_regex = '^\d+\.' }
 ```
+
+## Self-hosted GitHub/GitLab
+
+If you are using a self-hosted GitHub/GitLab instance, you can set the `provider` and `api_url` tool options.
+Additionally, you can set the `MISE_GITHUB_ENTERPRISE_TOKEN` or `MISE_GITLAB_ENTERPRISE_TOKEN` environment variable to
+authenticate with the API.
 
 ## Supported Ubi Syntax
 
@@ -111,7 +170,7 @@ releases.
 ### `ubi` resolver can't find os/arch
 
 Sometimes vendors use strange formats for their releases that ubi can't figure out, possibly for a
-specific os/arch combination. For example this recently happend in [this ticket](https://github.com/houseabsolute/ubi/issues/79) because a vendor used
+specific os/arch combination. For example this recently happened in [this ticket](https://github.com/houseabsolute/ubi/issues/79) because a vendor used
 "mac" instead of the more common "macos" or "darwin" tags.
 
 Try using ubi by itself to see if the issue is related to mise or ubi:

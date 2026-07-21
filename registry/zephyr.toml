@@ -1,0 +1,3 @@
+backends = ["aqua:MaybeJustJames/zephyr", "asdf:nsaunders/asdf-zephyr"]
+description = "Tree shaking breeze for PureScript CoreFn AST"
+test = { cmd = "zephyr --version", expected = "{{version}}" }

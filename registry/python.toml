@@ -1,0 +1,3 @@
+backends = ["core:python"]
+description = "python language"
+detect = ["pyproject.toml", ".python-version", "setup.py", "requirements.txt"]

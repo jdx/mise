@@ -1,0 +1,3 @@
+backends = ["github:vmware/pinniped"]
+description = "Pinniped is the easy, secure way to log in to your Kubernetes clusters"
+test = { cmd = "pinniped-cli version", expected = "v{{version}}" }

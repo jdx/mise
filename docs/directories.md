@@ -47,8 +47,11 @@ doing so.
 
 ### `~/.local/share/mise/downloads`
 
-This is where plugins may optionally cache downloaded assets such as tarballs. Use the
-`always_keep_downloads` setting to prevent mise from removing files from here.
+This is where plugins may write downloaded assets such as tarballs during installation. mise removes these files by
+default after install/uninstall; set `always_keep_download` to keep them for debugging backend/plugin install behavior.
+This directory is not a supported download cache. Some backends may skip a download when the expected file already exists,
+but that behavior is backend-specific and not guaranteed. Cache `~/.local/share/mise/installs` instead if you want to
+avoid reinstalling tools in CI or offline workflows.
 
 ### `~/.local/share/mise/plugins`
 
@@ -76,6 +79,13 @@ $ tree ~/.local/share/mise/installs/node
 lts -> ./20.15.0
 latest -> ./20.15.0
 ```
+
+You can set the `MISE_INSTALLS_DIR` environment variable to override this location.
+
+`MISE_INSTALLS_DIR` is read when mise starts. Set it in the environment before invoking mise and keep
+it set for later mise and shim invocations. Do not set it in the `[env]` section of `mise.toml`: `[env]`
+describes the environment mise exports, after mise has already selected its installation directory.
+Setting it there can make an install use one directory while later commands and shims look in another.
 
 ### `~/.local/share/mise/shims`
 

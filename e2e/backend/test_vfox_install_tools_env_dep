@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+# #10282 / follow-up to #10432: a `tools = true` [env] value that references a
+# DEPENDENCY tool's path (e.g. `CLOUDSDK_PYTHON = "{{ tools.python.path }}/..."`)
+# must resolve to the dependency's REAL install path and reach the dependent
+# tool's install hooks during a combined `mise install`.
+#
+# The original fix resolved tools=true env against ctx.ts — the unresolved
+# install toolset — so `build_tools_tera_map` was empty and `{{ tools.<dep>.path }}`
+# rendered "" (gcloud then saw CLOUDSDK_PYTHON=/bin/python3 and failed). Its e2e
+# test only used a STATIC tools=true value, so it never caught this. This test
+# exercises a `{{ tools.<dep>.path }}` value through BOTH a vfox `os.execute`
+# install hook AND a tool-level `postinstall` hook, using the hermetic `dummy`
+# plugin as the dependency (clean short name + a real install dir).
+
+PLUGIN_DIR="$PWD/vfox-tools-env-dep"
+INSTALL_MARKER="$PWD/tools-env-install-marker"
+POSTINSTALL_MARKER="$PWD/tools-env-postinstall-marker"
+
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "tools-env-dep"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/tools-env-dep"
+PLUGIN.license = "MIT"
+PLUGIN.description = "tools=true dependency-path env test plugin"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return {
+		{ version = "1.0.0" },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return {
+		version = ctx.version,
+	}
+end
+LUA
+
+# PostInstall shells out via os.execute (NOT cmd.exec) to capture the tools=true
+# env value, mirroring how vfox-gcloud runs its install.sh.
+cat >"$PLUGIN_DIR/hooks/post_install.lua" <<LUA
+function PLUGIN:PostInstall(ctx)
+	os.execute("printf '%s' \"\$MISE_TEST_TOOLS_PATH\" > \"$INSTALL_MARKER\"")
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	return {}
+end
+LUA
+
+git -C "$PLUGIN_DIR" init
+git -C "$PLUGIN_DIR" add .
+git -C "$PLUGIN_DIR" -c user.name="mise" -c user.email="mise@example.com" commit -m "initial plugin"
+
+# The vfox tool depends on `dummy`; the tools=true [env] value references the
+# dependency's resolved path. The tool-level `postinstall` writes the same value
+# to a second marker.
+cat >mise.toml <<EOF
+[settings]
+unix_default_inline_shell_args = "sh -c"
+
+[tools]
+dummy = "1.0.0"
+"vfox:file://$PLUGIN_DIR" = { version = "1.0.0", depends = ["dummy"], postinstall = "printf '%s' \"\$MISE_TEST_TOOLS_PATH\" > \"$POSTINSTALL_MARKER\"" }
+
+[env]
+MISE_TEST_TOOLS_PATH = { value = "{{ tools.dummy.path | default(value='') }}", tools = true }
+EOF
+
+mise install
+
+DUMMY_PATH="$(mise where dummy)"
+
+# vfox os.execute install hook saw the resolved dependency path (Step 1)
+assert "cat '$INSTALL_MARKER'" "$DUMMY_PATH"
+# tool-level postinstall hook saw the resolved dependency path (Step 2)
+assert "cat '$POSTINSTALL_MARKER'" "$DUMMY_PATH"

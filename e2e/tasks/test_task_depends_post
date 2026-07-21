@@ -13,7 +13,7 @@ run = "echo two"
 depends_post = ["two"]
 run = "echo three"
 EOF
-assert "mise task deps" "one
+assert "mise tasks deps" "one
 three
 two
 ├── three

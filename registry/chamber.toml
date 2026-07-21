@@ -1,0 +1,3 @@
+backends = ["aqua:segmentio/chamber", "asdf:mintel/asdf-chamber"]
+description = "CLI for managing secrets"
+test = { cmd = "chamber version", expected = "chamber v{{version}}" }

@@ -2,105 +2,81 @@
 #![allow(clippy::literal_string_with_formatting_args)]
 use std::fmt::Display;
 
-use indoc::formatdoc;
+use shell_escape::unix::escape;
 
 use crate::config::Settings;
-use crate::shell::{ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
 pub struct Bash {}
 
+impl Bash {}
+
+fn render_template(template: &str, replacements: &[(&str, &str)]) -> String {
+    let mut out = template.to_owned();
+    for (needle, value) in replacements {
+        out = out.replace(needle, value);
+    }
+    out
+}
+
+fn render_flags_array(value: &str) -> String {
+    shell_words::split(value)
+        .expect("failed to split activation flags")
+        .into_iter()
+        .map(|word| escape(word.into()).to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 impl Shell for Bash {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
-        let flags = opts.flags;
         let settings = Settings::get();
-        let exe = exe.to_string_lossy();
+
+        let exe = escape(exe.to_string_lossy());
+        let flags = render_flags_array(&opts.flags);
 
         let mut out = String::new();
+
+        out.push_str(&shell::build_deactivation_script(self));
+
         out.push_str(&self.format_activate_prelude(&opts.prelude));
-        out.push_str(&formatdoc! {r#"
-            export MISE_SHELL=bash
-            export __MISE_ORIG_PATH="$PATH"
-
-            mise() {{
-              local command
-              command="${{1:-}}"
-              if [ "$#" = 0 ]; then
-                command {exe}
-                return
-              fi
-              shift
-
-              case "$command" in
-              deactivate|shell|sh)
-                # if argv doesn't contains -h,--help
-                if [[ ! " $@ " =~ " --help " ]] && [[ ! " $@ " =~ " -h " ]]; then
-                  eval "$(command {exe} "$command" "$@")"
-                  return $?
-                fi
-                ;;
-              esac
-              command {exe} "$command" "$@"
-            }}
-
-            _mise_hook() {{
-              local previous_exit_status=$?;
-              eval "$(mise hook-env{flags} -s bash)";
-              return $previous_exit_status;
-            }};
-            "#});
-        if !opts.no_hook_env {
-            out.push_str(&formatdoc! {r#"
-            if [[ ";${{PROMPT_COMMAND:-}};" != *";_mise_hook;"* ]]; then
-              PROMPT_COMMAND="_mise_hook${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
-            fi
-            {chpwd_functions}
-            {chpwd_load}
-            chpwd_functions+=(_mise_hook)
-            _mise_hook
-            "#,
-            chpwd_functions = include_str!("../assets/bash_zsh_support/chpwd/function.sh"),
-            chpwd_load = include_str!("../assets/bash_zsh_support/chpwd/load.sh")
-            });
-        }
+        let activate = render_template(
+            include_str!("../assets/bash/activate.sh"),
+            &[
+                ("__MISE_EXE_VALUE__", &exe),
+                ("__MISE_FLAGS_VALUE__", &flags),
+                (
+                    "__MISE_HOOK_ENABLED_VALUE__",
+                    if opts.no_hook_env { "0" } else { "1" },
+                ),
+                (
+                    "__MISE_CHPWD_FUNCTIONS__",
+                    include_str!("../assets/bash_zsh_support/chpwd/function.sh"),
+                ),
+                (
+                    "__MISE_CHPWD_LOAD__",
+                    include_str!("../assets/bash_zsh_support/chpwd/load.sh"),
+                ),
+            ],
+        );
+        out.push_str(&activate);
+        out.push('\n');
         if settings.not_found_auto_install {
-            out.push_str(&formatdoc! {r#"
-            if [ -z "${{_mise_cmd_not_found:-}}" ]; then
-                _mise_cmd_not_found=1
-                if [ -n "$(declare -f command_not_found_handle)" ]; then
-                    _mise_cmd_not_found_handle=$(declare -f command_not_found_handle)
-                    eval "${{_mise_cmd_not_found_handle/command_not_found_handle/_command_not_found_handle}}"
-                fi
-
-                command_not_found_handle() {{
-                    if [[ "$1" != "mise" && "$1" != "mise-"* ]] && {exe} hook-not-found -s bash -- "$1"; then
-                      _mise_hook
-                      "$@"
-                    elif [ -n "$(declare -f _command_not_found_handle)" ]; then
-                        _command_not_found_handle "$@"
-                    else
-                        echo "bash: command not found: $1" >&2
-                        return 127
-                    fi
-                }}
-            fi
-            "#});
+            let not_found = render_template(
+                include_str!("../assets/bash/command_not_found.sh"),
+                &[("__MISE_EXE__", &exe)],
+            );
+            out.push_str(&not_found);
+            out.push('\n');
         }
 
         out
     }
 
     fn deactivate(&self) -> String {
-        formatdoc! {r#"
-            PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook;/}}"
-            PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook/}}"
-            unset _mise_hook
-            unset mise
-            unset MISE_SHELL
-            unset __MISE_DIFF
-            unset __MISE_SESSION
-        "#}
+        include_str!("../assets/bash/deactivate.sh").to_string()
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
@@ -115,6 +91,17 @@ impl Shell for Bash {
 
     fn unset_env(&self, k: &str) -> String {
         format!("unset {k}\n", k = shell_escape::unix::escape(k.into()))
+    }
+
+    fn set_alias(&self, name: &str, cmd: &str) -> String {
+        let name = shell_escape::unix::escape(name.into());
+        let cmd = shell_escape::unix::escape(cmd.into());
+        format!("alias {name}={cmd}\n")
+    }
+
+    fn unset_alias(&self, name: &str) -> String {
+        let name = shell_escape::unix::escape(name.into());
+        format!("unalias {name} 2>/dev/null || true\n")
     }
 }
 
@@ -136,6 +123,11 @@ mod tests {
 
     #[test]
     fn test_activate() {
+        unsafe {
+            std::env::remove_var("__MISE_ORIG_PATH");
+            std::env::remove_var("__MISE_DIFF");
+        }
+
         let bash = Bash::default();
         let exe = Path::new("/some/dir/mise");
         let opts = ActivateOptions {

@@ -12,7 +12,7 @@ use crate::toolset::ToolsetBuilder;
 /// not know about and so it will be necessary to call this explicitly.
 ///
 /// If you think mise should automatically call this for a particular command, please
-/// open an issue on the mise repo. You can also setup a shell function to reshim
+/// open an issue on the mise repo. You can also set up a shell function to reshim
 /// automatically (it's really fast so you don't need to worry about overhead):
 ///
 ///     npm() {
@@ -26,7 +26,7 @@ use crate::toolset::ToolsetBuilder;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Reshim {
     #[clap(hide = true)]
-    pub plugin: Option<String>,
+    pub tool: Option<String>,
     #[clap(hide = true)]
     pub version: Option<String>,
 
@@ -36,11 +36,11 @@ pub struct Reshim {
 }
 
 impl Reshim {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        let ts = ToolsetBuilder::new().build(&config)?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let ts = ToolsetBuilder::new().build(&config).await?;
 
-        shims::reshim(&ts, self.force)
+        shims::reshim(&config, &ts, self.force).await
     }
 }
 

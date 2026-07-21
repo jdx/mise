@@ -1,0 +1,2 @@
+backends = ["github:traefik/traefik", "asdf:Dabolus/asdf-traefik"]
+description = "The Cloud Native Application Proxy"

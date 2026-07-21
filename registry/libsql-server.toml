@@ -1,0 +1,12 @@
+description = "server mode of libSQL, which is a fork of SQLite that is both Open Source, and Open Contributions"
+os = ["linux", "macos"]
+test = { cmd = "sqld --version", expected = "sqld sqld {{version}}" }
+
+[[backends]]
+full = "github:tursodatabase/libsql"
+
+[backends.options]
+version_prefix = "libsql-server-v"
+
+[[backends]]
+full = "asdf:jonasb/asdf-libsql-server"

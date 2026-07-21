@@ -1,16 +1,18 @@
 use crate::dirs::CACHE;
-use crate::file::{display_path, remove_all};
+use crate::file::{display_path, remove_all_with_retry};
+use crate::toolset::env_cache::CachedEnv;
 use eyre::Result;
 use filetime::set_file_times;
+use heck::ToKebabCase;
 use walkdir::WalkDir;
 
 /// Deletes all cache files in mise
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "c", alias = "clean")]
 pub struct CacheClear {
-    /// Plugin(s) to clear cache for
+    /// Tool(s) to clear cache for
     /// e.g.: node, python
-    plugin: Option<Vec<String>>,
+    tool: Option<Vec<String>>,
 
     /// Mark all cache files as old
     #[clap(long, hide = true)]
@@ -19,8 +21,19 @@ pub struct CacheClear {
 
 impl CacheClear {
     pub fn run(self) -> Result<()> {
-        let cache_dirs = match &self.plugin {
-            Some(plugins) => plugins.iter().map(|p| CACHE.join(p)).collect(),
+        let cache_dirs = match &self.tool {
+            Some(tools) => tools
+                .iter()
+                .filter_map(|p| {
+                    let kebab = p.to_kebab_case();
+                    if kebab.is_empty() {
+                        warn!("invalid tool name: {p}");
+                        None
+                    } else {
+                        Some(CACHE.join(kebab))
+                    }
+                })
+                .collect(),
             None => vec![CACHE.to_path_buf()],
         };
         if self.outdate {
@@ -44,14 +57,60 @@ impl CacheClear {
             for p in cache_dirs {
                 if p.exists() {
                     debug!("clearing cache from {}", display_path(&p));
-                    remove_all(p)?;
+                    handle_remove_result(&p, remove_all_with_retry(&p))?;
                 }
             }
-            match &self.plugin {
-                Some(plugins) => info!("cache cleared for {}", plugins.join(", ")),
+            // Also clear env cache when clearing all caches
+            if self.tool.is_none() {
+                CachedEnv::clear()?;
+            }
+            match &self.tool {
+                Some(tools) => info!("cache cleared for {}", tools.join(", ")),
                 None => info!("cache cleared"),
             }
         }
         Ok(())
+    }
+}
+
+fn handle_remove_result(path: &std::path::Path, result: Result<()>) -> Result<()> {
+    match result {
+        Err(err)
+            if err
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|err| err.kind() == std::io::ErrorKind::DirectoryNotEmpty) =>
+        {
+            debug!(
+                "cache was recreated while being cleared: {}",
+                display_path(path)
+            );
+            Ok(())
+        }
+        result => result,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use eyre::Context;
+
+    use super::*;
+
+    #[test]
+    fn test_handle_remove_result_tolerates_directory_not_empty() {
+        let err = Err::<(), _>(std::io::Error::from(std::io::ErrorKind::DirectoryNotEmpty))
+            .wrap_err("failed rm -rf")
+            .unwrap_err();
+        handle_remove_result(std::path::Path::new("cache"), Err(err)).unwrap();
+    }
+
+    #[test]
+    fn test_handle_remove_result_propagates_other_errors() {
+        let err = std::io::Error::from(std::io::ErrorKind::PermissionDenied).into();
+        let err = handle_remove_result(std::path::Path::new("cache"), Err(err)).unwrap_err();
+        assert_eq!(
+            err.downcast_ref::<std::io::Error>().map(|err| err.kind()),
+            Some(std::io::ErrorKind::PermissionDenied)
+        );
     }
 }

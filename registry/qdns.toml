@@ -1,0 +1,2 @@
+backends = ["github:natesales/q", "asdf:moritz-makandra/asdf-plugin-qdns"]
+description = "A tiny command line DNS client with support for UDP, TCP, DoT, DoH, DoQ and ODoH"

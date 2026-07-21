@@ -1,0 +1,6 @@
+backends = [
+  "aqua:ekalinin/github-markdown-toc",
+  "asdf:skyzyx/asdf-github-markdown-toc",
+]
+description = "Easy TOC creation for GitHub README.md"
+test = { cmd = "gh-md-toc --version", expected = "{{version}}" }

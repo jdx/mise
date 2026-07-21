@@ -1,0 +1,3 @@
+backends = ["aqua:miniscruff/changie", "asdf:pdemagny/asdf-changie"]
+description = "Automated changelog tool for preparing releases with lots of customization options"
+test = { cmd = "changie --version", expected = "changie version v{{version}}" }

@@ -1,0 +1,3 @@
+backends = ["aqua:containerd/nerdctl", "asdf:dmpe/asdf-nerdctl"]
+description = "contaiNERD CTL - Docker-compatible CLI for containerd, with support for Compose, Rootless, eStargz, OCIcrypt, IPFS, "
+test = { cmd = "nerdctl --version", expected = "nerdctl version {{version}}" }

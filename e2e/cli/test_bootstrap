@@ -1,0 +1,330 @@
+#!/usr/bin/env bash
+
+# bootstrap with nothing configured succeeds and does nothing
+cat <<EOF >mise.toml
+[tools]
+EOF
+assert_succeed "mise bootstrap --yes"
+assert_succeed "MISE_EXPERIMENTAL=0 mise bootstrap --yes"
+assert_succeed "MISE_EXPERIMENTAL=0 mise bootstrap status"
+assert_not_contains "mise bootstrap --yes" "bootstrap: follow-up"
+
+# bootstrap applies dotfiles, installs tools, and runs the
+# `bootstrap` task afterwards, with the installed tools on PATH
+echo "gitconfig content" >gitconfig
+cat <<'EOF' >mise.toml
+[tools]
+tiny = "1.0.0"
+
+[dotfiles]
+"~/.gitconfig" = "gitconfig"
+"~/.zshrc/activate" = { block = 'eval "$(mise activate zsh)"' }
+
+# the task only succeeds if the installed tool is on PATH
+[tasks.bootstrap]
+run = "command -v rtx-tiny && echo task-done > bootstrap_ran"
+EOF
+assert_succeed "mise bootstrap --yes"
+assert "cat bootstrap_ran" "task-done"
+assert_contains "mise ls tiny" "1.0.0"
+assert "readlink ~/.gitconfig" "$PWD/gitconfig"
+assert_contains "cat ~/.zshrc" ">>> mise:activate >>>"
+assert_contains "mise bootstrap status" "dotfiles"
+assert_contains "mise bootstrap status" "tiny@1.0.0"
+assert_contains "mise bootstrap status" "installed"
+assert_contains "mise bootstrap status --json" '"dotfiles"'
+assert_contains "mise bootstrap status --json" '"tools"'
+assert_succeed "mise bootstrap status --missing"
+assert_contains "mise bootstrap dotfiles status" "~/.gitconfig"
+assert_contains "MISE_EXPERIMENTAL=0 mise bootstrap dotfiles status" "~/.gitconfig"
+assert_succeed "mise bootstrap packages apply --dry-run --yes"
+assert_succeed "mise bootstrap packages install --dry-run --yes"
+
+# idempotent: re-running is fine
+assert_succeed "mise bootstrap --yes"
+
+# dry-run doesn't run the install postinstall hook when all tools already exist
+rm -f postinstall_ran
+cat <<EOF >mise.toml
+[tools]
+tiny = "1.0.0"
+
+[hooks]
+postinstall = { run = "touch postinstall_ran", shell = "bash -c" }
+EOF
+assert_contains "mise bootstrap --dry-run" "Would run postinstall hook"
+assert_contains "mise bootstrap --dry-run" "bash -c"
+assert_contains "mise bootstrap --dry-run" "touch postinstall_ran"
+assert_fail "test -f postinstall_ran"
+
+# dry-run previews install hooks without installing or running anything
+rm -f bootstrap_ran preinstall_ran postinstall_ran
+cat <<EOF >mise.toml
+[tools]
+tiny = "2.1.0"
+
+[hooks]
+preinstall = "touch preinstall_ran"
+postinstall = "touch postinstall_ran"
+
+[tasks.bootstrap]
+run = "touch bootstrap_ran"
+EOF
+assert_contains "mise bootstrap --dry-run" "Would run preinstall hook"
+assert_contains "mise bootstrap --dry-run" "Would run postinstall hook"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/2.1.0"
+assert_fail "test -f preinstall_ran"
+assert_fail "test -f postinstall_ran"
+assert_fail "cat bootstrap_ran"
+assert_fail "mise bootstrap status --missing" "tiny@2.1.0"
+assert_contains "mise bootstrap status --json" '"state": "missing"'
+
+# resolution errors should also fail --missing
+cat <<EOF >mise.toml
+[tools]
+tiny = "prefix:9999"
+EOF
+assert_fail "mise bootstrap status --missing" "resolve error"
+assert_contains "mise bootstrap status --json" '"state": "resolve_error"'
+
+# runtime symlinks should not count as installed for bootstrap status
+cat <<EOF >mise.toml
+[tools]
+tiny = "9.9.9"
+EOF
+ln -s ./1.0.0 "$MISE_DATA_DIR/installs/tiny/9.9.9"
+assert_fail "mise bootstrap status --missing" "tiny@9.9.9"
+
+# --skip tools leaves configured tools uninstalled
+cat <<EOF >mise.toml
+[tools]
+tiny = "2.2.0"
+
+[tasks.bootstrap]
+run = "touch bootstrap_ran"
+EOF
+rm -f bootstrap_ran
+assert_succeed "mise bootstrap --yes --skip tools"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/2.2.0"
+assert "test -f bootstrap_ran"
+
+# comma-separated skips are supported
+rm -f bootstrap_ran
+cat <<EOF >mise.toml
+[tools]
+tiny = "2.3.0"
+
+[tasks.bootstrap]
+run = "touch bootstrap_ran"
+EOF
+assert_succeed "mise bootstrap --yes --skip tools,task"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/2.3.0"
+assert_fail "test -f bootstrap_ran"
+
+# repeated --skip flags are supported
+echo "skipped gitconfig content" >gitconfig-skipped
+rm -f bootstrap_ran
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.bootstrap-skip-gitconfig" = "gitconfig-skipped"
+
+[tasks.bootstrap]
+run = "touch bootstrap_ran"
+EOF
+assert_succeed "mise bootstrap --yes --skip dotfiles --skip task"
+assert_fail "test -e ~/.bootstrap-skip-gitconfig"
+assert_fail "test -f bootstrap_ran"
+
+# --only runs just the selected parts
+echo "only gitconfig content" >gitconfig-only
+rm -f bootstrap_ran
+cat <<EOF >mise.toml
+[tools]
+tiny = "2.4.0"
+
+[dotfiles]
+"~/.bootstrap-only-gitconfig" = "gitconfig-only"
+
+[tasks.bootstrap]
+run = "touch bootstrap_ran"
+EOF
+assert_succeed "mise bootstrap --yes --only dotfiles,task"
+assert "readlink ~/.bootstrap-only-gitconfig" "$PWD/gitconfig-only"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/2.4.0"
+assert "test -f bootstrap_ran"
+
+# --only and --skip are mutually exclusive
+assert_fail "mise bootstrap --yes --only dotfiles --skip tools"
+
+# --skip dotfiles still reloads config written by earlier phases
+rm -f mise.local.toml config_task_ran
+cat <<'EOF' >mise.toml
+[bootstrap.hooks.post-packages]
+run = 'printf "[tasks.bootstrap]\nrun = \"touch config_task_ran\"\n" > mise.local.toml'
+EOF
+assert_succeed "mise bootstrap --yes --skip dotfiles --skip tools"
+assert "test -f config_task_ran"
+rm -f mise.local.toml config_task_ran
+
+# skipped parts also skip their directly associated hooks
+rm -f pre_packages_hook post_packages_hook pre_tools_hook post_tools_hook final_hook
+cat <<'EOF' >mise.toml
+[bootstrap.hooks.pre-packages]
+run = "touch pre_packages_hook"
+
+[bootstrap.hooks.post-packages]
+run = "touch post_packages_hook"
+
+[bootstrap.hooks.pre-tools]
+run = "touch pre_tools_hook"
+
+[bootstrap.hooks.post-tools]
+run = "touch post_tools_hook"
+
+[bootstrap.hooks.final]
+run = "touch final_hook"
+EOF
+assert_succeed "mise bootstrap --yes --skip packages --skip tools --skip final-hook"
+assert_fail "test -f pre_packages_hook"
+assert_fail "test -f post_packages_hook"
+assert_fail "test -f pre_tools_hook"
+assert_fail "test -f post_tools_hook"
+assert_fail "test -f final_hook"
+
+# macOS LaunchAgents in shared configs are inert when launchd is unavailable
+cat <<EOF >mise.toml
+[bootstrap.macos.launchd.agents.my-sync]
+program = "~/.local/bin/my-sync"
+run_at_load = true
+EOF
+assert_succeed "mise bootstrap --dry-run"
+if [[ $(uname) == "Darwin" ]]; then
+  assert_contains "mise bootstrap launchd status" "my-sync"
+  assert_contains "mise bootstrap macos launchd-agents status" "my-sync"
+else
+  assert_contains "mise bootstrap launchd status" "skipped"
+  assert_contains "mise bootstrap macos launchd-agents status" "skipped"
+fi
+
+# systemd user services and timers are declarative and safe to inspect in dry-runs
+cat <<EOF >mise.toml
+[bootstrap.linux.systemd.units.my-sync]
+description = "sync files"
+exec_start = "~/.local/bin/my-sync --watch"
+restart = "on-failure"
+
+[bootstrap.linux.systemd.units.my-sync-timer]
+on_boot_sec = "2min"
+on_unit_inactive_sec = "5min"
+unit = "dev.mise.my-sync.service"
+EOF
+mkdir -p runtime/systemd/private
+XDG_RUNTIME_DIR="$PWD/runtime" assert_succeed "mise bootstrap --dry-run"
+XDG_RUNTIME_DIR="$PWD/runtime" assert_contains "mise bootstrap systemd status" "my-sync"
+XDG_RUNTIME_DIR="$PWD/runtime" assert_contains "mise bootstrap linux systemd-units status" "my-sync"
+XDG_RUNTIME_DIR="$PWD/runtime" assert_contains "mise bootstrap systemd status" "dev.mise.my-sync-timer.timer"
+
+# unavailable system package managers are skipped, not errors
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"apt:bc" = "latest"
+"dnf:bc" = "latest"
+"pacman:bc" = "latest"
+EOF
+assert_succeed "mise bootstrap --dry-run"
+
+# bootstrap prints a final follow-up section for configured parts skipped
+# because they are unavailable on the current platform
+if [[ $(uname) == "Darwin" ]]; then
+  cat <<EOF >mise.toml
+[bootstrap.linux.systemd.units.follow-up-skip]
+description = "skip summary"
+exec_start = "~/.local/bin/skip-summary"
+EOF
+  assert_contains "mise bootstrap --dry-run" "bootstrap: follow-up if applied"
+  assert_contains "mise bootstrap --dry-run" "systemd: 1 unit(s) skipped"
+else
+  cat <<EOF >mise.toml
+[bootstrap.macos.launchd.agents.follow-up-skip]
+program = "~/.local/bin/skip-summary"
+run_at_load = true
+EOF
+  assert_contains "mise bootstrap --dry-run" "bootstrap: follow-up if applied"
+  assert_contains "mise bootstrap --dry-run" "launchd: 1 agent(s) skipped"
+fi
+
+# bootstrap summarizes macOS defaults follow-up when values would be written
+cat <<EOF >mise.toml
+[bootstrap.macos.defaults]
+"dev.mise.e2e.follow-up" = { BootstrapFollowUp = true }
+EOF
+if [[ $(uname) == "Darwin" ]]; then
+  assert_contains "mise bootstrap --dry-run" "bootstrap: follow-up if applied"
+  assert_contains "mise bootstrap --dry-run" 'killall Dock'
+else
+  assert_contains "mise bootstrap --dry-run" "macOS defaults: 1 entry(ies) skipped"
+  assert_not_contains "mise bootstrap --dry-run" 'killall Dock'
+fi
+
+# dotfiles can add config that contributes hooks to later phases in the same run
+mkdir -p dotfiles/mise
+cat <<'EOF' >dotfiles/mise/config.toml
+[bootstrap.hooks.post-dotfiles]
+run = "echo post-dotfiles > post_dotfiles_hook_ran"
+
+[bootstrap.hooks.final]
+run = "echo final > final_hook_ran"
+EOF
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.config/mise/config.toml" = "dotfiles/mise/config.toml"
+EOF
+rm -f post_dotfiles_hook_ran final_hook_ran
+assert_contains "mise bootstrap --dry-run" "echo post-dotfiles > post_dotfiles_hook_ran"
+assert_contains "mise bootstrap --dry-run" "echo final > final_hook_ran"
+assert_fail "cat post_dotfiles_hook_ran"
+assert_fail "cat final_hook_ran"
+assert_succeed "mise bootstrap --yes"
+assert "cat post_dotfiles_hook_ran" "post-dotfiles"
+assert "cat final_hook_ran" "final"
+
+# bootstrap refuses dotfile conflicts unless scoped force is requested
+echo "bootstrap source" >dotfiles/bootstrap-force
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.bootstrap-force-dotfiles" = "dotfiles/bootstrap-force"
+EOF
+echo "local content" >~/.bootstrap-force-dotfiles
+assert_fail "mise bootstrap --yes" "use --force-dotfiles"
+assert "cat ~/.bootstrap-force-dotfiles" "local content"
+assert_succeed "mise bootstrap --yes --force-dotfiles"
+assert "readlink ~/.bootstrap-force-dotfiles" "$PWD/dotfiles/bootstrap-force"
+
+# dry-run previews hooks from templated config dotfiles
+cat <<'EOF' >dotfiles/mise/config.local.toml.tmpl
+[bootstrap.hooks.final]
+run = "echo {{ vars.templated_hook_value }} > templated_hook_ran"
+EOF
+cat <<EOF >mise.toml
+[vars]
+templated_hook_value = "template-final"
+
+[dotfiles]
+"~/.config/mise/config.local.toml" = { source = "dotfiles/mise/config.local.toml.tmpl", mode = "template" }
+EOF
+rm -f templated_hook_ran
+assert_contains "mise bootstrap --dry-run" "echo template-final > templated_hook_ran"
+assert_fail "cat templated_hook_ran"
+
+# dry-run recognizes local config targets such as ~/.mise/config.toml
+cat <<'EOF' >dotfiles/mise/local-config.toml
+[bootstrap.hooks.post-dotfiles]
+run = "echo mise-dir > mise_dir_hook_ran"
+EOF
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.mise/config.toml" = "dotfiles/mise/local-config.toml"
+EOF
+rm -f mise_dir_hook_ran
+assert_contains "mise bootstrap --dry-run" "echo mise-dir > mise_dir_hook_ran"
+assert_fail "cat mise_dir_hook_ran"

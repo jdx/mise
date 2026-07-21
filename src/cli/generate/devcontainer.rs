@@ -1,20 +1,16 @@
 use std::collections::HashMap;
 
 use crate::{
-    config::SETTINGS,
+    dirs,
     file::{self, display_path},
     git::Git,
 };
 use serde::Serialize;
 
-/// [experimental] Generate a devcontainer to execute mise
+/// Generate a devcontainer to execute mise
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Devcontainer {
-    /// The name of the devcontainer
-    #[clap(long, short, verbatim_doc_comment)]
-    name: Option<String>,
-
     /// The image to use for the devcontainer
     #[clap(long, short, verbatim_doc_comment)]
     image: Option<String>,
@@ -22,6 +18,10 @@ pub struct Devcontainer {
     /// Bind the mise-data-volume to the devcontainer
     #[clap(long, short, verbatim_doc_comment)]
     mount_mise_data: bool,
+
+    /// The name of the devcontainer
+    #[clap(long, short, verbatim_doc_comment)]
+    name: Option<String>,
 
     /// write to .devcontainer/devcontainer.json
     #[clap(long, short)]
@@ -37,6 +37,8 @@ struct DevcontainerTemplate {
     mounts: Vec<DevcontainerMount>,
     #[serde(rename = "containerEnv")]
     container_env: HashMap<String, String>,
+    #[serde(rename = "remoteEnv")]
+    remote_env: HashMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "postCreateCommand")]
     post_create_command: Option<String>,
@@ -51,12 +53,17 @@ struct DevcontainerMount {
 }
 
 impl Devcontainer {
-    pub fn run(self) -> eyre::Result<()> {
-        SETTINGS.ensure_experimental("generate devcontainer")?;
+    pub async fn run(self) -> eyre::Result<()> {
         let output = self.generate()?;
 
         if self.write {
-            let path = Git::get_root()?.join(".devcontainer/devcontainer.json");
+            let path = match Git::get_root() {
+                Ok(root) => root.join(".devcontainer/devcontainer.json"),
+                Err(_) => dirs::CWD
+                    .as_ref()
+                    .unwrap()
+                    .join(".devcontainer/devcontainer.json"),
+            };
             file::create(&path)?;
             file::write(&path, &output)?;
             miseprintln!("Wrote to {}", display_path(&path));
@@ -77,6 +84,7 @@ impl Devcontainer {
         let mut post_create_command: Option<String> = None;
         let mut mounts = vec![];
         let mut container_env = HashMap::new();
+        let mut remote_env = HashMap::new();
         if self.mount_mise_data {
             mounts.push(DevcontainerMount {
                 source: "mise-data-volume".to_string(),
@@ -84,6 +92,10 @@ impl Devcontainer {
                 type_field: "volume".to_string(),
             });
             container_env.insert("MISE_DATA_DIR".to_string(), "/mnt/mise-data".to_string());
+            remote_env.insert(
+                "PATH".to_string(),
+                "${containerEnv:PATH}:/mnt/mise-data/shims".to_string(),
+            );
             post_create_command = Some("sudo chown -R vscode:vscode /mnt/mise-data".to_string());
         }
 
@@ -110,6 +122,7 @@ impl Devcontainer {
             customizations,
             mounts,
             container_env,
+            remote_env,
             post_create_command,
         };
 

@@ -1,0 +1,3 @@
+backends = ["aqua:abiosoft/colima", "asdf:CrouchingMuppet/asdf-colima"]
+description = "Container runtimes on macOS (and Linux) with minimal setup"
+test = { cmd = "colima --version", expected = "colima version v{{version}}" }

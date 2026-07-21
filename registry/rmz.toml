@@ -1,0 +1,3 @@
+backends = ["aqua:SUPERCILEX/fuc/rmz"]
+description = "A zippy alternative to rm, a tool to remove files and directories"
+test = { cmd = "rmz --version", expected = "rmz {{version}}" }

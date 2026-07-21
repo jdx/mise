@@ -1,0 +1,3 @@
+backends = ["aqua:peak/s5cmd"]
+description = "Parallel S3 and local filesystem execution tool"
+test = { cmd = "s5cmd version", expected = "v{{version}}" }

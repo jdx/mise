@@ -1,0 +1,3 @@
+backends = ["aqua:apple/pkl", "asdf:mise-plugins/asdf-pkl"]
+description = "A configuration as code language with rich validation and tooling"
+test = { cmd = "pkl --version", expected = "Pkl {{version}}" }

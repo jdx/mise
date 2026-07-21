@@ -1,0 +1,55 @@
+name: test-vfox
+
+on:
+  pull_request:
+    paths:
+      - "crates/vfox/**"
+  push:
+    branches: [main, release]
+
+concurrency:
+  group: test-vfox-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  MISE_EXPERIMENTAL: 1
+  MISE_LOCKFILE: 1
+  RUST_BACKTRACE: 1
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  "test-vfox":
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
+      - run: |
+          cargo build --all-features
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - run: mise -v
+      - run: mise --cd crates/vfox run build
+      - run: mise --cd crates/vfox run lint
+      - run: mise --cd crates/vfox run test
+      - run: sccache --show-stats
+        if: always()

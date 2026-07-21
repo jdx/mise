@@ -1,0 +1,3 @@
+backends = ["aqua:SUPERCILEX/fuc/cpz"]
+description = "A zippy alternative to cp, a tool to copy files and directories"
+test = { cmd = "cpz --version", expected = "cpz {{version}}" }

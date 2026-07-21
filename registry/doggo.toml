@@ -1,0 +1,3 @@
+backends = ["aqua:mr-karan/doggo"]
+description = ":dog: Command-line DNS Client for Humans. Written in Golang"
+test = { cmd = "doggo --version | awk '{print $1}'", expected = "v{{version}}" }
