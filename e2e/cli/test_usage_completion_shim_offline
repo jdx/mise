@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# `usage complete-word` is invoked by the generated shell completion script.
+# Resolving its mise shim must not consult GitHub for a configured `usage@latest`.
+credential_marker="$HOME/github-credential-command-called"
+credential_command="$HOME/fake-github-credential-command"
+cat >"$credential_command" <<'EOF'
+#!/usr/bin/env bash
+touch "$HOME/github-credential-command-called"
+echo fake-token
+EOF
+chmod +x "$credential_command"
+
+mkdir -p "$MISE_CONFIG_DIR" "$MISE_DATA_DIR/shims"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings]
+github.credential_command = "$credential_command"
+EOF
+cat >mise.toml <<'EOF'
+[tools]
+usage = "latest"
+EOF
+
+ln -s "$(which mise)" "$MISE_DATA_DIR/shims/usage"
+export PATH="$MISE_DATA_DIR/shims:$PATH"
+
+assert_fail "usage complete-word --shell zsh -- mise activate"
+assert_fail "test -f '$credential_marker'"
