@@ -1672,6 +1672,17 @@ end
     }
 
     #[test]
+    fn artifact_lookup_prefers_exact_case_over_earlier_fallback() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let fallback = tmp.path().join("Yaak.app");
+        let exact = fallback.join("Contents/yaak.app");
+        file::create_dir_all(&exact)?;
+
+        assert_eq!(find_app(tmp.path(), "yaak.app"), Some(exact));
+        Ok(())
+    }
+
+    #[test]
     fn artifact_lookup_skips_macos_metadata_for_case_insensitive_match() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         file::create_dir_all(tmp.path().join("__MACOSX/Yaak.app"))?;
