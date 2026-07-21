@@ -185,7 +185,7 @@ impl Lock {
                     lockfile_path,
                     config_paths,
                     effective_config_files,
-                );
+                )?;
 
             if tools.is_empty() {
                 // `tools` can be empty either because config has no tools, or because a filter excludes all.
@@ -577,7 +577,7 @@ impl Lock {
         target_lockfile_path: &Path,
         config_paths: &[PathBuf],
         effective_config_files: &ConfigMap,
-    ) -> (BTreeSet<String>, BTreeSet<String>) {
+    ) -> Result<(BTreeSet<String>, BTreeSet<String>)> {
         let (mut configured_tools, mut configured_backends) = self.configured_tool_selectors(tools);
         let config_paths: BTreeSet<&PathBuf> = config_paths.iter().collect();
 
@@ -590,9 +590,7 @@ impl Lock {
             {
                 continue;
             }
-            let Ok(trs) = cf.to_tool_request_set() else {
-                continue;
-            };
+            let trs = cf.to_tool_request_set()?;
             for (ba, _, _) in trs.iter() {
                 // Pruning answers whether the tool is still declared, not whether its
                 // backend can resolve on this machine. In particular, OS-restricted
@@ -602,7 +600,7 @@ impl Lock {
             }
         }
 
-        (configured_tools, configured_backends)
+        Ok((configured_tools, configured_backends))
     }
 
     fn current_tool_versions(&self, tools: &[LockTool]) -> BTreeMap<String, BTreeSet<String>> {
