@@ -1129,7 +1129,7 @@ fn upsert_platform_manifest(mut entries: Vec<Descriptor>, entry: Descriptor) -> 
     entries.push(entry);
     // Deterministic order so re-pushing the same platforms yields the same
     // index bytes (and digest).
-    entries.sort_by(|a, b| key(a).cmp(&key(b)));
+    entries.sort_by_key(key);
     entries
 }
 
