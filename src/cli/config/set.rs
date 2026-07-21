@@ -71,7 +71,12 @@ impl ConfigSet {
         for (idx, part) in parts.iter().take(parts.len() - 1).enumerate() {
             container = container
                 .as_table_like_mut()
-                .unwrap()
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "cannot set '{full_key}': '{}' is already set to a non-table value",
+                        parts[..idx].join(".")
+                    )
+                })?
                 .entry(part)
                 .or_insert({
                     let mut t = toml_edit::Table::new();
@@ -143,12 +148,14 @@ impl ConfigSet {
             TomlValueTypes::Infer => bail!("Type not found"),
         };
 
-        let mut t = toml_edit::Table::new();
-        t.set_implicit(true);
-        let mut table = toml_edit::Item::Table(t);
         container
             .as_table_like_mut()
-            .unwrap_or_else(|| table.as_table_like_mut().unwrap())
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "cannot set '{full_key}': '{}' is already set to a non-table value",
+                    parts[..parts.len() - 1].join(".")
+                )
+            })?
             .insert(last_key, value);
 
         let raw = config.to_string();
