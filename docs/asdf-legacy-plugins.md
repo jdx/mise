@@ -328,7 +328,7 @@ chmod +x "$ASDF_INSTALL_PATH/bin/tool"
 
 Consider migrating from asdf plugins to modern alternatives:
 
-1. **Check if tool is available in [aqua registry](https://aquaproj.github.io/aqua-registry/)**
+1. **Check if tool is available in [aqua registry](https://github.com/aquaproj/aqua-registry)**
 2. **Use [github backend](dev-tools/backends/github.md) for simple GitHub releases**
 3. **Create a [mise plugin](tool-plugin-development.md) for complex tools** - use the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) for a quick start
 4. **Use language-specific package managers** (npm, pipx, cargo, gem)
