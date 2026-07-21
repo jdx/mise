@@ -38,11 +38,33 @@ MISE_SAFE=1 mise lock --bump --dry-run --json
 When enabled, mise **refuses with an error** (never a silent fallback) to:
 
 - run `exec()` or `read_file()` in config templates
-- source shell scripts via the `_.source` env directive
 - run hooks (suppressed like `--no-hooks`, since hooks fire ambiently from `mise env`/`hook-env`)
 - run tasks
 - execute asdf plugin scripts
 - install plugins
+
+It also **ignores environment and shell configuration from project (non-global) config** — `[env]`
+values, `_.path`, `_.file`, and `[shell_alias]` entries. These would otherwise be applied to your
+shell environment (env vars and aliases are emitted through `hook-env`) and to the
+subprocesses mise spawns during version resolution (for example `go list` or a vfox plugin hook),
+which is an indirect code-execution vector (`PATH`, `LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`,
+`NODE_OPTIONS`, …) that safe mode is meant to close. Global and system config (e.g.
+`~/.config/mise/config.toml`) is operator-owned and still applies, mirroring the
+[trust](/cli/trust.html) model.
+
+`_.source` is treated as code execution rather than environment injection, so it is ignored in safe
+mode regardless of where it is defined — including operator-owned global config.
+
+`[settings]` from project (non-global) config are also ignored, so an untrusted repo cannot change
+mise's behavior during resolution (for example disabling verification or redirecting a backend).
+Global/system settings still apply. Specific project settings may be allowlisted in the future if
+they are both safe and necessary.
+
+Because a config loaded in safe mode is inert — it can neither execute code nor inject environment —
+**safe mode does not require configs to be trusted.** mise loads untrusted configs without a
+[trust](/cli/trust.html) prompt or error when `safe` is set, since there is nothing a config can do
+to compromise the host. This is what lets automation run `mise lock` against pull-request config
+without a preceding `mise trust`.
 
 Version resolution still works for every HTTP-based backend — `core`, `aqua`, `github`, `gitlab`,
 `http`, `cargo`, `pipx`, `gem`, `dotnet`, and `npm` — as well as `go` (which runs with

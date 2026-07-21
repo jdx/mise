@@ -199,11 +199,15 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
             use crate::config::config_file::{config_trust_root, is_trusted};
             use crate::config::{config_files_in_dir, is_tool_versions_file};
 
+            // In safe mode, config is inert and trust is not required, so there
+            // are no untrusted configs to warn about.
+            let safe_mode = config::Settings::safe_mode();
             let config_files = config_files_in_dir(cwd);
             let untrusted_configs: Vec<_> = config_files
                 .iter()
                 .filter(|p| {
-                    !is_tool_versions_file(p)
+                    !safe_mode
+                        && !is_tool_versions_file(p)
                         && !is_trusted(&config_trust_root(p))
                         && !is_trusted(p)
                 })

@@ -630,7 +630,7 @@ fn var_u8(key: &str) -> u8 {
         .unwrap_or_default()
 }
 
-fn var_is_true(key: &str) -> bool {
+pub(crate) fn var_is_true(key: &str) -> bool {
     match var(key) {
         Ok(v) => {
             let v = v.to_lowercase();
