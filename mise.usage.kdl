@@ -2313,6 +2313,13 @@ Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it
 """#
             arg "<UID[:GID]>"
         }
+        flag --update-index help="Maintain the tag as a multi-arch image index" {
+            long_help #"""
+Maintain the tag as a multi-arch image index
+
+Pushes this build's manifest by digest and points the tag at an OCI image index containing one entry per platform, preserving entries other architectures pushed. Run `mise oci push --update-index` from one runner per platform to assemble a multi-arch tag.
+"""#
+        }
         arg <REF> help="Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)"
     }
     cmd run help="[experimental] Build an OCI image from the current mise.toml and run a command in it" {

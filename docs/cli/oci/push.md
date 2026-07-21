@@ -70,6 +70,12 @@ UID[:GID] to assign to every tar entry when building (conflicts with --image-dir
 
 Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 
+### `--update-index`
+
+Maintain the tag as a multi-arch image index
+
+Pushes this build's manifest by digest and points the tag at an OCI image index containing one entry per platform, preserving entries other architectures pushed. Run `mise oci push --update-index` from one runner per platform to assemble a multi-arch tag.
+
 Examples:
 
 ```

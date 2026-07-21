@@ -752,13 +752,25 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
     let mut session = AuthSession::new(r.clone(), "pull").await?;
 
     let manifest_url = format!("{base_url}/v2/{}/manifests/{}", r.repository, r.tag);
-    let accept = [MEDIA_TYPE_OCI_MANIFEST, MEDIA_TYPE_DOCKER_MANIFEST];
+    // Accept indexes too: a tag maintained with `--update-index` is an image
+    // index, and strict registries (GHCR) return 404/"manifest unknown"
+    // unless the index media types are in the Accept header — which would
+    // otherwise make the index-descent below unreachable there.
+    let index_accept = [
+        MEDIA_TYPE_OCI_INDEX,
+        MEDIA_TYPE_DOCKER_MANIFEST_LIST,
+        MEDIA_TYPE_OCI_MANIFEST,
+        MEDIA_TYPE_DOCKER_MANIFEST,
+    ];
+    // Descending into an index entry resolves a single-platform child, so the
+    // child fetch only needs the manifest types.
+    let manifest_accept = [MEDIA_TYPE_OCI_MANIFEST, MEDIA_TYPE_DOCKER_MANIFEST];
     let resp = session
         .send(|auth| {
             let mut rb = HTTP
                 .reqwest()
                 .get(&manifest_url)
-                .header("Accept", accept.join(", "));
+                .header("Accept", index_accept.join(", "));
             if let Some(a) = auth {
                 rb = rb.header("Authorization", a);
             }
@@ -777,10 +789,43 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => return Ok(None),
         s => bail!("fetching {manifest_url} failed: {}", s.as_u16()),
     }
-    let body: serde_json::Value = resp.json().await?;
-    // An index (multi-arch) can't be used as a single-image cache.
+    let mut body: serde_json::Value = resp.json().await?;
+    // An index (multi-arch, e.g. a tag maintained with --update-index):
+    // descend into the entry for the build platform so its layers remain
+    // reusable.
     if body.get("manifests").map(|m| m.is_array()).unwrap_or(false) {
-        return Ok(None);
+        // Match the same canonical identity `upsert_platform_manifest` uses,
+        // so descent and upsert agree on which entry represents this host's
+        // platform (arch/os normalized, arm64 variant filled). The host has
+        // no variant / os.version.
+        let host =
+            platform_identity_parts(std::env::consts::ARCH, std::env::consts::OS, None, None);
+        let digest = body
+            .get("manifests")
+            .and_then(|m| m.as_array())
+            .and_then(|entries| {
+                entries.iter().find(|e| {
+                    let p = e.get("platform");
+                    let get = |k: &str| p.and_then(|p| p.get(k)).and_then(|v| v.as_str());
+                    let ident = platform_identity_parts(
+                        get("architecture").unwrap_or(""),
+                        get("os").unwrap_or(""),
+                        get("variant"),
+                        get("os.version"),
+                    );
+                    ident == host
+                })
+            })
+            .and_then(|e| e.get("digest"))
+            .and_then(|d| d.as_str())
+            .map(String::from);
+        let Some(digest) = digest else {
+            return Ok(None); // no entry for this platform — nothing to reuse
+        };
+        crate::oci::layout::validate_sha256_digest(&digest)?;
+        let child_url = format!("{base_url}/v2/{}/manifests/{digest}", r.repository);
+        let (child, _ct) = fetch_manifest_json(&mut session, &child_url, &manifest_accept).await?;
+        body = child;
     }
     let manifest: ImageManifest = match serde_json::from_value(body) {
         Ok(m) => m,
@@ -827,6 +872,8 @@ pub struct PushSummary {
     pub skipped: usize,
     /// Blobs satisfied by cross-repository mount (no bytes transferred).
     pub mounted: usize,
+    /// Digest of the image index the tag now points at (`--update-index`).
+    pub index_digest: Option<String>,
 }
 
 /// Blobs above this size upload in chunks (`PATCH` per chunk) instead of a
@@ -846,7 +893,17 @@ pub const ANNOTATION_BASE_NAME: &str = "org.opencontainers.image.base.name";
 /// blob), then PUTs the manifest under the reference's tag (or digest).
 /// Base-image blobs hosted on the same registry are cross-repo mounted
 /// instead of re-uploaded when possible.
-pub async fn push_image(image_dir: &Path, reference: &str) -> Result<PushSummary> {
+///
+/// With `update_index`, the manifest is pushed by digest and the tag is
+/// updated to an OCI image index that carries one entry per platform —
+/// the existing index's other-platform entries are preserved, so runners
+/// of different architectures can each push the same tag and end up with
+/// a multi-arch image.
+pub async fn push_image(
+    image_dir: &Path,
+    reference: &str,
+    update_index: bool,
+) -> Result<PushSummary> {
     eyre::ensure!(
         !crate::config::Settings::get().offline(),
         "offline mode is enabled"
@@ -974,17 +1031,148 @@ pub async fn push_image(image_dir: &Path, reference: &str) -> Result<PushSummary
         }
     }
 
-    pusher
-        .put_manifest(&r.tag, &manifest_desc.media_type, &manifest_bytes)
-        .await
-        .wrap_err_with(|| format!("pushing manifest to {reference}"))?;
+    let index_digest = if update_index {
+        // Push the platform manifest by digest, then point the tag at an
+        // index that includes it alongside any other platforms already there.
+        pusher
+            .put_manifest(
+                &manifest_desc.digest,
+                &manifest_desc.media_type,
+                &manifest_bytes,
+            )
+            .await
+            .wrap_err_with(|| format!("pushing manifest to {reference}"))?;
+        let platform = platform_from_config(&layout, &manifest.config.digest)?;
+        let entry = Descriptor {
+            media_type: manifest_desc.media_type.clone(),
+            size: manifest_bytes.len() as u64,
+            digest: manifest_desc.digest.clone(),
+            annotations: Default::default(),
+            platform: Some(platform),
+        };
+        let digest = pusher
+            .update_tag_index(&r.tag, entry)
+            .await
+            .wrap_err_with(|| format!("updating image index for {reference}"))?;
+        Some(digest)
+    } else {
+        pusher
+            .put_manifest(&r.tag, &manifest_desc.media_type, &manifest_bytes)
+            .await
+            .wrap_err_with(|| format!("pushing manifest to {reference}"))?;
+        None
+    };
 
     Ok(PushSummary {
         manifest_digest: manifest_desc.digest.clone(),
         uploaded,
         skipped,
         mounted,
+        index_digest,
     })
+}
+
+/// Read the platform out of the image config blob.
+fn platform_from_config(
+    layout: &ImageLayout,
+    config_digest: &str,
+) -> Result<crate::oci::manifest::Platform> {
+    let config: serde_json::Value = serde_json::from_slice(&layout.read_blob(config_digest)?)?;
+    platform_from_config_value(&config)
+}
+
+/// Build an index-entry platform from an image config JSON, normalizing
+/// arch/os to the OCI-spec values (`amd64`/`arm64`, `linux`) so index entries
+/// and the host-comparison in `fetch_remote_image` agree, and preserving
+/// `os.version` / `os.features` (relevant for Windows images) rather than
+/// dropping them.
+fn platform_from_config_value(
+    config: &serde_json::Value,
+) -> Result<crate::oci::manifest::Platform> {
+    let get = |k: &str| config.get(k).and_then(|v| v.as_str());
+    let architecture = crate::oci::normalize_arch(
+        get("architecture").ok_or_else(|| eyre::eyre!("image config has no architecture"))?,
+    )
+    .to_string();
+    let os =
+        crate::oci::normalize_os(get("os").ok_or_else(|| eyre::eyre!("image config has no os"))?)
+            .to_string();
+    Ok(crate::oci::manifest::Platform {
+        architecture,
+        os,
+        os_version: get("os.version").map(String::from),
+        os_features: config
+            .get("os.features")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        variant: get("variant").map(String::from),
+    })
+}
+
+/// Upsert `entry` into an index's manifest list, replacing any existing entry
+/// for the same platform and preserving the rest. Entries without platform
+/// info are preserved as-is.
+fn upsert_platform_manifest(mut entries: Vec<Descriptor>, entry: Descriptor) -> Vec<Descriptor> {
+    let key = |d: &Descriptor| {
+        d.platform
+            .as_ref()
+            .map(platform_identity)
+            .unwrap_or_default()
+    };
+    let entry_key = key(&entry);
+    entries.retain(|d| key(d) != entry_key);
+    entries.push(entry);
+    // Deterministic order so re-pushing the same platforms yields the same
+    // index bytes (and digest).
+    entries.sort_by_key(key);
+    entries
+}
+
+/// Canonical identity used to match/dedupe platforms across index entries,
+/// consistent between `upsert_platform_manifest` and the index-descent in
+/// [`fetch_remote_image`]. Normalizes arch/os to OCI-spec values and fills the
+/// implied CPU variant (`arm64` → `v8`) so entries written by different tools
+/// compare equal — mise writes no variant, buildx writes `arm64/v8`, and both
+/// name the same platform. `os.version` stays in the identity so
+/// otherwise-identical Windows platforms don't collide.
+///
+/// Returned as `(os, architecture, variant, os_version)` so the derived
+/// ordering groups by OS then arch.
+fn platform_identity(p: &crate::oci::manifest::Platform) -> (String, String, String, String) {
+    platform_identity_parts(
+        &p.architecture,
+        &p.os,
+        p.variant.as_deref(),
+        p.os_version.as_deref(),
+    )
+}
+
+fn platform_identity_parts(
+    architecture: &str,
+    os: &str,
+    variant: Option<&str>,
+    os_version: Option<&str>,
+) -> (String, String, String, String) {
+    let arch = crate::oci::normalize_arch(architecture);
+    let os = crate::oci::normalize_os(os);
+    let variant = match (arch, variant) {
+        // arm64's canonical variant is v8; a missing/empty variant means the
+        // same platform (containerd's normalization).
+        ("arm64", None | Some("") | Some("v8")) => "v8",
+        (_, Some(v)) => v,
+        (_, None) => "",
+    };
+    (
+        os.to_string(),
+        arch.to_string(),
+        variant.to_string(),
+        os_version.unwrap_or("").to_string(),
+    )
 }
 
 /// Progress label for a blob: the tool name when the descriptor carries the
@@ -994,6 +1182,14 @@ fn blob_label(desc: &Descriptor) -> String {
         .get("dev.mise.tool.short")
         .cloned()
         .unwrap_or_else(|| short_digest(&desc.digest).to_string())
+}
+
+/// `sha256:<hex>` digest of `bytes`.
+fn sha256_digest(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(bytes);
+    format!("sha256:{}", crate::oci::layer::hex_encode(&h.finalize()))
 }
 
 /// First 12 hex chars of a `sha256:…` digest, for display.
@@ -1273,6 +1469,127 @@ impl Pusher {
         }
         Ok(())
     }
+
+    /// Point `tag` at an OCI image index containing `entry` plus whatever
+    /// other-platform entries the tag already carries. Returns the digest of
+    /// the pushed index.
+    ///
+    /// NOTE: read-modify-write without registry-side concurrency control (the
+    /// Distribution spec has no conditional manifest PUT), so two runners
+    /// updating the same tag at the same instant can race — sequence
+    /// per-platform pushes in CI when that matters.
+    async fn update_tag_index(&mut self, tag: &str, entry: Descriptor) -> Result<String> {
+        let existing = self.existing_index_entries(tag).await?;
+        let manifests = upsert_platform_manifest(existing, entry);
+        let index = ImageIndex {
+            schema_version: 2,
+            media_type: MEDIA_TYPE_OCI_INDEX.to_string(),
+            manifests,
+        };
+        let bytes = serde_json::to_vec(&index)?;
+        let digest = sha256_digest(&bytes);
+        self.put_manifest(tag, MEDIA_TYPE_OCI_INDEX, &bytes).await?;
+        Ok(digest)
+    }
+
+    /// The entries the tag's current image index carries, for merging.
+    ///
+    ///  - tag doesn't exist → empty
+    ///  - tag is an index / manifest list → its entries
+    ///  - tag is a single-platform manifest → one entry wrapping it (platform
+    ///    read from its config), so `--update-index` can upgrade a
+    ///    previously single-arch tag without dropping that platform. If the
+    ///    wrap fails, the entry is dropped with a warning rather than
+    ///    failing the push.
+    async fn existing_index_entries(&mut self, tag: &str) -> Result<Vec<Descriptor>> {
+        let url = format!("{}/v2/{}/manifests/{tag}", self.base_url, self.repository);
+        let accept = [
+            MEDIA_TYPE_OCI_INDEX,
+            MEDIA_TYPE_DOCKER_MANIFEST_LIST,
+            MEDIA_TYPE_OCI_MANIFEST,
+            MEDIA_TYPE_DOCKER_MANIFEST,
+        ]
+        .join(", ");
+        let resp = self
+            .session
+            .send(|auth| {
+                let mut rb = HTTP.reqwest().get(&url).header("Accept", &accept);
+                if let Some(a) = auth {
+                    rb = rb.header("Authorization", a);
+                }
+                rb
+            })
+            .await
+            .wrap_err_with(|| format!("GET {url}"))?;
+        match resp.status() {
+            StatusCode::OK => {}
+            StatusCode::NOT_FOUND => return Ok(vec![]),
+            s => bail!("fetching current index for {url} failed: {}", s.as_u16()),
+        }
+        let content_type = header_str(&resp, "content-type");
+        let bytes = resp.bytes().await?;
+        let body: serde_json::Value = serde_json::from_slice(&bytes)?;
+
+        // Already an index — take its entries.
+        if body.get("manifests").map(|m| m.is_array()).unwrap_or(false) {
+            let index: ImageIndex =
+                serde_json::from_slice(&bytes).wrap_err("parsing existing image index")?;
+            return Ok(index.manifests);
+        }
+
+        // A single-platform manifest: wrap it as an index entry so its
+        // platform survives the upgrade to an index.
+        match self
+            .wrap_single_manifest(&bytes, &body, &content_type)
+            .await
+        {
+            Ok(entry) => Ok(vec![entry]),
+            Err(e) => {
+                warn!(
+                    "could not preserve the existing single-platform manifest at {tag} \
+                     in the new index: {e}"
+                );
+                Ok(vec![])
+            }
+        }
+    }
+
+    /// Build an index entry for a single-platform manifest the tag currently
+    /// points at, reading its platform from its config blob.
+    async fn wrap_single_manifest(
+        &mut self,
+        bytes: &[u8],
+        body: &serde_json::Value,
+        content_type: &str,
+    ) -> Result<Descriptor> {
+        let digest = sha256_digest(bytes);
+        let media_type = body
+            .get("mediaType")
+            .and_then(|m| m.as_str())
+            .map(String::from)
+            .unwrap_or_else(|| content_type.to_string());
+        let config_digest = body
+            .get("config")
+            .and_then(|c| c.get("digest"))
+            .and_then(|d| d.as_str())
+            .ok_or_else(|| eyre::eyre!("manifest has no config digest"))?
+            .to_string();
+        crate::oci::layout::validate_sha256_digest(&config_digest)?;
+        let config_url = format!(
+            "{}/v2/{}/blobs/{config_digest}",
+            self.base_url, self.repository
+        );
+        let config_bytes = download_blob(&mut self.session, &config_url, None).await?;
+        let config: serde_json::Value = serde_json::from_slice(&config_bytes)?;
+        let platform = platform_from_config_value(&config)?;
+        Ok(Descriptor {
+            media_type,
+            size: bytes.len() as u64,
+            digest,
+            annotations: Default::default(),
+            platform: Some(platform),
+        })
+    }
 }
 
 /// Slot for an I/O error raised inside an upload-body closure so the caller
@@ -1440,6 +1757,114 @@ mod tests {
                 .registry_url(),
             "https://ghcr.io"
         );
+    }
+
+    fn platform_entry(arch: &str, os: &str, digest: &str) -> Descriptor {
+        Descriptor {
+            media_type: MEDIA_TYPE_OCI_MANIFEST.to_string(),
+            size: 1,
+            digest: digest.to_string(),
+            annotations: Default::default(),
+            platform: Some(crate::oci::manifest::Platform {
+                architecture: arch.to_string(),
+                os: os.to_string(),
+                os_version: None,
+                os_features: vec![],
+                variant: None,
+            }),
+        }
+    }
+
+    #[test]
+    fn upsert_replaces_same_platform_and_preserves_others() {
+        let existing = vec![
+            platform_entry("amd64", "linux", "sha256:old-amd64"),
+            platform_entry("arm64", "linux", "sha256:arm64"),
+        ];
+        let out = upsert_platform_manifest(
+            existing,
+            platform_entry("amd64", "linux", "sha256:new-amd64"),
+        );
+        assert_eq!(out.len(), 2);
+        let digests: Vec<&str> = out.iter().map(|d| d.digest.as_str()).collect();
+        assert!(digests.contains(&"sha256:new-amd64"));
+        assert!(digests.contains(&"sha256:arm64"));
+        assert!(!digests.contains(&"sha256:old-amd64"));
+    }
+
+    #[test]
+    fn upsert_distinguishes_platforms_by_os_version() {
+        // Two windows entries differing only by os.version must not collide.
+        let win = |ver: &str, digest: &str| Descriptor {
+            media_type: MEDIA_TYPE_OCI_MANIFEST.to_string(),
+            size: 1,
+            digest: digest.to_string(),
+            annotations: Default::default(),
+            platform: Some(crate::oci::manifest::Platform {
+                architecture: "amd64".to_string(),
+                os: "windows".to_string(),
+                os_version: Some(ver.to_string()),
+                os_features: vec![],
+                variant: None,
+            }),
+        };
+        let out = upsert_platform_manifest(
+            vec![win("10.0.20348", "sha256:2022")],
+            win("10.0.17763", "sha256:2019"),
+        );
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn upsert_treats_arm64_no_variant_as_v8() {
+        // mise writes arm64 with no variant; buildx writes arm64/v8. Pushing
+        // the former must replace the latter, not add a duplicate.
+        let with_variant = Descriptor {
+            media_type: MEDIA_TYPE_OCI_MANIFEST.to_string(),
+            size: 1,
+            digest: "sha256:buildx-arm64v8".to_string(),
+            annotations: Default::default(),
+            platform: Some(crate::oci::manifest::Platform {
+                architecture: "arm64".to_string(),
+                os: "linux".to_string(),
+                os_version: None,
+                os_features: vec![],
+                variant: Some("v8".to_string()),
+            }),
+        };
+        let out = upsert_platform_manifest(
+            vec![with_variant],
+            platform_entry("arm64", "linux", "sha256:mise-arm64"),
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].digest, "sha256:mise-arm64");
+    }
+
+    #[test]
+    fn platform_identity_normalizes_arch() {
+        // A config using the Rust-style arch name matches the normalized host.
+        assert_eq!(
+            platform_identity_parts("x86_64", "linux", None, None),
+            platform_identity_parts("amd64", "linux", None, None)
+        );
+        assert_eq!(
+            platform_identity_parts("aarch64", "linux", None, None),
+            platform_identity_parts("arm64", "linux", Some("v8"), None)
+        );
+    }
+
+    #[test]
+    fn upsert_is_deterministically_ordered() {
+        let a = upsert_platform_manifest(
+            vec![platform_entry("arm64", "linux", "sha256:a")],
+            platform_entry("amd64", "linux", "sha256:b"),
+        );
+        let b = upsert_platform_manifest(
+            vec![platform_entry("amd64", "linux", "sha256:b")],
+            platform_entry("arm64", "linux", "sha256:a"),
+        );
+        let order = |v: &[Descriptor]| v.iter().map(|d| d.digest.clone()).collect::<Vec<_>>();
+        assert_eq!(order(&a), order(&b));
     }
 
     #[test]

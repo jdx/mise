@@ -414,6 +414,33 @@ For a working image, run `mise oci build` on a linux host (or inside a
 linux container — `docker run -v $PWD:/src -w /src debian mise oci build`
 works). mise prints a warning when this mismatch is detected.
 
+### Multi-arch images
+
+A single host builds a single platform, but `mise oci push
+--update-index` lets one runner per architecture assemble a multi-arch
+tag: each push uploads its platform manifest by digest and points the
+tag at an OCI **image index** that preserves the entries other
+platforms pushed.
+
+```yaml
+# CI sketch: one job per arch, same tag
+jobs:
+  push-amd64: # runs-on: ubuntu-24.04
+    run: mise oci push --update-index ghcr.io/me/dev:latest
+  push-arm64: # runs-on: ubuntu-24.04-arm
+    needs: push-amd64 # sequence to avoid a read-modify-write race
+    run: mise oci push --update-index ghcr.io/me/dev:latest
+```
+
+Re-pushing the same platform replaces its entry (no duplicates), and a
+previously single-arch tag is upgraded to an index without losing the
+existing platform. Layer reuse works through indexes — the cache
+resolves to the entry matching the build platform.
+
+Note the index update is read-modify-write (the Distribution API has no
+conditional writes), so concurrent pushes to the same tag from
+different runners can race — sequence them as above.
+
 ## Known limitations (v1)
 
 - `asdf` / `vfox` backends are rejected (see above).

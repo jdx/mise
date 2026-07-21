@@ -75,6 +75,15 @@ pub struct Push {
     /// controls the image USER directive.
     #[clap(long, value_name = "UID[:GID]")]
     owner: Option<LayerOwner>,
+
+    /// Maintain the tag as a multi-arch image index
+    ///
+    /// Pushes this build's manifest by digest and points the tag at an OCI
+    /// image index containing one entry per platform, preserving entries
+    /// other architectures pushed. Run `mise oci push --update-index` from
+    /// one runner per platform to assemble a multi-arch tag.
+    #[clap(long)]
+    update_index: bool,
 }
 
 impl Push {
@@ -121,7 +130,7 @@ impl Push {
                 (out_dir, Some(td))
             };
 
-        let summary = registry::push_image(&image_dir, &self.reference).await?;
+        let summary = registry::push_image(&image_dir, &self.reference, self.update_index).await?;
         let mut extras = String::new();
         if summary.mounted > 0 {
             extras.push_str(&format!(", {} mounted from base repo", summary.mounted));
@@ -138,6 +147,9 @@ impl Push {
             summary.uploaded,
             summary.skipped
         );
+        if let Some(index_digest) = &summary.index_digest {
+            miseprintln!("updated image index: {index_digest}");
+        }
         Ok(())
     }
 
