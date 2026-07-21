@@ -15,6 +15,11 @@ use crate::oci::{BuildOptions, LayerOwner, registry};
 /// mise.toml first. Only blobs the registry doesn't already have are
 /// uploaded, so repeat pushes of mostly-unchanged toolsets are cheap.
 ///
+/// Tool layers whose tool, version, mount point, and file owner match the
+/// previously pushed image (or `--cache-from`) are reused without being
+/// rebuilt — those tools don't even need to be installed locally. Pass
+/// `--no-cache` to force a full local rebuild.
+///
 /// Credentials are read from the same places docker and podman use:
 /// `$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`,
 /// `~/.config/containers/auth.json`, and `~/.docker/config.json`
@@ -28,6 +33,14 @@ pub struct Push {
     /// Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
     #[clap(value_name = "REF")]
     reference: String,
+
+    /// Reuse unchanged tool layers from this image instead of the destination ref
+    ///
+    /// Must live in the same repository as the destination. Useful when each
+    /// push gets a unique tag (e.g. per-commit tags in CI):
+    /// `--cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
+    #[clap(long, value_name = "REF", conflicts_with_all = &["no_cache", "image_dir"])]
+    cache_from: Option<String>,
 
     /// Base image for the build (ignored with --image-dir)
     #[clap(long)]
@@ -46,6 +59,10 @@ pub struct Push {
     /// Override in-image mount point (ignored with --image-dir)
     #[clap(long)]
     mount_point: Option<String>,
+
+    /// Don't reuse tool layers from the previously pushed image
+    #[clap(long)]
+    no_cache: bool,
 
     /// Don't embed the mise binary (ignored with --image-dir)
     #[clap(long)]
@@ -74,6 +91,7 @@ impl Push {
         // Keep the temp dir alive for the duration of the push — it removes
         // itself on drop, so multi-hundred-megabyte image layouts don't
         // accumulate in /tmp.
+        let mut reused_layers = 0;
         let (image_dir, _tempdir_guard): (PathBuf, Option<TempDir>) =
             if let Some(d) = &self.image_dir {
                 if !d.join("index.json").is_file() {
@@ -95,26 +113,73 @@ impl Push {
                     owner: self.owner,
                     include_mise: !self.no_mise,
                     copy: vec![],
+                    reuse_from: self.fetch_layer_cache().await?,
                 };
                 let built = perform_build(opts, self.include_global).await?;
+                reused_layers = built.tool_layers.iter().filter(|l| l.reused).count();
                 info!("built image: {}", built.manifest_digest);
                 (out_dir, Some(td))
             };
 
         let summary = registry::push_image(&image_dir, &self.reference).await?;
-        let mounted = if summary.mounted > 0 {
-            format!(", {} mounted from base repo", summary.mounted)
-        } else {
-            String::new()
-        };
+        let mut extras = String::new();
+        if summary.mounted > 0 {
+            extras.push_str(&format!(", {} mounted from base repo", summary.mounted));
+        }
+        if reused_layers > 0 {
+            extras.push_str(&format!(
+                ", {reused_layers} tool layer(s) reused from previous image"
+            ));
+        }
         miseprintln!(
-            "pushed {} to {} ({} blob(s) uploaded, {} already present{mounted})",
+            "pushed {} to {} ({} blob(s) uploaded, {} already present{extras})",
             summary.manifest_digest,
             self.reference,
             summary.uploaded,
             summary.skipped
         );
         Ok(())
+    }
+
+    /// Fetch the layer-reuse cache image: `--cache-from` if given, otherwise
+    /// the destination ref itself (the previously pushed image under this
+    /// tag). Returns `None` with `--no-cache`, when no previous image exists,
+    /// or when the lookup fails — a broken cache must never fail the push.
+    async fn fetch_layer_cache(&self) -> Result<Option<registry::RemoteImage>> {
+        if self.no_cache {
+            return Ok(None);
+        }
+        let cache_ref = self.cache_from.as_deref().unwrap_or(&self.reference);
+        if let Some(cache_from) = &self.cache_from {
+            // Reused layer blobs are never uploaded — they must already live
+            // in the destination repository, so a cache image from a
+            // different repo would produce a manifest referencing blobs the
+            // destination doesn't have.
+            let dest = registry::Reference::parse(&self.reference)?;
+            let cache = registry::Reference::parse(cache_from)?;
+            if dest.registry != cache.registry || dest.repository != cache.repository {
+                bail!(
+                    "--cache-from must reference the same repository as the destination \
+                     (got {}/{}, destination is {}/{})",
+                    cache.registry,
+                    cache.repository,
+                    dest.registry,
+                    dest.repository
+                );
+            }
+        }
+        match registry::fetch_remote_image(cache_ref).await {
+            Ok(remote) => {
+                if remote.is_none() {
+                    debug!("no previous image at {cache_ref} — building all layers locally");
+                }
+                Ok(remote)
+            }
+            Err(e) => {
+                warn!("could not fetch layer cache from {cache_ref}: {e} — building all layers");
+                Ok(None)
+            }
+        }
     }
 }
 

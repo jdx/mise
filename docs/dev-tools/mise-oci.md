@@ -156,6 +156,35 @@ cross-repository mounted instead of re-uploaded (no bytes transferred).
 Large layers upload in chunks with progress bars, and transient network
 failures are retried with backoff (`http_retries` controls attempts).
 
+### Layer reuse
+
+Tool layers whose cache key (tool, version, in-image prefix, and file
+owner) matches the previously pushed image are **reused from the
+registry instead of rebuilt** — skipping the tar/gzip work entirely.
+Reused tools don't even need to be installed locally, which makes CI
+pushes fast: only tools whose version actually changed get installed
+and packaged.
+
+- By default the cache is the destination ref itself (the image
+  previously pushed under that tag).
+- `--cache-from REF` reuses layers from another tag in the **same
+  repository** — useful when every push gets a unique tag:
+
+  ```sh
+  mise oci push --cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$GIT_SHA
+  ```
+
+- `--no-cache` disables reuse and rebuilds every layer from the local
+  installs (docker-style escape hatch — reuse trusts that the
+  registry's layer content matches its annotations, rather than
+  rebuilding the exact bytes locally).
+
+One caveat: environment derivation (`JAVA_HOME`-style `exec_env` vars)
+runs against local installs. For a reused tool that isn't installed,
+most backends still derive paths correctly, but exotic backends may
+contribute incomplete env — pass `--no-cache` (with the tool installed)
+if the image config looks wrong.
+
 ```sh
 mise oci push [--image-dir DIR]
               [--from REF] [--mount-point PATH] [--no-mise]

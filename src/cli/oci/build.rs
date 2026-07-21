@@ -76,6 +76,9 @@ impl Build {
             owner: self.owner,
             include_mise: !self.no_mise,
             copy: self.copy.clone(),
+            // Layer reuse would leave blob-less holes in the layout; `build`
+            // must produce a complete, standalone image directory.
+            reuse_from: None,
         };
         let out = perform_build(opts, self.include_global).await?;
 

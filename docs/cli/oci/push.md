@@ -11,6 +11,11 @@ required. If `--image-dir` is not passed, builds fresh from the current
 mise.toml first. Only blobs the registry doesn't already have are
 uploaded, so repeat pushes of mostly-unchanged toolsets are cheap.
 
+Tool layers whose tool, version, mount point, and file owner match the
+previously pushed image (or `--cache-from`) are reused without being
+rebuilt — those tools don't even need to be installed locally. Pass
+`--no-cache` to force a full local rebuild.
+
 Credentials are read from the same places docker and podman use:
 `$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`,
 `~/.config/containers/auth.json`, and `~/.docker/config.json`
@@ -26,6 +31,12 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
 
 ## Flags
+
+### `--cache-from <REF>`
+
+Reuse unchanged tool layers from this image instead of the destination ref
+
+Must live in the same repository as the destination. Useful when each push gets a unique tag (e.g. per-commit tags in CI): `--cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
 
 ### `--from <FROM>`
 
@@ -44,6 +55,10 @@ See `mise oci build --help` for details.
 ### `--mount-point <MOUNT_POINT>`
 
 Override in-image mount point (ignored with --image-dir)
+
+### `--no-cache`
+
+Don't reuse tool layers from the previously pushed image
 
 ### `--no-mise`
 

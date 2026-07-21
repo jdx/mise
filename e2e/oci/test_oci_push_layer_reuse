@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Tests `mise oci push` layer reuse (discussion #11121): tool layers that
+# match the previously pushed image (tool, version, prefix, owner) are taken
+# from the registry instead of rebuilt — the tool doesn't even need to be
+# installed locally.
+
+export MISE_EXPERIMENTAL=1
+export SOURCE_DATE_EPOCH=1700000000
+
+mise install crane@latest >/dev/null 2>&1
+
+find_available_port() {
+  python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()"
+}
+
+REGISTRY_PID=""
+cleanup() {
+  if [[ -n ${REGISTRY_PID:-} ]]; then
+    kill "$REGISTRY_PID" 2>/dev/null || true
+    wait "$REGISTRY_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+PORT="$(find_available_port)"
+REGISTRY="127.0.0.1:$PORT"
+mise x crane@latest -- crane registry serve --address "$REGISTRY" >/dev/null 2>&1 &
+REGISTRY_PID=$!
+for _ in $(seq 1 50); do
+  if curl -fsS "http://$REGISTRY/v2/" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.2
+done
+assert_succeed "curl -fsS http://$REGISTRY/v2/"
+
+cat >mise.toml <<EOF
+[tools]
+jq = "1.8.1"
+EOF
+mise install >/dev/null 2>&1
+
+# --- 1. First push builds everything (nothing to reuse yet) ---
+mise oci push --from scratch --no-mise "$REGISTRY/e2e/devenv:v1" >push1.log 2>&1
+assert_contains "cat push1.log" "pushed sha256:"
+assert_not_contains "cat push1.log" "reused from previous image"
+jq_digest_v1="$(mise x crane@latest -- crane manifest --insecure "$REGISTRY/e2e/devenv:v1" |
+  jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "jq") | .digest')"
+
+# --- 2. Uninstall the tool entirely; re-push to the same tag must reuse
+# the layer from the registry without rebuilding or reinstalling ---
+mise uninstall jq >/dev/null 2>&1
+assert_fail "mise oci build -o ./no-reuse --from scratch --no-mise" "install path does not exist"
+assert_contains "mise oci push --from scratch --no-mise $REGISTRY/e2e/devenv:v1" \
+  "1 tool layer(s) reused from previous image"
+
+# --- 3. --cache-from: push to a NEW tag reusing layers from v1
+# (the per-commit-tag CI pattern) ---
+assert_contains "mise oci push --from scratch --no-mise --cache-from $REGISTRY/e2e/devenv:v1 $REGISTRY/e2e/devenv:v2" \
+  "1 tool layer(s) reused from previous image"
+
+# The reused jq layer digest is identical across tags, and the new image
+# validates end-to-end (all blobs actually present in the repo).
+jq_digest_v2="$(mise x crane@latest -- crane manifest --insecure "$REGISTRY/e2e/devenv:v2" |
+  jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "jq") | .digest')"
+assert "echo $jq_digest_v2" "$jq_digest_v1"
+assert_succeed "mise x crane@latest -- crane validate --insecure --remote $REGISTRY/e2e/devenv:v2"
+
+# --- 4. --cache-from must be in the destination repository ---
+assert_fail "mise oci push --from scratch --no-mise --cache-from $REGISTRY/other/repo:v1 $REGISTRY/e2e/devenv:v3" \
+  "same repository"
+
+# --- 5. --no-cache forces a local rebuild, which fails while the tool
+# is uninstalled ---
+assert_fail "mise oci push --no-cache --from scratch --no-mise $REGISTRY/e2e/devenv:v1" \
+  "install path does not exist"
+
+# --- 6. Reinstall and --no-cache pushes a byte-identical image ---
+mise install >/dev/null 2>&1
+assert_contains "mise oci push --no-cache --from scratch --no-mise $REGISTRY/e2e/devenv:v1" \
+  "0 blob(s) uploaded"
