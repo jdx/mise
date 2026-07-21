@@ -6,5 +6,5 @@ node = "^20.0.0"
 "npm:prettier" = "^3.1.0"
 EOF
 
-assert_contains "mise ls 2>&1" "semver ranges are not supported: ^20.0.0"
-assert_contains "mise ls 2>&1" "semver ranges are not supported: ^3.1.0"
+assert_contains "mise ls 2>&1" 'semver range "^20.0.0" is not supported for node (source: ~/workdir/mise.toml); use a concrete version or version prefix'
+assert_contains "mise ls 2>&1" 'semver range "^3.1.0" is not supported for npm:prettier (source: ~/workdir/mise.toml); use a concrete version or version prefix'
