@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 
@@ -49,20 +49,20 @@ impl RemoteTaskHttp {
         hash::hash_sha256_to_str(file)
     }
 
-    async fn download_file(&self, file: &str, destination: &PathBuf) -> Result<()> {
+    async fn download_file(&self, file: &str, destination: &Path) -> Result<()> {
         trace!("Downloading file: {}", file);
         HTTP.download_file(file, destination, None).await?;
         file::make_executable(destination)?;
         Ok(())
     }
 
-    fn temp_download_path(destination: &PathBuf) -> PathBuf {
+    fn temp_download_path(destination: &Path) -> PathBuf {
         let mut path = destination.as_os_str().to_os_string();
         path.push(".download-tmp");
         path.into()
     }
 
-    async fn download_file_atomically(&self, file: &str, destination: &PathBuf) -> Result<()> {
+    async fn download_file_atomically(&self, file: &str, destination: &Path) -> Result<()> {
         let temp = Self::temp_download_path(destination);
         if temp.exists() {
             file::remove_file(&temp)?;
@@ -84,7 +84,6 @@ impl RemoteTaskHttp {
         let temp_file =
             tempfile::NamedTempFile::with_prefix_in(format!("{cache_key}-"), &self.storage_path)?;
         let (_, destination) = temp_file.keep()?;
-        file::remove_file(&destination)?;
         if let Err(error) = self.download_file(file, &destination).await {
             let _ = file::remove_file(&destination);
             return Err(error);
@@ -120,7 +119,7 @@ impl TaskFileProvider for RemoteTaskHttp {
         trace!("Cache mode disabled");
         file::create_dir_all(&self.storage_path)?;
         let _lock = LockFile::new(&destination).lock()?;
-        self.download_file(file, &destination).await?;
+        self.download_file_atomically(file, &destination).await?;
         Ok(destination)
     }
 
@@ -157,7 +156,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_http_remote_task_get_local_path_without_cache() {
+    async fn test_http_remote_task_get_local_artifact_without_cache() {
         let paths = vec![
             "/myfile.py",
             "/subpath/myfile.sh",
