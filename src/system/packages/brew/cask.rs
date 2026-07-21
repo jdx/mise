@@ -347,8 +347,8 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
     } else {
         let format = cask_extraction_format(archive, filename)?;
         if format == ExtractionFormat::Raw {
-            // Raw executable binary — copy it using the original URL filename so find_artifact
-            // can match against the binary stanza source name (e.g. "claude").
+            // Raw executable binary — copy it using the original URL filename so
+            // find_file_artifact can match against the binary stanza source name (e.g. "claude").
             let url_filename = archive_filename(&cask.url).unwrap_or_else(|| filename.to_string());
             let dest = extract_dir.join(&url_filename);
             file::copy(archive, &dest)?;
