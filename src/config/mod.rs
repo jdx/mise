@@ -1258,7 +1258,17 @@ pub static ALL_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
 pub static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
     load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
         .into_iter()
-        .filter(|p| config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
+        .filter(|p| {
+            let ctr = config_trust_root(p);
+            // The `ignored_config_paths` setting is a hard block; the persisted
+            // ignore list is overridden by `trusted_config_paths`, matching
+            // is_trusted so a settings-trusted config is not reported as ignored.
+            if config_file::is_ignored_via_setting(&ctr) || config_file::is_ignored_via_setting(p) {
+                return true;
+            }
+            (config_file::is_persisted_ignored(&ctr) || config_file::is_persisted_ignored(p))
+                && !config_file::is_trusted_via_config_paths(p)
+        })
         .collect()
 });
 // pub static LOCAL_CONFIG_FILES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
@@ -1684,8 +1694,21 @@ fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool {
     if is_default_config_dir_override_filtered(path) {
         return true;
     }
-    !include_ignored
-        && (config_file::is_ignored(&config_trust_root(path)) || config_file::is_ignored(path))
+    if include_ignored {
+        return false;
+    }
+    let ctr = config_trust_root(path);
+    // The `ignored_config_paths` setting is a hard filter.
+    if config_file::is_ignored_via_setting(&ctr) || config_file::is_ignored_via_setting(path) {
+        return true;
+    }
+    // The persisted ignore list (dismissed prompt / `mise trust --ignore`) is
+    // overridden by `trusted_config_paths`, matching is_trusted's precedence so
+    // a settings-trusted config is still discovered and loaded.
+    if config_file::is_persisted_ignored(&ctr) || config_file::is_persisted_ignored(path) {
+        return !config_file::is_trusted_via_config_paths(path);
+    }
+    false
 }
 
 static GLOBAL_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
