@@ -312,7 +312,11 @@ pub async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option<Github
         return Ok(None);
     };
     if !valid_github_release_asset_urls(&release, owner, repo_name) {
-        log_versions_host_warn(ctx, "invalid_asset_urls", "fallback=true");
+        log_versions_host_warn(
+            ctx,
+            "invalid_asset_urls",
+            "fallback=true message=\"falling back to GitHub directly\"",
+        );
         return Ok(None);
     }
     if !valid_github_release_tag(&release, tag) {
@@ -320,7 +324,7 @@ pub async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option<Github
             ctx,
             "tag_mismatch",
             &format!(
-                "returned_tag={} fallback=true",
+                "returned_tag={} fallback=true message=\"falling back to GitHub directly\"",
                 log_value(&release.tag_name)
             ),
         );
@@ -394,7 +398,11 @@ where
                     Ok(None)
                 }
                 429 => {
-                    log_versions_host_warn(ctx, "rate_limited", "status=429 fallback=true");
+                    log_versions_host_warn(
+                        ctx,
+                        "rate_limited",
+                        "status=429 fallback=true message=\"falling back to GitHub directly\"",
+                    );
                     Ok(None)
                 }
                 status => {
@@ -402,7 +410,7 @@ where
                         ctx,
                         "failed",
                         &format!(
-                            "status={status} fallback=true error={}",
+                            "status={status} fallback=true error={} message=\"falling back to GitHub directly\"",
                             log_value(&versions_host_error_message(status, &body))
                         ),
                     );
@@ -415,7 +423,7 @@ where
                 ctx,
                 "failed",
                 &format!(
-                    "status={} fallback=true error={}",
+                    "status={} fallback=true error={} message=\"falling back to GitHub directly\"",
                     http::error_code(&err).unwrap_or(0),
                     log_value(&err.to_string())
                 ),
