@@ -864,13 +864,17 @@ fn link_binary(caskroom: &Path, binary: &BinaryArtifact) -> Result<()> {
 
 fn caskroom_binary_path(caskroom: &Path, binary: &BinaryArtifact) -> Result<PathBuf> {
     let target = binary.target_path()?;
-    let relative = target.strip_prefix(prefix::prefix()).wrap_err_with(|| {
-        format!(
-            "brew-cask: binary target '{}' must be under {}",
-            target.display(),
-            prefix::prefix().display()
-        )
-    })?;
+    let roots = allowed_binary_target_roots();
+    let relative = roots
+        .iter()
+        .find_map(|root| target.strip_prefix(root).ok())
+        .ok_or_else(|| {
+            eyre!(
+                "brew-cask: binary target '{}' must be under {}",
+                target.display(),
+                allowed_binary_target_roots_display(&roots)
+            )
+        })?;
     if relative.components().next().is_none() {
         bail!(
             "brew-cask: invalid binary target '{}'",
@@ -1136,6 +1140,31 @@ fn app_bundle_name(target_name: &str) -> Result<&str> {
         .ok_or_else(|| eyre!("brew-cask: invalid app target '{target_name}'"))
 }
 
+/// Roots that a cask's `binary` artifact may legitimately symlink into.
+///
+/// The Homebrew prefix (`/opt/homebrew` on arm64, `/usr/local` on Intel) is
+/// always allowed. `/usr/local` is additionally allowed even on arm64 because
+/// some casks (e.g. docker-desktop) hardcode absolute `/usr/local/bin` targets
+/// so their CLIs land on PATH regardless of architecture. Homebrew honors those
+/// targets, so mise does too.
+fn allowed_binary_target_roots() -> Vec<PathBuf> {
+    let prefix = prefix::prefix();
+    let mut roots = vec![prefix.clone()];
+    let usr_local = PathBuf::from("/usr/local");
+    if prefix != usr_local {
+        roots.push(usr_local);
+    }
+    roots
+}
+
+fn allowed_binary_target_roots_display(roots: &[PathBuf]) -> String {
+    roots
+        .iter()
+        .map(|root| root.display().to_string())
+        .collect::<Vec<_>>()
+        .join(" or ")
+}
+
 fn binary_target_path(target_name: &str) -> Result<PathBuf> {
     let prefix = prefix::prefix();
     let prefix_str = prefix.to_string_lossy();
@@ -1157,11 +1186,12 @@ fn binary_target_path(target_name: &str) -> Result<PathBuf> {
             target.display()
         );
     }
-    if !target.starts_with(&prefix) {
+    let roots = allowed_binary_target_roots();
+    if !roots.iter().any(|root| target.starts_with(root)) {
         bail!(
             "brew-cask: binary target '{}' must be under {}",
             target.display(),
-            prefix.display()
+            allowed_binary_target_roots_display(&roots)
         );
     }
     Ok(target)
@@ -2199,17 +2229,37 @@ end
     }
 
     #[test]
-    fn binary_targets_must_stay_under_prefix() -> Result<()> {
+    fn binary_targets_must_stay_under_an_allowed_root() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
 
-        let err = binary_target_path("/usr/local/bin/op")
+        // Targets outside both the prefix and /usr/local are rejected.
+        let err = binary_target_path("/opt/elsewhere/bin/op")
             .unwrap_err()
             .to_string();
         assert!(err.contains("must be under"));
         let err = binary_target_path("../op").unwrap_err().to_string();
         assert!(err.contains("must not contain '..'"));
+        Ok(())
+    }
+
+    #[test]
+    fn binary_targets_allow_absolute_usr_local() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+
+        // Casks like docker-desktop hardcode absolute /usr/local targets; these
+        // are honored even when the prefix is elsewhere (arm64 /opt/homebrew).
+        assert_eq!(
+            binary_target_path("/usr/local/bin/docker")?,
+            PathBuf::from("/usr/local/bin/docker")
+        );
+        assert_eq!(
+            binary_target_path("/usr/local/cli-plugins/docker-compose")?,
+            PathBuf::from("/usr/local/cli-plugins/docker-compose")
+        );
         Ok(())
     }
 
@@ -2227,6 +2277,24 @@ end
         assert_eq!(
             caskroom_binary_path(&caskroom, &binary)?,
             caskroom.join("sbin/op")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn caskroom_binary_paths_strip_usr_local_root() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let caskroom = tmp.path().join("Caskroom/docker-desktop/1.0.0");
+        let binary = BinaryArtifact {
+            source: "$APPDIR/Docker.app/Contents/Resources/bin/docker".to_string(),
+            target: Some("/usr/local/bin/docker".to_string()),
+        };
+
+        assert_eq!(
+            caskroom_binary_path(&caskroom, &binary)?,
+            caskroom.join("bin/docker")
         );
         Ok(())
     }
