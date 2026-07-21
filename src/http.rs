@@ -158,7 +158,7 @@ impl Client {
     }
 
     pub async fn get_bytes<U: IntoUrl>(&self, url: U) -> Result<impl AsRef<[u8]>> {
-        let url = url.into_url().unwrap();
+        let url = url.into_url()?;
         let resp = self.get_async(url.clone()).await?;
         Ok(resp.bytes().await?)
     }
@@ -175,7 +175,7 @@ impl Client {
         headers: &HeaderMap,
     ) -> Result<Response> {
         ensure!(!Settings::get().offline(), "offline mode is enabled");
-        let url = url.into_url().unwrap();
+        let url = url.into_url()?;
         let resp = self
             .send_with_https_fallback(Method::GET, url, headers, "GET")
             .await?;
@@ -189,7 +189,7 @@ impl Client {
         headers: &HeaderMap,
     ) -> Result<Response> {
         ensure!(!Settings::get().offline(), "offline mode is enabled");
-        let url = url.into_url().unwrap();
+        let url = url.into_url()?;
         self.send_with_https_fallback_allow_error_status(Method::GET, url, headers, "GET")
             .await
     }
@@ -206,7 +206,7 @@ impl Client {
         headers: &HeaderMap,
     ) -> Result<Response> {
         ensure!(!Settings::get().offline(), "offline mode is enabled");
-        let url = url.into_url().unwrap();
+        let url = url.into_url()?;
         let resp = self
             .send_with_https_fallback(Method::HEAD, url, headers, "HEAD")
             .await?;
@@ -219,9 +219,11 @@ impl Client {
     }
 
     pub fn get_text_request<U: IntoUrl>(&self, url: U) -> TextRequest<'_> {
+        // Defer surfacing an invalid URL to `send()` (which returns `Result`) so a
+        // bad URL is reported as an error instead of panicking here. See #3547.
         TextRequest {
             client: self,
-            url: url.into_url().unwrap(),
+            url: url.into_url().map_err(|e| e.to_string()),
             extra_headers: HeaderMap::new(),
             retries: Settings::get().http_retries(),
         }
@@ -232,7 +234,7 @@ impl Client {
     /// when locking multiple platforms). Concurrent requests for the same URL will
     /// wait for the first fetch to complete.
     pub async fn get_text_cached<U: IntoUrl>(&self, url: U) -> Result<String> {
-        let url = url.into_url().unwrap();
+        let url = url.into_url()?;
         let key = url.to_string();
 
         // Get or create the OnceCell for this URL
@@ -261,7 +263,7 @@ impl Client {
     }
 
     pub async fn get_html<U: IntoUrl>(&self, url: U) -> Result<String> {
-        let url = url.into_url().unwrap();
+        let url = url.into_url()?;
         let resp = self.get_async(url.clone()).await?;
         let is_html = resp
             .headers()
@@ -285,7 +287,7 @@ impl Client {
     where
         T: serde::de::DeserializeOwned,
     {
-        let url = url.into_url().unwrap();
+        let url = url.into_url()?;
         let resp = self.get_async(url).await?;
         let headers = resp.headers().clone();
         let json = resp.json().await?;
@@ -300,7 +302,7 @@ impl Client {
     where
         T: serde::de::DeserializeOwned,
     {
-        let url = url.into_url().unwrap();
+        let url = url.into_url()?;
         let resp = self.get_async_with_headers(url, headers).await?;
         let headers = resp.headers().clone();
         let json = resp.json().await?;
@@ -793,7 +795,9 @@ impl Client {
 
 pub struct TextRequest<'a> {
     client: &'a Client,
-    url: Url,
+    // Parsed lazily by `get_text_request`; an invalid URL surfaces as an error in
+    // `send()` rather than a panic. See #3547.
+    url: Result<Url, String>,
     extra_headers: HeaderMap,
     retries: i64,
 }
@@ -811,14 +815,15 @@ impl TextRequest<'_> {
 
     pub async fn send(mut self) -> Result<String> {
         ensure!(!Settings::get().offline(), "offline mode is enabled");
+        let mut url = self.url.clone().map_err(|e| eyre!(e))?;
         // Merge GitHub headers with any extra headers provided
-        let mut headers = host_auth_headers(&self.url)?;
+        let mut headers = host_auth_headers(&url)?;
         headers.extend(self.extra_headers.clone());
         let resp = self
             .client
             .send_with_https_fallback_with_retries(
                 Method::GET,
-                self.url.clone(),
+                url.clone(),
                 &headers,
                 "GET",
                 self.retries,
@@ -827,12 +832,13 @@ impl TextRequest<'_> {
             .await?;
         let text = resp.text().await?;
         if text.starts_with("<!DOCTYPE html>") {
-            if self.url.scheme() == "http" {
+            if url.scheme() == "http" {
                 // try with https since http may be blocked
-                self.url.set_scheme("https").unwrap();
+                url.set_scheme("https").unwrap();
+                self.url = Ok(url);
                 return Box::pin(self.send()).await;
             }
-            bail!("Got HTML instead of text from {}", self.url);
+            bail!("Got HTML instead of text from {}", url);
         }
         Ok(text)
     }
@@ -1277,6 +1283,17 @@ mod tests {
         crate::config::Settings::reset(None);
 
         result
+    }
+
+    #[tokio::test]
+    async fn test_invalid_url_returns_error_not_panic() {
+        // A relative/invalid URL must return an error rather than panicking
+        // (previously `into_url().unwrap()` crashed the process). See #3547.
+        let client = Client::new(Duration::from_secs(1), ClientKind::Http).unwrap();
+        assert!(client.get_bytes("").await.is_err());
+        assert!(client.head("").await.is_err());
+        assert!(client.get_text("").await.is_err());
+        assert!(client.get_text_request("").send().await.is_err());
     }
 
     #[tokio::test]
