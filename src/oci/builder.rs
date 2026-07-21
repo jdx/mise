@@ -294,13 +294,18 @@ impl Builder {
         // the image appears to build successfully. (`--no-mise` silences the
         // mise-binary warning below but doesn't help with tool binaries; only
         // running the build on a linux host does.)
-        if !versions.is_empty() && std::env::consts::OS != "linux" {
+        // Count only layers actually built on this host; reused layers came
+        // from the cache image and aren't rebuilt, so they don't carry
+        // host-native binaries. Warning on reused-only pushes (the CI re-push
+        // the reuse feature speeds up) would be a false alarm.
+        let built_tool_count = tool_reuse.iter().filter(|r| r.is_none()).count();
+        if built_tool_count > 0 && std::env::consts::OS != "linux" {
             warn!(
-                "building on {host} host — the {n} tool layer(s) contain {host} binaries that \
+                "building on {host} host — {n} tool layer(s) contain {host} binaries that \
                  will fail with `Exec format error` inside a linux container. Run \
                  `mise oci build` on a linux host (or in a linux container) for a working image.",
                 host = std::env::consts::OS,
-                n = versions.len()
+                n = built_tool_count
             );
         }
         for (i, (_, tv)) in versions.iter().enumerate() {
