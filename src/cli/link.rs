@@ -7,6 +7,7 @@ use eyre::bail;
 use path_absolutize::Absolutize;
 
 use crate::file::{make_symlink, remove_all};
+use crate::toolset::install_state;
 use crate::{cli::args::ToolArg, config::Config};
 use crate::{config, file};
 
@@ -43,7 +44,7 @@ impl Link {
                 style(path.to_string_lossy()).cyan().for_stderr()
             );
         }
-        let target = self.tool.ba.installs_path.join(version);
+        let target = self.tool.ba.installs_path.join(&version);
         if target.exists() {
             if self.force {
                 remove_all(&target)?;
@@ -57,6 +58,13 @@ impl Link {
         }
         file::create_dir_all(target.parent().unwrap())?;
         make_symlink(&path, &target)?;
+
+        // A linked tool is complete by definition. Clear any stale `incomplete`
+        // marker left in the cache by a previously-interrupted install so that
+        // `mise use`/`mise doctor` don't treat the linked version as missing.
+        // See discussion #3539.
+        let incomplete = install_state::incomplete_file_path(&self.tool.ba.short, &version);
+        let _ = file::remove_file(&incomplete);
 
         let config = Config::reset().await?;
         let ts = config.get_toolset().await?;

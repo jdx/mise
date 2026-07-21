@@ -5,3 +5,19 @@ mkdir -p tmp/tiny
 mise link tiny@9.8.7 tmp/tiny
 
 assert_contains "mise ls tiny" "tiny  9.8.7 (symlink)"
+
+# Regression test for https://github.com/jdx/mise/discussions/3539:
+# a stale `incomplete` marker left behind by a previously-interrupted install
+# must not cause a freshly-linked tool to be reported as missing (`mise use`
+# and `mise doctor` treat any version with an `incomplete` marker as not
+# installed). `mise link` should clear that marker.
+mkdir -p tmp/tiny2
+mkdir -p "$MISE_CACHE_DIR/tiny/9.9.9"
+touch "$MISE_CACHE_DIR/tiny/9.9.9/incomplete"
+mise link tiny@9.9.9 tmp/tiny2
+
+# `mise ls -i` only lists versions considered installed; the linked version
+# must appear despite the pre-existing stale marker.
+assert_contains "mise ls -i tiny" "tiny  9.9.9 (symlink)"
+# the stale marker should have been removed by `mise link`.
+assert "test ! -f \"$MISE_CACHE_DIR/tiny/9.9.9/incomplete\""
