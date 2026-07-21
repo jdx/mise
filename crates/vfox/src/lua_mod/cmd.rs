@@ -185,6 +185,34 @@ fn command_from_shell(shell: &[String], command: &str) -> LuaResult<Command> {
         mlua::Error::RuntimeError("cmd.exec shell command cannot be empty".to_string())
     })?;
     let mut cmd = Command::new(program);
+
+    // cmd.exe does not understand the `\"` escaping that std's Windows argument
+    // quoting uses for inner double quotes. Hand cmd command bodies through as
+    // raw arguments instead, wrapped in one outer quote pair that `/s` removes.
+    // This preserves commands such as `node -e "console.log(2 + 2)"`.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        let is_cmd = Path::new(program).file_name().is_some_and(|name| {
+            name.eq_ignore_ascii_case("cmd") || name.eq_ignore_ascii_case("cmd.exe")
+        });
+        let runs_command = args
+            .iter()
+            .any(|arg| arg.eq_ignore_ascii_case("/c") || arg.eq_ignore_ascii_case("/k"));
+
+        if is_cmd && runs_command {
+            if !args.iter().any(|arg| arg.eq_ignore_ascii_case("/s")) {
+                cmd.raw_arg("/s");
+            }
+            for arg in args {
+                cmd.raw_arg(arg);
+            }
+            cmd.raw_arg(format!("\"{command}\""));
+            return Ok(cmd);
+        }
+    }
+
     cmd.args(args);
     cmd.arg(command);
     Ok(cmd)
@@ -263,6 +291,25 @@ mod tests {
         .unwrap();
     }
 
+    #[test]
+    #[cfg(windows)]
+    fn test_cmd_exec_preserves_inner_quotes_with_cmd() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+
+        let result: String = lua
+            .load(
+                r#"
+                local cmd = require("cmd")
+                return cmd.exec('echo "hello world"')
+            "#,
+            )
+            .eval()
+            .unwrap();
+
+        assert_eq!(result, "\"hello world\"\r\n");
+    }
+
     // os.execute must honor the mise_env registry (env_clear + mise_env) so
     // plugins shelling out via os.execute get mise's sanitized env, not the raw
     // process env (which may carry stale tools=true values). (#10282)
@@ -287,6 +334,21 @@ mod tests {
         )
         .exec()
         .unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_os_execute_preserves_inner_quotes_with_cmd() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let marker = temp_dir.path().join("os-execute-output.txt");
+        let command = format!(r#"echo "hello world"> "{}""#, marker.display());
+
+        assert_eq!(os_execute(&lua, Some(command)).unwrap(), 0);
+
+        let output = std::fs::read_to_string(marker).unwrap();
+        assert_eq!(output, "\"hello world\"\r\n");
     }
 
     #[test]
