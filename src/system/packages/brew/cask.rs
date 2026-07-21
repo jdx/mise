@@ -1660,7 +1660,8 @@ end
     #[test]
     fn artifact_lookup_matches_app_bundle_case_insensitively() -> Result<()> {
         // Homebrew cask `yaak` declares `app "yaak.app"` but the DMG ships
-        // `Yaak.app`. APFS is case-insensitive; exact match must not be required.
+        // `Yaak.app`. Default macOS APFS is case-insensitive; exact match must
+        // not be required.
         let tmp = tempfile::tempdir()?;
         let app = tmp.path().join("Yaak.app");
         file::create_dir_all(&app)?;
