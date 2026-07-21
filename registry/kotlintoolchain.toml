@@ -1,0 +1,13 @@
+description = "A unified entry point into Kotlin"
+os = ["linux", "macos"]
+test = { cmd = "KOTLIN_CLI_WRAPPER_ALWAYS_USE_INTRINSIC_VERSION=1 kotlin --version", expected = "{{version}}" }
+
+[[backends]]
+full = "http:kotlintoolchain"
+
+[backends.options]
+bin = "kotlin"
+checksum_url = "https://packages.jetbrains.team/maven/p/amper/amper/org/jetbrains/kotlin/kotlin-cli/{{ version }}/kotlin-cli-{{version }}-wrapper.sha256"
+url = "https://packages.jetbrains.team/maven/p/amper/amper/org/jetbrains/kotlin/kotlin-cli/{{ version }}/kotlin-cli-{{ version}}-wrapper"
+version_json_path = ".tag_name"
+version_list_url = "https://api.github.com/repos/JetBrains/kotlin-toolchain/releases/latest"
