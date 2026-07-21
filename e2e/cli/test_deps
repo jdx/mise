@@ -24,8 +24,20 @@ EOF
 
 # Now npm provider should be detected
 assert_contains "mise deps --list" "npm"
+assert_contains "mise deps --list" "status: active"
 assert_contains "mise deps --list" "package-lock.json"
 assert_contains "mise deps --list" "node_modules"
+
+# Explicitly configured providers remain visible when their applicability file
+# is missing, but explain why they cannot run.
+rm package-lock.json
+assert_contains "mise deps --list" "status: inactive (missing package-lock.json)"
+assert_fail "mise deps npm --explain" "is inactive: missing package-lock.json"
+assert_not_contains "mise deps --force 2>&1" "npm install"
+
+# Creating the applicability file transitions the same provider to active.
+touch package-lock.json
+assert_contains "mise deps --list" "status: active"
 
 # Test --dry-run shows what would run
 assert_contains "mise deps --dry-run 2>&1" "npm"
@@ -49,6 +61,18 @@ touch schema.graphql
 
 assert_contains "mise deps --list" "codegen"
 assert_contains "mise deps --list" "schema.graphql"
+
+# Custom providers without a run command are retained for diagnostics and
+# cannot be executed.
+cat >>mise.toml <<'EOF'
+
+[deps.missing_run]
+sources = ["schema.graphql"]
+outputs = ["generated-missing/"]
+EOF
+assert_contains "mise deps --list" "missing_run"
+assert_contains "mise deps --list" "status: inactive (missing run command)"
+assert_fail "mise deps missing_run --explain" "is inactive: missing run command"
 
 # Test --only flag
 assert_contains "mise deps --dry-run --only codegen 2>&1" "codegen"
@@ -145,8 +169,10 @@ EOF
 assert_contains "mise deps --list" "bun"
 assert_contains "mise deps --list" "bun.lock"
 
+rm bun.lock
+assert_contains "mise deps --list" "inactive (missing bun.lockb or bun.lock)"
+
 # Test aube provider
-rm -f bun.lock
 cat >aube-lock.yaml <<'EOF'
 lockfileVersion: 1
 EOF
@@ -190,6 +216,9 @@ EOF
 assert_contains "mise deps --list" "go"
 assert_contains "mise deps --list" "go.mod"
 assert_contains "mise deps --dry-run 2>&1" "go"
+
+rm go.mod
+assert_contains "mise deps --list" "inactive (missing go.mod)"
 
 # Test pip provider
 rm -f go.sum go.mod
@@ -717,12 +746,13 @@ assert_contains "mise deps --list" ".gitmodules"
 assert_contains "mise deps --list" "libs/foo"
 assert_contains "mise deps --list" "libs/bar"
 
-# Test that empty .gitmodules is not applicable
+# Empty .gitmodules remains visible with its inapplicability reason.
 echo -n "" >.gitmodules
 cat >mise.toml <<'EOF'
 [deps.git-submodule]
 EOF
-assert_not_contains "mise deps --list" "git-submodule"
+assert_contains "mise deps --list" "git-submodule"
+assert_contains "mise deps --list" "status: inactive (empty .gitmodules)"
 
 # Clean up
 rm -f .gitmodules mise.toml .mise
@@ -824,6 +854,12 @@ EOF
   echo "$package" >"deps-monorepo/packages/$package/input.txt"
 done
 
+# Keep an inapplicable provider in one root to verify scoped diagnostics.
+cat >>deps-monorepo/packages/a/mise.toml <<'EOF'
+
+[deps.npm]
+EOF
+
 # A layered disable applies to providers from the same config root.
 cat >deps-monorepo/packages/a/mise.local.toml <<'EOF'
 [deps]
@@ -838,6 +874,9 @@ assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//:root"
 # --monorepo loads every explicit config root and qualifies duplicate IDs.
 assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/a:setup"
 assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/b:setup"
+assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/a:npm"
+assert_contains "cd deps-monorepo && mise deps --monorepo --list" "inactive (missing package-lock.json)"
+assert_fail "cd deps-monorepo && mise deps --monorepo //packages/a:npm --explain" "is inactive: missing package-lock.json"
 assert_not_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/a:disabled"
 assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/b:disabled"
 assert "cd deps-monorepo && mise deps --monorepo --force"

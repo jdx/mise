@@ -89,8 +89,8 @@ impl DepsProvider for ScopedDepsProvider {
         self.inner.install_command()
     }
 
-    fn is_applicable(&self) -> bool {
-        self.inner.is_applicable()
+    fn applicability(&self) -> super::DepsProviderApplicability {
+        self.inner.applicability()
     }
 
     fn is_auto(&self) -> bool {
@@ -119,7 +119,7 @@ use super::providers::{
 };
 use super::rule::BUILTIN_PROVIDERS;
 use super::state::{self, DepsState};
-use super::{DepsProvider, FreshnessResult};
+use super::{DepsProvider, DepsProviderApplicability, FreshnessResult};
 
 /// Options for running deps steps
 #[derive(Debug, Default)]
@@ -183,7 +183,7 @@ pub struct DepsEngine {
 }
 
 impl DepsEngine {
-    /// Create a new DepsEngine, discovering all applicable providers
+    /// Create a new DepsEngine, discovering all configured providers.
     pub fn new(config: &Config) -> Result<Self> {
         let providers = Self::discover_providers(config)?;
         // Only require experimental when deps is actually configured
@@ -262,7 +262,6 @@ impl DepsEngine {
                 let scoped_id = format!("{scope}:{id}");
                 if let Some(provider) =
                     Self::build_provider(id, &config_root, provider_config.clone())
-                    && provider.is_applicable()
                     && seen_ids.insert(scoped_id.clone())
                 {
                     scoped_providers.push((provider, scoped_id, scope.clone()));
@@ -335,7 +334,7 @@ impl DepsEngine {
         Ok(Self { providers })
     }
 
-    /// Discover all applicable deps providers for the current project
+    /// Discover all configured deps providers for the current project.
     ///
     /// Each config file's deps providers are scoped to that config file's directory.
     /// For example, a `[deps.pnpm]` defined in the root `mise.toml` only applies when
@@ -380,7 +379,6 @@ impl DepsEngine {
 
                 if let Some(provider) =
                     Self::build_provider(id, &config_root, provider_config.clone())
-                    && provider.is_applicable()
                 {
                     providers.push(provider);
                 }
@@ -459,7 +457,7 @@ impl DepsEngine {
         }
     }
 
-    /// List all discovered providers
+    /// List all discovered providers, including inactive providers.
     pub fn list_providers(&self) -> Vec<&dyn DepsProvider> {
         self.providers.iter().map(|p| p.as_ref()).collect()
     }
@@ -483,6 +481,7 @@ impl DepsEngine {
         self.providers
             .iter()
             .filter(|p| p.is_auto())
+            .filter(|p| p.is_applicable())
             .filter_map(|p| {
                 let result = self.check_freshness(p.as_ref());
                 match result {
@@ -504,6 +503,12 @@ impl DepsEngine {
 
         for provider in &self.providers {
             let id = provider.id().to_string();
+
+            if !provider.is_applicable() {
+                trace!("deps step {} is inactive, skipping", id);
+                results.push(DepsStepResult::Skipped(id));
+                continue;
+            }
 
             // Check auto_only filter
             if opts.auto_only && !provider.is_auto() {
@@ -871,6 +876,13 @@ impl DepsEngine {
     /// Uses blake3 content hashing with persistent state. On first run (no
     /// stored hashes), the provider is always considered stale.
     pub fn check_freshness(&self, provider: &dyn DepsProvider) -> Result<FreshnessResult> {
+        if let DepsProviderApplicability::Inactive(reason) = provider.applicability() {
+            return Err(eyre::eyre!(
+                "deps provider '{}' is inactive: {reason}",
+                provider.id()
+            ));
+        }
+
         let sources = provider.sources();
         let outputs = provider.outputs();
         let optional_outputs = provider.optional_outputs();

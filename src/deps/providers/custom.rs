@@ -4,7 +4,7 @@ use eyre::Result;
 use glob::glob;
 
 use crate::deps::rule::DepsProviderConfig;
-use crate::deps::{DepsCommand, DepsProvider};
+use crate::deps::{DepsCommand, DepsProvider, DepsProviderApplicability};
 
 use super::ProviderBase;
 
@@ -76,8 +76,7 @@ impl DepsProvider for CustomDepsProvider {
         DepsCommand::from_string(run, &self.base.project_root, &self.base.config)
     }
 
-    fn is_applicable(&self) -> bool {
-        // Custom providers require a run command to be applicable
-        self.base.config.run.is_some()
+    fn applicability(&self) -> DepsProviderApplicability {
+        DepsProviderApplicability::require_run(self.base.config.run.as_deref())
     }
 }

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use eyre::Result;
 
 use crate::deps::rule::DepsProviderConfig;
-use crate::deps::{DepsCommand, DepsProvider};
+use crate::deps::{DepsCommand, DepsProvider, DepsProviderApplicability};
 
 use super::ProviderBase;
 
@@ -72,8 +72,14 @@ impl DepsProvider for BunDepsProvider {
         })
     }
 
-    fn is_applicable(&self) -> bool {
-        self.lockfile_path().is_some()
+    fn applicability(&self) -> DepsProviderApplicability {
+        let root = self.base.config_root();
+        let binary_lock = root.join("bun.lockb");
+        let text_lock = root.join("bun.lock");
+        DepsProviderApplicability::require_any_file(&[
+            (&binary_lock, "bun.lockb"),
+            (&text_lock, "bun.lock"),
+        ])
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {

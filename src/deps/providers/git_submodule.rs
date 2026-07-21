@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use eyre::Result;
 
 use crate::deps::rule::DepsProviderConfig;
-use crate::deps::{DepsCommand, DepsProvider};
+use crate::deps::{DepsCommand, DepsProvider, DepsProviderApplicability};
 
 use super::ProviderBase;
 
@@ -99,8 +99,8 @@ impl DepsProvider for GitSubmoduleDepsProvider {
         })
     }
 
-    fn is_applicable(&self) -> bool {
+    fn applicability(&self) -> DepsProviderApplicability {
         let gitmodules = self.base.config_root().join(".gitmodules");
-        gitmodules.exists() && gitmodules.metadata().map(|m| m.len() > 0).unwrap_or(false)
+        DepsProviderApplicability::require_nonempty_file(&gitmodules, ".gitmodules")
     }
 }
