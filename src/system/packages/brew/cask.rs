@@ -220,19 +220,26 @@ impl BrewCaskManager {
         )?;
         execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
         for binary in &artifacts.binaries {
-            stage_binary(&stage, &tmp_caskroom, &cask, &appdir, binary)?;
+            stage_binary(&stage, &tmp_caskroom, &cask, &artifacts.apps, binary)?;
         }
         for completion in &artifacts.completions {
-            stage_completion(&stage, &tmp_caskroom, &cask, &appdir, completion)?;
+            stage_completion(&stage, &tmp_caskroom, &cask, &artifacts.apps, completion)?;
         }
         for generated in &artifacts.generated_completions {
-            stage_generated_completions(&stage, &tmp_caskroom, &cask, &appdir, generated)?;
+            stage_generated_completions(&stage, &tmp_caskroom, &cask, &artifacts.apps, generated)?;
         }
         write_receipt(&tmp_caskroom, &cask, &artifacts)?;
         let current_binaries = binary_targets(&artifacts)?;
         let current_completions = completion_target_paths(&cask, &artifacts)?;
         let current_fonts = font_target_paths(&artifacts)?;
-        replace_caskroom(&cask, &tmp_caskroom, &caskroom, || {
+        for target in &current_completions {
+            ensure_completion_target_replaceable(&cask, target)?;
+        }
+        let mut current_targets = current_binaries.clone();
+        current_targets.extend(current_completions.iter().cloned());
+        current_targets.extend(current_fonts.iter().cloned());
+        let mut link_transaction = ArtifactLinkTransaction::begin(current_targets)?;
+        let activation = replace_caskroom(&cask, &tmp_caskroom, &caskroom, || {
             for binary in &artifacts.binaries {
                 link_binary(&caskroom, binary)?;
             }
@@ -243,7 +250,16 @@ impl BrewCaskManager {
                 link_font(&caskroom, font)?;
             }
             Ok(())
-        })?;
+        });
+        if let Err(err) = activation {
+            if let Err(rollback_err) = link_transaction.rollback() {
+                return Err(err.wrap_err(format!(
+                    "failed to restore external cask artifacts: {rollback_err:#}"
+                )));
+            }
+            return Err(err);
+        }
+        link_transaction.commit()?;
         remove_obsolete_binary_links(&cask, &previous_binaries, &current_binaries)?;
         remove_obsolete_completions(&cask, &previous_completions, &current_completions)?;
         remove_obsolete_fonts(&cask, &previous_fonts, &current_fonts)?;
@@ -1074,12 +1090,12 @@ fn stage_completion(
     stage: &Path,
     caskroom: &Path,
     cask: &Cask,
-    appdir: &Path,
+    apps: &[AppArtifact],
     completion: &CompletionArtifact,
 ) -> Result<()> {
     let target = completion.target_path()?;
     let caskroom_completion = caskroom_completion_path(caskroom, &target)?;
-    let source = find_completion_source(stage, caskroom, cask, appdir, &completion.source)
+    let source = find_completion_source(stage, caskroom, cask, apps, &completion.source)?
         .ok_or_else(|| {
             eyre!(
                 "brew-cask: {} completion artifact '{}' was not found",
@@ -1101,11 +1117,10 @@ fn stage_generated_completions(
     stage: &Path,
     caskroom: &Path,
     cask: &Cask,
-    appdir: &Path,
+    apps: &[AppArtifact],
     completion: &GeneratedCompletionArtifact,
 ) -> Result<()> {
-    let executable =
-        find_generated_completion_executable(stage, caskroom, cask, appdir, completion)?;
+    let executable = find_generated_completion_executable(stage, caskroom, cask, apps, completion)?;
     if executable.starts_with(stage) || executable.starts_with(caskroom) {
         file::make_executable(&executable)?;
     }
@@ -1167,30 +1182,30 @@ fn find_completion_source(
     stage: &Path,
     caskroom: &Path,
     cask: &Cask,
-    appdir: &Path,
+    apps: &[AppArtifact],
     source: &str,
-) -> Option<PathBuf> {
+) -> Result<Option<PathBuf>> {
     for root in [caskroom, stage] {
         if let Some(source) = generated_caskroom_artifact(root, cask, source)
             && source.is_file()
         {
-            return Some(source);
+            return Ok(Some(source));
         }
     }
-    if let Some(source) = appdir_artifact_source(source, appdir) {
-        return Some(source);
+    if let Some(source) = appdir_artifact_source(source, apps)? {
+        return Ok(Some(source));
     }
-    absolute_prefixed_source(source)
+    Ok(absolute_prefixed_source(source)
         .filter(|source| source.is_file())
         .or_else(|| find_file_artifact(caskroom, source))
-        .or_else(|| find_file_artifact(stage, source))
+        .or_else(|| find_file_artifact(stage, source)))
 }
 
 fn find_generated_completion_executable(
     stage: &Path,
     caskroom: &Path,
     cask: &Cask,
-    appdir: &Path,
+    apps: &[AppArtifact],
     completion: &GeneratedCompletionArtifact,
 ) -> Result<PathBuf> {
     let executable = &completion.executable;
@@ -1204,7 +1219,7 @@ fn find_generated_completion_executable(
     {
         return Ok(source);
     }
-    if let Some(source) = appdir_artifact_source(executable, appdir) {
+    if let Some(source) = appdir_artifact_source(executable, apps)? {
         return Ok(source);
     }
     if let Some(source) = absolute_prefixed_source(executable) {
@@ -1230,12 +1245,44 @@ fn find_generated_completion_executable(
     ))
 }
 
-fn appdir_artifact_source(source: &str, appdir: &Path) -> Option<PathBuf> {
-    if !source.contains("$APPDIR") {
-        return None;
+fn appdir_artifact_source(source: &str, apps: &[AppArtifact]) -> Result<Option<PathBuf>> {
+    let Some(relative) = source.strip_prefix("$APPDIR/") else {
+        return Ok(None);
+    };
+    let relative = Path::new(relative);
+    let Some(bundle) = relative.components().next() else {
+        return Ok(None);
+    };
+    let suffix = relative.components().skip(1).collect::<PathBuf>();
+    let mut matches = Vec::new();
+    for app in apps {
+        let target = app_target_path(app.target_name())?;
+        let source_bundle = Path::new(&app.source).file_name();
+        let target_bundle = target.file_name();
+        if !matches!(bundle, Component::Normal(name) if Some(name) == source_bundle || Some(name) == target_bundle)
+        {
+            continue;
+        }
+        let path = target.join(&suffix);
+        if path.is_file() {
+            matches.push(path);
+        }
     }
-    let path = PathBuf::from(source.replace("$APPDIR", &appdir.to_string_lossy()));
-    path.is_file().then_some(path)
+    matches.sort();
+    matches.dedup();
+    match matches.as_slice() {
+        [] => Ok(None),
+        [path] => Ok(Some(path.clone())),
+        _ => bail!(
+            "brew-cask: APPDIR artifact '{}' is ambiguous: {}",
+            source,
+            matches
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
 }
 
 fn find_generated_completion_file(root: &Path, executable: &str) -> Result<Option<PathBuf>> {
@@ -1522,7 +1569,7 @@ fn stage_binary(
     stage: &Path,
     caskroom: &Path,
     cask: &Cask,
-    appdir: &Path,
+    apps: &[AppArtifact],
     binary: &BinaryArtifact,
 ) -> Result<()> {
     let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
@@ -1533,7 +1580,7 @@ fn stage_binary(
     if binary.source.contains("$APPDIR") {
         // $APPDIR is the Applications directory where install_app placed the bundle.
         // Symlink into the installed app so the CLI wrapper can trace back to find the app.
-        let app_binary = appdir_artifact_source(&binary.source, appdir).ok_or_else(|| {
+        let app_binary = appdir_artifact_source(&binary.source, apps)?.ok_or_else(|| {
             eyre!(
                 "brew-cask: binary artifact '{}' was not found",
                 binary.source
@@ -2552,6 +2599,103 @@ fn caskroom_backup_dir(cask: &Cask) -> PathBuf {
     caskroom_token_dir(&cask.token).join(format!(".mise-backup-{}", hash::hash_to_str(&key)))
 }
 
+#[derive(Debug)]
+struct ArtifactLinkBackup {
+    target: PathBuf,
+    backup: Option<PathBuf>,
+}
+
+#[derive(Debug)]
+struct ArtifactLinkTransaction {
+    backups: Vec<ArtifactLinkBackup>,
+}
+
+impl ArtifactLinkTransaction {
+    fn begin(mut targets: Vec<PathBuf>) -> Result<Self> {
+        targets.sort();
+        targets.dedup();
+        let mut transaction = Self {
+            backups: Vec::with_capacity(targets.len()),
+        };
+        for target in targets {
+            let entry = (|| -> Result<ArtifactLinkBackup> {
+                let backup = if target.symlink_metadata().is_ok() {
+                    let parent = target
+                        .parent()
+                        .ok_or_else(|| eyre!("brew-cask: artifact target has no parent"))?;
+                    let backup = parent.join(format!(
+                        ".mise-link-backup-{}",
+                        hash::hash_to_str(&target.display().to_string())
+                    ));
+                    remove_artifact_target(&backup)?;
+                    file::rename(&target, &backup)?;
+                    Some(backup)
+                } else {
+                    None
+                };
+                Ok(ArtifactLinkBackup { target, backup })
+            })();
+            match entry {
+                Ok(entry) => transaction.backups.push(entry),
+                Err(err) => {
+                    if let Err(rollback_err) = transaction.rollback() {
+                        return Err(err.wrap_err(format!(
+                            "failed to restore artifact targets after backup failed: {rollback_err:#}"
+                        )));
+                    }
+                    return Err(err);
+                }
+            }
+        }
+        Ok(transaction)
+    }
+
+    fn rollback(&mut self) -> Result<()> {
+        let mut first_error = None;
+        for entry in self.backups.iter().rev() {
+            match remove_artifact_target(&entry.target) {
+                Ok(()) => {
+                    if let Some(backup) = &entry.backup
+                        && let Err(err) = file::rename(backup, &entry.target)
+                    {
+                        first_error.get_or_insert(err);
+                    }
+                }
+                Err(err) => {
+                    first_error.get_or_insert(err);
+                }
+            }
+        }
+        if let Some(err) = first_error {
+            Err(err)
+        } else {
+            self.backups.clear();
+            Ok(())
+        }
+    }
+
+    fn commit(&mut self) -> Result<()> {
+        for entry in &self.backups {
+            if let Some(backup) = &entry.backup {
+                remove_artifact_target(backup)?;
+            }
+        }
+        self.backups.clear();
+        Ok(())
+    }
+}
+
+fn remove_artifact_target(path: &Path) -> Result<()> {
+    let Ok(metadata) = path.symlink_metadata() else {
+        return Ok(());
+    };
+    if metadata.file_type().is_symlink() {
+        file::remove_file(path)
+    } else {
+        file::remove_all(path)
+    }
+}
+
 fn replace_caskroom(
     cask: &Cask,
     staged: &Path,
@@ -3350,13 +3494,7 @@ end
         };
         let target = completion.target_path()?;
 
-        stage_completion(
-            &stage,
-            &caskroom,
-            &cask,
-            Path::new("/Applications"),
-            &completion,
-        )?;
+        stage_completion(&stage, &caskroom, &cask, &[], &completion)?;
         link_completion(&cask, &caskroom, &target)?;
 
         assert_eq!(
@@ -3388,13 +3526,7 @@ end
             target: Some("$HOMEBREW_PREFIX/etc/bash_completion.d/foo".to_string()),
         };
 
-        stage_completion(
-            &stage,
-            &caskroom,
-            &cask,
-            Path::new("/Applications"),
-            &completion,
-        )?;
+        stage_completion(&stage, &caskroom, &cask, &[], &completion)?;
 
         assert_eq!(
             crate::file::read_to_string(caskroom.join("etc/bash_completion.d/foo"))?,
@@ -3420,13 +3552,7 @@ end
             target: Some("$HOMEBREW_PREFIX/etc/bash_completion.d/foo".to_string()),
         };
 
-        stage_completion(
-            &stage,
-            &caskroom,
-            &cask,
-            Path::new("/Applications"),
-            &completion,
-        )?;
+        stage_completion(&stage, &caskroom, &cask, &[], &completion)?;
 
         assert_eq!(
             crate::file::read_to_string(caskroom.join("etc/bash_completion.d/foo"))?,
@@ -3486,13 +3612,7 @@ end
             shells: vec![CompletionShell::Bash],
         };
 
-        stage_generated_completions(
-            &stage,
-            &caskroom,
-            &cask,
-            Path::new("/Applications"),
-            &completion,
-        )?;
+        stage_generated_completions(&stage, &caskroom, &cask, &[], &completion)?;
 
         assert_eq!(
             crate::file::read_to_string(caskroom.join("etc/bash_completion.d/op"))?,
@@ -3521,34 +3641,41 @@ end
             shell_parameter_format: None,
             shells: vec![CompletionShell::Bash],
         };
+        let apps = [AppArtifact {
+            source: "Foo.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Foo.app".to_string()),
+        }];
 
         assert_eq!(
-            find_generated_completion_executable(
-                &stage,
-                &caskroom,
-                &cask,
-                &tmp.path().join("Applications"),
-                &completion,
-            )?,
+            find_generated_completion_executable(&stage, &caskroom, &cask, &apps, &completion,)?,
             app_executable
         );
         Ok(())
     }
 
     #[test]
-    fn appdir_artifact_source_uses_selected_appdir() -> Result<()> {
+    fn appdir_artifact_source_uses_matching_app_location() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
-        let system_appdir = tmp.path().join("system-applications");
-        let prefix_appdir = tmp.path().join("prefix-applications");
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let prefix_appdir = tmp.path().join("Applications");
         let relative = "Foo.app/Contents/MacOS/foo";
-        file::create_dir_all(system_appdir.join(relative).parent().unwrap())?;
         file::create_dir_all(prefix_appdir.join(relative).parent().unwrap())?;
-        crate::file::write(system_appdir.join(relative), "system")?;
         crate::file::write(prefix_appdir.join(relative), "prefix")?;
+        let apps = [
+            AppArtifact {
+                source: "Other.app".to_string(),
+                target: None,
+            },
+            AppArtifact {
+                source: "Foo.app".to_string(),
+                target: Some("$HOMEBREW_PREFIX/Applications/Foo.app".to_string()),
+            },
+        ];
 
         assert_eq!(
-            appdir_artifact_source("$APPDIR/Foo.app/Contents/MacOS/foo", &prefix_appdir),
-            Some(prefix_appdir.join(relative))
+            appdir_artifact_source("$APPDIR/Foo.app/Contents/MacOS/foo", &apps)?,
+            Some(prefix_appdir.join(relative)),
         );
         Ok(())
     }
@@ -3574,13 +3701,7 @@ end
         };
 
         assert_eq!(
-            find_generated_completion_executable(
-                &stage,
-                &caskroom,
-                &cask,
-                Path::new("/Applications"),
-                &completion,
-            )?,
+            find_generated_completion_executable(&stage, &caskroom, &cask, &[], &completion,)?,
             caskroom.join("bin/op")
         );
         Ok(())
@@ -3607,14 +3728,8 @@ end
             shells: vec![CompletionShell::Bash],
         };
 
-        let err = find_generated_completion_executable(
-            &stage,
-            &caskroom,
-            &cask,
-            Path::new("/Applications"),
-            &completion,
-        )
-        .unwrap_err();
+        let err = find_generated_completion_executable(&stage, &caskroom, &cask, &[], &completion)
+            .unwrap_err();
         assert!(
             err.to_string()
                 .contains("completion executable 'tool' is ambiguous")
@@ -3641,14 +3756,8 @@ end
             shells: vec![CompletionShell::Bash],
         };
 
-        let err = find_generated_completion_executable(
-            &stage,
-            &caskroom,
-            &cask,
-            Path::new("/Applications"),
-            &completion,
-        )
-        .unwrap_err();
+        let err = find_generated_completion_executable(&stage, &caskroom, &cask, &[], &completion)
+            .unwrap_err();
 
         assert!(
             err.to_string()
@@ -4293,13 +4402,7 @@ end
             target: Some("$HOMEBREW_PREFIX/bin/op".to_string()),
         };
 
-        stage_binary(
-            &stage,
-            &caskroom,
-            &cask,
-            Path::new("/Applications"),
-            &binary,
-        )?;
+        stage_binary(&stage, &caskroom, &cask, &[], &binary)?;
         link_binary(&caskroom, &binary)?;
 
         let target = binary.target_path()?;
@@ -4331,8 +4434,8 @@ end
             target: Some("$HOMEBREW_PREFIX/sbin/op".to_string()),
         };
 
-        stage_binary(&stage, &caskroom, &cask, Path::new("/Applications"), &bin)?;
-        stage_binary(&stage, &caskroom, &cask, Path::new("/Applications"), &sbin)?;
+        stage_binary(&stage, &caskroom, &cask, &[], &bin)?;
+        stage_binary(&stage, &caskroom, &cask, &[], &sbin)?;
         link_binary(&caskroom, &bin)?;
         link_binary(&caskroom, &sbin)?;
 
@@ -4359,13 +4462,7 @@ end
             target: Some("$HOMEBREW_PREFIX/bin/op".to_string()),
         };
 
-        stage_binary(
-            &stage,
-            &caskroom,
-            &cask,
-            Path::new("/Applications"),
-            &binary,
-        )?;
+        stage_binary(&stage, &caskroom, &cask, &[], &binary)?;
 
         assert_eq!(
             crate::file::read_to_string(caskroom.join("bin/op"))?,
@@ -4397,13 +4494,7 @@ end
             target: Some("$HOMEBREW_PREFIX/bin/karabiner_cli".to_string()),
         };
 
-        stage_binary(
-            &stage,
-            &caskroom,
-            &cask,
-            Path::new("/Applications"),
-            &binary,
-        )?;
+        stage_binary(&stage, &caskroom, &cask, &[], &binary)?;
         link_binary(&caskroom, &binary)?;
 
         let staged = caskroom.join("bin/karabiner_cli");
@@ -4437,13 +4528,7 @@ end
             target: Some("$HOMEBREW_PREFIX/bin/karabiner_cli".to_string()),
         };
 
-        stage_binary(
-            &stage,
-            &caskroom,
-            &cask,
-            Path::new("/Applications"),
-            &binary,
-        )?;
+        stage_binary(&stage, &caskroom, &cask, &[], &binary)?;
         file::remove_file(&pkg_binary)?;
         let err = link_binary(&caskroom, &binary).unwrap_err().to_string();
 
@@ -4660,7 +4745,7 @@ end
 
     #[cfg(unix)]
     #[test]
-    fn replace_caskroom_restores_previous_files_when_linking_fails() -> Result<()> {
+    fn failed_activation_restores_caskroom_and_external_links() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
@@ -4673,14 +4758,24 @@ end
         crate::file::write(destination.join(relative), "previous")?;
         crate::file::write(staged.join(relative), "replacement")?;
         let target = tmp.path().join(relative);
+        let new_target = tmp.path().join("bin/new-tool");
         file::create_dir_all(target.parent().unwrap())?;
+        file::create_dir_all(new_target.parent().unwrap())?;
         file::make_symlink(&destination.join(relative), &target)?;
+        let mut link_transaction =
+            ArtifactLinkTransaction::begin(vec![target.clone(), new_target.clone()])?;
 
-        let err = replace_caskroom(&cask, &staged, &destination, || Err(eyre!("link failed")))
-            .unwrap_err();
+        let err = replace_caskroom(&cask, &staged, &destination, || {
+            file::make_symlink(&destination.join(relative), &target)?;
+            file::make_symlink(&destination.join("bin/new-tool"), &new_target)?;
+            Err(eyre!("link failed"))
+        })
+        .unwrap_err();
+        link_transaction.rollback()?;
 
         assert_eq!(err.to_string(), "link failed");
         assert_eq!(crate::file::read_to_string(&target)?, "previous");
+        assert!(!new_target.symlink_metadata().is_ok());
         assert!(!caskroom_backup_dir(&cask).exists());
         Ok(())
     }
