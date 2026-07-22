@@ -932,8 +932,8 @@ fn ensure_completion_target_replaceable(cask: &Cask, target: &Path) -> Result<()
     }
     let link_target = std::fs::read_link(target)?;
     let resolved = resolve_symlink_target(target, link_target);
-    let token_dir = file::desymlink_path(&caskroom_token_dir(&cask.token));
-    if file::desymlink_path(&resolved).starts_with(&token_dir) {
+    let token_dir = caskroom_token_dir(&cask.token);
+    if path_starts_with_resolved_root(&resolved, &token_dir) {
         return Ok(());
     }
     bail!(
@@ -1282,7 +1282,7 @@ fn remove_obsolete_completions(
     previous_targets: &[PathBuf],
     current_targets: &[PathBuf],
 ) -> Result<()> {
-    let token_dir = file::desymlink_path(&caskroom_token_dir(&cask.token));
+    let token_dir = caskroom_token_dir(&cask.token);
     let prefix = prefix::prefix();
     for target in previous_targets {
         if current_targets.contains(target) || !target.starts_with(&prefix) {
@@ -1298,7 +1298,7 @@ fn remove_obsolete_completions(
             continue;
         };
         let resolved = resolve_symlink_target(target, link_target);
-        if file::desymlink_path(&resolved).starts_with(&token_dir) {
+        if path_starts_with_resolved_root(&resolved, &token_dir) {
             file::remove_file(target)?;
         }
     }
@@ -1396,6 +1396,28 @@ fn resolve_symlink_target(link: &Path, target: PathBuf) -> PathBuf {
         link.parent()
             .map(|parent| parent.join(&target))
             .unwrap_or(target)
+    }
+}
+
+fn path_starts_with_resolved_root(path: &Path, root: &Path) -> bool {
+    path_with_resolved_existing_ancestor(path).starts_with(&file::desymlink_path(root))
+}
+
+fn path_with_resolved_existing_ancestor(path: &Path) -> PathBuf {
+    let mut base = path;
+    let mut suffix = PathBuf::new();
+    loop {
+        if base.symlink_metadata().is_ok() {
+            return file::desymlink_path(base).join(suffix);
+        }
+        let Some(name) = base.file_name() else {
+            return path.to_path_buf();
+        };
+        suffix = Path::new(name).join(suffix);
+        let Some(parent) = base.parent() else {
+            return path.to_path_buf();
+        };
+        base = parent;
     }
 }
 
@@ -2955,6 +2977,30 @@ end
         assert!(dangling_target.symlink_metadata().is_err());
         assert!(other_target.symlink_metadata().is_ok());
         assert!(regular_target.symlink_metadata().is_ok());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_obsolete_completions_removes_dangling_symlinks_with_symlinked_prefix() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let real_prefix = tmp.path().join("homebrew-real");
+        let prefix = tmp.path().join("homebrew");
+        file::create_dir_all(&real_prefix)?;
+        file::make_symlink(&real_prefix, &prefix)?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let cask = test_cask("foo", "2.0.0");
+        let old_caskroom = caskroom_version_dir(&cask.token, "1.0.0");
+        let relative = Path::new("etc/bash_completion.d/dangling");
+        let target = prefix.join("etc/bash_completion.d/foo");
+        file::create_dir_all(old_caskroom.join("etc/bash_completion.d"))?;
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(&old_caskroom.join(relative), &target)?;
+
+        remove_obsolete_completions(&cask, &[target.clone()], &[])?;
+
+        assert!(target.symlink_metadata().is_err());
         Ok(())
     }
 
