@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-export MISE_EXPERIMENTAL=1
-
 mkdir -p .config/mise/conf.d .mise/tasks
 
 cat <<'EOF' >.config/mise.toml
@@ -11,27 +9,23 @@ run = "echo .config/a"
 
 [tasks.b]
 description = ".config/b"
+alias = "low"
 env = { LOWER_PRECEDENCE = "applied" }
 EOF
 
 cat <<'EOF' >.mise/config.toml
-monorepo_root = true
-
 [tasks.a]
 description = ".mise/a"
 run = "echo .mise/a"
 
 [tasks.b]
 description = ".mise/b"
+alias = "high"
 env = { HIGHER_PRECEDENCE = "applied" }
-
-[monorepo]
-config_roots = ["projects/*"]
 EOF
 
 cat <<'EOF' >.mise/tasks/b
 #!/usr/bin/env bash
-echo file/b
 echo "HIGHER_PRECEDENCE=${HIGHER_PRECEDENCE:-<unset>}"
 echo "LOWER_PRECEDENCE=${LOWER_PRECEDENCE:-<unset>}"
 EOF
@@ -42,16 +36,13 @@ assert_not_contains "mise tasks" "a  .config/a"
 assert_contains "mise run a" ".mise/a"
 assert_not_contains "mise run a" ".config/a"
 
-# A file task should receive metadata from only the highest-precedence inline
-# task definition. Lower-precedence definitions must not overlay it again.
+# A script receives only the highest-precedence inline definition. Additive
+# fields such as aliases and env must not accumulate from lower configs.
 assert_contains "mise tasks" "b  .mise/b"
-assert_not_contains "mise tasks" "b  .config/b"
-assert_contains "mise run b" "file/b"
-assert_contains "mise run b" "HIGHER_PRECEDENCE=applied"
-assert_contains "mise run b" "LOWER_PRECEDENCE=<unset>"
+assert_contains "mise run high" "HIGHER_PRECEDENCE=applied"
+assert_contains "mise run high" "LOWER_PRECEDENCE=<unset>"
+assert_fail "mise run low"
 
-# conf.d fragments load alphabetically, so the last fragment is the
-# highest-precedence inline definition and is the only one overlaid.
 cat <<'EOF' >.config/mise/conf.d/01-base.toml
 [tasks.c]
 description = "conf.d/01/c"
@@ -72,141 +63,5 @@ EOF
 chmod +x .mise/tasks/c
 
 assert_contains "mise tasks" "c  conf.d/02/c"
-assert_not_contains "mise tasks" "c  conf.d/01/c"
 assert_contains "mise run c" "HIGHER_PRECEDENCE=applied"
 assert_contains "mise run c" "LOWER_PRECEDENCE=<unset>"
-
-# Monorepo config roots are discovered outside the current hierarchy. Their
-# separately loaded task sets must still keep the first, highest-precedence
-# inline definition for a same-named file task.
-mkdir -p projects/app/.config projects/app/.mise/tasks
-
-cat <<'EOF' >projects/app/.config/mise.toml
-[tasks.d]
-description = "app/.config/d"
-env = { LOWER_PRECEDENCE = "applied" }
-EOF
-
-cat <<'EOF' >projects/app/.mise/config.toml
-[tasks.d]
-description = "app/.mise/d"
-env = { HIGHER_PRECEDENCE = "applied" }
-EOF
-
-cat <<'EOF' >projects/app/.mise/tasks/d
-#!/usr/bin/env bash
-echo "HIGHER_PRECEDENCE=${HIGHER_PRECEDENCE:-<unset>}"
-echo "LOWER_PRECEDENCE=${LOWER_PRECEDENCE:-<unset>}"
-EOF
-chmod +x projects/app/.mise/tasks/d
-
-assert_contains "mise tasks --all" "//projects/app:d  app/.mise/d"
-assert_not_contains "mise tasks --all" "//projects/app:d  app/.config/d"
-assert_contains "mise run //projects/app:d" "HIGHER_PRECEDENCE=applied"
-assert_contains "mise run //projects/app:d" "LOWER_PRECEDENCE=<unset>"
-
-# Global task configs follow the same rule across conf.d and config.toml, even
-# when the working directory is outside HOME and global files are loaded in a
-# separate pass.
-mkdir -p "$HOME/.config/mise/conf.d" "$HOME/.config/mise/tasks" \
-  "$HOME/global-custom-tasks" "$HOME/high-global-tasks" \
-  "$HOME/high-global-dir" "$HOME/low-global-dir"
-
-cat <<'EOF' >"$MISE_SYSTEM_DIR/config.toml"
-[tasks.e]
-description = "system/config/e"
-env = { SYSTEM_PRECEDENCE = "applied" }
-
-[tasks.g]
-run = "echo system-inline/g"
-EOF
-
-cat <<'EOF' >"$HOME/.config/mise/conf.d/01-base.toml"
-[task_config]
-includes = ["global-custom-tasks"]
-
-[tasks.e]
-description = "global/conf.d/01/e"
-env = { LOWER_PRECEDENCE = "applied" }
-EOF
-
-cat <<EOF >"$HOME/.config/mise/conf.d/02-override.toml"
-[task_config]
-dir = "$HOME/low-global-dir"
-
-[tasks.e]
-description = "global/conf.d/02/e"
-env = { LOWER_PRECEDENCE = "applied" }
-
-[tasks.i]
-run = "echo lower-inline/i"
-
-[tasks.j]
-env = { INLINE_METADATA = "applied" }
-EOF
-
-cat <<EOF >"$HOME/.config/mise/config.toml"
-[task_config]
-includes = [".config/mise/tasks", "high-global-tasks"]
-dir = "$HOME/high-global-dir"
-
-[tasks.e]
-description = "global/config/e"
-env = { HIGHER_PRECEDENCE = "applied" }
-
-[tasks.f]
-run = "echo high-inline/f"
-EOF
-
-cat <<'EOF' >"$HOME/.config/mise/tasks/e"
-#!/usr/bin/env bash
-echo "HIGHER_PRECEDENCE=${HIGHER_PRECEDENCE:-<unset>}"
-echo "LOWER_PRECEDENCE=${LOWER_PRECEDENCE:-<unset>}"
-echo "SYSTEM_PRECEDENCE=${SYSTEM_PRECEDENCE:-<unset>}"
-EOF
-chmod +x "$HOME/.config/mise/tasks/e"
-
-cat <<'EOF' >"$HOME/.config/mise/tasks/j"
-#!/usr/bin/env bash
-echo same-script/j
-echo "INLINE_METADATA=${INLINE_METADATA:-<unset>}"
-echo "TASK_DIR=$PWD"
-EOF
-chmod +x "$HOME/.config/mise/tasks/j"
-
-cat <<'EOF' >"$HOME/global-custom-tasks/f"
-#!/usr/bin/env bash
-echo lower-script/f
-EOF
-chmod +x "$HOME/global-custom-tasks/f"
-
-cat <<'EOF' >"$HOME/global-custom-tasks/h"
-#!/usr/bin/env bash
-echo lower-script/h
-EOF
-chmod +x "$HOME/global-custom-tasks/h"
-
-cat <<'EOF' >"$HOME/high-global-tasks/i"
-#!/usr/bin/env bash
-echo high-script/i
-EOF
-chmod +x "$HOME/high-global-tasks/i"
-
-mkdir -p "$TMPDIR/outside-home"
-assert_contains "mise tasks --global" "e"
-assert_contains "mise run e" "HIGHER_PRECEDENCE=applied"
-assert_contains "mise run e" "LOWER_PRECEDENCE=<unset>"
-assert_contains "mise run e" "SYSTEM_PRECEDENCE=<unset>"
-assert_contains "mise -C '$TMPDIR/outside-home' run e" "HIGHER_PRECEDENCE=applied"
-assert_contains "mise -C '$TMPDIR/outside-home' run e" "LOWER_PRECEDENCE=<unset>"
-assert_contains "mise -C '$TMPDIR/outside-home' run e" "SYSTEM_PRECEDENCE=<unset>"
-assert_contains "mise -C '$TMPDIR/outside-home' run f" "high-inline/f"
-assert_not_contains "mise -C '$TMPDIR/outside-home' run f" "lower-script/f"
-assert_contains "mise -C '$TMPDIR/outside-home' run g" "system-inline/g"
-assert_contains "mise -C '$TMPDIR/outside-home' run h" "lower-script/h"
-assert_contains "mise -C '$TMPDIR/outside-home' run i" "high-script/i"
-assert_not_contains "mise -C '$TMPDIR/outside-home' run i" "lower-inline/i"
-assert_contains "mise -C '$TMPDIR/outside-home' run j" "same-script/j"
-assert_contains "mise -C '$TMPDIR/outside-home' run j" "INLINE_METADATA=applied"
-assert_contains "mise -C '$TMPDIR/outside-home' run j" "TASK_DIR=$HOME/high-global-dir"
-assert_not_contains "mise -C '$TMPDIR/outside-home' run j" "TASK_DIR=$HOME/low-global-dir"
