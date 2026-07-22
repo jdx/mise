@@ -52,21 +52,8 @@ jobs:
       - run: echo "$HOME/bin" >> "$GITHUB_PATH"
       - id: versions
         run: |
-          #echo "main=$(git rev-parse --short origin/main)" >> "$GITHUB_OUTPUT"
           echo "release=$(mise-release v | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-      #- uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
-      #  with:
-      #    path: ~/bin/mise-${{ steps.versions.outputs.main }}
-      #    key: mise-hyperfine-main-${{ steps.versions.outputs.main }}-${{ runner.os }}-${{ runner.arch }}
-      #- name: build main
-      #  run: |
-      #    if [ ! -f "$HOME/bin/mise-${{ steps.versions.outputs.main }}" ]; then
-      #      git checkout main
-      #      cargo build --profile serious && mv target/serious/mise "$HOME/bin/mise-${{ steps.versions.outputs.main }}"
-      #      git checkout -
-      #    fi
       - run: mv "$HOME/bin/mise-release" "$HOME/bin/mise-${{ steps.versions.outputs.release }}"
-      #- run: cp "$HOME/bin/mise-${{ steps.versions.outputs.main }}" "$HOME/bin/mise-main"
       - run: cargo build --profile serious && mv target/serious/mise "$HOME/bin"
       - uses: ./.github/actions/mise-tools
       - run: |

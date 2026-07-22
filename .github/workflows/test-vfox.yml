@@ -5,7 +5,7 @@ on:
     paths:
       - "crates/vfox/**"
   push:
-    branches: [main, release]
+    branches: [release]
 
 concurrency:
   group: test-vfox-${{ github.ref }}
