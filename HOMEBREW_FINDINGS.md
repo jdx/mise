@@ -9,26 +9,26 @@ live GitHub data and `origin/main`; see [Verification audit](#verification-audit
 
 ## Executive decision
 
-The branch proves that writing a minimal Homebrew cask ledger makes a
-mise-poured cask pass Homebrew's installed checks. It does **not** prove that
-Homebrew can safely own the complete lifecycle of every mise-poured cask.
+**One direction only (highest jdx fit): single owner.**
 
-After a second, skeptical audit of current mise documentation, jdx-authored
-pull requests and comments, all open Homebrew-related upstream work, current
-Homebrew implementation, and live experiments, the recommended direction is:
+jdx’s shipped vision for `brew-cask` is a **mise-owned direct package manager**
+(`.mise-cask.toml`, expand parity, fail loud, never `brew install --cask`).
+Homebrew-origin `.metadata` is **preserved**, not authored by mise for
+mise-originated casks. Formula dual-ownership via `INSTALL_RECEIPT` does not
+extend to casks on `origin/main` or in open jdx cask work (#11197, #11198).
 
-1. Do not ship automatic Homebrew `.metadata` creation for every
-   mise-originated cask.
-2. Preserve genuine Homebrew metadata exactly, as upstream already does.
-3. Keep `.mise-cask.toml` authoritative for mise-originated casks.
-4. Upgrade those casks through `mise bootstrap packages upgrade --manager
-   brew-cask`.
-5. Treat automatic Homebrew adoption as a future, explicit ownership-transfer
-   feature only after lifecycle parity and compatibility tests exist.
+| Owner | Ledger | Upgrade path |
+|---|---|---|
+| mise (`brew-cask:…`) | `.mise-cask.toml` | `mise bootstrap packages upgrade --manager brew-cask` |
+| Homebrew (`brew install --cask`) | `.metadata/` | `brew upgrade --cask` |
 
-The original fix is mechanically successful but semantically overbroad. It
-turns “Homebrew recognizes this directory” into “Homebrew owns this install.”
-Those claims are not equivalent.
+**Do not ship** automatic Homebrew `.metadata` for mise pours (this branch’s
+experiment). Passing `installed?` is not lifecycle ownership. The Codex failure
+is ambiguous ownership from a Homebrew-looking path — fix ownership + updater
+config, not ledger spoofing.
+
+Lower-scored alternatives (binary-only emit, brew-present emit, opt-in handoff,
+pour-time formula-parity metadata) are out of scope for the decision.
 
 ## Repository and operating policy
 
@@ -687,19 +687,14 @@ gate workaround, not a complete compatibility contract.
 
 ## Recommended branch next step
 
-Do not build further on automatic metadata backfill.
+Aligned only with **single owner**:
 
-Preferred follow-up sequence:
-
-1. Preserve this document and the original experiment as evidence.
-2. Revert or retire automatic metadata emission/backfill before shipping.
-3. Retain upstream `.metadata` preservation from #11012.
-4. Rebase future cask work after #11197 and #11198 settle.
-5. Keep Codex under one declared owner.
-6. If desired, design a separate explicit adoption experiment with a written
-   lifecycle contract and tests before implementation — or pursue the
-   "smallest honest upstream PR" shape from the verification audit above,
-   after the operating policy is explicitly changed to allow upstream PRs.
+1. Keep this document + experiment as evidence; do not ship metadata emission.
+2. Revert/retire automatic metadata emission and backfill on this branch.
+3. Keep #11012 preserve behavior (already on main).
+4. One owner per cask (mise **or** brew); no dual ledger for mise pours.
+5. Future cask work follows open jdx trajectory: deeper mise-owned parity
+   (#11197/#11198 class), not Homebrew tab generation.
 
 ## Verification audit — 2026-07-23
 
@@ -767,27 +762,14 @@ statement for or against the cask equivalent exists anywhere upstream.
 
 ### Would this branch be accepted as an upstream PR as-is?
 
-No. Three blockers: no upstream product decision that casks may become
-brew-visible; the status flip changes mise semantics against the mise-owned
-model; backfill guesses historical state. jdx's current cask trajectory
-(#11197, #11198) deepens mise-owned receipts rather than adding brew-side
-ledgers.
+**No.** It fights the highest-score direction (mise-owned casks). Blockers:
+status flip against mise-owned model; backfill of guessed history; no product
+decision that casks should become brew-visible. jdx open work (#11197, #11198)
+deepens **mise** receipts, not brew-side ledgers.
 
-### Smallest honest upstream PR, if ever pursued
-
-Not this branch. The shape that could plausibly land:
-
-1. Pour-time-only `.metadata` write for fresh installs — nothing else. No
-   backfill, no status change, no `config.json` guessing.
-2. Framed explicitly as extending #10326's coexistence contract to casks,
-   citing the `pour.rs` formula receipt precedent.
-3. Honest caveats in the PR body: empty `uninstall_artifacts` with online API
-   fallback, offline uninstall gap, copy-vs-move app layout divergence.
-4. Rebased after #11197 and #11198 land — both touch `cask.rs` receipts and
-   will conflict.
-5. Channel: jdx's stated norm is "just make a PR" (#11157); a small focused
-   PR beats a discussion. Opening one remains forbidden by this fork's
-   operating policy until that policy is explicitly changed.
+**Correct upstream-shaped work under single-owner:** more direct cask parity
+(artifact types, flight steps, completions, uninstall safety) — same trajectory
+as jdx — not Homebrew `.metadata` generation.
 
 At audit time the branch sat 3 commits behind `origin/main`; none of those
 commits touch cask metadata.
@@ -804,39 +786,18 @@ Homebrew casks as a **mise-owned direct package-manager implementation** that
 should grow deliberate parity and fail loudly outside it. Homebrew-origin
 state should be preserved, not silently recreated or claimed.
 
-Therefore the canonical current fix is an ownership correction, not blanket
-receipt spoofing: update mise-owned casks with mise, update Homebrew-owned
-casks with Homebrew, and make tools/configuration respect that boundary.
-
-The 2026-07-23 verification audit confirmed this conclusion with one
-refinement: the pour-time metadata write is a defensible future parity
-extension of the formula coexistence contract, while the backfill and the
-status flip are the components that genuinely conflict with upstream
-direction and must not ship.
+Therefore the only direction that matches jdx’s demonstrated vision is
+**single owner**: update mise-owned casks with mise, update Homebrew-owned
+casks with Homebrew, preserve foreign `.metadata`, and do not invent brew
+ownership for mise pours.
 
 ## Independent re-audit errata — 2026-07-23 (second pass)
 
-A third independent pass (live `gh`/GraphQL including nested replies,
-`origin/main` @ `e3f5ddef2`, local Homebrew 6.0.12-92-g78430a5 source, three
-subagent cross-checks) re-confirmed the load-bearing claims. Additional notes:
+Re-confirmed load-bearing facts (live GitHub, `origin/main` @ `e3f5ddef2`,
+Homebrew 6.0.12, subagent cross-checks). Decision locked to **single owner**
+as the sole highest-score path for jdx’s vision.
 
-1. **#11157 “just make a PR”** is a jdx **nested reply** (2026-07-21T14:25:17Z)
-   under a comment, not a top-level discussion comment. Top-level-only GraphQL
-   comment queries miss it; the quote itself is accurate and human-toned.
-2. **Live Caskroom drift on the audit machine:** tokens that still fail
-   `brew list --cask --versions` while appearing in bare `brew list --cask`
-   remain (e.g. `claude-code`, `1password-cli`, `codexbar` — payload dir, no
-   `.metadata`). Some earlier experiment tokens (`codex`, `grok-build`, `kimi`)
-   now show Homebrew `.metadata` **without** `.mise-cask.toml` (likely later
-   real-brew reinstall/adoption). Do not treat one machine snapshot as frozen
-   truth.
-3. **Executive vs audit tone:** the five-point executive decision correctly
-   rejects shipping the full branch (auto metadata + backfill + status flip).
-   It must not be read as a permanent ban on a later **pour-time-only**
-   formula-parity PR (no backfill, no status flip, honest caveats) — that
-   option remains the smallest honest *change* shape if coexistence for casks
-   is ever productized. Canonical *ops* direction remains single-owner (E).
-4. Evidence bundle for this pass lives outside the repo policy surface in the
-   research scratch (claims, main contract, GitHub audit, crosscheck,
-   direction, live-brew, structural checks). No upstream PR/issue/comment was
-   opened.
+1. **#11157 “just make a PR”** is a jdx **nested reply** (2026-07-21T14:25:17Z).
+2. **Live Caskroom drift** on the audit machine: some tokens still fail
+   `brew list --cask --versions` without `.metadata`; others later brew-adopted.
+3. Evidence bundle in research scratch. No upstream PR/issue/comment opened.
