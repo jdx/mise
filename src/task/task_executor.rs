@@ -985,7 +985,9 @@ impl TaskExecutor {
 
     fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
         if let Some(shell) = &self.shell {
-            crate::path::split_shell_command(shell)
+            let mut shell = crate::path::split_shell_command(shell)?;
+            Settings::get().maybe_no_profile(&mut shell);
+            Ok(shell)
         } else {
             Settings::get().default_inline_shell()
         }

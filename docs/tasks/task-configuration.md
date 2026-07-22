@@ -454,6 +454,12 @@ The shell to use to run the task. This is useful if you want to run a task with 
 the default such as `fish`, `zsh`, or `pwsh`. Generally though, it's recommended to use a [shebang](./toml-tasks#shell-shebang) instead
 because that will allow IDEs with mise support to show syntax highlighting and linting for the script.
 
+When the shell is PowerShell (`pwsh` or `powershell`), mise passes `-NoProfile` so your PowerShell
+profile is not loaded, matching the non-interactive behavior of `sh -c`/`zsh -c`. This avoids profiles
+that mutate `PATH` (for example a mise activation snippet) shadowing a task's own installed tools. Set
+[`windows_powershell_no_profile`](/configuration/settings.html#windows_powershell_no_profile) to `false`
+if your tasks depend on side effects from your profile.
+
 ```mise-toml
 [tasks.hello]
 run = '''

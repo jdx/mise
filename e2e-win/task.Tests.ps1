@@ -210,4 +210,37 @@ run = 'echo "using shell $0"'
             Remove-Item -Path "$TestDrive\mise.args_repro.toml" -ErrorAction SilentlyContinue
         }
     }
+
+    Context 'pwsh -NoProfile injection' {
+        # A pwsh inline shell should be spawned with -NoProfile so startup
+        # profiles (which can mutate PATH and shadow task tools) are skipped,
+        # matching the non-interactive behavior of `sh -c`/`zsh -c`. See
+        # discussion #10956. The task prints its own process argv so we can
+        # assert on how pwsh was actually invoked.
+        BeforeEach {
+            @'
+[tasks.probe_argv]
+shell = "pwsh -c"
+run = 'Write-Output ([Environment]::GetCommandLineArgs() -join " ")'
+'@ | Out-File -FilePath "$TestDrive\mise.noprofile.toml" -Encoding utf8NoBOM
+            $env:MISE_CONFIG_FILE = "$TestDrive\mise.noprofile.toml"
+        }
+
+        AfterEach {
+            Remove-Item -Path Env:\MISE_CONFIG_FILE -ErrorAction SilentlyContinue
+            Remove-Item -Path Env:\MISE_WINDOWS_POWERSHELL_NO_PROFILE -ErrorAction SilentlyContinue
+            Remove-Item -Path "$TestDrive\mise.noprofile.toml" -ErrorAction SilentlyContinue
+        }
+
+        It 'injects -NoProfile into a pwsh task shell by default' {
+            $output = mise run probe_argv 2>&1 | Out-String
+            $output | Should -BeLike '*-NoProfile*'
+        }
+
+        It 'omits -NoProfile when windows_powershell_no_profile is disabled' {
+            $env:MISE_WINDOWS_POWERSHELL_NO_PROFILE = "false"
+            $output = mise run probe_argv 2>&1 | Out-String
+            $output | Should -Not -BeLike '*-NoProfile*'
+        }
+    }
 }
