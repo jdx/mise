@@ -7,13 +7,13 @@
 
 ## Summary
 
-| Layer | Formulae (`brew:`) | Casks (`brew-cask:`) before this branch | After this branch |
-|-------|--------------------|----------------------------------------|-------------------|
-| Artifact pour | Cellar + links | Caskroom + `/Applications` or `bin` links | same |
-| Mise receipt | n/a (uses brew tab) | `Caskroom/<token>/<ver>/.mise-cask.toml` | still written |
-| Brew receipt | `Cellar/.../INSTALL_RECEIPT.json` | **missing** | `.metadata/INSTALL_RECEIPT.json` + installed caskfile |
-| `brew list --versions` | works | **fails** ("not installed") | works |
-| `brew upgrade` | works | **fails** | works (when outdated) |
+| Layer                  | Formulae (`brew:`)                | Casks (`brew-cask:`) before this branch   | After this branch                                     |
+| ---------------------- | --------------------------------- | ----------------------------------------- | ----------------------------------------------------- |
+| Artifact pour          | Cellar + links                    | Caskroom + `/Applications` or `bin` links | same                                                  |
+| Mise receipt           | n/a (uses brew tab)               | `Caskroom/<token>/<ver>/.mise-cask.toml`  | still written                                         |
+| Brew receipt           | `Cellar/.../INSTALL_RECEIPT.json` | **missing**                               | `.metadata/INSTALL_RECEIPT.json` + installed caskfile |
+| `brew list --versions` | works                             | **fails** ("not installed")               | works                                                 |
+| `brew upgrade`         | works                             | **fails**                                 | works (when outdated)                                 |
 
 **Root cause (one line):** cask pour was built as a **standalone installer that
 never shells out to brew**, with a **mise-private receipt** (`.mise-cask.toml`),
@@ -89,7 +89,7 @@ When a **third party** (Codex) assumes “binary under `$HOMEBREW_PREFIX` ⇒ br
 owns it ⇒ `brew upgrade --cask`”, the ledger mismatch becomes a user-visible
 failure even though mise install “worked.”
 
-### 3. mise later *discovered* `.metadata` — but only as something to not break
+### 3. mise later _discovered_ `.metadata` — but only as something to not break
 
 - **Discussion:** [#11007](https://github.com/jdx/mise/discussions/11007)
   (referenced by PR body)
@@ -113,7 +113,7 @@ failure even though mise install “worked.”
 - Tests named `installed_version_ignores_homebrew_metadata` and
   `remove_stale_versions_keeps_current_version_and_homebrew_metadata`.
 
-**What #11012 did *not* fix:**
+**What #11012 did _not_ fix:**
 
 - It **never wrote** `.metadata` for **mise-originated** pours.
 - Direction of interop: **brew → mise** (don’t destroy brew’s ledger), not
@@ -124,14 +124,14 @@ coexistence remained one-way.
 
 ### 4. Why the incomplete parity was “rational” at the time
 
-| Pressure | Effect on design |
-|----------|------------------|
-| “No Homebrew required” | Cannot depend on `brew install --cask` Ruby stack for install |
-| “Never shell out to brew” (validated in #10383) | Must reimplement pour; easy to invent private receipt |
-| Narrow artifact MVP (app only, then binary/pkg…) | Focus on files on disk, not full `Cask::Tab` / uninstall artifacts |
-| Formulae already hard for interop | Keg tab was mandatory; cask tab deferred |
-| Status checks use filesystem | mise does not need brew’s `installed?` to manage its own packages |
-| Import/prune still formulae-only (docs limitations) | Cask lifecycle not treated as full brew citizen |
+| Pressure                                            | Effect on design                                                   |
+| --------------------------------------------------- | ------------------------------------------------------------------ |
+| “No Homebrew required”                              | Cannot depend on `brew install --cask` Ruby stack for install      |
+| “Never shell out to brew” (validated in #10383)     | Must reimplement pour; easy to invent private receipt              |
+| Narrow artifact MVP (app only, then binary/pkg…)    | Focus on files on disk, not full `Cask::Tab` / uninstall artifacts |
+| Formulae already hard for interop                   | Keg tab was mandatory; cask tab deferred                           |
+| Status checks use filesystem                        | mise does not need brew’s `installed?` to manage its own packages  |
+| Import/prune still formulae-only (docs limitations) | Cask lifecycle not treated as full brew citizen                    |
 
 None of that makes the Codex failure “user error.” It means **product surface
 shared with brew** (prefix + binary path) without **ledger parity**.
@@ -156,15 +156,15 @@ Codex   brew upgrade --cask codex  → hard fail on startup
 
 ### 6. Issues inside mise (checklist)
 
-| # | Issue | Evidence |
-|---|--------|----------|
-| A | **Missing brew cask tab / installed caskfile on pour** | `write_receipt` → `.mise-cask.toml` only since #10383 |
-| B | **Docs over-promise shared prefix, under-specify cask ledger** | Coexistence section formula-only through 2026.7.11 |
-| C | **One-way interop after #11012** | Preserve `.metadata` if brew wrote it; mise pours still orphans |
-| D | **`installed_version` / cleanup historically hostile to `.metadata`** | Fixed in #11012 for brew-adopted casks only |
-| E | **No e2e that runs real `brew list --cask --versions` after mise pour** | macOS e2e checks Caskroom/app dirs, not brew CLI |
-| F | **Cask import/prune not implemented** | Limitations in brew.md — incomplete brew citizen lifecycle |
-| G | **Artifact coverage gaps** (separate from receipt) | pkg/postflight/completions; #11164 etc. |
+| #   | Issue                                                                   | Evidence                                                        |
+| --- | ----------------------------------------------------------------------- | --------------------------------------------------------------- |
+| A   | **Missing brew cask tab / installed caskfile on pour**                  | `write_receipt` → `.mise-cask.toml` only since #10383           |
+| B   | **Docs over-promise shared prefix, under-specify cask ledger**          | Coexistence section formula-only through 2026.7.11              |
+| C   | **One-way interop after #11012**                                        | Preserve `.metadata` if brew wrote it; mise pours still orphans |
+| D   | **`installed_version` / cleanup historically hostile to `.metadata`**   | Fixed in #11012 for brew-adopted casks only                     |
+| E   | **No e2e that runs real `brew list --cask --versions` after mise pour** | macOS e2e checks Caskroom/app dirs, not brew CLI                |
+| F   | **Cask import/prune not implemented**                                   | Limitations in brew.md — incomplete brew citizen lifecycle      |
+| G   | **Artifact coverage gaps** (separate from receipt)                      | pkg/postflight/completions; #11164 etc.                         |
 
 **Primary fix for A–C:** emit Homebrew `.metadata` on every successful cask pour
 (this branch), and repair missing metadata for healthy earlier mise pours on
@@ -191,14 +191,14 @@ metadata.
 
 Same class of orphans observed on a developer machine (2026-07-22):
 
-| Token | `.mise-cask.toml` | `.metadata/INSTALL_RECEIPT.json` | `brew list --cask --versions` |
-|-------|-------------------|----------------------------------|-------------------------------|
-| kimi | yes | no (before experiment) | Error: not installed |
-| grok-build | yes | no | Error: not installed |
-| codexbar | yes | no | Error: not installed |
-| claude-code | yes | no | Error: not installed |
-| 1password-cli | yes | no | Error: not installed |
-| codex | (after real `brew install --cask --force`) | yes | `codex 0.145.0` |
+| Token         | `.mise-cask.toml`                          | `.metadata/INSTALL_RECEIPT.json` | `brew list --cask --versions` |
+| ------------- | ------------------------------------------ | -------------------------------- | ----------------------------- |
+| kimi          | yes                                        | no (before experiment)           | Error: not installed          |
+| grok-build    | yes                                        | no                               | Error: not installed          |
+| codexbar      | yes                                        | no                               | Error: not installed          |
+| claude-code   | yes                                        | no                               | Error: not installed          |
+| 1password-cli | yes                                        | no                               | Error: not installed          |
+| codex         | (after real `brew install --cask --force`) | yes                              | `codex 0.145.0`               |
 
 Note: bare `brew list --cask` may still **print** token names when Caskroom
 directories exist, even without metadata. Always use
@@ -374,17 +374,17 @@ is not rewritten.
 
 Three independent analyses + local Homebrew Ruby reading:
 
-| Claim | Verdict |
-|-------|---------|
-| Approach (emit `.metadata`) correct | **YES** — formula receipt parity; only way to fix brew `installed?` without shelling out |
-| Empty `{}` caskfile OK | **YES** — brew itself writes `{}` when no `only_path`; disk samples match |
-| Path enough for list/info/upgrade *gate* | **YES** — Ruby `installed?` / `cask_installed_version` + kimi dry-run |
-| First implementation's partial uninstall list | **WRONG** — non-empty partial list **blocks** API recovery (`resolve_installed_artifacts` early return). Fixed: empty `[]` |
-| Fake `"pkg": [source]` uninstall entry | **WRONG** — removed with empty list; real uninstall is pkgutil stanza |
-| Full `brew uninstall` / clean upgrade for **app** casks | **NOT guaranteed** — mise `ditto` copies apps; brew often move+symlink; residual risk |
-| Dual ownership | **Intentional** — same class as formula coexistence; brew upgrade can replace mise pour |
-| Shell out to brew as default | **Reject** — breaks “brew without brew” |
-| Document-only | **Reject** as steady state for shared prefix |
+| Claim                                                   | Verdict                                                                                                                    |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Approach (emit `.metadata`) correct                     | **YES** — formula receipt parity; only way to fix brew `installed?` without shelling out                                   |
+| Empty `{}` caskfile OK                                  | **YES** — brew itself writes `{}` when no `only_path`; disk samples match                                                  |
+| Path enough for list/info/upgrade _gate_                | **YES** — Ruby `installed?` / `cask_installed_version` + kimi dry-run                                                      |
+| First implementation's partial uninstall list           | **WRONG** — non-empty partial list **blocks** API recovery (`resolve_installed_artifacts` early return). Fixed: empty `[]` |
+| Fake `"pkg": [source]` uninstall entry                  | **WRONG** — removed with empty list; real uninstall is pkgutil stanza                                                      |
+| Full `brew uninstall` / clean upgrade for **app** casks | **NOT guaranteed** — mise `ditto` copies apps; brew often move+symlink; residual risk                                      |
+| Dual ownership                                          | **Intentional** — same class as formula coexistence; brew upgrade can replace mise pour                                    |
+| Shell out to brew as default                            | **Reject** — breaks “brew without brew”                                                                                    |
+| Document-only                                           | **Reject** as steady state for shared prefix                                                                               |
 
 **Ship verdict:** PARTIALLY COMPLETE but approach correct.
 
@@ -396,14 +396,14 @@ Three independent analyses + local Homebrew Ruby reading:
 
 Tracked for later / already partially fixed elsewhere:
 
-| Gap | Symptom | Notes |
-|-----|---------|-------|
-| pkg / complex postflight | install fails or incomplete | orbstack, zoom, etc. |
-| Generated completions | not installed | codex cask declares completion artifact |
-| auto_updates | was hard-fail; OK since 2026.7.11 | jdx/mise#11084 / #11107 |
-| Yaak app casing / VLC preflight wrapper | pour fail | jdx/mise#11164 (may predate release) |
-| TablePlus large DMG | mise HTTP decoder timeout | `brew fetch --cask` works |
-| Intel macOS brew prefix | formulae skipped | discussion #10968 |
+| Gap                                     | Symptom                           | Notes                                   |
+| --------------------------------------- | --------------------------------- | --------------------------------------- |
+| pkg / complex postflight                | install fails or incomplete       | orbstack, zoom, etc.                    |
+| Generated completions                   | not installed                     | codex cask declares completion artifact |
+| auto_updates                            | was hard-fail; OK since 2026.7.11 | jdx/mise#11084 / #11107                 |
+| Yaak app casing / VLC preflight wrapper | pour fail                         | jdx/mise#11164 (may predate release)    |
+| TablePlus large DMG                     | mise HTTP decoder timeout         | `brew fetch --cask` works               |
+| Intel macOS brew prefix                 | formulae skipped                  | discussion #10968                       |
 
 These are separate from receipt interop.
 
