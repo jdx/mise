@@ -10786,6 +10786,111 @@ packages:
           asset: checksums.txt
           algorithm: sha256
   - type: github_release
+    repo_owner: abhinav
+    repo_name: git-spice
+    description: Manage stacked Git branches
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.0-beta4")
+        asset: git-spice.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: gs
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.5.2")
+        asset: git-spice.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: gs
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.23.0")
+        asset: git-spice.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: gs
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+      - version_constraint: semver("<= 0.31.1")
+        asset: git-spice.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: git-spice
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+      - version_constraint: "true"
+        asset: git-spice.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: git-spice
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/abhinav/git-spice/.github/workflows/publish-release.yml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+  - type: github_release
     repo_owner: abice
     repo_name: go-enum
     description: An enum generator for go
@@ -36435,6 +36540,52 @@ packages:
       type: github_release
       asset: terratag_{{trimV .Version}}_checksums.txt
       algorithm: sha256
+  - name: envoyproxy/gateway/egctl
+    type: github_release
+    repo_owner: envoyproxy
+    repo_name: gateway
+    description: Manages Envoy Proxy as a Standalone or Kubernetes-based Application Gateway
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.0")
+        no_asset: true
+      - version_constraint: semver("<= 1.3.3")
+        asset: egctl_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: egctl
+            src: bin/{{.OS}}/{{.Arch}}/egctl
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: egctl_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: egctl
+            src: bin/{{.OS}}/{{.Arch}}/egctl
+        overrides:
+          - goos: windows
+            format: zip
+  - name: envoyproxy/gateway/envoy-gateway
+    type: github_release
+    repo_owner: envoyproxy
+    repo_name: gateway
+    description: Manages Envoy Proxy as a Standalone or Kubernetes-based Application Gateway
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 1.2.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: envoy-gateway_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: envoy-gateway
+            src: bin/{{.OS}}/{{.Arch}}/envoy-gateway
+        supported_envs:
+          - linux
+          - darwin
   - type: github_release
     repo_owner: equinix-labs
     repo_name: otel-cli
@@ -88064,6 +88215,19 @@ packages:
     version_overrides:
       - version_constraint: semver("<= 0.80.0-alpha.4")
         no_asset: true
+      - version_constraint: semver("<= 0.104.0")
+        asset: nika-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: "true"
         asset: nika-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
         format: tar.gz
@@ -88074,6 +88238,8 @@ packages:
           type: github_release
           asset: SHA256SUMS
           algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: supernovae-st/nika/\.github/workflows/release\.yml
         supported_envs:
           - linux
           - darwin
@@ -89653,7 +89819,7 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
-      - version_constraint: "true"
+      - version_constraint: semver("<= 4.14.12")
         asset: tfcmt_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -89670,6 +89836,48 @@ packages:
               - https://token.actions.githubusercontent.com
               - --signature
               - https://github.com/suzuki-shunsuke/tfcmt/releases/download/{{.Version}}/tfcmt_{{trimV .Version}}_checksums.txt.sig
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
+      - version_constraint: semver("<= 4.14.15")
+        asset: tfcmt_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: tfcmt_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: tfcmt_{{trimV .Version}}_checksums.txt.bundle
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
+      - version_constraint: "true"
+        asset: tfcmt_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: tfcmt_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: tfcmt_{{trimV .Version}}_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
@@ -91366,6 +91574,25 @@ packages:
         supported_envs:
           - linux
           - darwin
+  - type: github_release
+    repo_owner: tedilabs
+    repo_name: ota
+    description: k9s for Okta — a Go/Bubbletea TUI to inspect Okta admin resources
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: ota_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: tedilabs
     repo_name: tfvault
@@ -101336,6 +101563,88 @@ packages:
     slsa_provenance:
       type: github_release
       asset: multiple.intoto.jsonl
+  - type: github_release
+    repo_owner: yvgude
+    repo_name: lean-ctx
+    description: Local-first context intelligence layer for AI agents
+    version_filter: not (Version startsWith "vscode-")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.6.0")
+        no_asset: true
+      - version_constraint: semver("<= 1.7.0")
+        asset: lean-ctx-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 2.4.0")
+        asset: lean-ctx-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 3.1.5")
+        asset: lean-ctx-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: lean-ctx-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: zaghaghi
     repo_name: openapi-tui
