@@ -4227,7 +4227,11 @@ Examples:
     # Only upgrade tools defined in local mise.toml, not global ones
     $ mise upgrade --local
 
+    # Only upgrade tools defined in the global config
+    $ mise upgrade --global
+
 """#
+    flag "-g --global" help="Only upgrade tools defined in the global config file"
     flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
     flag "-j --jobs" help=#"""
 Number of jobs to run in parallel

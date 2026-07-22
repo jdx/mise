@@ -14,7 +14,7 @@ use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
 use crate::toolset::{
-    ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, ToolsetBuilder,
+    ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, Toolset, ToolsetBuilder,
     get_versions_needed_by_tracked_configs_excluding_locks, get_versions_needed_by_tracked_stubs,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -40,6 +40,10 @@ pub struct Upgrade {
     /// If not specified, all current tools will be upgraded
     #[clap(value_name = "INSTALLED_TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
+
+    /// Only upgrade tools defined in the global config file
+    #[clap(long, short, conflicts_with = "local")]
+    global: bool,
 
     /// Display multiselect menu to choose which tools to upgrade
     #[clap(long, short, verbatim_doc_comment, conflicts_with = "tool")]
@@ -76,14 +80,18 @@ pub struct Upgrade {
     dry_run_code: bool,
 
     /// Upgrade all tools, including installed-but-inactive tools not present in the current config
-    #[clap(long, verbatim_doc_comment, conflicts_with = "local")]
+    #[clap(
+        long,
+        verbatim_doc_comment,
+        conflicts_with_all = &["global", "local"]
+    )]
     inactive: bool,
 
     /// Only upgrade tools defined in local config files
     ///
     /// This will only upgrade tools that are defined in project-local mise.toml and
     /// will skip tools defined in the global config (~/.config/mise/config.toml).
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, verbatim_doc_comment, conflicts_with = "global")]
     local: bool,
 
     /// Only upgrade to versions released before this date or older than this duration
@@ -112,11 +120,51 @@ impl Upgrade {
     }
 
     fn scope(&self) -> ConfigScope {
-        if self.local {
+        if self.global {
+            ConfigScope::GlobalOnly
+        } else if self.local {
             ConfigScope::LocalOnly
         } else {
             ConfigScope::All
         }
+    }
+
+    async fn build_toolset(&self, config: &Arc<Config>) -> Result<Toolset> {
+        if self.global {
+            return self.build_global_toolset(config).await;
+        }
+        ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .with_scope(self.scope())
+            .build(config)
+            .await
+    }
+
+    async fn build_global_toolset(&self, config: &Arc<Config>) -> Result<Toolset> {
+        let mut ts = Toolset::default();
+        for cf in config.config_files.values().rev() {
+            if config::is_global_config(cf.get_path()) {
+                ts.merge(cf.to_toolset()?);
+            }
+        }
+        let mut arg_ts = Toolset::new(ToolSource::Argument);
+        for arg in &self.tool {
+            let Some(config_versions) = ts.versions.get(&arg.ba) else {
+                continue;
+            };
+            let Some(tvr) = &arg.tvr else {
+                continue;
+            };
+            let config_options = config_versions.requests.first().map(|tvr| tvr.options());
+            let mut tvr = tvr.clone();
+            tvr.set_options(arg.ba.opts_with_config(config_options));
+            arg_ts.add_version(tvr);
+        }
+        if !arg_ts.versions.is_empty() {
+            ts.merge(arg_ts);
+        }
+        ts.resolve(config).await?;
+        Ok(ts)
     }
 
     pub async fn run(self) -> Result<()> {
@@ -127,11 +175,7 @@ impl Upgrade {
         if !self.is_dry_run() {
             crate::lockfile::migrate_monorepo_lockfiles(&config)?;
         }
-        let ts = ToolsetBuilder::new()
-            .with_args(&self.tool)
-            .with_scope(self.scope())
-            .build(&config)
-            .await?;
+        let ts = self.build_toolset(&config).await?;
         // Compute before_date once to ensure consistency when using relative durations
         let before_date = self.get_before_date()?;
         let opts = ResolveOptions {
@@ -192,11 +236,7 @@ impl Upgrade {
         before_date: Option<Timestamp>,
     ) -> Result<()> {
         let mpr = MultiProgressReport::get();
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&self.tool)
-            .with_scope(self.scope())
-            .build(config)
-            .await?;
+        let mut ts = self.build_toolset(config).await?;
 
         let mut outdated_with_config_files: Vec<(&OutdatedInfo, Arc<dyn config_file::ConfigFile>)> =
             vec![];
@@ -854,6 +894,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     # Only upgrade tools defined in local mise.toml, not global ones
     $ <bold>mise upgrade --local</bold>
+
+    # Only upgrade tools defined in the global config
+    $ <bold>mise upgrade --global</bold>
 "#
 );
 
