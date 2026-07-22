@@ -813,3 +813,30 @@ refinement: the pour-time metadata write is a defensible future parity
 extension of the formula coexistence contract, while the backfill and the
 status flip are the components that genuinely conflict with upstream
 direction and must not ship.
+
+## Independent re-audit errata — 2026-07-23 (second pass)
+
+A third independent pass (live `gh`/GraphQL including nested replies,
+`origin/main` @ `e3f5ddef2`, local Homebrew 6.0.12-92-g78430a5 source, three
+subagent cross-checks) re-confirmed the load-bearing claims. Additional notes:
+
+1. **#11157 “just make a PR”** is a jdx **nested reply** (2026-07-21T14:25:17Z)
+   under a comment, not a top-level discussion comment. Top-level-only GraphQL
+   comment queries miss it; the quote itself is accurate and human-toned.
+2. **Live Caskroom drift on the audit machine:** tokens that still fail
+   `brew list --cask --versions` while appearing in bare `brew list --cask`
+   remain (e.g. `claude-code`, `1password-cli`, `codexbar` — payload dir, no
+   `.metadata`). Some earlier experiment tokens (`codex`, `grok-build`, `kimi`)
+   now show Homebrew `.metadata` **without** `.mise-cask.toml` (likely later
+   real-brew reinstall/adoption). Do not treat one machine snapshot as frozen
+   truth.
+3. **Executive vs audit tone:** the five-point executive decision correctly
+   rejects shipping the full branch (auto metadata + backfill + status flip).
+   It must not be read as a permanent ban on a later **pour-time-only**
+   formula-parity PR (no backfill, no status flip, honest caveats) — that
+   option remains the smallest honest *change* shape if coexistence for casks
+   is ever productized. Canonical *ops* direction remains single-owner (E).
+4. Evidence bundle for this pass lives outside the repo policy surface in the
+   research scratch (claims, main contract, GitHub audit, crosscheck,
+   direction, live-brew, structural checks). No upstream PR/issue/comment was
+   opened.
