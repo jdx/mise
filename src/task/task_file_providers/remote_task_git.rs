@@ -85,7 +85,7 @@ impl RemoteTaskGit {
 
     fn get_cache_key(&self, repo_structure: &GitRepoStructure) -> String {
         let key = format!(
-            "{}{}",
+            "{}\0{}",
             &repo_structure.url_without_path,
             &repo_structure.branch.to_owned().unwrap_or("".to_string())
         );
@@ -640,6 +640,13 @@ mod tests {
                 "git::https://github.com/example.git//myfile?ref=v1.0.0",
                 "git::https://github.com/example.git//subfolder/myfile?ref=v1.0.0",
                 true,
+            ),
+            // URL and ref must have an explicit identity boundary. Without
+            // one, these both concatenate to `.../example.gitnext.gitmain`.
+            (
+                "git::https://github.com/example.git//myfile?ref=next.gitmain",
+                "git::https://github.com/example.gitnext.git//myfile?ref=main",
+                false,
             ),
         ];
 
