@@ -1977,11 +1977,6 @@
           "description": "Default shell arguments for Windows to be used for inline commands. For example, `cmd /c` for cmd.exe.",
           "type": "string"
         },
-        "windows_powershell_no_profile": {
-          "default": true,
-          "description": "Pass `-NoProfile` to PowerShell (`pwsh`/`powershell`) shells that mise spawns for tasks and inline commands, so startup profiles are skipped.",
-          "type": "boolean"
-        },
         "windows_executable_extensions": {
           "default": ["exe", "bat", "cmd", "com", "ps1", "vbs"],
           "description": "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on.",
@@ -1989,6 +1984,11 @@
           "items": {
             "type": "string"
           }
+        },
+        "windows_powershell_no_profile": {
+          "default": true,
+          "description": "Pass `-NoProfile` to PowerShell (`pwsh`/`powershell`) shells that mise spawns for tasks and inline commands, so startup profiles are skipped.",
+          "type": "boolean"
         },
         "windows_shim_mode": {
           "default": "exe",

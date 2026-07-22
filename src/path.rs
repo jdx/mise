@@ -198,13 +198,25 @@ pub fn inject_powershell_no_profile(shell: &mut Vec<String>) {
     if !is_powershell_program(Path::new(program)) {
         return;
     }
-    let already_present = shell[1..].iter().any(|arg| {
-        let token = arg.trim_start_matches(['-', '/']).to_ascii_lowercase();
-        // `-nop`, `-nopro`, …, `-noprofile` are all abbreviations of NoProfile.
-        // Require at least "nop" to avoid matching unrelated `-no*` flags, and
-        // stop at "noprofile" so longer names like NoProfileLoadTime don't match.
-        token.len() >= 3 && "noprofile".starts_with(&token)
-    });
+    let already_present = shell[1..]
+        .iter()
+        .take_while(|arg| {
+            let token = arg.trim_start_matches(['-', '/']).to_ascii_lowercase();
+            // PowerShell treats everything after -Command/-File (and their
+            // abbreviations) as payload, so a payload argument such as `-nop`
+            // must not suppress injection.
+            !(!token.is_empty()
+                && ("command".starts_with(&token)
+                    || "commandwithargs".starts_with(&token)
+                    || "file".starts_with(&token)))
+        })
+        .any(|arg| {
+            let token = arg.trim_start_matches(['-', '/']).to_ascii_lowercase();
+            // `-nop`, `-nopro`, …, `-noprofile` are all abbreviations of NoProfile.
+            // Require at least "nop" to avoid matching unrelated `-no*` flags, and
+            // stop at "noprofile" so longer names like NoProfileLoadTime don't match.
+            token.len() >= 3 && "noprofile".starts_with(&token)
+        });
     if !already_present {
         shell.insert(1, "-NoProfile".to_string());
     }
@@ -871,6 +883,17 @@ mod tests {
         assert_eq!(
             inject(&["pwsh", "/NoProfile", "-c"]),
             sv(&["pwsh", "/NoProfile", "-c"])
+        );
+
+        // NoProfile-like payload arguments after -Command/-File are not shell
+        // options and must not prevent injection.
+        assert_eq!(
+            inject(&["pwsh", "-Command", "-nop"]),
+            sv(&["pwsh", "-NoProfile", "-Command", "-nop"])
+        );
+        assert_eq!(
+            inject(&["pwsh", "-File", "script.ps1", "-nop"]),
+            sv(&["pwsh", "-NoProfile", "-File", "script.ps1", "-nop"])
         );
 
         // -NoProfileLoadTime does not suppress the profile, so still injected.

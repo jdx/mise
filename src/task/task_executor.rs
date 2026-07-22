@@ -909,11 +909,12 @@ impl TaskExecutor {
         if !Settings::get().use_file_shell_for_executable_tasks && can_execute_directly(file) {
             return Ok((display, args.to_vec()));
         }
-        let shell = task
+        let mut shell = task
             .shell()?
             .or_else(|| shell_from_shebang(file))
             .or_else(|| shell_from_extension(file))
             .unwrap_or(Settings::get().default_file_shell()?);
+        Settings::get().maybe_no_profile(&mut shell);
         let (program, _) = task_shell_parts(&shell, "file shell")?;
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.to_vec();

@@ -73,7 +73,7 @@ echo "from-bash"
         # Repro for the per-task `tools = {...}` + `shell = "bash -c"` case.
         # When mise on Windows spawns bash for a task, PATH must be `:`-separated
         # `/c/...` form, not `;`-separated `C:\...` form, or bash cannot resolve
-        # any command — including the one mise just installed for the task.
+        # any command, including the one mise just installed for the task.
         #
         # We assert on the PATH the task observes, not on a tool install, so the
         # test runs without depending on rust/cargo or any toolchain backend.
@@ -176,7 +176,7 @@ esac
         # shell = "bash -c", a forwarded arg used to be passed as a separate argv
         # to `bash -c`, so the user's first arg became $0. Inline TOML scripts
         # append args to the command (like Unix), so $0 stays the shell (bash) and
-        # the arg is appended after it — not `using shell myarg`, where the arg had
+        # the arg is appended after it, not `using shell myarg`, where the arg had
         # been swallowed into $0.
         if (-not (Get-Command bash.exe -ErrorAction SilentlyContinue)) {
             Set-ItResult -Skipped -Because "bash.exe (Git Bash / MSYS) not on PATH"
@@ -194,7 +194,7 @@ run = 'echo "using shell $0"'
         try {
             # $0 is the shell bash was invoked as: "bash" on some setups, a full
             # path like "/usr/bin/bash" on Git Bash. Assert on the shape that
-            # proves the fix regardless of that form — $0 still names bash (not
+            # proves the fix regardless of that form: $0 still names bash (not
             # the forwarded arg) and "myarg" is appended as the trailing token,
             # rather than being swallowed into $0 (the old bug printed
             # "using shell myarg").
@@ -218,29 +218,58 @@ run = 'echo "using shell $0"'
         # discussion #10956. The task prints its own process argv so we can
         # assert on how pwsh was actually invoked.
         BeforeEach {
+            $script:noProfileTestEnv = @{}
+            foreach ($name in @('MISE_CONFIG_FILE', 'MISE_WINDOWS_POWERSHELL_NO_PROFILE')) {
+                $script:noProfileTestEnv[$name] = @{
+                    Exists = Test-Path "Env:\$name"
+                    Value = [Environment]::GetEnvironmentVariable($name, 'Process')
+                }
+            }
             @'
 [tasks.probe_argv]
 shell = "pwsh -c"
 run = 'Write-Output ([Environment]::GetCommandLineArgs() -join " ")'
+
+[tasks.probe_file_argv]
+file = "probe_file_argv.ps1"
 '@ | Out-File -FilePath "$TestDrive\mise.noprofile.toml" -Encoding utf8NoBOM
+            @'
+Write-Output ([Environment]::GetCommandLineArgs() -join " ")
+'@ | Out-File -FilePath "$TestDrive\probe_file_argv.ps1" -Encoding utf8NoBOM
             $env:MISE_CONFIG_FILE = "$TestDrive\mise.noprofile.toml"
         }
 
         AfterEach {
-            Remove-Item -Path Env:\MISE_CONFIG_FILE -ErrorAction SilentlyContinue
-            Remove-Item -Path Env:\MISE_WINDOWS_POWERSHELL_NO_PROFILE -ErrorAction SilentlyContinue
+            foreach ($name in @('MISE_CONFIG_FILE', 'MISE_WINDOWS_POWERSHELL_NO_PROFILE')) {
+                $original = $script:noProfileTestEnv[$name]
+                if ($original.Exists) {
+                    [Environment]::SetEnvironmentVariable($name, $original.Value, 'Process')
+                } else {
+                    [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+                }
+            }
+            $script:noProfileTestEnv = $null
             Remove-Item -Path "$TestDrive\mise.noprofile.toml" -ErrorAction SilentlyContinue
+            Remove-Item -Path "$TestDrive\probe_file_argv.ps1" -ErrorAction SilentlyContinue
         }
 
         It 'injects -NoProfile into a pwsh task shell by default' {
             $output = mise run probe_argv 2>&1 | Out-String
+            $LASTEXITCODE | Should -Be 0
             $output | Should -BeLike '*-NoProfile*'
         }
 
         It 'omits -NoProfile when windows_powershell_no_profile is disabled' {
             $env:MISE_WINDOWS_POWERSHELL_NO_PROFILE = "false"
             $output = mise run probe_argv 2>&1 | Out-String
+            $LASTEXITCODE | Should -Be 0
             $output | Should -Not -BeLike '*-NoProfile*'
+        }
+
+        It 'injects -NoProfile into a PowerShell file task' {
+            $output = mise run probe_file_argv 2>&1 | Out-String
+            $LASTEXITCODE | Should -Be 0
+            $output | Should -BeLike '*-NoProfile*'
         }
     }
 }

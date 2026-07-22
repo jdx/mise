@@ -3013,6 +3013,14 @@ description = "Default shell arguments for Windows to be used for inline command
 env = "MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS"
 type = "String"
 
+[windows_executable_extensions]
+default = ["exe", "bat", "cmd", "com", "ps1", "vbs"]
+description = "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on."
+env = "MISE_WINDOWS_EXECUTABLE_EXTENSIONS"
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
 [windows_powershell_no_profile]
 default = true
 description = "Pass `-NoProfile` to PowerShell (`pwsh`/`powershell`) shells that mise spawns for tasks and inline commands, so startup profiles are skipped."
@@ -3032,14 +3040,6 @@ Set to `false` if your tasks rely on side effects from your PowerShell profile
 """
 env = "MISE_WINDOWS_POWERSHELL_NO_PROFILE"
 type = "Bool"
-
-[windows_executable_extensions]
-default = ["exe", "bat", "cmd", "com", "ps1", "vbs"]
-description = "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on."
-env = "MISE_WINDOWS_EXECUTABLE_EXTENSIONS"
-parse_env = "list_by_comma"
-rust_type = "Vec<String>"
-type = "ListString"
 
 [windows_shim_mode]
 default = "exe"
