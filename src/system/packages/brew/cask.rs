@@ -43,6 +43,9 @@ struct Cask {
     ruby_source_checksum: Option<RubySourceChecksum>,
     #[serde(default)]
     tap_git_head: Option<String>,
+    /// API field `tap` (e.g. `homebrew/cask`); used only for brew tab coexistence.
+    #[serde(default)]
+    tap: Option<String>,
     #[serde(skip)]
     raw_base: Option<String>,
 }
@@ -1462,12 +1465,14 @@ fn write_homebrew_cask_metadata(
 }
 
 /// Homebrew `Metadata::TIMESTAMP_FORMAT` = `%Y%m%d%H%M%S.%L` (ms precision).
+/// Brew builds timestamps with `Time.now.utc` (`metadata.rb`); match that so
+/// mixed brew/mise dirs under the same version sort consistently via `max_by`.
 fn homebrew_cask_timestamp() -> String {
     // chrono: `%.3f` = `.` + milliseconds (brew `%L`).
-    chrono::Local::now().format("%Y%m%d%H%M%S%.3f").to_string()
+    chrono::Utc::now().format("%Y%m%d%H%M%S%.3f").to_string()
 }
 
-/// Test helper / pure format check (local wall clock covered by integration).
+/// Test helper / pure format check.
 fn format_homebrew_timestamp_from_parts(
     year: i32,
     month: u32,
@@ -1483,7 +1488,7 @@ fn format_homebrew_timestamp_from_parts(
     )
 }
 
-fn homebrew_cask_install_receipt(cask: &Cask, artifacts: &CaskArtifacts) -> serde_json::Value {
+fn homebrew_cask_install_receipt(cask: &Cask, _artifacts: &CaskArtifacts) -> serde_json::Value {
     let arch = if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
@@ -1493,6 +1498,14 @@ fn homebrew_cask_install_receipt(cask: &Cask, artifacts: &CaskArtifacts) -> serd
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+    // CRITICAL: `uninstall_artifacts` must be empty `[]`, not a partial list.
+    // Homebrew `CaskLoader.resolve_installed_artifacts` returns early when the
+    // tab list is non-empty (`.presence`), and never merges the live API list.
+    // A reconstructed app/binary-only list is therefore *worse* than empty:
+    // it blocks recovery of uninstall/zap/pkgutil/completions. Empty tab →
+    // API fallback when online (same path brew tests cover for `{}` caskfiles).
+    // Offline empty tab: brew may warn and leave files — same class as any
+    // incomplete receipt, without *silently* under-uninstalling.
     serde_json::json!({
         // Match formula pour.rs: brew version gate style, mark as mise.
         "homebrew_version": "5.1.15 (mise)",
@@ -1503,49 +1516,15 @@ fn homebrew_cask_install_receipt(cask: &Cask, artifacts: &CaskArtifacts) -> serd
         "time": time,
         "runtime_dependencies": {},
         "source": {
-            "tap": "homebrew/cask",
+            "tap": cask.tap.as_deref().unwrap_or("homebrew/cask"),
             "tap_git_head": cask.tap_git_head,
             "version": cask.version,
             "path": null,
         },
         "arch": arch,
-        "uninstall_artifacts": homebrew_uninstall_artifacts(artifacts),
+        "uninstall_artifacts": [],
         "built_on": {},
     })
-}
-
-/// Minimal uninstall artifact list so `brew uninstall --cask` has something
-/// useful. Shape mirrors brew's tab `uninstall_artifacts` entries.
-fn homebrew_uninstall_artifacts(artifacts: &CaskArtifacts) -> Vec<serde_json::Value> {
-    let mut out = Vec::new();
-    for app in &artifacts.apps {
-        out.push(serde_json::json!({
-            "app": [app.target_name()]
-        }));
-    }
-    for binary in &artifacts.binaries {
-        let Ok(target) = binary.target_name() else {
-            continue;
-        };
-        out.push(serde_json::json!({
-            "binary": [
-                binary.source,
-                { "target": target }
-            ]
-        }));
-    }
-    for font in &artifacts.fonts {
-        let name = font.target.as_deref().unwrap_or(&font.source);
-        out.push(serde_json::json!({
-            "font": [name]
-        }));
-    }
-    for pkg in &artifacts.pkgs {
-        out.push(serde_json::json!({
-            "pkg": [pkg.source]
-        }));
-    }
-    out
 }
 
 fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
@@ -1689,6 +1668,7 @@ mod tests {
             ruby_source_path: None,
             ruby_source_checksum: None,
             tap_git_head: None,
+            tap: None,
             raw_base: None,
         }
     }
@@ -2932,7 +2912,9 @@ end
         let body: serde_json::Value = serde_json::from_str(&crate::file::read_to_string(&tab)?)?;
         assert_eq!(body["source"]["version"], "0.145.0");
         assert_eq!(body["homebrew_version"], "5.1.15 (mise)");
-        assert!(body["uninstall_artifacts"].as_array().is_some_and(|a| !a.is_empty()));
+        // Empty list enables brew API fallback (must not be partial non-empty).
+        assert_eq!(body["uninstall_artifacts"], serde_json::json!([]));
+        assert_eq!(body["source"]["tap"], "homebrew/cask");
         assert!(token_dir.join(".metadata/config.json").is_file());
 
         // Second pour replaces versioned metadata, keeps single current version.
@@ -2946,22 +2928,18 @@ end
     }
 
     #[test]
-    fn homebrew_uninstall_artifacts_cover_app_and_binary() {
+    fn homebrew_cask_receipt_uses_empty_uninstall_artifacts_for_api_fallback() {
+        let cask = test_cask("codex", "0.145.0");
         let arts = CaskArtifacts {
-            apps: vec![AppArtifact {
-                source: "Kimi.app".to_string(),
-                target: None,
-            }],
             binaries: vec![BinaryArtifact {
                 source: "codex-aarch64-apple-darwin".to_string(),
                 target: Some("codex".to_string()),
             }],
             ..Default::default()
         };
-        let ua = homebrew_uninstall_artifacts(&arts);
-        assert_eq!(ua.len(), 2);
-        assert_eq!(ua[0]["app"][0], "Kimi.app");
-        assert_eq!(ua[1]["binary"][1]["target"], "codex");
+        let receipt = homebrew_cask_install_receipt(&cask, &arts);
+        assert_eq!(receipt["uninstall_artifacts"], serde_json::json!([]));
+        assert_eq!(receipt["source"]["version"], "0.145.0");
     }
 
     #[test]

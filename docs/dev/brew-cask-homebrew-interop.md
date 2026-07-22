@@ -292,12 +292,36 @@ In `src/system/packages/brew/cask.rs` after a successful pour:
 2. Call `write_homebrew_cask_metadata(token_dir, cask, artifacts)`:
    - Write `.metadata/<version>/<timestamp>/Casks/<token>.json` (`{}`)
    - Write `.metadata/INSTALL_RECEIPT.json` with mise-marked
-     `homebrew_version: "5.1.15 (mise)"`, `source.version`, basic
-     `uninstall_artifacts` from app/binary/font/pkg lists
+     `homebrew_version: "5.1.15 (mise)"`, `source.version`,
+     **`uninstall_artifacts: []` (empty on purpose)**
    - Write `.metadata/config.json` if missing
    - Replace prior versioned metadata dirs so `installed_version` matches
+   - UTC timestamps (match brew `Time.now.utc`)
 
-Docs: `docs/bootstrap/packages/brew.md` coexistence section updated.
+Docs: `docs/bootstrap/packages/brew.md` coexistence section updated (with
+caveats).
+
+### Verification (multi-wave, 2026-07-22) — skeptical review
+
+Three independent analyses + local Homebrew Ruby reading:
+
+| Claim | Verdict |
+|-------|---------|
+| Approach (emit `.metadata`) correct | **YES** — formula receipt parity; only way to fix brew `installed?` without shelling out |
+| Empty `{}` caskfile OK | **YES** — brew itself writes `{}` when no `only_path`; disk samples match |
+| Path enough for list/info/upgrade *gate* | **YES** — Ruby `installed?` / `cask_installed_version` + kimi dry-run |
+| First implementation's partial uninstall list | **WRONG** — non-empty partial list **blocks** API recovery (`resolve_installed_artifacts` early return). Fixed: empty `[]` |
+| Fake `"pkg": [source]` uninstall entry | **WRONG** — removed with empty list; real uninstall is pkgutil stanza |
+| Full `brew uninstall` / clean upgrade for **app** casks | **NOT guaranteed** — mise `ditto` copies apps; brew often move+symlink; residual risk |
+| Dual ownership | **Intentional** — same class as formula coexistence; brew upgrade can replace mise pour |
+| Shell out to brew as default | **Reject** — breaks “brew without brew” |
+| Document-only | **Reject** as steady state for shared prefix |
+
+**Ship verdict:** PARTIALLY COMPLETE but approach correct.
+
+- **Ship for:** list/info/upgrade-not-installed/Codex-class binary self-update
+- **Do not claim:** full uninstall/upgrade lifecycle for every app/pkg cask
+- **confidence:** ~85 approach; ~70 residual lifecycle safety after empty-tab fix
 
 ## Other brew-cask gaps (out of scope for this branch)
 

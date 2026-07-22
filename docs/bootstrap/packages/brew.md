@@ -120,9 +120,19 @@ as installed.
 **Casks** also write Homebrew-compatible metadata under
 `Caskroom/<token>/.metadata/` (tab + installed caskfile) in addition to
 mise's own `.mise-cask.toml` receipt inside the versioned caskroom. That makes
-`brew list --cask --versions`, `brew upgrade --cask`, and
-`brew uninstall --cask` work on mise-poured casks — including tools that
-self-update by shelling out to `brew upgrade --cask` (e.g. OpenAI Codex).
+`brew list --cask --versions` and `brew upgrade --cask` (as an *installed*
+gate) work on mise-poured casks — including tools that self-update by shelling
+out to `brew upgrade --cask` (e.g. OpenAI Codex).
+
+Caveats (not full brew lifecycle parity):
+
+- The tab's `uninstall_artifacts` is intentionally **empty** so Homebrew can
+  recover the full list from the live cask API when online. A partial list
+  would *block* that recovery. Offline `brew uninstall` may leave files.
+- mise **copies** app bundles into `/Applications`; real brew often **moves**
+  and leaves a caskroom symlink. `brew uninstall --cask` of some app casks may
+  not reverse mise's layout cleanly. Binary-link casks (e.g. codex) match brew
+  more closely.
 
 mise reads the Homebrew prefix directly, whether formulae were poured by mise
 or by a real Homebrew. It never overwrites files in the prefix that it didn't
