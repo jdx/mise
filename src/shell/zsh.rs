@@ -66,7 +66,11 @@ impl Shell for Zsh {
               eval "$({exe} hook-env{flags} -s zsh "$@")";
             }}
             _mise_hook_env_state() {{
-              local -a keys=(${{(ok)parameters[(I)MISE_*]}})
+              # enumerate MISE_* vars with the typeset builtin rather than
+              # ${{parameters}}: referencing that special array autoloads the
+              # zsh/parameter module via dlopen, which can deadlock under
+              # Rosetta in login shells (https://github.com/jdx/mise/discussions/11187)
+              local -a keys=(${{(o)${{(f)"$(typeset +m 'MISE_*' 2>/dev/null)"}}##* }})
               if (( $#keys > 0 )); then
                 typeset -p "${{keys[@]}}" 2>/dev/null
               fi

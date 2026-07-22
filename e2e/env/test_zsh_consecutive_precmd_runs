@@ -25,6 +25,14 @@ if [[ ${__MISE_ZSH_CHPWD_RAN:-unset} != "0" ]]; then
   exit 1
 fi
 
+# activation must not autoload zsh/parameter: the dlopen it triggers can
+# deadlock under Rosetta in login shells (discussion #11187)
+_mise_hook_env_state >/dev/null
+if zmodload | grep -q "zsh/parameter"; then
+  echo "expected activation to not autoload the zsh/parameter module"
+  exit 1
+fi
+
 _mise_hook_precmd
 
 if [[ ${__MISE_ZSH_PRECMD_RUN:-unset} != "1" ]]; then
