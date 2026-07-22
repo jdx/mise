@@ -751,27 +751,26 @@ fn prefer_offline(args: &[String]) -> bool {
         .unwrap_or_default()
 }
 
-/// See [`REMOTE_FETCH_COMMAND`]. Mirrors the argument parsing in
-/// [`prefer_offline`]: the first non-flag argument after the binary is the
-/// subcommand.
+/// See [`REMOTE_FETCH_COMMAND`].
 fn remote_fetch_command(args: &[String]) -> bool {
-    args.iter()
-        .take_while(|a| *a != "--")
-        .filter(|a| !a.starts_with('-'))
-        .nth(1)
-        .map(|a| {
-            [
-                "lock",
-                "ls-remote",
-                "list-all",
-                "list-remote",
-                "outdated",
-                "upgrade",
-                "up",
-            ]
-            .contains(&a.as_str())
-        })
-        .unwrap_or_default()
+    crate::cli::first_non_global_arg_idx(
+        &<crate::cli::Cli as clap::CommandFactory>::command(),
+        args,
+    )
+    .and_then(|idx| args.get(idx))
+    .map(|a| {
+        [
+            "lock",
+            "ls-remote",
+            "list-all",
+            "list-remote",
+            "outdated",
+            "upgrade",
+            "up",
+        ]
+        .contains(&a.as_str())
+    })
+    .unwrap_or_default()
 }
 
 /// returns true if missing required env vars should produce warnings instead of errors
@@ -1000,6 +999,31 @@ mod tests {
         assert!(!auto_env_default_for_version(&v("2027.5.9")));
         assert!(auto_env_default_for_version(&v("2027.6.0")));
         assert!(auto_env_default_for_version(&v("2028.1.0")));
+    }
+
+    #[test]
+    fn test_remote_fetch_command_skips_global_option_values() {
+        let args = |args: &[&str]| {
+            args.iter()
+                .map(|arg| (*arg).to_string())
+                .collect::<Vec<_>>()
+        };
+
+        assert!(remote_fetch_command(&args(&[
+            "mise", "--cd", "/tmp", "lock"
+        ])));
+        assert!(remote_fetch_command(&args(&[
+            "mise",
+            "--profile",
+            "development",
+            "ls-remote",
+        ])));
+        assert!(remote_fetch_command(&args(&[
+            "mise",
+            "--cd=/tmp",
+            "--profile=development",
+            "outdated",
+        ])));
     }
 
     #[cfg(unix)]

@@ -419,7 +419,7 @@ fn escape_args_after_separator(args: &[String], separator_idx: usize) -> Vec<Str
     result
 }
 
-fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> Option<usize> {
+pub(crate) fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> Option<usize> {
     let (flags_with_values, _) = get_global_flags(cmd);
     let mut i = 1;
     while i < args.len() {

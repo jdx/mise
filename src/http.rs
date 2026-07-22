@@ -1358,6 +1358,22 @@ mod tests {
         SettingsGuard { _lock: lock }
     }
 
+    struct AtomicBoolGuard {
+        value: &'static std::sync::atomic::AtomicBool,
+        previous: bool,
+    }
+    impl AtomicBoolGuard {
+        fn set(value: &'static std::sync::atomic::AtomicBool, enabled: bool) -> Self {
+            let previous = value.swap(enabled, Ordering::SeqCst);
+            Self { value, previous }
+        }
+    }
+    impl Drop for AtomicBoolGuard {
+        fn drop(&mut self) {
+            self.value.store(self.previous, Ordering::SeqCst);
+        }
+    }
+
     struct UnavailableHostsGuard {
         host_keys: Vec<String>,
     }
@@ -1803,7 +1819,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         // https://github.com/jdx/mise/discussions/11185
         let client = Client::new(Duration::from_secs(30), ClientKind::Fetch).unwrap();
         let _guard = set_test_prefer_offline(3);
-        let prev = crate::env::REMOTE_FETCH_COMMAND.swap(true, Ordering::SeqCst);
+        let _remote_fetch_guard = AtomicBoolGuard::set(&crate::env::REMOTE_FETCH_COMMAND, true);
 
         assert_eq!(client.request_timeout(), Duration::from_secs(30));
         assert_eq!(
@@ -1811,8 +1827,6 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
             Settings::get().configured_fetch_remote_versions_timeout()
         );
         assert_eq!(Settings::get().http_retries(), 3);
-
-        crate::env::REMOTE_FETCH_COMMAND.store(prev, Ordering::SeqCst);
     }
 
     #[tokio::test(flavor = "current_thread")]
