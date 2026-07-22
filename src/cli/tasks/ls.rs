@@ -118,22 +118,27 @@ impl TasksLs {
 
         let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
 
-        let tasks = all_tasks
+        let mut tasks = all_tasks
             .values()
+            // A local/overlay hide=true is monotonic when remote metadata is
+            // merged, so avoid fetching tasks that can never become visible.
             .filter(|t| self.hidden || !t.hide)
             .filter(|t| !self.local || !t.global)
             .filter(|t| !self.global || t.global)
             .cloned()
-            .sorted_by(|a, b| self.sort(a, b))
             .collect::<Vec<Task>>();
 
         // Resolve remote task files before any operation that may need them
-        let mut tasks = tasks;
         // always pass no_cache=false as the command doesn't take no-cache argument
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
         TaskFetcher::new(false)
+            .require_trust_before_fetch()
             .fetch_tasks(&config, &mut tasks)
             .await?;
+        // Remote #MISE headers can contribute hide/alias/description metadata,
+        // so visibility and metadata-based sorting must happen after fetching.
+        tasks.retain(|task| self.hidden || !task.hide);
+        tasks.sort_by(|a, b| self.sort(a, b));
 
         // Warn about non-executable files only when there are truly no tasks at all
         // (not just filtered out by --hidden/--local/--global)

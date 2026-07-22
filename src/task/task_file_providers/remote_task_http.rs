@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use crate::{Result, dirs, env, file, hash, http::HTTP, remote_source::RemoteSource};
 
-use super::TaskFileProvider;
+use super::{TaskFileArtifact, TaskFileProvider};
 
 #[derive(Debug)]
 pub struct RemoteTaskHttpBuilder {
@@ -53,6 +53,23 @@ impl RemoteTaskHttp {
         file::make_executable(destination)?;
         Ok(())
     }
+
+    async fn get_unique_artifact(&self, file: &str) -> Result<TaskFileArtifact> {
+        let cache_key = self.get_cache_key(file);
+        file::create_dir_all(&self.storage_path)?;
+        let temp_file =
+            tempfile::NamedTempFile::with_prefix_in(format!("{cache_key}-"), &self.storage_path)?;
+        let (_, destination) = temp_file.keep()?;
+        file::remove_file(&destination)?;
+        if let Err(error) = self.download_file(file, &destination).await {
+            let _ = file::remove_file(&destination);
+            return Err(error);
+        }
+        Ok(TaskFileArtifact::temporary(
+            destination.clone(),
+            destination,
+        ))
+    }
 }
 
 #[async_trait]
@@ -85,6 +102,15 @@ impl TaskFileProvider for RemoteTaskHttp {
 
         self.download_file(file, &destination).await?;
         Ok(destination)
+    }
+
+    async fn get_local_artifact(&self, file: &str) -> Result<TaskFileArtifact> {
+        if self.is_cached {
+            return Ok(TaskFileArtifact::persistent(
+                self.get_local_path(file).await?,
+            ));
+        }
+        self.get_unique_artifact(file).await
     }
 }
 
@@ -132,12 +158,28 @@ mod tests {
             let request_url = format!("{}{}", server.url(), request_path);
             let cache_key = provider.get_cache_key(&request_url);
 
+            let mut local_paths = vec![];
             for _ in 0..2 {
-                let local_path = provider.get_local_path(&request_url).await.unwrap();
+                let artifact = provider.get_local_artifact(&request_url).await.unwrap();
+                let local_path = artifact.path.clone();
                 assert!(local_path.exists());
                 assert!(local_path.is_file());
-                assert!(local_path.ends_with(&cache_key));
+                assert!(
+                    local_path
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with(&cache_key)
+                );
+                local_paths.push((local_path, artifact));
             }
+            assert_ne!(local_paths[0].0, local_paths[1].0);
+            let retained_paths = local_paths
+                .iter()
+                .map(|(path, _)| path.clone())
+                .collect::<Vec<_>>();
+            drop(local_paths);
+            assert!(retained_paths.iter().all(|path| !path.exists()));
 
             mocked_server.assert();
         }
