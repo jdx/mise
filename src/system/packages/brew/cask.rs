@@ -987,14 +987,14 @@ fn find_generated_completion_executable(
         return Ok(source);
     }
     if let Some(source) = absolute_prefixed_source(executable) {
-        if source.is_file() {
-            return Ok(source);
-        }
         if let Ok(relative) = source.strip_prefix(prefix::prefix()) {
             let caskroom_source = caskroom.join(relative);
             if caskroom_source.is_file() {
                 return Ok(caskroom_source);
             }
+        }
+        if source.is_file() {
+            return Ok(source);
         }
     }
     if let Some(source) = find_generated_completion_file(caskroom, executable)? {
@@ -2853,6 +2853,33 @@ end
         assert_eq!(
             find_generated_completion_executable(&stage, &caskroom, &cask, &completion)?,
             app_executable
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn generated_completion_executable_prefers_staged_prefix_binary() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let caskroom = tmp.path().join("caskroom");
+        file::create_dir_all(tmp.path().join("bin"))?;
+        file::create_dir_all(caskroom.join("bin"))?;
+        crate::file::write(tmp.path().join("bin/op"), "old")?;
+        crate::file::write(caskroom.join("bin/op"), "new")?;
+        let cask = test_cask("1password-cli", "2.34.1");
+        let completion = GeneratedCompletionArtifact {
+            executable: "$HOMEBREW_PREFIX/bin/op".to_string(),
+            args: vec![],
+            base_name: None,
+            shell_parameter_format: None,
+            shells: vec![CompletionShell::Bash],
+        };
+
+        assert_eq!(
+            find_generated_completion_executable(&stage, &caskroom, &cask, &completion)?,
+            caskroom.join("bin/op")
         );
         Ok(())
     }
