@@ -4,11 +4,10 @@
 > synthetic Homebrew `.metadata` for mise-owned pours. Direct `brew-cask:`
 > installs remain **Homebrew-invisible** (mise receipt only). Foreign Homebrew
 > metadata is preserved. Explicit one-way handoff (e.g. `brew install --cask
-> --adopt`) is **not** production-supported until Plan 012 disposable isolation
+--adopt`) is **not** production-supported until Plan 012 disposable isolation
 > proves eligibility. Historical text below describing empty-tab writers or
 > brew list/upgrade promises for mise pours is **evidence only** and is
 > superseded by `HOMEBREW_FINDINGS.md` executive decision and `plans/README.md`.
-
 
 **Branch:** `fix/brew-cask-homebrew-metadata-receipt`  
 **Fork:** `donbeave/mise` (no upstream PR yet)  
@@ -17,13 +16,13 @@
 
 ## Summary (current product — mise-only default)
 
-| Layer                  | Formulae (`brew:`)                | Casks (`brew-cask:`) mise-owned (current)              |
-| ---------------------- | --------------------------------- | ------------------------------------------------------ |
-| Artifact pour          | Cellar + links                    | Caskroom + `/Applications` or `bin` links              |
+| Layer                  | Formulae (`brew:`)                | Casks (`brew-cask:`) mise-owned (current)                |
+| ---------------------- | --------------------------------- | -------------------------------------------------------- |
+| Artifact pour          | Cellar + links                    | Caskroom + `/Applications` or `bin` links                |
 | Mise receipt           | n/a (uses brew tab)               | `.mise-cask.toml` with completed-action facts (schema 2) |
-| Brew receipt           | `Cellar/.../INSTALL_RECEIPT.json` | **not published** — Homebrew-invisible by default      |
-| `brew list --versions` | works                             | **not supported** for mise-owned pours                 |
-| `brew upgrade`         | works                             | **not supported** for mise-owned pours                 |
+| Brew receipt           | `Cellar/.../INSTALL_RECEIPT.json` | **not published** — Homebrew-invisible by default        |
+| `brew list --versions` | works                             | **not supported** for mise-owned pours                   |
+| `brew upgrade`         | works                             | **not supported** for mise-owned pours                   |
 
 Historical investigation below still documents why an empty-tab writer was
 attempted and why it is unsafe. That path is **retired** (Plan 010).

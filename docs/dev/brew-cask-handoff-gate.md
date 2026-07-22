@@ -9,11 +9,11 @@ state.
 
 ## Decision
 
-| Outcome | Selected |
-| ------- | -------- |
-| Proven class-limited handoff | no |
-| Native reinstall only | not productized |
-| **Unsupported — mise-only retained** | **yes** |
+| Outcome                              | Selected        |
+| ------------------------------------ | --------------- |
+| Proven class-limited handoff         | no              |
+| Native reinstall only                | not productized |
+| **Unsupported — mise-only retained** | **yes**         |
 
 Production code must not expose opt-in transfer until a disposable runner
 executes the full fixture matrix (app identical/different, auto_updates,

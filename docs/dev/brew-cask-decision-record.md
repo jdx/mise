@@ -30,12 +30,12 @@ could not describe and allowed Homebrew to recover teardown from the live API.
 
 ## Support matrix
 
-| Mode | Install | Status | Upgrade | Uninstall | brew list/upgrade |
-| ---- | ------- | ------ | ------- | --------- | ----------------- |
-| MiseOwned (default) | Rust pour | mise receipt | mise | mise (payload) | unsupported |
-| HomebrewOwned | native brew | brew ledger | brew | brew | supported |
-| Explicit handoff | not shipped | — | — | — | after proven 012 only |
-| A3 private metadata | not shipped | — | — | — | experiment only |
+| Mode                | Install     | Status       | Upgrade | Uninstall      | brew list/upgrade     |
+| ------------------- | ----------- | ------------ | ------- | -------------- | --------------------- |
+| MiseOwned (default) | Rust pour   | mise receipt | mise    | mise (payload) | unsupported           |
+| HomebrewOwned       | native brew | brew ledger  | brew    | brew           | supported             |
+| Explicit handoff    | not shipped | —            | —       | —              | after proven 012 only |
+| A3 private metadata | not shipped | —            | —       | —              | experiment only       |
 
 ## Consequences
 
