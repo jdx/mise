@@ -28,7 +28,9 @@ use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Task, TaskTemplate, strip_extension};
-use crate::tera::{contains_template_syntax, render_str, take_tera_accessed_files};
+use crate::tera::{
+    contains_template_syntax, get_tera_for_source_comparison, render_str, take_tera_accessed_files,
+};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
     ResolvedToolOptions, ToolOptionSource, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
@@ -689,7 +691,7 @@ impl Config {
         local_tasks.retain(|local| {
             !global_tasks
                 .iter()
-                .any(|global| tasks_have_same_source(local, global))
+                .any(|global| tasks_have_same_source(&config, local, global))
         });
         let mut tasks: BTreeMap<String, Task> = local_tasks
             .into_iter()
@@ -1683,27 +1685,64 @@ fn config_set_contains(set: &IndexSet<PathBuf>, path: &Path) -> bool {
     set.iter().any(|p| file::desymlink_path(p) == target)
 }
 
-fn paths_equal_resolved(left: &Path, right: &Path) -> bool {
-    left == right || file::desymlink_path(left) == file::desymlink_path(right)
-}
-
 fn path_starts_with_resolved(path: &Path, prefix: &Path) -> bool {
     path.starts_with(prefix) || file::desymlink_path(path).starts_with(file::desymlink_path(prefix))
 }
 
-fn tasks_have_same_source(left: &Task, right: &Task) -> bool {
-    if left.name != right.name {
-        return false;
-    }
-    match (left.file.as_deref(), right.file.as_deref()) {
-        (Some(left), Some(right)) => paths_equal_resolved(left, right),
-        (None, None) => {
-            !left.config_source.as_os_str().is_empty()
-                && !right.config_source.as_os_str().is_empty()
-                && paths_equal_resolved(&left.config_source, &right.config_source)
+fn resolved_task_file(config: &Config, task: &Task) -> Option<PathBuf> {
+    let file = task.file.as_ref()?;
+    let file_str = file.to_string_lossy().to_string();
+    let rendered = if contains_template_syntax(&file_str) {
+        let mut tera = get_tera_for_source_comparison();
+        // Use only context that was already resolved while loading the config.
+        // Building the task's full runtime context here would evaluate task
+        // env/vars directives and could execute templates merely to compare
+        // source identities.
+        let mut tera_ctx = config.tera_ctx.clone();
+        tera_ctx.insert("config_root", &task.config_root.clone().unwrap_or_default());
+        match render_str(&mut tera, &file_str, &tera_ctx) {
+            Ok(rendered) => rendered,
+            Err(err) => {
+                // Deferred file templates may intentionally use exec() or
+                // read_file(). Source comparison must never invoke those
+                // functions merely to list tasks; conservatively treat an
+                // unsupported dynamic path as a distinct source.
+                debug!(
+                    "failed to resolve task file for source comparison ({}): {err:#}",
+                    task.name
+                );
+                return None;
+            }
         }
-        _ => false,
+    } else {
+        file_str
+    };
+    let path = file::replace_path(&rendered);
+    let path = if path.is_absolute() {
+        path
+    } else if let Some(root) = &task.config_root {
+        root.join(path)
+    } else {
+        path
+    };
+    Some(file::desymlink_path(&path))
+}
+
+fn resolved_task_source(config: &Config, task: &Task) -> Option<PathBuf> {
+    if task.file.is_some() {
+        resolved_task_file(config, task)
+    } else if task.config_source.as_os_str().is_empty() {
+        None
+    } else {
+        Some(file::desymlink_path(&task.config_source))
     }
+}
+
+fn tasks_have_same_source(config: &Config, left: &Task, right: &Task) -> bool {
+    left.name == right.name
+        && resolved_task_source(config, left)
+            .zip(resolved_task_source(config, right))
+            .is_some_and(|(left, right)| left == right)
 }
 
 /// Returns true if the path should be filtered out due to MISE_CONFIG_DIR override.
@@ -2342,7 +2381,10 @@ async fn load_local_tasks_with_context(
                 let monorepo_root = monorepo_root.clone();
                 let templates = templates.clone();
                 async move {
-                    let config_paths = config_paths_in_dir(&subdir);
+                    let config_paths = config_paths_in_dir(&subdir)
+                        .into_iter()
+                        .unique_by(|path| file::desymlink_path(path))
+                        .collect::<Vec<_>>();
                     let found_config = !config_paths.is_empty();
                     let mut parsed_configs = ConfigMap::new();
                     for config_path in config_paths {
@@ -2723,6 +2765,7 @@ async fn load_global_tasks(
                     .map(|(_, cf)| cf)
             })
         })
+        .unique_by(|cf| file::desymlink_path(cf.get_path()))
         .collect::<Vec<_>>();
 
     // Global config files keep independent task include sets. Aggregate their
@@ -2747,11 +2790,9 @@ async fn load_global_tasks(
             if let Some(inline_task) = inline_tasks.get(&task.name) {
                 if seen_config_task_names.insert(task.name.clone()) {
                     if let Some(existing) = tasks.get_mut(&task.name) {
-                        let rediscovered_file = existing
-                            .file
-                            .as_deref()
-                            .zip(task.file.as_deref())
-                            .is_some_and(|(left, right)| paths_equal_resolved(left, right));
+                        let rediscovered_file = resolved_task_file(config, existing)
+                            .zip(resolved_task_file(config, &task))
+                            .is_some_and(|(left, right)| left == right);
                         if rediscovered_file {
                             existing.merge_toml_overlay(inline_task.clone());
                         }

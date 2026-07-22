@@ -1478,6 +1478,30 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
     desymlink_path(a) == desymlink_path(b)
 }
 
+fn normalize_path_components(path: &Path) -> PathBuf {
+    use std::path::Component;
+
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                let can_pop = normalized
+                    .components()
+                    .next_back()
+                    .is_some_and(|component| matches!(component, Component::Normal(_)));
+                if can_pop {
+                    normalized.pop();
+                } else if !normalized.has_root() {
+                    normalized.push(component.as_os_str());
+                }
+            }
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
+}
+
 pub fn desymlink_path(p: &Path) -> PathBuf {
     if p.is_symlink()
         && let Ok(target) = fs::read_link(p)
@@ -1489,9 +1513,10 @@ pub fn desymlink_path(p: &Path) -> PathBuf {
         };
         return target
             .canonicalize()
-            .unwrap_or_else(|_| target.to_path_buf());
+            .unwrap_or_else(|_| normalize_path_components(&target));
     }
-    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+    p.canonicalize()
+        .unwrap_or_else(|_| normalize_path_components(p))
 }
 
 pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
@@ -1850,6 +1875,24 @@ mod tests {
         symlink("../target/file", &link).unwrap();
 
         assert_eq!(desymlink_path(&link), target.canonicalize().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_desymlink_path_normalizes_broken_relative_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let link_dir = root.path().join("links");
+        fs::create_dir_all(&link_dir).unwrap();
+        let link = link_dir.join("missing");
+        symlink("../nested/../missing", &link).unwrap();
+
+        assert_eq!(desymlink_path(&link), root.path().join("missing"));
+        assert_eq!(
+            desymlink_path(&link),
+            desymlink_path(&root.path().join("missing"))
+        );
     }
 
     #[cfg(unix)]

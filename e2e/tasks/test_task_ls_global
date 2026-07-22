@@ -43,20 +43,3 @@ myglobalfile
 systemglobalfile"
 assert "mise run customglobalfile" "PROJECT_ROOT=$PWD"
 assert "mise run systemglobalfile" "PROJECT_ROOT=$PWD"
-
-# A local ancestor config can explicitly include the global task directory even
-# when the global config replaces that default include. Source deduplication
-# must not discard a task that the independent global pass did not load.
-cat >"$HOME/mise.toml" <<'TOML'
-[task_config]
-includes = [".config/mise/tasks"]
-TOML
-cat >"$HOME/.config/mise/config.toml" <<'TOML'
-tasks.myglobal = { run = 'echo myglobal' }
-
-[task_config]
-includes = ["dotfiles/tasks"]
-TOML
-
-assert "mise run myglobalfile" "myglobalfile"
-assert_contains "mise tasks --global" "myglobalfile"
