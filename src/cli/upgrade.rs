@@ -308,7 +308,10 @@ impl Upgrade {
                     .iter()
                     .map(|(n, v)| (n.as_str(), v.as_str()))
                     .collect();
-                let bumps = compute_config_bumps(config, &refs);
+                let bumps = compute_config_bumps(config, &refs)
+                    .into_iter()
+                    .filter(|bump| !self.global || config::is_global_config(&bump.config_path))
+                    .collect::<Vec<_>>();
                 for bump in &bumps {
                     miseprintln!(
                         "Would update {} from {} to {} in {}",
@@ -393,7 +396,10 @@ impl Upgrade {
                 .iter()
                 .map(|(n, v)| (n.as_str(), v.as_str()))
                 .collect();
-            let bumps = compute_config_bumps(config, &refs);
+            let bumps = compute_config_bumps(config, &refs)
+                .into_iter()
+                .filter(|bump| !self.global || config::is_global_config(&bump.config_path))
+                .collect::<Vec<_>>();
             apply_config_bumps(config, &bumps)?;
         }
 
