@@ -209,7 +209,12 @@ fn validate_artifact_paths(artifacts: &CaskArtifacts) -> Result<()> {
         app_target_path(app.target_name())?;
     }
     for binary in &artifacts.binaries {
-        if !binary.source.contains("$APPDIR") && !Path::new(&binary.source).is_absolute() {
+        if binary.source.contains("$APPDIR") {
+            // Expand against allowed Applications roots and fail closed on escape.
+            validate_appdir_binary_source(&binary.source)?;
+        } else if Path::new(&binary.source).is_absolute() {
+            validate_absolute_binary_source(&binary.source)?;
+        } else {
             validate_relative_artifact_source("binary source", &binary.source)?;
         }
         binary.target_path()?;
@@ -245,6 +250,92 @@ fn validate_relative_artifact_source(field: &str, source: &str) -> Result<()> {
     if path.components().next().is_none() {
         bail!("brew-cask: invalid {field} '{source}'");
     }
+    Ok(())
+}
+
+fn allowed_appdir_roots() -> [PathBuf; 2] {
+    [
+        PathBuf::from("/Applications"),
+        prefix::prefix().join("Applications"),
+    ]
+}
+
+/// `$APPDIR` must be a path prefix. Suffix is relative under Applications only.
+/// Rejects `$APPDIR/../secret` and mid-path `$APPDIR` after expand/normalize.
+fn validate_appdir_binary_source(source: &str) -> Result<()> {
+    let _ = expand_appdir_binary_candidates(source)?;
+    Ok(())
+}
+
+fn expand_appdir_binary_candidates(source: &str) -> Result<Vec<PathBuf>> {
+    if source.is_empty() || source.contains('\0') {
+        bail!("brew-cask: invalid $APPDIR binary source '{source}'");
+    }
+    let relative = if source == "$APPDIR" {
+        bail!("brew-cask: binary source '$APPDIR' must name a file under Applications");
+    } else if let Some(rest) = source.strip_prefix("$APPDIR/") {
+        rest
+    } else if source.contains("$APPDIR") {
+        bail!("brew-cask: $APPDIR must be the path prefix of binary source '{source}'");
+    } else {
+        bail!("brew-cask: binary source '{source}' is not an $APPDIR path");
+    };
+    let relative_path = Path::new(relative);
+    if relative.is_empty()
+        || relative_path.is_absolute()
+        || relative_path.components().any(|c| {
+            matches!(
+                c,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        bail!(
+            "brew-cask: $APPDIR binary source '{source}' must be a relative path under Applications without '..'"
+        );
+    }
+    let mut candidates = Vec::with_capacity(2);
+    for root in allowed_appdir_roots() {
+        let joined = root.join(relative_path);
+        let normalized = normalize_absolute_components(&joined)?;
+        // Containment after lexical normalize — not raw string replace.
+        if !path_contained_in_or_eq(&normalized, &root)? || normalized == root {
+            bail!(
+                "brew-cask: $APPDIR binary source '{source}' escapes Applications root {}",
+                root.display()
+            );
+        }
+        candidates.push(normalized);
+    }
+    Ok(candidates)
+}
+
+/// Resolve `$APPDIR/...` to an existing file under an allowed Applications root.
+fn resolve_appdir_binary_source(source: &str) -> Result<PathBuf> {
+    let candidates = expand_appdir_binary_candidates(source)?;
+    candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .ok_or_else(|| {
+            eyre!("brew-cask: binary artifact '{source}' was not found under Applications")
+        })
+}
+
+/// Absolute binary sources (e.g. pkg-installed paths) must not contain `..`.
+fn validate_absolute_binary_source(source: &str) -> Result<()> {
+    if source.contains('\0') {
+        bail!("brew-cask: binary source contains NUL");
+    }
+    let expanded = source.replace("$HOMEBREW_PREFIX", &prefix::prefix().to_string_lossy());
+    let path = PathBuf::from(&expanded);
+    if !path.is_absolute() {
+        bail!("brew-cask: binary source '{source}' must be absolute");
+    }
+    let normalized = normalize_absolute_components(&path)?;
+    if path.components().any(|c| matches!(c, Component::ParentDir)) {
+        bail!("brew-cask: absolute binary source '{source}' must not contain '..'");
+    }
+    let _ = normalized;
     Ok(())
 }
 
@@ -1181,22 +1272,9 @@ fn stage_binary(
         file::create_dir_all(parent)?;
     }
     let (operation, source_path) = if binary.source.contains("$APPDIR") {
-        // $APPDIR is the Applications directory where install_app placed the bundle.
-        // Symlink into the installed app so the CLI wrapper can trace back to find the app.
-        // Check both /Applications and $HOMEBREW_PREFIX/Applications per app_target_path().
-        let app_binary = [
-            PathBuf::from("/Applications"),
-            prefix::prefix().join("Applications"),
-        ]
-        .iter()
-        .map(|appdir| PathBuf::from(binary.source.replace("$APPDIR", &appdir.to_string_lossy())))
-        .find(|p| p.is_file())
-        .ok_or_else(|| {
-            eyre!(
-                "brew-cask: binary artifact '{}' was not found",
-                binary.source
-            )
-        })?;
+        // Expand + contain under /Applications or $HOMEBREW_PREFIX/Applications.
+        // Never string-replace then trust is_file — `$APPDIR/../secret` must fail closed.
+        let app_binary = resolve_appdir_binary_source(&binary.source)?;
         file::make_symlink(&app_binary, &caskroom_binary)?;
         (CaskActionOperation::Symlink, Some(app_binary))
     } else {
@@ -3553,6 +3631,78 @@ end
             .filter_map(|e| e.ok())
             .count();
         assert_eq!(before, after, "validation must not mutate prefix");
+        Ok(())
+    }
+
+    /// Plan 011 AC2: `$APPDIR` is not a free string replace — contain after expand.
+    #[test]
+    fn appdir_binary_source_rejects_traversal_before_io() -> Result<()> {
+        let _lock = env_lock();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        for bad in [
+            "$APPDIR/../secret",
+            "$APPDIR/foo/../../etc/passwd",
+            "$APPDIR/../tmp/evil",
+            "prefix/$APPDIR/Foo.app/cli",
+            "$APPDIR",
+            "$APPDIR/",
+        ] {
+            let err = validate_appdir_binary_source(bad).unwrap_err().to_string();
+            assert!(
+                err.contains("$APPDIR") || err.contains("Applications") || err.contains("relative"),
+                "bad={bad} err={err}"
+            );
+        }
+        // Happy path: relative under Applications after expand (file need not exist for validate).
+        validate_appdir_binary_source("$APPDIR/Foo.app/Contents/MacOS/cli")?;
+        // validate_artifact_paths must fail closed on escape sources.
+        let artifacts = CaskArtifacts {
+            binaries: vec![BinaryArtifact {
+                source: "$APPDIR/../secret".into(),
+                target: Some("evil".into()),
+            }],
+            ..Default::default()
+        };
+        assert!(validate_artifact_paths(&artifacts).is_err());
+        Ok(())
+    }
+
+    /// Even if a file exists at the escaped path, stage_binary must not symlink it.
+    #[cfg(unix)]
+    #[test]
+    fn stage_binary_appdir_escape_does_not_mutate_caskroom() -> Result<()> {
+        let _lock = env_lock();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        // Bait file outside Applications that naive `$APPDIR` + `../` would hit.
+        let secret = tmp.path().join("secret-bin");
+        crate::file::write(&secret, "pwn")?;
+        // Also create under Applications so a wrong policy might still find something.
+        let apps = tmp.path().join("Applications");
+        file::create_dir_all(&apps)?;
+
+        let cask = test_cask("evil-cask", "1.0.0");
+        let ids = test_ids(&cask.token, &cask.version);
+        let caskroom = caskroom_version_dir(&ids.token, &ids.version);
+        file::create_dir_all(&caskroom)?;
+        let binary = BinaryArtifact {
+            source: "$APPDIR/../secret-bin".into(),
+            target: Some("$HOMEBREW_PREFIX/bin/evil".into()),
+        };
+
+        let err = stage_binary(&stage, &caskroom, &cask, &ids, &binary)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("$APPDIR") || err.contains("Applications") || err.contains("relative"),
+            "err={err}"
+        );
+        // No caskroom/bin mutation for the escape attempt.
+        assert!(!caskroom.join("bin/evil").exists());
+        assert!(!tmp.path().join("bin/evil").exists());
         Ok(())
     }
 
