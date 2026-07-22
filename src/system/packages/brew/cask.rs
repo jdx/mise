@@ -879,6 +879,9 @@ fn stage_generated_completions(
     completion: &GeneratedCompletionArtifact,
 ) -> Result<()> {
     let executable = find_generated_completion_executable(stage, caskroom, cask, completion)?;
+    if executable.starts_with(stage) || executable.starts_with(caskroom) {
+        file::make_executable(&executable)?;
+    }
     let base_name = completion.resolved_base_name(cask);
     for shell in &completion.shells {
         let target = generated_completion_target_path(*shell, &base_name)?;
@@ -903,20 +906,13 @@ fn link_completion(caskroom: &Path, target: &Path) -> Result<()> {
     if let Some(parent) = target.parent() {
         file::create_dir_all(parent)?;
     }
-    file::remove_all(target)?;
-    file::copy(&caskroom_completion, target)?;
+    replace_completion(&caskroom_completion, target)?;
     Ok(())
 }
 
 fn find_completion_source(stage: &Path, caskroom: &Path, source: &str) -> Option<PathBuf> {
-    if source.contains("$APPDIR") {
-        return [
-            PathBuf::from("/Applications"),
-            prefix::prefix().join("Applications"),
-        ]
-        .iter()
-        .map(|appdir| PathBuf::from(source.replace("$APPDIR", &appdir.to_string_lossy())))
-        .find(|path| path.is_file());
+    if let Some(source) = appdir_artifact_source(source) {
+        return Some(source);
     }
     absolute_prefixed_source(source)
         .filter(|source| source.is_file())
@@ -941,6 +937,9 @@ fn find_generated_completion_executable(
     {
         return Ok(source);
     }
+    if let Some(source) = appdir_artifact_source(executable) {
+        return Ok(source);
+    }
     if let Some(source) = absolute_prefixed_source(executable) {
         if source.is_file() {
             return Ok(source);
@@ -952,14 +951,97 @@ fn find_generated_completion_executable(
             }
         }
     }
-    find_file_artifact(caskroom, executable)
-        .or_else(|| find_file_artifact(stage, executable))
-        .ok_or_else(|| {
-            eyre!(
-                "brew-cask: completion executable '{}' was not found",
-                executable
-            )
+    if let Some(source) = find_generated_completion_file(caskroom, executable)? {
+        return Ok(source);
+    }
+    if let Some(source) = find_generated_completion_file(stage, executable)? {
+        return Ok(source);
+    }
+    Err(eyre!(
+        "brew-cask: completion executable '{}' was not found",
+        executable
+    ))
+}
+
+fn replace_completion(source: &Path, target: &Path) -> Result<()> {
+    if target.exists() && !target.is_file() {
+        bail!(
+            "brew-cask: completion target '{}' exists and is not a file",
+            target.display()
+        );
+    }
+    let old_target = target.with_extension(format!(
+        "mise-old-{}",
+        crate::hash::hash_to_str(&target.display().to_string())
+    ));
+    file::remove_all(&old_target)?;
+    if target.exists() {
+        file::rename(target, &old_target)?;
+    }
+    if let Err(e) = file::copy(source, target) {
+        if old_target.exists() {
+            let _ = file::remove_all(target);
+            let _ = file::rename(&old_target, target);
+        }
+        return Err(e);
+    }
+    file::remove_all(&old_target)?;
+    Ok(())
+}
+
+fn appdir_artifact_source(source: &str) -> Option<PathBuf> {
+    if !source.contains("$APPDIR") {
+        return None;
+    }
+    [
+        PathBuf::from("/Applications"),
+        prefix::prefix().join("Applications"),
+    ]
+    .iter()
+    .map(|appdir| PathBuf::from(source.replace("$APPDIR", &appdir.to_string_lossy())))
+    .find(|path| path.is_file())
+}
+
+fn find_generated_completion_file(root: &Path, executable: &str) -> Result<Option<PathBuf>> {
+    let executable_path = Path::new(executable);
+    if executable_path.components().count() != 1 {
+        return Ok(find_file_artifact(root, executable));
+    }
+    let direct = root.join(executable_path);
+    if direct.is_file() {
+        return Ok(Some(direct));
+    }
+    let matches = find_file_artifacts(root, executable_path);
+    match matches.as_slice() {
+        [] => Ok(None),
+        [path] => Ok(Some(path.clone())),
+        _ => bail!(
+            "brew-cask: completion executable '{}' is ambiguous: {}",
+            executable,
+            matches
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+fn find_file_artifacts(root: &Path, name: &Path) -> Vec<PathBuf> {
+    let mut matches = WalkDir::new(root)
+        .into_iter()
+        .filter_entry(|entry| entry.file_name() != "__MACOSX")
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.into_path())
+        .filter(|path| {
+            path.strip_prefix(root)
+                .is_ok_and(|relative| relative.ends_with(name))
+                && path.is_file()
         })
+        .collect::<Vec<_>>();
+    matches.sort();
+    matches.dedup();
+    matches
 }
 
 fn generate_completion_output(
@@ -1189,18 +1271,29 @@ fn remove_obsolete_completions(
         let Ok(relative) = target.strip_prefix(&prefix) else {
             continue;
         };
-        let has_staged_copy = std::fs::read_dir(&token_dir)
+        let staged_copy = std::fs::read_dir(&token_dir)
             .ok()
             .into_iter()
             .flatten()
             .filter_map(|entry| entry.ok())
             .filter(|entry| entry.file_type().is_ok_and(|ft| ft.is_dir()))
-            .any(|entry| entry.path().join(relative).is_file());
-        if has_staged_copy {
+            .map(|entry| entry.path().join(relative))
+            .find(|path| path.is_file());
+        if staged_copy
+            .as_deref()
+            .is_some_and(|staged_copy| same_file_contents(target, staged_copy))
+        {
             file::remove_file(target)?;
         }
     }
     Ok(())
+}
+
+fn same_file_contents(a: &Path, b: &Path) -> bool {
+    match (std::fs::read(a), std::fs::read(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
 }
 
 fn stage_binary(stage: &Path, caskroom: &Path, cask: &Cask, binary: &BinaryArtifact) -> Result<()> {
@@ -1213,14 +1306,7 @@ fn stage_binary(stage: &Path, caskroom: &Path, cask: &Cask, binary: &BinaryArtif
         // $APPDIR is the Applications directory where install_app placed the bundle.
         // Symlink into the installed app so the CLI wrapper can trace back to find the app.
         // Check both /Applications and $HOMEBREW_PREFIX/Applications per app_target_path().
-        let app_binary = [
-            PathBuf::from("/Applications"),
-            prefix::prefix().join("Applications"),
-        ]
-        .iter()
-        .map(|appdir| PathBuf::from(binary.source.replace("$APPDIR", &appdir.to_string_lossy())))
-        .find(|p| p.is_file())
-        .ok_or_else(|| {
+        let app_binary = appdir_artifact_source(&binary.source).ok_or_else(|| {
             eyre!(
                 "brew-cask: binary artifact '{}' was not found",
                 binary.source
@@ -2622,7 +2708,6 @@ end
             &executable,
             "#!/bin/sh\nprintf '%s|%s|%s' \"$1\" \"$2\" \"$SHELL\"\n",
         )?;
-        file::make_executable(&executable)?;
         let cask = test_cask("1password-cli", "2.34.1");
         let completion = GeneratedCompletionArtifact {
             executable: "op".to_string(),
@@ -2638,6 +2723,114 @@ end
             crate::file::read_to_string(caskroom.join("etc/bash_completion.d/op"))?,
             "completion|bash|bash"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn generated_completion_executable_expands_appdir() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let caskroom = tmp.path().join("caskroom");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(&caskroom)?;
+        let app_executable = tmp.path().join("Applications/Foo.app/Contents/MacOS/foo");
+        file::create_dir_all(app_executable.parent().unwrap())?;
+        crate::file::write(&app_executable, "app cli")?;
+        let cask = test_cask("foo", "1.0.0");
+        let completion = GeneratedCompletionArtifact {
+            executable: "$APPDIR/Foo.app/Contents/MacOS/foo".to_string(),
+            args: vec![],
+            base_name: None,
+            shell_parameter_format: None,
+            shells: vec![CompletionShell::Bash],
+        };
+
+        assert_eq!(
+            find_generated_completion_executable(&stage, &caskroom, &cask, &completion)?,
+            app_executable
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_ambiguous_generated_completion_bare_executable() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let caskroom = tmp.path().join("caskroom");
+        file::create_dir_all(stage.join("a"))?;
+        file::create_dir_all(stage.join("b"))?;
+        file::create_dir_all(&caskroom)?;
+        crate::file::write(stage.join("a/tool"), "a")?;
+        crate::file::write(stage.join("b/tool"), "b")?;
+        let cask = test_cask("tool", "1.0.0");
+        let completion = GeneratedCompletionArtifact {
+            executable: "tool".to_string(),
+            args: vec![],
+            base_name: None,
+            shell_parameter_format: None,
+            shells: vec![CompletionShell::Bash],
+        };
+
+        let err = find_generated_completion_executable(&stage, &caskroom, &cask, &completion)
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("completion executable 'tool' is ambiguous")
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn link_completion_restores_existing_target_when_copy_fails() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let caskroom = tmp.path().join("caskroom");
+        let target = tmp.path().join("etc/bash_completion.d/foo");
+        let staged = caskroom.join("etc/bash_completion.d/foo");
+        file::create_dir_all(staged.parent().unwrap())?;
+        file::create_dir_all(target.parent().unwrap())?;
+        crate::file::write(&staged, "new")?;
+        crate::file::write(&target, "old")?;
+        std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o000))?;
+
+        let err = link_completion(&caskroom, &target).unwrap_err();
+
+        assert!(err.to_string().contains("failed copy"));
+        assert_eq!(crate::file::read_to_string(&target)?, "old");
+        std::fs::set_permissions(staged, std::fs::Permissions::from_mode(0o644))?;
+        Ok(())
+    }
+
+    #[test]
+    fn remove_obsolete_completions_keeps_replaced_targets() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("foo", "2.0.0");
+        let old_caskroom = caskroom_version_dir(&cask.token, "1.0.0");
+        let relative = Path::new("etc/bash_completion.d/foo");
+        let target = tmp.path().join(relative);
+        file::create_dir_all(old_caskroom.join("etc/bash_completion.d"))?;
+        file::create_dir_all(target.parent().unwrap())?;
+        crate::file::write(old_caskroom.join(relative), "old")?;
+        crate::file::write(&target, "other cask")?;
+
+        remove_obsolete_completions(&cask, std::slice::from_ref(&target), &[])?;
+
+        assert_eq!(crate::file::read_to_string(&target)?, "other cask");
+
+        crate::file::write(&target, "old")?;
+        remove_obsolete_completions(&cask, std::slice::from_ref(&target), &[])?;
+
+        assert!(!target.exists());
         Ok(())
     }
 
