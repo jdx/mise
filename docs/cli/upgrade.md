@@ -61,6 +61,13 @@ This is useful for scripts to check if tools need to be upgraded.
 
 Upgrade all tools, including installed-but-inactive tools not present in the current config
 
+### `-g --global`
+
+Only upgrade tools defined in the global config file
+
+This will only upgrade tools that are defined in the global config
+(~/.config/mise/config.toml) and will skip tools defined in local config files.
+
 ### `--local`
 
 Only upgrade tools defined in local config files
@@ -115,4 +122,7 @@ $ mise upgrade --interactive
 
 # Only upgrade tools defined in local mise.toml, not global ones
 $ mise upgrade --local
+
+# Only upgrade tools defined in the global config
+$ mise upgrade --global
 ```

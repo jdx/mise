@@ -4227,6 +4227,9 @@ Examples:
     # Only upgrade tools defined in local mise.toml, not global ones
     $ mise upgrade --local
 
+    # Only upgrade tools defined in the global config
+    $ mise upgrade --global
+
 """#
     flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
     flag "-j --jobs" help=#"""
@@ -4261,6 +4264,14 @@ This is useful for scripts to check if tools need to be upgraded.
 """#
     }
     flag --inactive help="Upgrade all tools, including installed-but-inactive tools not present in the current config"
+    flag "-g --global" help="Only upgrade tools defined in the global config file" {
+        long_help #"""
+Only upgrade tools defined in the global config file
+
+This will only upgrade tools that are defined in the global config
+(~/.config/mise/config.toml) and will skip tools defined in local config files.
+"""#
+    }
     flag --local help="Only upgrade tools defined in local config files" {
         long_help #"""
 Only upgrade tools defined in local config files

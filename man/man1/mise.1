@@ -4297,6 +4297,12 @@ This is useful for scripts to check if tools need to be upgraded.
 \fB\-\-inactive\fR
 Upgrade all tools, including installed\-but\-inactive tools not present in the current config
 .TP
+\fB\-g, \-\-global\fR
+Only upgrade tools defined in the global config file
+
+This will only upgrade tools that are defined in the global config
+(~/.config/mise/config.toml) and will skip tools defined in local config files.
+.TP
 \fB\-\-local\fR
 Only upgrade tools defined in local config files
 

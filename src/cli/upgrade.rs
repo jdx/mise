@@ -76,8 +76,19 @@ pub struct Upgrade {
     dry_run_code: bool,
 
     /// Upgrade all tools, including installed-but-inactive tools not present in the current config
-    #[clap(long, verbatim_doc_comment, conflicts_with = "local")]
+    #[clap(
+        long,
+        verbatim_doc_comment,
+        conflicts_with_all = &["global", "local"]
+    )]
     inactive: bool,
+
+    /// Only upgrade tools defined in the global config file
+    ///
+    /// This will only upgrade tools that are defined in the global config
+    /// (~/.config/mise/config.toml) and will skip tools defined in local config files.
+    #[clap(long, short, verbatim_doc_comment, conflicts_with = "local")]
+    global: bool,
 
     /// Only upgrade tools defined in local config files
     ///
@@ -112,7 +123,9 @@ impl Upgrade {
     }
 
     fn scope(&self) -> ConfigScope {
-        if self.local {
+        if self.global {
+            ConfigScope::GlobalOnly
+        } else if self.local {
             ConfigScope::LocalOnly
         } else {
             ConfigScope::All
@@ -854,6 +867,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     # Only upgrade tools defined in local mise.toml, not global ones
     $ <bold>mise upgrade --local</bold>
+
+    # Only upgrade tools defined in the global config
+    $ <bold>mise upgrade --global</bold>
 "#
 );
 
