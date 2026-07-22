@@ -27,7 +27,7 @@ jobs:
   build-tarball-linux:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
-    runs-on: namespace-profile-endev-linux-amd64-large
+    runs-on: namespace-profile-endev-linux-amd64-xlarge
     # PGO rows build the serious profile twice (instrument + optimize),
     # so they need roughly double the old 45-minute budget.
     timeout-minutes: 80

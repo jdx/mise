@@ -8,6 +8,7 @@ self-hosted-runner:
     - namespace-profile-endev-macos-arm64-large;overrides.cache-tag=mise-release-rust-macos
     - namespace-profile-endev-linux-amd64
     - namespace-profile-endev-linux-amd64-large
+    - namespace-profile-endev-linux-amd64-xlarge
     - namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     - namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux-nightly
     - namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-release-plz-rust-linux
