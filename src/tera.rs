@@ -1234,9 +1234,12 @@ pub fn get_miserc_tera() -> TeraEngine {
     TeraEngine::V2(Box::new(TERA.clone()))
 }
 
-/// Returns a renderer for comparing deferred values without executing template
-/// functions that can run commands or read arbitrary files. Unlike
-/// [`get_miserc_tera`], this respects the configured Tera version.
+/// Returns an empty renderer for comparing deferred values without invoking
+/// custom template functions or filters. This intentionally excludes inert
+/// helpers such as `arch()` and `os()` as well as effectful helpers such as
+/// `exec()` and `read_file()`; unsupported expressions are treated as distinct
+/// sources. Unlike [`get_miserc_tera`], this respects the configured Tera
+/// version.
 pub fn get_tera_for_source_comparison() -> TeraEngine {
     if use_tera_v1() {
         TeraEngine::V1(Box::default())

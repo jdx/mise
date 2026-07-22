@@ -3,6 +3,7 @@
 mkdir -p "$HOME/global-config"
 
 marker="$MISE_TMP_DIR/global-config-render-count"
+: >"$marker"
 cat >"$HOME/global-config/config.toml" <<EOF
 [tasks.render-once]
 description = "{{ exec(command='echo rendered >> $marker') }}"
@@ -18,6 +19,7 @@ MISE_GLOBAL_CONFIG_FILE="$HOME/global-config/config.toml" \
 assert "wc -l < '$marker' | tr -d ' '" "1"
 
 linked_marker="$MISE_TMP_DIR/linked-global-config-render-count"
+: >"$linked_marker"
 cat >"$HOME/global-config/linked-config.toml" <<EOF
 [tasks.render-linked-once]
 description = "{{ exec(command='echo rendered >> $linked_marker') }}"
