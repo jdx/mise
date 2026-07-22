@@ -66,11 +66,13 @@ Describe 'shim_mode' {
         $fakeShim = Join-Path -Path $shimPath -ChildPath "mise-11183-not-real.exe"
         $env:__MISE_SHIM_PATH = $fakeShim
         try {
-            $out = mise x -- mise-11183-not-real 2>&1
+            $out = mise x -- mise-11183-not-real.exe 2>&1
             $LASTEXITCODE | Should -Not -Be 0
             $joined = ($out | Out-String)
             $joined | Should -Not -Match "cannot find binary path"
             $joined | Should -Match "not a valid shim|No version is set for shim"
+            $joined | Should -Match "mise-11183-not-real"
+            $joined | Should -Not -Match "mise-11183-not-real\.exe"
         }
         finally {
             Remove-Item Env:\__MISE_SHIM_PATH -ErrorAction SilentlyContinue

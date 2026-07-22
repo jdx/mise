@@ -324,6 +324,7 @@ where
             std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
         });
         let program_name = program.to_string_lossy().into_owned();
+        let is_shim_dispatch = env::MISE_SHIM_PATH.read().unwrap().is_some();
         match which::which_in_all(&program, lookup_path, cwd) {
             Ok(mut candidates) => {
                 match candidates.find(|candidate| !crate::file::is_active_mise_shim(candidate)) {
@@ -331,15 +332,16 @@ where
                     // When invoked as a shim (`__MISE_SHIM_PATH` set), give the
                     // actionable `which_shim`-style error rather than the opaque
                     // `cannot find binary path` (discussion #11183).
-                    None if env::MISE_SHIM_PATH.read().unwrap().is_some() => {
+                    None if is_shim_dispatch => {
                         return Err(crate::shims::err_shim_not_found(&program_name).await);
                     }
                     None => program, // Fall back to original if resolution fails
                 }
             }
-            Err(_) if env::MISE_SHIM_PATH.read().unwrap().is_some() => {
+            Err(which::Error::CannotFindBinaryPath) if is_shim_dispatch => {
                 return Err(crate::shims::err_shim_not_found(&program_name).await);
             }
+            Err(err) if is_shim_dispatch => return Err(err.into()),
             Err(_) => program, // Fall back to original if resolution fails
         }
     };
@@ -428,17 +430,22 @@ where
     // Capture the requested program name before `which_in_all` consumes it, so
     // a resolution failure while dispatching a shim can name the tool.
     let program_name = program.to_string_lossy().into_owned();
-    let resolved = which::which_in_all(program, lookup_path, cwd)
-        .ok()
-        .and_then(|mut candidates| {
+    let is_shim_dispatch = env::MISE_SHIM_PATH.read().unwrap().is_some();
+    let resolved = match which::which_in_all(program, lookup_path, cwd) {
+        Ok(mut candidates) => {
             candidates.find(|candidate| !crate::file::is_active_mise_shim(candidate))
-        });
+        }
+        Err(which::Error::CannotFindBinaryPath) if is_shim_dispatch => {
+            return Err(crate::shims::err_shim_not_found(&program_name).await);
+        }
+        Err(err) => return Err(err.into()),
+    };
     let program = match resolved {
         Some(program) => program,
         // When invoked as a shim (`__MISE_SHIM_PATH` set), give the actionable
         // `which_shim`-style error instead of the opaque `cannot find binary
         // path` (discussion #11183).
-        None if env::MISE_SHIM_PATH.read().unwrap().is_some() => {
+        None if is_shim_dispatch => {
             return Err(crate::shims::err_shim_not_found(&program_name).await);
         }
         None => return Err(which::Error::CannotFindBinaryPath.into()),

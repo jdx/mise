@@ -176,6 +176,7 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str, args: &[String]) -
 /// on Windows, invoked with `__MISE_SHIM_PATH` set). Without this, that path
 /// surfaces the opaque `cannot find binary path`; symlink shims already get
 /// this message directly from `which_shim`. See discussion #11183.
+#[cfg(not(test))]
 pub async fn err_shim_not_found(bin_name: &str) -> color_eyre::Report {
     // Windows exe shims are invoked as `<tool>.exe`; name `<tool>` in the message.
     let bin_stem = bin_name
