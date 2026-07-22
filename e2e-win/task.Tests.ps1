@@ -226,16 +226,16 @@ run = 'echo "using shell $0"'
                 }
             }
             @'
+[task_config]
+includes = ["tasks"]
+
 [tasks.probe_argv]
 shell = "pwsh -c"
 run = 'Write-Output ([Environment]::GetCommandLineArgs() -join " ")'
-
-[tasks.probe_file_argv]
-file = "probe_file_argv.ps1"
 '@ | Out-File -FilePath "$TestDrive\mise.noprofile.toml" -Encoding utf8NoBOM
             @'
 Write-Output ([Environment]::GetCommandLineArgs() -join " ")
-'@ | Out-File -FilePath "$TestDrive\probe_file_argv.ps1" -Encoding utf8NoBOM
+'@ | Out-File -FilePath "$TestDrive\tasks\probe_file_argv.ps1" -Encoding utf8NoBOM
             $env:MISE_CONFIG_FILE = "$TestDrive\mise.noprofile.toml"
         }
 
@@ -250,7 +250,7 @@ Write-Output ([Environment]::GetCommandLineArgs() -join " ")
             }
             $script:noProfileTestEnv = $null
             Remove-Item -Path "$TestDrive\mise.noprofile.toml" -ErrorAction SilentlyContinue
-            Remove-Item -Path "$TestDrive\probe_file_argv.ps1" -ErrorAction SilentlyContinue
+            Remove-Item -Path "$TestDrive\tasks\probe_file_argv.ps1" -ErrorAction SilentlyContinue
         }
 
         It 'injects -NoProfile into a pwsh task shell by default' {
