@@ -7,46 +7,44 @@ The code for this is inside of the mise repository at [`./src/backend/npm.rs`](h
 
 ## Dependencies
 
-Version resolution (`mise ls-remote`, resolving `latest`) queries the npm
-registry directly over HTTP, so no node/npm installation is needed for it. The
-registry, scoped registries (`@scope:registry`), and auth tokens configured in
-`~/.npmrc` (or `NPM_CONFIG_USERCONFIG`) and `NPM_CONFIG_*` environment
-variables are honored. If your setup relies on npm-only configuration such as
-`cafile`, client certificates, or an auth token helper, set
-[`npm.use_npm_view`](/configuration/settings.html#npm_use_npm_view) to shell
-out to `npm view` for version metadata instead (this requires npm to be
-installed).
+By default mise handles `npm:` tools without needing node or a package manager
+CLI installed. Version resolution (`mise ls-remote`, resolving `latest`) queries
+the npm registry directly over HTTP, and packages are installed with mise's
+embedded [aube](https://github.com/jdx/aube) package manager. The registry,
+scoped registries (`@scope:registry`), and auth tokens configured in `~/.npmrc`
+(or `NPM_CONFIG_USERCONFIG`) and `NPM_CONFIG_*` environment variables are honored
+by both. `node` is only needed to _run_ the installed tools (and any package
+lifecycle scripts), not to install them.
 
-Installing packages relies on the configured package manager.
-With the default `npm.package_manager = "auto"` setting, mise uses
-[`aube`](https://aube.jdx.dev/) for installing npm packages when it is installed,
-similar to how the pipx backend uses `uv` when available.
-If you use `aube`, `pnpm`, or `bun` as the package manager, that package manager
-must also be installed.
+To shell out to the npm CLI instead — `npm view` for metadata and
+`npm install -g` for installs — set
+[`npm.shell_out`](/configuration/settings.html#npm-shell-out) (requires npm to
+be installed). Use it if you rely on npm-only configuration the built-in
+implementation does not support, such as `cafile`, client certificates, or an
+auth token helper.
+
+You can also pick a specific installer with
+[`npm.package_manager`](/configuration/settings.html#npm-package-manager). The
+default `auto` uses the embedded aube; setting it to `bun`, `pnpm`, or `npm`
+shells out to that tool, which must then be installed.
 
 The npm backend forwards [`minimum_release_age`](/configuration/settings.html#minimum_release_age)
-to transitive dependency resolution during install. This relies on the
-configured package manager supporting its native release-age flag:
+to transitive dependency resolution during install. The embedded aube installer
+honors it natively. When shelling out, it relies on the package manager
+supporting its release-age flag:
 
-- `aube` using its `minimumReleaseAge` setting
 - `pnpm >= 10.16.0` using `--config.minimumReleaseAge=<minutes>`
 - `bun >= 1.3.0` using `--minimum-release-age <seconds>`
 - `npm >= 11.10.0` using `--min-release-age=<days>`; `npm 6.9.0–11.9.x` using `--before <timestamp>` (sub-day `minimum_release_age` windows also use `--before` since `--min-release-age` is day-granular)
 
-If you want transitive protection, install and use a package manager version that meets the
-corresponding requirement above. Older versions may fail while processing the forwarded argument.
+If you want transitive protection when shelling out, install and use a package
+manager version that meets the corresponding requirement above. Older versions
+may fail while processing the forwarded argument.
 
-Here is how to install `npm` with mise:
-
-```sh
-mise use -g node
-```
-
-To install `aube`, `pnpm`, or `bun`:
+`node` is installed automatically as a dependency. To use a specific package
+manager CLI instead of the embedded installer:
 
 ```sh
-mise use -g aube
-# or
 mise use -g pnpm
 # or
 mise use -g bun
@@ -86,32 +84,31 @@ package-provided commands such as `preinstall`, `install`, `postinstall`, and `p
 allowing them means allowing code from the selected package and its dependencies to run during
 installation.
 
-With the default `npm.package_manager = "auto"` setting, mise installs through `aube` when `aube` is
-installed. If `aube` is not installed, mise installs through `npm`. Setting
-`npm.package_manager = "aube"`, `"pnpm"`, `"bun"`, or `"npm"` chooses that package manager
-explicitly. The `allow_builds`, `trust_policy_excludes`, `aube_args`, `pnpm_args`, `bun_args`, and
-`npm_args` options only affect the package manager that is actually used; an approval option for one
-package manager does not change the behavior of another.
+With the default `npm.package_manager = "auto"` setting, mise installs through its embedded `aube`
+package manager. Setting `npm.package_manager = "aube"`, `"pnpm"`, `"bun"`, or `"npm"` chooses a
+package manager explicitly (`aube` also uses the embedded one; the others shell out).
+[`npm.shell_out`](/configuration/settings.html#npm-shell-out) forces the npm CLI. The `allow_builds`,
+`trust_policy_excludes`, `pnpm_args`, `bun_args`, and `npm_args` options only affect the package
+manager that is actually used; an approval option for one does not change the behavior of another.
 
-For tools that need reviewed dependency build scripts, use `allow_builds` with `aube`, `pnpm`, or
-npm 11.16.0+.
+For tools that need reviewed dependency build scripts, use `allow_builds` with `aube` (default),
+`pnpm`, or npm 11.16.0+.
 
-### `aube`
+### `aube` (default)
 
-[`aube`](https://aube.jdx.dev/package-manager/lifecycle-scripts) follows the pnpm v11 build approval
-model: dependency lifecycle scripts are denied unless explicitly allowlisted. Use `allow_builds` for
-reviewed dependency builds:
+The embedded [`aube`](https://aube.jdx.dev/package-manager/lifecycle-scripts) installer follows the
+pnpm v11 build approval model: dependency lifecycle scripts are denied unless explicitly allowlisted.
+Use `allow_builds` for reviewed dependency builds:
 
 ```toml
 [tools]
 "npm:some-tool" = { version = "latest", allow_builds = ["esbuild"] }
 ```
 
-`allow_builds` is passed to `aube add --global` as one `--allow-build=<pkg>` flag per package.
-Use `trust_policy_excludes` for reviewed aube trust-policy exceptions, or `aube_args` for other
-raw aube flags.
-Set `allow_builds = true` to pass `--dangerously-allow-all-builds` when you explicitly accept that
-every dependency build script may run.
+`allow_builds` is written to the install's `aube.allowBuilds` manifest field.
+Use `trust_policy_excludes` for reviewed aube trust-policy exceptions.
+Set `allow_builds = true` to allow every dependency build script when you explicitly accept the risk.
+(The `aube_args` option is ignored now that installs run in-process rather than via the `aube` CLI.)
 
 ### `pnpm`
 

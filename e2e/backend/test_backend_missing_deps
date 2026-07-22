@@ -61,7 +61,7 @@ test_npm() {
   MISE_NPM_PACKAGE_MANAGER=bun assert_contains "mise ls-remote npm:left-pad" "1.3.0"
 
   # Legacy `npm view` mode still needs npm and warns when it is missing
-  export MISE_NPM_USE_NPM_VIEW=1
+  export MISE_NPM_SHELL_OUT=1
   test_backend_warning "npm" "mise ls-remote npm:test-package" "npm may be required but was not found"
 
   # Check for helpful install instructions
@@ -69,10 +69,12 @@ test_npm() {
   output=$(MISE_LOG_LEVEL=warn mise ls-remote npm:test-package 2>&1 || true)
   test_error_message "npm suggests installing node" "$output" "mise use node@latest"
   test_error_message "npm mentions npm is needed for queries" "$output" "npm is required for querying package information"
-  unset MISE_NPM_USE_NPM_VIEW
-
-  # Test install - should show warning but continue
+  # Install through the npm CLI (shell_out) still needs npm and warns.
   test_backend_warning "npm" "mise install npm:test-package@latest" "npm may be required but was not found"
+  unset MISE_NPM_SHELL_OUT
+
+  # The default install path uses the embedded aube package manager, which
+  # does not require an npm binary (only node, to run installed tools).
 }
 
 # Test cargo backend

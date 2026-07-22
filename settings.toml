@@ -1781,21 +1781,28 @@ env = "MISE_NPM_PACKAGE_MANAGER"
 rust_type = "NpmPackageManager"
 type = "String"
 
-[npm.use_npm_view]
+[npm.shell_out]
 default = false
-description = "Use the npm CLI (`npm view`) for version metadata queries instead of mise's built-in registry client."
+description = "Shell out to the npm CLI for `npm:` version metadata and installs instead of mise's built-in aube-based implementation."
 docs = """
-By default, mise queries npm version metadata (`mise ls-remote`, `latest` resolution)
-directly from the npm registry over HTTP, honoring the registry, scoped registries,
-and auth tokens configured in `~/.npmrc` and `NPM_CONFIG_*` environment variables.
-This means node/npm do not need to be installed to resolve `npm:` tool versions.
+By default, mise handles `npm:` tools without needing node/npm installed:
+version metadata (`mise ls-remote`, `latest` resolution) is queried directly
+from the npm registry over HTTP, and packages are installed with mise's
+embedded [aube](https://github.com/jdx/aube) package manager. Both honor the
+registry, scoped registries, and auth tokens configured in `~/.npmrc` and
+`NPM_CONFIG_*` environment variables.
 
-Enable this setting to shell out to `npm view` instead, e.g. if your setup relies on
-npm-specific configuration that mise's registry client does not support, such as
-`cafile`, client certificates, or an auth token helper. When enabled, npm must be
-installed for version queries to work.
+Enable this setting to shell out to the npm CLI instead — `npm view` for
+metadata and `npm install -g` for installs. Use it if your setup relies on
+npm-specific configuration the built-in implementation does not support (such
+as `cafile`, client certificates, or an auth token helper). When enabled, npm
+must be installed.
+
+This applies to the default/`auto` package manager. Explicitly selecting a
+package manager with [`npm.package_manager`](#npm-package-manager) (`bun`,
+`pnpm`, or `npm`) always shells out to that tool regardless of this setting.
 """
-env = "MISE_NPM_USE_NPM_VIEW"
+env = "MISE_NPM_SHELL_OUT"
 type = "Bool"
 
 [oci.default_from]

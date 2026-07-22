@@ -34,7 +34,6 @@ use tokio::sync::Mutex as TokioMutex;
 const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
 const NPM_ALLOW_SCRIPTS_VERSION: &str = "11.16.0";
 const NPM_MIN_RELEASE_AGE_VERSION: &str = "11.10.0";
-const AUBE_PROGRAM: &str = if cfg!(windows) { "aube.exe" } else { "aube" };
 const BUN_MIN_RELEASE_AGE_VERSION: &str = "1.3.0";
 const NPM_IGNORE_SCRIPTS_ARG: &str = "--ignore-scripts=true";
 const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
@@ -44,8 +43,6 @@ pub struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
     latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
-    // one packument fetch serves both version listing and dist-tag lookup
-    packument: tokio::sync::OnceCell<Arc<npm_registry::Packument>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -250,49 +247,50 @@ impl Backend for NPMBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        // Version queries go directly to the npm registry over HTTP, so npm is
-        // only needed when it is (or may be) the installer, or when the legacy
-        // `npm.use_npm_view` setting routes queries through the npm CLI. We
-        // avoid listing all package managers to prevent incorrect dependency
-        // edges.
+        // Version queries hit the npm registry over HTTP and installs use the
+        // embedded aube package manager, so by default neither needs a
+        // package-manager binary. `node` is still listed because installed JS
+        // tools (and any lifecycle scripts) need a runtime. Explicit non-aube
+        // package managers — or `npm.shell_out` — need their CLI on PATH.
         let settings = Settings::get();
-        let package_manager = settings.npm.package_manager;
-        let use_npm_view = settings.npm.use_npm_view;
+        let shell_out = settings.npm.shell_out;
         let tool_name = self.tool_name();
 
-        // Explicit `npm:npm` still bootstraps through node's bundled npm even
-        // when the registry shorthand prefers aqua. Keep node here so users of
-        // the npm backend, or the registry fallback, wait for that bootstrap
-        // npm before installation starts.
-        if tool_name == "npm" {
-            return match package_manager {
-                NpmPackageManager::Auto => Ok(vec!["node"]),
-                NpmPackageManager::Aube => Ok(vec!["node", "aube"]),
-                NpmPackageManager::Bun => Ok(vec!["node", "bun"]),
-                NpmPackageManager::Pnpm => Ok(vec!["node", "pnpm"]),
-                NpmPackageManager::Npm => Ok(vec!["node"]),
-            };
-        }
+        // Resolve the effective installer the same way `package_manager_for_install`
+        // does: `auto` is the embedded aube, or npm under `shell_out`; an explicit
+        // choice is always honored.
+        let installer = match settings.npm.package_manager {
+            NpmPackageManager::Auto if shell_out => NpmPackageManager::Npm,
+            NpmPackageManager::Auto => NpmPackageManager::Aube,
+            package_manager => package_manager,
+        };
 
-        // Avoid circular dependency when installing the configured package manager
-        // e.g., npm:bun with bun configured, or npm:pnpm with pnpm configured.
-        // npm stays here as the bootstrap installer for that package manager.
-        if tool_name == package_manager.to_string() {
+        // Avoid a circular dependency when installing the configured external
+        // package manager itself (e.g. npm:bun with package_manager=bun):
+        // bootstrap that install through npm. Embedded aube has no such cycle —
+        // it installs any package, including bun/pnpm/npm.
+        if tool_name == installer.to_string()
+            && !matches!(installer, NpmPackageManager::Auto | NpmPackageManager::Aube)
+        {
             return Ok(vec!["node", "npm"]);
         }
 
-        // For regular packages: node + the configured package manager. npm is
-        // included when it may end up doing the install (Auto falls back to it)
-        // or when `npm.use_npm_view` needs it for version queries.
         let mut deps = vec!["node"];
-        match package_manager {
-            NpmPackageManager::Auto | NpmPackageManager::Npm => deps.push("npm"),
-            NpmPackageManager::Aube => deps.push("aube"),
+        // `shell_out` routes metadata through `npm view`, which needs npm even
+        // when an explicit non-npm installer does the install.
+        if shell_out {
+            deps.push("npm");
+        }
+        match installer {
+            // Embedded aube — no external package-manager binary required.
+            NpmPackageManager::Auto | NpmPackageManager::Aube => {}
+            NpmPackageManager::Npm => {
+                if !deps.contains(&"npm") {
+                    deps.push("npm");
+                }
+            }
             NpmPackageManager::Bun => deps.push("bun"),
             NpmPackageManager::Pnpm => deps.push("pnpm"),
-        }
-        if use_npm_view && !deps.contains(&"npm") {
-            deps.push("npm");
         }
         Ok(deps)
     }
@@ -317,33 +315,21 @@ impl Backend for NPMBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        if Settings::get().npm.use_npm_view {
+        if Settings::get().npm.shell_out {
             return self.list_remote_versions_npm_view(config).await;
         }
         // Query the registry directly over HTTP so node/npm are not required
         // for version metadata. User .npmrc and NPM_CONFIG_* registry/auth
-        // settings still apply via NPM_REGISTRY_CONFIG.
+        // settings still apply via aube-registry's config loader.
         timeout::run_with_timeout_async(
-            async || {
-                let packument = self.fetch_packument().await?;
-                Ok(packument
-                    .versions_with_time()
-                    .into_iter()
-                    .map(|(version, created_at)| VersionInfo {
-                        version: version.to_string(),
-                        created_at: created_at.map(|s| s.to_string()),
-                        prerelease: is_semver_prerelease(version),
-                        ..Default::default()
-                    })
-                    .collect())
-            },
+            async || npm_registry::list_versions(&self.tool_name()).await,
             Settings::get().fetch_remote_versions_timeout(),
         )
         .await
     }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
-        if Settings::get().npm.use_npm_view {
+        if Settings::get().npm.shell_out {
             self.ensure_npm_for_version_check(config).await;
         }
 
@@ -353,10 +339,10 @@ impl Backend for NPMBackend {
             async || {
                 cache
                     .get_or_try_init_async(async || {
-                        if Settings::get().npm.use_npm_view {
+                        if Settings::get().npm.shell_out {
                             return this.latest_dist_tag_npm_view(config).await;
                         }
-                        Ok(this.fetch_packument().await?.latest_dist_tag())
+                        npm_registry::latest_dist_tag(&this.tool_name()).await
                     })
                     .await
             },
@@ -398,31 +384,7 @@ impl Backend for NPMBackend {
         match package_manager {
             NpmPackageManager::Auto => unreachable!("auto package manager should be resolved"),
             NpmPackageManager::Aube => {
-                let aube_program = self
-                    .dependency_path_for_install(&ctx.config, Some(&ctx.ts), AUBE_PROGRAM)
-                    .await
-                    .unwrap_or_else(|| AUBE_PROGRAM.into());
-                self.write_aube_npmrc(&tv.install_path(), ctx.before_date, &options)?;
-                let mut cmd = CmdLineRunner::new(aube_program)
-                    .arg("add")
-                    .arg("--global")
-                    .arg(format!("{}@{}", self.tool_name(), tv.version))
-                    .with_pr(ctx.pr.as_ref())
-                    .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                    .env_values(tv.install_env())
-                    .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
-                    .prepend_path(
-                        self.dependency_toolset(&ctx.config)
-                            .await?
-                            .list_paths(&ctx.config)
-                            .await,
-                    )?
-                    .current_dir(tv.install_path());
-                if let Some(args) = options.aube_args() {
-                    cmd = cmd.args(shell_words::split(args)?);
-                }
-                cmd = cmd.args(options.allow_build_args()?);
-                cmd.execute()?;
+                self.install_via_aube_embed(ctx, &tv, &options).await?;
             }
             NpmPackageManager::Bun => {
                 let mut cmd = CmdLineRunner::new("bun")
@@ -539,10 +501,22 @@ impl Backend for NPMBackend {
         _config: &Arc<Config>,
         tv: &crate::toolset::ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
-        Ok(Self::windows_bin_paths_for_install_path(&tv.install_path())
+        Ok(Self::bin_paths_for_install_path(&tv.install_path())
             .into_iter()
             .map(|path| runtime_path_for_install_path(tv, path))
             .collect())
+    }
+
+    #[cfg(unix)]
+    async fn list_bin_paths(
+        &self,
+        _config: &Arc<Config>,
+        tv: &crate::toolset::ToolVersion,
+    ) -> eyre::Result<Vec<std::path::PathBuf>> {
+        if matches!(tv.request, ToolRequest::System { .. }) {
+            return Ok(vec![]);
+        }
+        Ok(Self::bin_paths_for_install_path(&tv.runtime_path()))
     }
 }
 
@@ -555,22 +529,10 @@ impl NPMBackend {
                     .build(),
             ),
             ba: Arc::new(ba),
-            packument: tokio::sync::OnceCell::new(),
         }
     }
 
-    async fn fetch_packument(&self) -> eyre::Result<&Arc<npm_registry::Packument>> {
-        self.packument
-            .get_or_try_init(|| async {
-                let packument = npm_registry::NPM_REGISTRY_CONFIG
-                    .fetch_packument(&self.tool_name())
-                    .await?;
-                Ok(Arc::new(packument))
-            })
-            .await
-    }
-
-    /// Legacy `npm view` version listing, kept behind `npm.use_npm_view` for
+    /// Legacy `npm view` version listing, kept behind `npm.shell_out` for
     /// setups relying on npm-only config (cafile, client certs, token helpers).
     /// --prefix points at a neutral cache dir so project package.json (e.g.
     /// devEngines) cannot fail the query. Install already uses --prefix the
@@ -826,26 +788,11 @@ impl NPMBackend {
         &self,
         config: &Arc<Config>,
         package_manager: NpmPackageManager,
-        ts: Option<&Toolset>,
+        _ts: Option<&Toolset>,
     ) {
         match package_manager {
-            NpmPackageManager::Aube => {
-                if let Some(ts) = ts
-                    && ts.which_bin(config, AUBE_PROGRAM).await.is_some()
-                {
-                    return;
-                }
-                self.warn_if_dependency_missing(
-                    config,
-                    "aube",
-                    &["aube"],
-                    "To use npm packages with aube, you need to install aube first:\n\
-                          mise use aube@latest\n\n\
-                        Or switch back to npm by setting:\n\
-                          mise settings npm.package_manager=npm",
-                )
-                .await
-            }
+            // Embedded aube is compiled into mise — nothing to check for.
+            NpmPackageManager::Aube => {}
             NpmPackageManager::Bun => {
                 self.warn_if_dependency_missing(
                     config,
@@ -890,39 +837,109 @@ impl NPMBackend {
 
     async fn package_manager_for_install(
         &self,
-        config: &Arc<Config>,
-        ts: Option<&Toolset>,
+        _config: &Arc<Config>,
+        _ts: Option<&Toolset>,
     ) -> NpmPackageManager {
         let settings = Settings::get();
         match settings.npm.package_manager {
-            NpmPackageManager::Auto if self.aube_is_installed(config, ts).await => {
-                NpmPackageManager::Aube
-            }
-            NpmPackageManager::Auto => NpmPackageManager::Npm,
+            // aube is embedded, so `auto` normally resolves to it — no need to
+            // probe for an `aube` binary on PATH. `shell_out` opts the default
+            // path out of embedding, into the npm CLI. An explicit
+            // `package_manager` (including `aube`) is always honored, matching
+            // the `npm.shell_out` docs.
+            NpmPackageManager::Auto if settings.npm.shell_out => NpmPackageManager::Npm,
+            NpmPackageManager::Auto => NpmPackageManager::Aube,
             package_manager => package_manager,
         }
     }
 
-    async fn aube_is_installed(&self, config: &Arc<Config>, ts: Option<&Toolset>) -> bool {
-        self.dependency_path_for_install(config, ts, AUBE_PROGRAM)
+    /// Install an npm package by embedding aube's package manager in-process
+    /// (`aube::embed::add`) instead of shelling out to the `aube` binary.
+    ///
+    /// The install directory doubles as a throwaway project: a seed
+    /// `package.json` + `.npmrc` carry the install-scoped config (release age,
+    /// build-script allowlist) that aube reads during resolution, exactly as
+    /// the `aube add --global` path did via its written `.npmrc`. aube installs
+    /// into `<install>/node_modules`; the resulting `node_modules/.bin` shims
+    /// are linked into `<install>/bin` so mise's default `list_bin_paths`
+    /// (which points at `<install>/bin`) keeps working unchanged.
+    async fn install_via_aube_embed(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        options: &NpmOptions<'_>,
+    ) -> Result<()> {
+        let install_path = tv.install_path();
+        crate::file::create_dir_all(&install_path)?;
+
+        let allow_builds = options.allow_builds()?;
+        self.write_aube_embed_project(&install_path, ctx.before_date, options, &allow_builds)?;
+
+        if let Some(args) = options.aube_args() {
+            warn!(
+                "aube_args ({args:?}) are ignored for npm:{}: mise installs through the embedded aube package manager and no longer shells out to the aube CLI",
+                self.tool_name()
+            );
+        }
+
+        let mut opts = aube::embed::AddToProjectOptions {
+            // Global-style installs pin the exact resolved version, matching
+            // what `aube add --global` wrote to its synthetic manifest.
+            save_exact: true,
+            // Per-package allowlists are written to the seed package.json's
+            // `aube.allowBuilds`; only the "allow everything" case needs the
+            // invocation flag. `None` leaves scripts skipped (aube's default).
+            dangerously_allow_all_builds: matches!(allow_builds, AllowBuilds::All),
+            control: aube::embed::InstallControl::default(),
+            // Run dependency lifecycle scripts on the node mise resolved as a
+            // dependency, so `allow_builds` installs work even when node isn't
+            // on the ambient PATH (the in-process installer doesn't inherit the
+            // per-command PATH the old `aube add --global` subprocess got).
+            node_bin_dir: self.aube_embed_node_bin_dir(ctx).await,
+            ..Default::default()
+        };
+        opts.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
+
+        let package = format!("{}@{}", self.tool_name(), tv.version);
+        aube::embed::add(&install_path, std::slice::from_ref(&package), opts)
             .await
-            .is_some()
+            .map_err(|e| eyre::eyre!("aube install failed: {e}"))?;
+        Ok(())
     }
 
-    fn write_aube_npmrc(
+    /// Directory containing the `node` mise resolved as a dependency, handed to
+    /// the embedded aube installer so lifecycle scripts spawn on it. `None` (no
+    /// node dependency resolved) lets aube fall back to an ambient `node`.
+    async fn aube_embed_node_bin_dir(&self, ctx: &InstallContext) -> Option<PathBuf> {
+        let ts = self.dependency_toolset(&ctx.config).await.ok()?;
+        let node = ts.which_bin(&ctx.config, "node").await?;
+        node.parent().map(Path::to_path_buf)
+    }
+
+    /// Write the throwaway project's `package.json` + `.npmrc` for an embedded
+    /// aube install. `allowBuilds` package lists go in `package.json` (aube's
+    /// manifest namespace); release age and trust-policy excludes go in
+    /// `.npmrc`, which aube's resolver reads from the project dir.
+    fn write_aube_embed_project(
         &self,
         install_path: &Path,
         before_date: Option<Timestamp>,
         options: &NpmOptions,
+        allow_builds: &AllowBuilds,
     ) -> Result<()> {
-        let bin_dir = install_path.join("bin");
-        crate::file::create_dir_all(install_path)?;
-        crate::file::create_dir_all(&bin_dir)?;
-        let mut npmrc = format!(
-            "globalDir={}\nglobalBinDir={}\n",
-            Self::npmrc_path_value(install_path),
-            Self::npmrc_path_value(&bin_dir)
-        );
+        let mut manifest = serde_json::json!({
+            "name": "mise-npm-install",
+            "private": true,
+        });
+        if let AllowBuilds::Packages(packages) = allow_builds {
+            manifest["aube"] = serde_json::json!({ "allowBuilds": packages });
+        }
+        crate::file::write(
+            install_path.join("package.json"),
+            format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+        )?;
+
+        let mut npmrc = String::new();
         if let Some(before_date) = before_date {
             let minutes = Self::build_aube_minimum_release_age(elapsed_seconds_ceil(
                 before_date,
@@ -936,10 +953,6 @@ impl NPMBackend {
         }
         crate::file::write(install_path.join(".npmrc"), npmrc)?;
         Ok(())
-    }
-
-    fn npmrc_path_value(path: &Path) -> String {
-        path.to_string_lossy().replace('\\', "/")
     }
 
     fn build_aube_minimum_release_age(seconds: u64) -> u64 {
@@ -1035,14 +1048,28 @@ impl NPMBackend {
             .collect()
     }
 
-    #[cfg(any(windows, test))]
-    fn windows_bin_paths_for_install_path(install_path: &Path) -> Vec<std::path::PathBuf> {
+    /// Directories to expose on PATH for an installed npm tool.
+    ///
+    /// Embedded-aube installs place bin shims in `node_modules/.bin` (the
+    /// shims resolve their target relative to that location, so they can't be
+    /// moved). Other package managers — bun/pnpm/npm global installs, and
+    /// legacy `aube add --global` installs — use `bin/`. Whichever exists is
+    /// returned; the bare install path is the last-resort fallback (some npm
+    /// global layouts drop executables at the root on Windows).
+    fn bin_paths_for_install_path(install_path: &Path) -> Vec<std::path::PathBuf> {
+        let node_bin = install_path.join("node_modules").join(".bin");
         let bin_dir = install_path.join("bin");
-        if bin_dir.exists() {
-            vec![bin_dir]
-        } else {
-            vec![install_path.to_path_buf()]
+        let mut paths = Vec::new();
+        if node_bin.exists() {
+            paths.push(node_bin);
         }
+        if bin_dir.exists() {
+            paths.push(bin_dir);
+        }
+        if paths.is_empty() {
+            paths.push(install_path.to_path_buf());
+        }
+        paths
     }
 }
 
@@ -1056,7 +1083,7 @@ impl NPMBackend {
 /// Stricter than the generic `VERSION_REGEX` channel-tag list — for npm it
 /// catches any pre-release tag the maintainer chooses, not just the well-known
 /// names mise happens to recognize.
-fn is_semver_prerelease(version: &str) -> bool {
+pub(crate) fn is_semver_prerelease(version: &str) -> bool {
     let core_and_pre = version.split_once('+').map_or(version, |(v, _)| v);
     core_and_pre.contains('-')
 }
@@ -1195,13 +1222,11 @@ mod tests {
 
     #[test]
     fn test_get_dependencies_default_package_manager() {
-        // With default settings (npm), packages should depend on node + npm
+        // Default (auto) installs via the embedded aube package manager, so a
+        // package only needs node at runtime — no npm/aube/bun/pnpm binary.
         let backend = create_npm_backend("prettier");
         let deps = backend.get_dependencies().unwrap();
-        assert!(deps.contains(&"node"));
-        assert!(deps.contains(&"npm"));
-        assert!(!deps.contains(&"bun"));
-        assert!(!deps.contains(&"pnpm"));
+        assert_eq!(deps, vec!["node"]);
     }
 
     #[test]
@@ -1473,32 +1498,42 @@ mod tests {
     }
 
     #[test]
-    fn test_npmrc_path_value_uses_forward_slashes() {
+    fn test_bin_paths_prefers_node_modules_bin() {
+        // Embedded-aube installs put runnable shims in node_modules/.bin;
+        // that must come first on PATH.
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-cowsay").join("1.6.0");
+        std::fs::create_dir_all(install_path.join("node_modules").join(".bin")).unwrap();
+        std::fs::create_dir_all(install_path.join("bin")).unwrap();
+
         assert_eq!(
-            NPMBackend::npmrc_path_value(Path::new(r"C:\Users\me\mise\npm-cowsay\1.6.0")),
-            "C:/Users/me/mise/npm-cowsay/1.6.0"
+            NPMBackend::bin_paths_for_install_path(&install_path),
+            vec![
+                install_path.join("node_modules").join(".bin"),
+                install_path.join("bin"),
+            ]
         );
     }
 
     #[test]
-    fn test_windows_bin_paths_prefers_created_bin_dir() {
+    fn test_bin_paths_uses_bin_dir_for_non_aube_installs() {
         let tmp = tempfile::tempdir().unwrap();
         let install_path = tmp.path().join("npm-cowsay").join("1.6.0");
         std::fs::create_dir_all(install_path.join("bin")).unwrap();
 
         assert_eq!(
-            NPMBackend::windows_bin_paths_for_install_path(&install_path),
+            NPMBackend::bin_paths_for_install_path(&install_path),
             vec![install_path.join("bin")]
         );
     }
 
     #[test]
-    fn test_windows_bin_paths_falls_back_to_install_path() {
+    fn test_bin_paths_falls_back_to_install_path() {
         let tmp = tempfile::tempdir().unwrap();
         let install_path = tmp.path().join("npm-cowsay").join("1.6.0");
 
         assert_eq!(
-            NPMBackend::windows_bin_paths_for_install_path(&install_path),
+            NPMBackend::bin_paths_for_install_path(&install_path),
             vec![install_path]
         );
     }
@@ -1728,10 +1763,11 @@ mod tests {
     }
 
     #[test]
-    fn test_write_aube_npmrc_includes_trust_policy_excludes() {
+    fn test_write_aube_embed_project_emits_npmrc_and_manifest() {
         let backend = create_npm_backend("vercel");
         let tmp = tempfile::tempdir().unwrap();
         let install_path = tmp.path().join("npm-vercel").join("54.20.1");
+        crate::file::create_dir_all(&install_path).unwrap();
         let mut raw_options = ToolVersionOptions::default();
         raw_options.opts.insert(
             "trust_policy_excludes".to_string(),
@@ -1740,14 +1776,24 @@ mod tests {
                 toml::Value::String("undici".into()),
             ]),
         );
+        raw_options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::Array(vec![toml::Value::String("esbuild".into())]),
+        );
         let options = NpmOptions::new(&raw_options);
+        let allow_builds = options.allow_builds().unwrap();
 
         backend
-            .write_aube_npmrc(&install_path, None, &options)
+            .write_aube_embed_project(&install_path, None, &options, &allow_builds)
             .unwrap();
 
+        // Trust-policy excludes go in .npmrc for the resolver to read.
         let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
         assert!(npmrc.contains("trustPolicyExclude=undici,undici@^5\n"));
+        // The build-script allowlist goes in package.json's aube namespace.
+        let manifest = std::fs::read_to_string(install_path.join("package.json")).unwrap();
+        assert!(manifest.contains("\"allowBuilds\""));
+        assert!(manifest.contains("esbuild"));
     }
 
     #[test]

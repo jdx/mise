@@ -1324,9 +1324,9 @@
               "type": "string",
               "enum": ["auto", "npm", "aube", "bun", "pnpm"]
             },
-            "use_npm_view": {
+            "shell_out": {
               "default": false,
-              "description": "Use the npm CLI (`npm view`) for version metadata queries instead of mise's built-in registry client.",
+              "description": "Shell out to the npm CLI for `npm:` version metadata and installs instead of mise's built-in aube-based implementation.",
               "type": "boolean"
             }
           }
