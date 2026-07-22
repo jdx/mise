@@ -91,9 +91,9 @@ fn install_python3_windows(tv: &ToolVersion) -> Result<()> {
         Ok(()) => Ok(()),
         Err(e) => {
             debug!(
-                "python: hardlink {python3_exe} -> {python_exe} failed ({e}); copying executable",
-                python3_exe = python3_exe.display(),
+                "python: hardlink {python_exe} as {python3_exe} failed ({e}); copying executable",
                 python_exe = python_exe.display(),
+                python3_exe = python3_exe.display(),
             );
             std::fs::copy(&python_exe, &python3_exe)?;
             Ok(())
