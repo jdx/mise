@@ -68,6 +68,8 @@ struct TasksCacheKey {
     remote_no_cache: bool,
 }
 
+type TasksCache = DashMap<TasksCacheKey, Arc<OnceCell<Arc<BTreeMap<String, Task>>>>>;
+
 pub struct Config {
     pub config_files: ConfigMap,
     pub project_root: Option<PathBuf>,
@@ -84,7 +86,7 @@ pub struct Config {
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
     hooks: OnceCell<Vec<(PathBuf, Hook)>>,
-    tasks_cache: Arc<DashMap<TasksCacheKey, Arc<OnceCell<Arc<BTreeMap<String, Task>>>>>>,
+    tasks_cache: Arc<TasksCache>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
     vars_results: OnceCell<EnvResults>,
