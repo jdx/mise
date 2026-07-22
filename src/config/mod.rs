@@ -686,8 +686,9 @@ impl Config {
 
         let templates = collect_task_templates(&config.config_files);
 
-        let local_tasks = load_local_tasks_with_context(&config, ctx, &templates).await?;
         let global_tasks = load_global_tasks(&config, &templates).await?;
+        let local_tasks =
+            load_local_tasks_with_context(&config, ctx, &templates, &global_tasks).await?;
         let mut tasks: BTreeMap<String, Task> = local_tasks
             .into_iter()
             .chain(global_tasks)
@@ -1727,6 +1728,46 @@ fn resolved_task_file(config: &Config, task: &Task) -> Option<PathBuf> {
     Some(file::desymlink_path(&path))
 }
 
+fn resolved_task_source(config: &Config, task: &Task) -> Option<PathBuf> {
+    if task.file.is_some() {
+        resolved_task_file(config, task)
+    } else if task.config_source.as_os_str().is_empty() {
+        None
+    } else {
+        Some(file::desymlink_path(&task.config_source))
+    }
+}
+
+fn resolved_task_sources(config: &Config, tasks: &[Task]) -> HashSet<(String, PathBuf)> {
+    let mut sources = HashSet::new();
+    for task in tasks {
+        if let Some(source) = resolved_task_source(config, task) {
+            sources.insert((task.name.clone(), source));
+        }
+    }
+    sources
+}
+
+fn remove_tasks_with_sources(
+    config: &Config,
+    tasks: Vec<Task>,
+    excluded: &HashSet<(String, PathBuf)>,
+    protected_names: &HashSet<String>,
+) -> Vec<Task> {
+    let mut retained = Vec::with_capacity(tasks.len());
+    for task in tasks {
+        let duplicate = !protected_names.contains(&task.name)
+            && match resolved_task_source(config, &task) {
+                Some(source) => excluded.contains(&(task.name.clone(), source)),
+                None => false,
+            };
+        if !duplicate {
+            retained.push(task);
+        }
+    }
+    retained
+}
+
 /// Returns true if the path should be filtered out due to MISE_CONFIG_DIR override.
 /// When MISE_CONFIG_DIR is set to a non-default location, this filters out configs
 /// found under the default location (~/.config/mise) during traversal.
@@ -2307,6 +2348,7 @@ async fn load_local_tasks_with_context(
     config: &Arc<Config>,
     ctx: Option<&crate::task::TaskLoadContext>,
     templates: &IndexMap<String, TaskTemplate>,
+    global_tasks: &[Task],
 ) -> Result<Vec<Task>> {
     let mut tasks = vec![];
     let monorepo_config = find_monorepo_config(&config.config_files);
@@ -2340,7 +2382,7 @@ async fn load_local_tasks_with_context(
         // only task context explicitly supplied by a local config at the root;
         // tool-only configs such as ~/.tool-versions must not make incidental
         // copies override their decorated global counterparts.
-        if has_user_global_config && paths_equal_resolved(&d, &env::MISE_GLOBAL_CONFIG_ROOT) {
+        if paths_equal_resolved(&d, &env::MISE_GLOBAL_CONFIG_ROOT) {
             let local_file_context = local_configs
                 .iter()
                 .any(|cf| cf.task_config().dir.is_some())
@@ -2350,13 +2392,27 @@ async fn load_local_tasks_with_context(
                     .collect::<Result<Vec<_>>>()?
                     .into_iter()
                     .any(|includes| includes.is_some());
-            if !local_file_context {
-                let local_inline_task_names = local_configs
-                    .iter()
-                    .flat_map(|cf| cf.tasks())
-                    .map(|task| task.name.clone())
-                    .collect::<HashSet<_>>();
-                dir_tasks.retain(|task| local_inline_task_names.contains(&task.name));
+            let local_inline_task_names = local_configs
+                .iter()
+                .flat_map(|cf| cf.tasks())
+                .map(|task| task.name.clone())
+                .collect::<HashSet<_>>();
+            if has_user_global_config {
+                if !local_file_context {
+                    dir_tasks.retain(|task| local_inline_task_names.contains(&task.name));
+                }
+            } else if !local_file_context {
+                // A system config does not own the user's global-root include
+                // scope, so keep local-only defaults. Remove only sources that
+                // the global/system pass actually loaded; its decorated copy
+                // must win over the incidental undecorated local copy.
+                let global_sources = resolved_task_sources(config, global_tasks);
+                dir_tasks = remove_tasks_with_sources(
+                    config,
+                    dir_tasks,
+                    &global_sources,
+                    &local_inline_task_names,
+                );
             }
         }
 
