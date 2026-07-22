@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+mkdir -p "$HOME/.config/mise/tasks"
+
+cat <<'EOF' >"$HOME/.config/mise/tasks/system-meta"
+#!/usr/bin/env bash
+echo "SYSTEM_METADATA=${SYSTEM_METADATA:-<unset>}"
+EOF
+chmod +x "$HOME/.config/mise/tasks/system-meta"
+
+cat <<'EOF' >"$MISE_SYSTEM_DIR/config.toml"
+[tasks.system-meta]
+env = { SYSTEM_METADATA = "applied" }
+EOF
+
+# With no user-global config, the local hierarchy still walks HOME and sees the
+# same default script. The system/global pass must own the decorated copy.
+assert "mise run system-meta" "SYSTEM_METADATA=applied"
+assert_contains "mise tasks --global" "system-meta"
+
+# The same rule applies when the global config root is moved away from HOME.
+mkdir -p "$HOME/custom-global-root/.config/mise/tasks"
+cat <<'EOF' >"$HOME/custom-global-root/.config/mise/tasks/custom-root-meta"
+#!/usr/bin/env bash
+echo "CUSTOM_ROOT_METADATA=${CUSTOM_ROOT_METADATA:-<unset>}"
+EOF
+chmod +x "$HOME/custom-global-root/.config/mise/tasks/custom-root-meta"
+
+cat <<'EOF' >>"$MISE_SYSTEM_DIR/config.toml"
+
+[tasks.custom-root-meta]
+env = { CUSTOM_ROOT_METADATA = "applied" }
+EOF
+
+assert "MISE_GLOBAL_CONFIG_ROOT='$HOME/custom-global-root' mise run custom-root-meta" \
+  "CUSTOM_ROOT_METADATA=applied"
+assert_contains "MISE_GLOBAL_CONFIG_ROOT='$HOME/custom-global-root' mise tasks --global" \
+  "custom-root-meta"
+
+# An explicit local include/dir at HOME remains local context even when the
+# system pass sees the same script through its default global task directory.
+mkdir -p "$HOME/local-dir"
+cat <<EOF >"$HOME/mise.toml"
+[task_config]
+includes = [".config/mise/tasks"]
+dir = "$HOME/local-dir"
+
+[tasks.system-meta]
+env = { LOCAL_METADATA = "applied" }
+EOF
+cat <<'EOF' >"$HOME/.config/mise/tasks/system-meta"
+#!/usr/bin/env bash
+echo "LOCAL_METADATA=${LOCAL_METADATA:-<unset>}"
+echo "SYSTEM_METADATA=${SYSTEM_METADATA:-<unset>}"
+echo "TASK_DIR=$PWD"
+EOF
+assert_contains "mise run system-meta" "LOCAL_METADATA=applied"
+assert_contains "mise run system-meta" "SYSTEM_METADATA=<unset>"
+assert_contains "mise run system-meta" "TASK_DIR=$HOME/local-dir"
+
+# System configs can omit the default directory. Local-only default tasks must
+# not be removed merely because the system pass exists.
+cat <<'EOF' >>"$MISE_SYSTEM_DIR/config.toml"
+
+[task_config]
+includes = ["system-only-tasks"]
+EOF
+cat <<'EOF' >"$HOME/.config/mise/tasks/local-only"
+#!/usr/bin/env bash
+echo local-only
+EOF
+chmod +x "$HOME/.config/mise/tasks/local-only"
+assert "mise run local-only" "local-only"
