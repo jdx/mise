@@ -48,6 +48,20 @@ pub fn task_key(task: &Task) -> TaskKey {
 /// manages a dependency graph of tasks so `mise run` knows what to run next
 impl Deps {
     pub async fn new(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
+        Self::new_with_fetch_policy(config, tasks, false).await
+    }
+
+    /// Build a dependency graph for passive display without allowing remote
+    /// providers to perform network or Git work from an untrusted config.
+    pub async fn new_for_display(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
+        Self::new_with_fetch_policy(config, tasks, true).await
+    }
+
+    async fn new_with_fetch_policy(
+        config: &Arc<Config>,
+        tasks: Vec<Task>,
+        trust_before_fetch: bool,
+    ) -> eyre::Result<Self> {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
         let mut stack = vec![];
@@ -69,7 +83,11 @@ impl Deps {
         }
         let all_tasks_to_run = resolve_depends(config, tasks).await?;
         let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
-        let fetcher = TaskFetcher::new(no_cache);
+        let fetcher = if trust_before_fetch {
+            TaskFetcher::new(no_cache).require_trust_before_fetch()
+        } else {
+            TaskFetcher::new(no_cache)
+        };
         while let Some(mut a) = stack.pop() {
             if seen.contains(&a) {
                 // prevent infinite loop

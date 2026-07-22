@@ -26,7 +26,7 @@ use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
-use crate::task::task_file_providers::TaskFileProvidersBuilder;
+use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
 use crate::task::{Task, TaskTemplate, strip_extension};
 use crate::tera::{contains_template_syntax, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
@@ -597,8 +597,12 @@ impl Config {
         // Default context (None) becomes TaskLoadContext::default()
         let cache_key = ctx.cloned().unwrap_or_default();
 
-        // Check if already cached
-        if let Some(cached) = self.tasks_cache.get(&cache_key) {
+        // No-cache remote includes own temporary snapshots through their Tasks.
+        // The global Config cache is static and would keep those cleanup guards
+        // alive until process teardown (static destructors do not run), so skip
+        // both cache reads and writes in this mode.
+        let use_cache = !Settings::get().task.remote_no_cache.unwrap_or(false);
+        if use_cache && let Some(cached) = self.tasks_cache.get(&cache_key) {
             return Ok(cached.value().clone());
         }
 
@@ -608,8 +612,9 @@ impl Config {
         });
         let tasks_arc = Arc::new(tasks);
 
-        // Insert into cache
-        self.tasks_cache.insert(cache_key, tasks_arc.clone());
+        if use_cache {
+            self.tasks_cache.insert(cache_key, tasks_arc.clone());
+        }
 
         Ok(tasks_arc)
     }
@@ -830,6 +835,7 @@ impl Config {
                 tool_add_paths: Vec::new(),
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
+                trust_source: None,
             };
             let redact_keys = self
                 .redaction_keys()
@@ -2982,15 +2988,51 @@ fn is_mise_config_file_in_task_include(root: &Path, path: &Path) -> bool {
     })
 }
 
-async fn resolve_git_url_to_path(git_url: &str) -> Result<PathBuf> {
+async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
     let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
     let task_file_providers = TaskFileProvidersBuilder::new()
         .with_cache(!no_cache)
         .build();
 
     match task_file_providers.get_provider(git_url) {
-        Some(provider) => provider.get_local_path(git_url).await,
+        Some(provider) => provider.get_local_artifact(git_url).await,
         None => bail!("No provider found for git URL: {}", git_url),
+    }
+}
+
+fn trust_check_remote_task_include(owner: &Path, include: &str) -> Result<()> {
+    config_file::trust_check_remote_fetch(owner).wrap_err_with(|| {
+        format!(
+            "fetching remote task include {include} requires its defining config {} to be trusted",
+            display_path(owner)
+        )
+    })
+}
+
+/// Authorize every remote include before deriving whether its owner can vouch
+/// for the fetched task files. Outside safe mode this may interactively trust
+/// the owner, so callers must not snapshot `is_path_trusted` first.
+fn trust_check_remote_task_includes(owner: &Path, includes: &[String]) -> Result<bool> {
+    let mut found_remote = false;
+    for include in includes
+        .iter()
+        .filter(|include| include.starts_with("git::"))
+    {
+        trust_check_remote_task_include(owner, include)?;
+        found_remote = true;
+    }
+    Ok(found_remote)
+}
+
+fn preserve_remote_task_trust_source(tasks: &mut [Task], source: &Path) {
+    for task in tasks {
+        if task.file.as_ref().is_some_and(|file| {
+            let file = file.to_string_lossy();
+            file.starts_with("git::") || file.starts_with("http://") || file.starts_with("https://")
+        }) {
+            task.remote_config_source
+                .get_or_insert_with(|| source.to_path_buf());
+        }
     }
 }
 
@@ -3056,17 +3098,22 @@ async fn load_file_tasks(
     let config_root = Arc::new(config_root.to_path_buf());
     let cf_root = cf.config_root();
     let task_config_dir = cf.task_config().dir.clone();
+    let remote_includes_authorized = trust_check_remote_task_includes(cf.get_path(), &includes)?;
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
-    let require_task_include_trust = !is_path_trusted(cf.get_path());
+    let require_task_include_trust = !remote_includes_authorized && !is_path_trusted(cf.get_path());
 
     for include in includes {
-        let paths = if include.starts_with("git::") {
+        let artifacts = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(&include).await?]
         } else {
             expand_task_include(&cf_root, &include)
+                .into_iter()
+                .map(TaskFileArtifact::persistent)
+                .collect()
         };
-        for path in paths {
+        for artifact in artifacts {
+            let path = artifact.path;
             let mut loaded = load_tasks_includes(
                 config,
                 &path,
@@ -3077,6 +3124,14 @@ async fn load_file_tasks(
                 require_task_include_trust,
             )
             .await?;
+            if !require_task_include_trust || is_global {
+                preserve_remote_task_trust_source(&mut loaded, cf.get_path());
+            }
+            if let Some(cleanup) = artifact.cleanup {
+                for task in &mut loaded {
+                    task.remote_artifact_cleanups.push(cleanup.clone());
+                }
+            }
             if is_global || is_global_task_include_path(&path) {
                 mark_tasks_as_global(&mut loaded);
             }
@@ -3163,19 +3218,46 @@ pub async fn load_tasks_in_dir(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
-    // a config can only vouch for task include files when it was actually
-    // trusted — safe configs load without trust and cannot vouch for anything
-    let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
-
-    let (includes, resolve_dir) = configs
+    let (includes, resolve_dir, include_owner) = configs
         .iter()
         .find_map(|cf| match cf.task_config_includes() {
-            Ok(Some(includes)) => Some(Ok((includes, cf.config_root()))),
+            Ok(Some(includes)) => Some(Ok((
+                includes,
+                cf.config_root(),
+                Some(cf.get_path().to_path_buf()),
+            ))),
             Ok(None) => None,
             Err(err) => Some(Err(err)),
         })
         .transpose()?
-        .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf()));
+        .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf(), None));
+
+    let remote_includes_authorized = match include_owner.as_deref() {
+        Some(owner) => trust_check_remote_task_includes(owner, &includes)?,
+        None if includes.iter().any(|include| include.starts_with("git::")) => {
+            bail!("remote task include has no defining config provenance")
+        }
+        None => false,
+    };
+
+    // An explicit include is vouched for only by the config that declared it.
+    // For implicit default includes, retain the existing directory-level rule:
+    // any trusted config at that root can vouch for the conventional task dir.
+    let vouching_config_source = include_owner
+        .as_ref()
+        .filter(|owner| remote_includes_authorized || is_path_trusted(owner))
+        .cloned()
+        .or_else(|| {
+            if include_owner.is_some() {
+                return None;
+            }
+            configs
+                .iter()
+                .find(|cf| is_path_trusted(cf.get_path()))
+                .map(|cf| cf.get_path().to_path_buf())
+        });
+    // Safe configs load without trust and cannot vouch for task include files.
+    let require_task_include_trust = vouching_config_source.is_none();
 
     let mut config_tasks = vec![];
     for cf in &configs {
@@ -3188,12 +3270,16 @@ pub async fn load_tasks_in_dir(
 
     let mut file_tasks = vec![];
     for include in &includes {
-        let paths = if include.starts_with("git::") {
+        let artifacts = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(include).await?]
         } else {
             expand_task_include(&resolve_dir, include)
+                .into_iter()
+                .map(TaskFileArtifact::persistent)
+                .collect()
         };
-        for p in paths {
+        for artifact in artifacts {
+            let p = artifact.path;
             let mut loaded = load_tasks_includes(
                 config,
                 &p,
@@ -3204,6 +3290,14 @@ pub async fn load_tasks_in_dir(
                 require_task_include_trust,
             )
             .await?;
+            if let Some(source) = &vouching_config_source {
+                preserve_remote_task_trust_source(&mut loaded, source);
+            }
+            if let Some(cleanup) = artifact.cleanup {
+                for task in &mut loaded {
+                    task.remote_artifact_cleanups.push(cleanup.clone());
+                }
+            }
             if is_global_task_include_path(&p) {
                 mark_tasks_as_global(&mut loaded);
             }

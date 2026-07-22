@@ -237,6 +237,19 @@ impl EnvDirective {
             | EnvDirective::Module(_, _, opts) => opts,
         }
     }
+
+    /// Whether resolving this directive can execute code or install tooling.
+    /// Remote task headers are untrusted input, so these directives require the
+    /// local config that selected the task to be trusted before resolution.
+    fn requires_remote_trust(&self) -> bool {
+        matches!(
+            self,
+            EnvDirective::File(..)
+                | EnvDirective::Source(..)
+                | EnvDirective::PythonVenv { .. }
+                | EnvDirective::Module(..)
+        )
+    }
 }
 
 impl From<(String, String)> for EnvDirective {
@@ -323,6 +336,7 @@ pub struct EnvResults {
     pub watch_files: Vec<PathBuf>,
     /// True if any directive declared cacheable=false or is a dynamic module
     pub has_uncacheable: bool,
+    pub(crate) trust_source: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -348,17 +362,35 @@ pub struct EnvResolveOptions {
 impl EnvResults {
     pub async fn resolve(
         config: &Arc<Config>,
+        ctx: tera::Context,
+        initial: &EnvMap,
+        input: Vec<(EnvDirective, PathBuf)>,
+        resolve_opts: EnvResolveOptions,
+    ) -> eyre::Result<Self> {
+        Self::resolve_with_trust_source(config, ctx, initial, input, resolve_opts, None).await
+    }
+
+    /// Resolve directives relative to their source paths while checking trust
+    /// against a separate provenance path. Remote task headers need this:
+    /// relative files belong to the fetched script, but trust belongs to the
+    /// local config that declared the remote task.
+    pub async fn resolve_with_trust_source(
+        config: &Arc<Config>,
         mut ctx: tera::Context,
         initial: &EnvMap,
         input: Vec<(EnvDirective, PathBuf)>,
         resolve_opts: EnvResolveOptions,
+        trust_source: Option<&Path>,
     ) -> eyre::Result<Self> {
         // trace!("resolve: input: {:#?}", &input);
         let mut env = initial
             .iter()
             .map(|(k, v)| (k.clone(), (v.clone(), None)))
             .collect::<IndexMap<_, _>>();
-        let mut r = Self::default();
+        let mut r = Self {
+            trust_source: trust_source.map(Path::to_path_buf),
+            ..Default::default()
+        };
         let normalize_path = |config_root: &Path, p: PathBuf| {
             let p = p.strip_prefix("./").unwrap_or(&p);
             match p.strip_prefix("~/") {
@@ -430,6 +462,13 @@ impl EnvResults {
 
         for (directive, source) in filtered_input {
             let mut tera = None;
+            if directive.requires_remote_trust() && r.trust_source.is_some() {
+                r.trust_check_source(&source).wrap_err_with(|| {
+                    format!(
+                        "remote task environment directive {directive} requires its defining config to be trusted"
+                    )
+                })?;
+            }
             // trace!(
             //     "resolve: directive: {:?}, source: {:?}",
             //     &directive,
@@ -878,7 +917,7 @@ impl EnvResults {
 
         // Step 1: Tera template expansion
         if contains_template_syntax(input) {
-            trust_check(path)?;
+            self.trust_check_source(path)?;
             let tera = tera.get_or_insert_with(|| {
                 let mut tera = get_tera(path.parent());
                 // Re-bind exec() to the accumulated env vars — but never in safe
@@ -921,6 +960,10 @@ impl EnvResults {
         }
 
         Ok(output)
+    }
+
+    fn trust_check_source(&self, fallback: &Path) -> eyre::Result<()> {
+        trust_check(self.trust_source.as_deref().unwrap_or(fallback))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -1165,5 +1208,51 @@ mod tests {
         let keys: Vec<String> = results.env.keys().cloned().collect();
         assert_eq!(keys, vec!["TOOLS_VAL".to_string()]);
         assert!(results.env_paths.is_empty());
+    }
+
+    #[test]
+    fn test_remote_env_directives_requiring_trust() {
+        let options = EnvDirectiveOptions::default();
+        assert!(EnvDirective::File(".env".into(), options.clone()).requires_remote_trust());
+        assert!(EnvDirective::Source("env.sh".into(), options.clone()).requires_remote_trust());
+        assert!(
+            !EnvDirective::Age {
+                key: "SECRET".into(),
+                value: String::new(),
+                format: None,
+                options: options.clone(),
+            }
+            .requires_remote_trust()
+        );
+        assert!(
+            EnvDirective::PythonVenv {
+                path: ".venv".into(),
+                create: false,
+                python: None,
+                uv_create_args: None,
+                python_create_args: None,
+                options: options.clone(),
+            }
+            .requires_remote_trust()
+        );
+        assert!(
+            EnvDirective::Module(
+                "example".into(),
+                toml::Value::Table(Default::default()),
+                options
+            )
+            .requires_remote_trust()
+        );
+        assert!(!EnvDirective::Path("bin".into(), Default::default()).requires_remote_trust());
+        assert!(
+            !EnvDirective::Val("KEY".into(), "value".into(), Default::default())
+                .requires_remote_trust()
+        );
+        assert!(
+            !EnvDirective::Default("KEY".into(), "value".into(), Default::default())
+                .requires_remote_trust()
+        );
+        assert!(!EnvDirective::Rm("KEY".into(), Default::default()).requires_remote_trust());
+        assert!(!EnvDirective::Required("KEY".into(), Default::default()).requires_remote_trust());
     }
 }

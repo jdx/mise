@@ -1,7 +1,6 @@
 use crate::Result;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::config_file::trust_check;
 use crate::config::env_directive::EnvResults;
 use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
@@ -188,7 +187,7 @@ impl EnvResults {
         python_create_args: Option<Vec<String>>,
     ) -> Result<()> {
         trace!("python venv: {} create={create}", display_path(&path));
-        trust_check(source)?;
+        r.trust_check_source(source)?;
         let venv = r.parse_template(ctx, tera, source, exec_env, &path)?;
         let venv = normalize_path(config_root, venv.into());
         let venv_lock = LockFile::new(&venv).lock()?;

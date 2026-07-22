@@ -1,5 +1,5 @@
 use crate::errors::Error;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -14,7 +14,7 @@ use crate::env;
 use crate::file::display_path;
 use crate::task::has_any_usage_spec;
 use crate::task::task_helpers::task_needs_permit;
-use crate::task::task_list::{get_task_lists, resolve_depends};
+use crate::task::task_list::{get_task_lists_with_prefetched, resolve_depends};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::{Deps, Task};
@@ -225,6 +225,9 @@ pub struct Run {
 
     #[clap(skip)]
     pub executor: Option<crate::task::task_executor::TaskExecutor>,
+
+    #[clap(skip)]
+    pub prefetched_tasks: Option<BTreeMap<String, Task>>,
 }
 
 impl Run {
@@ -257,20 +260,31 @@ impl Run {
             self.args.contains(&"--help".to_string()) || self.args.contains(&"-h".to_string());
 
         let mut config = Config::get().await?;
+        let mut prefetched_task_list = None;
 
         // Handle task help early to avoid unnecessary toolset/deps work
         if has_help_in_task_args {
-            // Build args list to get the task (filter out --help/-h for task lookup)
+            // Build the same task list normal execution would use so raw-args
+            // tasks can reuse this exact fetched snapshot.
             let args = once(self.task.clone())
-                .chain(
-                    self.args
-                        .iter()
-                        .filter(|a| *a != "--help" && *a != "-h")
-                        .cloned(),
-                )
+                .chain(self.args.iter().cloned())
                 .collect_vec();
 
-            let task_list = get_task_lists(&config, &args, false, false).await?;
+            let mut task_list = get_task_lists_with_prefetched(
+                &config,
+                &args,
+                false,
+                false,
+                self.prefetched_tasks.as_ref(),
+            )
+            .await?;
+
+            // Help is passive discovery, but remote #USAGE and #MISE headers
+            // still need to be fetched before they can be displayed. Require
+            // trust before that fetch, just like `mise tasks info`.
+            let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache)
+                .require_trust_before_fetch();
+            fetcher.fetch_tasks(&config, &mut task_list).await?;
 
             if let Some(task) = task_list.first() {
                 // raw_args tasks act as proxies for tools that handle their
@@ -289,6 +303,7 @@ impl Run {
                     }
                     return Ok(());
                 }
+                prefetched_task_list = Some(task_list);
             } else {
                 // No task found, show run command help
                 self.get_clap_command().print_long_help()?;
@@ -309,7 +324,28 @@ impl Run {
             .chain(self.args.clone())
             .collect_vec();
 
-        let mut task_list = get_task_lists(&config, &args, true, self.skip_deps).await?;
+        let (mut task_list, tasks_already_fetched) = if let Some(mut tasks) = prefetched_task_list {
+            if self.skip_deps {
+                for task in &mut tasks {
+                    task.depends.clear();
+                    task.depends_post.clear();
+                    task.wait_for.clear();
+                }
+            }
+            (tasks, true)
+        } else {
+            (
+                get_task_lists_with_prefetched(
+                    &config,
+                    &args,
+                    true,
+                    self.skip_deps,
+                    self.prefetched_tasks.as_ref(),
+                )
+                .await?,
+                false,
+            )
+        };
 
         // Args after -- go directly to tasks (no prefix). They are also
         // recorded on `trailing_args` so the task renderer can detect
@@ -323,8 +359,10 @@ impl Run {
 
         // Fetch remote task files before parsing usage specs, so that
         // file-based remote tasks have their files resolved to local cache.
-        let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
-        fetcher.fetch_tasks(&config, &mut task_list).await?;
+        if !tasks_already_fetched {
+            let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
+            fetcher.fetch_tasks(&config, &mut task_list).await?;
+        }
 
         // Re-render dependency templates with parent task's usage arg/flag values.
         // This enables patterns like: depends = ["child {{usage.app}}"]

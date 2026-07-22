@@ -1,5 +1,6 @@
 use crate::config::{self, Config};
 use crate::file::display_path;
+use crate::task::task_fetcher::TaskFetcher;
 use crate::task::{
     GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, resolve_task_pattern,
 };
@@ -352,6 +353,19 @@ pub async fn get_task_lists(
     prompt: bool,
     only: bool,
 ) -> Result<Vec<Task>> {
+    get_task_lists_with_prefetched(config, args, prompt, only, None).await
+}
+
+/// Resolve task arguments while reusing metadata snapshots fetched during
+/// command dispatch. This keeps remote aliases tied to the exact body that
+/// established them.
+pub async fn get_task_lists_with_prefetched(
+    config: &Arc<Config>,
+    args: &[String],
+    prompt: bool,
+    only: bool,
+    prefetched_tasks: Option<&BTreeMap<String, Task>>,
+) -> Result<Vec<Task>> {
     let args = args
         .iter()
         .map(|s| vec![s.to_string()])
@@ -451,24 +465,46 @@ pub async fn get_task_lists(
         };
 
         let tasks_with_aliases = crate::task::build_task_ref_map(all_tasks.iter());
-
-        let mut cur_tasks = tasks_with_aliases
-            .get_matching(&t)?
-            .into_iter()
-            .cloned()
-            .collect_vec();
-        // If the task name was auto-expanded to monorepo syntax (e.g., "hello" -> "//:hello")
-        // but no monorepo task matched, fall back to the original bare name to find global tasks
+        let find_matching_tasks =
+            |tasks_with_aliases: &BTreeMap<String, &Task>| -> Result<Vec<Task>> {
+                let mut matches = tasks_with_aliases
+                    .get_matching(&t)?
+                    .into_iter()
+                    .map(|task| (**task).clone())
+                    .collect_vec();
+                // If the task name was auto-expanded to monorepo syntax (e.g.,
+                // "hello" -> "//:hello") but no monorepo task matched, fall
+                // back to the original bare name to find global tasks.
+                if matches.is_empty()
+                    && t != original_name
+                    && !original_name.starts_with("//")
+                    && !original_name.starts_with(':')
+                {
+                    matches = tasks_with_aliases
+                        .get_matching(&original_name)?
+                        .into_iter()
+                        .map(|task| (**task).clone())
+                        .collect_vec();
+                }
+                Ok(matches)
+            };
+        let mut cur_tasks = find_matching_tasks(&tasks_with_aliases)?;
         if cur_tasks.is_empty()
-            && t != original_name
-            && !original_name.starts_with("//")
-            && !original_name.starts_with(':')
+            && let Some(prefetched_tasks) = prefetched_tasks
         {
-            cur_tasks = tasks_with_aliases
-                .get_matching(&original_name)?
-                .into_iter()
-                .cloned()
-                .collect_vec();
+            let prefetched_with_aliases = crate::task::build_task_ref_map(prefetched_tasks.iter());
+            cur_tasks = find_matching_tasks(&prefetched_with_aliases)?;
+        }
+        if cur_tasks.is_empty() {
+            // Remote aliases only exist after parsing their #MISE headers.
+            // Retry a miss after trusted passive discovery rather than fetching
+            // every remote task for ordinary name hits.
+            let resolved_tasks = TaskFetcher::new(false)
+                .require_trust_before_fetch()
+                .fetch_task_map(config, &all_tasks)
+                .await?;
+            let resolved_with_aliases = crate::task::build_task_ref_map(resolved_tasks.iter());
+            cur_tasks = find_matching_tasks(&resolved_with_aliases)?;
         }
         if cur_tasks.is_empty() {
             // Check if this is a "default" task (either plain "default" or monorepo syntax like "//:default")
@@ -561,13 +597,29 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
     };
 
     let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+    let resolve = |all_tasks: &BTreeMap<String, Task>| {
+        tasks
+            .iter()
+            .cloned()
+            .map(|task| {
+                let depends = task.all_depends(all_tasks)?;
+                Ok(once(task).chain(depends).collect::<Vec<_>>())
+            })
+            .flatten_ok()
+            .collect::<Result<Vec<_>>>()
+    };
 
-    tasks
-        .into_iter()
-        .map(|t| {
-            let depends = t.all_depends(&all_tasks)?;
-            Ok(once(t).chain(depends).collect::<Vec<_>>())
-        })
-        .flatten_ok()
-        .collect()
+    match resolve(&all_tasks) {
+        Ok(tasks) => Ok(tasks),
+        Err(error) if error.to_string().starts_with("task not found:") => {
+            // A dependency may name an alias declared only in a remote header.
+            // Retry the failed graph resolution against trusted remote metadata.
+            let resolved_tasks = TaskFetcher::new(false)
+                .require_trust_before_fetch()
+                .fetch_task_map(config, &all_tasks)
+                .await?;
+            resolve(&resolved_tasks)
+        }
+        Err(error) => Err(error),
+    }
 }

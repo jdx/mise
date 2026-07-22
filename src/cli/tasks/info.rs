@@ -40,7 +40,23 @@ impl TasksInfo {
 
         use crate::task::GetMatchingExt;
         let matching = tasks_with_aliases.get_matching(&task_name).ok();
-        let task = matching.and_then(|m| m.first().cloned().cloned());
+        let mut task =
+            matching.and_then(|matching| matching.into_iter().next().map(|task| (**task).clone()));
+
+        // A remote task's aliases only become available after its #MISE header
+        // is fetched. Avoid fetching every remote task for ordinary name hits,
+        // but retry a miss against trusted, resolved remote metadata.
+        if task.is_none() {
+            let resolved_tasks = TaskFetcher::new(false)
+                .require_trust_before_fetch()
+                .fetch_task_map(&config, &tasks)
+                .await?;
+            let resolved_with_aliases = crate::task::build_task_ref_map(resolved_tasks.iter());
+            task = resolved_with_aliases
+                .get_matching(&task_name)
+                .ok()
+                .and_then(|matching| matching.into_iter().next().map(|task| (**task).clone()));
+        }
 
         if let Some(task) = task {
             // Resolve remote task files before displaying task info
@@ -48,6 +64,7 @@ impl TasksInfo {
             // always pass no_cache=false as the command doesn't take no-cache argument
             // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
             TaskFetcher::new(false)
+                .require_trust_before_fetch()
                 .fetch_tasks(&config, &mut tasks)
                 .await?;
             let task = &tasks[0];
