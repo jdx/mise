@@ -70,13 +70,21 @@ impl ToolRequest {
             _ => s.to_string(),
         };
         if crate::semver::is_npm_semver_range_query(&s)
+            && !source.is_unknown()
             && !matches!(
                 &source,
                 ToolSource::IdiomaticVersionFile(path)
                     if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
             )
         {
-            warn_once!("semver ranges are not supported: {s}");
+            let source_display = match &source {
+                ToolSource::Argument => "command argument".to_string(),
+                _ => source.to_string(),
+            };
+            warn_once!(
+                "semver range \"{s}\" is not supported for {} (source: {source_display}); use a concrete version or version prefix",
+                backend.short
+            );
         }
         Ok(match s.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
