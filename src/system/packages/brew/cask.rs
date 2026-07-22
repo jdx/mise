@@ -70,28 +70,28 @@ struct FontArtifact {
     target: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum FlightStep {
-    Move {
-        source: FlightPath,
-        target: FlightPath,
-        source_glob: bool,
-    },
-    Remove {
-        paths: Vec<FlightPath>,
-        recursive: bool,
-    },
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FlightPathBase {
-    StagedPath,
+enum CompletionShell {
+    Bash,
+    Fish,
+    Zsh,
+    Pwsh,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct FlightPath {
-    base: FlightPathBase,
-    path: String,
+struct CompletionArtifact {
+    shell: CompletionShell,
+    source: String,
+    target: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GeneratedCompletionArtifact {
+    executable: String,
+    args: Vec<String>,
+    base_name: Option<String>,
+    shell_parameter_format: Option<String>,
+    shells: Vec<CompletionShell>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -100,8 +100,8 @@ struct CaskArtifacts {
     binaries: Vec<BinaryArtifact>,
     pkgs: Vec<PkgArtifact>,
     fonts: Vec<FontArtifact>,
-    preflight_steps: Vec<FlightStep>,
-    postflight_steps: Vec<FlightStep>,
+    completions: Vec<CompletionArtifact>,
+    generated_completions: Vec<GeneratedCompletionArtifact>,
     pkg_ids: Vec<String>,
 }
 
@@ -114,6 +114,8 @@ struct CaskReceipt {
     binaries: Vec<PathBuf>,
     #[serde(default)]
     fonts: Vec<PathBuf>,
+    #[serde(default)]
+    completions: Vec<PathBuf>,
     #[serde(default)]
     pkg_ids: Vec<String>,
 }
@@ -149,11 +151,22 @@ impl BrewCaskManager {
             for font in &artifacts.fonts {
                 miseprintln!("install font {}", font.source);
             }
+            for completion in &artifacts.completions {
+                miseprintln!(
+                    "install {} completion {}",
+                    completion.shell.name(),
+                    completion.source
+                );
+            }
+            for generated in &artifacts.generated_completions {
+                miseprintln!("generate completions from {}", generated.executable);
+            }
             return Ok(cask.version);
         }
         prefix::bootstrap(false)?;
         let previous_binaries = previous_binary_targets(&cask)?;
         let previous_fonts = previous_font_targets(&cask)?;
+        let previous_completions = previous_completion_targets(&cask)?;
         let archive = fetch_archive(&cask, pr).await?;
         let stage = extract_archive(&cask, &archive, pr)?;
         let caskroom_token = caskroom_token_dir(&cask.token);
@@ -162,7 +175,6 @@ impl BrewCaskManager {
         file::remove_all(&tmp_caskroom)?;
         file::create_dir_all(&tmp_caskroom)?;
         let appdir = cask_appdir(&artifacts.apps)?;
-        execute_flight_steps(&cask, &artifacts.preflight_steps, &stage, "preflight_steps")?;
         execute_lifecycle_hook(&cask, &stage, &appdir, "preflight", pr).await?;
         for app in &artifacts.apps {
             install_app(&stage, &tmp_caskroom, app)?;
@@ -173,15 +185,15 @@ impl BrewCaskManager {
         for font in &artifacts.fonts {
             stage_font(&stage, &tmp_caskroom, font)?;
         }
-        execute_flight_steps(
-            &cask,
-            &artifacts.postflight_steps,
-            &tmp_caskroom,
-            "postflight_steps",
-        )?;
         execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
         for binary in &artifacts.binaries {
             stage_binary(&stage, &tmp_caskroom, &cask, binary)?;
+        }
+        for completion in &artifacts.completions {
+            stage_completion(&stage, &tmp_caskroom, completion)?;
+        }
+        for generated in &artifacts.generated_completions {
+            stage_generated_completions(&stage, &tmp_caskroom, &cask, generated)?;
         }
         write_receipt(&tmp_caskroom, &cask, &artifacts)?;
         file::remove_all(&caskroom)?;
@@ -190,6 +202,11 @@ impl BrewCaskManager {
             link_binary(&caskroom, binary)?;
         }
         remove_obsolete_binary_links(&cask, &previous_binaries, &binary_targets(&artifacts)?)?;
+        let current_completions = completion_target_paths(&cask, &artifacts)?;
+        for target in &current_completions {
+            link_completion(&caskroom, target)?;
+        }
+        remove_obsolete_completions(&cask, &previous_completions, &current_completions)?;
         for font in &artifacts.fonts {
             link_font(&caskroom, font)?;
         }
@@ -220,6 +237,76 @@ impl BinaryArtifact {
 
     fn target_path(&self) -> Result<PathBuf> {
         binary_target_path(&self.target_name()?)
+    }
+}
+
+impl CompletionShell {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "bash" => Some(Self::Bash),
+            "fish" => Some(Self::Fish),
+            "zsh" => Some(Self::Zsh),
+            "pwsh" => Some(Self::Pwsh),
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Bash => "bash",
+            Self::Fish => "fish",
+            Self::Zsh => "zsh",
+            Self::Pwsh => "pwsh",
+        }
+    }
+
+    fn parameter_name(self) -> &'static str {
+        match self {
+            Self::Pwsh => "powershell",
+            _ => self.name(),
+        }
+    }
+}
+
+impl CompletionArtifact {
+    fn target_name(&self) -> Result<String> {
+        match &self.target {
+            Some(target) => Ok(target.clone()),
+            None => Path::new(&self.source)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_string)
+                .ok_or_else(|| eyre!("brew-cask: invalid completion source '{}'", self.source)),
+        }
+    }
+
+    fn target_path(&self) -> Result<PathBuf> {
+        completion_target_path(self.shell, &self.target_name()?)
+    }
+}
+
+impl GeneratedCompletionArtifact {
+    fn resolved_base_name(&self, cask: &Cask) -> String {
+        let name = self.base_name.clone().unwrap_or_else(|| {
+            Path::new(&self.executable)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(&cask.token)
+                .to_string()
+        });
+        if name.is_empty() {
+            cask.token.clone()
+        } else {
+            name
+        }
+    }
+
+    fn target_paths(&self, cask: &Cask) -> Result<Vec<PathBuf>> {
+        let base_name = self.resolved_base_name(cask);
+        self.shells
+            .iter()
+            .map(|shell| generated_completion_target_path(*shell, &base_name))
+            .collect()
     }
 }
 
@@ -767,184 +854,353 @@ fn font_target_path(font: &FontArtifact) -> Result<PathBuf> {
         .join(name_path))
 }
 
-fn execute_flight_steps(
+fn stage_completion(stage: &Path, caskroom: &Path, completion: &CompletionArtifact) -> Result<()> {
+    let target = completion.target_path()?;
+    let caskroom_completion = caskroom_completion_path(caskroom, &target)?;
+    file::remove_all(&caskroom_completion)?;
+    if let Some(parent) = caskroom_completion.parent() {
+        file::create_dir_all(parent)?;
+    }
+    let source = find_completion_source(stage, caskroom, &completion.source).ok_or_else(|| {
+        eyre!(
+            "brew-cask: {} completion artifact '{}' was not found",
+            completion.shell.name(),
+            completion.source
+        )
+    })?;
+    file::copy(&source, &caskroom_completion)?;
+    Ok(())
+}
+
+fn stage_generated_completions(
+    stage: &Path,
+    caskroom: &Path,
     cask: &Cask,
-    steps: &[FlightStep],
-    staged_path: &Path,
-    kind: &str,
+    completion: &GeneratedCompletionArtifact,
 ) -> Result<()> {
-    for step in steps {
-        execute_flight_step(step, staged_path).wrap_err_with(|| {
-            format!("brew-cask:{}: failed to run structured {kind}", cask.token)
-        })?;
+    let executable = find_generated_completion_executable(stage, caskroom, cask, completion)?;
+    let base_name = completion.resolved_base_name(cask);
+    for shell in &completion.shells {
+        let target = generated_completion_target_path(*shell, &base_name)?;
+        let caskroom_completion = caskroom_completion_path(caskroom, &target)?;
+        if let Some(parent) = caskroom_completion.parent() {
+            file::create_dir_all(parent)?;
+        }
+        let output = generate_completion_output(&executable, completion, *shell)?;
+        crate::file::write(caskroom_completion, output)?;
     }
     Ok(())
 }
 
-fn execute_flight_step(step: &FlightStep, staged_path: &Path) -> Result<()> {
-    match step {
-        FlightStep::Move {
-            source,
-            target,
-            source_glob,
-        } => {
-            let sources = flight_sources(staged_path, source, *source_glob)?;
-            let target = resolve_flight_path(staged_path, target)?;
-            if sources.len() > 1 && !target.is_dir() {
-                bail!(
-                    "brew-cask: structured move with multiple sources requires a directory target"
-                );
-            }
-            for source in sources {
-                let target = if target.is_dir() {
-                    target.join(source.file_name().ok_or_else(|| {
-                        eyre!(
-                            "brew-cask: structured move source '{}' has no file name",
-                            source.display()
-                        )
-                    })?)
-                } else {
-                    target.clone()
-                };
-                if let Some(parent) = target.parent()
-                    && !parent.as_os_str().is_empty()
-                {
-                    file::create_dir_all(parent)?;
-                }
-                file::remove_all(&target)?;
-                file::rename(&source, &target)?;
-            }
-        }
-        FlightStep::Remove { paths, recursive } => {
-            for path in paths {
-                for path in flight_paths(staged_path, path)? {
-                    if *recursive {
-                        file::remove_all(&path)?;
-                    } else if path.symlink_metadata().is_ok() {
-                        file::remove_file_or_dir(&path)?;
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn flight_sources(
-    staged_path: &Path,
-    source: &FlightPath,
-    source_glob: bool,
-) -> Result<Vec<PathBuf>> {
-    if !source_glob {
-        let source = resolve_flight_path(staged_path, source)?;
-        if !source.exists() {
-            bail!(
-                "brew-cask: structured move source '{}' was not found",
-                source.display()
-            );
-        }
-        return Ok(vec![source]);
-    }
-    // Homebrew marks move sources as globs explicitly; non-glob move sources
-    // may contain literal glob-like characters and should be resolved literally.
-    let sources = expand_staged_glob(staged_path, &source.path)?;
-    if sources.is_empty() {
+fn link_completion(caskroom: &Path, target: &Path) -> Result<()> {
+    let caskroom_completion = caskroom_completion_path(caskroom, target)?;
+    if !caskroom_completion.is_file() {
         bail!(
-            "brew-cask: structured move source '{}' was not found",
-            source.path
+            "brew-cask: completion artifact '{}' was not staged",
+            target.display()
         );
     }
-    Ok(sources)
-}
-
-fn flight_paths(staged_path: &Path, path: &FlightPath) -> Result<Vec<PathBuf>> {
-    if !is_flight_glob(&path.path) {
-        return Ok(vec![resolve_flight_path(staged_path, path)?]);
+    if let Some(parent) = target.parent() {
+        file::create_dir_all(parent)?;
     }
-    // Remove steps do not have a `source_glob` flag, so path globs are detected
-    // from the path syntax instead.
-    expand_staged_glob(staged_path, &path.path)
+    file::remove_all(target)?;
+    file::copy(&caskroom_completion, target)?;
+    Ok(())
 }
 
-fn expand_staged_glob(staged_path: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
-    let mut matches = Vec::new();
-    let escaped_root = glob::Pattern::escape(staged_path.to_string_lossy().as_ref());
-    for pattern in expand_braces(pattern) {
-        validate_flight_relative_path(&pattern)?;
-        let rooted_pattern = Path::new(&escaped_root)
-            .join(Path::new(&pattern))
-            .to_string_lossy()
-            .to_string();
-        for path in glob::glob_with(
-            &rooted_pattern,
-            glob::MatchOptions {
-                require_literal_separator: true,
-                ..Default::default()
-            },
-        )
-        .wrap_err_with(|| format!("brew-cask: invalid structured flight glob '{pattern}'"))?
-        {
-            let path = path?;
-            if !path.starts_with(staged_path) {
-                bail!(
-                    "brew-cask: structured flight glob '{}' matched outside staged path",
-                    pattern
-                );
+fn find_completion_source(stage: &Path, caskroom: &Path, source: &str) -> Option<PathBuf> {
+    if source.contains("$APPDIR") {
+        return [
+            PathBuf::from("/Applications"),
+            prefix::prefix().join("Applications"),
+        ]
+        .iter()
+        .map(|appdir| PathBuf::from(source.replace("$APPDIR", &appdir.to_string_lossy())))
+        .find(|path| path.is_file());
+    }
+    absolute_prefixed_source(source)
+        .filter(|source| source.is_file())
+        .or_else(|| find_file_artifact(caskroom, source))
+        .or_else(|| find_file_artifact(stage, source))
+}
+
+fn find_generated_completion_executable(
+    stage: &Path,
+    caskroom: &Path,
+    cask: &Cask,
+    completion: &GeneratedCompletionArtifact,
+) -> Result<PathBuf> {
+    let executable = &completion.executable;
+    if let Some(source) = generated_caskroom_artifact(caskroom, cask, executable)
+        && source.is_file()
+    {
+        return Ok(source);
+    }
+    if let Some(source) = generated_caskroom_artifact(stage, cask, executable)
+        && source.is_file()
+    {
+        return Ok(source);
+    }
+    if let Some(source) = absolute_prefixed_source(executable) {
+        if source.is_file() {
+            return Ok(source);
+        }
+        if let Ok(relative) = source.strip_prefix(prefix::prefix()) {
+            let caskroom_source = caskroom.join(relative);
+            if caskroom_source.is_file() {
+                return Ok(caskroom_source);
             }
-            matches.push(path);
         }
     }
-    matches.sort();
-    matches.dedup();
-    Ok(matches)
+    find_file_artifact(caskroom, executable)
+        .or_else(|| find_file_artifact(stage, executable))
+        .ok_or_else(|| {
+            eyre!(
+                "brew-cask: completion executable '{}' was not found",
+                executable
+            )
+        })
 }
 
-fn is_flight_glob(path: &str) -> bool {
-    path.chars()
-        .any(|c| matches!(c, '*' | '?' | '[' | ']' | '{' | '}'))
-}
-
-fn resolve_flight_path(staged_path: &Path, path: &FlightPath) -> Result<PathBuf> {
-    match path.base {
-        FlightPathBase::StagedPath => {}
+fn generate_completion_output(
+    executable: &Path,
+    completion: &GeneratedCompletionArtifact,
+    shell: CompletionShell,
+) -> Result<String> {
+    let mut command = std::process::Command::new(executable);
+    command.args(&completion.args);
+    command.env("SHELL", shell.name());
+    let (shell_args, shell_env) = completion_shell_parameter(
+        completion.shell_parameter_format.as_deref(),
+        shell,
+        executable,
+    );
+    command.args(shell_args);
+    for (key, value) in shell_env {
+        command.env(key, value);
     }
-    let relative = Path::new(&path.path);
-    validate_flight_relative_path(&path.path)?;
-    Ok(staged_path.join(relative))
+    let output = command.output().wrap_err_with(|| {
+        format!(
+            "failed to generate {} completions from {}",
+            shell.name(),
+            executable.display()
+        )
+    })?;
+    if !output.status.success() {
+        bail!(
+            "brew-cask: failed to generate {} completions from {}: {}",
+            shell.name(),
+            executable.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-fn validate_flight_relative_path(path: &str) -> Result<()> {
-    let path = Path::new(path);
-    if path.is_absolute()
-        || path
-            .components()
-            .any(|component| matches!(component, Component::ParentDir))
+fn completion_shell_parameter(
+    format: Option<&str>,
+    shell: CompletionShell,
+    executable: &Path,
+) -> (Vec<String>, Vec<(String, String)>) {
+    let shell_parameter = shell.parameter_name().to_string();
+    match format {
+        None => (vec![shell_parameter], Vec::new()),
+        Some("arg") => (vec![format!("--shell={shell_parameter}")], Vec::new()),
+        Some("clap") => (Vec::new(), vec![("COMPLETE".to_string(), shell_parameter)]),
+        Some("click") => {
+            let program = executable
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default()
+                .to_uppercase()
+                .replace('-', "_");
+            (
+                Vec::new(),
+                vec![(
+                    format!("_{program}_COMPLETE"),
+                    format!("{shell_parameter}_source"),
+                )],
+            )
+        }
+        Some("cobra") => (vec!["completion".to_string(), shell_parameter], Vec::new()),
+        Some("flag") => (vec![format!("--{shell_parameter}")], Vec::new()),
+        Some("none") => (Vec::new(), Vec::new()),
+        Some("typer") => (
+            vec!["--show-completion".to_string(), shell_parameter],
+            vec![(
+                "_TYPER_COMPLETE_TEST_DISABLE_SHELL_DETECTION".to_string(),
+                "1".to_string(),
+            )],
+        ),
+        Some(format) => (vec![format!("{format}{}", shell.name())], Vec::new()),
+    }
+}
+
+fn absolute_prefixed_source(source: &str) -> Option<PathBuf> {
+    let prefix = prefix::prefix();
+    let source = source.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy());
+    let source = PathBuf::from(source);
+    source.is_absolute().then_some(source)
+}
+
+fn completion_target_path(shell: CompletionShell, target_name: &str) -> Result<PathBuf> {
+    let prefix = prefix::prefix();
+    let prefix_str = prefix.to_string_lossy();
+    let target_name = target_name.replace("$HOMEBREW_PREFIX", prefix_str.as_ref());
+    let path = PathBuf::from(&target_name);
+    let target = if path.is_absolute() {
+        path
+    } else if target_name.contains('/') {
+        prefix.join(path)
+    } else {
+        default_completion_dir(shell).join(completion_filename(shell, &target_name)?)
+    };
+    if target
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
     {
         bail!(
-            "brew-cask: invalid structured flight path '{}'",
-            path.display()
+            "brew-cask: completion target '{}' must not contain '..'",
+            target.display()
         );
     }
-    Ok(())
+    if !target.starts_with(&prefix) {
+        bail!(
+            "brew-cask: completion target '{}' must be under {}",
+            target.display(),
+            prefix.display()
+        );
+    }
+    Ok(target)
 }
 
-fn expand_braces(pattern: &str) -> Vec<String> {
-    let Some(start) = pattern.find('{') else {
-        return vec![pattern.to_string()];
+fn generated_completion_target_path(shell: CompletionShell, base_name: &str) -> Result<PathBuf> {
+    match shell {
+        CompletionShell::Pwsh => {
+            let name = format!("_{}.ps1", base_name);
+            completion_target_path(shell, &name)
+        }
+        _ => completion_target_path(shell, base_name),
+    }
+}
+
+fn default_completion_dir(shell: CompletionShell) -> PathBuf {
+    let prefix = prefix::prefix();
+    match shell {
+        CompletionShell::Bash => prefix.join("etc/bash_completion.d"),
+        CompletionShell::Fish => prefix.join("share/fish/vendor_completions.d"),
+        CompletionShell::Zsh => prefix.join("share/zsh/site-functions"),
+        CompletionShell::Pwsh => prefix.join("share/pwsh/completions"),
+    }
+}
+
+fn completion_filename(shell: CompletionShell, target_name: &str) -> Result<String> {
+    let filename = Path::new(target_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| eyre!("brew-cask: invalid completion target '{target_name}'"))?;
+    let stem = Path::new(filename)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(filename);
+    let normalized = match shell {
+        CompletionShell::Bash => stem.to_string(),
+        CompletionShell::Fish => {
+            if filename.ends_with(".fish") {
+                filename.to_string()
+            } else {
+                format!("{stem}.fish")
+            }
+        }
+        CompletionShell::Zsh => {
+            if filename.starts_with('_') {
+                filename.to_string()
+            } else {
+                format!("_{stem}")
+            }
+        }
+        CompletionShell::Pwsh => {
+            if filename.ends_with(".ps1") {
+                filename.to_string()
+            } else {
+                format!("{stem}.ps1")
+            }
+        }
     };
-    let Some(end_offset) = pattern[start + 1..].find('}') else {
-        return vec![pattern.to_string()];
+    if normalized.is_empty() {
+        bail!("brew-cask: invalid completion target '{target_name}'");
+    }
+    Ok(normalized)
+}
+
+fn caskroom_completion_path(caskroom: &Path, target: &Path) -> Result<PathBuf> {
+    let prefix = prefix::prefix();
+    let relative = target.strip_prefix(&prefix).map_err(|_| {
+        eyre!(
+            "brew-cask: completion target '{}' must be under {}",
+            target.display(),
+            prefix.display()
+        )
+    })?;
+    if relative.components().next().is_none() {
+        bail!(
+            "brew-cask: invalid completion target '{}'",
+            target.display()
+        );
+    }
+    Ok(caskroom.join(relative))
+}
+
+fn completion_target_paths(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
+    let mut targets = artifacts
+        .completions
+        .iter()
+        .map(CompletionArtifact::target_path)
+        .collect::<Result<Vec<_>>>()?;
+    for generated in &artifacts.generated_completions {
+        targets.extend(generated.target_paths(cask)?);
+    }
+    targets.sort();
+    targets.dedup();
+    Ok(targets)
+}
+
+fn previous_completion_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
+    let Some(version) = installed_version(&cask.token) else {
+        return Ok(Vec::new());
     };
-    let end = start + 1 + end_offset;
-    let prefix = &pattern[..start];
-    let suffix = &pattern[end + 1..];
-    let mut expanded = Vec::new();
-    for alternative in pattern[start + 1..end].split(',') {
-        for suffix in expand_braces(suffix) {
-            expanded.push(format!("{prefix}{alternative}{suffix}"));
+    let version_dir = caskroom_version_dir(&cask.token, &version);
+    Ok(read_receipt(&version_dir)?
+        .map(|receipt| receipt.completions)
+        .unwrap_or_default())
+}
+
+fn remove_obsolete_completions(
+    cask: &Cask,
+    previous_targets: &[PathBuf],
+    current_targets: &[PathBuf],
+) -> Result<()> {
+    let token_dir = file::desymlink_path(&caskroom_token_dir(&cask.token));
+    let prefix = prefix::prefix();
+    for target in previous_targets {
+        if current_targets.contains(target) || !target.is_file() || !target.starts_with(&prefix) {
+            continue;
+        }
+        let Ok(relative) = target.strip_prefix(&prefix) else {
+            continue;
+        };
+        let has_staged_copy = std::fs::read_dir(&token_dir)
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_type().is_ok_and(|ft| ft.is_dir()))
+            .any(|entry| entry.path().join(relative).is_file());
+        if has_staged_copy {
+            file::remove_file(target)?;
         }
     }
-    expanded
+    Ok(())
 }
 
 fn stage_binary(stage: &Path, caskroom: &Path, cask: &Cask, binary: &BinaryArtifact) -> Result<()> {
@@ -1101,16 +1357,8 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
     let mut artifacts = CaskArtifacts::default();
     for artifact in &cask.artifacts {
         let artifact_type = artifact_type(artifact);
-        if let Some(steps) = parse_flight_steps(cask, artifact, "preflight_steps")? {
-            artifacts.preflight_steps.extend(steps);
-            continue;
-        }
-        if let Some(steps) = parse_flight_steps(cask, artifact, "postflight_steps")? {
-            artifacts.postflight_steps.extend(steps);
-            continue;
-        }
         if is_non_install_artifact(&artifact_type) {
-            collect_pkg_receipt_ids(artifact, &mut artifacts.pkg_ids);
+            collect_uninstall_pkg_ids(artifact, &mut artifacts.pkg_ids);
             continue;
         }
         if let Some(app) = parse_app_artifact(artifact) {
@@ -1129,6 +1377,14 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
             artifacts.fonts.push(font);
             continue;
         }
+        if let Some(completion) = parse_completion_artifact(artifact)? {
+            artifacts.completions.push(completion);
+            continue;
+        }
+        if let Some(generated) = parse_generated_completion_artifact(artifact)? {
+            artifacts.generated_completions.push(generated);
+            continue;
+        }
         bail!(
             "brew-cask:{}: unsupported artifact type {}",
             cask.token,
@@ -1139,9 +1395,11 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
         && artifacts.binaries.is_empty()
         && artifacts.pkgs.is_empty()
         && artifacts.fonts.is_empty()
+        && artifacts.completions.is_empty()
+        && artifacts.generated_completions.is_empty()
     {
         bail!(
-            "brew-cask:{}: no app, binary, pkg, or font artifact found; only app-bundle, binary, pkg, and font casks are supported",
+            "brew-cask:{}: no app, binary, pkg, font, or completion artifact found; only app-bundle, binary, pkg, font, and completion casks are supported",
             cask.token
         );
     }
@@ -1151,7 +1409,7 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
         artifacts.pkg_ids.clear();
     } else if artifacts.pkg_ids.is_empty() {
         bail!(
-            "brew-cask:{}: pkg artifacts require pkgutil ids in uninstall metadata",
+            "brew-cask:{}: pkg artifacts require pkgutil ids in uninstall or zap metadata",
             cask.token
         );
     }
@@ -1243,190 +1501,158 @@ fn parse_font_artifact(value: &Value) -> Option<FontArtifact> {
     }
 }
 
-fn parse_flight_steps(cask: &Cask, value: &Value, kind: &str) -> Result<Option<Vec<FlightStep>>> {
-    let Some(metadata) = value.as_object().and_then(|o| o.get(kind)) else {
+fn parse_completion_artifact(value: &Value) -> Result<Option<CompletionArtifact>> {
+    for (key, shell) in [
+        ("bash_completion", CompletionShell::Bash),
+        ("fish_completion", CompletionShell::Fish),
+        ("zsh_completion", CompletionShell::Zsh),
+    ] {
+        let Some(completion) = value.as_object().and_then(|o| o.get(key)) else {
+            continue;
+        };
+        return parse_declared_completion_artifact(value, completion, shell);
+    }
+    Ok(None)
+}
+
+fn parse_declared_completion_artifact(
+    value: &Value,
+    completion: &Value,
+    shell: CompletionShell,
+) -> Result<Option<CompletionArtifact>> {
+    match completion {
+        Value::String(source) => Ok(Some(CompletionArtifact {
+            shell,
+            source: source.clone(),
+            target: value
+                .as_object()
+                .and_then(|o| o.get("target"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        })),
+        Value::Array(values) => {
+            let Some(source) = values.first().and_then(Value::as_str) else {
+                return Ok(None);
+            };
+            Ok(Some(CompletionArtifact {
+                shell,
+                source: source.to_string(),
+                target: artifact_target(value, values),
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn parse_generated_completion_artifact(
+    value: &Value,
+) -> Result<Option<GeneratedCompletionArtifact>> {
+    let Some(generated) = value
+        .as_object()
+        .and_then(|o| o.get("generate_completions_from_executable"))
+    else {
         return Ok(None);
     };
-    let groups = metadata.as_array().ok_or_else(|| {
-        eyre!(
-            "brew-cask:{}: unsupported {kind} metadata format",
-            cask.token
-        )
-    })?;
-    let mut steps = Vec::new();
-    for group in groups {
-        let group = group.as_object().ok_or_else(|| {
-            eyre!(
-                "brew-cask:{}: unsupported {kind} metadata format",
-                cask.token
-            )
-        })?;
-        reject_unsupported_flight_fields(cask, kind, "step group", group, &["steps"])?;
-        let group_steps = group
-            .get("steps")
-            .and_then(Value::as_array)
-            .ok_or_else(|| {
-                eyre!(
-                    "brew-cask:{}: unsupported {kind} metadata format",
-                    cask.token
-                )
-            })?;
-        for step in group_steps {
-            steps.push(parse_flight_step(cask, kind, step)?);
-        }
-    }
-    Ok(Some(steps))
-}
-
-fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightStep> {
-    let object = value.as_object().ok_or_else(|| {
-        eyre!(
-            "brew-cask:{}: unsupported {kind} step metadata format",
-            cask.token
-        )
-    })?;
-    let step_type = object.get("type").and_then(Value::as_str).ok_or_else(|| {
-        eyre!(
-            "brew-cask:{}: unsupported {kind} step metadata format",
-            cask.token
-        )
-    })?;
-    match step_type {
-        "move" => {
-            reject_unsupported_flight_fields(
-                cask,
-                kind,
-                "move step",
-                object,
-                &["type", "source", "target", "source_glob"],
-            )?;
-            Ok(FlightStep::Move {
-                source: parse_flight_path(cask, kind, "source", object.get("source"))?,
-                target: parse_flight_path(cask, kind, "target", object.get("target"))?,
-                source_glob: object
-                    .get("source_glob")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-            })
-        }
-        "remove" => {
-            reject_unsupported_flight_fields(
-                cask,
-                kind,
-                "remove step",
-                object,
-                &["type", "paths", "recursive"],
-            )?;
-            let paths = object
-                .get("paths")
-                .and_then(Value::as_array)
-                .ok_or_else(|| {
-                    eyre!(
-                        "brew-cask:{}: unsupported {kind} remove step metadata format",
-                        cask.token
-                    )
-                })?
-                .iter()
-                .map(|path| parse_flight_path(cask, kind, "paths", Some(path)))
-                .collect::<Result<Vec<_>>>()?;
-            Ok(FlightStep::Remove {
-                paths,
-                recursive: object
-                    .get("recursive")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-            })
-        }
-        _ => bail!(
-            "brew-cask:{}: unsupported {kind} step type {}",
-            cask.token,
-            step_type
-        ),
-    }
-}
-
-fn reject_unsupported_flight_fields(
-    cask: &Cask,
-    kind: &str,
-    context: &str,
-    object: &serde_json::Map<String, Value>,
-    allowed: &[&str],
-) -> Result<()> {
-    let mut unsupported = object
-        .keys()
-        .filter(|key| !allowed.contains(&key.as_str()))
-        .cloned()
-        .collect::<Vec<_>>();
-    unsupported.sort();
-    if !unsupported.is_empty() {
-        bail!(
-            "brew-cask:{}: unsupported {kind} {context} field {}",
-            cask.token,
-            unsupported.join(", ")
-        );
-    }
-    Ok(())
-}
-
-fn parse_flight_path(
-    cask: &Cask,
-    kind: &str,
-    field: &str,
-    value: Option<&Value>,
-) -> Result<FlightPath> {
-    let object = value.and_then(Value::as_object).ok_or_else(|| {
-        eyre!(
-            "brew-cask:{}: unsupported {kind} {field} metadata format",
-            cask.token
-        )
-    })?;
-    let base = match object.get("base").and_then(Value::as_str) {
-        Some("staged_path") => FlightPathBase::StagedPath,
-        Some(base) => bail!(
-            "brew-cask:{}: unsupported {kind} {field} base {}",
-            cask.token,
-            base
-        ),
-        None => bail!("brew-cask:{}: unsupported {kind} {field} base", cask.token),
+    let Value::Array(values) = generated else {
+        return Ok(None);
     };
-    let path = object
-        .get("path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| eyre!("brew-cask:{}: unsupported {kind} {field} path", cask.token))?;
-    if validate_flight_relative_path(path).is_err() {
-        bail!(
-            "brew-cask:{}: invalid {kind} {field} path {}",
-            cask.token,
-            path
-        )
+    if values.is_empty() {
+        bail!("brew-cask: generate_completions_from_executable requires an executable");
     }
-    Ok(FlightPath {
-        base,
-        path: path.to_string(),
-    })
+    let options = values.last().and_then(Value::as_object);
+    let command_values = if options.is_some() {
+        &values[..values.len() - 1]
+    } else {
+        values.as_slice()
+    };
+    let executable = command_values
+        .first()
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            eyre!("brew-cask: generate_completions_from_executable requires an executable")
+        })?
+        .to_string();
+    let args = command_values
+        .iter()
+        .skip(1)
+        .map(|value| {
+            value.as_str().map(str::to_string).ok_or_else(|| {
+                eyre!("brew-cask: generate_completions_from_executable arguments must be strings")
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let shell_parameter_format = options
+        .and_then(|o| o.get("shell_parameter_format"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let shells = options
+        .and_then(|o| o.get("shells"))
+        .and_then(Value::as_array)
+        .map(|shells| {
+            shells
+                .iter()
+                .map(|shell| {
+                    let shell = shell.as_str().ok_or_else(|| {
+                        eyre!("brew-cask: completion shell names must be strings")
+                    })?;
+                    CompletionShell::parse(shell)
+                        .ok_or_else(|| eyre!("brew-cask: unsupported completion shell '{shell}'"))
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_else(|| default_generated_completion_shells(shell_parameter_format.as_deref()));
+    Ok(Some(GeneratedCompletionArtifact {
+        executable,
+        args,
+        base_name: options
+            .and_then(|o| o.get("base_name"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        shell_parameter_format,
+        shells,
+    }))
 }
 
-fn collect_pkg_receipt_ids(value: &Value, pkg_ids: &mut Vec<String>) {
+fn default_generated_completion_shells(format: Option<&str>) -> Vec<CompletionShell> {
+    match format {
+        Some("cobra") | Some("typer") => vec![
+            CompletionShell::Bash,
+            CompletionShell::Zsh,
+            CompletionShell::Fish,
+            CompletionShell::Pwsh,
+        ],
+        _ => vec![
+            CompletionShell::Bash,
+            CompletionShell::Zsh,
+            CompletionShell::Fish,
+        ],
+    }
+}
+
+fn collect_uninstall_pkg_ids(value: &Value, pkg_ids: &mut Vec<String>) {
     let Some(object) = value.as_object() else {
         return;
     };
-    let Some(metadata) = object.get("uninstall") else {
-        return;
-    };
-    let values: Vec<&Value> = match metadata {
-        Value::Array(values) => values.iter().collect(),
-        value => vec![value],
-    };
-    for value in values {
-        let Some(pkgutil) = value.as_object().and_then(|o| o.get("pkgutil")) else {
+    for key in ["uninstall", "zap"] {
+        let Some(metadata) = object.get(key) else {
             continue;
         };
-        match pkgutil {
-            Value::String(id) => pkg_ids.push(id.clone()),
-            Value::Array(ids) => {
-                pkg_ids.extend(ids.iter().filter_map(Value::as_str).map(str::to_string))
+        let values: Vec<&Value> = match metadata {
+            Value::Array(values) => values.iter().collect(),
+            value => vec![value],
+        };
+        for value in values {
+            let Some(pkgutil) = value.as_object().and_then(|o| o.get("pkgutil")) else {
+                continue;
+            };
+            match pkgutil {
+                Value::String(id) => pkg_ids.push(id.clone()),
+                Value::Array(ids) => {
+                    pkg_ids.extend(ids.iter().filter_map(Value::as_str).map(str::to_string))
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 }
@@ -1711,10 +1937,18 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
             } else {
                 receipt.fonts
             };
+            let completion_targets = if receipt.completions.is_empty() {
+                completion_target_paths(cask, artifacts)?
+            } else {
+                receipt.completions
+            };
             if app_targets.iter().all(|app| app.exists())
                 && binary_targets.iter().all(|binary| binary.exists())
                 && pkgs_installed
                 && font_targets.iter().all(|font| font.exists())
+                && completion_targets
+                    .iter()
+                    .all(|completion| completion.exists())
             {
                 Ok(Some(receipt.version))
             } else {
@@ -1740,6 +1974,11 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
                     return Ok(None);
                 }
             }
+            for completion in completion_target_paths(cask, artifacts)? {
+                if !completion.exists() {
+                    return Ok(None);
+                }
+            }
             Ok(Some(version))
         }
     }
@@ -1759,6 +1998,7 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
             .iter()
             .map(font_target_path)
             .collect::<Result<Vec<_>>>()?,
+        completions: completion_target_paths(cask, artifacts)?,
         pkg_ids: artifacts.pkg_ids.clone(),
     };
     let body = toml::to_string_pretty(&receipt)?;
@@ -1826,22 +2066,16 @@ fn artifact_type(value: &Value) -> String {
 fn is_non_install_artifact(kind: &str) -> bool {
     matches!(
         kind,
-        "bash_completion"
-            | "caveats"
+        "caveats"
             | "conflicts_with"
             | "depends_on"
-            | "fish_completion"
-            | "generate_completions_from_executable"
             | "manpage"
             | "postflight"
             | "preflight"
-            | "uninstall_postflight_steps"
-            | "uninstall_preflight_steps"
             | "uninstall"
             | "uninstall_postflight"
             | "uninstall_preflight"
             | "zap"
-            | "zsh_completion"
     )
 }
 
@@ -1911,185 +2145,6 @@ mod tests {
             tap_git_head: None,
             raw_base: None,
         }
-    }
-
-    #[test]
-    fn parses_structured_flight_steps() -> Result<()> {
-        let mut cask = test_cask("wezterm@nightly", "latest");
-        cask.artifacts = vec![
-            serde_json::json!({
-                "preflight_steps": [{
-                    "steps": [
-                        {
-                            "type": "move",
-                            "source_glob": true,
-                            "source": {
-                                "base": "staged_path",
-                                "path": "{WezTerm-*,wezterm-*}/WezTerm.app"
-                            },
-                            "target": {
-                                "base": "staged_path",
-                                "path": "."
-                            }
-                        },
-                        {
-                            "type": "remove",
-                            "recursive": true,
-                            "paths": [
-                                {"base": "staged_path", "path": "WezTerm-*"},
-                                {"base": "staged_path", "path": "wezterm-*"}
-                            ]
-                        }
-                    ]
-                }]
-            }),
-            serde_json::json!({"app": "WezTerm.app"}),
-        ];
-
-        assert_eq!(
-            cask_artifacts(&cask)?,
-            CaskArtifacts {
-                apps: vec![AppArtifact {
-                    source: "WezTerm.app".to_string(),
-                    target: None,
-                }],
-                preflight_steps: vec![
-                    FlightStep::Move {
-                        source: FlightPath {
-                            base: FlightPathBase::StagedPath,
-                            path: "{WezTerm-*,wezterm-*}/WezTerm.app".to_string(),
-                        },
-                        target: FlightPath {
-                            base: FlightPathBase::StagedPath,
-                            path: ".".to_string(),
-                        },
-                        source_glob: true,
-                    },
-                    FlightStep::Remove {
-                        paths: vec![
-                            FlightPath {
-                                base: FlightPathBase::StagedPath,
-                                path: "WezTerm-*".to_string(),
-                            },
-                            FlightPath {
-                                base: FlightPathBase::StagedPath,
-                                path: "wezterm-*".to_string(),
-                            }
-                        ],
-                        recursive: true,
-                    }
-                ],
-                ..Default::default()
-            }
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn structured_flight_steps_move_and_remove_staged_paths() -> Result<()> {
-        let tmp = tempfile::tempdir()?;
-        let staged = tmp.path();
-        let bundle_dir = staged.join("WezTerm-nightly");
-        let app = bundle_dir.join("WezTerm.app");
-        file::create_dir_all(&app)?;
-
-        execute_flight_steps(
-            &test_cask("wezterm@nightly", "latest"),
-            &[
-                FlightStep::Move {
-                    source: FlightPath {
-                        base: FlightPathBase::StagedPath,
-                        path: "{WezTerm-*,wezterm-*}/WezTerm.app".to_string(),
-                    },
-                    target: FlightPath {
-                        base: FlightPathBase::StagedPath,
-                        path: ".".to_string(),
-                    },
-                    source_glob: true,
-                },
-                FlightStep::Remove {
-                    paths: vec![
-                        FlightPath {
-                            base: FlightPathBase::StagedPath,
-                            path: "WezTerm-*".to_string(),
-                        },
-                        FlightPath {
-                            base: FlightPathBase::StagedPath,
-                            path: "wezterm-*".to_string(),
-                        },
-                    ],
-                    recursive: true,
-                },
-            ],
-            staged,
-            "preflight_steps",
-        )?;
-
-        assert!(staged.join("WezTerm.app").is_dir());
-        assert!(!bundle_dir.exists());
-        Ok(())
-    }
-
-    #[test]
-    fn rejects_unsupported_structured_flight_steps() {
-        let mut cask = test_cask("battle-net", "1.0.0");
-        cask.artifacts = vec![
-            serde_json::json!({
-                "preflight_steps": [{
-                    "steps": [{
-                        "type": "set_permissions",
-                        "paths": [{"base": "staged_path", "path": "Battle.net-Setup.app"}],
-                        "permissions": "a+x"
-                    }]
-                }]
-            }),
-            serde_json::json!({"app": "Battle.net.app"}),
-        ];
-
-        let err = cask_artifacts(&cask).unwrap_err().to_string();
-        assert!(err.contains("unsupported preflight_steps step type set_permissions"));
-    }
-
-    #[test]
-    fn rejects_structured_flight_step_group_controls() {
-        let mut cask = test_cask("example", "1.0.0");
-        cask.artifacts = vec![
-            serde_json::json!({
-                "preflight_steps": [{
-                    "if": {"arch": "arm64"},
-                    "steps": [{
-                        "type": "remove",
-                        "paths": [{"base": "staged_path", "path": "old"}]
-                    }]
-                }]
-            }),
-            serde_json::json!({"app": "Example.app"}),
-        ];
-
-        let err = cask_artifacts(&cask).unwrap_err().to_string();
-        assert!(err.contains("unsupported preflight_steps step group field if"));
-    }
-
-    #[test]
-    fn rejects_structured_flight_step_controls() {
-        let mut cask = test_cask("miniconda", "25.5.1-1");
-        cask.artifacts = vec![
-            serde_json::json!({
-                "postflight_steps": [{
-                    "steps": [{
-                        "type": "remove",
-                        "paths": [{"base": "staged_path", "path": "base/envs"}],
-                        "recursive": true,
-                        "guards": [{"condition": "if_exists", "path": "{{temp}}/miniconda-envs"}]
-                    }]
-                }]
-            }),
-            serde_json::json!({"pkg": ["Miniconda.pkg"]}),
-            serde_json::json!({"uninstall": [{"pkgutil": "com.anaconda.pkg"}]}),
-        ];
-
-        let err = cask_artifacts(&cask).unwrap_err().to_string();
-        assert!(err.contains("unsupported postflight_steps remove step field guards"));
     }
 
     #[test]
@@ -2406,7 +2461,7 @@ end
     }
 
     #[test]
-    fn parses_binary_artifacts_and_ignores_completion_generation() -> Result<()> {
+    fn parses_binary_artifacts_and_generated_completions() -> Result<()> {
         let mut cask = test_cask("1password-cli", "2.34.1");
         cask.artifacts = vec![
             serde_json::json!({"binary": ["op"], "target": "$HOMEBREW_PREFIX/bin/op"}),
@@ -2427,10 +2482,184 @@ end
                     source: "op".to_string(),
                     target: Some("$HOMEBREW_PREFIX/bin/op".to_string())
                 }],
+                generated_completions: vec![GeneratedCompletionArtifact {
+                    executable: "op".to_string(),
+                    args: vec!["completion".to_string()],
+                    base_name: None,
+                    shell_parameter_format: None,
+                    shells: vec![
+                        CompletionShell::Bash,
+                        CompletionShell::Zsh,
+                        CompletionShell::Fish,
+                    ],
+                }],
                 ..Default::default()
             }
         );
         Ok(())
+    }
+
+    #[test]
+    fn parses_declared_completion_artifacts() -> Result<()> {
+        let mut cask = test_cask("ghostty", "1.2.0");
+        cask.artifacts = vec![
+            serde_json::json!({"app": "Ghostty.app"}),
+            serde_json::json!({
+                "bash_completion": [
+                    "$APPDIR/Ghostty.app/Contents/Resources/bash-completion/completions/ghostty.bash"
+                ],
+                "target": "$HOMEBREW_PREFIX/etc/bash_completion.d/ghostty"
+            }),
+            serde_json::json!({
+                "fish_completion": [
+                    "$APPDIR/Ghostty.app/Contents/Resources/fish/vendor_completions.d/ghostty.fish"
+                ],
+                "target": "$HOMEBREW_PREFIX/share/fish/vendor_completions.d/ghostty.fish"
+            }),
+            serde_json::json!({
+                "zsh_completion": [
+                    "$APPDIR/Ghostty.app/Contents/Resources/zsh/site-functions/_ghostty"
+                ],
+                "target": "$HOMEBREW_PREFIX/share/zsh/site-functions/_ghostty"
+            }),
+        ];
+
+        assert_eq!(
+            cask_artifacts(&cask)?.completions,
+            vec![
+                CompletionArtifact {
+                    shell: CompletionShell::Bash,
+                    source: "$APPDIR/Ghostty.app/Contents/Resources/bash-completion/completions/ghostty.bash"
+                        .to_string(),
+                    target: Some("$HOMEBREW_PREFIX/etc/bash_completion.d/ghostty".to_string()),
+                },
+                CompletionArtifact {
+                    shell: CompletionShell::Fish,
+                    source: "$APPDIR/Ghostty.app/Contents/Resources/fish/vendor_completions.d/ghostty.fish"
+                        .to_string(),
+                    target: Some(
+                        "$HOMEBREW_PREFIX/share/fish/vendor_completions.d/ghostty.fish"
+                            .to_string()
+                    ),
+                },
+                CompletionArtifact {
+                    shell: CompletionShell::Zsh,
+                    source: "$APPDIR/Ghostty.app/Contents/Resources/zsh/site-functions/_ghostty"
+                        .to_string(),
+                    target: Some("$HOMEBREW_PREFIX/share/zsh/site-functions/_ghostty".to_string()),
+                },
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn completion_target_paths_match_homebrew_names() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+
+        assert_eq!(
+            completion_target_path(CompletionShell::Bash, "ghostty.bash")?,
+            tmp.path().join("etc/bash_completion.d/ghostty")
+        );
+        assert_eq!(
+            completion_target_path(CompletionShell::Fish, "ghostty")?,
+            tmp.path()
+                .join("share/fish/vendor_completions.d/ghostty.fish")
+        );
+        assert_eq!(
+            completion_target_path(CompletionShell::Zsh, "ghostty")?,
+            tmp.path().join("share/zsh/site-functions/_ghostty")
+        );
+        assert_eq!(
+            generated_completion_target_path(CompletionShell::Pwsh, "ghostty")?,
+            tmp.path().join("share/pwsh/completions/_ghostty.ps1")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn stages_and_links_declared_completion() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let caskroom = tmp.path().join("caskroom");
+        file::create_dir_all(stage.join("completions"))?;
+        file::create_dir_all(&caskroom)?;
+        crate::file::write(stage.join("completions/ghostty.bash"), "complete")?;
+        let completion = CompletionArtifact {
+            shell: CompletionShell::Bash,
+            source: "completions/ghostty.bash".to_string(),
+            target: None,
+        };
+        let target = completion.target_path()?;
+
+        stage_completion(&stage, &caskroom, &completion)?;
+        link_completion(&caskroom, &target)?;
+
+        assert_eq!(
+            crate::file::read_to_string(caskroom.join("etc/bash_completion.d/ghostty"))?,
+            "complete"
+        );
+        assert_eq!(crate::file::read_to_string(target)?, "complete");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stages_generated_completion_output() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let caskroom = tmp.path().join("caskroom");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(&caskroom)?;
+        let executable = stage.join("op");
+        crate::file::write(
+            &executable,
+            "#!/bin/sh\nprintf '%s|%s|%s' \"$1\" \"$2\" \"$SHELL\"\n",
+        )?;
+        file::make_executable(&executable)?;
+        let cask = test_cask("1password-cli", "2.34.1");
+        let completion = GeneratedCompletionArtifact {
+            executable: "op".to_string(),
+            args: vec!["completion".to_string()],
+            base_name: None,
+            shell_parameter_format: None,
+            shells: vec![CompletionShell::Bash],
+        };
+
+        stage_generated_completions(&stage, &caskroom, &cask, &completion)?;
+
+        assert_eq!(
+            crate::file::read_to_string(caskroom.join("etc/bash_completion.d/op"))?,
+            "completion|bash|bash"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn completion_shell_parameter_formats_match_homebrew() {
+        let (args, env) =
+            completion_shell_parameter(Some("cobra"), CompletionShell::Zsh, Path::new("tool"));
+        assert_eq!(args, vec!["completion".to_string(), "zsh".to_string()]);
+        assert_eq!(env, Vec::<(String, String)>::new());
+
+        let (args, env) =
+            completion_shell_parameter(Some("click"), CompletionShell::Fish, Path::new("my-tool"));
+        assert!(args.is_empty());
+        assert_eq!(
+            env,
+            vec![("_MY_TOOL_COMPLETE".to_string(), "fish_source".to_string())]
+        );
+
+        let (args, env) =
+            completion_shell_parameter(Some("clap"), CompletionShell::Bash, Path::new("tool"));
+        assert!(args.is_empty());
+        assert_eq!(env, vec![("COMPLETE".to_string(), "bash".to_string())]);
     }
 
     #[test]
@@ -2527,21 +2756,20 @@ end
     }
 
     #[test]
-    fn ignores_zap_pkgutil_ids_for_pkg_receipts() -> Result<()> {
-        let mut cask = test_cask("google-japanese-ime", "3.33.6130");
+    fn parses_zap_pkgutil_ids() -> Result<()> {
+        let mut cask = test_cask("example", "1.0.0");
         cask.artifacts = vec![
-            serde_json::json!({"uninstall": [{"pkgutil": "com.google.pkg.GoogleJapaneseInput"}]}),
-            serde_json::json!({"pkg": ["GoogleJapaneseInput.pkg"]}),
-            serde_json::json!({"zap": [{"pkgutil": "com.google.pkg.Keystone"}]}),
+            serde_json::json!({"zap": [{"pkgutil": ["com.example.pkg"]}]}),
+            serde_json::json!({"pkg": ["Example.pkg"]}),
         ];
 
         assert_eq!(
             cask_artifacts(&cask)?,
             CaskArtifacts {
                 pkgs: vec![PkgArtifact {
-                    source: "GoogleJapaneseInput.pkg".to_string()
+                    source: "Example.pkg".to_string()
                 }],
-                pkg_ids: vec!["com.google.pkg.GoogleJapaneseInput".to_string()],
+                pkg_ids: vec!["com.example.pkg".to_string()],
                 ..Default::default()
             }
         );
@@ -2555,18 +2783,6 @@ end
 
         let err = cask_artifacts(&cask).unwrap_err().to_string();
         assert!(err.contains("pkg artifacts require pkgutil ids"));
-    }
-
-    #[test]
-    fn rejects_pkg_artifacts_with_only_zap_pkgutil_ids() {
-        let mut cask = test_cask("example", "1.0.0");
-        cask.artifacts = vec![
-            serde_json::json!({"pkg": ["Example.pkg"]}),
-            serde_json::json!({"zap": [{"pkgutil": "com.example.cleanup"}]}),
-        ];
-
-        let err = cask_artifacts(&cask).unwrap_err().to_string();
-        assert!(err.contains("pkg artifacts require pkgutil ids in uninstall metadata"));
     }
 
     #[test]
@@ -2621,7 +2837,7 @@ end
     }
 
     #[test]
-    fn skips_bash_completion_and_manpage_artifacts() -> Result<()> {
+    fn parses_completion_artifacts_and_skips_manpage_artifacts() -> Result<()> {
         let mut cask = test_cask("ghostty", "1.2.0");
         cask.artifacts = vec![
             serde_json::json!({"app": "Ghostty.app"}),
@@ -2633,6 +2849,7 @@ end
 
         let artifacts = cask_artifacts(&cask)?;
         assert_eq!(artifacts.apps.len(), 1);
+        assert_eq!(artifacts.completions.len(), 3);
         assert_eq!(artifacts.fonts.len(), 0);
         Ok(())
     }
@@ -2893,6 +3110,7 @@ end
             apps: vec![app_target_path(app.target_name())?],
             binaries: vec![],
             fonts: vec![],
+            completions: vec![],
             pkg_ids: vec!["com.example.helper".to_string()],
         };
         crate::file::write(
@@ -3166,6 +3384,7 @@ end
             apps: vec![],
             binaries: vec![],
             fonts: vec![],
+            completions: vec![],
             pkg_ids: vec![],
         };
         crate::file::write(
@@ -3221,6 +3440,35 @@ end
                     ..Default::default()
                 }
             )?,
+            Some("1.0.0".to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn installed_cask_version_checks_completions_without_receipt() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("completion-only", "1.0.0");
+        let completion = CompletionArtifact {
+            shell: CompletionShell::Zsh,
+            source: "ghostty".to_string(),
+            target: None,
+        };
+        file::create_dir_all(caskroom_version_dir(&cask.token, &cask.version))?;
+        let artifacts = CaskArtifacts {
+            completions: vec![completion.clone()],
+            ..Default::default()
+        };
+
+        assert_eq!(installed_cask_version(&cask, &artifacts)?, None);
+
+        let target = completion.target_path()?;
+        file::create_dir_all(target.parent().unwrap())?;
+        crate::file::write(target, "complete")?;
+        assert_eq!(
+            installed_cask_version(&cask, &artifacts)?,
             Some("1.0.0".to_string())
         );
         Ok(())
