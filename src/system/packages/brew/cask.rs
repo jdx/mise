@@ -906,7 +906,7 @@ fn link_completion(caskroom: &Path, target: &Path) -> Result<()> {
     if let Some(parent) = target.parent() {
         file::create_dir_all(parent)?;
     }
-    replace_completion(&caskroom_completion, target)?;
+    file::make_symlink(&caskroom_completion, target)?;
     Ok(())
 }
 
@@ -961,32 +961,6 @@ fn find_generated_completion_executable(
         "brew-cask: completion executable '{}' was not found",
         executable
     ))
-}
-
-fn replace_completion(source: &Path, target: &Path) -> Result<()> {
-    if target.exists() && !target.is_file() {
-        bail!(
-            "brew-cask: completion target '{}' exists and is not a file",
-            target.display()
-        );
-    }
-    let old_target = target.with_extension(format!(
-        "mise-old-{}",
-        crate::hash::hash_to_str(&target.display().to_string())
-    ));
-    file::remove_all(&old_target)?;
-    if target.exists() {
-        file::rename(target, &old_target)?;
-    }
-    if let Err(e) = file::copy(source, target) {
-        if old_target.exists() {
-            let _ = file::remove_all(target);
-            let _ = file::rename(&old_target, target);
-        }
-        return Err(e);
-    }
-    file::remove_all(&old_target)?;
-    Ok(())
 }
 
 fn appdir_artifact_source(source: &str) -> Option<PathBuf> {
@@ -1114,7 +1088,7 @@ fn completion_shell_parameter(
                 "1".to_string(),
             )],
         ),
-        Some(format) => (vec![format!("{format}{}", shell.name())], Vec::new()),
+        Some(format) => (vec![format!("{format}{shell_parameter}")], Vec::new()),
     }
 }
 
@@ -1268,32 +1242,28 @@ fn remove_obsolete_completions(
         if current_targets.contains(target) || !target.is_file() || !target.starts_with(&prefix) {
             continue;
         }
-        let Ok(relative) = target.strip_prefix(&prefix) else {
+        let Ok(metadata) = target.symlink_metadata() else {
             continue;
         };
-        let staged_copy = std::fs::read_dir(&token_dir)
-            .ok()
-            .into_iter()
-            .flatten()
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.file_type().is_ok_and(|ft| ft.is_dir()))
-            .map(|entry| entry.path().join(relative))
-            .find(|path| path.is_file());
-        if staged_copy
-            .as_deref()
-            .is_some_and(|staged_copy| same_file_contents(target, staged_copy))
-        {
+        if !metadata.file_type().is_symlink() {
+            continue;
+        }
+        let Ok(link_target) = std::fs::read_link(target) else {
+            continue;
+        };
+        let resolved = if link_target.is_absolute() {
+            link_target
+        } else {
+            target
+                .parent()
+                .map(|parent| parent.join(&link_target))
+                .unwrap_or(link_target)
+        };
+        if file::desymlink_path(&resolved).starts_with(&token_dir) {
             file::remove_file(target)?;
         }
     }
     Ok(())
-}
-
-fn same_file_contents(a: &Path, b: &Path) -> bool {
-    match (std::fs::read(a), std::fs::read(b)) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => false,
-    }
 }
 
 fn stage_binary(stage: &Path, caskroom: &Path, cask: &Cask, binary: &BinaryArtifact) -> Result<()> {
@@ -2689,6 +2659,10 @@ end
             crate::file::read_to_string(caskroom.join("etc/bash_completion.d/ghostty"))?,
             "complete"
         );
+        assert_eq!(
+            std::fs::read_link(&target)?,
+            caskroom.join("etc/bash_completion.d/ghostty")
+        );
         assert_eq!(crate::file::read_to_string(target)?, "complete");
         Ok(())
     }
@@ -2784,53 +2758,36 @@ end
         Ok(())
     }
 
-    #[cfg(unix)]
     #[test]
-    fn link_completion_restores_existing_target_when_copy_fails() -> Result<()> {
-        use std::os::unix::fs::PermissionsExt;
-
-        let _lock = ENV_LOCK.lock().unwrap();
-        let tmp = tempfile::tempdir()?;
-        let _guard = BrewPrefixGuard::set(tmp.path());
-        let caskroom = tmp.path().join("caskroom");
-        let target = tmp.path().join("etc/bash_completion.d/foo");
-        let staged = caskroom.join("etc/bash_completion.d/foo");
-        file::create_dir_all(staged.parent().unwrap())?;
-        file::create_dir_all(target.parent().unwrap())?;
-        crate::file::write(&staged, "new")?;
-        crate::file::write(&target, "old")?;
-        std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o000))?;
-
-        let err = link_completion(&caskroom, &target).unwrap_err();
-
-        assert!(err.to_string().contains("failed copy"));
-        assert_eq!(crate::file::read_to_string(&target)?, "old");
-        std::fs::set_permissions(staged, std::fs::Permissions::from_mode(0o644))?;
-        Ok(())
-    }
-
-    #[test]
-    fn remove_obsolete_completions_keeps_replaced_targets() -> Result<()> {
+    fn remove_obsolete_completions_removes_only_caskroom_symlinks() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("foo", "2.0.0");
         let old_caskroom = caskroom_version_dir(&cask.token, "1.0.0");
+        let other_caskroom = caskroom_version_dir("other", "1.0.0");
         let relative = Path::new("etc/bash_completion.d/foo");
         let target = tmp.path().join(relative);
+        let other_target = tmp.path().join("etc/bash_completion.d/other-foo");
+        let regular_target = tmp.path().join("etc/bash_completion.d/regular-foo");
         file::create_dir_all(old_caskroom.join("etc/bash_completion.d"))?;
+        file::create_dir_all(other_caskroom.join("etc/bash_completion.d"))?;
         file::create_dir_all(target.parent().unwrap())?;
         crate::file::write(old_caskroom.join(relative), "old")?;
-        crate::file::write(&target, "other cask")?;
+        crate::file::write(other_caskroom.join(relative), "old")?;
+        crate::file::write(&regular_target, "old")?;
+        file::make_symlink(&old_caskroom.join(relative), &target)?;
+        file::make_symlink(&other_caskroom.join(relative), &other_target)?;
 
-        remove_obsolete_completions(&cask, std::slice::from_ref(&target), &[])?;
+        remove_obsolete_completions(
+            &cask,
+            &[target.clone(), other_target.clone(), regular_target.clone()],
+            &[],
+        )?;
 
-        assert_eq!(crate::file::read_to_string(&target)?, "other cask");
-
-        crate::file::write(&target, "old")?;
-        remove_obsolete_completions(&cask, std::slice::from_ref(&target), &[])?;
-
-        assert!(!target.exists());
+        assert!(target.symlink_metadata().is_err());
+        assert!(other_target.symlink_metadata().is_ok());
+        assert!(regular_target.symlink_metadata().is_ok());
         Ok(())
     }
 
@@ -2853,6 +2810,14 @@ end
             completion_shell_parameter(Some("clap"), CompletionShell::Bash, Path::new("tool"));
         assert!(args.is_empty());
         assert_eq!(env, vec![("COMPLETE".to_string(), "bash".to_string())]);
+
+        let (args, env) = completion_shell_parameter(
+            Some("--autocomplete=init:"),
+            CompletionShell::Pwsh,
+            Path::new("tool"),
+        );
+        assert_eq!(args, vec!["--autocomplete=init:powershell".to_string()]);
+        assert_eq!(env, Vec::<(String, String)>::new());
     }
 
     #[test]
