@@ -73,14 +73,17 @@ from dmg and common archive formats. Binary artifacts are staged in the Caskroom
 and linked into the Homebrew prefix, usually under `<prefix>/bin`. Package
 installers run through mise's normal system-package sudo path, so non-interactive
 runs never hang waiting for a password. Pkg casks must include `pkgutil` receipt
-IDs in their `uninstall` or `zap` metadata so mise can verify installed state
-after the installer writes files outside the Caskroom. For casks with lifecycle
-hooks, mise fetches the sha256-verified cask Ruby source pinned by the API
-metadata and runs supported `preflight`/`postflight` hooks through its own Cask
-DSL shim, without delegating to Homebrew. Casks that require custom installer
-choices, services, unsupported hook DSL, or other cask artifact types fail with
-a clear unsupported artifact error instead of delegating to Homebrew. Generated
-shell completions are not installed.
+IDs in their `uninstall` metadata so mise can verify installed state after the
+installer writes files outside the Caskroom. `zap` `pkgutil` IDs are treated as
+cleanup metadata, not install receipts. For casks with lifecycle hooks, mise
+fetches the sha256-verified cask Ruby source pinned by the API metadata and runs
+supported `preflight`/`postflight` hooks through its own Cask DSL shim, without
+delegating to Homebrew. mise also supports structured `preflight_steps` and
+`postflight_steps` for `move`/`remove` operations against `staged_path`. Casks
+that require custom installer choices, services, unsupported hook DSL, unsupported
+structured lifecycle steps, or other cask artifact types fail with a clear
+unsupported artifact error instead of delegating to Homebrew. Generated shell
+completions are not installed.
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like

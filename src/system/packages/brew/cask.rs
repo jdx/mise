@@ -70,12 +70,38 @@ struct FontArtifact {
     target: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FlightStep {
+    Move {
+        source: FlightPath,
+        target: FlightPath,
+        source_glob: bool,
+    },
+    Remove {
+        paths: Vec<FlightPath>,
+        recursive: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FlightPathBase {
+    StagedPath,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FlightPath {
+    base: FlightPathBase,
+    path: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct CaskArtifacts {
     apps: Vec<AppArtifact>,
     binaries: Vec<BinaryArtifact>,
     pkgs: Vec<PkgArtifact>,
     fonts: Vec<FontArtifact>,
+    preflight_steps: Vec<FlightStep>,
+    postflight_steps: Vec<FlightStep>,
     pkg_ids: Vec<String>,
 }
 
@@ -136,6 +162,7 @@ impl BrewCaskManager {
         file::remove_all(&tmp_caskroom)?;
         file::create_dir_all(&tmp_caskroom)?;
         let appdir = cask_appdir(&artifacts.apps)?;
+        execute_flight_steps(&cask, &artifacts.preflight_steps, &stage, "preflight_steps")?;
         execute_lifecycle_hook(&cask, &stage, &appdir, "preflight", pr).await?;
         for app in &artifacts.apps {
             install_app(&stage, &tmp_caskroom, app)?;
@@ -146,6 +173,12 @@ impl BrewCaskManager {
         for font in &artifacts.fonts {
             stage_font(&stage, &tmp_caskroom, font)?;
         }
+        execute_flight_steps(
+            &cask,
+            &artifacts.postflight_steps,
+            &tmp_caskroom,
+            "postflight_steps",
+        )?;
         execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
         for binary in &artifacts.binaries {
             stage_binary(&stage, &tmp_caskroom, &cask, binary)?;
@@ -734,6 +767,211 @@ fn font_target_path(font: &FontArtifact) -> Result<PathBuf> {
         .join(name_path))
 }
 
+fn execute_flight_steps(
+    cask: &Cask,
+    steps: &[FlightStep],
+    staged_path: &Path,
+    kind: &str,
+) -> Result<()> {
+    for step in steps {
+        execute_flight_step(step, staged_path).wrap_err_with(|| {
+            format!("brew-cask:{}: failed to run structured {kind}", cask.token)
+        })?;
+    }
+    Ok(())
+}
+
+fn execute_flight_step(step: &FlightStep, staged_path: &Path) -> Result<()> {
+    match step {
+        FlightStep::Move {
+            source,
+            target,
+            source_glob,
+        } => {
+            let sources = flight_sources(staged_path, source, *source_glob)?;
+            let target = resolve_flight_path(staged_path, target)?;
+            if sources.len() > 1 && !target.is_dir() {
+                bail!(
+                    "brew-cask: structured move with multiple sources requires a directory target"
+                );
+            }
+            for source in sources {
+                let target = if target.is_dir() {
+                    target.join(source.file_name().ok_or_else(|| {
+                        eyre!(
+                            "brew-cask: structured move source '{}' has no file name",
+                            source.display()
+                        )
+                    })?)
+                } else {
+                    target.clone()
+                };
+                if let Some(parent) = target.parent()
+                    && !parent.as_os_str().is_empty()
+                {
+                    file::create_dir_all(parent)?;
+                }
+                file::remove_all(&target)?;
+                file::rename(&source, &target)?;
+            }
+        }
+        FlightStep::Remove { paths, recursive } => {
+            for path in paths {
+                for path in flight_paths(staged_path, path)? {
+                    if *recursive {
+                        file::remove_all(&path)?;
+                    } else if path.symlink_metadata().is_ok() {
+                        file::remove_file_or_dir(&path)?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn flight_sources(
+    staged_path: &Path,
+    source: &FlightPath,
+    source_glob: bool,
+) -> Result<Vec<PathBuf>> {
+    if !source_glob {
+        let source = resolve_flight_path(staged_path, source)?;
+        if !source.exists() {
+            bail!(
+                "brew-cask: structured move source '{}' was not found",
+                source.display()
+            );
+        }
+        return Ok(vec![source]);
+    }
+    let mut sources = Vec::new();
+    let escaped_root = glob::Pattern::escape(staged_path.to_string_lossy().as_ref());
+    for pattern in expand_braces(&source.path) {
+        let pattern_path = Path::new(&pattern);
+        if pattern_path.is_absolute()
+            || pattern_path
+                .components()
+                .any(|component| matches!(component, Component::ParentDir))
+        {
+            bail!("brew-cask: invalid structured flight path '{pattern}'");
+        }
+        let rooted_pattern = Path::new(&escaped_root)
+            .join(pattern_path)
+            .to_string_lossy()
+            .to_string();
+        for path in glob::glob_with(
+            &rooted_pattern,
+            glob::MatchOptions {
+                require_literal_separator: true,
+                ..Default::default()
+            },
+        )
+        .wrap_err_with(|| format!("brew-cask: invalid structured flight glob '{pattern}'"))?
+        {
+            let path = path?;
+            if !path.starts_with(staged_path) {
+                bail!(
+                    "brew-cask: structured flight glob '{}' matched outside staged path",
+                    pattern
+                );
+            }
+            sources.push(path);
+        }
+    }
+    sources.sort();
+    sources.dedup();
+    if sources.is_empty() {
+        bail!(
+            "brew-cask: structured move source '{}' was not found",
+            source.path
+        );
+    }
+    Ok(sources)
+}
+
+fn flight_paths(staged_path: &Path, path: &FlightPath) -> Result<Vec<PathBuf>> {
+    if !is_flight_glob(&path.path) {
+        return Ok(vec![resolve_flight_path(staged_path, path)?]);
+    }
+    let mut paths = Vec::new();
+    let escaped_root = glob::Pattern::escape(staged_path.to_string_lossy().as_ref());
+    for pattern in expand_braces(&path.path) {
+        let pattern_path = Path::new(&pattern);
+        if pattern_path.is_absolute()
+            || pattern_path
+                .components()
+                .any(|component| matches!(component, Component::ParentDir))
+        {
+            bail!("brew-cask: invalid structured flight path '{pattern}'");
+        }
+        let rooted_pattern = Path::new(&escaped_root)
+            .join(pattern_path)
+            .to_string_lossy()
+            .to_string();
+        for path in glob::glob_with(
+            &rooted_pattern,
+            glob::MatchOptions {
+                require_literal_separator: true,
+                ..Default::default()
+            },
+        )
+        .wrap_err_with(|| format!("brew-cask: invalid structured flight glob '{pattern}'"))?
+        {
+            let path = path?;
+            if !path.starts_with(staged_path) {
+                bail!(
+                    "brew-cask: structured flight glob '{}' matched outside staged path",
+                    pattern
+                );
+            }
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
+fn is_flight_glob(path: &str) -> bool {
+    path.chars()
+        .any(|c| matches!(c, '*' | '?' | '[' | ']' | '{' | '}'))
+}
+
+fn resolve_flight_path(staged_path: &Path, path: &FlightPath) -> Result<PathBuf> {
+    match path.base {
+        FlightPathBase::StagedPath => {}
+    }
+    let relative = Path::new(&path.path);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        bail!("brew-cask: invalid structured flight path '{}'", path.path);
+    }
+    Ok(staged_path.join(relative))
+}
+
+fn expand_braces(pattern: &str) -> Vec<String> {
+    let Some(start) = pattern.find('{') else {
+        return vec![pattern.to_string()];
+    };
+    let Some(end_offset) = pattern[start + 1..].find('}') else {
+        return vec![pattern.to_string()];
+    };
+    let end = start + 1 + end_offset;
+    let prefix = &pattern[..start];
+    let suffix = &pattern[end + 1..];
+    let mut expanded = Vec::new();
+    for alternative in pattern[start + 1..end].split(',') {
+        for suffix in expand_braces(suffix) {
+            expanded.push(format!("{prefix}{alternative}{suffix}"));
+        }
+    }
+    expanded
+}
+
 fn stage_binary(stage: &Path, caskroom: &Path, cask: &Cask, binary: &BinaryArtifact) -> Result<()> {
     let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
     file::remove_all(&caskroom_binary)?;
@@ -888,8 +1126,16 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
     let mut artifacts = CaskArtifacts::default();
     for artifact in &cask.artifacts {
         let artifact_type = artifact_type(artifact);
+        if let Some(steps) = parse_flight_steps(cask, artifact, "preflight_steps")? {
+            artifacts.preflight_steps.extend(steps);
+            continue;
+        }
+        if let Some(steps) = parse_flight_steps(cask, artifact, "postflight_steps")? {
+            artifacts.postflight_steps.extend(steps);
+            continue;
+        }
         if is_non_install_artifact(&artifact_type) {
-            collect_uninstall_pkg_ids(artifact, &mut artifacts.pkg_ids);
+            collect_pkg_receipt_ids(artifact, &mut artifacts.pkg_ids);
             continue;
         }
         if let Some(app) = parse_app_artifact(artifact) {
@@ -930,7 +1176,7 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
         artifacts.pkg_ids.clear();
     } else if artifacts.pkg_ids.is_empty() {
         bail!(
-            "brew-cask:{}: pkg artifacts require pkgutil ids in uninstall or zap metadata",
+            "brew-cask:{}: pkg artifacts require pkgutil ids in uninstall metadata",
             cask.token
         );
     }
@@ -1022,29 +1268,150 @@ fn parse_font_artifact(value: &Value) -> Option<FontArtifact> {
     }
 }
 
-fn collect_uninstall_pkg_ids(value: &Value, pkg_ids: &mut Vec<String>) {
+fn parse_flight_steps(cask: &Cask, value: &Value, kind: &str) -> Result<Option<Vec<FlightStep>>> {
+    let Some(metadata) = value.as_object().and_then(|o| o.get(kind)) else {
+        return Ok(None);
+    };
+    let groups = metadata.as_array().ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: unsupported {kind} metadata format",
+            cask.token
+        )
+    })?;
+    let mut steps = Vec::new();
+    for group in groups {
+        let group_steps = group
+            .as_object()
+            .and_then(|o| o.get("steps"))
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                eyre!(
+                    "brew-cask:{}: unsupported {kind} metadata format",
+                    cask.token
+                )
+            })?;
+        for step in group_steps {
+            steps.push(parse_flight_step(cask, kind, step)?);
+        }
+    }
+    Ok(Some(steps))
+}
+
+fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightStep> {
+    let object = value.as_object().ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: unsupported {kind} step metadata format",
+            cask.token
+        )
+    })?;
+    let step_type = object.get("type").and_then(Value::as_str).ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: unsupported {kind} step metadata format",
+            cask.token
+        )
+    })?;
+    match step_type {
+        "move" => Ok(FlightStep::Move {
+            source: parse_flight_path(cask, kind, "source", object.get("source"))?,
+            target: parse_flight_path(cask, kind, "target", object.get("target"))?,
+            source_glob: object
+                .get("source_glob")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        }),
+        "remove" => {
+            let paths = object
+                .get("paths")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    eyre!(
+                        "brew-cask:{}: unsupported {kind} remove step metadata format",
+                        cask.token
+                    )
+                })?
+                .iter()
+                .map(|path| parse_flight_path(cask, kind, "paths", Some(path)))
+                .collect::<Result<Vec<_>>>()?;
+            Ok(FlightStep::Remove {
+                paths,
+                recursive: object
+                    .get("recursive")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            })
+        }
+        _ => bail!(
+            "brew-cask:{}: unsupported {kind} step type {}",
+            cask.token,
+            step_type
+        ),
+    }
+}
+
+fn parse_flight_path(
+    cask: &Cask,
+    kind: &str,
+    field: &str,
+    value: Option<&Value>,
+) -> Result<FlightPath> {
+    let object = value.and_then(Value::as_object).ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: unsupported {kind} {field} metadata format",
+            cask.token
+        )
+    })?;
+    let base = match object.get("base").and_then(Value::as_str) {
+        Some("staged_path") => FlightPathBase::StagedPath,
+        Some(base) => bail!(
+            "brew-cask:{}: unsupported {kind} {field} base {}",
+            cask.token,
+            base
+        ),
+        None => bail!("brew-cask:{}: unsupported {kind} {field} base", cask.token),
+    };
+    let path = object
+        .get("path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| eyre!("brew-cask:{}: unsupported {kind} {field} path", cask.token))?;
+    let path_value = Path::new(path);
+    if path_value.is_absolute()
+        || path_value
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        bail!(
+            "brew-cask:{}: invalid {kind} {field} path {}",
+            cask.token,
+            path
+        );
+    }
+    Ok(FlightPath {
+        base,
+        path: path.to_string(),
+    })
+}
+
+fn collect_pkg_receipt_ids(value: &Value, pkg_ids: &mut Vec<String>) {
     let Some(object) = value.as_object() else {
         return;
     };
-    for key in ["uninstall", "zap"] {
-        let Some(metadata) = object.get(key) else {
+    let Some(metadata) = object.get("uninstall") else {
+        return;
+    };
+    let values: Vec<&Value> = match metadata {
+        Value::Array(values) => values.iter().collect(),
+        value => vec![value],
+    };
+    for value in values {
+        let Some(pkgutil) = value.as_object().and_then(|o| o.get("pkgutil")) else {
             continue;
         };
-        let values: Vec<&Value> = match metadata {
-            Value::Array(values) => values.iter().collect(),
-            value => vec![value],
-        };
-        for value in values {
-            let Some(pkgutil) = value.as_object().and_then(|o| o.get("pkgutil")) else {
-                continue;
-            };
-            match pkgutil {
-                Value::String(id) => pkg_ids.push(id.clone()),
-                Value::Array(ids) => {
-                    pkg_ids.extend(ids.iter().filter_map(Value::as_str).map(str::to_string))
-                }
-                _ => {}
+        match pkgutil {
+            Value::String(id) => pkg_ids.push(id.clone()),
+            Value::Array(ids) => {
+                pkg_ids.extend(ids.iter().filter_map(Value::as_str).map(str::to_string))
             }
+            _ => {}
         }
     }
 }
@@ -1453,6 +1820,8 @@ fn is_non_install_artifact(kind: &str) -> bool {
             | "manpage"
             | "postflight"
             | "preflight"
+            | "uninstall_postflight_steps"
+            | "uninstall_preflight_steps"
             | "uninstall"
             | "uninstall_postflight"
             | "uninstall_preflight"
@@ -1527,6 +1896,143 @@ mod tests {
             tap_git_head: None,
             raw_base: None,
         }
+    }
+
+    #[test]
+    fn parses_structured_flight_steps() -> Result<()> {
+        let mut cask = test_cask("wezterm@nightly", "latest");
+        cask.artifacts = vec![
+            serde_json::json!({
+                "preflight_steps": [{
+                    "steps": [
+                        {
+                            "type": "move",
+                            "source_glob": true,
+                            "source": {
+                                "base": "staged_path",
+                                "path": "{WezTerm-*,wezterm-*}/WezTerm.app"
+                            },
+                            "target": {
+                                "base": "staged_path",
+                                "path": "."
+                            }
+                        },
+                        {
+                            "type": "remove",
+                            "recursive": true,
+                            "paths": [
+                                {"base": "staged_path", "path": "WezTerm-*"},
+                                {"base": "staged_path", "path": "wezterm-*"}
+                            ]
+                        }
+                    ]
+                }]
+            }),
+            serde_json::json!({"app": "WezTerm.app"}),
+        ];
+
+        assert_eq!(
+            cask_artifacts(&cask)?,
+            CaskArtifacts {
+                apps: vec![AppArtifact {
+                    source: "WezTerm.app".to_string(),
+                    target: None,
+                }],
+                preflight_steps: vec![
+                    FlightStep::Move {
+                        source: FlightPath {
+                            base: FlightPathBase::StagedPath,
+                            path: "{WezTerm-*,wezterm-*}/WezTerm.app".to_string(),
+                        },
+                        target: FlightPath {
+                            base: FlightPathBase::StagedPath,
+                            path: ".".to_string(),
+                        },
+                        source_glob: true,
+                    },
+                    FlightStep::Remove {
+                        paths: vec![
+                            FlightPath {
+                                base: FlightPathBase::StagedPath,
+                                path: "WezTerm-*".to_string(),
+                            },
+                            FlightPath {
+                                base: FlightPathBase::StagedPath,
+                                path: "wezterm-*".to_string(),
+                            }
+                        ],
+                        recursive: true,
+                    }
+                ],
+                ..Default::default()
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn structured_flight_steps_move_and_remove_staged_paths() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let staged = tmp.path();
+        let bundle_dir = staged.join("WezTerm-nightly");
+        let app = bundle_dir.join("WezTerm.app");
+        file::create_dir_all(&app)?;
+
+        execute_flight_steps(
+            &test_cask("wezterm@nightly", "latest"),
+            &[
+                FlightStep::Move {
+                    source: FlightPath {
+                        base: FlightPathBase::StagedPath,
+                        path: "{WezTerm-*,wezterm-*}/WezTerm.app".to_string(),
+                    },
+                    target: FlightPath {
+                        base: FlightPathBase::StagedPath,
+                        path: ".".to_string(),
+                    },
+                    source_glob: true,
+                },
+                FlightStep::Remove {
+                    paths: vec![
+                        FlightPath {
+                            base: FlightPathBase::StagedPath,
+                            path: "WezTerm-*".to_string(),
+                        },
+                        FlightPath {
+                            base: FlightPathBase::StagedPath,
+                            path: "wezterm-*".to_string(),
+                        },
+                    ],
+                    recursive: true,
+                },
+            ],
+            staged,
+            "preflight_steps",
+        )?;
+
+        assert!(staged.join("WezTerm.app").is_dir());
+        assert!(!bundle_dir.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_unsupported_structured_flight_steps() {
+        let mut cask = test_cask("battle-net", "1.0.0");
+        cask.artifacts = vec![
+            serde_json::json!({
+                "preflight_steps": [{
+                    "steps": [{
+                        "type": "set_permissions",
+                        "paths": [{"base": "staged_path", "path": "Battle.net-Setup.app"}],
+                        "permissions": "a+x"
+                    }]
+                }]
+            }),
+            serde_json::json!({"app": "Battle.net.app"}),
+        ];
+
+        let err = cask_artifacts(&cask).unwrap_err().to_string();
+        assert!(err.contains("unsupported preflight_steps step type set_permissions"));
     }
 
     #[test]
@@ -1964,20 +2470,21 @@ end
     }
 
     #[test]
-    fn parses_zap_pkgutil_ids() -> Result<()> {
-        let mut cask = test_cask("example", "1.0.0");
+    fn ignores_zap_pkgutil_ids_for_pkg_receipts() -> Result<()> {
+        let mut cask = test_cask("google-japanese-ime", "3.33.6130");
         cask.artifacts = vec![
-            serde_json::json!({"zap": [{"pkgutil": ["com.example.pkg"]}]}),
-            serde_json::json!({"pkg": ["Example.pkg"]}),
+            serde_json::json!({"uninstall": [{"pkgutil": "com.google.pkg.GoogleJapaneseInput"}]}),
+            serde_json::json!({"pkg": ["GoogleJapaneseInput.pkg"]}),
+            serde_json::json!({"zap": [{"pkgutil": "com.google.pkg.Keystone"}]}),
         ];
 
         assert_eq!(
             cask_artifacts(&cask)?,
             CaskArtifacts {
                 pkgs: vec![PkgArtifact {
-                    source: "Example.pkg".to_string()
+                    source: "GoogleJapaneseInput.pkg".to_string()
                 }],
-                pkg_ids: vec!["com.example.pkg".to_string()],
+                pkg_ids: vec!["com.google.pkg.GoogleJapaneseInput".to_string()],
                 ..Default::default()
             }
         );
@@ -1991,6 +2498,18 @@ end
 
         let err = cask_artifacts(&cask).unwrap_err().to_string();
         assert!(err.contains("pkg artifacts require pkgutil ids"));
+    }
+
+    #[test]
+    fn rejects_pkg_artifacts_with_only_zap_pkgutil_ids() {
+        let mut cask = test_cask("example", "1.0.0");
+        cask.artifacts = vec![
+            serde_json::json!({"pkg": ["Example.pkg"]}),
+            serde_json::json!({"zap": [{"pkgutil": "com.example.cleanup"}]}),
+        ];
+
+        let err = cask_artifacts(&cask).unwrap_err().to_string();
+        assert!(err.contains("pkg artifacts require pkgutil ids in uninstall metadata"));
     }
 
     #[test]
