@@ -109,6 +109,21 @@ impl BrewCaskManager {
         let cask = fetch_cask(req).await?;
         let artifacts = cask_artifacts(&cask)?;
         if installed_cask_version(&cask, &artifacts)?.as_deref() == Some(cask.version.as_str()) {
+            if homebrew_cask_metadata_needs_repair(&cask)? {
+                if opts.dry_run {
+                    miseprintln!("repair cask metadata {}/{}", cask.token, cask.version);
+                } else {
+                    write_homebrew_cask_metadata(
+                        &caskroom_token_dir(&cask.token),
+                        &cask,
+                        &artifacts,
+                    )?;
+                    info!(
+                        "brew-cask:{}: repaired missing Homebrew metadata",
+                        cask.token
+                    );
+                }
+            }
             info!("brew-cask:{}: already installed", cask.token);
             return Ok(cask.version);
         }
@@ -224,6 +239,7 @@ impl SystemPackageManager for BrewCaskManager {
             let artifacts = cask_artifacts(&cask)?;
             let version = installed_cask_version(&cask, &artifacts)?;
             let state = match version {
+                Some(_) if homebrew_cask_metadata_needs_repair(&cask)? => PackageState::Missing,
                 Some(version) => match &req.version {
                     Some(requested) if version != *requested => {
                         PackageState::VersionMismatch { installed: version }
@@ -1420,7 +1436,9 @@ fn write_homebrew_cask_metadata(
                 continue;
             };
             // Keep only fixed tab/config files at top level; remove version dirs.
-            if name == "INSTALL_RECEIPT.json" || name == "config.json" || name == "LATEST_DOWNLOAD_SHA256"
+            if name == "INSTALL_RECEIPT.json"
+                || name == "config.json"
+                || name == "LATEST_DOWNLOAD_SHA256"
             {
                 continue;
             }
@@ -1431,15 +1449,8 @@ fn write_homebrew_cask_metadata(
     }
 
     let timestamp = homebrew_cask_timestamp();
-    let casks_dir = metadata
-        .join(&cask.version)
-        .join(&timestamp)
-        .join("Casks");
+    let casks_dir = metadata.join(&cask.version).join(&timestamp).join("Casks");
     file::create_dir_all(&casks_dir)?;
-
-    // Homebrew currently writes `{}` for API-loaded installs; existence of the
-    // path is what `installed?` checks. Keep a tiny valid JSON object.
-    crate::file::write(casks_dir.join(format!("{}.json", cask.token)), "{}\n")?;
 
     let receipt = homebrew_cask_install_receipt(cask, artifacts);
     crate::file::write(
@@ -1461,7 +1472,48 @@ fn write_homebrew_cask_metadata(
             serde_json::to_string(&config)?,
         )?;
     }
+
+    // Homebrew currently writes `{}` for API-loaded installs; existence of the
+    // path is what `installed?` checks. Write this validity marker last so an
+    // interrupted repair remains detectable instead of exposing a half-ledger.
+    crate::file::write(casks_dir.join(format!("{}.json", cask.token)), "{}\n")?;
     Ok(())
+}
+
+/// Backfill brew's ledger for a healthy cask previously poured by mise.
+///
+/// The mise receipt is the ownership proof: never synthesize metadata for a
+/// plain Caskroom directory or rewrite metadata already owned by Homebrew.
+fn homebrew_cask_metadata_needs_repair(cask: &Cask) -> Result<bool> {
+    let token_dir = caskroom_token_dir(&cask.token);
+    let version_dir = token_dir.join(&cask.version);
+    let Some(receipt) = read_receipt(&version_dir)? else {
+        return Ok(false);
+    };
+    Ok(receipt.version == cask.version && !homebrew_installed_caskfile_exists(&token_dir, cask)?)
+}
+
+fn homebrew_installed_caskfile_exists(token_dir: &Path, cask: &Cask) -> Result<bool> {
+    let version_metadata = token_dir.join(".metadata").join(&cask.version);
+    let Ok(timestamps) = std::fs::read_dir(version_metadata) else {
+        return Ok(false);
+    };
+    for timestamp in timestamps {
+        let timestamp = timestamp?;
+        if !timestamp.file_type()?.is_dir() {
+            continue;
+        }
+        let casks = timestamp.path().join("Casks");
+        for extension in ["json", "rb", "internal.json"] {
+            if casks
+                .join(format!("{}.{}", cask.token, extension))
+                .is_file()
+            {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// Homebrew `Metadata::TIMESTAMP_FORMAT` = `%Y%m%d%H%M%S.%L` (ms precision).
@@ -1473,6 +1525,7 @@ fn homebrew_cask_timestamp() -> String {
 }
 
 /// Test helper / pure format check.
+#[cfg(test)]
 fn format_homebrew_timestamp_from_parts(
     year: i32,
     month: u32,
@@ -2924,6 +2977,36 @@ end
         assert!(token_dir.join(".metadata/0.146.0").is_dir());
         let body2: serde_json::Value = serde_json::from_str(&crate::file::read_to_string(&tab)?)?;
         assert_eq!(body2["source"]["version"], "0.146.0");
+        Ok(())
+    }
+
+    #[test]
+    fn homebrew_cask_metadata_repair_detects_mise_orphan_only() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("codex", "0.145.0");
+        let artifacts = CaskArtifacts::default();
+        let version_dir = caskroom_version_dir(&cask.token, &cask.version);
+        file::create_dir_all(&version_dir)?;
+
+        // Directory debris without mise ownership proof is left untouched.
+        assert!(!homebrew_cask_metadata_needs_repair(&cask)?);
+        assert!(!caskroom_token_dir(&cask.token).join(".metadata").exists());
+
+        write_receipt(&version_dir, &cask, &artifacts)?;
+        assert!(homebrew_cask_metadata_needs_repair(&cask)?);
+        write_homebrew_cask_metadata(&caskroom_token_dir(&cask.token), &cask, &artifacts)?;
+        assert!(homebrew_installed_caskfile_exists(
+            &caskroom_token_dir(&cask.token),
+            &cask
+        )?);
+
+        // Existing brew metadata is preserved rather than rewritten.
+        let tab = caskroom_token_dir(&cask.token).join(".metadata/INSTALL_RECEIPT.json");
+        crate::file::write(&tab, "brew-owned")?;
+        assert!(!homebrew_cask_metadata_needs_repair(&cask)?);
+        assert_eq!(crate::file::read_to_string(tab)?, "brew-owned");
         Ok(())
     }
 

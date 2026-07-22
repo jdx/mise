@@ -124,6 +124,11 @@ mise's own `.mise-cask.toml` receipt inside the versioned caskroom. That makes
 gate) work on mise-poured casks — including tools that self-update by shelling
 out to `brew upgrade --cask` (e.g. OpenAI Codex).
 
+On a later bootstrap, mise also repairs this metadata for an already-installed
+cask that has a matching `.mise-cask.toml` receipt. This adopts earlier
+mise-only pours without downloading the artifact again; unrelated Caskroom
+directories and existing Homebrew metadata are left untouched.
+
 Caveats (not full brew lifecycle parity):
 
 - The tab's `uninstall_artifacts` is intentionally **empty** so Homebrew can

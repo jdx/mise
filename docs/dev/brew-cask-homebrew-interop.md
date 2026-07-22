@@ -167,9 +167,9 @@ Codex   brew upgrade --cask codex  → hard fail on startup
 | G | **Artifact coverage gaps** (separate from receipt) | pkg/postflight/completions; #11164 etc. |
 
 **Primary fix for A–C:** emit Homebrew `.metadata` on every successful cask pour
-(this branch). **Secondary:** e2e with `brew` present asserting
-`brew list --cask --versions <token>`; doc coexistence for casks; optional
-backfill command for existing mise-orphans.
+(this branch), and repair missing metadata for healthy earlier mise pours on
+their next bootstrap. **Secondary:** e2e with `brew` present asserting
+`brew list --cask --versions <token>`; doc coexistence for casks.
 
 ## Real-world failure (Codex / essential-mac)
 
@@ -297,9 +297,78 @@ In `src/system/packages/brew/cask.rs` after a successful pour:
    - Write `.metadata/config.json` if missing
    - Replace prior versioned metadata dirs so `installed_version` matches
    - UTC timestamps (match brew `Time.now.utc`)
+3. On the already-installed path, backfill missing metadata only when the
+   current version has a matching `.mise-cask.toml` receipt. Existing Homebrew
+   metadata and unowned Caskroom directory debris are not rewritten.
 
 Docs: `docs/bootstrap/packages/brew.md` coexistence section updated (with
 caveats).
+
+## Canonical-design re-audit (2026-07-22)
+
+The fix was re-checked against current upstream documentation, implementation,
+history, community usage, and a live Homebrew 6 installation.
+
+### mise product contract
+
+- [Bootstrap packages](https://mise.jdx.dev/bootstrap/packages/) defines system
+  packages as machine-global state, applied explicitly and declaratively by
+  `mise bootstrap packages apply` / `mise bootstrap`.
+- [The brew manager docs](https://mise.jdx.dev/bootstrap/packages/brew.html)
+  say mise uses built-in Homebrew installers that do not require Homebrew,
+  installs into the canonical prefix, and gives formula pours brew-compatible
+  receipts so real Homebrew can coexist. Casks use the same canonical Caskroom.
+- The original formula PR [#10326](https://github.com/jdx/mise/pull/10326)
+  calls canonical-prefix installation “load-bearing” and explicitly requires a
+  real Homebrew to see mise kegs as its own. The cask PR
+  [#10383](https://github.com/jdx/mise/pull/10383) retained the no-brew-CLI
+  architecture but omitted the equivalent cask ledger.
+- Current community walkthroughs independently use `brew-cask:` as declarative
+  bootstrap state for GUI apps and CLIs:
+  [Zenn](https://zenn.dev/boykush/articles/8d3f52c1a97b04) and
+  [DevelopersIO](https://dev.classmethod.jp/articles/setup-machine-with-mise-bootstrap/).
+  Both describe repeated bootstrap convergence, not a one-shot private install.
+
+Therefore shelling out to `brew install --cask` is not canonical for mise.
+Writing the filesystem contract is: it preserves the built-in installer, the
+no-Homebrew requirement, idempotency, and formula/cask coexistence symmetry.
+
+### Homebrew contract (6.0.12+, source audit)
+
+At Homebrew commit
+[`78430a54`](https://github.com/Homebrew/brew/tree/78430a54dd972a9725cf5f9a862bacd330303906):
+
+- `Cask#installed?` is still `installed_caskfile&.exist?`.
+- `Caskroom.cask_installed_caskfile` selects the latest
+  `.metadata/*/*/Casks/<token>.{json,internal.json,rb}`.
+- `Metadata::TIMESTAMP_FORMAT` is still `%Y%m%d%H%M%S.%L`, generated in UTC.
+- `Installer#save_caskfile` writes installed JSON; `Tab.create(...).write`
+  writes `.metadata/INSTALL_RECEIPT.json` after artifact installation.
+- `CaskLoader.resolve_installed_artifacts` treats a non-empty tab list as
+  authoritative. An empty list allows recovery from the current tap/API.
+- Newer Homebrew can normalize a minimal installed JSON by recovering the full
+  uninstall-relevant artifacts and persisting them into that JSON. This was
+  observed live after mise wrote `{}` for `grok-build`.
+
+The mise writer therefore keeps `{}` plus `uninstall_artifacts: []`: it is a
+valid compatibility seed and delegates artifact-shape normalization to
+Homebrew. Copying raw API artifacts into the tab would not be equivalent to
+Homebrew's filtered `artifacts_list(uninstall_only: true)` and could silently
+make cleanup incomplete. The installed caskfile is written last as a validity
+marker, so an interrupted repair remains detectable.
+
+### Bootstrap repair semantics
+
+The package driver filters `PackageState::Installed` before calling a manager's
+`install` method. Therefore repair cannot live only in `install_one`'s
+already-installed fast path. A healthy mise-owned cask with no Homebrew
+installed caskfile is reported as missing/out-of-sync; apply then selects it and
+repairs metadata without downloading the artifact. Status remains side-effect
+free, and dry-run prints the planned repair.
+
+Ownership is deliberately narrow: a matching versioned `.mise-cask.toml` is
+required. Plain Caskroom debris is not adopted, and existing Homebrew metadata
+is not rewritten.
 
 ### Verification (multi-wave, 2026-07-22) — skeptical review
 
@@ -354,9 +423,10 @@ After this fix is in a released mise, the setup-ai guard becomes optional.
 
 ```sh
 # unit
-cargo test -p mise write_homebrew_cask_metadata
-cargo test -p mise homebrew_uninstall_artifacts
-cargo test -p mise --lib system::packages::brew::cask
+cargo test write_homebrew_cask_metadata
+cargo test homebrew_cask_receipt
+cargo test homebrew_cask_metadata_repair
+cargo test system::packages::brew::cask
 
 # manual (after building this branch)
 # 1) remove brew metadata from a mise-only cask, reinstall via mise brew-cask
