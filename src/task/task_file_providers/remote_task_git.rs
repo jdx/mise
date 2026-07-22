@@ -355,7 +355,9 @@ mod tests {
         let second_path = provider.get_cached_path(&second_repo).unwrap();
 
         assert_eq!(
-            std::fs::read_to_string(&first_path).unwrap(),
+            std::fs::read_to_string(&first_path)
+                .unwrap()
+                .replace("\r\n", "\n"),
             "first revision\n"
         );
         assert_eq!(
@@ -363,7 +365,9 @@ mod tests {
             "live reader state\n"
         );
         assert_eq!(
-            std::fs::read_to_string(&second_path).unwrap(),
+            std::fs::read_to_string(&second_path)
+                .unwrap()
+                .replace("\r\n", "\n"),
             "second revision\n"
         );
         assert!(first_path.starts_with(&published_repo));
@@ -375,7 +379,9 @@ mod tests {
         let cached_second_path = provider.get_cached_path(&second_repo).unwrap();
         assert_eq!(cached_second_path, second_path);
         assert_eq!(
-            std::fs::read_to_string(cached_second_path).unwrap(),
+            std::fs::read_to_string(cached_second_path)
+                .unwrap()
+                .replace("\r\n", "\n"),
             "second revision\n"
         );
     }
