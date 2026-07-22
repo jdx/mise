@@ -7,6 +7,9 @@ live GitHub data and `origin/main`; see [Verification audit](#verification-audit
 product direction (no upstream rejection proof); see
 [Upstream rejection status](#upstream-rejection-status--generate-metadata) and
 [Directions that resolve the product goals](#directions-that-resolve-the-product-goals)  
+**Deep research (fourth pass):** 2026-07-23 — multi-agent concept matrix A–R +
+live Homebrew/Caskroom re-verify; Direction **A** reconfirmed winner; see
+[Deep research pass](#deep-research-pass--2026-07-23-fourth-pass)  
 **Process:** always extend this file when research, direction, or branch
 behavior changes — it is the durable decision record for the fork.  
 **Repository:** `donbeave/mise`  
@@ -946,3 +949,188 @@ After rejection-status research and full goal/direction matrix:
 5. Branch code on HEAD implements A’s core (pour-time write, no status lie);
    docs under `docs/bootstrap/packages/brew.md` describe cask coexistence with
    caveats.
+
+## Deep research pass — 2026-07-23 (fourth pass)
+
+Multi-agent re-verification + expanded concept space. Goal: confirm or
+replace Direction A as the single most reasonable product direction.
+
+**Agents:** Homebrew source explore · mise dual-ledger explore · live
+upstream GitHub verify · concept brainstorm (I–R) · live Caskroom probe.
+
+**Scratch evidence:** implementer `verification.log`, `homebrew_source.log`,
+`cargo_test_metadata.log`, `subagent_notes.md`.
+
+### Naming disambiguation (do not merge)
+
+| Name | Meaning | Ship? |
+|---|---|---|
+| Competing-design **A** (earlier section) | Early branch: pour-time metadata **plus** status `Missing` when brew tab absent | **No** as status policy |
+| Product **Direction A** | Pour-time dual ledger; mise status stays on payload/`.mise-cask.toml`; repair on upgrade path | **Yes (potential)** |
+| **A-status-lie** | Historical bug only — not a separate product concept | fixed on HEAD |
+
+Same filesystem mechanism. Difference = **who owns mise package status**.
+
+### Load-bearing claims re-verified (this pass)
+
+| # | Claim | Method | Verdict |
+|---|---|---|---|
+| 1 | `Cask#installed?` ⇔ installed caskfile exists | Local Homebrew 6.0.12-92-g78430a5 `cask.rb:244–246` | **Hold** |
+| 2 | Path = `.metadata/*/*/Casks/<token>.{json,internal.json,rb}` (max timestamp basename) | `caskroom.rb:47–61` | **Hold** |
+| 3 | `INSTALL_RECEIPT.json` **not** required for `installed?` | `Cask::Tab` at `.metadata/INSTALL_RECEIPT.json`; gate never reads it | **Hold** (tab still needed for good uninstall recovery) |
+| 4 | Non-empty `uninstall_artifacts` early-returns; empty allows API recover | `cask_loader.rb:841–844` `artifacts.presence` | **Hold** — empty tab is correct for online fallback |
+| 5 | Formula pour writes brew-compatible keg receipt | `pour.rs:181–258` | **Hold** |
+| 6 | HEAD: pour-time `write_homebrew_cask_metadata` + no status Missing on missing tab | `cask.rs:171–188`, `241–253` | **Hold** |
+| 7 | Live pure-mise pours fail brew; hybrid pass | Caskroom cohort: 12 pure-mise error; `grok-build`/`kimi` OK | **Hold** |
+| 8 | #10326 formula coexistence promise | Live PR body | **Hold** |
+| 9 | #10383 no cask INSTALL_RECEIPT design | Live PR + main `cask.rs` | **Hold** |
+| 10 | #11007 OP offered generate; #11012 preserve-only; no “do not generate” | Live discussion/PR | **Hold** |
+| 11 | No upstream PR implements cask `.metadata` generation | Search (title trap #11107 = `auto_updates`) | **Hold** |
+| 12 | #10582 rejects `brew install --cask` fallback | Live discussion | **Hold** → concept D **HIGH-REJECT** |
+
+Unit tests on HEAD (binary crate):
+
+```text
+cargo test homebrew_cask
+# write_homebrew_cask_metadata_creates_brew_installed_layout … ok
+# homebrew_cask_metadata_repair_detects_mise_orphan_only … ok
+# homebrew_cask_receipt_uses_empty_uninstall_artifacts_for_api_fallback … ok
+```
+
+### Live Caskroom cohort (this machine, read-only)
+
+| Cohort | Count | brew `list --cask --versions TOKEN` |
+|---|---:|---|
+| Pure mise (`.mise-cask.toml`, no `.metadata`) | 12 | **Error: not installed** |
+| Pure brew (`.metadata`, no mise receipt) | 18 | OK |
+| Hybrid (both) | 2 (`grok-build`, `kimi`) | OK |
+
+Examples pure-mise fail: `claude-code`, `1password-cli`, `codexbar`, `ghostty`.  
+Bare `brew list --cask` still prints all Caskroom basenames (debris). Per-token
+`--versions` is the correct installed-gate probe.
+
+**Correlation:** brew recognition tracks **metadata caskfile**, not Caskroom
+occupancy and not `.mise-cask.toml`. Dual-ledger write is the only in-repo
+mechanism that flips pure-mise → brew-visible without shelling out.
+
+### Expanded concept matrix (A–H known + I–R new)
+
+Score: **F**ull / **P**artial / **X** fail vs G1–G7.
+
+| ID | Concept | G1 | G2 | G3 | G4 | G5 | G6 | G7 | Full set? | Verdict |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **A** | Pour-time dual ledger (`.metadata` + `.mise-cask.toml`); status on mise ledger | F | F* | F | F* | F | F | F | **Yes (identity)** | **Winner** |
+| B | Single owner + disable tool brew updater | F | X | X | X | F | F | F | No | Ops under main only |
+| C | Install those casks with real brew only | X | F | F | F | P | F | F | No | Abandons pure mise pour |
+| D | Shell out `brew install --cask` | X | F | F | F | P | F | X | No | **HIGH-REJECT** (#10582) |
+| E | Metadata only for simple binary casks | F | P | P | P | F | F | F | No | Ownership lottery |
+| F | Explicit adopt/handoff command | F | P | P | P | F | F | F | No | Future opt-in only |
+| G | Fix third-party tools only | F | X | X | X | F | F | F | No | Humans still broken |
+| H | zerobrew-style private Cellar | F | X | X | X | F | F | F | No | Not brew-visible |
+| **I** | Lazy metadata on first brew touch | F | P | P | P | F | F | F | No | Racey; needs trigger |
+| **J** | PATH proxy / brew subcommand shim | F | P | P | P | F | F | P | No | Fragile; G7 creep |
+| **K** | Separate non-brew Caskroom prefix | F | X | X | X | F | F | F | No | Honest isolation, fails G2–G4 |
+| **L** | Post-pour brew register (`reinstall --force` / Ruby Tab) | P/X | F | F | F | F | F | P | No | Near HIGH-REJECT; needs brew |
+| **M** | Docs dual-path only (no code) | F | X | X | X | F | F | F | No | Temporary ops |
+| **N** | A + brew-upgrade quarantine (list yes, brew bumps no) | F | P | F | P | F | F | F | Near | Optional polish of A |
+| **O** | Upstream brew reads `.mise-cask.toml` | F | F | F | F | F | F | F | Yes **if** brew merges | Not mise-shippable alone |
+| **P** | Non-prefix shims only | F | X | X | X | F | F | F | No | K-lite for binaries |
+| **Q** | Emit metadata only if `brew` binary present | F | P | P | P | F | F | F | No | Gate for A, not replacement |
+| **R** | Minimal stub caskfile only (honest docs) | F | F* | F | F* | F | F | F | Yes (same as A) | **Not distinct** — is A |
+
+\*G2/G4: installed **gate** full; full uninstall/zap/app-move lifecycle still partial.
+
+#### New concepts — short analysis
+
+- **I lazy:** avoids writing private API until brew is used; fails first
+  Codex/startup race; needs shim or “run brew once.” Inferior to eager A.
+- **J shim:** answers from mise ledger without FS identity. Breaks absolute
+  path to brew, GUI, non-PATH callers. High maintenance.
+- **K separate prefix:** removes path confusion; renounces “under Homebrew
+  prefix” product story that formula pour already chose.
+- **L post-pour brew register:** best **real** tab quality, worst purity —
+  requires Homebrew present and shells to brew (or embeds private Ruby).
+  Conflicts with “no Homebrew required” bootstrap story.
+- **N quarantine:** refinement if dual-upgrade races dominate. Still ships A’s
+  caskfile; only changes upgrade policy marker. **Does not replace A.**
+- **O brew-side:** cleanest long-term purity; schedule/politics outside mise.
+  Keep as aspirational; do not block A on it.
+- **Q brew-present gate:** optional later; alone leaves pre-brew pours orphan
+  when brew is installed later.
+
+### Product-goal fit of recommended path
+
+| Goal | Direction A claim | Evidence |
+|---|---|---|
+| G1 mise Rust pour, no `brew install --cask` | Yes | `cask.rs` install path; #10582 alignment |
+| G2 brew-identical **install identity** | Yes (identity, not full lifecycle) | Hybrid tokens pass brew; docs caveats |
+| G3 `brew list --cask --versions TOKEN` | Yes after metadata | Live grok-build/kimi; pure-mise fail without |
+| G4 `brew upgrade --cask` installed-gate | Yes | Same gate as list; E2E earlier on branch |
+| G5 mise ledger status/upgrade | Yes | Status ignores missing tab; `.mise-cask.toml` |
+| G6 preserve foreign `.metadata` | Yes | #11012 ignore + preserve; cleanup skip |
+| G7 bootstrap-scoped | Yes | No brew rewrite; empty uninstall honesty |
+
+**Shell-out-to-brew (D)** scored **HIGH-REJECT** — explicit jdx non-goal.
+
+### Why A still wins after expanded brainstorm
+
+1. **Only mise-shippable concept that hits G1–G7 identity set without shell-out.**
+2. Formula `#10326` is the positive precedent (same class of pour-time brew ledger).
+3. Generate path never WONTFIX’d; preserve-only (#11012) was a different bug.
+4. Live machine proves pure-mise ↔ fail and dual-ledger ↔ pass correlation.
+5. New I–R either fail G2–G4, need external merge (O), or are A refinements (N/R).
+6. Competing-design blanket A’s status lie is **not** part of product A (fixed).
+
+**Do not promote to default:** B, C, D, E, G, H, I, J, K, L-as-default, M, P, Q-alone.  
+**Optional later:** N (upgrade quarantine), F (explicit handoff), O (brew upstream).
+
+### HEAD alignment
+
+Branch `fix/brew-cask-homebrew-metadata-receipt` implements product Direction A:
+
+- pour-time `write_homebrew_cask_metadata`
+- empty `uninstall_artifacts`
+- repair when `.mise-cask.toml` proves mise ownership and caskfile missing
+  (upgrade driver path includes Installed packages; plain apply skips Installed)
+- status does **not** use `Missing` when only brew tab is absent
+- #11012-style preserve on stale version cleanup
+
+**Gaps (document, not blockers for identity direction):**
+
+1. Repair not on every `apply` of already-Installed packages (upgrade path yes).
+2. Installed gate ≠ full lifecycle (empty uninstall tab; app copy vs brew move).
+3. Dual upgrade race if user runs both mise and `brew upgrade --cask`.
+4. Private Homebrew tab format coupling.
+5. Upstream accept still **unproven**.
+
+### Single recommendation (reconfirmed)
+
+**Ship / keep potential product direction: Direction A — formula-style cask
+identity** (pour-time dual ledger, no status lie).
+
+```text
+mise bootstrap brew-cask:TOKEN
+  → Rust pour artifacts (G1)
+  → .mise-cask.toml           # mise status / upgrade (G5)
+  → .metadata/…               # brew installed? (G2–G4)
+  → preserve foreign .metadata  (G6)
+```
+
+**Why not replace with a new concept:** expanded matrix (I–R) found no better
+mise-only full-identity path. **O** is theoretically pure but not controllable
+from this fork. **N/F** are polish/opt-in, not substitutes.
+
+**Honest limits:** identity gate done; full offline uninstall/zap parity and
+upstream acceptance deferred.
+
+**Ops under main without A:** B + tool flags (e.g. Codex
+`check_for_update_on_startup = false`) — insufficient for G2–G4 product finish.
+
+**Process:** keep extending this file; no jdx PR/issue/comment unless policy lifts.
+
+### Fourth-pass conclusion
+
+Deep multi-path verification **reconfirms** Direction A. No better verified
+option for G1–G7 without `brew install --cask`. Branch HEAD already implements
+A’s core. Research goal: decision record extended; recommendation locked as
+potential fork product direction (not proven jdx accept).
