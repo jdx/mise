@@ -109,9 +109,11 @@ impl RemoteTaskGit {
     }
 
     fn path_cache_destination(&self, cache_key: &str, repo_path: &str) -> PathBuf {
-        let path_key = hash::hash_sha256_to_str(repo_path);
-        self.storage_path
-            .join(format!("{cache_key}.path-{path_key}"))
+        // Hash the complete identity into a single component. Concatenating
+        // both SHA-256 strings makes gix's temporary pack paths exceed the
+        // legacy Windows path limit in otherwise ordinary temp directories.
+        let path_key = hash::hash_sha256_to_str(&format!("{cache_key}\0{repo_path}"));
+        self.storage_path.join(format!("path-{path_key}"))
     }
 
     fn fetch_to_destination(
