@@ -171,6 +171,31 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str, args: &[String]) -
     err_no_version_set(config, ts, bin_name, tvs).await
 }
 
+/// Build the actionable, `which_shim`-style resolution error for a bin that a
+/// shim failed to resolve while dispatching through `mise x` (the exe-mode shim
+/// on Windows, invoked with `__MISE_SHIM_PATH` set). Without this, that path
+/// surfaces the opaque `cannot find binary path`; symlink shims already get
+/// this message directly from `which_shim`. See discussion #11183.
+#[cfg(not(test))]
+pub async fn err_shim_not_found(bin_name: &str) -> color_eyre::Report {
+    // Windows exe shims are invoked as `<tool>.exe`; name `<tool>` in the message.
+    let bin_stem = bin_name
+        .strip_suffix(std::env::consts::EXE_SUFFIX)
+        .unwrap_or(bin_name);
+    let build = async {
+        let config = Config::get().await?;
+        let ts = ToolsetBuilder::new().build(&config).await?;
+        let tvs = ts.list_rtvs_with_bin(&config, bin_stem).await?;
+        // err_no_version_set always returns Err; map its Ok arm defensively.
+        err_no_version_set(&config, ts, bin_stem, tvs)
+            .await
+            .map(|_| eyre!("cannot find binary path: {bin_stem}"))
+    };
+    match build.await {
+        Ok(report) | Err(report) => report,
+    }
+}
+
 pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<()> {
     let _lock = LockFile::new(&dirs::SHIMS)
         .with_callback(|l| {

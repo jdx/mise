@@ -57,6 +57,28 @@ Describe 'shim_mode' {
         Test-Path -Path (Join-Path -Path $shimPath -ChildPath go) -PathType Leaf | Should -Be $false
     }
 
+    It 'exe shim dispatch for an unresolvable bin gives an actionable error' {
+        # Reproduces discussion #11183: an exe-mode shim dispatches through
+        # `mise x -- <tool>` with __MISE_SHIM_PATH set. When the tool cannot be
+        # resolved (e.g. a project-scoped tool invoked from outside the project),
+        # the Windows arm used to surface the opaque `cannot find binary path`.
+        # It should now surface the same which_shim-style guidance Unix gets.
+        $fakeShim = Join-Path -Path $shimPath -ChildPath "mise-11183-not-real.exe"
+        $env:__MISE_SHIM_PATH = $fakeShim
+        try {
+            $out = mise x -- mise-11183-not-real.exe 2>&1
+            $LASTEXITCODE | Should -Not -Be 0
+            $joined = ($out | Out-String)
+            $joined | Should -Not -Match "cannot find binary path"
+            $joined | Should -Match "not a valid shim|No version is set for shim"
+            $joined | Should -Match "mise-11183-not-real"
+            $joined | Should -Not -Match "mise-11183-not-real\.exe"
+        }
+        finally {
+            Remove-Item Env:\__MISE_SHIM_PATH -ErrorAction SilentlyContinue
+        }
+    }
+
     It 'run on hardlink' {
         mise settings windows_shim_mode "hardlink"
 
