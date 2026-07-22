@@ -727,50 +727,59 @@ fn prefer_offline(args: &[String]) -> bool {
         return true;
     }
 
-    // Otherwise fall back to the original command-based logic
-    args.iter()
-        .take_while(|a| *a != "--")
-        .filter(|a| !a.starts_with('-') || *a == "--prefer-offline")
-        .nth(1)
+    let command_idx = first_non_global_arg_idx(args);
+    let settings_args_end = command_idx.unwrap_or(args.len());
+    if args[..settings_args_end]
+        .iter()
+        .any(|arg| arg == "--prefer-offline")
+    {
+        return true;
+    }
+
+    prefer_offline_command(args)
+}
+
+fn first_non_global_arg_idx(args: &[String]) -> Option<usize> {
+    crate::cli::first_non_global_arg_idx(
+        &<crate::cli::Cli as clap::CommandFactory>::command(),
+        args,
+    )
+}
+
+fn command_arg(args: &[String]) -> Option<&str> {
+    first_non_global_arg_idx(args)
+        .and_then(|idx| args.get(idx))
+        .map(String::as_str)
+}
+
+fn prefer_offline_command(args: &[String]) -> bool {
+    command_arg(args)
         .map(|a| {
             [
-                "--prefer-offline",
-                "activate",
-                "current",
-                "direnv",
-                "env",
-                "exec",
-                "hook-env",
-                "ls",
-                "where",
-                "which",
+                "activate", "current", "direnv", "env", "exec", "hook-env", "ls", "where", "which",
                 "x",
             ]
-            .contains(&a.as_str())
+            .contains(&a)
         })
         .unwrap_or_default()
 }
 
 /// See [`REMOTE_FETCH_COMMAND`].
 fn remote_fetch_command(args: &[String]) -> bool {
-    crate::cli::first_non_global_arg_idx(
-        &<crate::cli::Cli as clap::CommandFactory>::command(),
-        args,
-    )
-    .and_then(|idx| args.get(idx))
-    .map(|a| {
-        [
-            "lock",
-            "ls-remote",
-            "list-all",
-            "list-remote",
-            "outdated",
-            "upgrade",
-            "up",
-        ]
-        .contains(&a.as_str())
-    })
-    .unwrap_or_default()
+    command_arg(args)
+        .map(|a| {
+            [
+                "lock",
+                "ls-remote",
+                "list-all",
+                "list-remote",
+                "outdated",
+                "upgrade",
+                "up",
+            ]
+            .contains(&a)
+        })
+        .unwrap_or_default()
 }
 
 /// returns true if missing required env vars should produce warnings instead of errors
@@ -1023,6 +1032,36 @@ mod tests {
             "--cd=/tmp",
             "--profile=development",
             "outdated",
+        ])));
+    }
+
+    #[test]
+    fn test_prefer_offline_command_skips_global_option_values() {
+        let args = |args: &[&str]| {
+            args.iter()
+                .map(|arg| (*arg).to_string())
+                .collect::<Vec<_>>()
+        };
+
+        assert!(prefer_offline_command(&args(&[
+            "mise", "--cd", "/tmp", "activate"
+        ])));
+        assert!(prefer_offline_command(&args(&[
+            "mise",
+            "--profile",
+            "development",
+            "hook-env",
+        ])));
+        assert!(prefer_offline_command(&args(&["mise", "-C/tmp", "env",])));
+        assert!(!prefer_offline_command(&args(&[
+            "mise", "--cd", "/tmp", "lock"
+        ])));
+        assert!(prefer_offline(&args(&[
+            "mise",
+            "--cd",
+            "/tmp",
+            "--prefer-offline",
+            "lock",
         ])));
     }
 

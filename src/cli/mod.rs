@@ -433,7 +433,7 @@ pub(crate) fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> 
             return Some(i);
         }
 
-        let flag_takes_value = if arg.starts_with("--") {
+        let flag_takes_separate_value = if arg.starts_with("--") {
             if arg.contains('=') {
                 false
             } else {
@@ -446,12 +446,12 @@ pub(crate) fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> 
             // malformed byte becomes a multi-byte U+FFFD and byte index 2 may not
             // be a char boundary. A short flag is always ASCII, so a non-ASCII
             // prefix simply matches no value-taking flag.
-            flags_with_values.iter().any(|f| f == flag_name)
+            arg.len() == 2 && flags_with_values.iter().any(|f| f == flag_name)
         } else {
             false
         };
 
-        if flag_takes_value && i + 1 < args.len() {
+        if flag_takes_separate_value && i + 1 < args.len() {
             i += 2;
         } else {
             i += 1;
@@ -956,6 +956,26 @@ mod tests {
         ];
 
         assert!(!uses_deprecated_backends_alias(&cmd, &args));
+    }
+
+    #[test]
+    fn test_first_non_global_arg_idx_handles_attached_short_flag_values() {
+        let cmd = Cli::command();
+        let args = |args: &[&str]| {
+            args.iter()
+                .map(|arg| (*arg).to_string())
+                .collect::<Vec<_>>()
+        };
+
+        for args in [
+            args(&["mise", "-C", "/tmp", "lock"]),
+            args(&["mise", "-C/tmp", "lock"]),
+            args(&["mise", "-C=/tmp", "lock"]),
+            args(&["mise", "-j8", "lock"]),
+        ] {
+            let idx = first_non_global_arg_idx(&cmd, &args).unwrap();
+            assert_eq!(args[idx], "lock");
+        }
     }
 
     #[test]
