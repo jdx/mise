@@ -187,30 +187,33 @@ impl BrewCaskManager {
         }
         execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
         for binary in &artifacts.binaries {
-            stage_binary(&stage, &tmp_caskroom, &cask, binary)?;
+            stage_binary(&stage, &tmp_caskroom, &cask, &appdir, binary)?;
         }
         for completion in &artifacts.completions {
-            stage_completion(&stage, &tmp_caskroom, &cask, completion)?;
+            stage_completion(&stage, &tmp_caskroom, &cask, &appdir, completion)?;
         }
         for generated in &artifacts.generated_completions {
-            stage_generated_completions(&stage, &tmp_caskroom, &cask, generated)?;
+            stage_generated_completions(&stage, &tmp_caskroom, &cask, &appdir, generated)?;
         }
         write_receipt(&tmp_caskroom, &cask, &artifacts)?;
-        file::remove_all(&caskroom)?;
-        file::rename(&tmp_caskroom, &caskroom)?;
-        for binary in &artifacts.binaries {
-            link_binary(&caskroom, binary)?;
-        }
-        remove_obsolete_binary_links(&cask, &previous_binaries, &binary_targets(&artifacts)?)?;
+        let current_binaries = binary_targets(&artifacts)?;
         let current_completions = completion_target_paths(&cask, &artifacts)?;
-        for target in &current_completions {
-            link_completion(&cask, &caskroom, target)?;
-        }
+        let current_fonts = font_target_paths(&artifacts)?;
+        replace_caskroom(&cask, &tmp_caskroom, &caskroom, || {
+            for binary in &artifacts.binaries {
+                link_binary(&caskroom, binary)?;
+            }
+            for target in &current_completions {
+                link_completion(&cask, &caskroom, target)?;
+            }
+            for font in &artifacts.fonts {
+                link_font(&caskroom, font)?;
+            }
+            Ok(())
+        })?;
+        remove_obsolete_binary_links(&cask, &previous_binaries, &current_binaries)?;
         remove_obsolete_completions(&cask, &previous_completions, &current_completions)?;
-        for font in &artifacts.fonts {
-            link_font(&caskroom, font)?;
-        }
-        remove_obsolete_fonts(&cask, &previous_fonts, &font_target_paths(&artifacts)?)?;
+        remove_obsolete_fonts(&cask, &previous_fonts, &current_fonts)?;
         remove_stale_versions(&caskroom_token, &cask.version)?;
         file::remove_all(stage)?;
         Ok(cask.version)
@@ -858,12 +861,13 @@ fn stage_completion(
     stage: &Path,
     caskroom: &Path,
     cask: &Cask,
+    appdir: &Path,
     completion: &CompletionArtifact,
 ) -> Result<()> {
     let target = completion.target_path()?;
     let caskroom_completion = caskroom_completion_path(caskroom, &target)?;
-    let source =
-        find_completion_source(stage, caskroom, cask, &completion.source).ok_or_else(|| {
+    let source = find_completion_source(stage, caskroom, cask, appdir, &completion.source)
+        .ok_or_else(|| {
             eyre!(
                 "brew-cask: {} completion artifact '{}' was not found",
                 completion.shell.name(),
@@ -884,9 +888,11 @@ fn stage_generated_completions(
     stage: &Path,
     caskroom: &Path,
     cask: &Cask,
+    appdir: &Path,
     completion: &GeneratedCompletionArtifact,
 ) -> Result<()> {
-    let executable = find_generated_completion_executable(stage, caskroom, cask, completion)?;
+    let executable =
+        find_generated_completion_executable(stage, caskroom, cask, appdir, completion)?;
     if executable.starts_with(stage) || executable.starts_with(caskroom) {
         file::make_executable(&executable)?;
     }
@@ -948,6 +954,7 @@ fn find_completion_source(
     stage: &Path,
     caskroom: &Path,
     cask: &Cask,
+    appdir: &Path,
     source: &str,
 ) -> Option<PathBuf> {
     for root in [caskroom, stage] {
@@ -957,7 +964,7 @@ fn find_completion_source(
             return Some(source);
         }
     }
-    if let Some(source) = appdir_artifact_source(source) {
+    if let Some(source) = appdir_artifact_source(source, appdir) {
         return Some(source);
     }
     absolute_prefixed_source(source)
@@ -970,6 +977,7 @@ fn find_generated_completion_executable(
     stage: &Path,
     caskroom: &Path,
     cask: &Cask,
+    appdir: &Path,
     completion: &GeneratedCompletionArtifact,
 ) -> Result<PathBuf> {
     let executable = &completion.executable;
@@ -983,7 +991,7 @@ fn find_generated_completion_executable(
     {
         return Ok(source);
     }
-    if let Some(source) = appdir_artifact_source(executable) {
+    if let Some(source) = appdir_artifact_source(executable, appdir) {
         return Ok(source);
     }
     if let Some(source) = absolute_prefixed_source(executable) {
@@ -1009,24 +1017,16 @@ fn find_generated_completion_executable(
     ))
 }
 
-fn appdir_artifact_source(source: &str) -> Option<PathBuf> {
+fn appdir_artifact_source(source: &str, appdir: &Path) -> Option<PathBuf> {
     if !source.contains("$APPDIR") {
         return None;
     }
-    [
-        PathBuf::from("/Applications"),
-        prefix::prefix().join("Applications"),
-    ]
-    .iter()
-    .map(|appdir| PathBuf::from(source.replace("$APPDIR", &appdir.to_string_lossy())))
-    .find(|path| path.is_file())
+    let path = PathBuf::from(source.replace("$APPDIR", &appdir.to_string_lossy()));
+    path.is_file().then_some(path)
 }
 
 fn find_generated_completion_file(root: &Path, executable: &str) -> Result<Option<PathBuf>> {
     let executable_path = Path::new(executable);
-    if executable_path.components().count() != 1 {
-        return Ok(find_file_artifact(root, executable));
-    }
     let direct = root.join(executable_path);
     if direct.is_file() {
         return Ok(Some(direct));
@@ -1305,7 +1305,13 @@ fn remove_obsolete_completions(
     Ok(())
 }
 
-fn stage_binary(stage: &Path, caskroom: &Path, cask: &Cask, binary: &BinaryArtifact) -> Result<()> {
+fn stage_binary(
+    stage: &Path,
+    caskroom: &Path,
+    cask: &Cask,
+    appdir: &Path,
+    binary: &BinaryArtifact,
+) -> Result<()> {
     let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
     file::remove_all(&caskroom_binary)?;
     if let Some(parent) = caskroom_binary.parent() {
@@ -1314,8 +1320,7 @@ fn stage_binary(stage: &Path, caskroom: &Path, cask: &Cask, binary: &BinaryArtif
     if binary.source.contains("$APPDIR") {
         // $APPDIR is the Applications directory where install_app placed the bundle.
         // Symlink into the installed app so the CLI wrapper can trace back to find the app.
-        // Check both /Applications and $HOMEBREW_PREFIX/Applications per app_target_path().
-        let app_binary = appdir_artifact_source(&binary.source).ok_or_else(|| {
+        let app_binary = appdir_artifact_source(&binary.source, appdir).ok_or_else(|| {
             eyre!(
                 "brew-cask: binary artifact '{}' was not found",
                 binary.source
@@ -1729,6 +1734,9 @@ fn parse_generated_completion_artifact(
         })
         .transpose()?
         .unwrap_or_else(|| default_generated_completion_shells(shell_parameter_format.as_deref()));
+    if shells.is_empty() {
+        bail!("brew-cask: generate_completions_from_executable requires at least one shell");
+    }
     Ok(Some(GeneratedCompletionArtifact {
         executable,
         args,
@@ -2155,6 +2163,48 @@ fn caskroom_version_dir(token: &str, version: &str) -> PathBuf {
 fn caskroom_tmp_dir(cask: &Cask) -> PathBuf {
     let key = format!("{}-{}", cask.token, cask.version);
     caskroom_token_dir(&cask.token).join(format!(".mise-tmp-{}", hash::hash_to_str(&key)))
+}
+
+fn caskroom_backup_dir(cask: &Cask) -> PathBuf {
+    let key = format!("{}-{}", cask.token, cask.version);
+    caskroom_token_dir(&cask.token).join(format!(".mise-backup-{}", hash::hash_to_str(&key)))
+}
+
+fn replace_caskroom(
+    cask: &Cask,
+    staged: &Path,
+    destination: &Path,
+    link_artifacts: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    let backup = caskroom_backup_dir(cask);
+    file::remove_all(&backup)?;
+    let had_previous = destination.symlink_metadata().is_ok();
+    if had_previous {
+        file::rename(destination, &backup)?;
+    }
+    if let Err(err) = file::rename(staged, destination) {
+        if had_previous {
+            file::rename(&backup, destination)?;
+        }
+        return Err(err);
+    }
+    if let Err(err) = link_artifacts() {
+        let rollback = (|| -> Result<()> {
+            file::remove_all(destination)?;
+            if had_previous {
+                file::rename(&backup, destination)?;
+            }
+            Ok(())
+        })();
+        if let Err(rollback_err) = rollback {
+            return Err(err.wrap_err(format!(
+                "failed to restore previous cask after activation failed: {rollback_err:#}"
+            )));
+        }
+        return Err(err);
+    }
+    file::remove_all(backup)?;
+    Ok(())
 }
 
 fn remove_stale_versions(token_dir: &Path, current_version: &str) -> Result<()> {
@@ -2627,6 +2677,19 @@ end
     }
 
     #[test]
+    fn rejects_generated_completions_with_no_shells() {
+        let value = serde_json::json!({
+            "generate_completions_from_executable": ["op", {"shells": []}]
+        });
+
+        let err = parse_generated_completion_artifact(&value)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("requires at least one shell"));
+    }
+
+    #[test]
     fn parses_declared_completion_artifacts() -> Result<()> {
         let mut cask = test_cask("ghostty", "1.2.0");
         cask.artifacts = vec![
@@ -2724,7 +2787,13 @@ end
         };
         let target = completion.target_path()?;
 
-        stage_completion(&stage, &caskroom, &cask, &completion)?;
+        stage_completion(
+            &stage,
+            &caskroom,
+            &cask,
+            Path::new("/Applications"),
+            &completion,
+        )?;
         link_completion(&cask, &caskroom, &target)?;
 
         assert_eq!(
@@ -2756,7 +2825,13 @@ end
             target: Some("$HOMEBREW_PREFIX/etc/bash_completion.d/foo".to_string()),
         };
 
-        stage_completion(&stage, &caskroom, &cask, &completion)?;
+        stage_completion(
+            &stage,
+            &caskroom,
+            &cask,
+            Path::new("/Applications"),
+            &completion,
+        )?;
 
         assert_eq!(
             crate::file::read_to_string(caskroom.join("etc/bash_completion.d/foo"))?,
@@ -2782,7 +2857,13 @@ end
             target: Some("$HOMEBREW_PREFIX/etc/bash_completion.d/foo".to_string()),
         };
 
-        stage_completion(&stage, &caskroom, &cask, &completion)?;
+        stage_completion(
+            &stage,
+            &caskroom,
+            &cask,
+            Path::new("/Applications"),
+            &completion,
+        )?;
 
         assert_eq!(
             crate::file::read_to_string(caskroom.join("etc/bash_completion.d/foo"))?,
@@ -2842,7 +2923,13 @@ end
             shells: vec![CompletionShell::Bash],
         };
 
-        stage_generated_completions(&stage, &caskroom, &cask, &completion)?;
+        stage_generated_completions(
+            &stage,
+            &caskroom,
+            &cask,
+            Path::new("/Applications"),
+            &completion,
+        )?;
 
         assert_eq!(
             crate::file::read_to_string(caskroom.join("etc/bash_completion.d/op"))?,
@@ -2873,8 +2960,32 @@ end
         };
 
         assert_eq!(
-            find_generated_completion_executable(&stage, &caskroom, &cask, &completion)?,
+            find_generated_completion_executable(
+                &stage,
+                &caskroom,
+                &cask,
+                &tmp.path().join("Applications"),
+                &completion,
+            )?,
             app_executable
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn appdir_artifact_source_uses_selected_appdir() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let system_appdir = tmp.path().join("system-applications");
+        let prefix_appdir = tmp.path().join("prefix-applications");
+        let relative = "Foo.app/Contents/MacOS/foo";
+        file::create_dir_all(system_appdir.join(relative).parent().unwrap())?;
+        file::create_dir_all(prefix_appdir.join(relative).parent().unwrap())?;
+        crate::file::write(system_appdir.join(relative), "system")?;
+        crate::file::write(prefix_appdir.join(relative), "prefix")?;
+
+        assert_eq!(
+            appdir_artifact_source("$APPDIR/Foo.app/Contents/MacOS/foo", &prefix_appdir),
+            Some(prefix_appdir.join(relative))
         );
         Ok(())
     }
@@ -2900,7 +3011,13 @@ end
         };
 
         assert_eq!(
-            find_generated_completion_executable(&stage, &caskroom, &cask, &completion)?,
+            find_generated_completion_executable(
+                &stage,
+                &caskroom,
+                &cask,
+                Path::new("/Applications"),
+                &completion,
+            )?,
             caskroom.join("bin/op")
         );
         Ok(())
@@ -2927,11 +3044,52 @@ end
             shells: vec![CompletionShell::Bash],
         };
 
-        let err = find_generated_completion_executable(&stage, &caskroom, &cask, &completion)
-            .unwrap_err();
+        let err = find_generated_completion_executable(
+            &stage,
+            &caskroom,
+            &cask,
+            Path::new("/Applications"),
+            &completion,
+        )
+        .unwrap_err();
         assert!(
             err.to_string()
                 .contains("completion executable 'tool' is ambiguous")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_ambiguous_generated_completion_nested_executable() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let caskroom = tmp.path().join("caskroom");
+        file::create_dir_all(stage.join("a/bin"))?;
+        file::create_dir_all(stage.join("b/bin"))?;
+        file::create_dir_all(&caskroom)?;
+        crate::file::write(stage.join("a/bin/tool"), "a")?;
+        crate::file::write(stage.join("b/bin/tool"), "b")?;
+        let cask = test_cask("tool", "1.0.0");
+        let completion = GeneratedCompletionArtifact {
+            executable: "bin/tool".to_string(),
+            args: vec![],
+            base_name: None,
+            shell_parameter_format: None,
+            shells: vec![CompletionShell::Bash],
+        };
+
+        let err = find_generated_completion_executable(
+            &stage,
+            &caskroom,
+            &cask,
+            Path::new("/Applications"),
+            &completion,
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("completion executable 'bin/tool' is ambiguous")
         );
         Ok(())
     }
@@ -3559,7 +3717,13 @@ end
             target: Some("$HOMEBREW_PREFIX/bin/op".to_string()),
         };
 
-        stage_binary(&stage, &caskroom, &cask, &binary)?;
+        stage_binary(
+            &stage,
+            &caskroom,
+            &cask,
+            Path::new("/Applications"),
+            &binary,
+        )?;
         link_binary(&caskroom, &binary)?;
 
         let target = binary.target_path()?;
@@ -3591,8 +3755,8 @@ end
             target: Some("$HOMEBREW_PREFIX/sbin/op".to_string()),
         };
 
-        stage_binary(&stage, &caskroom, &cask, &bin)?;
-        stage_binary(&stage, &caskroom, &cask, &sbin)?;
+        stage_binary(&stage, &caskroom, &cask, Path::new("/Applications"), &bin)?;
+        stage_binary(&stage, &caskroom, &cask, Path::new("/Applications"), &sbin)?;
         link_binary(&caskroom, &bin)?;
         link_binary(&caskroom, &sbin)?;
 
@@ -3619,7 +3783,13 @@ end
             target: Some("$HOMEBREW_PREFIX/bin/op".to_string()),
         };
 
-        stage_binary(&stage, &caskroom, &cask, &binary)?;
+        stage_binary(
+            &stage,
+            &caskroom,
+            &cask,
+            Path::new("/Applications"),
+            &binary,
+        )?;
 
         assert_eq!(
             crate::file::read_to_string(caskroom.join("bin/op"))?,
@@ -3651,7 +3821,13 @@ end
             target: Some("$HOMEBREW_PREFIX/bin/karabiner_cli".to_string()),
         };
 
-        stage_binary(&stage, &caskroom, &cask, &binary)?;
+        stage_binary(
+            &stage,
+            &caskroom,
+            &cask,
+            Path::new("/Applications"),
+            &binary,
+        )?;
         link_binary(&caskroom, &binary)?;
 
         let staged = caskroom.join("bin/karabiner_cli");
@@ -3685,7 +3861,13 @@ end
             target: Some("$HOMEBREW_PREFIX/bin/karabiner_cli".to_string()),
         };
 
-        stage_binary(&stage, &caskroom, &cask, &binary)?;
+        stage_binary(
+            &stage,
+            &caskroom,
+            &cask,
+            Path::new("/Applications"),
+            &binary,
+        )?;
         file::remove_file(&pkg_binary)?;
         let err = link_binary(&caskroom, &binary).unwrap_err().to_string();
 
@@ -3897,6 +4079,33 @@ end
         file::create_dir_all(token_dir.join(".mise-tmp-interrupted"))?;
 
         assert_eq!(installed_version("actual-token"), Some("2.0.0".to_string()));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replace_caskroom_restores_previous_files_when_linking_fails() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("completion-only", "1.0.0");
+        let destination = caskroom_version_dir(&cask.token, &cask.version);
+        let staged = caskroom_tmp_dir(&cask);
+        let relative = Path::new("etc/bash_completion.d/tool");
+        file::create_dir_all(destination.join(relative).parent().unwrap())?;
+        file::create_dir_all(staged.join(relative).parent().unwrap())?;
+        crate::file::write(destination.join(relative), "previous")?;
+        crate::file::write(staged.join(relative), "replacement")?;
+        let target = tmp.path().join(relative);
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(&destination.join(relative), &target)?;
+
+        let err = replace_caskroom(&cask, &staged, &destination, || Err(eyre!("link failed")))
+            .unwrap_err();
+
+        assert_eq!(err.to_string(), "link failed");
+        assert_eq!(crate::file::read_to_string(&target)?, "previous");
+        assert!(!caskroom_backup_dir(&cask).exists());
         Ok(())
     }
 
