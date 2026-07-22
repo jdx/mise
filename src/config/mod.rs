@@ -4,7 +4,7 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::{Either, Itertools};
 use path_absolutize::Absolutize;
 pub use settings::{CompilePurpose, Settings};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
@@ -924,12 +924,14 @@ impl Config {
             load_local_tasks_with_context(&config, ctx, &task_definitions).await?;
         let global_tasks = load_global_tasks(&config, &task_definitions).await?;
         local_tasks.retain(|local| {
-            !global_tasks
-                .iter()
-                .any(|global| tasks_have_same_source(local, global))
+            !local.suppress_if_global_duplicate
+                || !global_tasks
+                    .iter()
+                    .any(|global| tasks_have_same_source(&local.task, global))
         });
         let mut tasks: BTreeMap<String, Task> = local_tasks
             .into_iter()
+            .map(|local| local.task)
             .chain(global_tasks)
             .rev()
             .inspect(|t| {
@@ -3203,17 +3205,17 @@ fn render_task_input_entries(
         .collect()
 }
 
-async fn apply_task_config_inputs(
-    task: &mut Task,
+async fn resolve_task_config_inputs(
+    task: &Task,
     config: &Arc<Config>,
     task_inputs: &ResolvedTaskInputs,
-) -> Result<()> {
+) -> Result<Option<ResolvedTaskInputs>> {
     let has_group_references = task
         .sources
         .iter()
         .any(|source| source.starts_with(TASK_INPUT_GROUP_PREFIX));
     if task_inputs.is_empty() && !has_group_references {
-        return Ok(());
+        return Ok(None);
     }
     Settings::get().ensure_experimental("task input groups")?;
 
@@ -3240,23 +3242,33 @@ async fn apply_task_config_inputs(
         )),
         None => None,
     };
-    let task_inputs = ResolvedTaskInputs {
+    Ok(Some(ResolvedTaskInputs {
         global_inputs,
         input_groups,
-    };
-    let had_sources = !task.sources.is_empty();
-    let mut sources = expand_task_inputs(
+    }))
+}
+
+fn apply_task_input_groups(task: &mut Task, task_inputs: &ResolvedTaskInputs) -> Result<()> {
+    task.sources = expand_task_inputs(
         &task.sources,
-        &task_inputs,
+        task_inputs,
         Path::new(""),
         &task.name,
         &mut vec![],
         false,
     )?;
+    Ok(())
+}
+
+fn apply_task_global_inputs(
+    task: &mut Task,
+    task_inputs: &ResolvedTaskInputs,
+    had_sources: bool,
+) -> Result<()> {
     if let Some((global_inputs, root)) = &task_inputs.global_inputs {
-        sources.extend(expand_task_inputs(
+        task.sources.extend(expand_task_inputs(
             global_inputs,
-            &task_inputs,
+            task_inputs,
             root,
             &task.name,
             &mut vec![],
@@ -3264,9 +3276,21 @@ async fn apply_task_config_inputs(
         )?);
     }
 
-    task.sources = sources;
     if !had_sources && !task.sources.is_empty() && task.outputs.is_empty() {
         task.outputs = TaskOutputs::Auto;
+    }
+    Ok(())
+}
+
+async fn apply_task_config_inputs(
+    task: &mut Task,
+    config: &Arc<Config>,
+    task_inputs: &ResolvedTaskInputs,
+) -> Result<()> {
+    let had_sources = !task.sources.is_empty();
+    if let Some(task_inputs) = resolve_task_config_inputs(task, config, task_inputs).await? {
+        apply_task_input_groups(task, &task_inputs)?;
+        apply_task_global_inputs(task, &task_inputs, had_sources)?;
     }
     Ok(())
 }
@@ -3452,11 +3476,28 @@ fn dir_is_in_enclosing_monorepo(
         && !file::path_starts_with_resolved(dir, selected_root)
 }
 
+struct LoadedLocalTask {
+    task: Task,
+    suppress_if_global_duplicate: bool,
+}
+
+fn task_config_has_file_context(task_config: &TaskConfig) -> bool {
+    task_config.includes.is_some()
+        || task_config.dir.is_some()
+        || task_config.shell.is_some()
+        || task_config.cache.is_some()
+        || task_config.rust_cache.is_some()
+        || !task_config.global_env.is_empty()
+        || !task_config.global_pass_through_env.is_empty()
+        || !task_config.global_inputs.is_empty()
+        || !task_config.input_groups.is_empty()
+}
+
 async fn load_local_tasks_with_context(
     config: &Arc<Config>,
     ctx: Option<&crate::task::TaskLoadContext>,
     templates: &TaskDefinitions,
-) -> Result<Vec<Task>> {
+) -> Result<Vec<LoadedLocalTask>> {
     let mut tasks = vec![];
     let monorepo_config = find_monorepo_config(&config.config_files);
     let monorepo_root = monorepo_config.and_then(|cf| cf.project_root().map(|p| p.to_path_buf()));
@@ -3473,6 +3514,11 @@ async fn load_local_tasks_with_context(
         .as_deref()
         .map(|root| enclosing_monorepo_roots(&config.config_files, root))
         .unwrap_or_default();
+    let user_global_config_paths = global_config_files();
+    let has_user_global_config = config
+        .config_files
+        .values()
+        .any(|cf| config_set_contains(&user_global_config_paths, cf.get_path()));
     for d in all_dirs()? {
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
             continue;
@@ -3487,14 +3533,55 @@ async fn load_local_tasks_with_context(
             );
             continue;
         }
-        let mut dir_tasks =
-            load_tasks_in_dir_with_definitions(config, &d, &local_config_files, templates).await?;
+        let local_configs = configs_at_root(&d, &local_config_files);
+        let cascaded_task_config = cascaded_task_config_for_dir(&d, &local_config_files)?;
+        let effective_cascaded_task_config =
+            if local_configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
+                None
+            } else {
+                cascaded_task_config.as_ref()
+            };
+        let mut dir_tasks = load_tasks_from_configs(
+            config,
+            &d,
+            local_configs.clone(),
+            templates,
+            false,
+            effective_cascaded_task_config,
+        )
+        .await?;
+
+        let mut suppress_if_global_duplicate = !has_user_global_config;
+        let mut local_inline_task_names = HashSet::new();
+        if has_user_global_config && file::same_file(&d, &env::MISE_GLOBAL_CONFIG_ROOT) {
+            let local_file_context = local_configs
+                .iter()
+                .any(|cf| task_config_has_file_context(cf.task_config()))
+                || effective_cascaded_task_config
+                    .is_some_and(|tc| task_config_has_file_context(&tc.task_config));
+            suppress_if_global_duplicate = false;
+            if !local_file_context {
+                local_inline_task_names = local_configs
+                    .iter()
+                    .flat_map(|cf| cf.tasks())
+                    .map(|task| task.name.clone())
+                    .collect();
+                // A user-global config owns the HOME include decision, so
+                // omitted defaults must not be resurrected by the local
+                // hierarchy walk.
+                dir_tasks.retain(|task| local_inline_task_names.contains(&task.name));
+            }
+        }
 
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);
         }
 
-        tasks.extend(dir_tasks);
+        tasks.extend(dir_tasks.into_iter().map(|task| LoadedLocalTask {
+            suppress_if_global_duplicate: suppress_if_global_duplicate
+                && !local_inline_task_names.contains(&task.name),
+            task,
+        }));
     }
 
     // Determine if we should load monorepo tasks from subdirectories
@@ -3620,7 +3707,10 @@ async fn load_local_tasks_with_context(
         }
 
         while let Some(result) = join_set.join_next().await {
-            tasks.extend(result??);
+            tasks.extend(result??.into_iter().map(|task| LoadedLocalTask {
+                task,
+                suppress_if_global_duplicate: !has_user_global_config,
+            }));
         }
     }
 
@@ -4013,7 +4103,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
         .await?;
         rendered_file_tasks.finish_config();
         let mut inline_tasks = IndexMap::new();
-        for task in &sources.config_tasks {
+        for task in &sources.config_task_overlays {
             inline_tasks
                 .entry(task.name.clone())
                 .or_insert_with(|| task.clone());
@@ -4213,10 +4303,11 @@ async fn load_config_tasks(
     templates: &TaskDefinitions,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
     task_config: &ResolvedTaskConfig,
-) -> Result<Vec<Task>> {
+) -> Result<LoadedConfigTasks> {
     let is_global = is_global_config(cf.get_path());
     let config_root = Arc::new(config_root.to_path_buf());
     let mut tasks = vec![];
+    let mut overlays = vec![];
     for t in cf.tasks().into_iter() {
         let config_root = config_root.clone();
         let config = config.clone();
@@ -4232,6 +4323,8 @@ async fn load_config_tasks(
         }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
+        let has_explicit_dir = t.dir.is_some();
+        let has_explicit_shell = t.shell.is_some();
         if t.dir.is_none() {
             t.dir = task_config.dir.clone();
         }
@@ -4240,7 +4333,25 @@ async fn load_config_tasks(
         }
         match t.render(&config, &config_root).await {
             Ok(()) => {
-                apply_task_config_inputs(&mut t, &config, &task_config.inputs).await?;
+                let had_sources = !t.sources.is_empty();
+                let resolved_task_inputs =
+                    resolve_task_config_inputs(&t, &config, &task_config.inputs).await?;
+                if let Some(task_inputs) = &resolved_task_inputs {
+                    apply_task_input_groups(&mut t, task_inputs)?;
+                }
+                if is_global {
+                    let mut overlay = t.clone();
+                    if !has_explicit_dir {
+                        overlay.dir = None;
+                    }
+                    if !has_explicit_shell {
+                        overlay.shell = None;
+                    }
+                    overlays.push(overlay);
+                }
+                if let Some(task_inputs) = &resolved_task_inputs {
+                    apply_task_global_inputs(&mut t, task_inputs, had_sources)?;
+                }
                 apply_task_config_cache_default(&mut t, &task_config.cache);
                 apply_task_config_rust_cache_default(&mut t, &task_config.rust_cache);
                 task_config.environment.apply(&mut t)?;
@@ -4259,7 +4370,7 @@ async fn load_config_tasks(
             }
         }
     }
-    Ok(tasks)
+    Ok(LoadedConfigTasks { tasks, overlays })
 }
 
 struct LoadTaskIncludesOptions<'a> {
@@ -4614,6 +4725,12 @@ async fn load_tasks_in_dir_with_definitions(
 struct TaskSources {
     file_tasks: Vec<Task>,
     config_tasks: Vec<Task>,
+    config_task_overlays: Vec<Task>,
+}
+
+struct LoadedConfigTasks {
+    tasks: Vec<Task>,
+    overlays: Vec<Task>,
 }
 
 #[derive(Clone)]
@@ -4844,6 +4961,7 @@ async fn load_task_sources_from_configs(
     };
 
     let mut config_tasks = vec![];
+    let mut config_task_overlays = vec![];
     for (precedence, cf) in configs.iter().enumerate() {
         let dir = dir.to_path_buf();
         let monorepo_cf = monorepo_context.then_some(*cf);
@@ -4856,10 +4974,14 @@ async fn load_task_sources_from_configs(
             &task_config,
         )
         .await?;
-        for task in &mut loaded {
+        for task in &mut loaded.tasks {
             task.config_precedence = precedence;
         }
-        config_tasks.extend(loaded);
+        for task in &mut loaded.overlays {
+            task.config_precedence = precedence;
+        }
+        config_tasks.extend(loaded.tasks);
+        config_task_overlays.extend(loaded.overlays);
     }
 
     let mut file_tasks = vec![];
@@ -4907,6 +5029,7 @@ async fn load_task_sources_from_configs(
     Ok(TaskSources {
         file_tasks,
         config_tasks,
+        config_task_overlays,
     })
 }
 

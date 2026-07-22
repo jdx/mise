@@ -79,3 +79,164 @@ assert "mise run customglobalfile" "PROJECT_ROOT=$PWD"
 assert "mise run systemglobalfile" "PROJECT_ROOT=$PWD"
 assert "mise run relative-meta" "RELATIVE_OVERLAY=applied"
 assert "mise run templated-meta" "TEMPLATED_OVERLAY=applied"
+
+# The user-global pass owns HOME's task include scope. An unrelated local HOME
+# config must not resurrect omitted defaults or let them override an explicitly
+# included global task with the same name.
+cat <<'EOF' >~/.config/mise/tasks/collision
+#!/usr/bin/env bash
+echo default-task
+EOF
+chmod +x ~/.config/mise/tasks/collision
+cat <<'EOF' >~/.config/mise/tasks/omitted-only
+#!/usr/bin/env bash
+echo omitted-task
+EOF
+chmod +x ~/.config/mise/tasks/omitted-only
+cat <<'EOF' >~/dotfiles/tasks/collision
+#!/usr/bin/env bash
+echo custom-task
+EOF
+chmod +x ~/dotfiles/tasks/collision
+cat >~/.config/mise/config.toml <<'TOML'
+tasks.myglobal = { run = 'echo myglobal' }
+
+[task_config]
+includes = ["dotfiles/tasks"]
+TOML
+cat >"$HOME/mise.toml" <<'TOML'
+[env]
+UNRELATED_HOME_CONFIG = "present"
+TOML
+
+assert "mise run collision" "custom-task"
+assert_fail "mise run omitted-only"
+assert_not_contains "mise tasks --global" "omitted-only"
+
+# Cascade control alone does not supply file-task context at the HOME root, so
+# it must not resurrect defaults omitted by the user-global config.
+cat >"$HOME/mise.toml" <<'TOML'
+[task_config]
+cascade = true
+TOML
+assert_fail "mise run omitted-only"
+
+# A local ancestor config can explicitly include the global task directory even
+# when the global config replaces that default include. Source deduplication
+# must not discard a task that the independent global pass did not load.
+cat >"$HOME/mise.toml" <<'TOML'
+[task_config]
+includes = [".config/mise/tasks"]
+TOML
+cat >"$HOME/.config/mise/config.toml" <<'TOML'
+tasks.myglobal = { run = 'echo myglobal' }
+
+[task_config]
+includes = ["dotfiles/tasks"]
+TOML
+
+assert "mise run myglobalfile" "myglobalfile"
+assert_contains "mise tasks --global" "myglobalfile"
+
+# Explicit task configuration at the HOME root owns its default file tasks even
+# when the user-global config replaces those defaults.
+mkdir -p "$HOME/.mise/conf.d" "$HOME/local-task-dir"
+cat >"$HOME/.config/mise/tasks/local-dir-context" <<'EOF'
+#!/usr/bin/env bash
+echo "$PWD"
+EOF
+chmod +x "$HOME/.config/mise/tasks/local-dir-context"
+cat >"$HOME/mise.toml" <<'EOF'
+[env]
+UNRELATED_HOME_CONFIG = "present"
+EOF
+cat >"$HOME/.mise/conf.d/20-task-context.toml" <<EOF
+[task_config]
+dir = "$HOME/local-task-dir"
+EOF
+assert "mise run local-dir-context" "$HOME/local-task-dir"
+
+# Input defaults from a local conf.d fragment also establish explicit ownership
+# of HOME's default file-task scope.
+touch "$HOME/local-global-input"
+cat >"$HOME/.config/mise/tasks/local-input-context" <<'EOF'
+#!/usr/bin/env bash
+echo local-input-context
+EOF
+chmod +x "$HOME/.config/mise/tasks/local-input-context"
+cat >"$HOME/.mise/conf.d/20-task-context.toml" <<'EOF'
+[task_config]
+global_inputs = ["local-global-input"]
+EOF
+assert \
+  "MISE_EXPERIMENTAL=1 mise tasks ls --json | jq -r '.[] | select(.name == \"local-input-context\") | .sources[0]'" \
+  "$HOME/local-global-input"
+
+# Rust-cache defaults are also file-task context even when explicitly disabled.
+cat >"$HOME/.config/mise/tasks/local-rust-cache-context" <<'EOF'
+#!/usr/bin/env bash
+echo local-rust-cache-context
+EOF
+chmod +x "$HOME/.config/mise/tasks/local-rust-cache-context"
+cat >"$HOME/.mise/conf.d/20-task-context.toml" <<'EOF'
+[task_config]
+rust_cache = false
+EOF
+assert "mise run local-rust-cache-context" "local-rust-cache-context"
+: >"$HOME/.mise/conf.d/20-task-context.toml"
+
+cat >"$HOME/local-shell-wrapper" <<'EOF'
+#!/usr/bin/env bash
+echo LOCAL_SHELL
+exec bash "$@"
+EOF
+chmod +x "$HOME/local-shell-wrapper"
+cat >"$HOME/.config/mise/tasks/local-shell-context" <<'EOF'
+#!/usr/bin/env bash
+echo LOCAL_TASK
+EOF
+chmod +x "$HOME/.config/mise/tasks/local-shell-context"
+cat >"$HOME/mise.toml" <<EOF
+[task_config]
+shell = "$HOME/local-shell-wrapper -c"
+EOF
+assert \
+  "mise tasks ls --json | jq -r '.[] | select(.name == \"local-shell-context\") | .shell'" \
+  "$HOME/local-shell-wrapper -c"
+
+# Effective task context may cascade from an ancestor into a custom global
+# root. The HOME/global-root filter must use that effective context, not only
+# config files located directly at the root.
+custom_global_root="$HOME/nested/global-root"
+mkdir -p "$custom_global_root/.config/mise/tasks" "$HOME/nested/cascaded-dir"
+cat >"$HOME/nested/mise.toml" <<EOF
+[task_config]
+cascade = true
+dir = "$HOME/nested/cascaded-dir"
+EOF
+cat >"$custom_global_root/.config/mise/tasks/cascaded-context" <<'EOF'
+#!/usr/bin/env bash
+echo "$PWD"
+EOF
+chmod +x "$custom_global_root/.config/mise/tasks/cascaded-context"
+cat >"$HOME/custom-global.toml" <<'EOF'
+[task_config]
+includes = ["empty-global-tasks"]
+EOF
+assert \
+  "MISE_GLOBAL_CONFIG_ROOT='$custom_global_root' MISE_GLOBAL_CONFIG_FILE='$HOME/custom-global.toml' MISE_SYSTEM_CONFIG_FILE='$HOME/missing-system.toml' mise -C '$custom_global_root' run cascaded-context" \
+  "$HOME/nested/cascaded-dir"
+
+# A root-local cascade opt-out also disables ancestor file-task context for
+# ownership checks, so omitted global defaults stay omitted.
+cat >"$custom_global_root/mise.toml" <<'EOF'
+[task_config]
+cascade = false
+EOF
+cat >"$custom_global_root/.config/mise/tasks/omitted-after-cascade-opt-out" <<'EOF'
+#!/usr/bin/env bash
+echo should-not-run
+EOF
+chmod +x "$custom_global_root/.config/mise/tasks/omitted-after-cascade-opt-out"
+assert_fail \
+  "MISE_GLOBAL_CONFIG_ROOT='$custom_global_root' MISE_GLOBAL_CONFIG_FILE='$HOME/custom-global.toml' MISE_SYSTEM_CONFIG_FILE='$HOME/missing-system.toml' mise -C '$custom_global_root' run omitted-after-cascade-opt-out"
