@@ -1,5 +1,87 @@
 # Changelog
 
+## [2026.7.12](https://github.com/jdx/mise/compare/v2026.7.11..v2026.7.12) - 2026-07-22
+
+### 🚀 Features
+
+- **(bootstrap)** support relative paths in [bootstrap.repos] by @lilienblum in [#11155](https://github.com/jdx/mise/pull/11155)
+- **(config)** add MISE_SAFE mode to block repo-controlled code execution by @jdx in [#11146](https://github.com/jdx/mise/pull/11146)
+- **(config)** ignore project [env]/aliases/settings and skip trust in safe mode by @jdx in [#11151](https://github.com/jdx/mise/pull/11151)
+- **(core)** verify node/swift signatures in-process with rpgp, drop external gpg by @jdx in [#11148](https://github.com/jdx/mise/pull/11148)
+- **(lock)** add `mise lock --bump` to advance lockfile selectors by @jdx in [#11145](https://github.com/jdx/mise/pull/11145)
+- **(npm)** resolve versions over HTTP, groundwork for embedding aube by @jdx in [#11147](https://github.com/jdx/mise/pull/11147)
+- **(npm)** embed aube for node-free npm: version resolution and installs by @jdx in [#11149](https://github.com/jdx/mise/pull/11149)
+- **(oci)** built-in registry push client, drop skopeo/crane dependency by @jdx in [#11132](https://github.com/jdx/mise/pull/11132)
+- **(oci)** chunked uploads, retries, cross-repo mounts, progress bars by @jdx in [#11141](https://github.com/jdx/mise/pull/11141)
+- **(oci)** reuse unchanged tool layers from the previously pushed image by @jdx in [#11142](https://github.com/jdx/mise/pull/11142)
+- **(oci)** multi-arch image index support (--update-index) by @jdx in [#11144](https://github.com/jdx/mise/pull/11144)
+
+### 🐛 Bug Fixes
+
+- **(activate)** avoid zsh/parameter autoload during zsh activation by @jdx in [#11188](https://github.com/jdx/mise/pull/11188)
+- **(backend)** detect qualified prerelease suffixes by @risu729 in [#11179](https://github.com/jdx/mise/pull/11179)
+- **(brew)** allow cask binaries to symlink into /usr/local on arm64 by @jdx in [#11174](https://github.com/jdx/mise/pull/11174)
+- **(brew-cask)** case-insensitive app lookup + preflight-generated wrappers by @donbeave in [#11164](https://github.com/jdx/mise/pull/11164)
+- **(completions)** avoid network lookup during usage completion by @jdx in [#11169](https://github.com/jdx/mise/pull/11169)
+- **(config)** align env and vars array parsing by @risu729 in [#11060](https://github.com/jdx/mise/pull/11060)
+- **(config)** avoid panic when config set descends into a non-table value by @Marukome0743 in [#11153](https://github.com/jdx/mise/pull/11153)
+- **(config)** honor trusted_config_paths over previously-ignored configs by @JamBalaya56562 in [#11152](https://github.com/jdx/mise/pull/11152)
+- **(config)** improve unsupported semver range warnings by @risu729 in [#11176](https://github.com/jdx/mise/pull/11176)
+- **(env)** resolve a real POSIX bash for _.source on Windows by @JamBalaya56562 in [#11097](https://github.com/jdx/mise/pull/11097)
+- **(env)** expand cross-file references in _.file env files by @Marukome0743 in [#11158](https://github.com/jdx/mise/pull/11158)
+- **(hook-env)** show concise warning instead of full error for untrusted configs by @lilienblum in [#11159](https://github.com/jdx/mise/pull/11159)
+- **(http)** don't cap remote-fetch commands to 3s under prefer_offline by @jdx in [#11190](https://github.com/jdx/mise/pull/11190)
+- **(link)** clear stale incomplete marker when linking a tool by @Marukome0743 in [#11150](https://github.com/jdx/mise/pull/11150)
+- **(lock)** preserve os-restricted tool entries by @jdx in [#11175](https://github.com/jdx/mise/pull/11175)
+- **(shim)** actionable error for unresolved Windows exe-shim dispatch by @jdx in [#11189](https://github.com/jdx/mise/pull/11189)
+- **(vfox)** preserve inner quotes with cmd.exe by @finalchild in [#11166](https://github.com/jdx/mise/pull/11166)
+- extend match of Linux musl asset for Android by @bltavares in [#10730](https://github.com/jdx/mise/pull/10730)
+
+### 📚 Documentation
+
+- document environment-backed file-task arguments by @zeitlinger in [#11165](https://github.com/jdx/mise/pull/11165)
+
+### 🧪 Testing
+
+- **(nix)** skip macos defaults test in sandbox by @laozc in [#11170](https://github.com/jdx/mise/pull/11170)
+- **(oci)** e2e happy-path push coverage against a real registry by @jdx in [#11140](https://github.com/jdx/mise/pull/11140)
+
+### 📦️ Dependency Updates
+
+- update namespacelabs/nscloud-cache-action digest to c5f8dab by @renovate[bot] in [#11079](https://github.com/jdx/mise/pull/11079)
+- avoid tool installation during dry runs by @risu729 in [#11016](https://github.com/jdx/mise/pull/11016)
+- remove orphaned npm dependencies by @risu729 in [#11100](https://github.com/jdx/mise/pull/11100)
+- enforce experimental gate for task providers by @risu729 in [#11177](https://github.com/jdx/mise/pull/11177)
+
+### 📦 Registry
+
+- disable cargo-release test by @jdx in [#11143](https://github.com/jdx/mise/pull/11143)
+
+### Chore
+
+- **(ci)** bump release linux runner to xlarge by @jdx in [#11196](https://github.com/jdx/mise/pull/11196)
+- **(ci)** increase release build timeouts by @jdx in [#11200](https://github.com/jdx/mise/pull/11200)
+
+### New Contributors
+
+- @donbeave made their first contribution in [#11164](https://github.com/jdx/mise/pull/11164)
+- @lilienblum made their first contribution in [#11159](https://github.com/jdx/mise/pull/11159)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (5)
+
+- [`abhinav/git-spice`](https://github.com/abhinav/git-spice)
+- [`envoyproxy/gateway/egctl`](https://github.com/envoyproxy/gateway)
+- [`envoyproxy/gateway/envoy-gateway`](https://github.com/envoyproxy/gateway)
+- [`tedilabs/ota`](https://github.com/tedilabs/ota)
+- [`yvgude/lean-ctx`](https://github.com/yvgude/lean-ctx)
+
+#### Updated Packages (2)
+
+- [`supernovae-st/nika`](https://github.com/supernovae-st/nika)
+- [`suzuki-shunsuke/tfcmt`](https://github.com/suzuki-shunsuke/tfcmt)
+
 ## [2026.7.11](https://github.com/jdx/mise/compare/v2026.7.10..v2026.7.11) - 2026-07-20
 
 ### 🐛 Bug Fixes
