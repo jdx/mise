@@ -5841,6 +5841,7 @@ dependencies = [
  "rmcp",
  "rmp-serde",
  "rops",
+ "same-file",
  "seccompiler",
  "self_update",
  "serde",
