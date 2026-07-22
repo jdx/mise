@@ -2,6 +2,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::file::display_path;
 use crate::git::Git;
+use crate::lock_file::LockFile;
 use crate::plugins::PluginType;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, parse_tool_options};
 use crate::{dirs, env, file, runtime_symlinks};
@@ -605,6 +606,52 @@ pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
         .join("incomplete")
 }
 
+fn tool_version_lock(short: &str, v: &str) -> LockFile {
+    LockFile::new(&incomplete_file_path(short, v))
+}
+
+/// Acquires the transaction lock for one logical tool version.
+///
+/// The incomplete marker is shared by local, shared, and system install paths,
+/// so install, uninstall, and link use this logical identity while mutating the
+/// marker and install path. The marker path is only the lock identity; the
+/// lock itself remains a separate stable file under the lockfiles cache.
+pub(crate) fn lock_tool_version(short: &str, v: &str) -> Result<fslock::LockFile> {
+    tool_version_lock(short, v)
+        .with_callback(|lock| {
+            debug!("waiting for tool-version lock on {}", display_path(lock));
+        })
+        .lock()
+}
+
+pub fn clear_incomplete_marker(short: &str, v: &str) -> Result<()> {
+    let incomplete_path = incomplete_file_path(short, v);
+    match file::remove_file(&incomplete_path) {
+        std::result::Result::Ok(()) => {
+            if let Some(parent) = incomplete_path.parent()
+                && let Err(err) = file::sync_dir(parent)
+            {
+                debug!("error syncing incomplete marker parent: {:?}", err);
+            }
+            Ok(())
+        }
+        Err(err)
+            if err
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|err| err.kind() == std::io::ErrorKind::NotFound) =>
+        {
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
+}
+
+pub fn clear_incomplete_marker_best_effort(short: &str, v: &str) {
+    if let Err(err) = clear_incomplete_marker(short, v) {
+        debug!("error clearing incomplete marker: {:?}", err);
+    }
+}
+
 /// Path to the checksum file for a specific tool version
 /// Used to track changes in rolling releases (like "nightly")
 fn checksum_file_path(short: &str, v: &str) -> PathBuf {
@@ -643,10 +690,45 @@ pub fn reset() {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_version_for_sort;
+    use super::{lock_tool_version, normalize_version_for_sort, tool_version_lock};
     use itertools::Itertools;
     use std::collections::BTreeMap;
+    use std::sync::mpsc;
+    use std::time::Duration;
     use versions::Versioning;
+
+    #[test]
+    fn tool_version_locks_serialize_logical_versions() {
+        let short = format!("lock_test_{}", std::process::id());
+        let first = lock_tool_version(&short, "1.0.0").unwrap();
+        let (waiting_tx, waiting_rx) = mpsc::channel();
+        let (acquired_tx, acquired_rx) = mpsc::channel();
+        let thread_short = short.replace('_', "-");
+        let waiter = std::thread::spawn(move || {
+            let lock = tool_version_lock(&thread_short, "1.0.0")
+                .with_callback(move |_| waiting_tx.send(()).unwrap())
+                .lock()
+                .unwrap();
+            acquired_tx.send(()).unwrap();
+            drop(lock);
+        });
+
+        // The callback proves the second lock reached the contended lock rather
+        // than merely losing a scheduling race with this assertion.
+        waiting_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(
+            acquired_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+
+        // A different logical version is independent even while the first is held.
+        let other = lock_tool_version(&short, "2.0.0").unwrap();
+        drop(other);
+        drop(first);
+
+        acquired_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        waiter.join().unwrap();
+    }
 
     #[test]
     fn test_normalize_version_for_sort() {
