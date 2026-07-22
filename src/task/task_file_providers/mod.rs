@@ -1,4 +1,9 @@
-use std::{fmt::Debug, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashSet,
+    fmt::Debug,
+    path::{Path, PathBuf},
+    sync::{Arc, LazyLock, Mutex},
+};
 
 mod local_task;
 mod remote_task_git;
@@ -26,14 +31,42 @@ pub(crate) struct TaskFileArtifactCleanup {
     path: PathBuf,
 }
 
-impl Drop for TaskFileArtifactCleanup {
-    fn drop(&mut self) {
-        if let Err(err) = crate::file::remove_all(&self.path) {
+static TEMPORARY_ARTIFACTS: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+impl TaskFileArtifactCleanup {
+    fn new(path: PathBuf) -> Self {
+        TEMPORARY_ARTIFACTS.lock().unwrap().insert(path.clone());
+        Self { path }
+    }
+
+    fn remove(path: &Path) {
+        if let Err(err) = crate::file::remove_all(path) {
             warn!(
                 "failed to clean up remote task artifact {}: {err:#}",
-                crate::file::display_path(&self.path)
+                crate::file::display_path(path)
             );
         }
+    }
+}
+
+impl Drop for TaskFileArtifactCleanup {
+    fn drop(&mut self) {
+        TEMPORARY_ARTIFACTS.lock().unwrap().remove(&self.path);
+        Self::remove(&self.path);
+    }
+}
+
+/// Remove temporary remote task snapshots even when an explicit process exit
+/// bypasses Rust destructors (for example after a task returns a non-zero code).
+pub(crate) fn cleanup_temporary_artifacts() {
+    let paths = TEMPORARY_ARTIFACTS
+        .lock()
+        .unwrap()
+        .drain()
+        .collect::<Vec<_>>();
+    for path in paths {
+        TaskFileArtifactCleanup::remove(&path);
     }
 }
 
@@ -54,7 +87,7 @@ impl TaskFileArtifact {
     pub(crate) fn temporary(path: PathBuf, cleanup_path: PathBuf) -> Self {
         Self {
             path,
-            cleanup: Some(Arc::new(TaskFileArtifactCleanup { path: cleanup_path })),
+            cleanup: Some(Arc::new(TaskFileArtifactCleanup::new(cleanup_path))),
         }
     }
 }

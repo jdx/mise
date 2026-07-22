@@ -1195,6 +1195,7 @@ impl Task {
         &self,
         config: &Arc<Config>,
         tasks_to_run: &[Task],
+        no_cache: bool,
     ) -> Result<(Vec<Task>, Vec<Task>)> {
         use crate::task::TaskLoadContext;
 
@@ -1225,7 +1226,9 @@ impl Task {
             None
         };
 
-        let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+        let all_tasks = config
+            .tasks_with_context_no_cache(ctx.as_ref(), no_cache)
+            .await?;
         let tasks = build_task_ref_map(all_tasks.iter());
         // Skip deps with unresolved {{usage.*}} references — they'll be resolved
         // later when render_depends_with_usage() is called with actual arg values.

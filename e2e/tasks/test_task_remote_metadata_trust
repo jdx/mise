@@ -30,6 +30,11 @@ file = "http://localhost:${HTTP_PORT}/test/remote-template"
 run = "echo remote dependency"
 EOF
 
+# Safe mode makes config parsing inert, but it must not turn remote discovery
+# into an SSRF-capable trust bypass.
+assert_fail "$UNTRUSTED_ENV MISE_SAFE=1 mise tasks ls" "not trusted"
+[[ ! -e $REQUEST_MARKER ]] || fail "safe-mode discovery fetched an untrusted remote task"
+
 assert_fail "$UNTRUSTED_ENV mise tasks ls" "not trusted"
 assert_fail "$UNTRUSTED_ENV mise tasks deps remote_template" "not trusted"
 assert_fail "$UNTRUSTED_ENV mise run remote_template --help" "not trusted"
@@ -122,3 +127,17 @@ output=$(quiet_assert_succeed "TMPDIR=$ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE
 assert_contains_text "$output" "remote revision 1"
 assert_contains_text "$output" "remote revision 2"
 assert_fail "find '$ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."
+
+# Task failures exit through mise's explicit exit path. That path must clean
+# live no-cache snapshots even though process::exit does not run destructors.
+cat <<EOF >mise.toml
+[tasks.remote_failing]
+file = "http://localhost:${HTTP_PORT}/test/remote-failing"
+EOF
+
+FAILING_ARTIFACT_TMPDIR="$TMPDIR/remote-failing-artifacts"
+mkdir -p "$FAILING_ARTIFACT_TMPDIR"
+assert_fail "TMPDIR=$FAILING_ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run remote_failing"
+# The run command's own TempDir cannot destruct on process::exit and may leave
+# an empty directory; the downloaded remote task file itself must be gone.
+assert_fail "find '$FAILING_ARTIFACT_TMPDIR' -type f -print -quit | grep -q ."

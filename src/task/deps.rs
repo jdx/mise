@@ -1,7 +1,7 @@
 use crate::config::env_directive::EnvDirective;
 use crate::task::task_fetcher::TaskFetcher;
 use crate::task::{Task, dep_has_usage_ref, parse_usage_values_from_task};
-use crate::{config::Config, task::task_list::resolve_depends};
+use crate::{config::Config, task::task_list::resolve_depends_with_no_cache};
 use itertools::Itertools;
 use petgraph::Direction;
 use petgraph::graph::DiGraph;
@@ -89,7 +89,7 @@ impl Deps {
             stack.push(t.clone());
             add_idx(t, &mut graph);
         }
-        let all_tasks_to_run = resolve_depends(config, tasks).await?;
+        let all_tasks_to_run = resolve_depends_with_no_cache(config, tasks, no_cache).await?;
         let fetcher = if trust_before_fetch {
             TaskFetcher::new(no_cache).require_trust_before_fetch()
         } else {
@@ -129,7 +129,9 @@ impl Deps {
             // Update the graph node with the fetched version of the task
             // (add_idx may have returned an existing index with an unfetched task)
             graph[a_idx] = a.clone();
-            let (pre, post) = a.resolve_depends(config, &all_tasks_to_run).await?;
+            let (pre, post) = a
+                .resolve_depends(config, &all_tasks_to_run, no_cache)
+                .await?;
             for b in pre {
                 let b_idx = add_idx(&b, &mut graph);
                 graph.update_edge(a_idx, b_idx, ());
@@ -170,12 +172,13 @@ impl Deps {
     /// Create a sub-graph that prunes tasks already completed by the caller.
     /// `completed` is a snapshot of task keys that have finished in the parent
     /// graph — these are removed from the sub-graph so they don't run again.
-    pub async fn new_pruned(
+    pub async fn new_pruned_with_no_cache(
         config: &Arc<Config>,
         tasks: Vec<Task>,
         completed: &HashSet<TaskKey>,
+        no_cache: bool,
     ) -> eyre::Result<Self> {
-        let mut deps = Self::new(config, tasks).await?;
+        let mut deps = Self::new_with_no_cache(config, tasks, no_cache).await?;
         let mut to_remove = vec![];
         for idx in deps.graph.node_indices() {
             let key = task_key(&deps.graph[idx]);
@@ -356,4 +359,46 @@ fn leaves(graph: &DiGraph<Task, ()>) -> Vec<Task> {
         .externals(Direction::Outgoing)
         .map(|idx| graph[idx].clone())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[tokio::test]
+    async fn test_new_pruned_with_no_cache_keeps_remote_fetches_uncached() {
+        let mut server = mockito::Server::new_async().await;
+        let remote = server
+            .mock("GET", "/task")
+            .with_status(200)
+            .with_body("#!/usr/bin/env bash\necho ok\n")
+            .expect(2)
+            .create_async()
+            .await;
+        let config = Config::get().await.unwrap();
+        let config_root = tempfile::tempdir().unwrap();
+        let source = format!("{}/task", server.url());
+        let task = Task {
+            name: "remote".into(),
+            display_name: "remote".into(),
+            config_source: config_root.path().join("mise.toml"),
+            config_root: Some(config_root.path().to_path_buf()),
+            file: Some(PathBuf::from(source)),
+            ..Default::default()
+        };
+        let completed = HashSet::new();
+
+        let first = Deps::new_pruned_with_no_cache(&config, vec![task.clone()], &completed, true)
+            .await
+            .unwrap();
+        let second = Deps::new_pruned_with_no_cache(&config, vec![task], &completed, true)
+            .await
+            .unwrap();
+
+        let first_path = first.all().next().unwrap().file.clone().unwrap();
+        let second_path = second.all().next().unwrap().file.clone().unwrap();
+        assert_ne!(first_path, second_path);
+        remote.assert_async().await;
+    }
 }

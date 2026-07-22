@@ -94,6 +94,12 @@ class TestFileHandler(http.server.SimpleHTTPRequestHandler):
                 f'echo "remote revision {revision}"\n'
             )
             self.wfile.write(content.encode('utf-8'))
+        elif self.path == '/test/remote-failing':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            content = '#!/usr/bin/env bash\nexit 7\n'
+            self.wfile.write(content.encode('utf-8'))
         else:
             # Return 404 for other paths
             self.send_error(404, "File not found")

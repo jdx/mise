@@ -67,6 +67,12 @@ includes = [
 ]
 EOF
 
+# Safe-mode config parsing must not clone an untrusted remote include before
+# enforcing the defining config's actual trust.
+: >"$REQUEST_LOG"
+assert_fail "MISE_SAFE=1 MISE_TRUSTED_CONFIG_PATHS=$TMPDIR/not-trusted MISE_YES=0 mise tasks"
+assert_fail "test -s '$REQUEST_LOG'"
+
 # The xtasks/lint directory contains multiple task files
 # We should be able to see and run them
 assert_contains "mise tasks" "ripgrep"
@@ -107,7 +113,7 @@ EOF
 
 INCLUDE_ARTIFACT_TMPDIR="$TMPDIR/remote-git-include-artifacts"
 mkdir -p "$INCLUDE_ARTIFACT_TMPDIR"
-assert_succeed "TMPDIR=$INCLUDE_ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run ripgrep" # Remote task should be redownloaded
+assert_succeed "TMPDIR=$INCLUDE_ARTIFACT_TMPDIR mise run --no-cache ripgrep" # CLI no-cache must also redownload includes
 assert_fail "find '$INCLUDE_ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
 

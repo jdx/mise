@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use clap::Parser;
 use rmcp::{
     RoleServer, ServiceExt,
@@ -300,7 +300,17 @@ impl ServerHandler for MiseServer {
                     data: None,
                 })?;
 
-                let tasks = config.tasks().await.map_err(|e| ErrorData {
+                // MCP is a long-lived process. In remote no-cache mode each
+                // resource read is its own logical command and must receive a
+                // fresh snapshot rather than retaining the first one forever.
+                let remote_no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
+                let task_config = if remote_no_cache {
+                    config.with_config_files(config.config_files.clone())
+                } else {
+                    config
+                };
+
+                let tasks = task_config.tasks().await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
                     message: Cow::Owned(format!("Failed to load tasks: {e}")),
                     data: None,

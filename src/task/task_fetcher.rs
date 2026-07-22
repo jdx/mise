@@ -1,4 +1,4 @@
-use crate::config::config_file::trust_check;
+use crate::config::config_file::{trust_check, trust_check_remote_fetch};
 use crate::config::{Config, Settings};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Task, script_header_has_decoded_template};
@@ -55,7 +55,7 @@ impl TaskFetcher {
                     .unwrap_or_else(|| original.config_source.clone());
 
                 if self.trust_before_fetch {
-                    trust_check(&defining_config_source).wrap_err_with(|| {
+                    trust_check_remote_fetch(&defining_config_source).wrap_err_with(|| {
                         format!(
                             "fetching remote task {source} requires its defining config to be trusted"
                         )

@@ -14,7 +14,7 @@ use crate::env;
 use crate::file::display_path;
 use crate::task::has_any_usage_spec;
 use crate::task::task_helpers::task_needs_permit;
-use crate::task::task_list::{get_task_lists, resolve_depends};
+use crate::task::task_list::{get_task_lists_with_no_cache, resolve_depends_with_no_cache};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::{Deps, Task};
@@ -267,7 +267,8 @@ impl Run {
                 .chain(self.args.iter().cloned())
                 .collect_vec();
 
-            let mut task_list = get_task_lists(&config, &args, false, false).await?;
+            let mut task_list =
+                get_task_lists_with_no_cache(&config, &args, false, false, self.no_cache).await?;
 
             // Help is passive discovery, but remote #USAGE and #MISE headers
             // still need to be fetched before they can be displayed. Require
@@ -325,7 +326,8 @@ impl Run {
             (tasks, true)
         } else {
             (
-                get_task_lists(&config, &args, true, self.skip_deps).await?,
+                get_task_lists_with_no_cache(&config, &args, true, self.skip_deps, self.no_cache)
+                    .await?,
                 false,
             )
         };
@@ -371,7 +373,8 @@ impl Run {
         // 1. Discover deps providers from monorepo subdirectory configs
         // 2. Include monorepo subdirectory tools in the toolset before installing
         // 3. Reuse the resolved list for execution (avoiding duplicate work)
-        let resolved_tasks = resolve_depends(&config, task_list).await?;
+        let resolved_tasks =
+            resolve_depends_with_no_cache(&config, task_list, self.no_cache).await?;
 
         // Collect subdirectory config files from all resolved tasks. In
         // monorepos these come from sub mise.toml files referenced via the
@@ -780,6 +783,7 @@ impl Run {
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,
+            no_cache: self.no_cache,
             sandbox: crate::sandbox::SandboxConfig::from_settings_and_cli(
                 &Settings::get().sandbox,
                 self.deny_all,
