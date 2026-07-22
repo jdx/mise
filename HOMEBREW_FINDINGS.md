@@ -9,26 +9,23 @@ live GitHub data and `origin/main`; see [Verification audit](#verification-audit
 
 ## Executive decision
 
-**One direction only (highest jdx fit): single owner.**
+**Product goal (bootstrap `brew-cask:` only): formula-style coexistence.**
 
-jdx’s shipped vision for `brew-cask` is a **mise-owned direct package manager**
-(`.mise-cask.toml`, expand parity, fail loud, never `brew install --cask`).
-Homebrew-origin `.metadata` is **preserved**, not authored by mise for
-mise-originated casks. Formula dual-ownership via `INSTALL_RECEIPT` does not
-extend to casks on `origin/main` or in open jdx cask work (#11197, #11198).
+User expectation of `brew-cask:` under Homebrew’s prefix is that the install is
+**observably a Homebrew cask** — without shelling out to Ruby `brew` for the
+pour. That matches formulae today (`INSTALL_RECEIPT.json`) and was unfinished
+for casks (`.mise-cask.toml` only on main).
 
-| Owner | Ledger | Upgrade path |
-|---|---|---|
-| mise (`brew-cask:…`) | `.mise-cask.toml` | `mise bootstrap packages upgrade --manager brew-cask` |
-| Homebrew (`brew install --cask`) | `.metadata/` | `brew upgrade --cask` |
+| Layer | Contract |
+|---|---|
+| Pour engine | mise Rust direct install (no `brew install --cask`) |
+| Mise ledger | `.mise-cask.toml` — status / paths / mise upgrade |
+| Brew identity | `Caskroom/<token>/.metadata/` at pour time (cask analogue of formula receipt) |
+| Preserve | Never destroy genuine Homebrew-authored `.metadata` (#11012) |
+| Not in scope | Full brew replacement; perfect offline uninstall of every app layout |
 
-**Do not ship** automatic Homebrew `.metadata` for mise pours (this branch’s
-experiment). Passing `installed?` is not lifecycle ownership. The Codex failure
-is ambiguous ownership from a Homebrew-looking path — fix ownership + updater
-config, not ledger spoofing.
-
-Lower-scored alternatives (binary-only emit, brew-present emit, opt-in handoff,
-pour-time formula-parity metadata) are out of scope for the decision.
+**Ship** pour-time brew metadata for bootstrap casks. **Do not** mark a healthy
+mise pour as package `Missing` only because brew’s tab was absent.
 
 ## Repository and operating policy
 

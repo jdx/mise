@@ -238,8 +238,12 @@ impl SystemPackageManager for BrewCaskManager {
             let cask = fetch_cask(req).await?;
             let artifacts = cask_artifacts(&cask)?;
             let version = installed_cask_version(&cask, &artifacts)?;
+            // Mise status uses the mise/payload ledger only — same as before
+            // brew-metadata coexistence. Missing Homebrew `.metadata` is not
+            // "package missing"; pour-time write covers new installs, and
+            // `install_one` backfills on upgrade/re-apply of an already-poured
+            // version (upgrade driver includes Installed packages).
             let state = match version {
-                Some(_) if homebrew_cask_metadata_needs_repair(&cask)? => PackageState::Missing,
                 Some(version) => match &req.version {
                     Some(requested) if version != *requested => {
                         PackageState::VersionMismatch { installed: version }
@@ -1410,8 +1414,13 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
 }
 
 /// Write Homebrew-compatible cask metadata under
-/// `Caskroom/<token>/.metadata/…` so a real `brew` install treats the pour as
-/// installed.
+/// `Caskroom/<token>/.metadata/…` so a real `brew` treats the pour as
+/// installed — the cask analogue of formula `pour::write_receipt`
+/// (`INSTALL_RECEIPT.json` in the keg).
+///
+/// Scope: bootstrap `brew-cask:` only. Mise still pours in Rust (no
+/// `brew install --cask`); this only closes the identity gap so tools that
+/// speak Homebrew (CLI, Codex, doctor) see the same install mise just made.
 ///
 /// Homebrew decides `cask.installed?` by presence of:
 /// `.metadata/<version>/<timestamp>/Casks/<token>.{rb,json}`
