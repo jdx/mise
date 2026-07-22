@@ -891,6 +891,11 @@ impl NPMBackend {
             // invocation flag. `None` leaves scripts skipped (aube's default).
             dangerously_allow_all_builds: matches!(allow_builds, AllowBuilds::All),
             control: aube::embed::InstallControl::default(),
+            // Run dependency lifecycle scripts on the node mise resolved as a
+            // dependency, so `allow_builds` installs work even when node isn't
+            // on the ambient PATH (the in-process installer doesn't inherit the
+            // per-command PATH the old `aube add --global` subprocess got).
+            node_bin_dir: self.aube_embed_node_bin_dir(ctx).await,
             ..Default::default()
         };
         opts.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
@@ -900,6 +905,15 @@ impl NPMBackend {
             .await
             .map_err(|e| eyre::eyre!("aube install failed: {e}"))?;
         Ok(())
+    }
+
+    /// Directory containing the `node` mise resolved as a dependency, handed to
+    /// the embedded aube installer so lifecycle scripts spawn on it. `None` (no
+    /// node dependency resolved) lets aube fall back to an ambient `node`.
+    async fn aube_embed_node_bin_dir(&self, ctx: &InstallContext) -> Option<PathBuf> {
+        let ts = self.dependency_toolset(&ctx.config).await.ok()?;
+        let node = ts.which_bin(&ctx.config, "node").await?;
+        node.parent().map(Path::to_path_buf)
     }
 
     /// Write the throwaway project's `package.json` + `.npmrc` for an embedded
