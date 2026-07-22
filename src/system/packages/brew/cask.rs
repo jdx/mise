@@ -1400,7 +1400,7 @@ fn resolve_symlink_target(link: &Path, target: PathBuf) -> PathBuf {
 }
 
 fn path_starts_with_resolved_root(path: &Path, root: &Path) -> bool {
-    path_with_resolved_existing_ancestor(path).starts_with(&file::desymlink_path(root))
+    path_with_resolved_existing_ancestor(path).starts_with(file::desymlink_path(root))
 }
 
 fn path_with_resolved_existing_ancestor(path: &Path) -> PathBuf {
