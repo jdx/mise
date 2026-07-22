@@ -3,7 +3,7 @@ use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 pub use settings::Settings;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
@@ -686,13 +686,8 @@ impl Config {
 
         let templates = collect_task_templates(&config.config_files);
 
-        let mut local_tasks = load_local_tasks_with_context(&config, ctx, &templates).await?;
+        let local_tasks = load_local_tasks_with_context(&config, ctx, &templates).await?;
         let global_tasks = load_global_tasks(&config, &templates).await?;
-        local_tasks.retain(|local| {
-            !global_tasks
-                .iter()
-                .any(|global| tasks_have_same_source(&config, local, global))
-        });
         let mut tasks: BTreeMap<String, Task> = local_tasks
             .into_iter()
             .chain(global_tasks)
@@ -1685,6 +1680,10 @@ fn config_set_contains(set: &IndexSet<PathBuf>, path: &Path) -> bool {
     set.iter().any(|p| file::desymlink_path(p) == target)
 }
 
+fn paths_equal_resolved(left: &Path, right: &Path) -> bool {
+    left == right || file::desymlink_path(left) == file::desymlink_path(right)
+}
+
 fn path_starts_with_resolved(path: &Path, prefix: &Path) -> bool {
     path.starts_with(prefix) || file::desymlink_path(path).starts_with(file::desymlink_path(prefix))
 }
@@ -1726,23 +1725,6 @@ fn resolved_task_file(config: &Config, task: &Task) -> Option<PathBuf> {
         path
     };
     Some(file::desymlink_path(&path))
-}
-
-fn resolved_task_source(config: &Config, task: &Task) -> Option<PathBuf> {
-    if task.file.is_some() {
-        resolved_task_file(config, task)
-    } else if task.config_source.as_os_str().is_empty() {
-        None
-    } else {
-        Some(file::desymlink_path(&task.config_source))
-    }
-}
-
-fn tasks_have_same_source(config: &Config, left: &Task, right: &Task) -> bool {
-    left.name == right.name
-        && resolved_task_source(config, left)
-            .zip(resolved_task_source(config, right))
-            .is_some_and(|(left, right)| left == right)
 }
 
 /// Returns true if the path should be filtered out due to MISE_CONFIG_DIR override.
@@ -2338,11 +2320,45 @@ async fn load_local_tasks_with_context(
         .filter(|(_, cf)| !is_global_config(cf.get_path()))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect::<IndexMap<_, _>>();
+    let global_config_paths = global_config_files();
+    let has_user_global_config = config
+        .config_files
+        .values()
+        .any(|cf| config_set_contains(&global_config_paths, cf.get_path()));
     for d in all_dirs()? {
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
             continue;
         }
-        let mut dir_tasks = load_tasks_in_dir(config, &d, &local_config_files, templates).await?;
+        let local_configs = configs_at_root(&d, &local_config_files);
+        let mut dir_tasks =
+            load_tasks_from_configs(config, &d, local_configs.clone(), templates, false).await?;
+
+        // The local hierarchy walk reaches the user-global config root (HOME
+        // by default), where default task directories would be loaded again.
+        // Once a user-global config exists, its independent pass owns that
+        // scope, including the decision to replace default includes. Preserve
+        // only task context explicitly supplied by a local config at the root;
+        // tool-only configs such as ~/.tool-versions must not make incidental
+        // copies override their decorated global counterparts.
+        if has_user_global_config && paths_equal_resolved(&d, &env::MISE_GLOBAL_CONFIG_ROOT) {
+            let local_file_context = local_configs
+                .iter()
+                .any(|cf| cf.task_config().dir.is_some())
+                || local_configs
+                    .iter()
+                    .map(|cf| cf.task_config_includes())
+                    .collect::<Result<Vec<_>>>()?
+                    .into_iter()
+                    .any(|includes| includes.is_some());
+            if !local_file_context {
+                let local_inline_task_names = local_configs
+                    .iter()
+                    .flat_map(|cf| cf.tasks())
+                    .map(|task| task.name.clone())
+                    .collect::<HashSet<_>>();
+                dir_tasks.retain(|task| local_inline_task_names.contains(&task.name));
+            }
+        }
 
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);

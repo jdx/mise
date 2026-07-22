@@ -72,3 +72,53 @@ assert "mise run customglobalfile" "PROJECT_ROOT=$PWD"
 assert "mise run systemglobalfile" "PROJECT_ROOT=$PWD"
 assert "mise run relative-meta" "RELATIVE_OVERLAY=applied"
 assert "mise run templated-meta" "TEMPLATED_OVERLAY=applied"
+
+# The user-global pass owns HOME's task include scope. An unrelated local HOME
+# config must not resurrect omitted defaults or let them override an explicitly
+# included global task with the same name.
+cat <<'EOF' >~/.config/mise/tasks/collision
+#!/usr/bin/env bash
+echo default-task
+EOF
+chmod +x ~/.config/mise/tasks/collision
+cat <<'EOF' >~/.config/mise/tasks/omitted-only
+#!/usr/bin/env bash
+echo omitted-task
+EOF
+chmod +x ~/.config/mise/tasks/omitted-only
+cat <<'EOF' >~/dotfiles/tasks/collision
+#!/usr/bin/env bash
+echo custom-task
+EOF
+chmod +x ~/dotfiles/tasks/collision
+cat >~/.config/mise/config.toml <<'TOML'
+tasks.myglobal = { run = 'echo myglobal' }
+
+[task_config]
+includes = ["dotfiles/tasks"]
+TOML
+cat >"$HOME/mise.toml" <<'TOML'
+[env]
+UNRELATED_HOME_CONFIG = "present"
+TOML
+
+assert "mise run collision" "custom-task"
+assert_fail "mise run omitted-only"
+assert_not_contains "mise tasks --global" "omitted-only"
+
+# A local ancestor config can explicitly include the global task directory even
+# when the global config replaces that default include. Source deduplication
+# must not discard a task that the independent global pass did not load.
+cat >"$HOME/mise.toml" <<'TOML'
+[task_config]
+includes = [".config/mise/tasks"]
+TOML
+cat >"$HOME/.config/mise/config.toml" <<'TOML'
+tasks.myglobal = { run = 'echo myglobal' }
+
+[task_config]
+includes = ["dotfiles/tasks"]
+TOML
+
+assert "mise run myglobalfile" "myglobalfile"
+assert_contains "mise tasks --global" "myglobalfile"
