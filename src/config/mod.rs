@@ -27,7 +27,7 @@ use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENA
 use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
-use crate::task::{Task, TaskTemplate, strip_extension};
+use crate::task::{Task, TaskTemplate, monorepo_scope, strip_extension};
 use crate::tera::{contains_template_syntax, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
@@ -2233,18 +2233,9 @@ pub async fn rebuild_shims_and_runtime_symlinks(
 }
 
 fn prefix_monorepo_task_names(tasks: &mut [Task], dir: &Path, monorepo_root: &Path) {
-    const MONOREPO_PATH_PREFIX: &str = "//";
-    const MONOREPO_TASK_SEPARATOR: &str = ":";
-
-    if let Ok(rel_path) = dir.strip_prefix(monorepo_root) {
-        let prefix = rel_path
-            .to_string_lossy()
-            .replace(std::path::MAIN_SEPARATOR, "/");
+    if let Some(scope) = monorepo_scope(monorepo_root, dir) {
         for task in tasks.iter_mut() {
-            task.name = format!(
-                "{}{}{}{}",
-                MONOREPO_PATH_PREFIX, prefix, MONOREPO_TASK_SEPARATOR, task.name
-            );
+            task.name = format!("{scope}:{}", task.name);
         }
     }
 }

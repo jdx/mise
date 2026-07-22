@@ -63,6 +63,7 @@ pub mod task_template;
 pub mod task_tool_installer;
 
 pub use task_confirm::TaskConfirm;
+pub(crate) use task_load_context::monorepo_scope;
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
 pub use task_output::TaskOutput;
 pub use task_script_parser::{has_any_args_defined, has_any_usage_spec};

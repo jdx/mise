@@ -529,50 +529,174 @@ assert_not_contains "mise deps --list" "custom_sub"
 # Clean up previous test
 rm -rf subproject root_input.txt root_output.txt mise.toml .mise
 
-# Test that monorepo subdirectory prepare steps run when using //subdir:task from root
+# Test that task-discovered providers are scoped to their monorepo config root
 export MISE_EXPERIMENTAL=1
-mkdir -p subapp
+mkdir -p apps/subapp-a apps/subapp-b apps/subapp-c
 
 cat >mise.toml <<'EOF'
 monorepo_root = true
 
 [monorepo]
-config_roots = ["subapp"]
-EOF
-
-cat >subapp/mise.toml <<'EOF'
-[deps.subapp_deps]
-auto = true
-sources = ["input.txt"]
-outputs = ["deps_marker"]
-run = "touch deps_marker"
-
-[tasks.check]
-run = "test -f deps_marker && echo SUBAPP_PREPARE_OK || echo SUBAPP_PREPARE_MISSING"
-EOF
-
-touch subapp/input.txt
-
-# Run the task from root using monorepo syntax
-assert_contains "mise run //subapp:check" "SUBAPP_PREPARE_OK"
-
-# Test that prepare steps also run when subtasks are reached via dependencies
-cat >mise.toml <<'EOF'
-monorepo_root = true
-
-[monorepo]
-config_roots = ["subapp"]
+config_roots = ["apps/subapp-*"]
 
 [tasks.check]
 depends = "//...:check"
 EOF
 
-touch subapp/input.txt
-rm -f subapp/deps_marker
-assert_contains "mise run //:check" "SUBAPP_PREPARE_OK"
+# Loading a selected root's config hierarchy must not activate providers from
+# an intermediate ancestor that is not itself a selected task root.
+cat >apps/mise.toml <<'EOF'
+[deps.intermediate]
+auto = true
+sources = ["intermediate-input.txt"]
+outputs = ["intermediate-output.txt"]
+run = "cp intermediate-input.txt intermediate-output.txt"
+EOF
+echo intermediate >apps/intermediate-input.txt
+
+for subapp in subapp-a subapp-b; do
+  cat >"apps/$subapp/mise.toml" <<'EOF'
+[deps.setup]
+auto = true
+sources = ["input.txt"]
+outputs = ["prepared.txt"]
+run = "sleep 1; cp input.txt prepared.txt"
+
+[deps.build]
+auto = true
+depends = ["setup", "//:root_setup", "global_setup"]
+sources = ["prepared.txt"]
+outputs = ["built.txt"]
+run = "test -f prepared.txt && test -f ../../root-output.txt && test -f ../../global-output.txt && cp prepared.txt built.txt"
+
+[deps.disabled]
+auto = true
+sources = ["input.txt"]
+outputs = ["disabled.txt"]
+run = "cp input.txt disabled.txt"
+
+[tasks.check]
+run = "test -f built.txt && echo TASK_DEPS_OK"
+EOF
+  echo "$subapp" >"apps/$subapp/input.txt"
+done
+
+# Local tool configuration must override the base config while providing an
+# automatic provider from the same layered file.
+cat >>apps/subapp-a/mise.toml <<'EOF'
+
+[tools]
+tiny = "2"
+EOF
+
+# This configured root has no task in the resolved graph, so its provider must
+# not run when another root is selected or through //...:check.
+cat >apps/subapp-c/mise.toml <<'EOF'
+[deps.outside]
+auto = true
+sources = ["input.txt"]
+outputs = ["outside.txt"]
+run = "cp input.txt outside.txt"
+
+[deps.from_a]
+auto = true
+depends = ["//apps/subapp-a:setup"]
+outputs = ["from-a.txt"]
+run = "test -f ../subapp-a/prepared.txt && touch from-a.txt"
+
+[tasks.unrelated]
+run = "test -f from-a.txt && echo NESTED_DEPS_OK"
+EOF
+echo subapp-c >apps/subapp-c/input.txt
+
+# Disabling a provider in one root must not disable the same ID in another root.
+cat >apps/subapp-a/mise.local.toml <<'EOF'
+[tools]
+tiny = "1"
+
+[deps]
+disable = ["disabled"]
+
+[deps.layered_tool]
+auto = true
+outputs = ["layered-tool.txt"]
+run = "rtx-tiny > layered-tool.txt"
+EOF
+
+# Task-discovered providers must not bypass the deps experimental gate
+unset MISE_EXPERIMENTAL
+assert_fail "mise run //:check" "deps is experimental"
+export MISE_EXPERIMENTAL=1
+
+# Root and global providers retain their existing automatic-task behavior.
+cat >>mise.toml <<'EOF'
+
+[deps.root_setup]
+auto = true
+sources = ["root-input.txt"]
+outputs = ["root-output.txt"]
+run = "cp root-input.txt root-output.txt"
+EOF
+echo root >root-input.txt
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[deps.global_setup]
+auto = true
+dir = "$PWD"
+sources = ["global-input.txt"]
+outputs = ["global-output.txt"]
+run = "cp global-input.txt global-output.txt"
+EOF
+echo global >global-input.txt
+
+# A direct task invocation runs only its root (plus root/global providers).
+assert_contains "mise run //apps/subapp-a:check" "TASK_DEPS_OK"
+assert "test -f apps/subapp-a/built.txt"
+assert_fail "test -f apps/subapp-b/built.txt"
+assert_fail "test -f apps/subapp-c/outside.txt"
+assert_fail "test -f apps/intermediate-output.txt"
+assert "test -f root-output.txt"
+assert "test -f global-output.txt"
+assert_contains "cat apps/subapp-a/layered-tool.txt" "v1.1.0"
+
+rm -f apps/subapp-a/prepared.txt apps/subapp-a/built.txt \
+  apps/subapp-a/layered-tool.txt root-output.txt global-output.txt
+
+# Providers with duplicate IDs run in both roots. Unqualified dependencies
+# prefer the same root and can fall back to retained root/global providers.
+assert_contains "mise run //:check" "TASK_DEPS_OK"
+assert "test -f apps/subapp-a/built.txt"
+assert "test -f apps/subapp-b/built.txt"
+assert_fail "test -f apps/subapp-a/disabled.txt"
+assert "test -f apps/subapp-b/disabled.txt"
+assert_fail "test -f apps/subapp-c/outside.txt"
+assert_fail "test -f apps/intermediate-output.txt"
+assert "test -f root-output.txt"
+assert "test -f global-output.txt"
+assert_contains "cat apps/subapp-a/layered-tool.txt" "v1.1.0"
+
+# From a nested invocation root, absolute provider dependencies resolve only to
+# that root's qualified ID rather than treating it as the monorepo root.
+cat >apps/subapp-a/mise.local.toml <<'EOF'
+[tools]
+tiny = "1"
+
+[deps]
+disable = ["build", "disabled"]
+
+[deps.layered_tool]
+auto = true
+outputs = ["layered-tool.txt"]
+run = "rtx-tiny > layered-tool.txt"
+EOF
+rm -f apps/subapp-a/prepared.txt apps/subapp-c/from-a.txt
+assert_contains "cd apps/subapp-a && mise run //apps/subapp-c:unrelated" "NESTED_DEPS_OK"
+assert "test -f apps/subapp-a/prepared.txt"
+assert "test -f apps/subapp-c/from-a.txt"
 
 # Clean up
-rm -rf subapp mise.toml .mise
+rm -rf apps mise.toml .mise root-input.txt root-output.txt \
+  global-input.txt global-output.txt "$MISE_CONFIG_DIR/config.toml"
 
 # Test git-submodule provider
 cat >.gitmodules <<'EOF'

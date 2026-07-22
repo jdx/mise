@@ -9,6 +9,7 @@ use tokio::task::JoinSet;
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings};
+use crate::task::monorepo_scope;
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -25,15 +26,33 @@ struct ScopedDepsProvider {
 }
 
 impl ScopedDepsProvider {
-    fn new(inner: Box<dyn DepsProvider>, id: String, scope: &str) -> Self {
+    fn new(
+        inner: Box<dyn DepsProvider>,
+        id: String,
+        scope: &str,
+        scoped_ids: &HashSet<String>,
+        fallback_ids: &HashSet<String>,
+        qualified_fallback_ids: &HashMap<String, String>,
+    ) -> Self {
         let depends = inner
             .depends()
             .into_iter()
             .map(|dep| {
                 if dep.starts_with("//") {
-                    dep
+                    if scoped_ids.contains(&dep) {
+                        dep
+                    } else if let Some(fallback_id) = qualified_fallback_ids.get(&dep) {
+                        fallback_id.clone()
+                    } else {
+                        dep
+                    }
                 } else {
-                    format!("{scope}:{dep}")
+                    let scoped_dep = format!("{scope}:{dep}");
+                    if scoped_ids.contains(&scoped_dep) || !fallback_ids.contains(&dep) {
+                        scoped_dep
+                    } else {
+                        dep
+                    }
                 }
             })
             .collect();
@@ -178,10 +197,19 @@ impl DepsEngine {
         config: &Config,
         config_files: impl IntoIterator<Item = Arc<dyn ConfigFile>>,
     ) -> Result<Self> {
+        Self::new_monorepo_with_fallback(config, config_files, &HashSet::new(), &HashMap::new())
+    }
+
+    fn new_monorepo_with_fallback(
+        config: &Config,
+        config_files: impl IntoIterator<Item = Arc<dyn ConfigFile>>,
+        fallback_ids: &HashSet<String>,
+        qualified_fallback_ids: &HashMap<String, String>,
+    ) -> Result<Self> {
         let monorepo_root = config
             .monorepo_root()
             .ok_or_else(|| eyre::eyre!("no config file in scope sets monorepo_root = true"))?;
-        let mut providers: Vec<Box<dyn DepsProvider>> = vec![];
+        let mut scoped_providers: Vec<(Box<dyn DepsProvider>, String, String)> = vec![];
         let mut seen_ids = HashSet::new();
         let config_files: Vec<_> = config_files.into_iter().collect();
         let mut disabled_by_root: HashMap<PathBuf, HashSet<String>> = HashMap::new();
@@ -215,15 +243,8 @@ impl DepsEngine {
             };
 
             let config_root = cf.config_root();
-            let relative_root = config_root
-                .strip_prefix(&monorepo_root)
-                .unwrap_or(&config_root)
-                .to_string_lossy()
-                .replace('\\', "/");
-            let scope = if relative_root.is_empty() {
-                "//".to_string()
-            } else {
-                format!("//{relative_root}")
+            let Some(scope) = monorepo_scope(&monorepo_root, &config_root) else {
+                continue;
             };
 
             for (id, provider_config) in &deps_config.providers {
@@ -240,13 +261,70 @@ impl DepsEngine {
                     && provider.is_applicable()
                     && seen_ids.insert(scoped_id.clone())
                 {
-                    providers.push(Box::new(ScopedDepsProvider::new(
-                        provider, scoped_id, &scope,
-                    )));
+                    scoped_providers.push((provider, scoped_id, scope.clone()));
                 }
             }
         }
 
+        let providers: Vec<Box<dyn DepsProvider>> = scoped_providers
+            .into_iter()
+            .map(|(provider, scoped_id, scope)| {
+                Box::new(ScopedDepsProvider::new(
+                    provider,
+                    scoped_id,
+                    &scope,
+                    &seen_ids,
+                    fallback_ids,
+                    qualified_fallback_ids,
+                )) as Box<dyn DepsProvider>
+            })
+            .collect();
+        if !providers.is_empty() {
+            Settings::get().ensure_experimental("deps")?;
+        }
+        Ok(Self { providers })
+    }
+
+    /// Create a monorepo engine for task execution while preserving providers
+    /// from the current project plus global and system configuration.
+    pub fn new_task_monorepo(
+        config: &Config,
+        config_files: impl IntoIterator<Item = Arc<dyn ConfigFile>>,
+    ) -> Result<Self> {
+        let mut providers = Self::discover_providers(config)?;
+        let fallback_ids = providers
+            .iter()
+            .map(|provider| provider.id().to_string())
+            .collect();
+        let monorepo_root = config
+            .monorepo_root()
+            .ok_or_else(|| eyre::eyre!("no config file in scope sets monorepo_root = true"))?;
+        let qualified_fallback_ids = config
+            .project_root
+            .as_deref()
+            .and_then(|project_root| {
+                let scope = monorepo_scope(&monorepo_root, project_root)?;
+                Some(
+                    providers
+                        .iter()
+                        .filter(|provider| provider.base().project_root.as_path() == project_root)
+                        .map(|provider| {
+                            (
+                                format!("{scope}:{}", provider.id()),
+                                provider.id().to_string(),
+                            )
+                        })
+                        .collect(),
+                )
+            })
+            .unwrap_or_default();
+        let mut engine = Self::new_monorepo_with_fallback(
+            config,
+            config_files,
+            &fallback_ids,
+            &qualified_fallback_ids,
+        )?;
+        providers.append(&mut engine.providers);
         if !providers.is_empty() {
             Settings::get().ensure_experimental("deps")?;
         }
@@ -263,7 +341,6 @@ impl DepsEngine {
             .project_root
             .clone()
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-
         let mut providers: Vec<Box<dyn DepsProvider>> = vec![];
         let mut seen_ids: HashSet<String> = HashSet::new();
         let mut disabled: Vec<String> = vec![];
@@ -376,52 +453,6 @@ impl DepsEngine {
                 config_root,
             )))
         }
-    }
-
-    /// Add providers from additional config files (e.g., monorepo subdirectory configs).
-    ///
-    /// Unlike `discover_providers`, this does NOT filter by project root, since these
-    /// configs are intentionally from different directories (monorepo subdirectories).
-    pub fn add_config_files(
-        &mut self,
-        config_files: impl IntoIterator<Item = Arc<dyn ConfigFile>>,
-    ) -> Result<()> {
-        let mut seen_ids: HashSet<String> =
-            self.providers.iter().map(|p| p.id().to_string()).collect();
-        let mut disabled: Vec<String> = vec![];
-
-        for cf in config_files {
-            let Some(deps_config) = cf.deps_config() else {
-                continue;
-            };
-
-            disabled.extend(deps_config.disable.iter().cloned());
-            let config_root = cf.config_root();
-
-            for (id, provider_config) in &deps_config.providers {
-                if !seen_ids.insert(id.clone()) {
-                    continue;
-                }
-
-                if let Some(provider) =
-                    Self::build_provider(id, &config_root, provider_config.clone())
-                    && provider.is_applicable()
-                {
-                    self.providers.push(provider);
-                }
-            }
-        }
-
-        if !disabled.is_empty() {
-            self.providers
-                .retain(|p| !disabled.contains(&p.id().to_string()));
-        }
-
-        if !self.providers.is_empty() {
-            Settings::get().ensure_experimental("deps")?;
-        }
-
-        Ok(())
     }
 
     /// List all discovered providers
