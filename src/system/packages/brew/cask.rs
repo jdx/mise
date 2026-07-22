@@ -2998,7 +2998,7 @@ end
         file::create_dir_all(target.parent().unwrap())?;
         file::make_symlink(&old_caskroom.join(relative), &target)?;
 
-        remove_obsolete_completions(&cask, &[target.clone()], &[])?;
+        remove_obsolete_completions(&cask, std::slice::from_ref(&target), &[])?;
 
         assert!(target.symlink_metadata().is_err());
         Ok(())
