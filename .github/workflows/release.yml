@@ -28,9 +28,9 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
     runs-on: namespace-profile-endev-linux-amd64-xlarge
-    # PGO rows build the serious profile twice (instrument + optimize),
-    # so they need roughly double the old 45-minute budget.
-    timeout-minutes: 80
+    # PGO and cross-built release tarballs can exceed 90 minutes on
+    # loaded runners, especially once archive generation is included.
+    timeout-minutes: 150
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
       MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
@@ -70,7 +70,7 @@ jobs:
         env:
           MISE_PGO: ${{ matrix.pgo || '' }}
         with:
-          timeout_minutes: 75
+          timeout_minutes: 140
           max_attempts: 3
           command: scripts/build-tarball.sh ${{matrix.target}}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -85,7 +85,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
     runs-on: namespace-profile-endev-macos-arm64
-    timeout-minutes: 90
+    timeout-minutes: 150
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
       MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
@@ -116,7 +116,7 @@ jobs:
         env:
           MISE_PGO: ${{ matrix.pgo || '' }}
         with:
-          timeout_minutes: 90
+          timeout_minutes: 140
           max_attempts: 3
           # Keep rustc, rust-std, and the profiling runtime on the same
           # toolchain. A mismatched runner default makes PGO training fail
@@ -134,7 +134,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-windows-${{matrix.arch}}
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
