@@ -17,6 +17,8 @@
 - **Depends on**: none
 - **Category**: security
 - **Planned at**: commit `866916893`, 2026-07-23
+- **DONE**: 2026-07-23 — `SafePathComponent` / `CaskIds`, checked joins, component-aware
+  `app_target_path`, pre-I/O validation; adversarial unit tests. No semver ordering.
 
 ## Why this matters
 

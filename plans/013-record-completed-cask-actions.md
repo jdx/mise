@@ -17,6 +17,9 @@
 - **Depends on**: Plan 011
 - **Category**: architecture / correctness
 - **Planned at**: commit `866916893`, 2026-07-23
+- **DONE**: 2026-07-23 — mutators emit `CompletedCaskAction`; journal under
+  `<prefix>/var/mise/cask-recovery` with fsync; final `.mise-cask.toml` after
+  activation; legacy receipts `LegacyUnverified` / not handoff-eligible.
 
 ## Why this matters
 

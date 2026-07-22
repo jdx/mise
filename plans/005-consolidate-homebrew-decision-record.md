@@ -19,6 +19,12 @@ Plan 009 outcome are decided.
 
 ## Status
 
+- **DONE (partial final)**: 2026-07-23 — `docs/dev/brew-cask-decision-record.md`
+  ADR + support matrix; interop doc banner archives contradictions; Plan 012
+  STOP recorded honestly. Revisit when disposable handoff evidence exists.
+
+## Status (original)
+
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW

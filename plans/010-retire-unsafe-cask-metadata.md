@@ -18,6 +18,9 @@
 - **Depends on**: none
 - **Category**: bug / security / docs
 - **Planned at**: commit `866916893`, 2026-07-23
+- **DONE**: 2026-07-23 — removed `write_homebrew_cask_metadata` / repair paths;
+  regression tests prove no `.metadata` on mise pour + foreign metadata preserved;
+  docs state mise-only ownership. Evidence: focused cask suite 70 passed.
 
 ## Why this matters
 

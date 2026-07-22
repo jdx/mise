@@ -117,30 +117,21 @@ Homebrew installation, mise-poured kegs look like its own: `brew list`,
 status checks read the Cellar directly, so formulae installed by brew count
 as installed.
 
-**Casks** also write Homebrew-compatible metadata under
-`Caskroom/<token>/.metadata/` (tab + installed caskfile) in addition to
-mise's own `.mise-cask.toml` receipt inside the versioned caskroom. That makes
-`brew list --cask --versions` and `brew upgrade --cask` (as an _installed_
-gate) work on mise-poured casks — including tools that self-update by shelling
-out to `brew upgrade --cask` (e.g. OpenAI Codex).
+**Casks are different.** A direct `brew-cask:` pour is **mise-owned**: payload
+under Caskroom plus a mise receipt (`.mise-cask.toml` with completed-action
+facts). Mise does **not** publish Homebrew's private installed marker
+(`Caskroom/<token>/.metadata/`). A mise-owned cask is therefore
+**Homebrew-invisible** by default: do not run `brew list --cask`,
+`brew upgrade --cask`, `brew reinstall --cask`, or `brew uninstall --cask`
+against it. Those commands require Homebrew-authored lifecycle authority.
 
-Earlier mise-only pours (payload + `.mise-cask.toml`, no brew ledger) are
-repaired on the next `mise bootstrap packages upgrade --manager brew-cask`
-(or any re-invoke of install for that already-current version): metadata is
-written without re-downloading. Unrelated Caskroom directories and genuine
-Homebrew-authored `.metadata` are left untouched. Mise package **status**
-still uses the mise/payload ledger — a missing brew tab is not "package
-missing".
-
-Caveats (not full brew lifecycle parity):
-
-- The tab's `uninstall_artifacts` is intentionally **empty** so Homebrew can
-  recover the full list from the live cask API when online. A partial list
-  would _block_ that recovery. Offline `brew uninstall` may leave files.
-- mise **copies** app bundles into `/Applications`; real brew often **moves**
-  and leaves a caskroom symlink. `brew uninstall --cask` of some app casks may
-  not reverse mise's layout cleanly. Binary-link casks (e.g. codex) match brew
-  more closely.
+- Genuine Homebrew-authored `.metadata` is **preserved** and never rewritten
+  or deleted by mise cleanup.
+- An explicit one-way handoff to Homebrew (for example via supported
+  `brew install --cask --adopt`) is under evaluation; it is not promised
+  until disposable isolation tests prove eligibility and safety.
+- Mise package **status** uses the mise/payload ledger only — a missing brew
+  tab is not "package missing".
 
 mise reads the Homebrew prefix directly, whether formulae were poured by mise
 or by a real Homebrew. It never overwrites files in the prefix that it didn't

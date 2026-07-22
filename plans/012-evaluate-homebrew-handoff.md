@@ -17,6 +17,10 @@
 - **Depends on**: Plan 010 for the production safety baseline
 - **Category**: direction / compatibility / tests
 - **Planned at**: commit `866916893`, 2026-07-23
+- **STOP (isolation unproven)**: 2026-07-23 — operator host has real
+  `/opt/homebrew` + `/Applications`. No disposable mutation performed.
+  Gate decision: **mise-only retained**; no production transfer. See
+  `docs/dev/brew-cask-handoff-gate.md`.
 
 ## Why this matters
 
