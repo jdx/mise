@@ -3,13 +3,20 @@
 **Research date:** 2026-07-22  
 **Verification audit:** 2026-07-23 — every upstream claim re-verified against
 live GitHub data and `origin/main`; see [Verification audit](#verification-audit--2026-07-23)  
+**Direction lock:** 2026-07-23 — formula-style cask identity is the **potential**
+product direction (no upstream rejection proof); see
+[Upstream rejection status](#upstream-rejection-status--generate-metadata) and
+[Directions that resolve the product goals](#directions-that-resolve-the-product-goals)  
+**Process:** always extend this file when research, direction, or branch
+behavior changes — it is the durable decision record for the fork.  
 **Repository:** `donbeave/mise`  
 **Branch:** `fix/brew-cask-homebrew-metadata-receipt`  
 **Scope:** research and decision record; never an upstream PR authorization
 
 ## Executive decision
 
-**Product goal (bootstrap `brew-cask:` only): formula-style coexistence.**
+**Potential product direction (bootstrap `brew-cask:` only): formula-style
+coexistence** — Direction **A** below.
 
 User expectation of `brew-cask:` under Homebrew’s prefix is that the install is
 **observably a Homebrew cask** — without shelling out to Ruby `brew` for the
@@ -26,6 +33,10 @@ for casks (`.mise-cask.toml` only on main).
 
 **Ship** pour-time brew metadata for bootstrap casks. **Do not** mark a healthy
 mise pour as package `Missing` only because brew’s tab was absent.
+
+**Upstream status of this direction:** **not rejected** (never closed as WONTFIX;
+never refused in jdx comments). **Not yet accepted** (no PR opened; #11012
+shipped preserve-only for a different bug). Count as **potential**, not proven.
 
 ## Repository and operating policy
 
@@ -587,7 +598,7 @@ Problems:
 
 Decision: best future interoperability shape if jdx explicitly wants it.
 
-### E. Single owner — recommended now
+### E. Single owner — main status quo / ops workaround (not product finish)
 
 For a mise-owned cask:
 
@@ -603,21 +614,21 @@ brew install → Homebrew .metadata → mise preserves/adopts presence
 
 Advantages:
 
-- matches current jdx direction;
-- no false ownership claim;
-- unsupported behavior remains explicit;
-- private ledgers remain authored by their owner;
-- lifecycle responsibility is understandable.
+- matches **current** `origin/main` code;
+- no private-API liability;
+- essential-mac Codex mitigation works with `check_for_update_on_startup = false`.
 
 Cost:
 
-- tools such as Codex must not infer brew ownership solely from a canonical
-  prefix path;
-- users wanting Homebrew self-update must install that cask with Homebrew;
-- `brew doctor` may regard mise-only Caskroom state as foreign/incomplete;
-- docs must state the ownership boundary.
+- fails product goals G2–G4 (brew identity / Codex brew updater / user expectation
+  of `brew-cask:`);
+- `brew doctor` noise on mise-only Caskroom state.
 
-Decision: canonical current direction.
+Decision: **ops under main only** — not the locked potential product direction.
+See Direction **A** (executive + goal matrix). Also note competing-designs
+section **A** earlier in this doc was the “blanket metadata” branch shape; the
+locked product Direction A is **pour-time identity without status lie**, refined
+in the 2026-07-23 third pass.
 
 ## Canonical resolution of the Codex case
 
@@ -684,14 +695,19 @@ gate workaround, not a complete compatibility contract.
 
 ## Recommended branch next step
 
-Aligned only with **single owner**:
+Aligned with **Direction A** (potential formula-style cask identity):
 
-1. Keep this document + experiment as evidence; do not ship metadata emission.
-2. Revert/retire automatic metadata emission and backfill on this branch.
-3. Keep #11012 preserve behavior (already on main).
-4. One owner per cask (mise **or** brew); no dual ledger for mise pours.
-5. Future cask work follows open jdx trajectory: deeper mise-owned parity
-   (#11197/#11198 class), not Homebrew tab generation.
+1. Keep this document as the decision record; **always extend it** on new
+   research or behavior changes.
+2. Keep pour-time `.metadata` write + empty `uninstall_artifacts` + no status
+   `Missing` when only brew tab is absent (HEAD `a47633fc2`).
+3. Keep #11012 preserve behavior for foreign brew metadata.
+4. Repair already-poured mise casks on upgrade/re-invoke, not via status lie.
+5. Harden tests/docs caveats; do not claim full uninstall/zap parity.
+6. Rebase onto main after #11197/#11198 if preparing any future upstream-shaped
+   slim PR (policy still forbids opening one unless explicitly lifted).
+7. essential-mac: A unblocks brew identity; Codex flag remains optional if mise
+   should own version bumps exclusively.
 
 ## Verification audit — 2026-07-23
 
@@ -713,7 +729,8 @@ listed here.
 | jdx #10582 quotes ("mise-owned cask lifecycle runtime path", "intentionally not a `brew install --cask` fallback") | Verified, verbatim |
 | jdx #11007 quote ("cannot be recovered by mise…") | Verified, verbatim |
 | #11197/#11198 open, mise-owned receipts only | Verified; no `.metadata` writes in either diff |
-| No upstream PR/Issue/Discussion proposes brew `.metadata` for mise-poured casks | Verified — 12+ search queries, every hit classified, zero proposals |
+| No upstream PR *implements* brew `.metadata` for mise-poured casks | Verified — zero PRs |
+| No discussion body ever mentions generate as expected option | **Corrected 2026-07-23 third pass** — #11007 OP explicitly offered preserve **or generate**; no *follow-up PR* proposed implementation |
 | Upstream docs coexistence section is formulae-only | Verified against `origin/main` `docs/bootstrap/packages/brew.md`; the cask coexistence text exists only on this branch |
 
 Search-hit classification notes:
@@ -746,12 +763,12 @@ Search-hit classification notes:
 
 The branch is not one decision; its components fit differently:
 
-| Branch component | Fit |
+| Branch component | Fit under Direction A (potential) |
 |---|---|
-| Pour-time `.metadata` write on fresh install | Defensible — direct analog of the #10326 formula receipt contract; exact current version, nothing guessed |
-| Backfill/repair of historical pours | Against direction — synthesizes state upstream says mise cannot recover; no upstream ask exists |
-| Status flip (`Missing` when brew ledger absent) | Clearly against direction — makes a mise-owned cask's health depend on another manager's private ledger |
-| Empty `uninstall_artifacts` tab | Correct engineering given brew's early-return behavior, but fallback-grade: offline uninstall gaps and copy-vs-move app layout divergence remain |
+| Pour-time `.metadata` write on fresh install | **Core of A** — formula #10326 analogue; exact current version |
+| Repair of mise-owned pours missing brew tab (`.mise-cask.toml` proof) | **OK for A** — not “recover deleted brew-origin metadata”; only adopt earlier mise-only pours |
+| Status flip (`Missing` when brew ledger absent) | **Removed on HEAD** — was wrong; mise status stays on payload/mise ledger |
+| Empty `uninstall_artifacts` tab | Correct for brew API early-return; document offline/uninstall gaps |
 
 The formula/cask asymmetry is therefore **undecided upstream, not decided
 against**: jdx shipped exactly this coexistence contract for formulae, and no
@@ -759,42 +776,173 @@ statement for or against the cask equivalent exists anywhere upstream.
 
 ### Would this branch be accepted as an upstream PR as-is?
 
-**No.** It fights the highest-score direction (mise-owned casks). Blockers:
-status flip against mise-owned model; backfill of guessed history; no product
-decision that casks should become brew-visible. jdx open work (#11197, #11198)
-deepens **mise** receipts, not brew-side ledgers.
+**As a fat research dump: unlikely.** Strip `HOMEBREW_FINDINGS.md` /
+interop essays from any upstream PR; jdx process norm is a small focused PR
+(#11157).
 
-**Correct upstream-shaped work under single-owner:** more direct cask parity
-(artifact types, flight steps, completions, uninstall safety) — same trajectory
-as jdx — not Homebrew `.metadata` generation.
+**As slim pour-time identity (Direction A): maybe / medium** — no rejection
+proof; positive formula precedent (#10326); must frame honestly (installed gate,
+not full lifecycle); rebase after #11197/#11198 (same files); no status
+`Missing` when only brew tab absent (fixed on HEAD `a47633fc2`).
 
-At audit time the branch sat 3 commits behind `origin/main`; none of those
-commits touch cask metadata.
+At the 2026-07-23 audit the branch was a few commits behind `origin/main`; none
+of those commits implemented cask `.metadata` generation.
+
+## Upstream rejection status — generate metadata
+
+**Question:** Did jdx reject “mise writes Homebrew cask `.metadata` for
+mise-originated pours so brew recognizes the install?”
+
+**Answer: no. Not rejected. Not accepted either.**
+
+### Exhaustive look (2026-07-23)
+
+| Looked for | Result |
+|---|---|
+| Discussion proposing generate as expected behavior | **#11007** (khoi) — preserve **or generate** |
+| Merged response to #11007 | **#11012** — preserve/ignore only; does **not** generate |
+| jdx text “do not generate” / “won’t support brew list for mise casks” | **None** |
+| Open or closed PR that implements cask `.metadata` generation | **None** |
+| Issue tracker WONTFIX for this | **None** (bootstrap cask reports live in Discussions) |
+| Title trap | **#11107** “auto-updating cask metadata” = cask JSON `auto_updates` field, not Caskroom `.metadata` |
+
+### #11007 / #11012 (only related thread)
+
+Reporter expected:
+
+> preserve existing Homebrew metadata **or generate** Homebrew-compatible cask
+> metadata
+
+jdx (AI-labeled) confirmed deletion bug; shipped #11012 preserve; recovery for
+already-deleted brew metadata is `brew reinstall --cask --force`, not mise.
+
+**Correct reading:** bug-fix scope was “stop destroying brew’s ledger.”  
+**Incorrect reading:** “jdx vetoed generation forever.”  
+“Cannot be recovered by mise” describes **deleted brew-origin** tabs, not a ban
+on writing tabs for **new mise pours**.
+
+### Weight for “potential direction”
+
+- No reject proof → **may pursue Direction A**.
+- No accept proof → do not claim jdx already agreed.
+- Silence after #11012 is **incomplete product**, not statute.
+
+## Product goals this work must resolve
+
+| ID | Goal |
+|---|---|
+| G1 | Install via `mise bootstrap` / `brew-cask:` (Rust pour, no `brew install --cask`) |
+| G2 | User should not feel a different product than `brew install --cask` for **install identity** |
+| G3 | `brew list --cask --versions TOKEN` works |
+| G4 | `brew upgrade --cask TOKEN` installed-gate works (Codex-class tools) |
+| G5 | mise still status/upgrade via bootstrap (`.mise-cask.toml`) |
+| G6 | Never destroy genuine Homebrew `.metadata` (#11012) |
+| G7 | Bootstrap-scoped — not full Homebrew replacement |
+
+**Not required for “identity done”:** perfect offline uninstall of every app
+layout, full zap parity, Intel macs, every artifact type.
+
+## Directions that resolve the product goals
+
+| ID | Direction | Full goal set? | jdx risk | Notes |
+|---|---|---|---|---|
+| **A** | Pour-time write brew `.metadata` + keep `.mise-cask.toml` | **Yes (identity)** | Med (open) | Only complete match for G1–G7 without shelling to brew |
+| **B** | Single owner + disable tool brew self-update | No | Low (main today) | Ops workaround; G3/G4 stay broken |
+| **C** | Install those casks with real `brew` only | Partial | Low | Abandons pure mise pour |
+| **D** | Shell out to `brew install --cask` | No | **High reject** | Explicit non-goal (#10582) |
+| **E** | Metadata only for simple binary casks | Partial | Med | Codex-class only; inconsistent ownership |
+| **F** | Explicit opt-in adopt/handoff command | Partial | Med | Default still feels wrong |
+| **G** | Fix only Codex / third-party tools | No | n/a | `brew` CLI still broken for humans |
+| **H** | zerobrew-style private store | No | n/a | Not brew-visible; wrong reference |
+
+### zerobrew (checked, not a reference for A)
+
+zerobrew cask support (as of research): binary-only; stages into its own Cellar
+name `cask:token`; private sqlite ledger; **does not** write Homebrew
+`Caskroom/.../.metadata`. Parallel package manager — not “brew recognizes
+install.” **Right references for A:** mise formula `pour::write_receipt` +
+Homebrew `Cask#installed?` + this branch’s writer.
+
+### Only A fully hits G1–G7 together
+
+B is what main forces today and what essential-mac already mitigates for Codex
+(`check_for_update_on_startup = false`). B does **not** finish the product
+expectation that `brew-cask:` feels like brew.
+
+## Direction A — locked potential direction
+
+```text
+mise bootstrap brew-cask:TOKEN
+  → pour artifacts (Rust)
+  → write .mise-cask.toml          # mise status / upgrade
+  → write .metadata/…              # brew installed? gate
+  → preserve pre-existing brew .metadata on cleanup (#11012)
+```
+
+**Branch HEAD behavior (after `a47633fc2`):**
+
+- pour-time `write_homebrew_cask_metadata`
+- empty `uninstall_artifacts` (online API fallback)
+- repair on re-invoke of already-current install (upgrade path includes
+  Installed packages)
+- status does **not** use Missing when only brew tab is absent
+
+**Honest limits (document, do not overclaim):**
+
+- installed gate ≠ full lifecycle parity
+- empty uninstall tab + app copy-vs-move → some `brew uninstall` cases differ
+- dual upgrade (mise vs brew) can race if both used carelessly
+
+**Upstream PR shape if policy ever allows:**
+
+1. Small: `cask.rs` + short docs coexistence caveats only  
+2. Frame as #10326 cask extension  
+3. Rebase after #11197 / #11198  
+4. No research novel / findings file in the PR  
+5. Tests: layout, preserve foreign, empty uninstall_artifacts  
 
 ## Final conclusion
 
-The original investigation correctly found a real ledger mismatch and a real
-third-party failure. The implementation correctly demonstrated the minimal
-filesystem condition Homebrew uses. The skeptical follow-up found that this
-condition is not the full product contract.
+The investigation found a real ledger mismatch and a real third-party failure
+(Codex / `brew upgrade --cask`). The branch proved the minimal filesystem
+condition Homebrew uses for `installed?`.
 
-Based on all currently available upstream information, jdx sees bootstrap
-Homebrew casks as a **mise-owned direct package-manager implementation** that
-should grow deliberate parity and fail loudly outside it. Homebrew-origin
-state should be preserved, not silently recreated or claimed.
+**Upstream did not reject** generating brew-compatible cask metadata for
+mise pours. The only related ship was #11012 **preserve** after brew metadata
+was deleted — a different bug. Formula coexistence (#10326) remains the
+strongest positive precedent for writing brew-native ledgers at pour time.
 
-Therefore the only direction that matches jdx’s demonstrated vision is
-**single owner**: update mise-owned casks with mise, update Homebrew-owned
-casks with Homebrew, preserve foreign `.metadata`, and do not invent brew
-ownership for mise pours.
+**Potential direction (locked):** Direction **A** — formula-style cask identity
+for bootstrap `brew-cask:` (mise pour + dual ledger: `.mise-cask.toml` +
+`.metadata`). That is the only researched option that resolves G1–G7 without
+shelling out to `brew` or abandoning the `brew-cask:` product name.
+
+**Not the finish line:** single-owner-only ops (B) — valid under main today,
+insufficient for user expectation of brew-identical identity.
+
+**Proven jdx accept:** no. **Proven jdx reject:** no. Proceed as potential
+fork direction; any upstream PR remains a separate, policy-gated decision.
 
 ## Independent re-audit errata — 2026-07-23 (second pass)
 
 Re-confirmed load-bearing facts (live GitHub, `origin/main` @ `e3f5ddef2`,
-Homebrew 6.0.12, subagent cross-checks). Decision locked to **single owner**
-as the sole highest-score path for jdx’s vision.
+Homebrew 6.0.12, subagent cross-checks).
 
 1. **#11157 “just make a PR”** is a jdx **nested reply** (2026-07-21T14:25:17Z).
 2. **Live Caskroom drift** on the audit machine: some tokens still fail
    `brew list --cask --versions` without `.metadata`; others later brew-adopted.
 3. Evidence bundle in research scratch. No upstream PR/issue/comment opened.
+
+## Direction lock extension — 2026-07-23 (third pass)
+
+After rejection-status research and full goal/direction matrix:
+
+1. **Generate-metadata was never rejected** — see
+   [Upstream rejection status](#upstream-rejection-status--generate-metadata).
+2. **Direction A is the potential product direction**; B is ops-only under main.
+3. **zerobrew is not a model** for brew-visible casks.
+4. **Always extend this document** when research, direction, or branch behavior
+   changes (process rule for this fork track).
+5. Branch code on HEAD implements A’s core (pour-time write, no status lie);
+   docs under `docs/bootstrap/packages/brew.md` describe cask coexistence with
+   caveats.
