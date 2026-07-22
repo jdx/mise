@@ -48,9 +48,10 @@ impl TaskFetcher {
                     .cf
                     .clone()
                     .or_else(|| config.config_files.get(&original.config_source).cloned());
-                let defining_config_source = defining_cf
-                    .as_ref()
-                    .map(|cf| cf.get_path().to_path_buf())
+                let defining_config_source = original
+                    .remote_config_source
+                    .clone()
+                    .or_else(|| defining_cf.as_ref().map(|cf| cf.get_path().to_path_buf()))
                     .unwrap_or_else(|| original.config_source.clone());
 
                 if self.trust_before_fetch {

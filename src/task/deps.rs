@@ -1,4 +1,3 @@
-use crate::config::Settings;
 use crate::config::env_directive::EnvDirective;
 use crate::task::task_fetcher::TaskFetcher;
 use crate::task::{Task, dep_has_usage_ref, parse_usage_values_from_task};
@@ -48,19 +47,28 @@ pub fn task_key(task: &Task) -> TaskKey {
 /// manages a dependency graph of tasks so `mise run` knows what to run next
 impl Deps {
     pub async fn new(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
-        Self::new_with_fetch_policy(config, tasks, false).await
+        Self::new_with_fetch_policy(config, tasks, false, false).await
+    }
+
+    pub async fn new_with_no_cache(
+        config: &Arc<Config>,
+        tasks: Vec<Task>,
+        no_cache: bool,
+    ) -> eyre::Result<Self> {
+        Self::new_with_fetch_policy(config, tasks, false, no_cache).await
     }
 
     /// Build a dependency graph for passive display without allowing remote
     /// providers to perform network or Git work from an untrusted config.
     pub async fn new_for_display(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
-        Self::new_with_fetch_policy(config, tasks, true).await
+        Self::new_with_fetch_policy(config, tasks, true, false).await
     }
 
     async fn new_with_fetch_policy(
         config: &Arc<Config>,
         tasks: Vec<Task>,
         trust_before_fetch: bool,
+        no_cache: bool,
     ) -> eyre::Result<Self> {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
@@ -82,7 +90,6 @@ impl Deps {
             add_idx(t, &mut graph);
         }
         let all_tasks_to_run = resolve_depends(config, tasks).await?;
-        let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
         let fetcher = if trust_before_fetch {
             TaskFetcher::new(no_cache).require_trust_before_fetch()
         } else {

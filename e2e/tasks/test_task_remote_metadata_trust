@@ -43,6 +43,25 @@ assert_contains "$UNTRUSTED_ENV mise run remote_template --help" "--remote-flag"
 [[ -e $MARKER ]] || fail "trusted remote metadata template did not render"
 assert_succeed "$UNTRUSTED_ENV mise untrust mise.toml"
 
+# A trusted config vouches for an explicitly included task file even when that
+# file is outside the config's trust root. Preserve that provenance when the
+# include declares a remote task, including for temporary no-cache snapshots.
+INCLUDED_TASK_DIR="$TMPDIR/included-remote-tasks"
+mkdir -p "$INCLUDED_TASK_DIR"
+cat <<EOF >"$INCLUDED_TASK_DIR/tasks.toml"
+[included_remote_template]
+file = "http://localhost:${HTTP_PORT}/test/remote-template"
+EOF
+cat <<EOF >mise.toml
+[task_config]
+includes = ["$INCLUDED_TASK_DIR/tasks.toml"]
+EOF
+
+assert_succeed "$UNTRUSTED_ENV mise trust mise.toml"
+assert_contains "$UNTRUSTED_ENV mise tasks info included_remote_template" "remote_dep"
+assert_contains "$UNTRUSTED_ENV MISE_TASK_REMOTE_NO_CACHE=true mise tasks info included_remote_template" "remote_dep"
+assert_succeed "$UNTRUSTED_ENV mise untrust mise.toml"
+
 # Deferred metadata (confirmation and task env) can render after initial task
 # discovery, so decoded header templates must still require the defining
 # config's trust before either path gets a chance to execute.

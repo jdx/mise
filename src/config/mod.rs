@@ -62,6 +62,12 @@ pub(crate) struct MonorepoUnion {
     pub repo_urls: HashMap<String, String>,
 }
 
+#[derive(Clone, Hash, Eq, PartialEq)]
+struct TasksCacheKey {
+    context: crate::task::TaskLoadContext,
+    remote_no_cache: bool,
+}
+
 pub struct Config {
     pub config_files: ConfigMap,
     pub project_root: Option<PathBuf>,
@@ -78,7 +84,7 @@ pub struct Config {
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
     hooks: OnceCell<Vec<(PathBuf, Hook)>>,
-    tasks_cache: Arc<DashMap<crate::task::TaskLoadContext, Arc<BTreeMap<String, Task>>>>,
+    tasks_cache: Arc<DashMap<TasksCacheKey, Arc<BTreeMap<String, Task>>>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
     vars_results: OnceCell<EnvResults>,
@@ -593,16 +599,15 @@ impl Config {
         &self,
         ctx: Option<&crate::task::TaskLoadContext>,
     ) -> Result<Arc<BTreeMap<String, Task>>> {
-        // Use the entire context as cache key
-        // Default context (None) becomes TaskLoadContext::default()
-        let cache_key = ctx.cloned().unwrap_or_default();
+        let cache_key = TasksCacheKey {
+            context: ctx.cloned().unwrap_or_default(),
+            remote_no_cache: Settings::get().task.remote_no_cache.unwrap_or(false),
+        };
 
-        // No-cache remote includes own temporary snapshots through their Tasks.
-        // The global Config cache is static and would keep those cleanup guards
-        // alive until process teardown (static destructors do not run), so skip
-        // both cache reads and writes in this mode.
-        let use_cache = !Settings::get().task.remote_no_cache.unwrap_or(false);
-        if use_cache && let Some(cached) = self.tasks_cache.get(&cache_key) {
+        // No-cache remote includes still need one immutable snapshot for the
+        // duration of a command. Re-loading here can mix revisions when task
+        // selection and dependency resolution ask for the same task set.
+        if let Some(cached) = self.tasks_cache.get(&cache_key) {
             return Ok(cached.value().clone());
         }
 
@@ -612,11 +617,13 @@ impl Config {
         });
         let tasks_arc = Arc::new(tasks);
 
-        if use_cache {
-            self.tasks_cache.insert(cache_key, tasks_arc.clone());
-        }
+        self.tasks_cache.insert(cache_key, tasks_arc.clone());
 
         Ok(tasks_arc)
+    }
+
+    pub(crate) fn clear_tasks_cache(&self) {
+        self.tasks_cache.clear();
     }
 
     pub async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, Task>> {
@@ -2104,8 +2111,11 @@ impl Debug for Config {
         s.field("Config Files", &config_files);
         // Note: tasks are now lazily loaded and cached, so we can't access them synchronously here
         // Try to get the default (current hierarchy) cache entry
-        let default_ctx = crate::task::TaskLoadContext::default();
-        if let Some(tasks) = self.tasks_cache.get(&default_ctx) {
+        let default_key = TasksCacheKey {
+            context: crate::task::TaskLoadContext::default(),
+            remote_no_cache: Settings::get().task.remote_no_cache.unwrap_or(false),
+        };
+        if let Some(tasks) = self.tasks_cache.get(&default_key) {
             s.field(
                 "Tasks",
                 &tasks.values().map(|t| t.to_string()).collect_vec(),
@@ -3000,6 +3010,18 @@ async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
     }
 }
 
+fn preserve_remote_task_trust_source(tasks: &mut [Task], source: &Path) {
+    for task in tasks {
+        if task.file.as_ref().is_some_and(|file| {
+            let file = file.to_string_lossy();
+            file.starts_with("git::") || file.starts_with("http://") || file.starts_with("https://")
+        }) {
+            task.remote_config_source
+                .get_or_insert_with(|| source.to_path_buf());
+        }
+    }
+}
+
 /// Check if a pattern contains glob metacharacters
 fn is_glob_pattern(pattern: &str) -> bool {
     // Check for unescaped glob metacharacters: *, ?, [, ], {, }
@@ -3087,6 +3109,9 @@ async fn load_file_tasks(
                 require_task_include_trust,
             )
             .await?;
+            if !require_task_include_trust || is_global {
+                preserve_remote_task_trust_source(&mut loaded, cf.get_path());
+            }
             if let Some(cleanup) = artifact.cleanup {
                 for task in &mut loaded {
                     task.remote_artifact_cleanups.push(cleanup.clone());
@@ -3181,6 +3206,10 @@ pub async fn load_tasks_in_dir(
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
     let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
+    let vouching_config_source = configs
+        .iter()
+        .find(|cf| is_path_trusted(cf.get_path()))
+        .map(|cf| cf.get_path().to_path_buf());
 
     let (includes, resolve_dir) = configs
         .iter()
@@ -3223,6 +3252,9 @@ pub async fn load_tasks_in_dir(
                 require_task_include_trust,
             )
             .await?;
+            if let Some(source) = &vouching_config_source {
+                preserve_remote_task_trust_source(&mut loaded, source);
+            }
             if let Some(cleanup) = artifact.cleanup {
                 for task in &mut loaded {
                     task.remote_artifact_cleanups.push(cleanup.clone());

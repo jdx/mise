@@ -7,14 +7,16 @@
 PORT_FILE="$TMPDIR/mise_git_http_port"
 READY_FILE="$TMPDIR/mise_git_http_ready"
 INFO_FILE="$TMPDIR/mise_git_http_info"
+REQUEST_LOG="$TMPDIR/mise_git_http_requests"
 
 # Clean up any previous server files
-rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
+rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE" "$REQUEST_LOG"
 
 # Start local git HTTP server with OS-assigned port to avoid race conditions
 MISE_GIT_HTTP_PORT_FILE="$PORT_FILE" \
   MISE_GIT_HTTP_READY_FILE="$READY_FILE" \
   MISE_GIT_HTTP_INFO_FILE="$INFO_FILE" \
+  MISE_GIT_HTTP_REQUEST_LOG="$REQUEST_LOG" \
   python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
 SERVER_PID=$!
 
@@ -50,7 +52,7 @@ git init
 # Ensure cleanup on exit
 cleanup() {
   kill "$SERVER_PID" 2>/dev/null || true
-  rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
+  rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE" "$REQUEST_LOG"
 }
 trap cleanup EXIT
 
@@ -167,7 +169,10 @@ assert_contains "mise run toml_table_task" "toml_table_task executed"
 # then be cleaned when no-cache mode bypasses the static task cache.
 NESTED_ARTIFACT_TMPDIR="$TMPDIR/nested-remote-git-artifacts"
 mkdir -p "$NESTED_ARTIFACT_TMPDIR"
+: >"$REQUEST_LOG"
 assert_contains "TMPDIR=$NESTED_ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run nested_remote" "nested remote task executed"
+clone_count=$(grep -c 'GET /repo.git/info/refs?service=git-upload-pack' "$REQUEST_LOG" || true)
+[[ $clone_count -eq 2 ]] || fail "no-cache nested task used $clone_count clones instead of one outer and one inner snapshot"
 assert_fail "find '$NESTED_ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."
 
 mise cache clear # Clear cache to force redownload

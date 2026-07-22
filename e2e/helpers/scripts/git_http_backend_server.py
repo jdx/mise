@@ -14,8 +14,9 @@ import socketserver
 from pathlib import Path
 
 class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
-    def __init__(self, *args, repo_dir=None, **kwargs):
+    def __init__(self, *args, repo_dir=None, request_log=None, **kwargs):
         self.repo_dir = repo_dir
+        self.request_log = request_log
         super().__init__(*args, **kwargs)
 
     def do_GET(self):
@@ -25,6 +26,10 @@ class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
         self.handle_git_request()
 
     def handle_git_request(self):
+        if self.request_log:
+            with open(self.request_log, 'a') as log:
+                log.write(f'{self.command} {self.path}\n')
+
         # Set up environment for git-http-backend
         env = os.environ.copy()
         env['GIT_PROJECT_ROOT'] = str(self.repo_dir)
@@ -193,8 +198,15 @@ def start_server(port=0):
     repo_path = temp_dir / 'repo'
 
     # Create handler with repo directory
+    request_log = os.environ.get('MISE_GIT_HTTP_REQUEST_LOG')
+
     def handler(*args, **kwargs):
-        return GitHTTPHandler(*args, repo_dir=temp_dir, **kwargs)
+        return GitHTTPHandler(
+            *args,
+            repo_dir=temp_dir,
+            request_log=request_log,
+            **kwargs
+        )
 
     # Let the OS assign an available port if port=0
     # This avoids race conditions between finding and binding
