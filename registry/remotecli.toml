@@ -1,0 +1,4 @@
+backends = ["github:remoteoss/remote-cli"]
+description = "Interact with the Remote.com API to manage your company and employees directly from your terminal"
+os = ["linux", "macos"]
+test = { cmd = "remotecli --version", expected = "remote version v{{version}}" }
