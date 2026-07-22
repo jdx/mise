@@ -913,7 +913,7 @@ impl Settings {
 
     pub fn fetch_remote_versions_timeout(&self) -> Duration {
         let timeout = self.configured_fetch_remote_versions_timeout();
-        if self.prefer_offline() {
+        if self.bound_remote_version_lookups() {
             timeout.min(Duration::from_secs(3))
         } else {
             timeout
@@ -922,6 +922,19 @@ impl Settings {
 
     pub fn configured_fetch_remote_versions_timeout(&self) -> Duration {
         duration::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
+    }
+
+    /// Whether remote-version lookups should use the aggressive fast-path budget
+    /// (a single ~3s attempt with no retries). This is on under `prefer_offline`
+    /// so shims and shell activation never stall — but NOT for commands whose
+    /// whole job is to enumerate remote versions/tags (`mise lock`, `ls-remote`,
+    /// `outdated`, `upgrade`), which must honor the full configured
+    /// `fetch_remote_versions_timeout` and retry budget even when
+    /// `prefer_offline` is set.
+    ///
+    /// See <https://github.com/jdx/mise/discussions/11185>.
+    pub fn bound_remote_version_lookups(&self) -> bool {
+        self.prefer_offline() && !env::REMOTE_FETCH_COMMAND.load(Ordering::Relaxed)
     }
 
     /// duration that remote version cache is kept for
@@ -949,7 +962,7 @@ impl Settings {
     /// back to cached/local behavior. In particular, shims must not multiply a
     /// stalled resolver timeout by the configured retry count.
     pub fn http_retries(&self) -> i64 {
-        if self.prefer_offline() {
+        if self.bound_remote_version_lookups() {
             0
         } else {
             self.http_retries

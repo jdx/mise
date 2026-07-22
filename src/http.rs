@@ -150,7 +150,7 @@ impl Client {
 
     fn request_timeout(&self) -> Duration {
         match self.kind {
-            ClientKind::Fetch if Settings::get().prefer_offline() => {
+            ClientKind::Fetch if Settings::get().bound_remote_version_lookups() => {
                 self.timeout.min(Duration::from_secs(3))
             }
             _ => self.timeout,
@@ -1793,6 +1793,26 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let _guard = set_test_prefer_offline(3);
 
         assert_eq!(client.request_timeout(), Duration::from_secs(3));
+    }
+
+    #[test]
+    fn test_remote_fetch_command_keeps_full_budget_under_prefer_offline() {
+        // Commands whose job is to enumerate remote versions/tags (`mise lock`,
+        // `ls-remote`, ...) must honor the configured timeout and retries even
+        // when prefer_offline is set.
+        // https://github.com/jdx/mise/discussions/11185
+        let client = Client::new(Duration::from_secs(30), ClientKind::Fetch).unwrap();
+        let _guard = set_test_prefer_offline(3);
+        let prev = crate::env::REMOTE_FETCH_COMMAND.swap(true, Ordering::SeqCst);
+
+        assert_eq!(client.request_timeout(), Duration::from_secs(30));
+        assert_eq!(
+            Settings::get().fetch_remote_versions_timeout(),
+            Settings::get().configured_fetch_remote_versions_timeout()
+        );
+        assert_eq!(Settings::get().http_retries(), 3);
+
+        crate::env::REMOTE_FETCH_COMMAND.store(prev, Ordering::SeqCst);
     }
 
     #[tokio::test(flavor = "current_thread")]

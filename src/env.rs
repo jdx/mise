@@ -524,6 +524,14 @@ pub static __MISE_ZSH_PRECMD_RUN: Lazy<bool> = Lazy::new(|| !var_is_false("__MIS
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
+/// Commands whose explicit purpose is to enumerate remote versions/tags. Under
+/// `prefer_offline`, remote-version lookups are otherwise capped to a single
+/// ~3s attempt with no retries so fast/interactive commands (shims, activation)
+/// never stall. These commands opt out of that cap so they honor the full
+/// configured `fetch_remote_versions_timeout` even when `prefer_offline` is set
+/// (https://github.com/jdx/mise/discussions/11185).
+pub static REMOTE_FETCH_COMMAND: Lazy<AtomicBool> =
+    Lazy::new(|| remote_fetch_command(&ARGS.read().unwrap()).into());
 pub static OFFLINE: Lazy<bool> = Lazy::new(|| offline(&ARGS.read().unwrap()));
 pub static WARN_ON_MISSING_REQUIRED_ENV: Lazy<bool> =
     Lazy::new(|| warn_on_missing_required_env(&ARGS.read().unwrap()));
@@ -737,6 +745,29 @@ fn prefer_offline(args: &[String]) -> bool {
                 "where",
                 "which",
                 "x",
+            ]
+            .contains(&a.as_str())
+        })
+        .unwrap_or_default()
+}
+
+/// See [`REMOTE_FETCH_COMMAND`]. Mirrors the argument parsing in
+/// [`prefer_offline`]: the first non-flag argument after the binary is the
+/// subcommand.
+fn remote_fetch_command(args: &[String]) -> bool {
+    args.iter()
+        .take_while(|a| *a != "--")
+        .filter(|a| !a.starts_with('-'))
+        .nth(1)
+        .map(|a| {
+            [
+                "lock",
+                "ls-remote",
+                "list-all",
+                "list-remote",
+                "outdated",
+                "upgrade",
+                "up",
             ]
             .contains(&a.as_str())
         })
