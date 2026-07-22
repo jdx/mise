@@ -845,42 +845,9 @@ fn flight_sources(
         }
         return Ok(vec![source]);
     }
-    let mut sources = Vec::new();
-    let escaped_root = glob::Pattern::escape(staged_path.to_string_lossy().as_ref());
-    for pattern in expand_braces(&source.path) {
-        let pattern_path = Path::new(&pattern);
-        if pattern_path.is_absolute()
-            || pattern_path
-                .components()
-                .any(|component| matches!(component, Component::ParentDir))
-        {
-            bail!("brew-cask: invalid structured flight path '{pattern}'");
-        }
-        let rooted_pattern = Path::new(&escaped_root)
-            .join(pattern_path)
-            .to_string_lossy()
-            .to_string();
-        for path in glob::glob_with(
-            &rooted_pattern,
-            glob::MatchOptions {
-                require_literal_separator: true,
-                ..Default::default()
-            },
-        )
-        .wrap_err_with(|| format!("brew-cask: invalid structured flight glob '{pattern}'"))?
-        {
-            let path = path?;
-            if !path.starts_with(staged_path) {
-                bail!(
-                    "brew-cask: structured flight glob '{}' matched outside staged path",
-                    pattern
-                );
-            }
-            sources.push(path);
-        }
-    }
-    sources.sort();
-    sources.dedup();
+    // Homebrew marks move sources as globs explicitly; non-glob move sources
+    // may contain literal glob-like characters and should be resolved literally.
+    let sources = expand_staged_glob(staged_path, &source.path)?;
     if sources.is_empty() {
         bail!(
             "brew-cask: structured move source '{}' was not found",
@@ -894,19 +861,18 @@ fn flight_paths(staged_path: &Path, path: &FlightPath) -> Result<Vec<PathBuf>> {
     if !is_flight_glob(&path.path) {
         return Ok(vec![resolve_flight_path(staged_path, path)?]);
     }
-    let mut paths = Vec::new();
+    // Remove steps do not have a `source_glob` flag, so path globs are detected
+    // from the path syntax instead.
+    expand_staged_glob(staged_path, &path.path)
+}
+
+fn expand_staged_glob(staged_path: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
+    let mut matches = Vec::new();
     let escaped_root = glob::Pattern::escape(staged_path.to_string_lossy().as_ref());
-    for pattern in expand_braces(&path.path) {
-        let pattern_path = Path::new(&pattern);
-        if pattern_path.is_absolute()
-            || pattern_path
-                .components()
-                .any(|component| matches!(component, Component::ParentDir))
-        {
-            bail!("brew-cask: invalid structured flight path '{pattern}'");
-        }
+    for pattern in expand_braces(pattern) {
+        validate_flight_relative_path(&pattern)?;
         let rooted_pattern = Path::new(&escaped_root)
-            .join(pattern_path)
+            .join(Path::new(&pattern))
             .to_string_lossy()
             .to_string();
         for path in glob::glob_with(
@@ -925,12 +891,12 @@ fn flight_paths(staged_path: &Path, path: &FlightPath) -> Result<Vec<PathBuf>> {
                     pattern
                 );
             }
-            paths.push(path);
+            matches.push(path);
         }
     }
-    paths.sort();
-    paths.dedup();
-    Ok(paths)
+    matches.sort();
+    matches.dedup();
+    Ok(matches)
 }
 
 fn is_flight_glob(path: &str) -> bool {
@@ -943,14 +909,23 @@ fn resolve_flight_path(staged_path: &Path, path: &FlightPath) -> Result<PathBuf>
         FlightPathBase::StagedPath => {}
     }
     let relative = Path::new(&path.path);
-    if relative.is_absolute()
-        || relative
+    validate_flight_relative_path(&path.path)?;
+    Ok(staged_path.join(relative))
+}
+
+fn validate_flight_relative_path(path: &str) -> Result<()> {
+    let path = Path::new(path);
+    if path.is_absolute()
+        || path
             .components()
             .any(|component| matches!(component, Component::ParentDir))
     {
-        bail!("brew-cask: invalid structured flight path '{}'", path.path);
+        bail!(
+            "brew-cask: invalid structured flight path '{}'",
+            path.display()
+        );
     }
-    Ok(staged_path.join(relative))
+    Ok(())
 }
 
 fn expand_braces(pattern: &str) -> Vec<String> {
@@ -1280,9 +1255,15 @@ fn parse_flight_steps(cask: &Cask, value: &Value, kind: &str) -> Result<Option<V
     })?;
     let mut steps = Vec::new();
     for group in groups {
+        let group = group.as_object().ok_or_else(|| {
+            eyre!(
+                "brew-cask:{}: unsupported {kind} metadata format",
+                cask.token
+            )
+        })?;
+        reject_unsupported_flight_fields(cask, kind, "step group", group, &["steps"])?;
         let group_steps = group
-            .as_object()
-            .and_then(|o| o.get("steps"))
+            .get("steps")
             .and_then(Value::as_array)
             .ok_or_else(|| {
                 eyre!(
@@ -1311,15 +1292,31 @@ fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightSte
         )
     })?;
     match step_type {
-        "move" => Ok(FlightStep::Move {
-            source: parse_flight_path(cask, kind, "source", object.get("source"))?,
-            target: parse_flight_path(cask, kind, "target", object.get("target"))?,
-            source_glob: object
-                .get("source_glob")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-        }),
+        "move" => {
+            reject_unsupported_flight_fields(
+                cask,
+                kind,
+                "move step",
+                object,
+                &["type", "source", "target", "source_glob"],
+            )?;
+            Ok(FlightStep::Move {
+                source: parse_flight_path(cask, kind, "source", object.get("source"))?,
+                target: parse_flight_path(cask, kind, "target", object.get("target"))?,
+                source_glob: object
+                    .get("source_glob")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            })
+        }
         "remove" => {
+            reject_unsupported_flight_fields(
+                cask,
+                kind,
+                "remove step",
+                object,
+                &["type", "paths", "recursive"],
+            )?;
             let paths = object
                 .get("paths")
                 .and_then(Value::as_array)
@@ -1348,6 +1345,29 @@ fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightSte
     }
 }
 
+fn reject_unsupported_flight_fields(
+    cask: &Cask,
+    kind: &str,
+    context: &str,
+    object: &serde_json::Map<String, Value>,
+    allowed: &[&str],
+) -> Result<()> {
+    let mut unsupported = object
+        .keys()
+        .filter(|key| !allowed.contains(&key.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    unsupported.sort();
+    if !unsupported.is_empty() {
+        bail!(
+            "brew-cask:{}: unsupported {kind} {context} field {}",
+            cask.token,
+            unsupported.join(", ")
+        );
+    }
+    Ok(())
+}
+
 fn parse_flight_path(
     cask: &Cask,
     kind: &str,
@@ -1373,17 +1393,12 @@ fn parse_flight_path(
         .get("path")
         .and_then(Value::as_str)
         .ok_or_else(|| eyre!("brew-cask:{}: unsupported {kind} {field} path", cask.token))?;
-    let path_value = Path::new(path);
-    if path_value.is_absolute()
-        || path_value
-            .components()
-            .any(|component| matches!(component, Component::ParentDir))
-    {
+    if validate_flight_relative_path(path).is_err() {
         bail!(
             "brew-cask:{}: invalid {kind} {field} path {}",
             cask.token,
             path
-        );
+        )
     }
     Ok(FlightPath {
         base,
@@ -2033,6 +2048,48 @@ mod tests {
 
         let err = cask_artifacts(&cask).unwrap_err().to_string();
         assert!(err.contains("unsupported preflight_steps step type set_permissions"));
+    }
+
+    #[test]
+    fn rejects_structured_flight_step_group_controls() {
+        let mut cask = test_cask("example", "1.0.0");
+        cask.artifacts = vec![
+            serde_json::json!({
+                "preflight_steps": [{
+                    "if": {"arch": "arm64"},
+                    "steps": [{
+                        "type": "remove",
+                        "paths": [{"base": "staged_path", "path": "old"}]
+                    }]
+                }]
+            }),
+            serde_json::json!({"app": "Example.app"}),
+        ];
+
+        let err = cask_artifacts(&cask).unwrap_err().to_string();
+        assert!(err.contains("unsupported preflight_steps step group field if"));
+    }
+
+    #[test]
+    fn rejects_structured_flight_step_controls() {
+        let mut cask = test_cask("miniconda", "25.5.1-1");
+        cask.artifacts = vec![
+            serde_json::json!({
+                "postflight_steps": [{
+                    "steps": [{
+                        "type": "remove",
+                        "paths": [{"base": "staged_path", "path": "base/envs"}],
+                        "recursive": true,
+                        "guards": [{"condition": "if_exists", "path": "{{temp}}/miniconda-envs"}]
+                    }]
+                }]
+            }),
+            serde_json::json!({"pkg": ["Miniconda.pkg"]}),
+            serde_json::json!({"uninstall": [{"pkgutil": "com.anaconda.pkg"}]}),
+        ];
+
+        let err = cask_artifacts(&cask).unwrap_err().to_string();
+        assert!(err.contains("unsupported postflight_steps remove step field guards"));
     }
 
     #[test]
