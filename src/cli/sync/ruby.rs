@@ -6,7 +6,7 @@ use itertools::sorted;
 use crate::{
     backend,
     config::{self, Config},
-    dirs, file,
+    file,
 };
 
 /// Symlinks all ruby tool versions from an external tool into mise
@@ -46,11 +46,9 @@ impl SyncRuby {
         let ruby = backend::get(&"ruby".into()).unwrap();
 
         let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
-        let installed_versions_path = dirs::INSTALLS.join("ruby");
-
-        file::remove_symlinks_with_target_prefix(&installed_versions_path, &brew_prefix)?;
 
         let subdirs = file::dir_subdirs(&brew_prefix)?;
+        let mut links = vec![];
         for entry in sorted(subdirs) {
             if entry.starts_with(".") {
                 continue;
@@ -59,9 +57,10 @@ impl SyncRuby {
                 continue;
             }
             let v = entry.trim_start_matches("ruby@");
-            if ruby.create_symlink(v, &brew_prefix.join(&entry))?.is_some() {
-                miseprintln!("Synced ruby@{} from Homebrew", v);
-            }
+            links.push((v.to_string(), brew_prefix.join(&entry)));
+        }
+        for v in ruby.sync_symlinks(&brew_prefix, links)? {
+            miseprintln!("Synced ruby@{} from Homebrew", v);
         }
         Ok(())
     }

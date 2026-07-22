@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -1722,14 +1722,78 @@ pub trait Backend: Debug + Send + Sync {
         }
         None
     }
-    fn create_symlink(&self, version: &str, target: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
-        let link = self.ba().installs_path.join(version);
-        if link.exists() {
-            return Ok(None);
+    fn sync_symlinks(
+        &self,
+        target_prefix: &Path,
+        links: Vec<(String, PathBuf)>,
+    ) -> Result<BTreeSet<String>> {
+        let desired = links.into_iter().collect::<BTreeMap<_, _>>();
+        let installs_path = &self.ba().installs_path;
+        let mut versions = desired.keys().cloned().collect::<BTreeSet<_>>();
+
+        if installs_path.exists() {
+            for entry in installs_path.read_dir()? {
+                let entry = entry?;
+                let path = entry.path();
+                if file::is_symlink_to_prefix(&path, target_prefix)?
+                    && let Some(version) = path.file_name().and_then(|v| v.to_str())
+                {
+                    versions.insert(version.to_string());
+                }
+            }
         }
-        file::create_dir_all(link.parent().unwrap())?;
-        let link = file::make_symlink(target, &link)?;
-        Ok(Some(link))
+
+        // Lock every path this sync can remove or replace. Keeping all locks
+        // through the update prevents a concurrent link/install from observing
+        // the old destructive unlink/recreate window.
+        let _state_locks = versions
+            .iter()
+            .map(|version| install_state::lock_tool_version(&self.ba().short, version))
+            .collect::<Result<Vec<_>>>()?;
+
+        file::create_dir_all(installs_path)?;
+        let mut changed = BTreeSet::new();
+        let mut marker_errors = vec![];
+        for version in versions {
+            let link = installs_path.join(&version);
+            let provider_link = file::is_symlink_to_prefix(&link, target_prefix)?;
+            let Some(target) = desired.get(&version) else {
+                if provider_link {
+                    file::remove_symlink_or_junction(&link)?;
+                }
+                continue;
+            };
+
+            if target.exists() && file::is_symlink_to(&link, target) {
+                if let Err(err) = install_state::clear_incomplete_marker(&self.ba().short, &version)
+                {
+                    marker_errors.push(format!("{version}: {err:#}"));
+                }
+                continue;
+            }
+
+            let entry_exists = std::fs::symlink_metadata(&link).is_ok();
+            if entry_exists && !provider_link {
+                // Never overwrite a managed install or a link owned by another
+                // sync provider.
+                continue;
+            }
+
+            file::make_symlink(target, &link)?;
+            changed.insert(version.clone());
+            if target.exists()
+                && let Err(err) = install_state::clear_incomplete_marker(&self.ba().short, &version)
+            {
+                marker_errors.push(format!("{version}: {err:#}"));
+            }
+        }
+        if !marker_errors.is_empty() {
+            bail!(
+                "failed to clear incomplete markers: {}",
+                marker_errors.join("; ")
+            );
+        }
+        Ok(changed)
     }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();

@@ -16,9 +16,25 @@ assert_contains "mise ls node --json | jq -r '.[] | .symlinked_to | select( . !=
 install_fake_node "$NVM_DIR/versions/node/v20.0.0"
 install_fake_node "$NVM_DIR/versions/node/v22.0.0"
 install_fake_node "$MISE_DATA_DIR/installs/node/20.0.0/bin"
+mkdir -p "$MISE_CACHE_DIR/node/18.0.0/incomplete"
+mkdir -p "$MISE_CACHE_DIR/node/22.0.0"
+touch "$MISE_CACHE_DIR/node/22.0.0/incomplete"
 
-mise sync node --nvm
+# A marker error for one version must not prevent later versions from being
+# reconciled or repaired.
+assert_fail_contains "mise sync node --nvm" "failed to clear incomplete markers: 18.0.0"
+assert "test -L \"$MISE_DATA_DIR/installs/node/22.0.0\""
+assert "test ! -f \"$MISE_CACHE_DIR/node/22.0.0/incomplete\""
+assert "test -d \"$MISE_CACHE_DIR/node/18.0.0/incomplete\""
 mise ls
 assert_contains "mise ls node --json | jq -r '.[] | .symlinked_to | select( . != null)'" "node/22.0.0"
 assert_not_contains "mise ls node --json | jq -r '.[] | .symlinked_to | select( . != null)'" "node/20.0.0"
-assert_contains "mise ls node --json | jq -r '.[] | .symlinked_to | select( . != null)'" "node/18.0.0"
+assert "test -L \"$MISE_DATA_DIR/installs/node/18.0.0\""
+
+# Stale links owned by this provider are removed, while managed installs are
+# left untouched.
+rmdir "$MISE_CACHE_DIR/node/18.0.0/incomplete"
+rm -r "$NVM_DIR/versions/node/v18.0.0"
+mise sync node --nvm
+assert "test ! -e \"$MISE_DATA_DIR/installs/node/18.0.0\" && test ! -L \"$MISE_DATA_DIR/installs/node/18.0.0\""
+assert "test -d \"$MISE_DATA_DIR/installs/node/20.0.0\""
