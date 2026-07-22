@@ -117,6 +117,13 @@ Homebrew installation, mise-poured kegs look like its own: `brew list`,
 status checks read the Cellar directly, so formulae installed by brew count
 as installed.
 
+**Casks** also write Homebrew-compatible metadata under
+`Caskroom/<token>/.metadata/` (tab + installed caskfile) in addition to
+mise's own `.mise-cask.toml` receipt inside the versioned caskroom. That makes
+`brew list --cask --versions`, `brew upgrade --cask`, and
+`brew uninstall --cask` work on mise-poured casks — including tools that
+self-update by shelling out to `brew upgrade --cask` (e.g. OpenAI Codex).
+
 mise reads the Homebrew prefix directly, whether formulae were poured by mise
 or by a real Homebrew. It never overwrites files in the prefix that it didn't
 create — link conflicts fail with a list of the offending files rather than

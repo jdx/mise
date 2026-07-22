@@ -162,6 +162,12 @@ impl BrewCaskManager {
         }
         remove_obsolete_fonts(&cask, &previous_fonts, &font_target_paths(&artifacts)?)?;
         remove_stale_versions(&caskroom_token, &cask.version)?;
+        // Brew-compatible tab + installed caskfile so real Homebrew sees this
+        // pour as installed (`brew list/upgrade/uninstall --cask`). Formulae
+        // already write INSTALL_RECEIPT.json; casks previously only wrote
+        // `.mise-cask.toml`, which brew ignores → tools like Codex that run
+        // `brew upgrade --cask` after a mise pour fail with "not installed".
+        write_homebrew_cask_metadata(&caskroom_token, &cask, &artifacts)?;
         file::remove_all(stage)?;
         Ok(cask.version)
     }
@@ -1382,6 +1388,164 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
     let body = toml::to_string_pretty(&receipt)?;
     crate::file::write(caskroom.join(".mise-cask.toml"), body)?;
     Ok(())
+}
+
+/// Write Homebrew-compatible cask metadata under
+/// `Caskroom/<token>/.metadata/…` so a real `brew` install treats the pour as
+/// installed.
+///
+/// Homebrew decides `cask.installed?` by presence of:
+/// `.metadata/<version>/<timestamp>/Casks/<token>.{rb,json}`
+/// (`Caskroom.cask_with_metadata?` / `cask.installed_caskfile`). The tab is
+/// `.metadata/INSTALL_RECEIPT.json` (`Cask::Tab`).
+///
+/// Without this, mise leaves Caskroom debris that `brew list --cask` may
+/// still print as a directory name but `brew list --cask --versions TOKEN`
+/// and `brew upgrade --cask TOKEN` fail with "Cask is not installed".
+fn write_homebrew_cask_metadata(
+    token_dir: &Path,
+    cask: &Cask,
+    artifacts: &CaskArtifacts,
+) -> Result<()> {
+    let metadata = token_dir.join(".metadata");
+    // Drop prior versioned metadata so brew's installed_version matches the
+    // pour we just finished (single-version caskroom).
+    if metadata.is_dir() {
+        for entry in std::fs::read_dir(&metadata)?.filter_map(|e| e.ok()) {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            // Keep only fixed tab/config files at top level; remove version dirs.
+            if name == "INSTALL_RECEIPT.json" || name == "config.json" || name == "LATEST_DOWNLOAD_SHA256"
+            {
+                continue;
+            }
+            if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+                file::remove_all(entry.path())?;
+            }
+        }
+    }
+
+    let timestamp = homebrew_cask_timestamp();
+    let casks_dir = metadata
+        .join(&cask.version)
+        .join(&timestamp)
+        .join("Casks");
+    file::create_dir_all(&casks_dir)?;
+
+    // Homebrew currently writes `{}` for API-loaded installs; existence of the
+    // path is what `installed?` checks. Keep a tiny valid JSON object.
+    crate::file::write(casks_dir.join(format!("{}.json", cask.token)), "{}\n")?;
+
+    let receipt = homebrew_cask_install_receipt(cask, artifacts);
+    crate::file::write(
+        metadata.join("INSTALL_RECEIPT.json"),
+        serde_json::to_string_pretty(&receipt)?,
+    )?;
+
+    // Minimal config.json — brew reads this for appdir etc. Safe defaults.
+    if !metadata.join("config.json").exists() {
+        let config = serde_json::json!({
+            "default": {
+                "appdir": "/Applications",
+            },
+            "env": {},
+            "explicit": {},
+        });
+        crate::file::write(
+            metadata.join("config.json"),
+            serde_json::to_string(&config)?,
+        )?;
+    }
+    Ok(())
+}
+
+/// Homebrew `Metadata::TIMESTAMP_FORMAT` = `%Y%m%d%H%M%S.%L` (ms precision).
+fn homebrew_cask_timestamp() -> String {
+    // chrono: `%.3f` = `.` + milliseconds (brew `%L`).
+    chrono::Local::now().format("%Y%m%d%H%M%S%.3f").to_string()
+}
+
+/// Test helper / pure format check (local wall clock covered by integration).
+fn format_homebrew_timestamp_from_parts(
+    year: i32,
+    month: u32,
+    day: u32,
+    hour: u32,
+    min: u32,
+    sec: u32,
+    millis: u32,
+) -> String {
+    format!(
+        "{year:04}{month:02}{day:02}{hour:02}{min:02}{sec:02}.{:03}",
+        millis.min(999)
+    )
+}
+
+fn homebrew_cask_install_receipt(cask: &Cask, artifacts: &CaskArtifacts) -> serde_json::Value {
+    let arch = if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "x86_64"
+    };
+    let time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    serde_json::json!({
+        // Match formula pour.rs: brew version gate style, mark as mise.
+        "homebrew_version": "5.1.15 (mise)",
+        "loaded_from_api": true,
+        "loaded_from_internal_api": false,
+        "uninstall_flight_blocks": false,
+        "installed_on_request": true,
+        "time": time,
+        "runtime_dependencies": {},
+        "source": {
+            "tap": "homebrew/cask",
+            "tap_git_head": cask.tap_git_head,
+            "version": cask.version,
+            "path": null,
+        },
+        "arch": arch,
+        "uninstall_artifacts": homebrew_uninstall_artifacts(artifacts),
+        "built_on": {},
+    })
+}
+
+/// Minimal uninstall artifact list so `brew uninstall --cask` has something
+/// useful. Shape mirrors brew's tab `uninstall_artifacts` entries.
+fn homebrew_uninstall_artifacts(artifacts: &CaskArtifacts) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    for app in &artifacts.apps {
+        out.push(serde_json::json!({
+            "app": [app.target_name()]
+        }));
+    }
+    for binary in &artifacts.binaries {
+        let Ok(target) = binary.target_name() else {
+            continue;
+        };
+        out.push(serde_json::json!({
+            "binary": [
+                binary.source,
+                { "target": target }
+            ]
+        }));
+    }
+    for font in &artifacts.fonts {
+        let name = font.target.as_deref().unwrap_or(&font.source);
+        out.push(serde_json::json!({
+            "font": [name]
+        }));
+    }
+    for pkg in &artifacts.pkgs {
+        out.push(serde_json::json!({
+            "pkg": [pkg.source]
+        }));
+    }
+    out
 }
 
 fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
@@ -2726,5 +2890,85 @@ end
             "metadata"
         );
         Ok(())
+    }
+
+    #[test]
+    fn write_homebrew_cask_metadata_creates_brew_installed_layout() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("codex", "0.145.0");
+        let artifacts = CaskArtifacts {
+            binaries: vec![BinaryArtifact {
+                source: "codex-aarch64-apple-darwin".to_string(),
+                target: Some("codex".to_string()),
+            }],
+            ..Default::default()
+        };
+        let token_dir = caskroom_token_dir(&cask.token);
+        file::create_dir_all(token_dir.join(&cask.version))?;
+
+        write_homebrew_cask_metadata(&token_dir, &cask, &artifacts)?;
+
+        // Homebrew: cask.installed? ⇔ .metadata/*/*/Casks/*.{rb,json}
+        let globbed = WalkDir::new(token_dir.join(".metadata"))
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_type().is_file()
+                    && e.path()
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n == "codex.json" || n == "codex.rb")
+            })
+            .count();
+        assert!(
+            globbed >= 1,
+            "expected .metadata/<ver>/<ts>/Casks/codex.json"
+        );
+
+        let tab = token_dir.join(".metadata/INSTALL_RECEIPT.json");
+        assert!(tab.is_file());
+        let body: serde_json::Value = serde_json::from_str(&crate::file::read_to_string(&tab)?)?;
+        assert_eq!(body["source"]["version"], "0.145.0");
+        assert_eq!(body["homebrew_version"], "5.1.15 (mise)");
+        assert!(body["uninstall_artifacts"].as_array().is_some_and(|a| !a.is_empty()));
+        assert!(token_dir.join(".metadata/config.json").is_file());
+
+        // Second pour replaces versioned metadata, keeps single current version.
+        let cask2 = test_cask("codex", "0.146.0");
+        write_homebrew_cask_metadata(&token_dir, &cask2, &artifacts)?;
+        assert!(!token_dir.join(".metadata/0.145.0").exists());
+        assert!(token_dir.join(".metadata/0.146.0").is_dir());
+        let body2: serde_json::Value = serde_json::from_str(&crate::file::read_to_string(&tab)?)?;
+        assert_eq!(body2["source"]["version"], "0.146.0");
+        Ok(())
+    }
+
+    #[test]
+    fn homebrew_uninstall_artifacts_cover_app_and_binary() {
+        let arts = CaskArtifacts {
+            apps: vec![AppArtifact {
+                source: "Kimi.app".to_string(),
+                target: None,
+            }],
+            binaries: vec![BinaryArtifact {
+                source: "codex-aarch64-apple-darwin".to_string(),
+                target: Some("codex".to_string()),
+            }],
+            ..Default::default()
+        };
+        let ua = homebrew_uninstall_artifacts(&arts);
+        assert_eq!(ua.len(), 2);
+        assert_eq!(ua[0]["app"][0], "Kimi.app");
+        assert_eq!(ua[1]["binary"][1]["target"], "codex");
+    }
+
+    #[test]
+    fn format_homebrew_timestamp_parts_match_brew_shape() {
+        assert_eq!(
+            format_homebrew_timestamp_from_parts(2026, 7, 22, 18, 8, 12, 861),
+            "20260722180812.861"
+        );
     }
 }
