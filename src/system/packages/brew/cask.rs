@@ -1285,7 +1285,7 @@ fn remove_obsolete_completions(
     let token_dir = file::desymlink_path(&caskroom_token_dir(&cask.token));
     let prefix = prefix::prefix();
     for target in previous_targets {
-        if current_targets.contains(target) || !target.is_file() || !target.starts_with(&prefix) {
+        if current_targets.contains(target) || !target.starts_with(&prefix) {
             continue;
         }
         let Ok(metadata) = target.symlink_metadata() else {
@@ -1297,14 +1297,7 @@ fn remove_obsolete_completions(
         let Ok(link_target) = std::fs::read_link(target) else {
             continue;
         };
-        let resolved = if link_target.is_absolute() {
-            link_target
-        } else {
-            target
-                .parent()
-                .map(|parent| parent.join(&link_target))
-                .unwrap_or(link_target)
-        };
+        let resolved = resolve_symlink_target(target, link_target);
         if file::desymlink_path(&resolved).starts_with(&token_dir) {
             file::remove_file(target)?;
         }
@@ -2904,6 +2897,7 @@ end
         let other_caskroom = caskroom_version_dir("other", "1.0.0");
         let relative = Path::new("etc/bash_completion.d/foo");
         let target = tmp.path().join(relative);
+        let dangling_target = tmp.path().join("etc/bash_completion.d/dangling-foo");
         let other_target = tmp.path().join("etc/bash_completion.d/other-foo");
         let regular_target = tmp.path().join("etc/bash_completion.d/regular-foo");
         file::create_dir_all(old_caskroom.join("etc/bash_completion.d"))?;
@@ -2913,15 +2907,25 @@ end
         crate::file::write(other_caskroom.join(relative), "old")?;
         crate::file::write(&regular_target, "old")?;
         file::make_symlink(&old_caskroom.join(relative), &target)?;
+        file::make_symlink(
+            &old_caskroom.join("etc/bash_completion.d/dangling"),
+            &dangling_target,
+        )?;
         file::make_symlink(&other_caskroom.join(relative), &other_target)?;
 
         remove_obsolete_completions(
             &cask,
-            &[target.clone(), other_target.clone(), regular_target.clone()],
+            &[
+                target.clone(),
+                dangling_target.clone(),
+                other_target.clone(),
+                regular_target.clone(),
+            ],
             &[],
         )?;
 
         assert!(target.symlink_metadata().is_err());
+        assert!(dangling_target.symlink_metadata().is_err());
         assert!(other_target.symlink_metadata().is_ok());
         assert!(regular_target.symlink_metadata().is_ok());
         Ok(())
