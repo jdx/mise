@@ -225,6 +225,7 @@ run = 'echo "using shell $0"'
                     Value = [Environment]::GetEnvironmentVariable($name, 'Process')
                 }
             }
+            Remove-Item -Path Env:\MISE_WINDOWS_POWERSHELL_NO_PROFILE -ErrorAction SilentlyContinue
             @'
 [task_config]
 includes = ["tasks"]
