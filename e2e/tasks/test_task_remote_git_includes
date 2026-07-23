@@ -103,7 +103,10 @@ includes = [
 ]
 EOF
 
-assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run ripgrep" # Remote task should be redownloaded
+INCLUDE_ARTIFACT_TMPDIR="$TMPDIR/remote-git-include-artifacts"
+mkdir -p "$INCLUDE_ARTIFACT_TMPDIR"
+assert_succeed "TMPDIR=$INCLUDE_ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run ripgrep" # Remote task should be redownloaded
+assert_fail "find '$INCLUDE_ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
 
 assert_succeed "mise run ripgrep" # Cache should be used
@@ -174,5 +177,24 @@ EOF
 
 assert_contains "mise tasks" "standalone_task"
 assert_contains "mise run standalone_task" "standalone_task executed"
+
+#################################################################################
+# Test no-cache Git task snapshots
+#################################################################################
+
+cat <<EOF >mise.toml
+[tasks.remote_git_a]
+file = "git::${LOCAL_GIT_URL}//xtasks/lint/ripgrep"
+
+[tasks.remote_git_b]
+file = "git::${LOCAL_GIT_URL}//xtasks/lint/ripgrep"
+EOF
+
+ARTIFACT_TMPDIR="$TMPDIR/remote-git-artifacts"
+mkdir -p "$ARTIFACT_TMPDIR"
+output=$(quiet_assert_succeed "TMPDIR=$ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run remote_git_a ::: remote_git_b")
+path_count=$(grep -o 'ripgrep task executed: .*' <<<"$output" | sort -u | wc -l)
+[[ $path_count -eq 2 ]] || fail "no-cache Git tasks did not retain two distinct snapshots"
+assert_fail "find '$ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."
 
 echo "All tests passed!"

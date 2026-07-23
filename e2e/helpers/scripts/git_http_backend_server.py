@@ -116,7 +116,7 @@ def create_test_repo(repo_path):
     xtasks_dir.mkdir(parents=True)
 
     ripgrep_file = xtasks_dir / 'ripgrep'
-    ripgrep_file.write_text('#!/usr/bin/env bash\necho "ripgrep task executed"\n')
+    ripgrep_file.write_text('#!/usr/bin/env bash\necho "ripgrep task executed: $0"\n')
     ripgrep_file.chmod(0o755)
 
     # A toml task file colocated with the executable scripts. Keys are task
