@@ -42,7 +42,7 @@ use crate::{
     cache::{CacheManager, CacheManagerBuilder},
     plugins::PluginEnum,
 };
-use crate::{dirs, env, file, hash, lock_file, versions_host};
+use crate::{dirs, env, file, hash, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
 use eyre::{Result, bail, eyre};
@@ -2195,6 +2195,13 @@ pub trait Backend: Debug + Send + Sync {
             tv.install_path = Some(tv.ba().installs_path.join(tv.tv_pathname()));
         }
 
+        // Incomplete markers are keyed by logical tool/version rather than by
+        // the physical install path. Use the same logical key as link/sync so
+        // shared and system installs cannot have their marker cleared while an
+        // install is still in progress.
+        let state_version = tv.tv_pathname();
+        let state_lock = install_state::lock_tool_version(&tv.ba().short, &state_version)?;
+
         let will_uninstall =
             (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
@@ -2208,7 +2215,7 @@ pub trait Backend: Debug + Send + Sync {
         ctx.pr.start_operations(total_ops);
 
         if will_uninstall {
-            self.uninstall_version(&ctx.config, &tv, ctx.pr.as_ref(), false)
+            self.uninstall_version_unlocked(&ctx.config, &tv, ctx.pr.as_ref(), false)
                 .await?;
             ctx.pr.next_operation();
         } else if self
@@ -2224,18 +2231,6 @@ pub trait Backend: Debug + Send + Sync {
         versions_host::track_install(tv.short(), &tv.ba().full(), &tv.version);
 
         ctx.pr.set_message("install".into());
-        let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
-
-        // Double-checked (locking) that it wasn't installed while we were waiting for the lock
-        if self
-            .is_install_satisfied_or_false(&ctx.config, &tv, true)
-            .await
-            && !ctx.force
-            && !rolling_reinstall
-        {
-            return Ok(tv);
-        }
-
         self.create_install_dirs(&tv)?;
 
         let old_tv = tv.clone();
@@ -2275,17 +2270,11 @@ pub trait Backend: Debug + Send + Sync {
                 trace!("error touching config file: {:?} {:?}", path, err);
             }
         }
-        let incomplete_path = self.incomplete_file_path(&tv);
-        if let Err(err) = file::remove_file(&incomplete_path) {
-            debug!("error removing incomplete file: {:?}", err);
-        } else {
-            // Sync parent directory to ensure file removal is immediately visible
-            if let Some(parent) = incomplete_path.parent()
-                && let Err(err) = file::sync_dir(parent)
-            {
-                debug!("error syncing incomplete file parent directory: {:?}", err);
-            }
-        }
+        install_state::clear_incomplete_marker_best_effort(&tv.ba().short, &tv.tv_pathname());
+        // The install and marker transition is complete. Do not hold this lock
+        // while arbitrary user code runs: a postinstall hook may invoke link,
+        // sync, or uninstall for the same logical version.
+        drop(state_lock);
         if let Some(script) = tv.request.options().get("postinstall") {
             ctx.pr
                 .finish_with_message("running custom postinstall hook".to_string());
@@ -2449,6 +2438,25 @@ pub trait Backend: Debug + Send + Sync {
         pr: &dyn SingleReport,
         dryrun: bool,
     ) -> eyre::Result<()> {
+        let state_version = tv.tv_pathname();
+        let _state_lock = if dryrun {
+            None
+        } else {
+            Some(install_state::lock_tool_version(
+                &tv.ba().short,
+                &state_version,
+            )?)
+        };
+        self.uninstall_version_unlocked(config, tv, pr, dryrun)
+            .await
+    }
+    async fn uninstall_version_unlocked(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        pr: &dyn SingleReport,
+        dryrun: bool,
+    ) -> eyre::Result<()> {
         pr.set_message("uninstall".into());
 
         if !dryrun {
@@ -2549,9 +2557,18 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn cleanup_install_dirs_on_error(&self, tv: &ToolVersion) {
         if !Settings::get().always_keep_install {
-            let _ = remove_all_with_warning(tv.install_path());
-            // Clean up the incomplete marker from cache
-            let _ = file::remove_file(self.incomplete_file_path(tv));
+            let install_path = tv.install_path();
+            let install_removed = remove_all_with_warning(&install_path).is_ok()
+                && matches!(
+                    std::fs::symlink_metadata(&install_path),
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound
+                );
+            if install_removed {
+                install_state::clear_incomplete_marker_best_effort(
+                    &tv.ba().short,
+                    &tv.tv_pathname(),
+                );
+            }
             // Remove parent installs dir if it's now empty (no other versions present)
             let installs_path = &self.ba().installs_path;
             if installs_path.exists()
