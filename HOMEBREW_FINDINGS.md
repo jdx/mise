@@ -96,10 +96,12 @@ The corrected dependency/status index is [plans/README.md](plans/README.md).
 
 **Execution note (2026-07-23):** Plans **010**, **011**, and **013** are DONE on
 this branch (no synthetic metadata writer; path containment; completed-action
-journal + post-activation receipt). Plan **012** is **STOP** — disposable
-isolation unproven on the operator host; product gate is **mise-only retained**
-(see `docs/dev/brew-cask-handoff-gate.md`). Plans 001/002/003/004/006/008/009
-remain blocked; **007** remains REJECTED. ADR: `docs/dev/brew-cask-decision-record.md`.
+journal + post-activation receipt). Plan **012** is **IN PROGRESS**: a manual
+GitHub-hosted disposable probe and deterministic fixtures exist, but full
+matrix evidence is pending; product behavior remains **mise-only** (see
+`docs/dev/brew-cask-handoff-gate.md`). Plans
+001/002/003/004/006/008/009 remain blocked; **007** remains REJECTED. ADR:
+`docs/dev/brew-cask-decision-record.md`.
 
 **Upstream status:** Homebrew already supports full install/adoption, but no
 receipt-only external registration contract was found. Neither jdx/mise nor

@@ -1,0 +1,72 @@
+name: brew-cask-handoff
+
+on:
+  # Bootstrap this branch before the workflow exists on the fork's default
+  # branch. Remove this branch-only trigger after the first evidence run.
+  push:
+    branches:
+      - fix/brew-cask-homebrew-metadata-receipt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brew-cask-handoff-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  disposable-macos:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      MISE_BREW_HANDOFF_DISPOSABLE: "1"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_ENV_HINTS: "1"
+      RUST_BACKTRACE: "1"
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Assert disposable GitHub-hosted VM
+        env:
+          ASSERTED_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test "$ASSERTED_RUNNER_ENVIRONMENT" = github-hosted
+          test "$MISE_BREW_HANDOFF_DISPOSABLE" = 1
+          MISE_BREW_HANDOFF_SENTINEL="$RUNNER_TEMP/brew-cask-handoff.executed"
+          case "$MISE_BREW_HANDOFF_SENTINEL" in
+            "$RUNNER_TEMP"/*) ;;
+            *) exit 1 ;;
+          esac
+          {
+            echo "RUNNER_ENVIRONMENT=$ASSERTED_RUNNER_ENVIRONMENT"
+            echo "MISE_BREW_HANDOFF_GITHUB_ACTIONS=true"
+            echo "MISE_BREW_HANDOFF_SENTINEL=$MISE_BREW_HANDOFF_SENTINEL"
+          } >> "$GITHUB_ENV"
+
+      - name: Build mise
+        run: cargo build --all-features
+
+      - name: Execute deterministic handoff probe
+        run: |
+          export PATH="$PWD/target/debug:$PATH"
+          mise run test:e2e e2e/cli/test_system_install_brew_adopt_macos_slow
+
+      - name: Require executed-scenario sentinel
+        run: |
+          test -s "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "same_version_mise_caskroom" "$MISE_BREW_HANDOFF_SENTINEL"
+
+      - name: Upload handoff evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: brew-cask-handoff-evidence-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/brew-cask-handoff-evidence.json
+            ${{ runner.temp }}/brew-cask-handoff.executed
+            ${{ runner.temp }}/handoff-http.log
+            ${{ runner.temp }}/same-version-adopt.log
+          if-no-files-found: warn

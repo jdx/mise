@@ -17,9 +17,11 @@
 - **Depends on**: Plan 010 for the production safety baseline
 - **Category**: direction / compatibility / tests
 - **Planned at**: commit `866916893`, 2026-07-23
-- **STOP (isolation unproven)**: 2026-07-23 — operator host has real
-  `/opt/homebrew` + `/Applications`. No disposable mutation performed.
-  Gate decision: **mise-only retained**; no production transfer. See
+- **IN PROGRESS (disposable workflow added, evidence pending)**: 2026-07-23 —
+  operator host remains forbidden. A manual GitHub-hosted `macos-15` workflow,
+  deterministic local tap/archive generator, in-test isolation assertions, and
+  executed-scenario sentinel now exist. No production transfer is authorized
+  until the full matrix runs and the evidence gate is classified. See
   `docs/dev/brew-cask-handoff-gate.md`.
 
 ## Why this matters

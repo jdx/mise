@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+
+# This test mutates the runner's Homebrew prefix and /Applications. It is
+# intentionally inert unless the dedicated GitHub-hosted disposable job opts in.
+if [[ ${MISE_BREW_HANDOFF_DISPOSABLE:-} != "1" ]]; then
+  exit 0
+fi
+
+[[ "$(uname -s)" == "Darwin" ]] || fail "handoff test requires macOS"
+[[ ${MISE_BREW_HANDOFF_GITHUB_ACTIONS:-} == "true" ]] ||
+  fail "handoff test requires asserted GitHub Actions"
+[[ ${RUNNER_ENVIRONMENT:-} == "github-hosted" ]] ||
+  fail "handoff test refuses non-GitHub-hosted runner '${RUNNER_ENVIRONMENT:-unset}'"
+[[ -n ${RUNNER_TEMP:-} ]] || fail "RUNNER_TEMP is required"
+[[ -n ${MISE_BREW_HANDOFF_SENTINEL:-} ]] || fail "sentinel path is required"
+case "$MISE_BREW_HANDOFF_SENTINEL" in
+  "$RUNNER_TEMP"/*) ;;
+  *) fail "sentinel must live under RUNNER_TEMP" ;;
+esac
+
+BREW_PREFIX="$(brew --prefix)"
+BREW_REPOSITORY="$(brew --repository)"
+BREW_COMMIT="$(git -C "$BREW_REPOSITORY" rev-parse HEAD)"
+[[ $BREW_PREFIX == "/opt/homebrew" || $BREW_PREFIX == "/usr/local" ]] ||
+  fail "unexpected Homebrew prefix: $BREW_PREFIX"
+
+FIXTURE_ROOT="$TMPDIR/brew-cask-handoff"
+PORT="$(
+  python3 - <<'PY'
+import socket
+with socket.socket() as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+)"
+python3 "$ROOT/e2e/fixtures/brew-cask-handoff/generate.py" "$FIXTURE_ROOT" "$PORT"
+python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$FIXTURE_ROOT" \
+  >"$TMPDIR/handoff-http.log" 2>&1 &
+HTTP_PID=$!
+trap 'kill "$HTTP_PID" 2>/dev/null || true' EXIT
+for _ in {1..30}; do
+  curl -fsS "http://127.0.0.1:$PORT/matrix.json" >/dev/null && break
+  sleep 0.2
+done
+curl -fsS "http://127.0.0.1:$PORT/matrix.json" >/dev/null ||
+  fail "fixture server did not start"
+
+# Every required class must exist before any mutation. Later matrix expansion
+# consumes the required_rows contract rather than silently skipping scenarios.
+jq -e '
+  (map(.token) | unique | length) == length and
+  (map(.class) | index("app")) != null and
+  (map(.class) | index("binary")) != null and
+  all(.required_rows | length == 5)
+' "$FIXTURE_ROOT/matrix.json" >/dev/null || fail "invalid fixture matrix"
+
+MISE_URL_REPLACEMENTS="$(
+  jq -cn --arg replacement "http://127.0.0.1:$PORT" \
+    '{"https://raw.githubusercontent.com/mise-test/homebrew-handoff/HEAD": $replacement}'
+)"
+export MISE_URL_REPLACEMENTS
+
+cat >mise.toml <<'EOF'
+[bootstrap.brew.taps]
+"mise-test/handoff" = "https://github.com/mise-test/homebrew-handoff.git"
+
+[bootstrap.packages]
+"brew-cask:mise-test/handoff/mise-handoff-identical" = "latest"
+EOF
+
+TOKEN="mise-handoff-identical"
+APP="/Applications/Mise Handoff Identical.app"
+CASKROOM="$BREW_PREFIX/Caskroom/$TOKEN"
+[[ ! -e $APP && ! -e $CASKROOM ]] ||
+  fail "fixture state already exists before scenario"
+
+mise bootstrap packages apply --yes
+[[ -d $APP ]] || fail "mise fixture app missing"
+[[ -f "$CASKROOM/1.0.0/.mise-cask.toml" ]] || fail "mise receipt missing"
+[[ ! -e "$CASKROOM/.metadata" ]] || fail "mise pour published Homebrew metadata"
+
+# Record exact evidence. The raw same-version collision outcome remains a gate:
+# do not infer handoff support merely because the command has a supported name.
+APP_DIGEST_BEFORE="$(find "$APP" -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
+TAP_DIR="$(brew --repository mise-test/handoff 2>/dev/null || true)"
+if [[ -z $TAP_DIR ]]; then
+  brew tap-new mise-test/handoff
+  TAP_DIR="$(brew --repository mise-test/handoff)"
+fi
+mkdir -p "$TAP_DIR/Casks"
+cp "$FIXTURE_ROOT/tap/Casks/"*.rb "$TAP_DIR/Casks/"
+git -C "$TAP_DIR" add Casks
+git -C "$TAP_DIR" -c user.name=mise-test -c user.email=mise-test@example.invalid \
+  commit -m "test: add deterministic handoff casks"
+
+set +e
+brew install --cask --adopt "mise-test/handoff/$TOKEN" \
+  >"$TMPDIR/same-version-adopt.log" 2>&1
+ADOPT_STATUS=$?
+set -e
+APP_DIGEST_AFTER="$(find "$APP" -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
+[[ $APP_DIGEST_BEFORE == "$APP_DIGEST_AFTER" ]] ||
+  fail "same-version adopt changed payload before classification"
+
+jq -n \
+  --arg token "$TOKEN" \
+  --argjson adopt_status "$ADOPT_STATUS" \
+  --arg before "$APP_DIGEST_BEFORE" \
+  --arg after "$APP_DIGEST_AFTER" \
+  --arg metadata "$([[ -e "$CASKROOM/.metadata" ]] && echo present || echo absent)" \
+  --arg brew_commit "$BREW_COMMIT" \
+  '{token: $token, scenario: "same_version_mise_caskroom", adopt_status: $adopt_status,
+    payload_before: $before, payload_after: $after, homebrew_metadata: $metadata,
+    homebrew_commit: $brew_commit}' \
+  >"$RUNNER_TEMP/brew-cask-handoff-evidence.json"
+cp "$TMPDIR/same-version-adopt.log" "$RUNNER_TEMP/same-version-adopt.log"
+cp "$TMPDIR/handoff-http.log" "$RUNNER_TEMP/handoff-http.log"
+
+# Sentinel means a destructive scenario really executed, not merely that the
+# wrapper exited successfully.
+printf '%s\n' "same_version_mise_caskroom" >"$MISE_BREW_HANDOFF_SENTINEL"
