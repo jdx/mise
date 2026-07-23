@@ -1745,11 +1745,12 @@ impl Task {
         // A malformed explicit shell (e.g. an unbalanced quote in a path with
         // spaces) must fail loudly rather than silently falling back to the
         // default shell and running the task under the wrong interpreter.
-        let shell_cmd = crate::path::split_shell_command(shell)?;
+        let mut shell_cmd = crate::path::split_shell_command(shell)?;
         if shell_cmd.is_empty() || shell_cmd[0].trim().is_empty() {
             warn!("invalid shell '{shell}', expected '<program> <argument>' (e.g. sh -c)");
             Ok(None)
         } else {
+            config::Settings::get().maybe_no_profile(&mut shell_cmd);
             Ok(Some(shell_cmd))
         }
     }

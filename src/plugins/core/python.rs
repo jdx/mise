@@ -75,6 +75,32 @@ pub fn python_path(tv: &ToolVersion) -> PathBuf {
     }
 }
 
+/// Create the conventional `python3` entry next to `python.exe` on Windows.
+///
+/// The python-build-standalone Windows archives only ship `python.exe`, while
+/// cross-platform scripts commonly invoke `python3`. Keeping the alias inside
+/// the install directory lets normal PATH and shim discovery handle it just
+/// like an upstream executable.
+#[cfg(windows)]
+fn install_python3_windows(tv: &ToolVersion) -> Result<()> {
+    let python_exe = tv.install_path().join("python.exe");
+    let python3_exe = tv.install_path().join("python3.exe");
+
+    file::remove_all(&python3_exe)?;
+    match std::fs::hard_link(&python_exe, &python3_exe) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            debug!(
+                "python: hardlink {python_exe} as {python3_exe} failed ({e}); copying executable",
+                python_exe = python_exe.display(),
+                python3_exe = python3_exe.display(),
+            );
+            std::fs::copy(&python_exe, &python3_exe)?;
+            Ok(())
+        }
+    }
+}
+
 /// Sort key for Python versions that handles miniconda's two versioning schemes correctly.
 ///
 /// Miniconda has two formats:
@@ -416,6 +442,9 @@ impl PythonPlugin {
             #[cfg(unix)]
             file::make_symlink(&install.join("bin/python3"), &install.join("bin/python"))?;
         }
+
+        #[cfg(windows)]
+        install_python3_windows(tv)?;
 
         Ok(())
     }

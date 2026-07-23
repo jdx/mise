@@ -7,6 +7,8 @@ LABEL org.opencontainers.image.licenses=MIT
 
 WORKDIR /usr/src/mise
 COPY . /usr/src/mise/
+RUN apt-get update && apt-get install -y --no-install-recommends cmake \
+    && rm -rf /var/lib/apt/lists/*
 RUN cargo build --release
 
 FROM rust@sha256:9a2cd304a852f05d3352f75bc2775242371c0169a72dbb40d5d881379d571989 AS runtime

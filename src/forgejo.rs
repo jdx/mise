@@ -162,7 +162,11 @@ fn cache_dir() -> PathBuf {
 
 pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    let url = url.into_url().unwrap();
+    // An invalid URL just means no auth headers; the real error surfaces when the
+    // request is made. Avoid panicking here. See #3547.
+    let Ok(url) = url.into_url() else {
+        return headers;
+    };
 
     if let Some((token, _source)) = resolve_token(url.host_str().unwrap_or("codeberg.org")) {
         headers.insert(

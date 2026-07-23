@@ -633,13 +633,15 @@ of the full backend specification.
 
 ### Guidelines and Requirements
 
-When adding a new tool, the following requirements apply (automatically
-enforced by [GitHub Actions workflow](https://github.com/jdx/mise/blob/main/.github/workflows/registry_comment.yml)):
+When adding a new tool, the following requirements apply:
 
 - **A test is required in `registry/`** - Must include a `test` field to
-  verify installation.
+  verify installation. This is automatically enforced by the
+  [`validate-new-tools` job](https://github.com/jdx/mise/blob/main/.github/workflows/registry.yml)
+  in the registry workflow.
 - **Tools may be rejected if they are not notable** - The tool should be
-  reasonably popular and well-maintained. There are no specific guidelines for this and
+  reasonably popular and well-maintained. Notability is decided by maintainer
+  review (not CI). There are no specific guidelines for this and
   a lot of factors are taken into account. @jdx won't explain why a given tool wasn't
   accepted. Include a brief popularity summary (stars, downloads, recent release date) in
   the PR description so the policy can be applied without re-doing the research.

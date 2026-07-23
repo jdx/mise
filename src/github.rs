@@ -305,12 +305,20 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
 }
 
 pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
-    let key = release_cache_key(API_URL, repo, tag, true);
+    get_release_with_versions_host(repo, tag, true).await
+}
+
+pub async fn get_release_with_versions_host(
+    repo: &str,
+    tag: &str,
+    use_versions_host: bool,
+) -> Result<GithubRelease> {
+    let key = release_cache_key(API_URL, repo, tag, use_versions_host);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     cache
         .get_or_try_init_async_if(
-            async || get_release_with_options(API_URL, repo, tag, true).await,
+            async || get_release_with_options(API_URL, repo, tag, use_versions_host).await,
             should_cache_release,
         )
         .await
@@ -363,13 +371,17 @@ fn should_cache_release(release: &GithubRelease) -> bool {
 pub async fn get_release_with_build_revision_status(
     repo: &str,
     version: &str,
+    use_versions_host: bool,
 ) -> Result<(GithubRelease, bool)> {
     let releases = list_releases(repo).await?;
     match pick_best_numeric_build_revision(releases.clone(), version) {
         Some(release) => Ok((release, true)),
         None => match pick_best_build_revision(releases, version) {
             Some(release) => Ok((release, false)),
-            None => Ok((get_release(repo, version).await?, false)),
+            None => Ok((
+                get_release_with_versions_host(repo, version, use_versions_host).await?,
+                false,
+            )),
         },
     }
 }

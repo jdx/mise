@@ -27,12 +27,20 @@ EOF
 path_output=$(mise env -s bash | grep PATH)
 assert_not_contains "$path_output" "$MISE_CONFIG_DIR"
 
-# TODO: this fails because of https://github.com/jdx/mise/blob/53c9144df8ef5d7d75f19c949be6231a05f7405a/src/config/config_file/mise_toml.rs#L838
-#cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
-#[env]
-#_.source = "{{ env.MISE_CONFIG_DIR }}/source.sh"
-#_.path = [
-#    "/{{ env.MISE_TEST_SOURCE }}",
-#]
-#EOF
-#assert_contains "mise env -s bash | grep PATH" "export PATH='/1234:"
+# Env vars exported by `_.source` are visible to a later `_.path` template.
+# Directives inside `[env]._` now resolve in the order they are written, so
+# `_.source` (written first) runs before `_.path`. Regression test for
+# https://github.com/jdx/mise/discussions/3783
+cat >"$MISE_CONFIG_DIR/source.sh" <<EOF
+export MISE_TEST_SOURCE=1234
+EOF
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.source = "{{ env.MISE_CONFIG_DIR }}/source.sh"
+_.path = [
+    "/{{ env.MISE_TEST_SOURCE }}",
+]
+EOF
+
+assert_contains "mise env -s bash | grep PATH" "export PATH='/1234:"

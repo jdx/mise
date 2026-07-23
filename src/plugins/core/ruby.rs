@@ -441,7 +441,7 @@ impl RubyPlugin {
         source == DEFAULT_RUBY_PRECOMPILED_URL
     }
 
-    fn use_versions_host_for_precompiled_attestations(source: &str) -> bool {
+    fn use_versions_host_for_precompiled_source(source: &str) -> bool {
         Self::is_default_ruby_source(source)
     }
 
@@ -580,14 +580,23 @@ impl RubyPlugin {
         locked_build_revision: Option<&str>,
     ) -> Result<Option<(String, Option<String>)>> {
         let requires_build_revision = Self::source_requires_build_revision(repo);
+        // The default precompiled repo is explicitly allowlisted by mise-versions.
+        // Custom repositories must fetch their release metadata directly from GitHub.
+        let use_versions_host = Self::use_versions_host_for_precompiled_source(repo);
         let release = if let Some(tag) = locked_build_revision {
             // Use the exact build revision from the lockfile
             debug!("using locked build revision {tag} for ruby {version}");
-            match github::get_release(repo, tag).await {
+            match github::get_release_with_versions_host(repo, tag, use_versions_host).await {
                 Ok(r) => r,
                 Err(err) => {
                     debug!("locked build revision {tag} not found, finding latest: {err}");
-                    match github::get_release_with_build_revision_status(repo, version).await {
+                    match github::get_release_with_build_revision_status(
+                        repo,
+                        version,
+                        use_versions_host,
+                    )
+                    .await
+                    {
                         Ok((r, found_build_revision)) => {
                             if requires_build_revision && !found_build_revision {
                                 debug!("no build revision release found for ruby {version}");
@@ -603,7 +612,9 @@ impl RubyPlugin {
                 }
             }
         } else {
-            match github::get_release_with_build_revision_status(repo, version).await {
+            match github::get_release_with_build_revision_status(repo, version, use_versions_host)
+                .await
+            {
                 Ok((r, found_build_revision)) => {
                     if requires_build_revision && !found_build_revision {
                         debug!("no build revision release found for ruby {version}");
@@ -837,7 +848,7 @@ impl RubyPlugin {
             repo,
             None, // Accept any workflow from repo
             None,
-            Self::use_versions_host_for_precompiled_attestations(source),
+            Self::use_versions_host_for_precompiled_source(source),
         )
         .await
         {
@@ -1273,10 +1284,10 @@ mod tests {
 
     #[test]
     fn test_ruby_precompiled_versions_host_only_for_default_source() {
-        assert!(RubyPlugin::use_versions_host_for_precompiled_attestations(
+        assert!(RubyPlugin::use_versions_host_for_precompiled_source(
             DEFAULT_RUBY_PRECOMPILED_URL
         ));
-        assert!(!RubyPlugin::use_versions_host_for_precompiled_attestations(
+        assert!(!RubyPlugin::use_versions_host_for_precompiled_source(
             "acme/ruby"
         ));
     }

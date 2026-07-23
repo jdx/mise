@@ -533,11 +533,12 @@ fn preview_matched_hook(root: &Path, hook: &Hook) -> Result<()> {
             };
             // Do not render the command again here: template functions such as
             // exec() may have side effects. Preview the command as currently loaded.
-            let shell = shell
+            let mut shell = shell
                 .as_ref()
                 .map(|shell| crate::path::split_shell_command(shell))
                 .transpose()?
                 .unwrap_or(Settings::get().default_inline_shell()?);
+            Settings::get().maybe_no_profile(&mut shell);
             display_inline_command(&shell, run)
         }
     };
@@ -595,11 +596,12 @@ async fn execute(
     let Some(run) = hook.action.run_for_current_platform() else {
         return Ok(());
     };
-    let shell = shell
+    let mut shell = shell
         .as_ref()
         .map(|shell| crate::path::split_shell_command(shell))
         .transpose()?
         .unwrap_or(Settings::get().default_inline_shell()?);
+    Settings::get().maybe_no_profile(&mut shell);
 
     // Preinstall hooks skip `tools=true` env directives since the tools
     // providing those env vars aren't installed yet (fixes #6162)
