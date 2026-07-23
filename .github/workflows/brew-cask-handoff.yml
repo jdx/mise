@@ -70,5 +70,5 @@ jobs:
             ${{ runner.temp }}/brew-cask-handoff-evidence.json
             ${{ runner.temp }}/brew-cask-handoff.executed
             ${{ runner.temp }}/handoff-http.log
-            ${{ runner.temp }}/same-version-adopt.log
+            ${{ runner.temp }}/same-version-*.log
           if-no-files-found: warn

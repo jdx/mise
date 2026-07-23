@@ -103,19 +103,62 @@ APP_DIGEST_AFTER="$(find "$APP" -type f -print0 | sort -z | xargs -0 shasum -a 2
 [[ $APP_DIGEST_BEFORE == "$APP_DIGEST_AFTER" ]] ||
   fail "same-version adopt changed payload before classification"
 
+EVIDENCE_JSONL="$TMPDIR/brew-cask-handoff-evidence.jsonl"
 jq -n \
   --arg token "$TOKEN" \
   --argjson adopt_status "$ADOPT_STATUS" \
   --arg before "$APP_DIGEST_BEFORE" \
   --arg after "$APP_DIGEST_AFTER" \
   --arg metadata "$([[ -e "$CASKROOM/.metadata" ]] && echo present || echo absent)" \
+  --arg mise_receipt "$([[ -e "$CASKROOM/1.0.0/.mise-cask.toml" ]] && echo present || echo absent)" \
   --arg brew_commit "$BREW_COMMIT" \
   '{token: $token, scenario: "same_version_mise_caskroom", adopt_status: $adopt_status,
     payload_before: $before, payload_after: $after, homebrew_metadata: $metadata,
-    homebrew_commit: $brew_commit}' \
-  >"$RUNNER_TEMP/brew-cask-handoff-evidence.json"
+    mise_receipt: $mise_receipt, homebrew_commit: $brew_commit}' \
+  >>"$EVIDENCE_JSONL"
+
+if [[ $ADOPT_STATUS -eq 0 ]]; then
+  set +e
+  brew list --cask --versions "$TOKEN" >"$TMPDIR/same-version-list.log" 2>&1
+  LIST_STATUS=$?
+  brew reinstall --cask "$TOKEN" >"$TMPDIR/same-version-reinstall.log" 2>&1
+  REINSTALL_STATUS=$?
+  set -e
+  APP_DIGEST_REINSTALLED="$(
+    if [[ -d $APP ]]; then
+      find "$APP" -type f -print0 | sort -z | xargs -0 shasum -a 256 |
+        shasum -a 256 | cut -d' ' -f1
+    else
+      printf '%s' absent
+    fi
+  )"
+  set +e
+  brew uninstall --cask "$TOKEN" >"$TMPDIR/same-version-uninstall.log" 2>&1
+  UNINSTALL_STATUS=$?
+  set -e
+  jq -n \
+    --arg token "$TOKEN" \
+    --argjson list_status "$LIST_STATUS" \
+    --argjson reinstall_status "$REINSTALL_STATUS" \
+    --argjson uninstall_status "$UNINSTALL_STATUS" \
+    --arg payload_after_reinstall "$APP_DIGEST_REINSTALLED" \
+    --arg target_after_uninstall "$([[ -e $APP ]] && echo present || echo absent)" \
+    --arg caskroom_after_uninstall "$([[ -e $CASKROOM ]] && echo present || echo absent)" \
+    '{token: $token, scenario: "homebrew_lifecycle",
+      list_status: $list_status, reinstall_status: $reinstall_status,
+      uninstall_status: $uninstall_status,
+      payload_after_reinstall: $payload_after_reinstall,
+      target_after_uninstall: $target_after_uninstall,
+      caskroom_after_uninstall: $caskroom_after_uninstall}' \
+    >>"$EVIDENCE_JSONL"
+fi
+
+jq -s . "$EVIDENCE_JSONL" >"$RUNNER_TEMP/brew-cask-handoff-evidence.json"
 cp "$TMPDIR/same-version-adopt.log" "$RUNNER_TEMP/same-version-adopt.log"
 cp "$TMPDIR/handoff-http.log" "$RUNNER_TEMP/handoff-http.log"
+for log in "$TMPDIR"/same-version-{list,reinstall,uninstall}.log; do
+  [[ -f $log ]] && cp "$log" "$RUNNER_TEMP/"
+done
 
 # Sentinel means a destructive scenario really executed, not merely that the
 # wrapper exited successfully.
