@@ -67,8 +67,10 @@ def main() -> None:
     root.mkdir(parents=True, exist_ok=True)
     api_dir = root / "api/cask"
     casks_dir = root / "tap/Casks"
+    formula_dir = root / "tap/Formula"
     api_dir.mkdir(parents=True, exist_ok=True)
     casks_dir.mkdir(parents=True, exist_ok=True)
+    formula_dir.mkdir(parents=True, exist_ok=True)
 
     fixtures = [
         ("mise-handoff-identical", "Mise Handoff Identical.app", False, "identical"),
@@ -161,6 +163,221 @@ def main() -> None:
                 "retry_after_failure",
                 "homebrew_lifecycle",
             ],
+        }
+    )
+
+    mixed_token = "mise-handoff-mixed"
+    mixed_app = "Mise Handoff Mixed.app"
+    mixed_binary = "mise-handoff-mixed-tool"
+    mixed_archive = root / "archives" / f"{mixed_token}-1.0.0.zip"
+    mixed_files = app_files(mixed_app, "mixed-app")
+    mixed_files[mixed_binary] = (
+        b"#!/bin/sh\nprintf 'handoff-mixed\\n'\n",
+        stat.S_IFREG | 0o755,
+    )
+    mixed_sha = write_zip(mixed_archive, mixed_files)
+    mixed_url = f"http://127.0.0.1:{port}/archives/{mixed_archive.name}"
+    (api_dir / f"{mixed_token}.json").write_text(
+        json.dumps(
+            cask_api(
+                mixed_token,
+                mixed_url,
+                mixed_sha,
+                [{"app": [mixed_app]}, {"binary": [mixed_binary]}],
+            ),
+            indent=2,
+        )
+        + "\n"
+    )
+    (casks_dir / f"{mixed_token}.rb").write_text(
+        "\n".join(
+            [
+                f'cask "{mixed_token}" do',
+                '  version "1.0.0"',
+                f'  sha256 "{mixed_sha}"',
+                f'  url "{mixed_url}"',
+                '  name "mise handoff mixed"',
+                '  desc "Deterministic mixed app and binary fixture"',
+                '  homepage "https://mise.jdx.dev/"',
+                f'  app "{mixed_app}"',
+                f'  binary "{mixed_binary}"',
+                "end",
+                "",
+            ]
+        )
+    )
+    matrix.append(
+        {
+            "token": mixed_token,
+            "class": "mixed_app_binary",
+            "auto_updates": False,
+            "archive_sha256": mixed_sha,
+            "required_rows": [
+                "no_caskroom",
+                "same_version_mise_caskroom",
+                "different_target",
+                "retry_after_failure",
+                "homebrew_lifecycle",
+            ],
+        }
+    )
+
+    dependency_formula = "mise-handoff-dependency"
+    dependency_archive = root / "archives" / f"{dependency_formula}-1.0.0.zip"
+    dependency_sha = write_zip(
+        dependency_archive,
+        {
+            dependency_formula: (
+                b"#!/bin/sh\nprintf 'handoff-dependency\\n'\n",
+                stat.S_IFREG | 0o755,
+            )
+        },
+    )
+    dependency_url = f"http://127.0.0.1:{port}/archives/{dependency_archive.name}"
+    (formula_dir / f"{dependency_formula}.rb").write_text(
+        "\n".join(
+            [
+                "class MiseHandoffDependency < Formula",
+                '  desc "Deterministic handoff dependency fixture"',
+                '  homepage "https://mise.jdx.dev/"',
+                f'  url "{dependency_url}"',
+                '  version "1.0.0"',
+                f'  sha256 "{dependency_sha}"',
+                "",
+                "  def install",
+                f'    bin.install "{dependency_formula}"',
+                "  end",
+                "end",
+                "",
+            ]
+        )
+    )
+    dependency_token = "mise-handoff-binary-dependency"
+    dependency_binary = "mise-handoff-dependent-tool"
+    dependency_cask_archive = root / "archives" / f"{dependency_token}-1.0.0.zip"
+    dependency_cask_sha = write_zip(
+        dependency_cask_archive,
+        {
+            dependency_binary: (
+                b"#!/bin/sh\nprintf 'handoff-dependent\\n'\n",
+                stat.S_IFREG | 0o755,
+            )
+        },
+    )
+    dependency_cask_url = (
+        f"http://127.0.0.1:{port}/archives/{dependency_cask_archive.name}"
+    )
+    dependency_api = cask_api(
+        dependency_token,
+        dependency_cask_url,
+        dependency_cask_sha,
+        [{"binary": [dependency_binary]}],
+    )
+    dependency_api["depends_on"] = {
+        "formula": [f"mise-test/handoff/{dependency_formula}"]
+    }
+    (api_dir / f"{dependency_token}.json").write_text(
+        json.dumps(dependency_api, indent=2) + "\n"
+    )
+    (casks_dir / f"{dependency_token}.rb").write_text(
+        "\n".join(
+            [
+                f'cask "{dependency_token}" do',
+                '  version "1.0.0"',
+                f'  sha256 "{dependency_cask_sha}"',
+                f'  url "{dependency_cask_url}"',
+                '  name "mise handoff binary dependency"',
+                '  desc "Deterministic formula dependency fixture"',
+                '  homepage "https://mise.jdx.dev/"',
+                f'  depends_on formula: "mise-test/handoff/{dependency_formula}"',
+                f'  binary "{dependency_binary}"',
+                "end",
+                "",
+            ]
+        )
+    )
+    matrix.append(
+        {
+            "token": dependency_token,
+            "class": "binary_formula_dependency",
+            "auto_updates": False,
+            "archive_sha256": dependency_cask_sha,
+            "dependency_archive_sha256": dependency_sha,
+            "required_rows": [
+                "no_caskroom",
+                "same_version_mise_caskroom",
+                "different_target",
+                "retry_after_failure",
+                "homebrew_lifecycle",
+            ],
+        }
+    )
+
+    pkg_token = "mise-handoff-pkg-ineligible"
+    pkg_name = "mise-handoff.pkg"
+    pkg_archive = root / "archives" / f"{pkg_token}-1.0.0.zip"
+    pkg_sha = write_zip(
+        pkg_archive,
+        {pkg_name: (b"not-a-real-package\n", stat.S_IFREG | 0o644)},
+    )
+    pkg_url = f"http://127.0.0.1:{port}/archives/{pkg_archive.name}"
+    (casks_dir / f"{pkg_token}.rb").write_text(
+        "\n".join(
+            [
+                f'cask "{pkg_token}" do',
+                '  version "1.0.0"',
+                f'  sha256 "{pkg_sha}"',
+                f'  url "{pkg_url}"',
+                '  name "mise handoff ineligible pkg"',
+                '  desc "Fixture that must be rejected before package execution"',
+                '  homepage "https://mise.jdx.dev/"',
+                f'  pkg "{pkg_name}"',
+                "end",
+                "",
+            ]
+        )
+    )
+    matrix.append(
+        {
+            "token": pkg_token,
+            "class": "pkg",
+            "auto_updates": False,
+            "archive_sha256": pkg_sha,
+            "required_rows": ["pre_mutation_ineligible"],
+        }
+    )
+
+    hook_token = "mise-handoff-hook-ineligible"
+    hook_app = "Mise Handoff Hook.app"
+    hook_archive = root / "archives" / f"{hook_token}-1.0.0.zip"
+    hook_sha = write_zip(hook_archive, app_files(hook_app, "hook"))
+    hook_url = f"http://127.0.0.1:{port}/archives/{hook_archive.name}"
+    (casks_dir / f"{hook_token}.rb").write_text(
+        "\n".join(
+            [
+                f'cask "{hook_token}" do',
+                '  version "1.0.0"',
+                f'  sha256 "{hook_sha}"',
+                f'  url "{hook_url}"',
+                '  name "mise handoff ineligible hook"',
+                '  desc "Fixture that must be rejected before lifecycle hooks"',
+                '  homepage "https://mise.jdx.dev/"',
+                f'  app "{hook_app}"',
+                "  preflight do",
+                '    system "/usr/bin/touch", "/tmp/mise-handoff-hook-ran"',
+                "  end",
+                "end",
+                "",
+            ]
+        )
+    )
+    matrix.append(
+        {
+            "token": hook_token,
+            "class": "flight_hook",
+            "auto_updates": False,
+            "archive_sha256": hook_sha,
+            "required_rows": ["pre_mutation_ineligible"],
         }
     )
     (root / "matrix.json").write_text(json.dumps(matrix, indent=2) + "\n")

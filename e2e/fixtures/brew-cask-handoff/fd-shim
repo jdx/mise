@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Dedicated workflow shim for the two fd forms used by xtasks/test/e2e.
+# It is intentionally not a general fd replacement.
+[[ ${1:-} == "-tf" ]] || exit 64
+first_pattern=${2:-}
+shift 2
+second_pattern=
+if [[ ${1:-} == "--and" ]]; then
+  second_pattern=${2:-}
+  shift 2
+fi
+[[ $# -eq 0 ]] || exit 64
+
+while IFS= read -r path; do
+  path=${path#./}
+  name=${path##*/}
+  [[ $name =~ $first_pattern ]] || continue
+  [[ -z $second_pattern || $name =~ $second_pattern ]] || continue
+  printf '%s\n' "$path"
+done < <(find . -type f -print)

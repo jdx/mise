@@ -53,7 +53,11 @@ jobs:
 
       - name: Execute deterministic handoff probe
         run: |
-          export PATH="$PWD/target/debug:$PATH"
+          mkdir -p "$RUNNER_TEMP/handoff-bin"
+          cp e2e/fixtures/brew-cask-handoff/fd-shim "$RUNNER_TEMP/handoff-bin/fd"
+          chmod +x "$RUNNER_TEMP/handoff-bin/fd"
+          export PATH="$RUNNER_TEMP/handoff-bin:$PWD/target/debug:$PATH"
+          export MISE_AUTO_INSTALL=0
           mise run test:e2e e2e/cli/test_system_install_brew_adopt_macos_slow
 
       - name: Require executed-scenario sentinel

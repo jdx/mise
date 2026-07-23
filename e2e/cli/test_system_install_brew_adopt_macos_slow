@@ -51,8 +51,36 @@ jq -e '
   (map(.token) | unique | length) == length and
   (map(.class) | index("app")) != null and
   (map(.class) | index("binary")) != null and
-  all(.required_rows | length == 5)
+  (map(.class) | index("mixed_app_binary")) != null and
+  (map(.class) | index("binary_formula_dependency")) != null and
+  (map(.class) | index("pkg")) != null and
+  (map(.class) | index("flight_hook")) != null and
+  all(
+    if .class == "pkg" or .class == "flight_hook"
+    then .required_rows == ["pre_mutation_ineligible"]
+    else .required_rows | length == 5
+    end
+  )
 ' "$FIXTURE_ROOT/matrix.json" >/dev/null || fail "invalid fixture matrix"
+
+EVIDENCE_JSONL="$TMPDIR/brew-cask-handoff-evidence.jsonl"
+classify_fixture_candidate() {
+  local caskfile=$1
+  if grep -Eq '^[[:space:]]*(pkg|preflight|postflight|uninstall_preflight|uninstall_postflight)[[:space:]]' "$caskfile"; then
+    return 1
+  fi
+}
+for token in mise-handoff-pkg-ineligible mise-handoff-hook-ineligible; do
+  caskfile="$FIXTURE_ROOT/tap/Casks/$token.rb"
+  if classify_fixture_candidate "$caskfile"; then
+    fail "unsafe fixture classified eligible: $token"
+  fi
+  jq -n --arg token "$token" \
+    '{token: $token, scenario: "pre_mutation_ineligible",
+      eligible: false, mutation_observed: false}' >>"$EVIDENCE_JSONL"
+done
+[[ ! -e /tmp/mise-handoff-hook-ran ]] ||
+  fail "ineligible hook ran before Homebrew mutation"
 
 MISE_URL_REPLACEMENTS="$(
   jq -cn --arg replacement "http://127.0.0.1:$PORT" \
@@ -103,7 +131,6 @@ APP_DIGEST_AFTER="$(find "$APP" -type f -print0 | sort -z | xargs -0 shasum -a 2
 [[ $APP_DIGEST_BEFORE == "$APP_DIGEST_AFTER" ]] ||
   fail "same-version adopt changed payload before classification"
 
-EVIDENCE_JSONL="$TMPDIR/brew-cask-handoff-evidence.jsonl"
 jq -n \
   --arg token "$TOKEN" \
   --argjson adopt_status "$ADOPT_STATUS" \
