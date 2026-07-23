@@ -67,6 +67,8 @@ jobs:
           grep -Fx "homebrew_lifecycle" "$MISE_BREW_HANDOFF_SENTINEL"
           grep -Fx "no_caskroom" "$MISE_BREW_HANDOFF_SENTINEL"
           grep -Fx "different_target" "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "second_attempt_after_success" "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "failure_before_stage" "$MISE_BREW_HANDOFF_SENTINEL"
           grep -Fx "retry_after_failure" "$MISE_BREW_HANDOFF_SENTINEL"
           grep -Fx "different_target_auto_updates" "$MISE_BREW_HANDOFF_SENTINEL"
           grep -Fx "binary_target_exists_no_caskroom" "$MISE_BREW_HANDOFF_SENTINEL"

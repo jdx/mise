@@ -277,11 +277,38 @@ brew install --cask --adopt "$TAP_DIR/Casks/$NO_CASKROOM_TOKEN.rb" \
   >"$TMPDIR/different-target-retry.log" 2>&1
 RETRY_STATUS=$?
 set -e
-record_app_adopt "$NO_CASKROOM_TOKEN" "retry_after_failure" "$NO_CASKROOM_APP" \
+record_app_adopt "$NO_CASKROOM_TOKEN" "second_attempt_after_success" "$NO_CASKROOM_APP" \
   "$RETRY_BEFORE" "$RETRY_STATUS"
 if [[ $RETRY_STATUS -eq 0 ]]; then
   brew uninstall --cask "$NO_CASKROOM_TOKEN" \
     >"$TMPDIR/different-target-retry-uninstall.log" 2>&1
+fi
+
+[[ ! -e $NO_CASKROOM_APP && ! -e $NO_CASKROOM_CASKROOM ]] ||
+  fail "different-target lifecycle did not clean fixture"
+stage_fixture_app "$NO_CASKROOM_TOKEN" "${NO_CASKROOM_APP##*/}" "$NO_CASKROOM_APP"
+CHECKSUM_FAILURE_BEFORE="$(app_digest "$NO_CASKROOM_APP")"
+BROKEN_CASK="$TMPDIR/$NO_CASKROOM_TOKEN.rb"
+sed -E 's/sha256 "[0-9a-f]+"/sha256 "'"$(printf '0%.0s' {1..64})"'"/' \
+  "$TAP_DIR/Casks/$NO_CASKROOM_TOKEN.rb" >"$BROKEN_CASK"
+set +e
+brew install --cask --adopt "$BROKEN_CASK" \
+  >"$TMPDIR/checksum-failure-adopt.log" 2>&1
+CHECKSUM_FAILURE_STATUS=$?
+set -e
+record_app_adopt "$NO_CASKROOM_TOKEN" "failure_before_stage" "$NO_CASKROOM_APP" \
+  "$CHECKSUM_FAILURE_BEFORE" "$CHECKSUM_FAILURE_STATUS"
+
+set +e
+brew install --cask --adopt "$TAP_DIR/Casks/$NO_CASKROOM_TOKEN.rb" \
+  >"$TMPDIR/checksum-failure-retry.log" 2>&1
+CHECKSUM_RETRY_STATUS=$?
+set -e
+record_app_adopt "$NO_CASKROOM_TOKEN" "retry_after_failure" "$NO_CASKROOM_APP" \
+  "$CHECKSUM_FAILURE_BEFORE" "$CHECKSUM_RETRY_STATUS"
+if [[ $CHECKSUM_RETRY_STATUS -eq 0 ]]; then
+  brew uninstall --cask "$NO_CASKROOM_TOKEN" \
+    >"$TMPDIR/checksum-failure-retry-uninstall.log" 2>&1
 fi
 
 AUTO_TOKEN="mise-handoff-auto-updates"
@@ -476,6 +503,8 @@ printf '%s\n' \
   "homebrew_lifecycle" \
   "no_caskroom" \
   "different_target" \
+  "second_attempt_after_success" \
+  "failure_before_stage" \
   "retry_after_failure" \
   "different_target_auto_updates" \
   "binary_target_exists_no_caskroom" \
