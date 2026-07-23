@@ -720,12 +720,12 @@ fn swap_app(target: &Path, tmp_target: &Path) -> Result<()> {
     ));
     remove_app(&old_target)?;
     if target.exists() {
-        file::rename(&target, &old_target)?;
+        file::rename(target, &old_target)?;
     }
-    if let Err(e) = file::rename(&tmp_target, &target) {
+    if let Err(e) = file::rename(tmp_target, target) {
         // Restore the old app if the swap failed.
         if old_target.exists() {
-            let _ = file::rename(&old_target, &target);
+            let _ = file::rename(&old_target, target);
         }
         return Err(e);
     }
