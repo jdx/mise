@@ -1250,16 +1250,16 @@ fn appdir_artifact_source(source: &str, apps: &[AppArtifact]) -> Result<Option<P
         return Ok(None);
     };
     let relative = Path::new(relative);
-    let Some(bundle) = relative.components().next() else {
+    let Some(Component::Normal(bundle)) = relative.components().next() else {
         return Ok(None);
     };
     let suffix = relative.components().skip(1).collect::<PathBuf>();
     let mut matches = Vec::new();
     for app in apps {
         let target = app_target_path(app.target_name())?;
-        let source_bundle = Path::new(&app.source).file_name();
-        let target_bundle = target.file_name();
-        if !matches!(bundle, Component::Normal(name) if Some(name) == source_bundle || Some(name) == target_bundle)
+        let bundle = Path::new(bundle);
+        if !path_ends_with_ignore_ascii_case(Path::new(&app.source), bundle)
+            && !path_ends_with_ignore_ascii_case(&target, bundle)
         {
             continue;
         }
@@ -3654,12 +3654,12 @@ end
     }
 
     #[test]
-    fn appdir_artifact_source_uses_matching_app_location() -> Result<()> {
+    fn appdir_artifact_source_matches_app_case_insensitively() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let prefix_appdir = tmp.path().join("Applications");
-        let relative = "Foo.app/Contents/MacOS/foo";
+        let relative = "foo.app/Contents/MacOS/foo";
         file::create_dir_all(prefix_appdir.join(relative).parent().unwrap())?;
         crate::file::write(prefix_appdir.join(relative), "prefix")?;
         let apps = [
@@ -3668,8 +3668,8 @@ end
                 target: None,
             },
             AppArtifact {
-                source: "Foo.app".to_string(),
-                target: Some("$HOMEBREW_PREFIX/Applications/Foo.app".to_string()),
+                source: "foo.app".to_string(),
+                target: Some("$HOMEBREW_PREFIX/Applications/foo.app".to_string()),
             },
         ];
 
@@ -4775,7 +4775,7 @@ end
 
         assert_eq!(err.to_string(), "link failed");
         assert_eq!(crate::file::read_to_string(&target)?, "previous");
-        assert!(!new_target.symlink_metadata().is_ok());
+        assert!(new_target.symlink_metadata().is_err());
         assert!(!caskroom_backup_dir(&cask).exists());
         Ok(())
     }
