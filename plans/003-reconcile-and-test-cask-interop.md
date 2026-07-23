@@ -22,6 +22,11 @@ early exit is failure, not success.
 
 ## Status
 
+**CLOSED — NOT APPLICABLE after Plan 012.** Mise-owned casks make no Homebrew
+list/upgrade/uninstall claim, and no handoff state ships. The disposable matrix
+instead proves native Homebrew lifecycle only after a successful native
+install/adopt and records why that cannot be exposed as preserving transfer.
+
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH

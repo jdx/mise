@@ -19,6 +19,12 @@ pass.
 
 ## Status
 
+**CLOSED — NOT APPLICABLE after Plan 012.** This plan existed to make a
+dependency-bearing cask eligible for Homebrew handoff/private metadata.
+Handoff is unsupported and failed attempts empirically leave formula residue.
+Mise does not serialize a Homebrew dependency ledger. General direct-pour
+dependency support is a separate product feature, not an interop unblocker.
+
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH

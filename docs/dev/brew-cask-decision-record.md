@@ -1,6 +1,6 @@
 # ADR: brew-cask ownership and Homebrew interop
 
-**Status:** Accepted (eighth-pass normative)  
+**Status:** Accepted (Plan 012 final)  
 **Date:** 2026-07-23  
 **Related:** `HOMEBREW_FINDINGS.md`, `plans/README.md`, Plans 010–013
 
@@ -20,31 +20,35 @@ could not describe and allowed Homebrew to recover teardown from the live API.
    centrally before any I/O.
 4. **Completed actions, not intent.** Mutators record durable facts; final
    receipt publishes after activation; journals live outside Caskroom/metadata.
-5. **Handoff is opt-in and unproven.** `brew install --cask --adopt` remains a
-   candidate for explicit one-way transfer only after disposable isolation
-   matrix passes. Until then: mise-only; no production transfer code.
-6. **Plan 007 rejected.** No dual-writer transactional upgrades without a
+5. **Handoff is unsupported.** Disposable Plan 012 evidence proves
+   `brew install --cask --adopt` lacks equality validation and safe,
+   observable rollback for mise payloads. No production transfer code.
+6. **Homebrew markers block mise mutation.** Mise may observe a healthy
+   same-version Homebrew cask, but refuses upgrade/recovery mutation across
+   versions. Homebrew remains sole mutator.
+7. **Plan 007 rejected.** No dual-writer transactional upgrades without a
    shared supported lock.
-7. **Plan 002 (A3 private experiment)** stays default-off and requires explicit
+8. **Plan 002 (A3 private experiment)** stays default-off and requires explicit
    operator authorization.
 
 ## Support matrix
 
-| Mode                | Install     | Status       | Upgrade | Uninstall      | brew list/upgrade     |
-| ------------------- | ----------- | ------------ | ------- | -------------- | --------------------- |
-| MiseOwned (default) | Rust pour   | mise receipt | mise    | mise (payload) | unsupported           |
-| HomebrewOwned       | native brew | brew ledger  | brew    | brew           | supported             |
-| Explicit handoff    | not shipped | —            | —       | —              | after proven 012 only |
-| A3 private metadata | not shipped | —            | —       | —              | experiment only       |
+| Mode                | Install     | Status       | Upgrade | Uninstall      | brew list/upgrade |
+| ------------------- | ----------- | ------------ | ------- | -------------- | ----------------- |
+| MiseOwned (default) | Rust pour   | mise receipt | mise    | mise (payload) | unsupported       |
+| HomebrewOwned       | native brew | brew ledger  | brew    | brew           | supported         |
+| Explicit handoff    | unsupported | —            | —       | —              | unsupported       |
+| A3 private metadata | not shipped | —            | —       | —              | experiment only   |
 
 ## Consequences
 
 - Tools that assume "binary under prefix ⇒ brew owns it" will still fail on
   mise-owned casks; that is intentional until a proven handoff exists.
-- Plans 001/003/004/006/008 remain blocked until ownership/handoff dimensions
-  are chosen with disposable evidence.
-- Upstream registration (Plan 009) is narrowed: only request gaps left after a
-  future successful Plan 012.
+- Plan 001's applicable boundary is complete: marker ownership and mutation
+  authority remain separate; foreign markers block mise mutation.
+- Plans 003/004/006/008 are closed as not applicable to the rejected handoff.
+- Plan 009 records the smallest missing public capability locally; no upstream
+  contact occurred.
 
 ## Supersedes
 

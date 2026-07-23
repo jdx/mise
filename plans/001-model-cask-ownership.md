@@ -18,6 +18,14 @@ version as separate dimensions. Native Homebrew handoff ends in
 
 ## Status
 
+**DONE (revised after Plan 012):** no handoff state ships. Payload provenance
+remains in the mise receipt; Homebrew marker ownership is detected separately;
+mutation authority is fail-closed. Same-version Homebrew state may satisfy
+status without mutation. Any older, degraded, malformed, or symlinked Homebrew
+marker blocks mise install/upgrade before bootstrap, download, or payload I/O.
+This removes the implicit-takeover enabling condition without inventing an
+`Externalized` ledger.
+
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH

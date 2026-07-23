@@ -19,6 +19,10 @@ Plan 009 outcome are decided.
 
 ## Status
 
+**DONE (Plan 012 final):** ADR, support matrix, handoff gate, plan graph, and
+normative findings now select unsupported/mise-only. Historical research stays
+archived as evidence; current banners supersede it.
+
 - **DONE (partial final)**: 2026-07-23 — `docs/dev/brew-cask-decision-record.md`
   ADR + support matrix; interop doc banner archives contradictions; Plan 012
   STOP recorded honestly. Revisit when disposable handoff evidence exists.

@@ -1,47 +1,55 @@
 # brew-cask native handoff gate (Plan 012)
 
-## Status: IN PROGRESS — disposable probe ready, evidence pending
+## Status: DONE — unsupported; mise-only retained
 
-The implementation host remains forbidden. A dedicated manual workflow now
-uses a fresh GitHub-hosted `macos-15` VM, verifies
-`runner.environment == github-hosted` inside both workflow and E2E harness,
-generates deterministic local tap/archive fixtures, and requires an
-executed-scenario sentinel. GitHub-hosted canonical Homebrew/Application paths
-are disposable with the VM; identical paths on any other runner remain
-forbidden.
-
-The initial probe records same-version Caskroom collision behavior and exact
-payload digests. It does **not** prove handoff support. Remaining matrix rows
-must be implemented, executed, and classified before this gate changes.
+GitHub Actions run
+[`29979380126`](https://github.com/donbeave/mise/actions/runs/29979380126)
+completed the final deterministic matrix on a fresh GitHub-hosted `macos-15`
+runner against Homebrew commit
+`6bd951d96e7ebc54787799dba77bfb26ec956c4c`. Isolation assertions, a
+scenario sentinel, local checksum-pinned tap/archive fixtures, and exact
+before/after state were required.
 
 ## Decision
 
-| Outcome                              | Selected                                   |
-| ------------------------------------ | ------------------------------------------ |
-| Proven class-limited handoff         | no                                         |
-| Native reinstall only                | not productized                            |
-| **Unsupported — mise-only retained** | **current safe baseline pending evidence** |
+| Outcome                              | Selected                    |
+| ------------------------------------ | --------------------------- |
+| Proven class-limited handoff         | no                          |
+| Native reinstall only                | documented, not productized |
+| **Unsupported — mise-only retained** | **yes**                     |
 
-Production code must not expose opt-in transfer until a disposable runner
-executes the full fixture matrix (app identical/different, auto_updates,
-binary, dependency, pkg/hooks ineligible) with sentinel and collision/failure
-rows.
+Production code must not expose transfer. Native Homebrew reinstall remains an
+intentional manager/payload replacement, not a preserving handoff.
 
-## Remaining unblockers
+## Evidence and classification
 
-- Execute the manual workflow and retain its evidence artifact.
-- Complete no-Caskroom, differing-target, failure/retry, and Homebrew lifecycle
-  rows for every fixture class.
-- Add deterministic mixed app/binary and formula-dependency fixtures.
-- Add explicit pre-mutation ineligibility checks for pkg and lifecycle hooks.
-- Verify post-handoff mise status is `Externalized` and refuses mutation; this
-  depends on the revised ownership model in Plan 001.
-- Pin the tested Homebrew commit and classify every row.
-- Select exactly one Plan 012 decision-gate outcome.
+| Class / condition                    | Result     | Reason                                                                                                         |
+| ------------------------------------ | ---------- | -------------------------------------------------------------------------------------------------------------- |
+| identical app, same-version Caskroom | ineligible | happy path and Homebrew lifecycle pass, but rollback after target mutation is not deterministically observable |
+| different app                        | ineligible | `--adopt` succeeds and preserves arbitrary differing bytes; it does not prove equality                         |
+| `auto_updates` app                   | ineligible | differing bytes are accepted                                                                                   |
+| binary                               | ineligible | existing target fails; retry only succeeds after removing it, which is native install                          |
+| mixed app + binary                   | ineligible | binary conflict fails after Homebrew removes the adopted app                                                   |
+| formula dependency + binary          | ineligible | failed attempt installs and retains dependency state                                                           |
+| pkg / flight hook                    | ineligible | rejected before mutation by the mise eligibility gate                                                          |
+| checksum failure before stage        | retry-safe | payload unchanged, marker absent, corrected retry succeeds                                                     |
 
-## Safe baseline (shipped)
+Runs `29977074980`, `29978638514`, `29978779650`,
+`29979070381`, and `29979380126` provide incremental evidence. The final run
+artifact contains exact digests, markers, dependency results, sentinel rows,
+and logs.
 
-- Mise-owned pours: no Homebrew `.metadata` (Plan 010)
-- Path containment before I/O (Plan 011)
-- Completed-action journal + post-activation receipt (Plan 013)
-- Foreign Homebrew metadata preserved
+Failure injection after target action and before/after tab cannot be observed
+or controlled through Homebrew's supported CLI. Per Plan 012's STOP rule, that
+ambiguity excludes even app-only handoff; it is not deferred as a production
+experiment.
+
+## Safe product boundary
+
+- Mise-owned pours publish only `.mise-cask.toml`.
+- Homebrew `.metadata` is never synthesized or repaired.
+- Foreign Homebrew metadata is preserved byte-for-byte.
+- Any Homebrew marker blocks mise mutation across versions.
+- Use Homebrew from the start when Homebrew lifecycle is required.
+- Plan 009 records the smallest missing supported capability; no upstream
+  contact occurred.

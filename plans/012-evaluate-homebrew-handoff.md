@@ -17,11 +17,12 @@
 - **Depends on**: Plan 010 for the production safety baseline
 - **Category**: direction / compatibility / tests
 - **Planned at**: commit `866916893`, 2026-07-23
-- **IN PROGRESS (disposable workflow added, evidence pending)**: 2026-07-23 —
-  operator host remains forbidden. A manual GitHub-hosted `macos-15` workflow,
-  deterministic local tap/archive generator, in-test isolation assertions, and
-  executed-scenario sentinel now exist. No production transfer is authorized
-  until the full matrix runs and the evidence gate is classified. See
+- **DONE — UNSUPPORTED**: 2026-07-23 — final disposable run `29979380126`
+  completed against Homebrew
+  `6bd951d96e7ebc54787799dba77bfb26ec956c4c`. App adoption lacks equality
+  proof; mixed failure deletes the app; dependency failure leaves residue;
+  binary targets conflict; later failure phases are not controllable through
+  the supported CLI. Mise-only mode is retained. See
   `docs/dev/brew-cask-handoff-gate.md`.
 
 ## Why this matters
@@ -184,13 +185,14 @@ ineligible, or unresolved with a failing/passing E2E reference.
 
 ## Done criteria
 
-- [ ] Experiments ran only in an asserted disposable environment.
-- [ ] Homebrew commit and every relevant semantic are pinned.
-- [ ] `--adopt` is classified as full install, not registration.
-- [ ] Every artifact class has evidence-based eligibility.
-- [ ] Failure/retry and same-version collisions are covered.
-- [ ] One product direction is selected by the decision gate.
-- [ ] No production handoff shipped from an unresolved spike.
+- [x] Experiments ran only in an asserted disposable environment.
+- [x] Homebrew commit and every relevant semantic are pinned.
+- [x] `--adopt` is classified as full install, not registration.
+- [x] Every artifact class has evidence-based eligibility.
+- [x] Observable failure/retry and same-version collisions are covered;
+      unsupported later phases trigger the STOP rule.
+- [x] Unsupported/mise-only is selected by the decision gate.
+- [x] No production handoff shipped.
 
 ## STOP conditions
 

@@ -18,6 +18,11 @@ reinstall, uninstall, rollback, offline, foreign-target, and failure E2E.
 
 ## Status
 
+**CLOSED — NOT APPLICABLE after Plan 012.** No artifact class passed the
+handoff safety gate. App, auto-update app, binary, mixed, dependency, pkg, and
+flight-hook rows are classified in `docs/dev/brew-cask-handoff-gate.md`.
+Artifact support in mise remains distinct from Homebrew lifecycle parity.
+
 - **Priority**: P2
 - **Effort**: L per artifact class
 - **Risk**: HIGH

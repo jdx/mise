@@ -1,11 +1,6 @@
 name: brew-cask-handoff
 
 on:
-  # Bootstrap this branch before the workflow exists on the fork's default
-  # branch. Remove this branch-only trigger after the first evidence run.
-  push:
-    branches:
-      - fix/brew-cask-homebrew-metadata-receipt
   workflow_dispatch:
 
 permissions:

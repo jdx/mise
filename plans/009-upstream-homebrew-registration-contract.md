@@ -20,6 +20,13 @@ capability that closes that proven gap.
 
 ## Status
 
+**DONE locally; no upstream contact.** Plan 012 selected unsupported/mise-only.
+The smallest missing capability is a machine-readable, non-mutating
+validation/dry-run bound to an atomic native handoff result—not broad
+receipt-only registration. The local decision package is
+`docs/dev/brew-cask-supported-handoff-gap.md`. External contact still requires
+separate authorization.
+
 - **Priority**: P2
 - **Effort**: M-L
 - **Risk**: HIGH

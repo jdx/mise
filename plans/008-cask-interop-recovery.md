@@ -17,6 +17,12 @@ metadata. Never reconstruct historical authority from the current API.
 
 ## Status
 
+**CLOSED — NOT APPLICABLE after Plan 012.** No handoff, synthetic ledger, or
+dual-owner transaction ships, so there is no supported interop transition to
+resume or quarantine. Existing Homebrew metadata is preserved and blocks mise
+mutation; current mise journals cover mise-owned interrupted actions. Private
+metadata recovery remains unauthorized with Plan 002.
+
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH

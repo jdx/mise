@@ -42,13 +42,13 @@ behavior changes — it is the durable decision record for the fork.
 
 ## Executive decision
 
-> **Current normative verdict (eighth pass): do not ship synthetic Homebrew
+> **Current normative verdict (Plan 012 final): do not ship synthetic Homebrew
 > metadata by default.** Homebrew has no identity-only cask marker; recognition
 > grants lifecycle authority. Exactly one manager must have mutation authority.
-> Keep normal direct pours mise-owned and Homebrew-invisible. First test
-> Homebrew's supported `brew install --cask --adopt` as an explicit one-way
-> handoff; after success Homebrew alone upgrades/uninstalls while mise observes
-> and preserves. If strict no-`brew` interop remains mandatory, the durable
+> Keep normal direct pours mise-owned and Homebrew-invisible. Disposable tests
+> reject `brew install --cask --adopt` as production handoff: it lacks payload
+> equality proof and safe observable rollback across artifact/dependency
+> classes. If strict no-`brew` interop remains mandatory, the durable
 > solution is an upstream registration/status/deregister/handoff contract with
 > Homebrew-owned validation and compare-and-swap. **A3** — minimal installed JSON
 > plus a non-empty tab derived from proven completed actions — remains the best
@@ -62,7 +62,7 @@ to keep empty `uninstall_artifacts`, backfill from a live API, ship A2/A3, or le
 both managers mutate the same cask.
 
 **Current product direction (bootstrap `brew-cask:` only): explicit
-single-owner lifecycle with optional handoff.** Formula-style dual-manager
+single-owner lifecycle without handoff.** Formula-style dual-manager
 coexistence is unavailable without a mutually supported coordination contract.
 
 The original expectation was that a direct `brew-cask:` pour under Homebrew's
@@ -76,7 +76,7 @@ only through explicit ownership transfer or a future supported contract.
 | Mise-owned pour              | mise Rust direct install; no Homebrew marker or Homebrew lifecycle promise                                         |
 | Homebrew-owned install       | explicit user-selected native Homebrew install                                                                     |
 | Mise ledger                  | `.mise-cask.toml` — status / paths / mise lifecycle while mise owns the cask                                       |
-| Homebrew handoff             | Prefer supported `brew install --cask --adopt`; Homebrew authors its ledger and becomes sole lifecycle owner       |
+| Homebrew handoff             | Unsupported by Plan 012; use Homebrew from the start when its lifecycle is required                                |
 | Private experiment           | A3 metadata only for disposable binary research; publishing its marker transfers mutation authority away from mise |
 | Preserve                     | Never destroy genuine Homebrew-authored `.metadata` (#11012; ownership classifier — `plans/001`)                   |
 | Durable zero-subprocess path | Upstream validate/register/status/deregister/handoff API with locking/CAS (`plans/009`)                            |
@@ -94,14 +94,14 @@ Execution starts with [Plan 010: retire unsafe metadata](plans/010-retire-unsafe
 [Plan 013: record completed actions](plans/013-record-completed-cask-actions.md).
 The corrected dependency/status index is [plans/README.md](plans/README.md).
 
-**Execution note (2026-07-23):** Plans **010**, **011**, and **013** are DONE on
-this branch (no synthetic metadata writer; path containment; completed-action
-journal + post-activation receipt). Plan **012** is **IN PROGRESS**: a manual
-GitHub-hosted disposable probe and deterministic fixtures exist, but full
-matrix evidence is pending; product behavior remains **mise-only** (see
-`docs/dev/brew-cask-handoff-gate.md`). Plans
-001/002/003/004/006/008/009 remain blocked; **007** remains REJECTED. ADR:
-`docs/dev/brew-cask-decision-record.md`.
+**Execution note (2026-07-23):** Plans **010**, **011**, **012**, and **013**
+are DONE. Plan 012's final disposable run `29979380126` selected unsupported,
+so product behavior remains **mise-only**. Revised Plan **001** is DONE:
+Homebrew markers block mise mutation across versions. Plans **003**, **004**,
+**006**, and **008** are closed as not applicable to rejected handoff. Plan
+**009** is DONE as a local capability-gap proposal; no upstream contact. Plan
+**002** remains blocked on explicit operator authorization; **007** remains
+REJECTED. ADR: `docs/dev/brew-cask-decision-record.md`.
 
 **Upstream status:** Homebrew already supports full install/adoption, but no
 receipt-only external registration contract was found. Neither jdx/mise nor

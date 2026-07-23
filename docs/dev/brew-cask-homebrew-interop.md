@@ -1,11 +1,11 @@
 # brew-cask ↔ real Homebrew interop (investigation + fix)
 
-> **Normative status (2026-07-23, eighth pass / Plan 010):** Do **not** ship
+> **Normative status (2026-07-23, Plan 012 final):** Do **not** ship
 > synthetic Homebrew `.metadata` for mise-owned pours. Direct `brew-cask:`
 > installs remain **Homebrew-invisible** (mise receipt only). Foreign Homebrew
-> metadata is preserved. Explicit one-way handoff (e.g. `brew install --cask
---adopt`) is **not** production-supported until Plan 012 disposable isolation
-> proves eligibility. Historical text below describing empty-tab writers or
+> metadata is preserved. Explicit one-way handoff (e.g.
+> `brew install --cask --adopt`) is **unsupported** after Plan 012 disposable
+> testing. Historical text below describing empty-tab writers or
 > brew list/upgrade promises for mise pours is **evidence only** and is
 > superseded by `HOMEBREW_FINDINGS.md` executive decision and `plans/README.md`.
 
@@ -26,6 +26,13 @@
 
 Historical investigation below still documents why an empty-tab writer was
 attempted and why it is unsafe. That path is **retired** (Plan 010).
+
+Plan 012 final evidence is in
+[`brew-cask-handoff-gate.md`](brew-cask-handoff-gate.md). Homebrew adoption
+accepted arbitrary differing app payloads, failed destructively for mixed
+artifacts, and left dependency residue. Mise therefore has no transfer mode.
+Use native Homebrew installation from the start when Homebrew lifecycle is
+required.
 
 **Root cause (one line):** cask pour was built as a **standalone installer that
 never shells out to brew**, with a **mise-private receipt** (`.mise-cask.toml`),
