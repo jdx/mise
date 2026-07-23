@@ -1,4 +1,18 @@
 use eyre::bail;
+use std::path::Path;
+
+/// Return the absolute `//path` scope for a directory within a monorepo.
+pub(crate) fn monorepo_scope(monorepo_root: &Path, dir: &Path) -> Option<String> {
+    let relative_path = dir.strip_prefix(monorepo_root).ok()?;
+    let path = relative_path
+        .to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    if path.is_empty() {
+        Some("//".to_string())
+    } else {
+        Some(format!("//{path}"))
+    }
+}
 
 /// Context for loading tasks with optional filtering hints
 #[derive(Debug, Clone, Default, Hash, Eq, PartialEq)]
@@ -193,33 +207,14 @@ pub fn expand_colon_task_syntax(
 
     // Determine the current directory relative to monorepo root
     if let Some(cwd) = &*crate::dirs::CWD {
-        if let Ok(rel_path) = cwd.strip_prefix(monorepo_root) {
+        if let Some(scope) = monorepo_scope(&monorepo_root, cwd) {
             // For bare task names, only expand if we're actually in the monorepo
             // For colon patterns, always expand (and error if outside monorepo)
 
-            // Convert relative path to monorepo path format
-            let path_str = rel_path
-                .to_string_lossy()
-                .replace(std::path::MAIN_SEPARATOR, "/");
-
-            if path_str.is_empty() {
-                // We're at the root
-                if is_colon_pattern {
-                    // :task -> //:task (task already has colon)
-                    Ok(format!("//{}", task))
-                } else {
-                    // bare task -> //:task (add colon)
-                    Ok(format!("//:{}", task))
-                }
+            if is_colon_pattern {
+                Ok(format!("{scope}{task}"))
             } else {
-                // We're in a subdirectory
-                if is_colon_pattern {
-                    // :task -> //path:task
-                    Ok(format!("//{}{}", path_str, task))
-                } else {
-                    // bare name -> //path:task
-                    Ok(format!("//{}:{}", path_str, task))
-                }
+                Ok(format!("{scope}:{task}"))
             }
         } else {
             if is_colon_pattern {
@@ -239,6 +234,17 @@ pub fn expand_colon_task_syntax(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_monorepo_scope() {
+        let root = Path::new("repo");
+        assert_eq!(monorepo_scope(root, root), Some("//".to_string()));
+        assert_eq!(
+            monorepo_scope(root, &root.join("apps").join("api")),
+            Some("//apps/api".to_string())
+        );
+        assert_eq!(monorepo_scope(root, Path::new("other")), None);
+    }
 
     #[test]
     fn test_extract_path_hint() {

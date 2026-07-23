@@ -32,6 +32,63 @@ pub enum FreshnessResult {
     Forced,
 }
 
+/// Whether a configured deps provider can run in its current project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DepsProviderApplicability {
+    Applicable,
+    Inactive(String),
+}
+
+impl DepsProviderApplicability {
+    /// Require a provider-specific file to exist.
+    pub fn require_file(path: &Path, name: &str) -> Self {
+        if path.exists() {
+            Self::Applicable
+        } else {
+            Self::Inactive(format!("missing {name}"))
+        }
+    }
+
+    /// Require one of several provider-specific files to exist.
+    pub fn require_any_file(paths: &[(&Path, &str)]) -> Self {
+        if paths.iter().any(|(path, _)| path.exists()) {
+            Self::Applicable
+        } else {
+            let names = paths
+                .iter()
+                .map(|(_, name)| *name)
+                .collect::<Vec<_>>()
+                .join(" or ");
+            Self::Inactive(format!("missing {names}"))
+        }
+    }
+
+    /// Require a file to exist and contain data.
+    pub fn require_nonempty_file(path: &Path, name: &str) -> Self {
+        if !path.exists() {
+            return Self::Inactive(format!("missing {name}"));
+        }
+        if path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+            Self::Applicable
+        } else {
+            Self::Inactive(format!("empty {name}"))
+        }
+    }
+
+    /// Require a custom provider to define a non-empty run command.
+    pub fn require_run(run: Option<&str>) -> Self {
+        match run {
+            Some(run) if !run.trim().is_empty() => Self::Applicable,
+            Some(_) => Self::Inactive("run command is empty".to_string()),
+            None => Self::Inactive("missing run command".to_string()),
+        }
+    }
+
+    pub fn is_applicable(&self) -> bool {
+        matches!(self, Self::Applicable)
+    }
+}
+
 impl FreshnessResult {
     /// Returns true if the provider should be considered fresh (no work needed)
     pub fn is_fresh(&self) -> bool {
@@ -114,6 +171,16 @@ pub trait DepsProvider: Debug + Send + Sync {
         &self.base().id
     }
 
+    /// Stable identifier used for persistent freshness state.
+    ///
+    /// This may differ from [`Self::id`] when a provider is wrapped with a
+    /// scope for display, selection, and dependency ordering. State files are
+    /// already isolated by project root, so the provider's unscoped identity
+    /// should be used consistently across invocation modes.
+    fn state_id(&self) -> &str {
+        self.id()
+    }
+
     /// Returns the source files to check for freshness (lock files, config files)
     fn sources(&self) -> Vec<PathBuf>;
 
@@ -143,8 +210,13 @@ pub trait DepsProvider: Debug + Send + Sync {
     /// The command to run when outputs are stale relative to sources
     fn install_command(&self) -> Result<DepsCommand>;
 
+    /// Whether this provider is applicable, with an actionable reason if not.
+    fn applicability(&self) -> DepsProviderApplicability;
+
     /// Whether this provider is applicable (e.g., lockfile exists)
-    fn is_applicable(&self) -> bool;
+    fn is_applicable(&self) -> bool {
+        self.applicability().is_applicable()
+    }
 
     /// Whether this provider should auto-run before mise x/run
     fn is_auto(&self) -> bool {
