@@ -68,8 +68,10 @@ installs app bundles into `/Applications` while recording the version under
 ```
 
 `brew-cask` currently supports app-bundle casks (`app` artifacts), binary casks
-(`binary` artifacts), and simple macOS installer packages (`pkg` artifacts)
-from dmg and common archive formats. Binary artifacts are staged in the Caskroom
+(`binary` artifacts), simple macOS installer packages (`pkg` artifacts), and
+shell completions (`bash_completion`, `fish_completion`, `zsh_completion`, and
+`generate_completions_from_executable`) from dmg and common archive formats.
+Binary artifacts are staged in the Caskroom
 and linked into the Homebrew prefix, usually under `<prefix>/bin`. Package
 installers run through mise's normal system-package sudo path, so non-interactive
 runs never hang waiting for a password. Pkg casks must include `pkgutil` receipt
@@ -82,8 +84,7 @@ delegating to Homebrew. mise also supports structured `preflight_steps` and
 `postflight_steps` for `move`/`remove` operations against `staged_path`. Casks
 that require custom installer choices, services, unsupported hook DSL, unsupported
 structured lifecycle steps, or other cask artifact types fail with a clear
-unsupported artifact error instead of delegating to Homebrew. Generated shell
-completions are not installed.
+unsupported artifact error instead of delegating to Homebrew.
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like
