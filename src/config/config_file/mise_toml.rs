@@ -1678,19 +1678,15 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 venv: Option<EnvDirectivePythonVenv>,
                             }
 
+                            // Reuses `deserialize_arr` so each of `path`/`file`/`source`
+                            // accepts either a single value or a list, while
+                            // `ParsedEnvBlock` below iterates the `_` table in the order
+                            // the keys were written.
                             #[derive(Deserialize)]
-                            struct EnvDirectives {
-                                #[serde(default, deserialize_with = "deserialize_arr")]
-                                path: Vec<MiseTomlEnvDirective>,
-                                #[serde(default, deserialize_with = "deserialize_arr")]
-                                file: Vec<MiseTomlEnvDirective>,
-                                #[serde(default, deserialize_with = "deserialize_arr")]
-                                source: Vec<MiseTomlEnvDirective>,
-                                #[serde(default)]
-                                python: EnvDirectivePython,
-                                #[serde(flatten)]
-                                other: BTreeMap<String, toml::Value>,
-                            }
+                            struct DirectiveArr(
+                                #[serde(deserialize_with = "deserialize_arr")]
+                                Vec<MiseTomlEnvDirective>,
+                            );
 
                             impl<'de> de::Deserialize<'de> for EnvDirectivePythonVenv {
                                 fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -1799,21 +1795,95 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 })
                             }
 
-                            let directives = map.next_value::<EnvDirectives>()?;
-                            // TODO: parse these in the order they're defined somehow
-                            env.extend(flatten_directives(directives.path, EnvDirective::Path));
-                            env.extend(flatten_directives(directives.file, EnvDirective::File));
-                            env.extend(flatten_directives(directives.source, EnvDirective::Source));
-                            for (key, mut value) in directives.other {
-                                let mut opts = EnvDirectiveOptions::default();
-                                if let Some(table) = value.as_table_mut()
-                                    && let Some(tools) = table.remove("tools")
-                                {
-                                    opts.tools = tools.as_bool().unwrap_or(false);
-                                }
-                                env.push(EnvDirective::Module(key, value, opts));
+                            // Parse the `_` table preserving the written order of its
+                            // sub-keys (`path`/`file`/`source`/modules) so that a later
+                            // directive's template can reference a variable exported by
+                            // an earlier one — e.g. `_.path` using a var from `_.source`
+                            // (discussion #3783). `python.venv` is applied last
+                            // regardless of position: it is a tools-phase directive whose
+                            // PATH conventionally comes after tool paths.
+                            struct ParsedEnvBlock {
+                                directives: Vec<EnvDirective>,
+                                venv: Option<EnvDirectivePythonVenv>,
                             }
-                            if let Some(venv) = directives.python.venv {
+
+                            impl<'de> Deserialize<'de> for ParsedEnvBlock {
+                                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                                where
+                                    D: Deserializer<'de>,
+                                {
+                                    struct ParsedEnvBlockVisitor;
+                                    impl<'de> Visitor<'de> for ParsedEnvBlockVisitor {
+                                        type Value = ParsedEnvBlock;
+                                        fn expecting(
+                                            &self,
+                                            formatter: &mut Formatter,
+                                        ) -> std::fmt::Result
+                                        {
+                                            formatter.write_str("the env `_` directive table")
+                                        }
+                                        fn visit_map<M>(
+                                            self,
+                                            mut map: M,
+                                        ) -> Result<Self::Value, M::Error>
+                                        where
+                                            M: de::MapAccess<'de>,
+                                        {
+                                            let mut directives = vec![];
+                                            let mut venv = None;
+                                            while let Some(key) = map.next_key::<String>()? {
+                                                match key.as_str() {
+                                                    "path" => {
+                                                        directives.extend(flatten_directives(
+                                                            map.next_value::<DirectiveArr>()?.0,
+                                                            EnvDirective::Path,
+                                                        ));
+                                                    }
+                                                    "file" => {
+                                                        directives.extend(flatten_directives(
+                                                            map.next_value::<DirectiveArr>()?.0,
+                                                            EnvDirective::File,
+                                                        ));
+                                                    }
+                                                    "source" => {
+                                                        directives.extend(flatten_directives(
+                                                            map.next_value::<DirectiveArr>()?.0,
+                                                            EnvDirective::Source,
+                                                        ));
+                                                    }
+                                                    "python" => {
+                                                        venv = map
+                                                            .next_value::<EnvDirectivePython>()?
+                                                            .venv;
+                                                    }
+                                                    _ => {
+                                                        let mut value =
+                                                            map.next_value::<toml::Value>()?;
+                                                        let mut opts =
+                                                            EnvDirectiveOptions::default();
+                                                        if let Some(table) = value.as_table_mut()
+                                                            && let Some(tools) =
+                                                                table.remove("tools")
+                                                        {
+                                                            opts.tools =
+                                                                tools.as_bool().unwrap_or(false);
+                                                        }
+                                                        directives.push(EnvDirective::Module(
+                                                            key, value, opts,
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                            Ok(ParsedEnvBlock { directives, venv })
+                                        }
+                                    }
+                                    deserializer.deserialize_map(ParsedEnvBlockVisitor)
+                                }
+                            }
+
+                            let block = map.next_value::<ParsedEnvBlock>()?;
+                            env.extend(block.directives);
+                            if let Some(venv) = block.venv {
                                 env.push(EnvDirective::PythonVenv {
                                     path: venv.path,
                                     create: venv.create,
@@ -2438,6 +2508,39 @@ mod tests {
             assert_snapshot!(cf);
             assert_debug_snapshot!(cf);
         });
+    }
+
+    #[tokio::test]
+    async fn test_env_directive_written_order() {
+        // Directives inside `[env]._` are emitted in the order they are written,
+        // rather than the previous fixed path -> file -> source order, so a later
+        // directive's template can reference a variable set by an earlier one.
+        // https://github.com/jdx/mise/discussions/3783
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [env]
+            _.source = "a.sh"
+            _.path = "b"
+            _.file = "c.env"
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let kinds: Vec<&str> = cf
+            .env
+            .0
+            .iter()
+            .map(|d| match d {
+                EnvDirective::Source(..) => "source",
+                EnvDirective::Path(..) => "path",
+                EnvDirective::File(..) => "file",
+                _ => "other",
+            })
+            .collect();
+        assert_eq!(kinds, ["source", "path", "file"]);
     }
 
     #[tokio::test]
@@ -3281,8 +3384,8 @@ run = 'echo "template"'
         foo3=3
         foo4=4
         unset rm
-        _.path = "/bar"
         _.file = ".env2"
+        _.path = "/bar"
         _.source = "/baz2"
         foo5=5
         foo6=6
