@@ -1,5 +1,6 @@
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
+use std::process::Stdio;
 
 use async_trait::async_trait;
 use eyre::{WrapErr, bail, eyre};
@@ -716,7 +717,7 @@ fn swap_app(target: &Path, tmp_target: &Path) -> Result<()> {
         "mise-old-{}",
         crate::hash::hash_to_str(&target.display().to_string())
     ));
-    file::remove_all(&old_target)?;
+    remove_app(&old_target)?;
     if target.exists() {
         file::rename(&target, &old_target)?;
     }
@@ -727,8 +728,59 @@ fn swap_app(target: &Path, tmp_target: &Path) -> Result<()> {
         }
         return Err(e);
     }
-    file::remove_all(&old_target)?;
+    remove_app(&old_target)?;
     Ok(())
+}
+
+fn remove_app(path: &Path) -> Result<()> {
+    match file::remove_all(path) {
+        Ok(()) => return Ok(()),
+        Err(err) if !is_permission_denied(&err) => return Err(err),
+        Err(_) => {}
+    }
+
+    repair_app_permissions(path);
+    match file::remove_all(path) {
+        Ok(()) => return Ok(()),
+        Err(err) if !is_permission_denied(&err) => return Err(err),
+        Err(_) => {}
+    }
+
+    let user = nix::unistd::User::from_uid(nix::unistd::geteuid())?
+        .map(|user| user.name)
+        .ok_or_else(|| eyre!("brew-cask: could not determine current user"))?;
+    sudo::run(
+        "chown",
+        &[
+            "-R".to_string(),
+            "--".to_string(),
+            user,
+            path.display().to_string(),
+        ],
+        &[],
+    )?;
+    repair_app_permissions(path);
+    file::remove_all(path)
+}
+
+fn repair_app_permissions(path: &Path) {
+    let run = |program: &str, args: &[&str]| {
+        let _ = std::process::Command::new(program)
+            .args(args)
+            .arg(path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    };
+    run("/usr/bin/chflags", &["-R", "--", "000"]);
+    run("/bin/chmod", &["-R", "--", "u+rwx"]);
+    run("/bin/chmod", &["-R", "-N"]);
+}
+
+fn is_permission_denied(err: &eyre::Report) -> bool {
+    err.downcast_ref::<std::io::Error>()
+        .is_some_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied)
 }
 
 /// Copy a directory using macOS `ditto`, which preserves resource forks, extended attributes,
