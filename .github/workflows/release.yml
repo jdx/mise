@@ -85,7 +85,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
     runs-on: namespace-profile-endev-macos-arm64
-    timeout-minutes: 150
+    timeout-minutes: 300
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
       MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
@@ -116,7 +116,7 @@ jobs:
         env:
           MISE_PGO: ${{ matrix.pgo || '' }}
         with:
-          timeout_minutes: 140
+          timeout_minutes: 280
           max_attempts: 3
           # Keep rustc, rust-std, and the profiling runtime on the same
           # toolchain. A mismatched runner default makes PGO training fail
