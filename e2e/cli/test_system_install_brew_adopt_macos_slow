@@ -94,7 +94,7 @@ git -C "$TAP_DIR" -c user.name=mise-test -c user.email=mise-test@example.invalid
   commit -m "test: add deterministic handoff casks"
 
 set +e
-brew install --cask --adopt "mise-test/handoff/$TOKEN" \
+brew install --cask --adopt "$TAP_DIR/Casks/$TOKEN.rb" \
   >"$TMPDIR/same-version-adopt.log" 2>&1
 ADOPT_STATUS=$?
 set -e
