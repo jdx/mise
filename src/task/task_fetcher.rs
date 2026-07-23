@@ -36,8 +36,9 @@ impl TaskFetcher {
                     bail!("No provider found for file: {}", source);
                 }
 
-                let local_path = provider.unwrap().get_local_path(&source).await?;
                 let original = t.clone();
+                let artifact = provider.unwrap().get_local_artifact(&source).await?;
+                let local_path = artifact.path;
                 let config_root = original
                     .config_root
                     .clone()
@@ -73,6 +74,12 @@ impl TaskFetcher {
                 // intentionally not handled by merge_toml_overlay().
                 remote.global = original.global;
                 remote.remote_file_source = Some(source);
+                remote
+                    .remote_artifact_cleanups
+                    .extend(original.remote_artifact_cleanups);
+                if let Some(cleanup) = artifact.cleanup {
+                    remote.remote_artifact_cleanups.push(cleanup);
+                }
                 *t = remote;
             }
         }

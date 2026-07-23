@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+HTTP_PORT_FILE="$TMPDIR/mise_http_test_port"
+MISE_HTTP_TEST_PORT_FILE="$HTTP_PORT_FILE" \
+  python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" 0 &
+HTTP_SERVER_PID=$!
+
+cleanup() {
+  kill "$HTTP_SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+wait_for_file "$HTTP_PORT_FILE" "HTTP test server port file" 30 "$HTTP_SERVER_PID"
+HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+
+cat <<EOF >mise.toml
+[tasks.remote_revision_a]
+file = "http://localhost:${HTTP_PORT}/test/remote-changing"
+
+[tasks.remote_revision_b]
+file = "http://localhost:${HTTP_PORT}/test/remote-changing"
+EOF
+
+ARTIFACT_TMPDIR="$TMPDIR/remote-http-artifacts"
+mkdir -p "$ARTIFACT_TMPDIR"
+output=$(quiet_assert_succeed "TMPDIR=$ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run remote_revision_a ::: remote_revision_b")
+assert_contains_text "$output" "remote revision 1"
+assert_contains_text "$output" "remote revision 2"
+assert_fail "find '$ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."
