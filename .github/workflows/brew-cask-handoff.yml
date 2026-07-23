@@ -50,8 +50,6 @@ jobs:
         run: cargo build --all-features
 
       - name: Execute deterministic handoff probe
-        env:
-          MISE_AUTO_INSTALL: "0"
         run: |
           export PATH="$PWD/target/debug:$PATH"
           mise run test:e2e e2e/cli/test_system_install_brew_adopt_macos_slow
