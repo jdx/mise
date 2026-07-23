@@ -53,6 +53,8 @@ use regex::Regex;
 use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 
+pub use prepared_install::PreparedInstall;
+
 pub mod aqua;
 pub mod asdf;
 pub mod asset_matcher;
@@ -73,6 +75,7 @@ pub mod pipx;
 pub mod pkgx;
 pub mod platform_target;
 mod platform_tokens;
+mod prepared_install;
 pub mod s3;
 pub mod spm;
 pub mod static_helpers;
@@ -2123,6 +2126,15 @@ pub trait Backend: Debug + Send + Sync {
         None
     }
 
+    /// Resolve the inputs installation is allowed to consume before any
+    /// backend-specific install side effects begin.
+    ///
+    /// Backends use the explicit legacy path until they migrate preparation
+    /// and execution together.
+    fn prepare_install(&self, _ctx: &InstallContext, _tv: &ToolVersion) -> Result<PreparedInstall> {
+        Ok(PreparedInstall::legacy())
+    }
+
     async fn install_version(
         &self,
         ctx: InstallContext,
@@ -2155,6 +2167,14 @@ pub trait Backend: Debug + Send + Sync {
                 );
             }
         }
+
+        // Locked dry-runs validate the prepared backend inputs too. Normal
+        // dry-runs retain their existing no-install behavior.
+        let prepared = if ctx.locked {
+            Some(self.prepare_install(&ctx, &tv)?)
+        } else {
+            None
+        };
 
         // A rolling release (e.g. a `nightly` tag) keeps the same version string,
         // so its install dir already existing does NOT mean it's up-to-date.
@@ -2198,6 +2218,14 @@ pub trait Backend: Debug + Send + Sync {
         let will_uninstall =
             (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
+        // Forced and rolling reinstalls must prepare before removing the old
+        // installation. New installs can defer preparation until after the
+        // already-installed fast path below.
+        let mut prepared = prepared;
+        if will_uninstall && prepared.is_none() {
+            prepared = Some(self.prepare_install(&ctx, &tv)?);
+        }
+
         // Query backend for operation count and set up progress tracking
         let install_ops = self.install_operation_count(&tv, &ctx).await;
         let total_ops = if will_uninstall {
@@ -2219,6 +2247,12 @@ pub trait Backend: Debug + Send + Sync {
             return Ok(tv);
         }
 
+        // Resolve every remaining backend input before creating install dirs.
+        let prepared = match prepared {
+            Some(prepared) => prepared,
+            None => self.prepare_install(&ctx, &tv)?,
+        };
+
         // Track the installation asynchronously (fire-and-forget)
         // Do this before install so the request has time to complete during installation
         versions_host::track_install(tv.short(), &tv.ba().full(), &tv.version);
@@ -2239,14 +2273,15 @@ pub trait Backend: Debug + Send + Sync {
         self.create_install_dirs(&tv)?;
 
         let old_tv = tv.clone();
-        let tv = match self.install_version_(&ctx, tv).await {
-            Ok(tv) => tv,
+        let successful = match prepared.execute(self, &ctx, tv).await {
+            Ok(successful) => successful,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
                 // Pass through the error - it will be wrapped at a higher level
                 return Err(e);
             }
         };
+        let tv = successful.into_tool_version();
 
         let install_path = tv.install_path();
         let mut update_install_state = false;
