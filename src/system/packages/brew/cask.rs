@@ -710,6 +710,7 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
     Ok(())
 }
 
+/// Atomically replace an app, restoring the previous bundle if activation fails.
 fn swap_app(target: &Path, tmp_target: &Path) -> Result<()> {
     // Atomic swap: rename existing target aside before putting the new one in place so that
     // a failure during rename leaves the old app intact rather than leaving nothing.
@@ -728,10 +729,18 @@ fn swap_app(target: &Path, tmp_target: &Path) -> Result<()> {
         }
         return Err(e);
     }
-    remove_app(&old_target)?;
+    // The replacement is already live. A cleanup failure must not report the
+    // install as failed or prevent install_app from removing quarantine.
+    if let Err(err) = remove_app(&old_target) {
+        warn!(
+            "brew-cask: failed to remove old app backup {}: {err:#}",
+            old_target.display()
+        );
+    }
     Ok(())
 }
 
+/// Remove an app bundle, repairing protected contents before escalating ownership.
 fn remove_app(path: &Path) -> Result<()> {
     match file::remove_all(path) {
         Ok(()) => return Ok(()),
@@ -749,6 +758,8 @@ fn remove_app(path: &Path) -> Result<()> {
     let user = nix::unistd::User::from_uid(nix::unistd::geteuid())?
         .map(|user| user.name)
         .ok_or_else(|| eyre!("brew-cask: could not determine current user"))?;
+    // Match Homebrew's final ownership-recovery step. sudo::run applies the
+    // system_packages.sudo setting and refuses to prompt without a TTY.
     sudo::run(
         "chown",
         &[
@@ -763,6 +774,7 @@ fn remove_app(path: &Path) -> Result<()> {
     file::remove_all(path)
 }
 
+/// Clear flags, restore owner permissions, and remove ACLs from an app bundle.
 fn repair_app_permissions(path: &Path) {
     let run = |program: &str, args: &[&str]| {
         let _ = std::process::Command::new(program)
@@ -778,6 +790,7 @@ fn repair_app_permissions(path: &Path) {
     run("/bin/chmod", &["-R", "-N"]);
 }
 
+/// Return whether an eyre chain originated from an I/O permission error.
 fn is_permission_denied(err: &eyre::Report) -> bool {
     err.downcast_ref::<std::io::Error>()
         .is_some_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied)
