@@ -420,7 +420,7 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | yarn       | `.yvmrc`, `package.json`                  |
 
 For `go.mod`, the `toolchain goX.Y.Z` directive (an exact toolchain pin) is used when present.
-Otherwise the `go X.Y` directive is used; because it declares only the *minimum* required Go
+Otherwise the `go X.Y` directive is used; because it declares only the _minimum_ required Go
 version, mise resolves it to the latest matching patch (e.g. `go 1.22` → latest `1.22.x`).
 
 In mise, these are disabled by default, see <https://github.com/jdx/mise/discussions/4345> for rationale.
