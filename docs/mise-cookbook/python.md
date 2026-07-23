@@ -77,6 +77,10 @@ If you want `mise` to use the virtual environment created by `uv`, you can set t
 Use `"source"` to only source an existing `.venv`, or `"create|source"` to create it if missing and then source it.
 If you prefer `mise deps` to create the venv, keep it at `"source"`, enable `[deps.uv]`, and run `mise deps`.
 
+::: tip
+`mise` locates the uv project by walking up for a `uv.lock` file — that lockfile is how `mise` knows the project uses uv. A `uv.lock` must therefore be present: if none is found (for example a fresh project that hasn't been `uv sync`'d yet), the setting does nothing. Run `uv sync` (or `uv lock`) to generate one.
+:::
+
 ```toml [mise.toml]
 [settings]
 python.uv_venv_auto = "source"
