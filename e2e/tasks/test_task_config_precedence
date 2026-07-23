@@ -1,20 +1,67 @@
 #!/usr/bin/env bash
 
-mkdir -p .config .mise
+mkdir -p .config/mise/conf.d .mise/tasks
 
 cat <<'EOF' >.config/mise.toml
 [tasks.a]
 description = ".config/a"
 run = "echo .config/a"
+
+[tasks.b]
+description = ".config/b"
+alias = "low"
+env = { LOWER_PRECEDENCE = "applied" }
 EOF
 
 cat <<'EOF' >.mise/config.toml
 [tasks.a]
 description = ".mise/a"
 run = "echo .mise/a"
+
+[tasks.b]
+description = ".mise/b"
+alias = "high"
+env = { HIGHER_PRECEDENCE = "applied" }
 EOF
+
+cat <<'EOF' >.mise/tasks/b
+#!/usr/bin/env bash
+echo "HIGHER_PRECEDENCE=${HIGHER_PRECEDENCE:-<unset>}"
+echo "LOWER_PRECEDENCE=${LOWER_PRECEDENCE:-<unset>}"
+EOF
+chmod +x .mise/tasks/b
 
 assert_contains "mise tasks" "a  .mise/a"
 assert_not_contains "mise tasks" "a  .config/a"
 assert_contains "mise run a" ".mise/a"
 assert_not_contains "mise run a" ".config/a"
+
+# A script receives only the highest-precedence inline definition. Additive
+# fields such as aliases and env must not accumulate from lower configs.
+assert_contains "mise tasks" "b  .mise/b"
+assert_contains "mise run high" "HIGHER_PRECEDENCE=applied"
+assert_contains "mise run high" "LOWER_PRECEDENCE=<unset>"
+assert_fail "mise run low"
+
+cat <<'EOF' >.config/mise/conf.d/01-base.toml
+[tasks.c]
+description = "conf.d/01/c"
+env = { LOWER_PRECEDENCE = "applied" }
+EOF
+
+cat <<'EOF' >.config/mise/conf.d/02-override.toml
+[tasks.c]
+description = "conf.d/02/c"
+env = { HIGHER_PRECEDENCE = "applied" }
+EOF
+
+cat <<'EOF' >.mise/tasks/c
+#!/usr/bin/env bash
+echo "HIGHER_PRECEDENCE=${HIGHER_PRECEDENCE:-<unset>}"
+echo "LOWER_PRECEDENCE=${LOWER_PRECEDENCE:-<unset>}"
+EOF
+chmod +x .mise/tasks/c
+
+assert_contains "mise tasks" "c  conf.d/02/c"
+assert_contains "mise run c" "HIGHER_PRECEDENCE=applied"
+assert_contains "mise run c" "LOWER_PRECEDENCE=<unset>"

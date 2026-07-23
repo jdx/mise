@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+mkdir -p "$HOME/global-config"
+
+marker="$MISE_TMP_DIR/global-config-render-count"
+cat >"$HOME/global-config/config.toml" <<EOF
+[tasks.render-once]
+description = "{{ exec(command='echo rendered >> $marker') }}"
+run = "echo render-once"
+EOF
+
+# A path listed as both user-global and system config is one physical config and
+# must render once. Task rendering can execute templates, so duplicate loading
+# is observable even when the final task map deduplicates the name.
+MISE_GLOBAL_CONFIG_FILE="$HOME/global-config/config.toml" \
+  MISE_SYSTEM_CONFIG_FILE="$HOME/global-config/config.toml" \
+  mise tasks >/dev/null
+assert "wc -l < '$marker' | tr -d ' '" "1"
+
+linked_marker="$MISE_TMP_DIR/linked-global-config-render-count"
+cat >"$HOME/global-config/linked-config.toml" <<EOF
+[tasks.render-linked-once]
+description = "{{ exec(command='echo rendered >> $linked_marker') }}"
+run = "echo render-linked-once"
+EOF
+ln -s "linked-config.toml" "$HOME/global-config/config-link.toml"
+MISE_GLOBAL_CONFIG_FILE="$HOME/global-config/linked-config.toml" \
+  MISE_SYSTEM_CONFIG_FILE="$HOME/global-config/config-link.toml" \
+  mise tasks >/dev/null
+assert "wc -l < '$linked_marker' | tr -d ' '" "1"
