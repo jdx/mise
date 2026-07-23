@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Read go version from go.mod (idiomatic version file, opt-in)
+# The "ignored without opt-in" case is covered by e2e/core/test_go_slow.
+
+# Enable idiomatic version files for go
+mise settings set idiomatic_version_file_enable_tools go
+
+# the `toolchain` directive is an exact pin and takes precedence over the
+# `go` directive (which is only a minimum version)
+cat >go.mod <<EOF
+module example.com/m
+
+go 1.21
+toolchain go1.21.4
+EOF
+assert "mise current go" "1.21.4"
+
+# `toolchain default` is ignored; the `go` directive is used, resolved to the
+# latest matching patch (a minimum version -> latest 1.21.x)
+cat >go.mod <<EOF
+module example.com/m
+
+go 1.21
+toolchain default
+EOF
+assert_contains "mise current go" "1.21"
