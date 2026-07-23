@@ -19,7 +19,8 @@
 - **Planned at**: commit `866916893`, 2026-07-23
 - **DONE**: 2026-07-23 — `SafePathComponent` / `CaskIds`, checked joins, component-aware
   `app_target_path`, `$APPDIR` contain-after-expand, **request-token equality**
-  (`ensure_cask_token_matches_request` in `fetch_cask`; accepts `old_tokens`/`aliases`);
+  (exact `cask.token` always; `old_tokens`/`aliases` only for official homebrew/cask —
+  never third-party self-declared lists; hostile-alias bypass test);
   existing-symlink rejection at mutation boundaries; adversarial unit tests. No semver ordering.
 
 ## Why this matters

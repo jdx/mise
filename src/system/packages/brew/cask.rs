@@ -835,18 +835,40 @@ fn requested_cask_token(req: &PackageRequest) -> &str {
     }
 }
 
-/// True when API canonical token or declared alias/old_token equals the request token.
-fn cask_token_matches_request(cask: &Cask, requested: &str) -> bool {
+/// Whether this request is served by the official Homebrew cask registry.
+///
+/// Only that source may use API `old_tokens`/`aliases` for request matching.
+/// Third-party taps must match `cask.token` exactly — their alias lists are
+/// untrusted and must not redirect pour identity (hostile-tap wrong-identity).
+fn trust_homebrew_cask_api_aliases(req: &PackageRequest) -> bool {
+    match split_tap_name(&req.name) {
+        Some(("homebrew", "cask", _)) => true,
+        Some(_) => false,
+        // Bare names are fetched only from formulae.brew.sh official cask API.
+        None => true,
+    }
+}
+
+/// Request identity check.
+///
+/// - Always accept exact `cask.token == requested`.
+/// - Accept API `old_tokens`/`aliases` **only** when `trust_api_aliases` is true
+///   (official homebrew/cask). Never trust those lists from third-party taps.
+fn cask_token_matches_request(cask: &Cask, requested: &str, trust_api_aliases: bool) -> bool {
     if cask.token == requested {
         return true;
+    }
+    if !trust_api_aliases {
+        return false;
     }
     cask.old_tokens.iter().any(|t| t == requested) || cask.aliases.iter().any(|t| t == requested)
 }
 
-/// Fail closed: never pour under an identity different from the request token/alias.
+/// Fail closed before any path/FS work: response identity must answer the request.
 fn ensure_cask_token_matches_request(cask: &Cask, req: &PackageRequest) -> Result<()> {
     let requested = requested_cask_token(req);
-    if cask_token_matches_request(cask, requested) {
+    let trust_aliases = trust_homebrew_cask_api_aliases(req);
+    if cask_token_matches_request(cask, requested, trust_aliases) {
         return Ok(());
     }
     bail!(
@@ -3843,9 +3865,9 @@ end
         Ok(())
     }
 
-    /// Plan 011: API token must equal requested token (or old_token/alias).
+    /// Plan 011: exact token match; official API may use old_tokens/aliases.
     #[test]
-    fn request_token_equality_accepts_canonical_and_aliases() -> Result<()> {
+    fn request_token_equality_accepts_canonical_and_trusted_aliases() -> Result<()> {
         let cask = test_cask("visual-studio-code", "1.0.0");
         ensure_cask_token_matches_request(&cask, &test_request("visual-studio-code"))?;
         ensure_cask_token_matches_request(
@@ -3853,12 +3875,24 @@ end
             &test_request("homebrew/cask/visual-studio-code"),
         )?;
 
+        // Official homebrew/cask (and bare official API) may honor old_tokens/aliases.
         let mut aliased = test_cask("visual-studio-code", "1.0.0");
         aliased.old_tokens = vec!["vscode".into()];
         aliased.aliases = vec!["code-app".into()];
         ensure_cask_token_matches_request(&aliased, &test_request("vscode"))?;
+        ensure_cask_token_matches_request(&aliased, &test_request("homebrew/cask/vscode"))?;
         ensure_cask_token_matches_request(&aliased, &test_request("code-app"))?;
-        ensure_cask_token_matches_request(&aliased, &test_request("someowner/sometap/vscode"))?;
+
+        // Third-party tap: exact token only — self-declared aliases are ignored.
+        assert!(
+            ensure_cask_token_matches_request(&aliased, &test_request("evil-org/evil-tap/vscode"))
+                .is_err(),
+            "third-party must not accept API old_tokens/aliases"
+        );
+        ensure_cask_token_matches_request(
+            &aliased,
+            &test_request("evil-org/evil-tap/visual-studio-code"),
+        )?;
         Ok(())
     }
 
@@ -3889,20 +3923,61 @@ end
                 .to_string();
         assert!(err2.contains("innocent"), "err2={err2}");
 
-        // Mismatch must never proceed to CaskIds/path joins under the wrong token.
-        assert!(CaskIds::validate(&hostile.token, &hostile.version).is_ok());
-        // But callers must not use hostile.token when ensure failed — simulate
-        // install_one order: equality first, then ids from *matched* identity only.
         assert_eq!(requested_cask_token(&req), "innocent");
-        assert!(!cask_token_matches_request(&hostile, "innocent"));
+        assert!(!cask_token_matches_request(
+            &hostile,
+            "innocent",
+            trust_homebrew_cask_api_aliases(&req)
+        ));
 
         let after = WalkDir::new(tmp.path())
             .into_iter()
             .filter_map(|e| e.ok())
             .count();
         assert_eq!(before, after, "token mismatch must not mutate prefix");
-        // Caskroom for either identity must not appear from this check alone.
         assert!(!tmp.path().join("Caskroom").exists());
+        Ok(())
+    }
+
+    /// Hostile third-party body: token=evil, old_tokens=[innocent] must NOT accept.
+    /// That was the wrong-identity pour hole (request innocent → Caskroom/evil-payload).
+    #[test]
+    fn hostile_tap_self_declared_old_tokens_fail_closed_without_fs_mutation() -> Result<()> {
+        let _lock = env_lock();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let before = WalkDir::new(tmp.path())
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .count();
+
+        let mut hostile = test_cask("evil-payload", "9.9.9");
+        hostile.old_tokens = vec!["innocent".into()];
+        hostile.aliases = vec!["innocent".into()];
+
+        // Third-party tap request (untrusted aliases).
+        let third_party = test_request("evil-org/malware-tap/innocent");
+        assert!(!trust_homebrew_cask_api_aliases(&third_party));
+        let err = ensure_cask_token_matches_request(&hostile, &third_party)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("does not match") && err.contains("evil-payload"),
+            "err={err}"
+        );
+        assert!(!cask_token_matches_request(
+            &hostile, "innocent", /* trust_api_aliases */ false
+        ));
+        // install_one would use cask.token for paths only after ensure — ensure failed.
+        assert_eq!(hostile.token, "evil-payload");
+        assert!(!tmp.path().join("Caskroom/evil-payload").exists());
+        assert!(!tmp.path().join("Caskroom/innocent").exists());
+
+        let after = WalkDir::new(tmp.path())
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .count();
+        assert_eq!(before, after, "hostile alias bypass must not mutate prefix");
         Ok(())
     }
 
