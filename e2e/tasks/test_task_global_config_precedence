@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+mkdir -p "$HOME/.config/mise/conf.d" "$HOME/.config/mise/tasks"
+
+cat <<'EOF' >"$MISE_SYSTEM_DIR/config.toml"
+[tasks.e]
+description = "system/config/e"
+env = { SYSTEM_PRECEDENCE = "applied" }
+EOF
+
+cat <<'EOF' >"$HOME/.config/mise/conf.d/01-base.toml"
+[tasks.e]
+description = "global/conf.d/01/e"
+env = { LOWER_PRECEDENCE = "applied" }
+EOF
+
+cat <<'EOF' >"$HOME/.config/mise/config.toml"
+[tasks.e]
+description = "global/config/e"
+env = { HIGHER_PRECEDENCE = "applied" }
+EOF
+
+cat <<'EOF' >"$HOME/.config/mise/tasks/e"
+#!/usr/bin/env bash
+echo "HIGHER_PRECEDENCE=${HIGHER_PRECEDENCE:-<unset>}"
+echo "LOWER_PRECEDENCE=${LOWER_PRECEDENCE:-<unset>}"
+echo "SYSTEM_PRECEDENCE=${SYSTEM_PRECEDENCE:-<unset>}"
+EOF
+chmod +x "$HOME/.config/mise/tasks/e"
+
+mkdir -p "$TMPDIR/outside-home"
+assert_contains "mise tasks --global" "e"
+assert_contains "mise run e" "HIGHER_PRECEDENCE=applied"
+assert_contains "mise run e" "LOWER_PRECEDENCE=<unset>"
+assert_contains "mise run e" "SYSTEM_PRECEDENCE=<unset>"
+assert_contains "mise -C '$TMPDIR/outside-home' run e" "HIGHER_PRECEDENCE=applied"
+assert_contains "mise -C '$TMPDIR/outside-home' run e" "LOWER_PRECEDENCE=<unset>"
+assert_contains "mise -C '$TMPDIR/outside-home' run e" "SYSTEM_PRECEDENCE=<unset>"

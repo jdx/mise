@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+mkdir -p "$HOME/.config/mise/conf.d" "$HOME/.config/mise/tasks"
+
+marker="$MISE_TMP_DIR/source-comparison-exec-marker"
+script="$HOME/.config/mise/tasks/same"
+
+cat <<'EOF' >"$script"
+#!/usr/bin/env bash
+echo same-script
+EOF
+chmod +x "$script"
+cat <<'EOF' >"$HOME/.config/mise/tasks/same-hash"
+#!/usr/bin/env bash
+echo same-hash-script
+EOF
+chmod +x "$HOME/.config/mise/tasks/same-hash"
+
+cat <<'EOF' >"$HOME/.config/mise/config.toml"
+[task_config]
+includes = [".config/mise/tasks"]
+EOF
+
+cat >"$HOME/.config/mise/conf.d/lower.toml" <<EOF
+[task_config]
+includes = ["empty-global-tasks"]
+
+[tasks.same]
+file = "{{ exec(command='printf $script; printf x >> $marker') }}"
+env = { LOWER_OVERLAY = "must-not-render-for-comparison" }
+vars = { SIDE_EFFECT = "{{ exec(command='printf y >> $marker') }}" }
+
+[tasks.same-hash]
+file = "{{ '/definitely/missing' | hash_file }}"
+EOF
+
+mise tasks >/dev/null
+if [[ -e $marker ]]; then
+  fail "task source comparison executed a deferred file template"
+fi
