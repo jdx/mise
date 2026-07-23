@@ -634,11 +634,22 @@ impl BrewCaskManager {
         let artifacts = cask_artifacts(&cask)?;
         validate_artifact_paths(&artifacts)?;
         validate_mutation_boundaries(&ids, &artifacts)?;
-        if installed_cask_version(&cask, &artifacts)?.as_deref() == Some(cask.version.as_str()) {
+        let installed = installed_cask_version(&cask, &artifacts)?;
+        if installed.as_deref() == Some(cask.version.as_str()) {
             // Already-installed: never synthesize or repair Homebrew `.metadata`.
             // Foreign Homebrew ledgers are preserved byte-for-byte.
             info!("brew-cask:{}: already installed", cask.token);
             return Ok(cask.version);
+        }
+        // A Homebrew marker is lifecycle authority, not an identity hint.
+        // Never pour over an older/degraded Homebrew-owned cask: doing so would
+        // switch the payload to mise while leaving Homebrew's teardown ledger
+        // authoritative for different files.
+        if homebrew_metadata_present(&ids.token) {
+            bail!(
+                "brew-cask:{} is managed by Homebrew; use Homebrew to upgrade or uninstall it",
+                cask.token
+            );
         }
         if opts.dry_run {
             miseprintln!("install cask {}/{}", cask.token, cask.version);
@@ -1969,6 +1980,15 @@ fn installed_version(token: &str) -> Option<String> {
             None
         }
     }
+}
+
+fn homebrew_metadata_present(token: &SafePathComponent) -> bool {
+    // Fail closed for any filesystem object at `.metadata`, including a
+    // symlink or malformed tree. Mise never authors this path.
+    caskroom_token_dir(token)
+        .join(".metadata")
+        .symlink_metadata()
+        .is_ok()
 }
 
 fn pkg_id_installed(pkg_id: &str) -> Result<bool> {
@@ -3651,6 +3671,35 @@ end
         file::create_dir_all(token_dir.join(".mise-tmp-interrupted"))?;
 
         assert_eq!(installed_version("actual-token"), Some("2.0.0".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn homebrew_metadata_blocks_mise_mutation_across_versions() -> Result<()> {
+        let _lock = env_lock();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token = test_token("actual-token");
+        let token_dir = caskroom_token_dir(&token);
+
+        assert!(!homebrew_metadata_present(&token));
+        file::create_dir_all(token_dir.join(".metadata/1.0.0/timestamp/Casks"))?;
+        assert!(homebrew_metadata_present(&token));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn malformed_homebrew_metadata_symlink_fails_closed() -> Result<()> {
+        let _lock = env_lock();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token = test_token("actual-token");
+        let token_dir = caskroom_token_dir(&token);
+        file::create_dir_all(&token_dir)?;
+        std::os::unix::fs::symlink("missing", token_dir.join(".metadata"))?;
+
+        assert!(homebrew_metadata_present(&token));
         Ok(())
     }
 
