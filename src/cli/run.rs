@@ -362,20 +362,51 @@ impl Run {
 
         // Validate deps configuration before toolset construction can install
         // anything, then retain the engine for execution below.
+        let mut layered_subdir_configs = vec![];
         let deps_engine = if self.no_deps {
             None
+        } else if subdir_configs.is_empty() {
+            Some(DepsEngine::new(&config)?)
         } else {
-            let mut engine = DepsEngine::new(&config)?;
-            if !subdir_configs.is_empty() {
-                engine.add_config_files(subdir_configs.clone())?;
+            let mut deps_config_files = config.config_files.clone();
+            let selected_config_roots: HashSet<_> =
+                subdir_configs.iter().map(|cf| cf.config_root()).collect();
+            for config_root in subdir_configs.iter().map(|cf| cf.config_root()).unique() {
+                let (config_paths, idiomatic_filenames) =
+                    crate::config::load_config_hierarchy_from_dir(&config_root).await?;
+                deps_config_files.extend(
+                    crate::config::load_config_files_from_paths(
+                        &config_paths,
+                        &idiomatic_filenames,
+                    )
+                    .await?,
+                );
             }
-            Some(engine)
+            deps_config_files.retain(|_, cf| {
+                let config_root = cf.config_root();
+                cf.project_root().is_some()
+                    && selected_config_roots.contains(&config_root)
+                    && config.project_root.as_ref() != Some(&config_root)
+            });
+            layered_subdir_configs.extend(deps_config_files.values().cloned());
+            Some(DepsEngine::new_task_monorepo(
+                &config,
+                deps_config_files.into_values(),
+            )?)
         };
 
         // Build the toolset using root config files plus subdir configs from
         // resolved tasks, so tools declared in monorepo subdirs are installed
         // before deps (e.g. `[deps.bun] auto=true`) try to use them.
         let mut combined_configs = config.config_files.clone();
+        // The hierarchy loader returns higher-precedence files first. Preserve
+        // that order so local overlays still win when ToolsetBuilder reverses
+        // the map for low-to-high merging.
+        for cf in layered_subdir_configs {
+            combined_configs
+                .entry(cf.get_path().to_path_buf())
+                .or_insert(cf);
+        }
         for cf in &subdir_configs {
             combined_configs
                 .entry(cf.get_path().to_path_buf())
