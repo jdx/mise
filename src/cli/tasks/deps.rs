@@ -138,7 +138,7 @@ impl TasksDeps {
     /// ```
     ///
     async fn print_deps_tree(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
-        let deps = Deps::new(config, tasks.clone()).await?;
+        let deps = Deps::new_for_display(config, tasks.clone()).await?;
         // filter out nodes that are not selected
         let start_indexes = deps.graph.node_indices().filter(|&idx| {
             let task = &deps.graph[idx];
@@ -169,7 +169,7 @@ impl TasksDeps {
     /// ```
     //
     async fn print_deps_dot(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
-        let deps = Deps::new(config, tasks).await?;
+        let deps = Deps::new_for_display(config, tasks).await?;
         miseprintln!(
             "{:?}",
             Dot::with_attr_getters(

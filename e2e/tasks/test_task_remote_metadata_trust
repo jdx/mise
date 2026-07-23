@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+
+# Remote task metadata can render Tera templates during discovery and install
+# tools before execution. Both actions must respect the defining config's trust.
+
+HTTP_PORT_FILE="$TMPDIR/mise_http_test_port"
+MARKER="$TMPDIR/remote-template-executed"
+DEFERRED_MARKER="$TMPDIR/remote-deferred-template-executed"
+REQUEST_MARKER="$TMPDIR/remote-template-requested"
+MISE_HTTP_TEST_PORT_FILE="$HTTP_PORT_FILE" \
+  MISE_HTTP_REQUEST_MARKER="$REQUEST_MARKER" \
+  python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" 0 &
+HTTP_SERVER_PID=$!
+
+cleanup() {
+  kill "$HTTP_SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+wait_for_file "$HTTP_PORT_FILE" "HTTP test server port file" 30 "$HTTP_SERVER_PID"
+HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+
+UNTRUSTED_ENV="env -u CI -u GITHUB_ACTION -u GITHUB_ACTIONS MISE_TRUSTED_CONFIG_PATHS=$TMPDIR/not-trusted MISE_YES=0 MISE_REMOTE_TEMPLATE_MARKER=$MARKER MISE_REMOTE_DEFERRED_MARKER=$DEFERRED_MARKER"
+
+cat <<EOF >mise.toml
+[tasks.remote_template]
+file = "http://localhost:${HTTP_PORT}/test/remote-template"
+
+[tasks.remote_dep]
+run = "echo remote dependency"
+EOF
+
+# Safe mode makes config parsing inert, but it must not turn remote discovery
+# into an SSRF-capable trust bypass.
+assert_fail "$UNTRUSTED_ENV MISE_SAFE=1 mise tasks ls" "not trusted"
+[[ ! -e $REQUEST_MARKER ]] || fail "safe-mode discovery fetched an untrusted remote task"
+
+assert_fail "$UNTRUSTED_ENV mise tasks ls" "not trusted"
+assert_fail "$UNTRUSTED_ENV mise tasks deps remote_template" "not trusted"
+assert_fail "$UNTRUSTED_ENV mise run remote_template --help" "not trusted"
+[[ ! -e $REQUEST_MARKER ]] || fail "remote task was fetched during untrusted passive discovery"
+[[ ! -e $MARKER ]] || fail "remote metadata template executed before trust"
+assert_succeed "$UNTRUSTED_ENV mise trust mise.toml"
+assert_succeed "$UNTRUSTED_ENV mise tasks ls"
+assert_contains "$UNTRUSTED_ENV mise tasks deps remote_template" "remote_dep"
+assert_contains "$UNTRUSTED_ENV mise run remote_template --help" "--remote-flag"
+[[ -e $REQUEST_MARKER ]] || fail "trusted passive discovery did not fetch the remote task"
+[[ -e $MARKER ]] || fail "trusted remote metadata template did not render"
+assert_succeed "$UNTRUSTED_ENV mise untrust mise.toml"
+
+# A trusted config vouches for an explicitly included task file even when that
+# file is outside the config's trust root. Preserve that provenance when the
+# include declares a remote task, including for temporary no-cache snapshots.
+INCLUDED_TASK_DIR="$TMPDIR/included-remote-tasks"
+mkdir -p "$INCLUDED_TASK_DIR"
+cat <<EOF >"$INCLUDED_TASK_DIR/tasks.toml"
+[included_remote_template]
+file = "http://localhost:${HTTP_PORT}/test/remote-template"
+EOF
+cat <<EOF >mise.toml
+[task_config]
+includes = ["$INCLUDED_TASK_DIR/tasks.toml"]
+EOF
+
+assert_succeed "$UNTRUSTED_ENV mise trust mise.toml"
+assert_contains "$UNTRUSTED_ENV mise tasks info included_remote_template" "remote_dep"
+assert_contains "$UNTRUSTED_ENV MISE_TASK_REMOTE_NO_CACHE=true mise tasks info included_remote_template" "remote_dep"
+assert_succeed "$UNTRUSTED_ENV mise untrust mise.toml"
+
+# Deferred metadata (confirmation and task env) can render after initial task
+# discovery, so decoded header templates must still require the defining
+# config's trust before either path gets a chance to execute.
+cat <<EOF >mise.toml
+[tasks.remote_deferred]
+file = "http://localhost:${HTTP_PORT}/test/remote-deferred-template"
+EOF
+
+assert_fail "$UNTRUSTED_ENV mise run remote_deferred" "not trusted"
+[[ ! -e $DEFERRED_MARKER ]] || fail "deferred remote metadata template executed before trust"
+assert_succeed "$UNTRUSTED_ENV mise trust mise.toml"
+assert_contains "$UNTRUSTED_ENV MISE_YES=1 mise run remote_deferred" "remote deferred task ran"
+[[ -e $DEFERRED_MARKER ]] || fail "trusted remote task env template did not render"
+assert_succeed "$UNTRUSTED_ENV mise untrust mise.toml"
+
+# Tool metadata is inert when installation is disabled, but normal task auto-
+# installation must require trust. Each disabled path must execute without
+# installing the missing fixture tool.
+cat <<EOF >mise.toml
+[tasks.remote_tools]
+file = "http://localhost:${HTTP_PORT}/test/remote-tools"
+EOF
+
+assert_fail "$UNTRUSTED_ENV mise run remote_tools" "not trusted"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+assert_contains "$UNTRUSTED_ENV mise run --skip-tools remote_tools" "dummy not installed"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+assert_contains "$UNTRUSTED_ENV MISE_TASK_RUN_AUTO_INSTALL=0 mise run remote_tools" "dummy not installed"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+assert_contains "$UNTRUSTED_ENV MISE_AUTO_INSTALL=0 mise run remote_tools" "dummy not installed"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+
+assert_succeed "$UNTRUSTED_ENV mise trust mise.toml"
+assert_contains "$UNTRUSTED_ENV mise run remote_tools" "This is Dummy 1.0.0!"
+
+# A remote raw-args task must execute the same snapshot used to decide that
+# --help should pass through, rather than fetching a mutable source twice.
+cat <<EOF >mise.toml
+[tasks.remote_raw_help]
+file = "http://localhost:${HTTP_PORT}/test/remote-raw-help"
+EOF
+
+assert_contains "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_raw_help --help" "remote raw help revision 1"
+
+# Two no-cache tasks using the same mutable URL must retain the exact body that
+# was parsed for each Task instead of both executing the final download path.
+cat <<EOF >mise.toml
+[tasks.remote_revision_a]
+file = "http://localhost:${HTTP_PORT}/test/remote-changing"
+
+[tasks.remote_revision_b]
+file = "http://localhost:${HTTP_PORT}/test/remote-changing"
+EOF
+
+ARTIFACT_TMPDIR="$TMPDIR/remote-artifacts"
+mkdir -p "$ARTIFACT_TMPDIR"
+output=$(quiet_assert_succeed "TMPDIR=$ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run remote_revision_a ::: remote_revision_b")
+assert_contains_text "$output" "remote revision 1"
+assert_contains_text "$output" "remote revision 2"
+assert_fail "find '$ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."
+
+# Task failures exit through mise's explicit exit path. That path must clean
+# live no-cache snapshots even though process::exit does not run destructors.
+cat <<EOF >mise.toml
+[tasks.remote_failing]
+file = "http://localhost:${HTTP_PORT}/test/remote-failing"
+EOF
+
+FAILING_ARTIFACT_TMPDIR="$TMPDIR/remote-failing-artifacts"
+mkdir -p "$FAILING_ARTIFACT_TMPDIR"
+assert_fail "TMPDIR=$FAILING_ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run remote_failing"
+# The run command's own TempDir cannot destruct on process::exit and may leave
+# an empty directory; the downloaded remote task file itself must be gone.
+assert_fail "find '$FAILING_ARTIFACT_TMPDIR' -type f -print -quit | grep -q ."

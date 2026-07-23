@@ -14,7 +14,7 @@ use crate::env;
 use crate::file::display_path;
 use crate::task::has_any_usage_spec;
 use crate::task::task_helpers::task_needs_permit;
-use crate::task::task_list::{get_task_lists, resolve_depends};
+use crate::task::task_list::{get_task_lists_with_no_cache, resolve_depends_with_no_cache};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::{Deps, Task};
@@ -257,20 +257,25 @@ impl Run {
             self.args.contains(&"--help".to_string()) || self.args.contains(&"-h".to_string());
 
         let mut config = Config::get().await?;
+        let mut prefetched_task_list = None;
 
         // Handle task help early to avoid unnecessary toolset/deps work
         if has_help_in_task_args {
-            // Build args list to get the task (filter out --help/-h for task lookup)
+            // Build the same task list normal execution would use so raw-args
+            // tasks can reuse this exact fetched snapshot.
             let args = once(self.task.clone())
-                .chain(
-                    self.args
-                        .iter()
-                        .filter(|a| *a != "--help" && *a != "-h")
-                        .cloned(),
-                )
+                .chain(self.args.iter().cloned())
                 .collect_vec();
 
-            let task_list = get_task_lists(&config, &args, false, false).await?;
+            let mut task_list =
+                get_task_lists_with_no_cache(&config, &args, false, false, self.no_cache).await?;
+
+            // Help is passive discovery, but remote #USAGE and #MISE headers
+            // still need to be fetched before they can be displayed. Require
+            // trust before that fetch, just like `mise tasks info`.
+            let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache)
+                .require_trust_before_fetch();
+            fetcher.fetch_tasks(&config, &mut task_list).await?;
 
             if let Some(task) = task_list.first() {
                 // raw_args tasks act as proxies for tools that handle their
@@ -289,6 +294,7 @@ impl Run {
                     }
                     return Ok(());
                 }
+                prefetched_task_list = Some(task_list);
             } else {
                 // No task found, show run command help
                 self.get_clap_command().print_long_help()?;
@@ -309,7 +315,22 @@ impl Run {
             .chain(self.args.clone())
             .collect_vec();
 
-        let mut task_list = get_task_lists(&config, &args, true, self.skip_deps).await?;
+        let (mut task_list, tasks_already_fetched) = if let Some(mut tasks) = prefetched_task_list {
+            if self.skip_deps {
+                for task in &mut tasks {
+                    task.depends.clear();
+                    task.depends_post.clear();
+                    task.wait_for.clear();
+                }
+            }
+            (tasks, true)
+        } else {
+            (
+                get_task_lists_with_no_cache(&config, &args, true, self.skip_deps, self.no_cache)
+                    .await?,
+                false,
+            )
+        };
 
         // Args after -- go directly to tasks (no prefix). They are also
         // recorded on `trailing_args` so the task renderer can detect
@@ -323,8 +344,10 @@ impl Run {
 
         // Fetch remote task files before parsing usage specs, so that
         // file-based remote tasks have their files resolved to local cache.
-        let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
-        fetcher.fetch_tasks(&config, &mut task_list).await?;
+        if !tasks_already_fetched {
+            let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
+            fetcher.fetch_tasks(&config, &mut task_list).await?;
+        }
 
         // Re-render dependency templates with parent task's usage arg/flag values.
         // This enables patterns like: depends = ["child {{usage.app}}"]
@@ -350,7 +373,8 @@ impl Run {
         // 1. Discover deps providers from monorepo subdirectory configs
         // 2. Include monorepo subdirectory tools in the toolset before installing
         // 3. Reuse the resolved list for execution (avoiding duplicate work)
-        let resolved_tasks = resolve_depends(&config, task_list).await?;
+        let resolved_tasks =
+            resolve_depends_with_no_cache(&config, task_list, self.no_cache).await?;
 
         // Collect subdirectory config files from all resolved tasks. In
         // monorepos these come from sub mise.toml files referenced via the
@@ -691,7 +715,7 @@ impl Run {
     async fn prepare_tasks(&mut self, config: &Arc<Config>, mut tasks: Vec<Task>) -> Result<Deps> {
         let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
         fetcher.fetch_tasks(config, &mut tasks).await?;
-        let mut tasks = Deps::new(config, tasks).await?;
+        let mut tasks = Deps::new_with_no_cache(config, tasks, self.no_cache).await?;
         tasks.mark_ambiguous_prefixes();
         self.is_linear = tasks.is_linear();
         Ok(tasks)
@@ -759,6 +783,7 @@ impl Run {
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,
+            no_cache: self.no_cache,
             sandbox: crate::sandbox::SandboxConfig::from_settings_and_cli(
                 &Settings::get().sandbox,
                 self.deny_all,

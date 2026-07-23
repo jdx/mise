@@ -9,6 +9,7 @@ pub fn exit(code: i32) -> ! {
     #[cfg(windows)]
     CmdLineRunner::kill_all();
 
+    crate::task::task_file_providers::cleanup_temporary_artifacts();
     debug!("exiting with code: {code}");
     std::process::exit(code)
 }

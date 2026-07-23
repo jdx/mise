@@ -142,10 +142,16 @@ async fn main_() -> eyre::Result<()> {
     }
     measure!("main", {
         let args = env::args_safe();
-        match Cli::run(&args)
+        let result = Cli::run(&args)
             .await
-            .with_section(|| VERSION.to_string().header("Version:"))
-        {
+            .with_section(|| VERSION.to_string().header("Version:"));
+        // Command-scoped no-cache task snapshots can own temporary remote
+        // artifacts. Release the Config cache before normal process teardown,
+        // since statics do not run destructors.
+        if let Some(config) = config::Config::maybe_get() {
+            config.clear_tasks_cache();
+        }
+        match result {
             Ok(()) => Ok(()),
             Err(err) => handle_err(err),
         }?;

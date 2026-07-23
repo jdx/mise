@@ -7,14 +7,16 @@
 PORT_FILE="$TMPDIR/mise_git_http_port"
 READY_FILE="$TMPDIR/mise_git_http_ready"
 INFO_FILE="$TMPDIR/mise_git_http_info"
+REQUEST_LOG="$TMPDIR/mise_git_http_requests"
 
 # Clean up any previous server files
-rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
+rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE" "$REQUEST_LOG"
 
 # Start local git HTTP server with OS-assigned port to avoid race conditions
 MISE_GIT_HTTP_PORT_FILE="$PORT_FILE" \
   MISE_GIT_HTTP_READY_FILE="$READY_FILE" \
   MISE_GIT_HTTP_INFO_FILE="$INFO_FILE" \
+  MISE_GIT_HTTP_REQUEST_LOG="$REQUEST_LOG" \
   python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
 SERVER_PID=$!
 
@@ -50,7 +52,7 @@ git init
 # Ensure cleanup on exit
 cleanup() {
   kill "$SERVER_PID" 2>/dev/null || true
-  rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
+  rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE" "$REQUEST_LOG"
 }
 trap cleanup EXIT
 
@@ -64,6 +66,12 @@ includes = [
     "git::${LOCAL_GIT_URL}//xtasks/lint"
 ]
 EOF
+
+# Safe-mode config parsing must not clone an untrusted remote include before
+# enforcing the defining config's actual trust.
+: >"$REQUEST_LOG"
+assert_fail "MISE_SAFE=1 MISE_TRUSTED_CONFIG_PATHS=$TMPDIR/not-trusted MISE_YES=0 mise tasks"
+assert_fail "test -s '$REQUEST_LOG'"
 
 # The xtasks/lint directory contains multiple task files
 # We should be able to see and run them
@@ -103,7 +111,10 @@ includes = [
 ]
 EOF
 
-assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run ripgrep" # Remote task should be redownloaded
+INCLUDE_ARTIFACT_TMPDIR="$TMPDIR/remote-git-include-artifacts"
+mkdir -p "$INCLUDE_ARTIFACT_TMPDIR"
+assert_succeed "TMPDIR=$INCLUDE_ARTIFACT_TMPDIR mise run --no-cache ripgrep" # CLI no-cache must also redownload includes
+assert_fail "find '$INCLUDE_ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
 
 assert_succeed "mise run ripgrep" # Cache should be used
@@ -159,6 +170,17 @@ assert_contains "mise tasks" "toml_table_task"
 assert_contains "mise run toml_task" "toml_task executed"
 assert_contains "mise run toml_table_task" "toml_table_task executed"
 
+# A remote TOML include can itself declare a remote file task. Both the outer
+# include clone and inner script clone must remain alive through execution and
+# then be cleaned when no-cache mode bypasses the static task cache.
+NESTED_ARTIFACT_TMPDIR="$TMPDIR/nested-remote-git-artifacts"
+mkdir -p "$NESTED_ARTIFACT_TMPDIR"
+: >"$REQUEST_LOG"
+assert_contains "TMPDIR=$NESTED_ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run nested_remote" "nested remote task executed"
+clone_count=$(grep -c 'GET /repo.git/info/refs?service=git-upload-pack' "$REQUEST_LOG" || true)
+[[ $clone_count -eq 2 ]] || fail "no-cache nested task used $clone_count clones instead of one outer and one inner snapshot"
+assert_fail "find '$NESTED_ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."
+
 mise cache clear # Clear cache to force redownload
 
 #################################################################################
@@ -174,5 +196,30 @@ EOF
 
 assert_contains "mise tasks" "standalone_task"
 assert_contains "mise run standalone_task" "standalone_task executed"
+
+#################################################################################
+# Test config-declared remote git task metadata and tool installation
+#################################################################################
+
+cat <<EOF >mise.toml
+[tasks.remote_metadata_a]
+file = "git::${LOCAL_GIT_URL}//xtasks/remote/remote_metadata.toml"
+
+[tasks.remote_metadata_b]
+file = "git::${LOCAL_GIT_URL}//xtasks/remote/remote_metadata.toml"
+EOF
+
+mise trust
+assert_contains "mise tasks info remote_metadata_a" "remote git metadata"
+assert_contains "mise run remote_metadata_a" "This is Dummy 1.0.0!"
+assert_contains "mise run remote_metadata_a" "relative env loaded"
+ARTIFACT_TMPDIR="$TMPDIR/remote-git-artifacts"
+mkdir -p "$ARTIFACT_TMPDIR"
+output=$(quiet_assert_succeed "TMPDIR=$ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run remote_metadata_a ::: remote_metadata_b")
+assert_contains_text "$output" "This is Dummy 1.0.0!"
+assert_contains_text "$output" "relative env loaded"
+path_count=$(grep -o 'remote path: .*' <<<"$output" | sort -u | wc -l)
+[[ $path_count -eq 2 ]] || fail "no-cache Git tasks did not retain two distinct snapshots"
+assert_fail "find '$ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."
 
 echo "All tests passed!"

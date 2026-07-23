@@ -45,7 +45,7 @@ LOCAL_GIT_URL="http://localhost:${SERVER_PORT}/repo.git"
 # Update cache directory paths for local server
 REMOTE_TASKS_DIR="${MISE_CACHE_DIR}/remote-git-tasks-cache"
 # Hash for localhost URL will be different than GitHub URL
-LOCAL_CACHE_HASH=$(echo -n "${LOCAL_GIT_URL}v2025.1.17" | shasum -a 256 | cut -d' ' -f1)
+LOCAL_CACHE_HASH=$(printf '%s\0%s' "${LOCAL_GIT_URL}" "v2025.1.17" | shasum -a 256 | cut -d' ' -f1)
 MISE_LOCAL_CACHE_DIR="${REMOTE_TASKS_DIR}/${LOCAL_CACHE_HASH}"
 
 git init

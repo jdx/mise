@@ -48,6 +48,7 @@ impl TasksInfo {
             // always pass no_cache=false as the command doesn't take no-cache argument
             // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
             TaskFetcher::new(false)
+                .require_trust_before_fetch()
                 .fetch_tasks(&config, &mut tasks)
                 .await?;
             let task = &tasks[0];

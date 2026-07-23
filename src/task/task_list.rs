@@ -352,6 +352,16 @@ pub async fn get_task_lists(
     prompt: bool,
     only: bool,
 ) -> Result<Vec<Task>> {
+    get_task_lists_with_no_cache(config, args, prompt, only, false).await
+}
+
+pub async fn get_task_lists_with_no_cache(
+    config: &Arc<Config>,
+    args: &[String],
+    prompt: bool,
+    only: bool,
+    no_cache: bool,
+) -> Result<Vec<Task>> {
     let args = args
         .iter()
         .map(|s| vec![s.to_string()])
@@ -445,9 +455,11 @@ pub async fn get_task_lists(
         };
 
         let all_tasks = if let Some(ref ctx) = effective_context {
-            config.tasks_with_context(Some(ctx)).await?
+            config
+                .tasks_with_context_no_cache(Some(ctx), no_cache)
+                .await?
         } else {
-            config.tasks().await?
+            config.tasks_with_context_no_cache(None, no_cache).await?
         };
 
         let tasks_with_aliases = crate::task::build_task_ref_map(all_tasks.iter());
@@ -500,7 +512,11 @@ pub async fn get_task_lists(
 
 /// Resolve all dependencies for a list of tasks
 /// Iteratively discovers path hints by loading tasks and their dependencies
-pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<Vec<Task>> {
+pub async fn resolve_depends_with_no_cache(
+    config: &Arc<Config>,
+    tasks: Vec<Task>,
+    no_cache: bool,
+) -> Result<Vec<Task>> {
     // Iteratively discover all path hints by loading tasks and their dependencies
     // This handles chains like: //A:B -> :C -> :D -> //E:F where we need to discover E
     let mut all_path_hints = HashSet::new();
@@ -540,7 +556,9 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
             load_all: false,
         });
 
-        let loaded_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+        let loaded_tasks = config
+            .tasks_with_context_no_cache(ctx.as_ref(), no_cache)
+            .await?;
 
         // Find new tasks that haven't been processed yet
         tasks_to_process = loaded_tasks
@@ -560,7 +578,9 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
         None
     };
 
-    let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+    let all_tasks = config
+        .tasks_with_context_no_cache(ctx.as_ref(), no_cache)
+        .await?;
 
     tasks
         .into_iter()

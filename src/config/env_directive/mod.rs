@@ -323,6 +323,7 @@ pub struct EnvResults {
     pub watch_files: Vec<PathBuf>,
     /// True if any directive declared cacheable=false or is a dynamic module
     pub has_uncacheable: bool,
+    pub(crate) template_trust_source: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -348,17 +349,35 @@ pub struct EnvResolveOptions {
 impl EnvResults {
     pub async fn resolve(
         config: &Arc<Config>,
+        ctx: tera::Context,
+        initial: &EnvMap,
+        input: Vec<(EnvDirective, PathBuf)>,
+        resolve_opts: EnvResolveOptions,
+    ) -> eyre::Result<Self> {
+        Self::resolve_with_trust_source(config, ctx, initial, input, resolve_opts, None).await
+    }
+
+    /// Resolve directives relative to their source paths while checking Tera
+    /// trust against a separate provenance path. Remote task headers need this:
+    /// relative files belong to the fetched script, but trust belongs to the
+    /// local config that declared the remote task.
+    pub async fn resolve_with_trust_source(
+        config: &Arc<Config>,
         mut ctx: tera::Context,
         initial: &EnvMap,
         input: Vec<(EnvDirective, PathBuf)>,
         resolve_opts: EnvResolveOptions,
+        trust_source: Option<&Path>,
     ) -> eyre::Result<Self> {
         // trace!("resolve: input: {:#?}", &input);
         let mut env = initial
             .iter()
             .map(|(k, v)| (k.clone(), (v.clone(), None)))
             .collect::<IndexMap<_, _>>();
-        let mut r = Self::default();
+        let mut r = Self {
+            template_trust_source: trust_source.map(Path::to_path_buf),
+            ..Default::default()
+        };
         let normalize_path = |config_root: &Path, p: PathBuf| {
             let p = p.strip_prefix("./").unwrap_or(&p);
             match p.strip_prefix("~/") {
@@ -878,7 +897,7 @@ impl EnvResults {
 
         // Step 1: Tera template expansion
         if contains_template_syntax(input) {
-            trust_check(path)?;
+            trust_check(self.template_trust_source.as_deref().unwrap_or(path))?;
             let tera = tera.get_or_insert_with(|| {
                 let mut tera = get_tera(path.parent());
                 // Re-bind exec() to the accumulated env vars — but never in safe

@@ -120,6 +120,7 @@ pub struct TaskExecutorConfig {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub no_cache: bool,
     /// CLI-level sandbox overrides (merged with task-level sandbox config)
     pub sandbox: crate::sandbox::SandboxConfig,
 }
@@ -139,6 +140,7 @@ pub struct TaskExecutor {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub no_cache: bool,
     pub sandbox: crate::sandbox::SandboxConfig,
 }
 
@@ -160,6 +162,7 @@ impl TaskExecutor {
             continue_on_error: config.continue_on_error,
             dry_run: config.dry_run,
             skip_deps: config.skip_deps,
+            no_cache: config.no_cache,
             sandbox: config.sandbox,
         }
     }
@@ -695,7 +698,9 @@ impl TaskExecutor {
             let (name, _) = split_task_spec(s);
             name
         }));
-        let tasks = config.tasks_with_context(Some(&ctx)).await?;
+        let tasks = config
+            .tasks_with_context_no_cache(Some(&ctx), self.no_cache)
+            .await?;
         let tasks_map: BTreeMap<String, Task> = tasks
             .values()
             .flat_map(|t| {
@@ -747,7 +752,8 @@ impl TaskExecutor {
                 to_run.push(t);
             }
         }
-        let sub_deps = Deps::new_pruned(config, to_run, completed_tasks).await?;
+        let sub_deps =
+            Deps::new_pruned_with_no_cache(config, to_run, completed_tasks, self.no_cache).await?;
         let sub_deps = Arc::new(Mutex::new(sub_deps));
 
         // Pump subgraph into scheduler and signal completion via oneshot when done
