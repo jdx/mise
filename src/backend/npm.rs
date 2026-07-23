@@ -903,8 +903,24 @@ impl NPMBackend {
         let package = format!("{}@{}", self.tool_name(), tv.version);
         aube::embed::add(&install_path, std::slice::from_ref(&package), opts)
             .await
-            .map_err(|e| eyre::eyre!("aube install failed: {e}"))?;
+            .map_err(|e| self.format_aube_install_error(e))?;
         Ok(())
+    }
+
+    /// Render an aube embedded-install failure into an eyre error that keeps
+    /// aube's full cause chain and remediation.
+    ///
+    /// aube returns a [`miette::Report`] whose `Display` prints only the
+    /// outermost message (e.g. "failed to resolve dependencies"), which hides
+    /// the actual reason — a supply-chain trust-policy block on a transitive
+    /// dependency surfaces as an opaque resolution failure otherwise. Walk the
+    /// cause chain so the real diagnostic is visible, and for the trust
+    /// downgrade code translate aube's own `.npmrc` / `pnpm-workspace.yaml`
+    /// help into the mise-native `trust_policy_excludes` / `npm.shell_out`
+    /// remedies, since mise owns the synthetic `.npmrc` aube's help tells the
+    /// user to edit.
+    fn format_aube_install_error(&self, err: miette::Report) -> eyre::Report {
+        eyre::eyre!(build_aube_install_error_message(&err, &self.ba().full()))
     }
 
     /// Directory containing the `node` mise resolved as a dependency, handed to
@@ -1141,6 +1157,37 @@ fn parse_bool_arg(value: &str) -> Option<bool> {
     }
 }
 
+/// Build the message for an aube embedded-install failure, preserving aube's
+/// full cause chain and remediation.
+///
+/// aube returns a [`miette::Report`] whose `Display` prints only the outermost
+/// message (e.g. "failed to resolve dependencies"), which hides the actual
+/// reason — a supply-chain trust-policy block on a transitive dependency
+/// surfaces as an opaque resolution failure otherwise. Walk the cause chain so
+/// the real diagnostic is visible, and for the trust downgrade code translate
+/// aube's own `.npmrc` / `pnpm-workspace.yaml` help into the mise-native
+/// `trust_policy_excludes` / `npm.shell_out` remedies, since mise owns the
+/// synthetic `.npmrc` aube's help tells the user to edit.
+fn build_aube_install_error_message(err: &miette::Report, tool_full: &str) -> String {
+    let mut msg = format!("aube install failed: {err}");
+    for cause in err.chain().skip(1) {
+        msg.push_str(&format!("\n  caused by: {cause}"));
+    }
+    if err.code().map(|c| c.to_string()).as_deref() == Some("ERR_AUBE_TRUST_DOWNGRADE") {
+        msg.push_str(&format!(
+            "\n\nThis is a supply-chain trust check, not a version-resolution failure. \
+             If you have reviewed the flagged package and want to allow it, add it to \
+             `trust_policy_excludes` for this tool, e.g.:\n  \
+             \"{tool_full}\" = {{ version = \"latest\", trust_policy_excludes = [\"<package>\"] }}\n\
+             or run `mise settings npm.shell_out=true` to install with the npm CLI, which \
+             does not run this check."
+        ));
+    } else if let Some(help) = err.help() {
+        msg.push_str(&format!("\n  help: {help}"));
+    }
+    msg
+}
+
 /// Returns install-time-only option keys for NPM backend.
 pub fn install_time_option_keys() -> Vec<String> {
     vec![
@@ -1309,6 +1356,53 @@ mod tests {
         assert_eq!(NPMBackend::build_aube_minimum_release_age(1), 1);
         assert_eq!(NPMBackend::build_aube_minimum_release_age(60), 1);
         assert_eq!(NPMBackend::build_aube_minimum_release_age(61), 2);
+    }
+
+    #[test]
+    fn test_build_aube_install_error_message_trust_downgrade() {
+        use miette::Diagnostic;
+        use thiserror::Error;
+
+        #[derive(Debug, Error)]
+        #[error(
+            "trust downgrade for @octokit/endpoint@9.0.6 (trustPolicy=no-downgrade): earlier published version 10.1.0 had provenance attestation but this version has no trust evidence"
+        )]
+        struct Cause;
+
+        #[derive(Debug, Error, Diagnostic)]
+        #[error("failed to resolve dependencies")]
+        #[diagnostic(code(ERR_AUBE_TRUST_DOWNGRADE))]
+        struct TopErr {
+            #[source]
+            source: Cause,
+        }
+
+        let report = miette::Report::new(TopErr { source: Cause });
+        let msg = build_aube_install_error_message(&report, "npm:danger");
+        // Outermost message is preserved and the real cause is surfaced.
+        assert!(msg.contains("aube install failed: failed to resolve dependencies"));
+        assert!(msg.contains("caused by: trust downgrade for @octokit/endpoint@9.0.6"));
+        // mise-native remediation replaces aube's .npmrc-oriented help.
+        assert!(msg.contains("trust_policy_excludes"));
+        assert!(msg.contains("\"npm:danger\""));
+        assert!(msg.contains("npm.shell_out=true"));
+    }
+
+    #[test]
+    fn test_build_aube_install_error_message_other_error_keeps_aube_help() {
+        use miette::Diagnostic;
+        use thiserror::Error;
+
+        #[derive(Debug, Error, Diagnostic)]
+        #[error("something else failed")]
+        #[diagnostic(code(ERR_AUBE_OTHER), help("try again later"))]
+        struct OtherErr;
+
+        let report = miette::Report::new(OtherErr);
+        let msg = build_aube_install_error_message(&report, "npm:foo");
+        assert!(msg.contains("aube install failed: something else failed"));
+        assert!(msg.contains("help: try again later"));
+        assert!(!msg.contains("trust_policy_excludes"));
     }
 
     fn assert_npm_view_versions_time(data: &serde_json::Value) {
