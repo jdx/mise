@@ -2,13 +2,13 @@
 
 ## Status
 
-**IN PROGRESS — 2026-07-23.** Local fork parses and dry-runs all 39 downstream
-cask declarations. Real macOS pours pass for Cloudflare WARP, TablePlus, Zoom,
+**DONE — 2026-07-23.** Local fork parses and dry-runs all 39 downstream cask
+declarations. Real macOS pours pass for Cloudflare WARP, TablePlus, Zoom,
 OrbStack, Surge, Plex Media Server, Zed Preview, and Tunnelblick without
 Homebrew cask ownership. Latest-build Zed reinstall proves generated
 completions and receipt fingerprints. Consumer bootstrap migration is
-implemented and locally tested. GitHub-hosted disposable macOS workflow remains
-final acceptance gate.
+implemented, locally tested, committed, and pushed. GitHub-hosted disposable
+macOS run `29990136878` passed the representative direct-pour matrix.
 
 - **Priority**: P1
 - **Risk**: HIGH
@@ -39,7 +39,7 @@ installed, recorded, and included in payload status.
 
 - [x] Exact current API definitions parse for all eight casks.
 - [x] Unit fixtures cover nested `$APPDIR` targets and uninstall-only steps.
-- [ ] Disposable GitHub-hosted macOS installs representative app, pkg, hook,
+- [x] Disposable GitHub-hosted macOS installs representative app, pkg, hook,
       nested-target, and large-DMG casks through the built fork.
 - [x] Installed status succeeds and mise-created targets are verified locally.
 - [x] A downstream bootstrap declares all eight casks in TOML.

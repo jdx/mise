@@ -42,7 +42,7 @@ not a durable product boundary.
 |    11 | [Emit exact binary private metadata](002-emit-exact-binary-metadata.md)                 | P3       | L       | HIGH | **CLOSED — NOT APPLICABLE**; private metadata direction rejected           | 001, 006, 013                               |
 |    12 | [Transactional private interop upgrades](007-transactional-interop-upgrades.md)         | P3       | L       | HIGH | REJECTED — no shared manager lock                                          | supported contract or single-owner redesign |
 |    13 | [Consolidate the decision record](005-consolidate-homebrew-decision-record.md)          | P2       | M       | LOW  | **DONE** — final unsupported support matrix and evidence                   | 010; 012 final outcome                      |
-|    14 | [Prove representative direct-pour compatibility](014-direct-pour-compatibility.md)      | P1       | M       | HIGH | **IN PROGRESS** — local matrix green; disposable GitHub macOS gate pending | 011, 013                                    |
+|    14 | [Prove representative direct-pour compatibility](014-direct-pour-compatibility.md)      | P1       | M       | HIGH | **DONE** — local and disposable GitHub macOS matrices green                | 011, 013                                    |
 
 Plans 010 and 011 are unconditional safety work. Plans 012 and 013 establish
 the supported handoff and truthful local state foundations. At the Plan 012

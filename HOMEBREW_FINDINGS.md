@@ -101,8 +101,8 @@ mise mutation across versions; recovery journals make incomplete installs
 unhealthy. Plans **003**, **004**, **006**, and **008** are closed as not
 applicable to rejected handoff. Plan **009** is DONE as a local capability-gap
 proposal; no upstream contact. Plan **002** is closed as not applicable;
-**007** remains REJECTED. Plan **014** has green local compatibility evidence
-and awaits its GitHub-hosted macOS gate. ADR:
+**007** remains REJECTED. Plan **014** is DONE after local compatibility proof
+and GitHub-hosted macOS run `29990136878`. ADR:
 `docs/dev/brew-cask-decision-record.md`.
 
 **Upstream status:** Homebrew already supports full install/adoption, but no
