@@ -692,8 +692,15 @@ impl Cli {
             version::show_latest().await;
             exit(0);
         }
-        let cmd = cli.get_command().await?;
-        measure!("run {cmd}", { cmd.run().await })
+        let result = match cli.get_command().await {
+            Ok(cmd) => measure!("run {cmd}", { cmd.run().await }),
+            Err(err) => Err(err),
+        };
+        if let Some(config) = Config::maybe_get() {
+            config.clear_tasks_cache();
+        }
+        crate::config::clear_remote_task_include_artifacts();
+        result
     }
 
     async fn get_command(self) -> Result<Commands> {
