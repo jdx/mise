@@ -80,7 +80,7 @@ mise has two ways to manage Python virtualenvs:
 | `python.uv_venv_auto` | uv projects (with `uv.lock`) | `[settings]` section |
 | `_.python.venv`       | Projects not using uv        | `[env]` section      |
 
-**`python.uv_venv_auto`** detects and sources the `.venv` managed by `uv`. Use `"source"` to only activate existing venvs, or `"create|source"` to create if missing. See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for full examples.
+**`python.uv_venv_auto`** detects and sources the `.venv` managed by `uv`. Use `"source"` to only activate existing venvs, or `"create|source"` to create if missing. mise locates the uv project by walking up for a `uv.lock` file, so a `uv.lock` must be present — without one the setting does nothing. See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for full examples.
 
 **`_.python.venv`** creates/activates a venv and adds it to PATH. It works with both `mise activate` and `mise exec`. Use this for projects that don't use uv.
 
@@ -123,7 +123,7 @@ Virtualenv activation requires `mise activate` or `mise exec`. When using [shims
 
 ### `python.uv_venv_auto` setting
 
-For uv-managed projects (those with a `uv.lock` file), you can use the `python.uv_venv_auto` setting to automatically source or create the `.venv` that uv manages. See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for full examples.
+For uv-managed projects (those with a `uv.lock` file), you can use the `python.uv_venv_auto` setting to automatically source or create the `.venv` that uv manages. mise finds the project root by walking up for a `uv.lock`; the presence of that lockfile is how mise knows the project uses uv, so a `uv.lock` must be present. If no `uv.lock` is found the setting is a no-op — run `uv sync` (or `uv lock`) to generate one first. See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for full examples.
 
 ```toml [mise.toml]
 [settings]
