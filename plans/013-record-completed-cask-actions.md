@@ -18,8 +18,10 @@
 - **Category**: architecture / correctness
 - **Planned at**: commit `866916893`, 2026-07-23
 - **DONE**: 2026-07-23 — mutators emit `CompletedCaskAction`; journal under
-  `<prefix>/var/mise/cask-recovery` with fsync; final `.mise-cask.toml` after
-  activation; legacy receipts `LegacyUnverified` / not handoff-eligible.
+  `<prefix>/var/mise/cask-recovery` before mutation and after each completed
+  action, with checked file/parent fsync; final `.mise-cask.toml` derives only
+  from completed actions after activation; retained sources use final Caskroom
+  paths; legacy receipts remain `LegacyUnverified` / not handoff-eligible.
 
 ## Why this matters
 
