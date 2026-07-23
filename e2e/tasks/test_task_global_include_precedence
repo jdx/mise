@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+mkdir -p "$HOME/.config/mise/conf.d" "$HOME/.config/mise/tasks" \
+  "$HOME/global-custom-tasks" "$HOME/high-global-tasks"
+
+cat <<'EOF' >"$MISE_SYSTEM_DIR/config.toml"
+[tasks.g]
+run = "echo system-inline/g"
+EOF
+
+cat <<'EOF' >"$HOME/.config/mise/conf.d/01-base.toml"
+[task_config]
+includes = ["global-custom-tasks"]
+EOF
+
+cat <<EOF >"$HOME/.config/mise/conf.d/02-override.toml"
+[task_config]
+includes = [".config/mise/tasks"]
+
+[tasks.i]
+run = "echo lower-inline/i"
+EOF
+
+cat <<'EOF' >"$HOME/.config/mise/config.toml"
+[task_config]
+includes = [".config/mise/tasks", "high-global-tasks"]
+
+[tasks.f]
+run = "echo high-inline/f"
+EOF
+
+cat <<'EOF' >"$HOME/global-custom-tasks/f"
+#!/usr/bin/env bash
+echo lower-script/f
+EOF
+chmod +x "$HOME/global-custom-tasks/f"
+
+cat <<'EOF' >"$HOME/global-custom-tasks/h"
+#!/usr/bin/env bash
+echo lower-script/h
+EOF
+chmod +x "$HOME/global-custom-tasks/h"
+
+cat <<'EOF' >"$HOME/high-global-tasks/i"
+#!/usr/bin/env bash
+echo high-script/i
+EOF
+chmod +x "$HOME/high-global-tasks/i"
+
+mkdir -p "$TMPDIR/outside-home"
+assert_contains "mise -C '$TMPDIR/outside-home' run f" "high-inline/f"
+assert_not_contains "mise -C '$TMPDIR/outside-home' run f" "lower-script/f"
+assert_contains "mise -C '$TMPDIR/outside-home' run g" "system-inline/g"
+assert_contains "mise -C '$TMPDIR/outside-home' run h" "lower-script/h"
+assert_contains "mise -C '$TMPDIR/outside-home' run i" "high-script/i"
+assert_not_contains "mise -C '$TMPDIR/outside-home' run i" "lower-inline/i"

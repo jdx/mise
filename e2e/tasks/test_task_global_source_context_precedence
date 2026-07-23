@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+mkdir -p "$HOME/.config/mise/conf.d" "$HOME/.config/mise/tasks" \
+  "$HOME/high-global-dir" "$HOME/low-global-dir"
+ln -s ".config/mise/tasks" "$HOME/linked-global-tasks"
+
+cat <<EOF >"$HOME/.config/mise/conf.d/02-override.toml"
+[task_config]
+dir = "$HOME/low-global-dir"
+includes = ["linked-global-tasks"]
+
+[tasks.j]
+env = { INLINE_METADATA = "applied" }
+EOF
+
+cat <<EOF >"$HOME/.config/mise/config.toml"
+[task_config]
+includes = [".config/mise/tasks"]
+dir = "$HOME/high-global-dir"
+EOF
+
+cat <<'EOF' >"$HOME/.config/mise/tasks/j"
+#!/usr/bin/env bash
+echo same-script/j
+echo "INLINE_METADATA=${INLINE_METADATA:-<unset>}"
+echo "TASK_DIR=$PWD"
+EOF
+chmod +x "$HOME/.config/mise/tasks/j"
+
+mkdir -p "$TMPDIR/outside-home"
+assert_contains "mise -C '$TMPDIR/outside-home' run j" "same-script/j"
+assert_contains "mise -C '$TMPDIR/outside-home' run j" "INLINE_METADATA=applied"
+assert_contains "mise -C '$TMPDIR/outside-home' run j" "TASK_DIR=$HOME/high-global-dir"
+assert_not_contains "mise -C '$TMPDIR/outside-home' run j" "TASK_DIR=$HOME/low-global-dir"
+
+# An explicit project include of the same global scripts must retain local
+# precedence. Same-source deduplication may discard only the incidental copy
+# discovered while walking the global config root, not project task context.
+mkdir -p "$HOME/project" "$HOME/local-project-dir"
+
+cat <<'EOF' >>"$HOME/.config/mise/config.toml"
+
+[tasks.local-overlay-wins]
+env = { GLOBAL_CONTEXT = "applied" }
+EOF
+
+cat <<EOF >"$HOME/project/mise.toml"
+[task_config]
+includes = ["$HOME/.config/mise/tasks"]
+dir = "$HOME/local-project-dir"
+
+[tasks.local-overlay-wins]
+env = { LOCAL_CONTEXT = "applied" }
+EOF
+
+cat <<'EOF' >"$HOME/.config/mise/tasks/local-overlay-wins"
+#!/usr/bin/env bash
+echo "LOCAL_CONTEXT=${LOCAL_CONTEXT:-<unset>}"
+echo "GLOBAL_CONTEXT=${GLOBAL_CONTEXT:-<unset>}"
+EOF
+chmod +x "$HOME/.config/mise/tasks/local-overlay-wins"
+
+cat <<'EOF' >"$HOME/.config/mise/tasks/local-dir-wins"
+#!/usr/bin/env bash
+echo "TASK_DIR=$PWD"
+EOF
+chmod +x "$HOME/.config/mise/tasks/local-dir-wins"
+
+assert_contains "mise -C '$HOME/project' run local-overlay-wins" "LOCAL_CONTEXT=applied"
+assert_contains "mise -C '$HOME/project' run local-overlay-wins" "GLOBAL_CONTEXT=<unset>"
+assert_contains "mise -C '$HOME/project' run local-dir-wins" "TASK_DIR=$HOME/local-project-dir"
+assert_not_contains "mise -C '$HOME/project' run local-dir-wins" "TASK_DIR=$HOME/high-global-dir"
