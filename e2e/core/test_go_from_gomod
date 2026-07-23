@@ -16,11 +16,13 @@ EOF
 assert "mise current go" "1.21.4"
 
 # `toolchain default` is ignored; the `go` directive is used, resolved to the
-# latest matching patch (a minimum version -> latest 1.21.x)
+# latest matching patch (a minimum version -> latest 1.21.x). Derive the expected
+# patch the same way resolution does, so the assertion tracks "latest matching".
 cat >go.mod <<EOF
 module example.com/m
 
 go 1.21
 toolchain default
 EOF
-assert_contains "mise current go" "1.21"
+latest_121="$(mise ls-remote go@1.21 | tail -1)"
+assert "mise current go" "$latest_121"

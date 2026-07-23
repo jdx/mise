@@ -410,11 +410,19 @@ impl Backend for GoPlugin {
     }
 }
 
-/// Returns true if `v` is a plain numeric-dotted version like `1.22` or `1.22.5`.
-/// Pre-releases (`1.22rc1`), `default`, and other non-numeric forms are rejected so
-/// they never mis-resolve.
-fn is_go_version(v: &str) -> bool {
-    regex!(r"^[0-9]+(\.[0-9]+)*$").is_match(v)
+/// A `go` directive version: the minimum language version, `major.minor` with an
+/// optional patch (e.g. `1.22` or `1.22.5`). A bare `1` is rejected so it can't be
+/// mistaken for a version prefix that resolves to the newest Go release.
+fn is_go_directive_version(v: &str) -> bool {
+    regex!(r"^[0-9]+\.[0-9]+(\.[0-9]+)?$").is_match(v)
+}
+
+/// A `toolchain` version: a fully-qualified Go release `major.minor.patch` (e.g.
+/// `1.22.5`). Go toolchain names always carry the patch (`go1.22.5`, never `go1.22`),
+/// and pre-releases are excluded from resolution, so anything else falls back to the
+/// `go` directive rather than being used as an exact pin.
+fn is_go_toolchain_version(v: &str) -> bool {
+    regex!(r"^[0-9]+\.[0-9]+\.[0-9]+$").is_match(v)
 }
 
 /// Parse a `go.mod` file into a Go version request for idiomatic version resolution.
@@ -444,13 +452,14 @@ fn parse_gomod(body: &str) -> String {
         })
     };
 
-    // Prefer a concrete `toolchain goX.Y.Z` pin; otherwise fall back to the `go` minimum.
-    // An invalid toolchain value (e.g. `toolchain default`, a pre-release) falls through
-    // to a usable `go` directive rather than discarding the file.
+    // Prefer a fully-qualified `toolchain goX.Y.Z` pin; otherwise fall back to the `go`
+    // minimum. A malformed/partial/pre-release toolchain (e.g. `toolchain default`,
+    // `toolchain go1.22`, `toolchain go1.22rc1`) falls through to the `go` directive
+    // rather than discarding the file.
     directive_value("toolchain")
         .and_then(|v| v.strip_prefix("go").map(|s| s.to_string()))
-        .filter(|v| is_go_version(v))
-        .or_else(|| directive_value("go").filter(|v| is_go_version(v)))
+        .filter(|v| is_go_toolchain_version(v))
+        .or_else(|| directive_value("go").filter(|v| is_go_directive_version(v)))
         .unwrap_or_default()
 }
 
@@ -498,6 +507,13 @@ mod tests {
         assert_eq!(parse_gomod("go 1.22rc1\n"), "");
         // an invalid pre-release toolchain falls back to a valid `go` line
         assert_eq!(parse_gomod("go 1.21\ntoolchain go1.21rc1\n"), "1.21");
+        // a partial (not fully-qualified) toolchain is not a real toolchain name;
+        // fall back to the `go` directive
+        assert_eq!(parse_gomod("go 1.22\ntoolchain go1.22\n"), "1.22");
+        // a fully-qualified toolchain with no `go` directive is still usable
+        assert_eq!(parse_gomod("toolchain go1.22.0\n"), "1.22.0");
+        // a bare major-only directive is rejected (would resolve to the newest Go)
+        assert_eq!(parse_gomod("go 1\n"), "");
         // no version directive -> empty (file skipped)
         assert_eq!(parse_gomod("module example.com/m\n"), "");
     }
