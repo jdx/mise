@@ -4,3 +4,9 @@ mise settings set python.compile true
 assert "mise settings get python.compile" "true"
 mise settings unset python.compile
 assert_fail "mise settings get python.compile" "mise ERROR Setting [python.compile] is not set"
+
+# regression: a parent key stored as an inline table must not panic on unset
+settings_config="$MISE_CONFIG_DIR/config.toml"
+printf '[settings]\npython = { compile = true }\n' >"$settings_config"
+mise settings unset python.compile
+assert_fail "mise settings get python.compile" "mise ERROR Setting [python.compile] is not set"
