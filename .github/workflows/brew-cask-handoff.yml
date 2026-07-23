@@ -64,6 +64,11 @@ jobs:
         run: |
           test -s "$MISE_BREW_HANDOFF_SENTINEL"
           grep -Fx "same_version_mise_caskroom" "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "homebrew_lifecycle" "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "no_caskroom" "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "different_target" "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "retry_after_failure" "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "different_target_auto_updates" "$MISE_BREW_HANDOFF_SENTINEL"
 
       - name: Upload handoff evidence
         if: always()
@@ -75,4 +80,7 @@ jobs:
             ${{ runner.temp }}/brew-cask-handoff.executed
             ${{ runner.temp }}/handoff-http.log
             ${{ runner.temp }}/same-version-*.log
+            ${{ runner.temp }}/*-adopt.log
+            ${{ runner.temp }}/*-retry.log
+            ${{ runner.temp }}/*-uninstall.log
           if-no-files-found: warn

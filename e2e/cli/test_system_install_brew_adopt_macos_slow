@@ -25,6 +25,20 @@ BREW_COMMIT="$(git -C "$BREW_REPOSITORY" rev-parse HEAD)"
   fail "unexpected Homebrew prefix: $BREW_PREFIX"
 
 FIXTURE_ROOT="$TMPDIR/brew-cask-handoff"
+EVIDENCE_JSONL="$TMPDIR/brew-cask-handoff-evidence.jsonl"
+finalize_probe() {
+  local status=$?
+  trap - EXIT
+  [[ -z ${HTTP_PID:-} ]] || kill "$HTTP_PID" 2>/dev/null || true
+  if [[ -f $EVIDENCE_JSONL ]]; then
+    jq -s . "$EVIDENCE_JSONL" >"$RUNNER_TEMP/brew-cask-handoff-evidence.json"
+  fi
+  while IFS= read -r log; do
+    cp "$log" "$RUNNER_TEMP/"
+  done < <(find "$TMPDIR" -maxdepth 1 -type f -name '*.log' -print)
+  exit "$status"
+}
+trap finalize_probe EXIT
 PORT="$(
   python3 - <<'PY'
 import socket
@@ -37,7 +51,6 @@ python3 "$ROOT/e2e/fixtures/brew-cask-handoff/generate.py" "$FIXTURE_ROOT" "$POR
 python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$FIXTURE_ROOT" \
   >"$TMPDIR/handoff-http.log" 2>&1 &
 HTTP_PID=$!
-trap 'kill "$HTTP_PID" 2>/dev/null || true' EXIT
 for _ in {1..30}; do
   curl -fsS "http://127.0.0.1:$PORT/matrix.json" >/dev/null && break
   sleep 0.2
@@ -63,7 +76,6 @@ jq -e '
   )
 ' "$FIXTURE_ROOT/matrix.json" >/dev/null || fail "invalid fixture matrix"
 
-EVIDENCE_JSONL="$TMPDIR/brew-cask-handoff-evidence.jsonl"
 classify_fixture_candidate() {
   local caskfile=$1
   if grep -Eq '^[[:space:]]*(pkg|preflight|postflight|uninstall_preflight|uninstall_postflight)[[:space:]]' "$caskfile"; then
@@ -117,7 +129,9 @@ if [[ -z $TAP_DIR ]]; then
 fi
 mkdir -p "$TAP_DIR/Casks"
 cp "$FIXTURE_ROOT/tap/Casks/"*.rb "$TAP_DIR/Casks/"
-git -C "$TAP_DIR" add -f Casks
+mkdir -p "$TAP_DIR/Formula"
+cp "$FIXTURE_ROOT/tap/Formula/"*.rb "$TAP_DIR/Formula/"
+git -C "$TAP_DIR" add -f Casks Formula
 git -C "$TAP_DIR" -c user.name=mise-test -c user.email=mise-test@example.invalid \
   commit -m "test: add deterministic handoff casks"
 brew trust mise-test/handoff
@@ -180,13 +194,133 @@ if [[ $ADOPT_STATUS -eq 0 ]]; then
     >>"$EVIDENCE_JSONL"
 fi
 
+app_digest() {
+  local app=$1
+  if [[ ! -d $app ]]; then
+    printf '%s' absent
+    return
+  fi
+  find "$app" -type f -print0 | sort -z | xargs -0 shasum -a 256 |
+    shasum -a 256 | cut -d' ' -f1
+}
+
+stage_fixture_app() {
+  local token=$1 app_name=$2 destination=$3
+  local stage="$TMPDIR/stage-$token"
+  mkdir -p "$stage"
+  ditto -x -k "$FIXTURE_ROOT/archives/$token-1.0.0.zip" "$stage"
+  ditto "$stage/$app_name" "$destination"
+}
+
+record_app_adopt() {
+  local token=$1 scenario=$2 app=$3 before=$4 status=$5
+  local caskroom="$BREW_PREFIX/Caskroom/$token"
+  local after
+  after="$(app_digest "$app")"
+  jq -n \
+    --arg token "$token" \
+    --arg scenario "$scenario" \
+    --argjson adopt_status "$status" \
+    --arg before "$before" \
+    --arg after "$after" \
+    --arg metadata "$([[ -e "$caskroom/.metadata" ]] && echo present || echo absent)" \
+    --arg mise_receipt "$([[ -e "$caskroom/1.0.0/.mise-cask.toml" ]] && echo present || echo absent)" \
+    '{token: $token, scenario: $scenario, adopt_status: $adopt_status,
+      payload_before: $before, payload_after: $after,
+      homebrew_metadata: $metadata, mise_receipt: $mise_receipt}' \
+    >>"$EVIDENCE_JSONL"
+}
+
+NO_CASKROOM_TOKEN="mise-handoff-different"
+NO_CASKROOM_APP="/Applications/Mise Handoff Different.app"
+NO_CASKROOM_CASKROOM="$BREW_PREFIX/Caskroom/$NO_CASKROOM_TOKEN"
+[[ ! -e $NO_CASKROOM_APP && ! -e $NO_CASKROOM_CASKROOM ]] ||
+  fail "no-Caskroom fixture state already exists"
+stage_fixture_app "$NO_CASKROOM_TOKEN" "${NO_CASKROOM_APP##*/}" "$NO_CASKROOM_APP"
+NO_CASKROOM_BEFORE="$(app_digest "$NO_CASKROOM_APP")"
+set +e
+brew install --cask --adopt "$TAP_DIR/Casks/$NO_CASKROOM_TOKEN.rb" \
+  >"$TMPDIR/no-caskroom-adopt.log" 2>&1
+NO_CASKROOM_STATUS=$?
+set -e
+record_app_adopt "$NO_CASKROOM_TOKEN" "no_caskroom" "$NO_CASKROOM_APP" \
+  "$NO_CASKROOM_BEFORE" "$NO_CASKROOM_STATUS"
+if [[ $NO_CASKROOM_STATUS -eq 0 ]]; then
+  brew uninstall --cask "$NO_CASKROOM_TOKEN" \
+    >"$TMPDIR/no-caskroom-uninstall.log" 2>&1
+fi
+
+[[ ! -e $NO_CASKROOM_APP && ! -e $NO_CASKROOM_CASKROOM ]] ||
+  fail "no-Caskroom lifecycle did not clean fixture"
+stage_fixture_app "$NO_CASKROOM_TOKEN" "${NO_CASKROOM_APP##*/}" "$NO_CASKROOM_APP"
+DIFFERENT_EXECUTABLE="$(find "$NO_CASKROOM_APP/Contents/MacOS" -type f -print -quit)"
+printf '%s\n' "locally-different" >>"$DIFFERENT_EXECUTABLE"
+DIFFERENT_BEFORE="$(app_digest "$NO_CASKROOM_APP")"
+set +e
+brew install --cask --adopt "$TAP_DIR/Casks/$NO_CASKROOM_TOKEN.rb" \
+  >"$TMPDIR/different-target-adopt.log" 2>&1
+DIFFERENT_STATUS=$?
+set -e
+record_app_adopt "$NO_CASKROOM_TOKEN" "different_target" "$NO_CASKROOM_APP" \
+  "$DIFFERENT_BEFORE" "$DIFFERENT_STATUS"
+
+# Retry without deleting the failed payload: quarantine it on the same volume,
+# restore exact fixture bytes, then invoke the same native operation.
+DIFFERENT_QUARANTINE="$TMPDIR/Mise Handoff Different.failed.app"
+if [[ -e $NO_CASKROOM_APP ]]; then
+  mv "$NO_CASKROOM_APP" "$DIFFERENT_QUARANTINE"
+fi
+stage_fixture_app "$NO_CASKROOM_TOKEN" "${NO_CASKROOM_APP##*/}" "$NO_CASKROOM_APP"
+RETRY_BEFORE="$(app_digest "$NO_CASKROOM_APP")"
+set +e
+brew install --cask --adopt "$TAP_DIR/Casks/$NO_CASKROOM_TOKEN.rb" \
+  >"$TMPDIR/different-target-retry.log" 2>&1
+RETRY_STATUS=$?
+set -e
+record_app_adopt "$NO_CASKROOM_TOKEN" "retry_after_failure" "$NO_CASKROOM_APP" \
+  "$RETRY_BEFORE" "$RETRY_STATUS"
+if [[ $RETRY_STATUS -eq 0 ]]; then
+  brew uninstall --cask "$NO_CASKROOM_TOKEN" \
+    >"$TMPDIR/different-target-retry-uninstall.log" 2>&1
+fi
+
+AUTO_TOKEN="mise-handoff-auto-updates"
+AUTO_APP="/Applications/Mise Handoff Auto Updates.app"
+AUTO_CASKROOM="$BREW_PREFIX/Caskroom/$AUTO_TOKEN"
+[[ ! -e $AUTO_APP && ! -e $AUTO_CASKROOM ]] ||
+  fail "auto_updates fixture state already exists"
+stage_fixture_app "$AUTO_TOKEN" "${AUTO_APP##*/}" "$AUTO_APP"
+AUTO_EXECUTABLE="$(find "$AUTO_APP/Contents/MacOS" -type f -print -quit)"
+printf '%s\n' "locally-different" >>"$AUTO_EXECUTABLE"
+AUTO_BEFORE="$(app_digest "$AUTO_APP")"
+set +e
+brew install --cask --adopt "$TAP_DIR/Casks/$AUTO_TOKEN.rb" \
+  >"$TMPDIR/auto-updates-different-adopt.log" 2>&1
+AUTO_STATUS=$?
+set -e
+record_app_adopt "$AUTO_TOKEN" "different_target_auto_updates" "$AUTO_APP" \
+  "$AUTO_BEFORE" "$AUTO_STATUS"
+if [[ $AUTO_STATUS -eq 0 ]]; then
+  brew uninstall --cask "$AUTO_TOKEN" \
+    >"$TMPDIR/auto-updates-uninstall.log" 2>&1
+fi
+
 jq -s . "$EVIDENCE_JSONL" >"$RUNNER_TEMP/brew-cask-handoff-evidence.json"
 cp "$TMPDIR/same-version-adopt.log" "$RUNNER_TEMP/same-version-adopt.log"
 cp "$TMPDIR/handoff-http.log" "$RUNNER_TEMP/handoff-http.log"
 for log in "$TMPDIR"/same-version-{list,reinstall,uninstall}.log; do
   [[ -f $log ]] && cp "$log" "$RUNNER_TEMP/"
 done
+for log in "$TMPDIR"/*{adopt,retry,uninstall}.log; do
+  [[ -f $log ]] && cp "$log" "$RUNNER_TEMP/"
+done
 
 # Sentinel means a destructive scenario really executed, not merely that the
 # wrapper exited successfully.
-printf '%s\n' "same_version_mise_caskroom" >"$MISE_BREW_HANDOFF_SENTINEL"
+printf '%s\n' \
+  "same_version_mise_caskroom" \
+  "homebrew_lifecycle" \
+  "no_caskroom" \
+  "different_target" \
+  "retry_after_failure" \
+  "different_target_auto_updates" >"$MISE_BREW_HANDOFF_SENTINEL"
