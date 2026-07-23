@@ -119,6 +119,9 @@ jobs:
 
       - name: Exercise representative direct-pour matrix
         run: |
-          export PATH="$PWD/target/debug:$PATH"
+          mkdir -p "$RUNNER_TEMP/direct-pour-bin"
+          cp e2e/fixtures/brew-cask-handoff/fd-shim "$RUNNER_TEMP/direct-pour-bin/fd"
+          chmod +x "$RUNNER_TEMP/direct-pour-bin/fd"
+          export PATH="$RUNNER_TEMP/direct-pour-bin:$PWD/target/debug:$PATH"
           export MISE_AUTO_INSTALL=0
           mise run test:e2e e2e/cli/test_system_install_brew_cask_compatibility_macos_slow
