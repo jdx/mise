@@ -1041,7 +1041,9 @@ impl Settings {
                 Self::UNIX_DEFAULT_INLINE_SHELL_ARGS,
             )
         };
-        split_default_shell_or_fallback(sa, fallback)
+        let mut shell = split_default_shell_or_fallback(sa, fallback)?;
+        self.maybe_no_profile(&mut shell);
+        Ok(shell)
     }
 
     pub fn default_file_shell(&self) -> Result<Vec<String>> {
@@ -1056,7 +1058,17 @@ impl Settings {
                 Self::UNIX_DEFAULT_FILE_SHELL_ARGS,
             )
         };
-        split_default_shell_or_fallback(sa, fallback)
+        let mut shell = split_default_shell_or_fallback(sa, fallback)?;
+        self.maybe_no_profile(&mut shell);
+        Ok(shell)
+    }
+
+    /// Inject `-NoProfile` into a PowerShell shell command when
+    /// `windows_powershell_no_profile` is enabled. No-op for other shells.
+    pub fn maybe_no_profile(&self, shell: &mut Vec<String>) {
+        if self.windows_powershell_no_profile {
+            crate::path::inject_powershell_no_profile(shell);
+        }
     }
 
     pub fn os(&self) -> &str {

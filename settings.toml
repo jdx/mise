@@ -3021,6 +3021,26 @@ parse_env = "list_by_comma"
 rust_type = "Vec<String>"
 type = "ListString"
 
+[windows_powershell_no_profile]
+default = true
+description = "Pass `-NoProfile` to PowerShell (`pwsh`/`powershell`) shells that mise spawns for tasks and inline commands, so startup profiles are skipped."
+docs = """
+When mise runs a task or inline command through PowerShell, it passes
+`-NoProfile` so the shell does not load the user's PowerShell profile. This
+matches the non-interactive behavior of `sh -c` / `zsh -c` on Unix, which do not
+source interactive startup files.
+
+Profiles that mutate `PATH` — for example a mise activation snippet that prepends
+the shims directory — can otherwise shadow a task's own installed tools and
+produce confusing `cannot find binary path` errors.
+
+Set to `false` if your tasks rely on side effects from your PowerShell profile
+(environment variables, functions, aliases). This only affects `pwsh` and
+`powershell`; it has no effect on `cmd` or on non-Windows shells.
+"""
+env = "MISE_WINDOWS_POWERSHELL_NO_PROFILE"
+type = "Bool"
+
 [windows_shim_mode]
 default = "exe"
 description = "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`."

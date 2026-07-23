@@ -1985,6 +1985,11 @@
             "type": "string"
           }
         },
+        "windows_powershell_no_profile": {
+          "default": true,
+          "description": "Pass `-NoProfile` to PowerShell (`pwsh`/`powershell`) shells that mise spawns for tasks and inline commands, so startup profiles are skipped.",
+          "type": "boolean"
+        },
         "windows_shim_mode": {
           "default": "exe",
           "description": "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`.",

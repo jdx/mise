@@ -163,6 +163,65 @@ pub fn is_cmd_shell_program(program: &Path) -> bool {
     program_stem(program).as_deref() == Some("cmd")
 }
 
+/// Returns true if `program` is PowerShell (`pwsh` / PowerShell Core) or Windows
+/// PowerShell (`powershell`), with or without a directory prefix or `.exe`
+/// extension.
+pub fn is_powershell_program(program: &Path) -> bool {
+    matches!(
+        program_stem(program).as_deref(),
+        Some("pwsh" | "powershell")
+    )
+}
+
+/// If `shell` invokes PowerShell and does not already suppress startup profiles,
+/// insert `-NoProfile` immediately after the program.
+///
+/// Unlike `zsh -c` / `sh -c`, `pwsh -Command` loads the user's PowerShell
+/// profile even for a non-interactive one-liner. A profile that mutates `PATH`
+/// (e.g. mise activation prepending the shims dir) can shadow a task's own
+/// installed tools, producing confusing "cannot find binary path" failures
+/// (discussion #10956). Skipping the profile makes mise-spawned PowerShell
+/// behave like the POSIX shells it spawns elsewhere.
+///
+/// `-NoProfile` must precede `-Command`/`-File`, since everything after those is
+/// treated as the script/args rather than as pwsh options — hence insertion at
+/// index 1, right after the program.
+///
+/// Detection is idempotent and covers PowerShell's case-insensitive prefix
+/// abbreviations (`-nop`, `-NoProfile`, `/noprofile`, …). `-NoProfileLoadTime`
+/// is deliberately *not* treated as suppressing the profile — it only affects
+/// startup timing output — so it does not block injection.
+pub fn inject_powershell_no_profile(shell: &mut Vec<String>) {
+    let Some(program) = shell.first() else {
+        return;
+    };
+    if !is_powershell_program(Path::new(program)) {
+        return;
+    }
+    let already_present = shell[1..]
+        .iter()
+        .take_while(|arg| {
+            let token = arg.trim_start_matches(['-', '/']).to_ascii_lowercase();
+            // PowerShell treats everything after -Command/-File (and their
+            // abbreviations) as payload, so a payload argument such as `-nop`
+            // must not suppress injection.
+            !(!token.is_empty()
+                && ("command".starts_with(&token)
+                    || "commandwithargs".starts_with(&token)
+                    || "file".starts_with(&token)))
+        })
+        .any(|arg| {
+            let token = arg.trim_start_matches(['-', '/']).to_ascii_lowercase();
+            // `-nop`, `-nopro`, …, `-noprofile` are all abbreviations of NoProfile.
+            // Require at least "nop" to avoid matching unrelated `-no*` flags, and
+            // stop at "noprofile" so longer names like NoProfileLoadTime don't match.
+            token.len() >= 3 && "noprofile".starts_with(&token)
+        });
+    if !already_present {
+        shell.insert(1, "-NoProfile".to_string());
+    }
+}
+
 /// Assemble the args (everything after the `cmd.exe` program) for running
 /// `script` — plus any forwarded `args` — through cmd.exe *verbatim*.
 ///
@@ -766,6 +825,88 @@ mod tests {
         // `cmd.com` is not the modern interpreter we target.
         assert!(!is_cmd_shell_program(Path::new("cmd.com")));
         assert!(!is_cmd_shell_program(Path::new("")));
+    }
+
+    #[test]
+    fn test_is_powershell_program() {
+        assert!(is_powershell_program(Path::new("pwsh")));
+        assert!(is_powershell_program(Path::new("pwsh.exe")));
+        assert!(is_powershell_program(Path::new("PWSH.EXE")));
+        assert!(is_powershell_program(Path::new("powershell")));
+        assert!(is_powershell_program(Path::new("powershell.exe")));
+        assert!(is_powershell_program(Path::new(
+            r"C:\Program Files\PowerShell\7\pwsh.exe"
+        )));
+
+        assert!(!is_powershell_program(Path::new("cmd")));
+        assert!(!is_powershell_program(Path::new("bash")));
+        assert!(!is_powershell_program(Path::new("")));
+    }
+
+    #[test]
+    fn test_inject_powershell_no_profile() {
+        let inject = |args: &[&str]| {
+            let mut v = sv(args);
+            inject_powershell_no_profile(&mut v);
+            v
+        };
+
+        // Injected right after the program, before -Command.
+        assert_eq!(
+            inject(&["pwsh", "-Command"]),
+            sv(&["pwsh", "-NoProfile", "-Command"])
+        );
+        assert_eq!(
+            inject(&["powershell", "-c"]),
+            sv(&["powershell", "-NoProfile", "-c"])
+        );
+        assert_eq!(
+            inject(&["pwsh.exe", "-NoLogo", "-Command"]),
+            sv(&["pwsh.exe", "-NoProfile", "-NoLogo", "-Command"])
+        );
+
+        // Non-PowerShell shells are untouched.
+        assert_eq!(inject(&["cmd", "/c"]), sv(&["cmd", "/c"]));
+        assert_eq!(inject(&["bash", "-c"]), sv(&["bash", "-c"]));
+        assert_eq!(inject(&[]), sv(&[]));
+
+        // Idempotent — already present in any accepted spelling/abbreviation.
+        assert_eq!(
+            inject(&["pwsh", "-NoProfile", "-Command"]),
+            sv(&["pwsh", "-NoProfile", "-Command"])
+        );
+        assert_eq!(
+            inject(&["pwsh", "-noprofile", "-c"]),
+            sv(&["pwsh", "-noprofile", "-c"])
+        );
+        assert_eq!(inject(&["pwsh", "-nop", "-c"]), sv(&["pwsh", "-nop", "-c"]));
+        assert_eq!(
+            inject(&["pwsh", "/NoProfile", "-c"]),
+            sv(&["pwsh", "/NoProfile", "-c"])
+        );
+
+        // NoProfile-like payload arguments after -Command/-File are not shell
+        // options and must not prevent injection.
+        assert_eq!(
+            inject(&["pwsh", "-Command", "-nop"]),
+            sv(&["pwsh", "-NoProfile", "-Command", "-nop"])
+        );
+        assert_eq!(
+            inject(&["pwsh", "-File", "script.ps1", "-nop"]),
+            sv(&["pwsh", "-NoProfile", "-File", "script.ps1", "-nop"])
+        );
+
+        // -NoProfileLoadTime does not suppress the profile, so still injected.
+        assert_eq!(
+            inject(&["pwsh", "-NoProfileLoadTime", "-c"]),
+            sv(&["pwsh", "-NoProfile", "-NoProfileLoadTime", "-c"])
+        );
+
+        // -NoLogo starts with "-no" but is not a NoProfile abbreviation.
+        assert_eq!(
+            inject(&["pwsh", "-NoLogo", "-c"]),
+            sv(&["pwsh", "-NoProfile", "-NoLogo", "-c"])
+        );
     }
 
     #[test]
