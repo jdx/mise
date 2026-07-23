@@ -5,7 +5,15 @@ export MISE_PYTHON_GITHUB_ATTESTATIONS=0
 # (astral-sh/uv#19278). Bump once 0.11.10 ships with attestations restored.
 assert "mise use -g uv@0.11.8 python@3.11.3"
 assert "mise x -- uv python install 3.11.1"
+mkdir -p "$MISE_CACHE_DIR/python/3.11.1"
+touch "$MISE_CACHE_DIR/python/3.11.1/incomplete"
 export UV_PYTHON_DOWNLOADS=never
 assert "mise sync python --uv"
+assert "test ! -f \"$MISE_CACHE_DIR/python/3.11.1/incomplete\""
+assert "mise where python@3.11.1"
+touch "$MISE_CACHE_DIR/python/3.11.1/incomplete"
+assert_not_contains "mise sync python --uv" "Synced python@3.11.1 from uv to mise"
+assert "test ! -f \"$MISE_CACHE_DIR/python/3.11.1/incomplete\""
+assert "mise where python@3.11.1"
 assert "mise x python@3.11.1 -- python -V" "Python 3.11.1"
 assert "mise x -- uv run -p 3.11.3 -- python -V" "Python 3.11.3"

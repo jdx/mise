@@ -46,19 +46,16 @@ impl SyncPython {
         let python = backend::get(&"python".into()).unwrap();
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");
-        let installed_python_versions_path = dirs::INSTALLS.join("python");
-
-        file::remove_symlinks_with_target_prefix(
-            &installed_python_versions_path,
-            &pyenv_versions_path,
-        )?;
 
         let subdirs = file::dir_subdirs(&pyenv_versions_path)?;
+        let mut links = vec![];
         for v in sorted(subdirs) {
             if v.starts_with(".") {
                 continue;
             }
-            python.create_symlink(&v, &pyenv_versions_path.join(&v))?;
+            links.push((v.clone(), pyenv_versions_path.join(&v)));
+        }
+        for v in python.sync_symlinks(&pyenv_versions_path, links)? {
             miseprintln!("Synced python@{} from pyenv", v);
         }
         Ok(())
@@ -69,24 +66,18 @@ impl SyncPython {
         let uv_versions_path = &*env::UV_PYTHON_INSTALL_DIR;
         let installed_python_versions_path = dirs::INSTALLS.join("python");
 
-        file::remove_symlinks_with_target_prefix(
-            &installed_python_versions_path,
-            uv_versions_path,
-        )?;
-
         let subdirs = file::dir_subdirs(uv_versions_path)?;
+        let mut links = vec![];
         for name in sorted(subdirs) {
             if name.starts_with(".") {
                 continue;
             }
             // name is like cpython-3.13.1-macos-aarch64-none
             let v = name.split('-').nth(1).unwrap();
-            if python
-                .create_symlink(v, &uv_versions_path.join(&name))?
-                .is_some()
-            {
-                miseprintln!("Synced python@{v} from uv to mise");
-            }
+            links.push((v.to_string(), uv_versions_path.join(&name)));
+        }
+        for v in python.sync_symlinks(uv_versions_path, links)? {
+            miseprintln!("Synced python@{v} from uv to mise");
         }
 
         let subdirs = file::dir_subdirs(&installed_python_versions_path)?;
@@ -95,7 +86,7 @@ impl SyncPython {
                 continue;
             }
             let src = installed_python_versions_path.join(&v);
-            if src.is_symlink() {
+            if file::is_symlink_or_junction(&src) {
                 continue;
             }
             // ~/.local/share/uv/python/cpython-3.10.16-macos-aarch64-none

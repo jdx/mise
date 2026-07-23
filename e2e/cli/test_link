@@ -14,6 +14,8 @@ assert_contains "mise ls tiny" "tiny  9.8.7 (symlink)"
 mkdir -p tmp/tiny2
 mkdir -p "$MISE_CACHE_DIR/tiny/9.9.9"
 touch "$MISE_CACHE_DIR/tiny/9.9.9/incomplete"
+mkdir -p "$MISE_CACHE_DIR/tiny/9.9.8"
+touch "$MISE_CACHE_DIR/tiny/9.9.8/incomplete"
 mise link tiny@9.9.9 tmp/tiny2
 
 # `mise ls -i` only lists versions considered installed; the linked version
@@ -21,3 +23,38 @@ mise link tiny@9.9.9 tmp/tiny2
 assert_contains "mise ls -i tiny" "tiny  9.9.9 (symlink)"
 # the stale marker should have been removed by `mise link`.
 assert "test ! -f \"$MISE_CACHE_DIR/tiny/9.9.9/incomplete\""
+# a sibling version's marker must not be affected.
+assert "test -f \"$MISE_CACHE_DIR/tiny/9.9.8/incomplete\""
+
+# Re-linking the same target should repair a newly-created stale marker without
+# requiring --force.
+touch "$MISE_CACHE_DIR/tiny/9.9.9/incomplete"
+mise link tiny@9.9.9 tmp/tiny2
+assert "test ! -f \"$MISE_CACHE_DIR/tiny/9.9.9/incomplete\""
+
+# A dangling external link is not a complete install and must keep the marker.
+mise link tiny@9.9.8 tmp/missing
+assert "test -f \"$MISE_CACHE_DIR/tiny/9.9.8/incomplete\""
+
+# Path equality alone must not treat an ordinary managed install as an existing
+# external link.
+mkdir -p "$MISE_CACHE_DIR/tiny/3.1.0"
+touch "$MISE_CACHE_DIR/tiny/3.1.0/incomplete"
+assert_fail "mise link tiny@3.1.0 \"$MISE_DATA_DIR/installs/tiny/3.1.0\""
+assert "test -f \"$MISE_CACHE_DIR/tiny/3.1.0/incomplete\""
+
+# Request-style versions use their normalized install pathname for both the
+# symlink and incomplete marker.
+mkdir -p tmp/tiny-ref
+mkdir -p "$MISE_CACHE_DIR/tiny/ref-feature-foo"
+touch "$MISE_CACHE_DIR/tiny/ref-feature-foo/incomplete"
+mise link tiny@ref:feature/foo tmp/tiny-ref
+assert "test ! -f \"$MISE_CACHE_DIR/tiny/ref-feature-foo/incomplete\""
+assert "mise where tiny@ref:feature/foo" "$MISE_DATA_DIR/installs/tiny/ref-feature-foo"
+assert "readlink \"$MISE_DATA_DIR/installs/tiny/ref-feature-foo\"" "$PWD/tmp/tiny-ref"
+
+# Marker removal errors remain strict, while the marker itself is preserved.
+mkdir -p tmp/tiny3
+mkdir -p "$MISE_CACHE_DIR/tiny/9.9.7/incomplete"
+assert_fail "mise link tiny@9.9.7 tmp/tiny3"
+assert "test -d \"$MISE_CACHE_DIR/tiny/9.9.7/incomplete\""
