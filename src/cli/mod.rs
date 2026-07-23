@@ -700,6 +700,7 @@ impl Cli {
             config.clear_tasks_cache();
         }
         crate::config::clear_remote_task_include_artifacts();
+        crate::task::task_fetcher::clear_remote_task_artifacts();
         result
     }
 
