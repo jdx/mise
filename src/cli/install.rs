@@ -308,6 +308,11 @@ impl Install {
                     .await,
             )
         };
+        // Tools that actually installed successfully. `versions` is mutated
+        // below (retained to current versions for the lockfile/shim rebuild),
+        // so capture the set now for the "installed but not activated" warning.
+        let installed_shorts: HashSet<String> =
+            versions.iter().map(|tv| tv.short().to_string()).collect();
         // In dry-run mode, check if any tools would be installed before filtering
         if self.is_dry_run() {
             if self.dry_run_code {
@@ -347,7 +352,14 @@ impl Install {
             .await?;
         }
 
-        // Warn about tools that were installed but not in any config file
+        // Warn about tools that were installed but not in any config file.
+        // Restrict to tools that actually installed — a tool whose install
+        // failed is already reported by `install_error` below, and also
+        // claiming it was "installed but not activated" would be misleading.
+        let inactive_tools: Vec<String> = inactive_tools
+            .into_iter()
+            .filter(|t| installed_shorts.contains(t))
+            .collect();
         if !inactive_tools.is_empty() {
             let tool_list = inactive_tools.join(", ");
             let use_cmds: Vec<String> = inactive_tools
