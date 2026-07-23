@@ -305,6 +305,160 @@ if [[ $AUTO_STATUS -eq 0 ]]; then
     >"$TMPDIR/auto-updates-uninstall.log" 2>&1
 fi
 
+file_digest() {
+  local path=$1
+  if [[ -f $path ]]; then
+    shasum -a 256 "$path" | cut -d' ' -f1
+  else
+    printf '%s' absent
+  fi
+}
+
+stage_fixture_archive() {
+  local token=$1 destination=$2
+  mkdir -p "$destination"
+  ditto -x -k "$FIXTURE_ROOT/archives/$token-1.0.0.zip" "$destination"
+}
+
+BINARY_TOKEN="mise-handoff-binary"
+BINARY_TARGET="$BREW_PREFIX/bin/mise-handoff-tool"
+BINARY_CASKROOM="$BREW_PREFIX/Caskroom/$BINARY_TOKEN"
+[[ ! -e $BINARY_TARGET && ! -e $BINARY_CASKROOM ]] ||
+  fail "binary fixture state already exists"
+BINARY_STAGE="$TMPDIR/stage-$BINARY_TOKEN"
+stage_fixture_archive "$BINARY_TOKEN" "$BINARY_STAGE"
+cp "$BINARY_STAGE/mise-handoff-tool" "$BINARY_TARGET"
+chmod +x "$BINARY_TARGET"
+BINARY_BEFORE="$(file_digest "$BINARY_TARGET")"
+set +e
+brew install --cask --adopt "$TAP_DIR/Casks/$BINARY_TOKEN.rb" \
+  >"$TMPDIR/binary-adopt.log" 2>&1
+BINARY_STATUS=$?
+set -e
+jq -n \
+  --arg token "$BINARY_TOKEN" \
+  --argjson adopt_status "$BINARY_STATUS" \
+  --arg before "$BINARY_BEFORE" \
+  --arg after "$(file_digest "$BINARY_TARGET")" \
+  --arg target_type "$([[ -L $BINARY_TARGET ]] && echo symlink || echo regular_or_absent)" \
+  --arg metadata "$([[ -e "$BINARY_CASKROOM/.metadata" ]] && echo present || echo absent)" \
+  '{token: $token, scenario: "binary_target_exists_no_caskroom",
+    adopt_status: $adopt_status, payload_before: $before, payload_after: $after,
+    target_type: $target_type, homebrew_metadata: $metadata}' \
+  >>"$EVIDENCE_JSONL"
+
+BINARY_QUARANTINE="$TMPDIR/mise-handoff-tool.failed"
+if [[ -e $BINARY_TARGET || -L $BINARY_TARGET ]]; then
+  mv "$BINARY_TARGET" "$BINARY_QUARANTINE"
+fi
+set +e
+brew install --cask --adopt "$TAP_DIR/Casks/$BINARY_TOKEN.rb" \
+  >"$TMPDIR/binary-retry.log" 2>&1
+BINARY_RETRY_STATUS=$?
+brew list --cask --versions "$BINARY_TOKEN" >"$TMPDIR/binary-list.log" 2>&1
+BINARY_LIST_STATUS=$?
+brew uninstall --cask "$BINARY_TOKEN" >"$TMPDIR/binary-uninstall.log" 2>&1
+BINARY_UNINSTALL_STATUS=$?
+set -e
+jq -n \
+  --arg token "$BINARY_TOKEN" \
+  --argjson retry_status "$BINARY_RETRY_STATUS" \
+  --argjson list_status "$BINARY_LIST_STATUS" \
+  --argjson uninstall_status "$BINARY_UNINSTALL_STATUS" \
+  --arg target_after_uninstall "$([[ -e $BINARY_TARGET || -L $BINARY_TARGET ]] && echo present || echo absent)" \
+  '{token: $token, scenario: "binary_retry_and_lifecycle",
+    retry_status: $retry_status, list_status: $list_status,
+    uninstall_status: $uninstall_status,
+    target_after_uninstall: $target_after_uninstall}' \
+  >>"$EVIDENCE_JSONL"
+
+MIXED_TOKEN="mise-handoff-mixed"
+MIXED_APP="/Applications/Mise Handoff Mixed.app"
+MIXED_BINARY="$BREW_PREFIX/bin/mise-handoff-mixed-tool"
+MIXED_CASKROOM="$BREW_PREFIX/Caskroom/$MIXED_TOKEN"
+[[ ! -e $MIXED_APP && ! -e $MIXED_BINARY && ! -e $MIXED_CASKROOM ]] ||
+  fail "mixed fixture state already exists"
+MIXED_STAGE="$TMPDIR/stage-$MIXED_TOKEN"
+stage_fixture_archive "$MIXED_TOKEN" "$MIXED_STAGE"
+ditto "$MIXED_STAGE/${MIXED_APP##*/}" "$MIXED_APP"
+cp "$MIXED_STAGE/mise-handoff-mixed-tool" "$MIXED_BINARY"
+chmod +x "$MIXED_BINARY"
+MIXED_APP_BEFORE="$(app_digest "$MIXED_APP")"
+MIXED_BINARY_BEFORE="$(file_digest "$MIXED_BINARY")"
+set +e
+brew install --cask --adopt "$TAP_DIR/Casks/$MIXED_TOKEN.rb" \
+  >"$TMPDIR/mixed-adopt.log" 2>&1
+MIXED_STATUS=$?
+set -e
+jq -n \
+  --arg token "$MIXED_TOKEN" \
+  --argjson adopt_status "$MIXED_STATUS" \
+  --arg app_before "$MIXED_APP_BEFORE" \
+  --arg app_after "$(app_digest "$MIXED_APP")" \
+  --arg binary_before "$MIXED_BINARY_BEFORE" \
+  --arg binary_after "$(file_digest "$MIXED_BINARY")" \
+  --arg metadata "$([[ -e "$MIXED_CASKROOM/.metadata" ]] && echo present || echo absent)" \
+  '{token: $token, scenario: "mixed_targets_exist_no_caskroom",
+    adopt_status: $adopt_status, app_before: $app_before, app_after: $app_after,
+    binary_before: $binary_before, binary_after: $binary_after,
+    homebrew_metadata: $metadata}' \
+  >>"$EVIDENCE_JSONL"
+
+DEPENDENCY_TOKEN="mise-handoff-binary-dependency"
+DEPENDENCY_FORMULA="mise-handoff-dependency"
+DEPENDENCY_TARGET="$BREW_PREFIX/bin/mise-handoff-dependent-tool"
+DEPENDENCY_CASKROOM="$BREW_PREFIX/Caskroom/$DEPENDENCY_TOKEN"
+[[ ! -e $DEPENDENCY_TARGET && ! -e $DEPENDENCY_CASKROOM ]] ||
+  fail "dependency fixture state already exists"
+DEPENDENCY_STAGE="$TMPDIR/stage-$DEPENDENCY_TOKEN"
+stage_fixture_archive "$DEPENDENCY_TOKEN" "$DEPENDENCY_STAGE"
+cp "$DEPENDENCY_STAGE/mise-handoff-dependent-tool" "$DEPENDENCY_TARGET"
+chmod +x "$DEPENDENCY_TARGET"
+set +e
+brew install --cask --adopt "$TAP_DIR/Casks/$DEPENDENCY_TOKEN.rb" \
+  >"$TMPDIR/dependency-adopt.log" 2>&1
+DEPENDENCY_STATUS=$?
+brew list --formula --versions "mise-test/handoff/$DEPENDENCY_FORMULA" \
+  >"$TMPDIR/dependency-formula-after-failure.log" 2>&1
+DEPENDENCY_AFTER_FAILURE=$?
+set -e
+jq -n \
+  --arg token "$DEPENDENCY_TOKEN" \
+  --argjson adopt_status "$DEPENDENCY_STATUS" \
+  --argjson dependency_list_status "$DEPENDENCY_AFTER_FAILURE" \
+  --arg metadata "$([[ -e "$DEPENDENCY_CASKROOM/.metadata" ]] && echo present || echo absent)" \
+  '{token: $token, scenario: "dependency_target_exists_no_caskroom",
+    adopt_status: $adopt_status,
+    dependency_list_status_after_attempt: $dependency_list_status,
+    homebrew_metadata: $metadata}' \
+  >>"$EVIDENCE_JSONL"
+
+DEPENDENCY_QUARANTINE="$TMPDIR/mise-handoff-dependent-tool.failed"
+if [[ -e $DEPENDENCY_TARGET || -L $DEPENDENCY_TARGET ]]; then
+  mv "$DEPENDENCY_TARGET" "$DEPENDENCY_QUARANTINE"
+fi
+set +e
+brew install --cask --adopt "$TAP_DIR/Casks/$DEPENDENCY_TOKEN.rb" \
+  >"$TMPDIR/dependency-retry.log" 2>&1
+DEPENDENCY_RETRY_STATUS=$?
+brew uninstall --cask "$DEPENDENCY_TOKEN" >"$TMPDIR/dependency-uninstall.log" 2>&1
+DEPENDENCY_UNINSTALL_STATUS=$?
+brew list --formula --versions "mise-test/handoff/$DEPENDENCY_FORMULA" \
+  >"$TMPDIR/dependency-formula-after-uninstall.log" 2>&1
+DEPENDENCY_AFTER_UNINSTALL=$?
+brew uninstall "mise-test/handoff/$DEPENDENCY_FORMULA" \
+  >"$TMPDIR/dependency-formula-cleanup.log" 2>&1
+set -e
+jq -n \
+  --arg token "$DEPENDENCY_TOKEN" \
+  --argjson retry_status "$DEPENDENCY_RETRY_STATUS" \
+  --argjson uninstall_status "$DEPENDENCY_UNINSTALL_STATUS" \
+  --argjson dependency_list_status "$DEPENDENCY_AFTER_UNINSTALL" \
+  '{token: $token, scenario: "dependency_retry_and_lifecycle",
+    retry_status: $retry_status, uninstall_status: $uninstall_status,
+    dependency_list_status_after_cask_uninstall: $dependency_list_status}' \
+  >>"$EVIDENCE_JSONL"
+
 jq -s . "$EVIDENCE_JSONL" >"$RUNNER_TEMP/brew-cask-handoff-evidence.json"
 cp "$TMPDIR/same-version-adopt.log" "$RUNNER_TEMP/same-version-adopt.log"
 cp "$TMPDIR/handoff-http.log" "$RUNNER_TEMP/handoff-http.log"
@@ -323,4 +477,9 @@ printf '%s\n' \
   "no_caskroom" \
   "different_target" \
   "retry_after_failure" \
-  "different_target_auto_updates" >"$MISE_BREW_HANDOFF_SENTINEL"
+  "different_target_auto_updates" \
+  "binary_target_exists_no_caskroom" \
+  "binary_retry_and_lifecycle" \
+  "mixed_targets_exist_no_caskroom" \
+  "dependency_target_exists_no_caskroom" \
+  "dependency_retry_and_lifecycle" >"$MISE_BREW_HANDOFF_SENTINEL"

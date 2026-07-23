@@ -69,6 +69,11 @@ jobs:
           grep -Fx "different_target" "$MISE_BREW_HANDOFF_SENTINEL"
           grep -Fx "retry_after_failure" "$MISE_BREW_HANDOFF_SENTINEL"
           grep -Fx "different_target_auto_updates" "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "binary_target_exists_no_caskroom" "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "binary_retry_and_lifecycle" "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "mixed_targets_exist_no_caskroom" "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "dependency_target_exists_no_caskroom" "$MISE_BREW_HANDOFF_SENTINEL"
+          grep -Fx "dependency_retry_and_lifecycle" "$MISE_BREW_HANDOFF_SENTINEL"
 
       - name: Upload handoff evidence
         if: always()
