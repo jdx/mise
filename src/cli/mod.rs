@@ -1,6 +1,6 @@
 use crate::config::{Config, Settings};
 use crate::exit::exit;
-use crate::task::TaskOutput;
+use crate::task::{GetMatchingExt, TaskOutput};
 use crate::ui::{self, ctrlc};
 use crate::{Result, backend};
 use crate::{cli::args::ToolArg, path::PathExt};
@@ -720,7 +720,32 @@ impl Cli {
                 } else {
                     config.tasks().await?
                 };
-                if tasks.iter().any(|(_, t)| t.is_match(&task)) {
+                let mut prefetched_tasks = None;
+                let task_refs = crate::task::build_task_ref_map(tasks.iter());
+                let task_exists = if tasks.iter().any(|(_, candidate)| candidate.is_match(&task))
+                    || !task_refs.get_matching(&task)?.is_empty()
+                {
+                    true
+                } else {
+                    // Remote aliases only exist after parsing #MISE headers.
+                    // Retry command dispatch on a miss and retain the resolved
+                    // snapshots so Run executes the body that established the
+                    // alias.
+                    let resolved_tasks = crate::task::task_fetcher::TaskFetcher::new(false)
+                        .require_trust_before_fetch()
+                        .fetch_task_map(&config, &tasks)
+                        .await?;
+                    let resolved_task_refs = crate::task::build_task_ref_map(resolved_tasks.iter());
+                    let found = resolved_tasks
+                        .values()
+                        .any(|candidate| candidate.is_match(&task))
+                        || !resolved_task_refs.get_matching(&task)?.is_empty();
+                    if found {
+                        prefetched_tasks = Some(resolved_tasks);
+                    }
+                    found
+                };
+                if task_exists {
                     return Ok(Commands::Run(Box::new(run::Run {
                         task,
                         args: self.task_args.unwrap_or_default(),
@@ -743,6 +768,7 @@ impl Cli {
                         output_handler: None,
                         context_builder: Default::default(),
                         executor: None,
+                        prefetched_tasks,
                         no_cache: Default::default(),
                         timeout: None,
                         skip_deps: false,

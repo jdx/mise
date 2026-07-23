@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::config::Config;
+use crate::task::task_fetcher::TaskFetcher;
 use crate::task::{Deps, GetMatchingExt, Task, build_task_ref_map};
 use crate::ui::style::{self};
 use crate::ui::tree::print_tree;
@@ -49,9 +50,19 @@ impl TasksDeps {
     async fn get_all_tasks(&self, config: &Arc<Config>) -> Result<Vec<Task>> {
         // Use TaskLoadContext::all() to load tasks from entire monorepo
         let ctx = crate::task::TaskLoadContext::all();
-        Ok(config
-            .tasks_with_context(Some(&ctx))
-            .await?
+        let tasks = config.tasks_with_context(Some(&ctx)).await?;
+        let visible_tasks = tasks
+            .iter()
+            // A local/overlay hide=true survives remote metadata merging, so
+            // do not fetch tasks that cannot appear in ordinary output.
+            .filter(|(_, task)| self.hidden || !task.hide)
+            .map(|(name, task)| (name.clone(), task.clone()))
+            .collect();
+        let resolved = TaskFetcher::new(false)
+            .require_trust_before_fetch()
+            .fetch_task_map(config, &visible_tasks)
+            .await?;
+        Ok(resolved
             .values()
             .filter(|t| self.hidden || !t.hide)
             .cloned()
@@ -74,26 +85,76 @@ impl TasksDeps {
             .filter(|t| t.starts_with("//"))
             .map(|s| s.as_str())
             .collect();
-        let monorepo_tasks = if !monorepo_patterns.is_empty() {
+        let mut monorepo_tasks = if !monorepo_patterns.is_empty() {
             let ctx = crate::task::TaskLoadContext::from_patterns(monorepo_patterns.into_iter());
-            Some(config.tasks_with_context(Some(&ctx)).await?)
+            Some(
+                config
+                    .tasks_with_context(Some(&ctx))
+                    .await?
+                    .as_ref()
+                    .clone(),
+            )
         } else {
             None
         };
 
         // Load non-monorepo tasks once (only if needed)
         let has_regular = task_names.iter().any(|t| !t.starts_with("//"));
-        let regular_tasks = if has_regular {
-            Some(config.tasks().await?)
+        let mut regular_tasks = if has_regular {
+            Some(config.tasks().await?.as_ref().clone())
         } else {
             None
         };
 
-        // Build task ref maps once (not per-task)
+        let monorepo_needs_remote = if let Some(tasks) = &monorepo_tasks {
+            let refs = build_task_ref_map(tasks.iter());
+            task_names
+                .iter()
+                .filter(|name| name.starts_with("//"))
+                .map(|name| refs.get_matching(name))
+                .collect::<Result<Vec<_>>>()?
+                .iter()
+                .any(Vec::is_empty)
+        } else {
+            false
+        };
+        if monorepo_needs_remote && let Some(tasks) = &monorepo_tasks {
+            monorepo_tasks = Some(
+                TaskFetcher::new(false)
+                    .require_trust_before_fetch()
+                    .fetch_task_map(config, tasks)
+                    .await?,
+            );
+        }
+
+        let regular_needs_remote = if let Some(tasks) = &regular_tasks {
+            let refs = build_task_ref_map(tasks.iter());
+            task_names
+                .iter()
+                .filter(|name| !name.starts_with("//"))
+                .map(|name| refs.get_matching(name))
+                .collect::<Result<Vec<_>>>()?
+                .iter()
+                .any(Vec::is_empty)
+        } else {
+            false
+        };
+        if regular_needs_remote && let Some(tasks) = &regular_tasks {
+            regular_tasks = Some(
+                TaskFetcher::new(false)
+                    .require_trust_before_fetch()
+                    .fetch_task_map(config, tasks)
+                    .await?,
+            );
+        }
+
+        // Build task ref maps once (not per-task), after any remote-alias retry.
         let monorepo_ref_map = monorepo_tasks
             .as_ref()
-            .map(|t| build_task_ref_map(t.iter()));
-        let regular_ref_map = regular_tasks.as_ref().map(|t| build_task_ref_map(t.iter()));
+            .map(|tasks| build_task_ref_map(tasks.iter()));
+        let regular_ref_map = regular_tasks
+            .as_ref()
+            .map(|tasks| build_task_ref_map(tasks.iter()));
 
         // Look up each task from the appropriate cache
         let mut tasks = vec![];
@@ -138,7 +199,7 @@ impl TasksDeps {
     /// ```
     ///
     async fn print_deps_tree(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
-        let deps = Deps::new(config, tasks.clone()).await?;
+        let deps = Deps::new_for_display(config, tasks.clone()).await?;
         // filter out nodes that are not selected
         let start_indexes = deps.graph.node_indices().filter(|&idx| {
             let task = &deps.graph[idx];
@@ -169,7 +230,7 @@ impl TasksDeps {
     /// ```
     //
     async fn print_deps_dot(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
-        let deps = Deps::new(config, tasks).await?;
+        let deps = Deps::new_for_display(config, tasks).await?;
         miseprintln!(
             "{:?}",
             Dot::with_attr_getters(

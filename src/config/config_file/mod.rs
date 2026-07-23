@@ -351,6 +351,23 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     Err(UntrustedConfig(path.into()))?
 }
 
+/// Require trust before configuration can cause remote network or Git work.
+///
+/// Safe mode makes ordinary config parsing trust-exempt because its executable
+/// features are disabled. A remote fetch is still an external side effect,
+/// though, so safe mode only permits it when the owner was already trusted.
+/// Outside safe mode this preserves the normal interactive trust prompt.
+pub fn trust_check_remote_fetch(path: &Path) -> eyre::Result<()> {
+    if !remote_fetch_trust_allows(Settings::safe_mode(), is_path_trusted(path)) {
+        Err(UntrustedConfig(path.into()))?
+    }
+    trust_check(path)
+}
+
+fn remote_fetch_trust_allows(safe_mode: bool, is_trusted: bool) -> bool {
+    !safe_mode || is_trusted
+}
+
 pub fn is_trusted(path: &Path) -> bool {
     let canonicalized_path = match path.canonicalize() {
         Ok(p) => p,
@@ -762,5 +779,13 @@ mod tests {
             result2,
             Path::new("/tmp/trusted/infra-mise.toml-a1b2c3d4e5f67890.monorepo")
         );
+    }
+
+    #[test]
+    fn test_remote_fetch_trust_policy() {
+        assert!(!remote_fetch_trust_allows(true, false));
+        assert!(remote_fetch_trust_allows(true, true));
+        assert!(remote_fetch_trust_allows(false, false));
+        assert!(remote_fetch_trust_allows(false, true));
     }
 }

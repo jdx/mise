@@ -994,6 +994,7 @@ impl Bootstrap {
             output_handler: None,
             context_builder: Default::default(),
             executor: None,
+            prefetched_tasks: None,
             no_cache: Default::default(),
             timeout: None,
             skip_deps: false,

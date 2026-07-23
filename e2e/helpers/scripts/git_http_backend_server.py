@@ -14,8 +14,9 @@ import socketserver
 from pathlib import Path
 
 class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
-    def __init__(self, *args, repo_dir=None, **kwargs):
+    def __init__(self, *args, repo_dir=None, request_log=None, **kwargs):
         self.repo_dir = repo_dir
+        self.request_log = request_log
         super().__init__(*args, **kwargs)
 
     def do_GET(self):
@@ -25,6 +26,10 @@ class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
         self.handle_git_request()
 
     def handle_git_request(self):
+        if self.request_log:
+            with open(self.request_log, 'a') as log:
+                log.write(f'{self.command} {self.path}\n')
+
         # Set up environment for git-http-backend
         env = os.environ.copy()
         env['GIT_PROJECT_ROOT'] = str(self.repo_dir)
@@ -102,7 +107,7 @@ class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             self.send_error(500, f"Server error: {str(e)}")
 
-def create_test_repo(repo_path):
+def create_test_repo(repo_path, server_port):
     """Create a minimal test repository"""
     # Create a regular (non-bare) repository
     subprocess.run(['git', 'init', repo_path], check=True)
@@ -119,6 +124,29 @@ def create_test_repo(repo_path):
     ripgrep_file.write_text('#!/usr/bin/env bash\necho "ripgrep task executed"\n')
     ripgrep_file.chmod(0o755)
 
+    # A config-declared remote task whose script filename ends in .toml. This
+    # exercises the script-header path rather than task-include TOML parsing.
+    remote_task_dir = Path(repo_path) / 'xtasks' / 'remote'
+    remote_task_dir.mkdir(parents=True)
+    remote_metadata_file = remote_task_dir / 'remote_metadata.toml'
+    remote_metadata_file.write_text(
+        '#!/usr/bin/env bash\n'
+        '#MISE description="remote git metadata"\n'
+        '#MISE tools={dummy="1.0.0"}\n'
+        '#MISE env._.file="remote.env"\n'
+        'echo "remote path: $0"\n'
+        'echo "$REMOTE_RELATIVE_ENV"\n'
+        'dummy\n'
+    )
+    remote_metadata_file.chmod(0o755)
+    (remote_task_dir / 'remote.env').write_text('REMOTE_RELATIVE_ENV="relative env loaded"\n')
+    nested_remote_file = remote_task_dir / 'nested'
+    nested_remote_file.write_text(
+        '#!/usr/bin/env bash\n'
+        'echo "nested remote task executed"\n'
+    )
+    nested_remote_file.chmod(0o755)
+
     # A toml task file colocated with the executable scripts. Keys are task
     # names; values are the run command (or a table). Used by tests covering
     # remote toml task includes.
@@ -129,6 +157,9 @@ def create_test_repo(repo_path):
         '[toml_table_task]\n'
         'run = "echo toml_table_task executed"\n'
         'description = "TOML task with table form"\n'
+        '\n'
+        '[nested_remote]\n'
+        f'file = "git::http://localhost:{server_port}/repo.git//xtasks/remote/nested"\n'
     )
 
     # A standalone toml file in a sibling directory to test the
@@ -166,17 +197,23 @@ def start_server(port=0):
     temp_dir = Path(tempfile.mkdtemp(prefix='mise_git_http_'))
     repo_path = temp_dir / 'repo'
 
-    print(f"Creating test repository at {repo_path}")
-    create_test_repo(str(repo_path))
-
     # Create handler with repo directory
+    request_log = os.environ.get('MISE_GIT_HTTP_REQUEST_LOG')
+
     def handler(*args, **kwargs):
-        return GitHTTPHandler(*args, repo_dir=temp_dir, **kwargs)
+        return GitHTTPHandler(
+            *args,
+            repo_dir=temp_dir,
+            request_log=request_log,
+            **kwargs
+        )
 
     # Let the OS assign an available port if port=0
     # This avoids race conditions between finding and binding
     with socketserver.TCPServer(("", port), handler) as httpd:
         actual_port = httpd.server_address[1]
+        print(f"Creating test repository at {repo_path}")
+        create_test_repo(str(repo_path), actual_port)
         print(f"Git HTTP server running on port {actual_port}")
         print(f"Repository URL: http://localhost:{actual_port}/repo.git")
 

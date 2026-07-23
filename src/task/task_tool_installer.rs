@@ -220,6 +220,7 @@ impl<'a> TaskToolInstaller<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::task::Task;
 
     #[test]
     fn test_task_tool_installer_new() {
@@ -227,5 +228,23 @@ mod tests {
         let cli_tools: Vec<ToolArg> = vec![];
         let installer = TaskToolInstaller::new(&context_builder, &cli_tools);
         assert_eq!(installer.cli_tools.len(), 0);
+    }
+
+    #[test]
+    fn test_remote_tool_metadata_without_provenance_fails_closed() {
+        let task = Task {
+            name: "remote".into(),
+            remote_file_source: Some("https://example.com/task".into()),
+            remote_metadata_has_tools: true,
+            ..Default::default()
+        };
+
+        let error = task.tool_args().unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("tool metadata without defining config provenance")
+        );
     }
 }

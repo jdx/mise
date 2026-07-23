@@ -696,16 +696,21 @@ impl TaskExecutor {
             name
         }));
         let tasks = config.tasks_with_context(Some(&ctx)).await?;
-        let tasks_map: BTreeMap<String, Task> = tasks
-            .values()
-            .flat_map(|t| {
-                t.aliases
-                    .iter()
-                    .map(|a| (a.to_string(), t.clone()))
-                    .chain(once((t.name.clone(), t.clone())))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+        let mut resolved_tasks = tasks.as_ref().clone();
+        let needs_remote_aliases = {
+            let tasks_map = crate::task::build_task_ref_map(resolved_tasks.iter());
+            specs.iter().try_fold(false, |missing, spec| {
+                let (name, _) = split_task_spec(spec);
+                Ok::<_, eyre::Report>(missing || tasks_map.get_matching(name)?.is_empty())
+            })?
+        };
+        if needs_remote_aliases {
+            resolved_tasks = crate::task::task_fetcher::TaskFetcher::new(false)
+                .require_trust_before_fetch()
+                .fetch_task_map(config, &resolved_tasks)
+                .await?;
+        }
+        let tasks_map = crate::task::build_task_ref_map(resolved_tasks.iter());
         let mut to_run: Vec<Task> = vec![];
         for spec in specs {
             let (name, args) = split_task_spec(spec);
