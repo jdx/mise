@@ -65,7 +65,7 @@ command may convert valid Homebrew ownership into mise ownership automatically.
 | Diff check      | `rtk git diff --check`                        | no output                     |
 
 If Cargo is not on PATH, use
-`rtk proxy /Users/donbeave/.cargo/bin/cargo` with identical arguments.
+`rtk cargo` with identical arguments.
 
 ## Scope
 

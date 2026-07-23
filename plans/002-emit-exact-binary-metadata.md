@@ -29,6 +29,12 @@ completed-action manifest from Plan 013.
 
 ## Status
 
+**CLOSED — NOT APPLICABLE after Plan 012 (2026-07-23).** Native Homebrew
+handoff was proven unsupported, and the selected product direction is
+mise-owned direct pour. No private Homebrew metadata experiment is authorized
+or needed. This is a historical rejected alternative, not a blocked delivery
+item.
+
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH
@@ -97,7 +103,7 @@ the binary. Exact metadata must not claim mise installed those completions.
 | Diff check       | `rtk git diff --check`                        | no output           |
 
 If `rtk cargo` cannot find Cargo on this workstation, use
-`rtk proxy /Users/donbeave/.cargo/bin/cargo` with identical arguments.
+`rtk cargo` with identical arguments.
 
 ## Scope
 

@@ -92,7 +92,7 @@ insufficient.
 | Diff check      | `rtk git diff --check`                                              | no output           |
 
 If `rtk cargo` cannot find Cargo, use
-`rtk proxy /Users/donbeave/.cargo/bin/cargo` with identical arguments.
+`rtk cargo` with identical arguments.
 
 ## Scope
 

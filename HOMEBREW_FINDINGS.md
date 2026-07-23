@@ -36,7 +36,7 @@ requires an upstream registration/CAS contract. See
 [Eighth pass](#eighth-pass--2026-07-23-architecture-correction-and-supported-handoff-discovery).
 **Process:** always extend this file when research, direction, or branch
 behavior changes — it is the durable decision record for the fork.  
-**Repository:** `donbeave/mise`  
+**Repository:** downstream mise fork
 **Branch:** `fix/brew-cask-homebrew-metadata-receipt`  
 **Scope:** research and decision record; never an upstream PR authorization
 
@@ -94,14 +94,16 @@ Execution starts with [Plan 010: retire unsafe metadata](plans/010-retire-unsafe
 [Plan 013: record completed actions](plans/013-record-completed-cask-actions.md).
 The corrected dependency/status index is [plans/README.md](plans/README.md).
 
-**Execution note (2026-07-23):** Plans **010**, **011**, **012**, and **013**
-are DONE. Plan 012's final disposable run `29979380126` selected unsupported,
-so product behavior remains **mise-only**. Revised Plan **001** is DONE:
-Homebrew markers block mise mutation across versions. Plans **003**, **004**,
-**006**, and **008** are closed as not applicable to rejected handoff. Plan
-**009** is DONE as a local capability-gap proposal; no upstream contact. Plan
-**002** remains blocked on explicit operator authorization; **007** remains
-REJECTED. ADR: `docs/dev/brew-cask-decision-record.md`.
+**Execution note (2026-07-23):** Plans **001**, **010**, **011**, **012**, and
+**013** are DONE. Plan 012's final disposable run `29979380126` selected
+unsupported, so product behavior remains **mise-only**. Homebrew markers block
+mise mutation across versions; recovery journals make incomplete installs
+unhealthy. Plans **003**, **004**, **006**, and **008** are closed as not
+applicable to rejected handoff. Plan **009** is DONE as a local capability-gap
+proposal; no upstream contact. Plan **002** is closed as not applicable;
+**007** remains REJECTED. Plan **014** has green local compatibility evidence
+and awaits its GitHub-hosted macOS gate. ADR:
+`docs/dev/brew-cask-decision-record.md`.
 
 **Upstream status:** Homebrew already supports full install/adoption, but no
 receipt-only external registration contract was found. Neither jdx/mise nor
@@ -114,8 +116,8 @@ This work is restricted to the fork:
 
 | Item        | Value                                     |
 | ----------- | ----------------------------------------- |
-| Fork        | <https://github.com/donbeave/mise>        |
-| Local clone | `/Users/donbeave/Projects/donbeave/mise`  |
+| Fork        | downstream mise fork                      |
+| Local clone | local repository checkout                 |
 | Branch      | `fix/brew-cask-homebrew-metadata-receipt` |
 | Upstream    | `jdx/mise`, read-only context             |
 | Fork remote | `fork`                                    |
@@ -124,10 +126,10 @@ Hard rules:
 
 - Never open a PR, issue, discussion, or comment against `jdx/mise` from this
   work unless policy is explicitly changed.
-- Push only to `donbeave/mise`.
+- Push only to the configured fork remote.
 - Public reproduction must use a minimal `mise.toml`; it must not require the
-  private/reference `essential-mac` repository.
-- `essential-mac` and Codex may be mentioned only as discovery context.
+  a private downstream repository.
+- Private downstream repositories must not be named in public artifacts.
 - Use `rtk` for shell commands.
 - Mise is a binary crate for these tests; use `cargo test <filter>`, not
   `cargo test --lib`.
@@ -686,7 +688,7 @@ Advantages:
 
 - matches **current** `origin/main` code;
 - no private-API liability;
-- essential-mac Codex mitigation works with `check_for_update_on_startup = false`.
+- a downstream Codex mitigation works with `check_for_update_on_startup = false`.
 
 Cost:
 
@@ -712,7 +714,7 @@ mise bootstrap packages upgrade --manager brew-cask
 ```
 
 Codex's Homebrew startup updater must be disabled because the install is not
-Homebrew-owned. This is the current `essential-mac` mitigation via
+Homebrew-owned. This is the current downstream mitigation via
 `check_for_update_on_startup = false`.
 
 ### Homebrew owns Codex
@@ -776,7 +778,7 @@ Aligned with **Direction A** (potential formula-style cask identity):
 5. Harden tests/docs caveats; do not claim full uninstall/zap parity.
 6. Rebase onto main after #11197/#11198 if preparing any future upstream-shaped
    slim PR (policy still forbids opening one unless explicitly lifted).
-7. essential-mac: A unblocks brew identity; Codex flag remains optional if mise
+7. downstream bootstrap: A unblocks brew identity; Codex flag remains optional if mise
    should own version bumps exclusively.
 
 ## Verification audit — 2026-07-23
@@ -935,7 +937,7 @@ Homebrew `Cask#installed?` + this branch’s writer.
 
 ### Only A fully hits G1–G7 together
 
-B is what main forces today and what essential-mac already mitigates for Codex
+B is what main forces today and what a downstream bootstrap already mitigates for Codex
 (`check_for_update_on_startup = false`). B does **not** finish the product
 expectation that `brew-cask:` feels like brew.
 
@@ -1904,7 +1906,7 @@ Recommended execution order:
 - Current Codex API still declares binary + generated completions + zap and the
   `ripgrep` formula dependency; A3 cannot blindly copy its artifact array.
 - Re-ran
-  `rtk proxy /Users/donbeave/.cargo/bin/cargo test system::packages::brew::cask`:
+  `rtk cargo test system::packages::brew::cask`:
   **63 passed**. This is not a safety proof: two passing tests positively assert
   the rejected empty-tab behavior.
 - Did not mutate `/opt/homebrew`, `/Applications`, package receipts, taps, or any

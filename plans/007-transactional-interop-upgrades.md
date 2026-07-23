@@ -75,7 +75,7 @@ Repo conventions:
 | Diff check        | `rtk git diff --check`                        | no output                  |
 
 If Cargo is not on this workstation PATH, use
-`rtk proxy /Users/donbeave/.cargo/bin/cargo` with identical arguments.
+`rtk cargo` with identical arguments.
 
 ## Scope
 

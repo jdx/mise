@@ -38,6 +38,8 @@ struct Cask {
     #[serde(default)]
     artifacts: Vec<Value>,
     #[serde(default)]
+    depends_on: CaskDependsOn,
+    #[serde(default)]
     ruby_source_path: Option<String>,
     #[serde(default)]
     ruby_source_checksum: Option<RubySourceChecksum>,
@@ -56,6 +58,16 @@ struct Cask {
     aliases: Vec<String>,
     #[serde(skip)]
     raw_base: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct CaskDependsOn {
+    #[serde(default)]
+    formula: Vec<String>,
+    #[serde(default)]
+    macos: Option<Value>,
+    #[serde(default)]
+    arch: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,12 +93,22 @@ struct FontArtifact {
     target: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GeneratedCompletionArtifact {
+    executable: String,
+    args: Vec<String>,
+    base_name: Option<String>,
+    shell_parameter_format: Option<String>,
+    shells: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct CaskArtifacts {
     apps: Vec<AppArtifact>,
     binaries: Vec<BinaryArtifact>,
     pkgs: Vec<PkgArtifact>,
     fonts: Vec<FontArtifact>,
+    generated_completions: Vec<GeneratedCompletionArtifact>,
     pkg_ids: Vec<String>,
 }
 
@@ -268,7 +290,11 @@ fn validate_mutation_boundaries(ids: &CaskIds, artifacts: &CaskArtifacts) -> Res
     }
     for binary in &artifacts.binaries {
         let target = binary.target_path()?;
-        let root = allowed_binary_target_roots()
+        let mut roots = allowed_binary_target_roots();
+        if is_appdir_binary_target(&binary.target_name()?) {
+            roots.extend(allowed_appdir_roots());
+        }
+        let root = roots
             .into_iter()
             .find(|root| target.starts_with(root))
             .ok_or_else(|| {
@@ -313,6 +339,12 @@ fn validate_artifact_paths(artifacts: &CaskArtifacts) -> Result<()> {
             validate_relative_artifact_source("font source", &font.source)?;
         }
         font_target_path(font)?;
+    }
+    for completion in &artifacts.generated_completions {
+        generated_completion_executable(completion, &artifacts.binaries)?;
+        for shell in &completion.shells {
+            generated_completion_target(completion, shell)?;
+        }
     }
     Ok(())
 }
@@ -396,12 +428,13 @@ fn expand_appdir_binary_candidates(source: &str) -> Result<Vec<PathBuf>> {
     Ok(candidates)
 }
 
-/// Resolve `$APPDIR/...` to an existing file under an allowed Applications root.
+/// Resolve `$APPDIR/...` to an existing file or bundle under an allowed
+/// Applications root.
 fn resolve_appdir_binary_source(source: &str) -> Result<PathBuf> {
     let candidates = expand_appdir_binary_candidates(source)?;
     candidates
         .into_iter()
-        .find(|path| path.is_file())
+        .find(|path| path.exists())
         .ok_or_else(|| {
             eyre!("brew-cask: binary artifact '{source}' was not found under Applications")
         })
@@ -433,6 +466,7 @@ enum CaskActionKind {
     Font,
     Pkg,
     Hook,
+    Completion,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -453,6 +487,21 @@ enum CaskActionPhase {
     CompletedNonRollbackable,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum CaskTargetKind {
+    File,
+    Directory,
+    Symlink,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct CaskTargetFingerprint {
+    kind: CaskTargetKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    digest: Option<String>,
+}
+
 /// One filesystem/package action mise actually completed. Not projected intent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct CompletedCaskAction {
@@ -466,6 +515,8 @@ struct CompletedCaskAction {
     phase: CaskActionPhase,
     /// True when mise created/replaced the target; false if only observed.
     mise_created: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_fingerprint: Option<CaskTargetFingerprint>,
     /// Stable non-path identifiers emitted by the mutator (for example pkg ids).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     identifiers: Vec<String>,
@@ -481,6 +532,7 @@ struct CompletedCaskActionManifest {
     version: String,
     platform: String,
     architecture: String,
+    formula_dependencies: Vec<String>,
     actions: Vec<CompletedCaskAction>,
 }
 
@@ -493,6 +545,7 @@ impl CompletedCaskActionManifest {
             version: ids.version.as_str().to_string(),
             platform: std::env::consts::OS.to_string(),
             architecture: std::env::consts::ARCH.to_string(),
+            formula_dependencies: Vec::new(),
             actions: Vec::new(),
         }
     }
@@ -564,22 +617,82 @@ fn write_action_journal(ids: &CaskIds, manifest: &CompletedCaskActionManifest) -
 fn record_completed_action(
     ids: &CaskIds,
     manifest: &mut CompletedCaskActionManifest,
-    action: CompletedCaskAction,
+    mut action: CompletedCaskAction,
 ) -> Result<()> {
+    action.target_fingerprint = action
+        .target
+        .as_deref()
+        .map(cask_target_fingerprint)
+        .transpose()?
+        .flatten();
     manifest.actions.push(action);
     write_action_journal(ids, manifest)
 }
 
-fn clear_action_journal(ids: &CaskIds, transaction_id: &str) -> Result<()> {
-    let path = action_journal_path(ids, transaction_id)?;
-    if path.exists() {
-        file::remove_file(&path)?;
-        if let Some(parent) = path.parent() {
-            file::sync_dir(parent)
-                .wrap_err_with(|| format!("failed fsync directory {}", parent.display()))?;
+fn cask_target_fingerprint(path: &Path) -> Result<Option<CaskTargetFingerprint>> {
+    let Ok(metadata) = path.symlink_metadata() else {
+        return Ok(None);
+    };
+    let (kind, digest) = if metadata.file_type().is_symlink() {
+        let target = std::fs::read_link(path)?;
+        (
+            CaskTargetKind::Symlink,
+            Some(hash::hash_sha256_to_str(&target.to_string_lossy())),
+        )
+    } else if metadata.is_file() {
+        (
+            CaskTargetKind::File,
+            Some(hash::file_hash_sha256(path, None)?),
+        )
+    } else if metadata.is_dir() {
+        (CaskTargetKind::Directory, None)
+    } else {
+        bail!(
+            "brew-cask: unsupported completed target type '{}'",
+            path.display()
+        );
+    };
+    Ok(Some(CaskTargetFingerprint { kind, digest }))
+}
+
+fn cask_target_matches(action: &CompletedCaskAction) -> Result<bool> {
+    let Some(target) = action.target.as_deref() else {
+        return Ok(true);
+    };
+    let Some(expected) = action.target_fingerprint.as_ref() else {
+        return Ok(target.exists());
+    };
+    Ok(cask_target_fingerprint(target)?.as_ref() == Some(expected))
+}
+
+/// A successful retry is the recovery boundary for older interrupted pours of
+/// the same token. Only after the new final receipt is durable may their
+/// journals be retired.
+fn clear_action_journals_for_token(ids: &CaskIds) -> Result<()> {
+    let token_root = checked_join(&cask_recovery_root(), &ids.token);
+    let Ok(entries) = std::fs::read_dir(&token_root) else {
+        return Ok(());
+    };
+    for entry in entries.filter_map(|entry| entry.ok()) {
+        if entry.file_type().is_ok_and(|kind| kind.is_file())
+            && entry.path().extension().is_some_and(|ext| ext == "json")
+        {
+            file::remove_file(entry.path())?;
         }
     }
+    file::sync_dir(&token_root)
+        .wrap_err_with(|| format!("failed fsync directory {}", token_root.display()))?;
     Ok(())
+}
+
+fn has_action_journals(token: &SafePathComponent) -> bool {
+    let token_root = checked_join(&cask_recovery_root(), token);
+    std::fs::read_dir(token_root).is_ok_and(|entries| {
+        entries.filter_map(|entry| entry.ok()).any(|entry| {
+            entry.file_type().is_ok_and(|kind| kind.is_file())
+                && entry.path().extension().is_some_and(|ext| ext == "json")
+        })
+    })
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -595,6 +708,10 @@ struct CaskReceipt {
     #[serde(default)]
     fonts: Vec<PathBuf>,
     #[serde(default)]
+    completions: Vec<PathBuf>,
+    #[serde(default)]
+    formula_dependencies: Vec<String>,
+    #[serde(default)]
     pkg_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     transaction_id: Option<String>,
@@ -603,6 +720,21 @@ struct CaskReceipt {
 }
 
 impl CaskReceipt {
+    fn validate_known(&self) -> Result<()> {
+        if self.schema_version > CASK_RECEIPT_SCHEMA_V2 {
+            bail!(
+                "brew-cask: unknown receipt schema version {}",
+                self.schema_version
+            );
+        }
+        if self.schema_version == CASK_RECEIPT_SCHEMA_V2
+            && (self.transaction_id.is_none() || self.actions.is_empty())
+        {
+            bail!("brew-cask: incomplete completed-action receipt");
+        }
+        Ok(())
+    }
+
     /// Legacy receipts are usable for mise-only status/uninstall facts they
     /// actually contain, but never become interop/handoff eligible automatically.
     #[allow(dead_code)] // exercised in unit tests; handoff gate uses when Plan 012 ships
@@ -632,6 +764,7 @@ impl BrewCaskManager {
         // opaque identifiers before any FS I/O.
         let ids = CaskIds::validate(&cask.token, &cask.version)?;
         let artifacts = cask_artifacts(&cask)?;
+        validate_cask_constraints(&cask.depends_on)?;
         validate_artifact_paths(&artifacts)?;
         validate_mutation_boundaries(&ids, &artifacts)?;
         let installed = installed_cask_version(&cask, &artifacts)?;
@@ -650,6 +783,21 @@ impl BrewCaskManager {
                 "brew-cask:{} is managed by Homebrew; use Homebrew to upgrade or uninstall it",
                 cask.token
             );
+        }
+        let formula_dependencies = cask
+            .depends_on
+            .formula
+            .iter()
+            .map(|name| PackageRequest {
+                name: name.clone(),
+                version: None,
+                tap_url: None,
+            })
+            .collect::<Vec<_>>();
+        if !formula_dependencies.is_empty() {
+            super::BrewManager::new()
+                .install(&formula_dependencies, opts)
+                .await?;
         }
         if opts.dry_run {
             miseprintln!("install cask {}/{}", cask.token, cask.version);
@@ -680,6 +828,7 @@ impl BrewCaskManager {
         let appdir = cask_appdir(&artifacts.apps)?;
         let transaction_id = new_cask_transaction_id(&ids);
         let mut completed = CompletedCaskActionManifest::new(&ids, &transaction_id);
+        completed.formula_dependencies = cask.depends_on.formula.clone();
         // Establish durable intent before the first installation mutation.
         write_action_journal(&ids, &completed)?;
         if let Some(action) =
@@ -717,6 +866,11 @@ impl BrewCaskManager {
             let action = link_binary(&caskroom, binary)?;
             record_completed_action(&ids, &mut completed, action)?;
         }
+        for completion in &artifacts.generated_completions {
+            for action in generate_completions(completion, &artifacts.binaries)? {
+                record_completed_action(&ids, &mut completed, action)?;
+            }
+        }
         remove_obsolete_binary_links(&cask, &previous_binaries, &binary_targets(&artifacts)?)?;
         for font in &artifacts.fonts {
             let action = link_font(&caskroom, font)?;
@@ -728,10 +882,72 @@ impl BrewCaskManager {
         // Never publish synthetic Homebrew `.metadata` — mise-owned pours stay
         // Homebrew-invisible. Existing foreign metadata is never rewritten.
         write_receipt(&caskroom, &completed)?;
-        clear_action_journal(&ids, &transaction_id)?;
+        clear_action_journals_for_token(&ids)?;
         file::remove_all(stage)?;
         Ok(cask.version)
     }
+}
+
+fn validate_cask_constraints(depends_on: &CaskDependsOn) -> Result<()> {
+    if let Some(macos) = &depends_on.macos {
+        let object = macos
+            .as_object()
+            .ok_or_else(|| eyre!("brew-cask: unsupported macOS dependency constraint"))?;
+        if !object.is_empty() {
+            if object.len() != 1 || !object.contains_key(">=") {
+                bail!("brew-cask: unsupported macOS dependency constraint {macos}");
+            }
+            let required = object[">="]
+                .as_array()
+                .and_then(|values| values.first())
+                .and_then(Value::as_str)
+                .ok_or_else(|| eyre!("brew-cask: invalid macOS dependency constraint"))?;
+            let current = std::process::Command::new("sw_vers")
+                .arg("-productVersion")
+                .output()
+                .wrap_err("brew-cask: failed to query macOS version")?;
+            if !current.status.success() {
+                bail!("brew-cask: failed to query macOS version");
+            }
+            let current = String::from_utf8_lossy(&current.stdout);
+            if version_components(&current) < version_components(required) {
+                bail!(
+                    "brew-cask: requires macOS {required} or newer (current {})",
+                    current.trim()
+                );
+            }
+        }
+    }
+    if let Some(arch) = &depends_on.arch {
+        let constraints = arch
+            .as_array()
+            .ok_or_else(|| eyre!("brew-cask: unsupported architecture constraint"))?;
+        let current_type = if cfg!(target_arch = "aarch64") {
+            "arm"
+        } else if cfg!(target_arch = "x86_64") {
+            "intel"
+        } else {
+            std::env::consts::ARCH
+        };
+        let matches = constraints.iter().any(|constraint| {
+            constraint.as_object().is_some_and(|object| {
+                object.get("type").and_then(Value::as_str) == Some(current_type)
+                    && object.get("bits").and_then(Value::as_u64) == Some(64)
+            })
+        });
+        if !matches {
+            bail!("brew-cask: unsupported architecture constraint {arch}");
+        }
+    }
+    Ok(())
+}
+
+fn version_components(version: &str) -> Vec<u64> {
+    version
+        .trim()
+        .split('.')
+        .map(|part| part.parse().unwrap_or(0))
+        .collect()
 }
 
 impl AppArtifact {
@@ -990,16 +1206,25 @@ fn extract_archive(
     } else {
         let format = cask_extraction_format(archive, filename)?;
         if format == ExtractionFormat::Raw {
-            // Raw executable binary — copy it using the original URL filename so
-            // find_file_artifact can match against the binary stanza source name (e.g. "claude").
-            let url_filename = archive_filename(&cask.url).unwrap_or_else(|| filename.to_string());
-            let dest_name = Path::new(&url_filename)
+            // Redirect/download URLs often omit the `.pkg` basename declared
+            // by the cask. Preserve the declared package name so the installer
+            // can resolve it; raw executable casks keep the URL basename.
+            let artifacts = cask_artifacts(cask)?;
+            let is_pkg = artifacts.pkgs.len() == 1;
+            let raw_name = if is_pkg {
+                artifacts.pkgs[0].source.clone()
+            } else {
+                archive_filename(&cask.url).unwrap_or_else(|| filename.to_string())
+            };
+            let dest_name = Path::new(&raw_name)
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("payload");
             let dest = extract_dir.join(dest_name);
             file::copy(archive, &dest)?;
-            file::make_executable(&dest)?;
+            if !is_pkg {
+                file::make_executable(&dest)?;
+            }
         } else if !format.is_archive() {
             bail!(
                 "brew-cask:{}: unsupported archive type for {}",
@@ -1070,6 +1295,7 @@ async fn execute_lifecycle_hook(
         target: None,
         phase: CaskActionPhase::CompletedNonRollbackable,
         mise_created: false,
+        target_fingerprint: None,
         identifiers: Vec::new(),
     }))
 }
@@ -1133,9 +1359,11 @@ async fn fetch_cask_rb(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<Pat
             cask.token
         )
     })?;
+    validate_sha256("ruby source", sha256)?;
     let cache_dir = crate::dirs::CACHE.join("system-brew").join("cask-source");
     file::create_dir_all(&cache_dir)?;
-    let short_sha = sha256.get(..12).unwrap_or(sha256);
+    let cache_key = hash::hash_to_str(&sha256);
+    let short_sha = &cache_key[..12];
     let dest = cache_dir.join(format!("{}-{short_sha}.rb", cask.token));
     if dest.exists() && hash::ensure_checksum(&dest, sha256, None, "sha256").is_ok() {
         return Ok(dest);
@@ -1147,6 +1375,13 @@ async fn fetch_cask_rb(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<Pat
     HTTP_FETCH.download_file(&url, &dest, pr).await?;
     hash::ensure_checksum(&dest, sha256, pr, "sha256")?;
     Ok(dest)
+}
+
+fn validate_sha256(field: &str, checksum: &str) -> Result<()> {
+    if checksum.len() != 64 || !checksum.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("brew-cask: invalid {field} sha256 checksum");
+    }
+    Ok(())
 }
 
 fn cask_extraction_format(archive: &Path, filename: &str) -> Result<ExtractionFormat> {
@@ -1223,6 +1458,7 @@ fn install_app(
         target: Some(target),
         phase: CaskActionPhase::Completed,
         mise_created: true,
+        target_fingerprint: None,
         identifiers: Vec::new(),
     })
 }
@@ -1263,6 +1499,7 @@ fn install_pkg(stage: &Path, pkg: &PkgArtifact, pkg_ids: &[String]) -> Result<Co
         target: None,
         phase: CaskActionPhase::CompletedNonRollbackable,
         mise_created: true,
+        target_fingerprint: None,
         identifiers: pkg_ids.to_vec(),
     })
 }
@@ -1289,6 +1526,7 @@ fn stage_font(
         target: Some(caskroom_font_path(retained_caskroom, font)?),
         phase: CaskActionPhase::Completed,
         mise_created: true,
+        target_fingerprint: None,
         identifiers: Vec::new(),
     })
 }
@@ -1327,6 +1565,7 @@ fn link_font(caskroom: &Path, font: &FontArtifact) -> Result<CompletedCaskAction
         target: Some(target),
         phase: CaskActionPhase::Completed,
         mise_created: true,
+        target_fingerprint: None,
         identifiers: Vec::new(),
     })
 }
@@ -1484,6 +1723,7 @@ fn stage_binary(
         target: Some(caskroom_binary_path(retained_caskroom, binary)?),
         phase: CaskActionPhase::Completed,
         mise_created: true,
+        target_fingerprint: None,
         identifiers: Vec::new(),
     })
 }
@@ -1555,7 +1795,7 @@ fn cask_appdir(apps: &[AppArtifact]) -> Result<PathBuf> {
 
 fn link_binary(caskroom: &Path, binary: &BinaryArtifact) -> Result<CompletedCaskAction> {
     let caskroom_binary = caskroom_binary_path(caskroom, binary)?;
-    if !caskroom_binary.is_file() {
+    if !caskroom_binary.exists() {
         if caskroom_binary
             .symlink_metadata()
             .is_ok_and(|metadata| metadata.file_type().is_symlink())
@@ -1585,13 +1825,17 @@ fn link_binary(caskroom: &Path, binary: &BinaryArtifact) -> Result<CompletedCask
         target: Some(target),
         phase: CaskActionPhase::Completed,
         mise_created: true,
+        target_fingerprint: None,
         identifiers: Vec::new(),
     })
 }
 
 fn caskroom_binary_path(caskroom: &Path, binary: &BinaryArtifact) -> Result<PathBuf> {
     let target = binary.target_path()?;
-    let roots = allowed_binary_target_roots();
+    let mut roots = allowed_binary_target_roots();
+    if is_appdir_binary_target(&binary.target_name()?) {
+        roots.extend(allowed_appdir_roots());
+    }
     let relative = roots
         .iter()
         .find_map(|root| target.strip_prefix(root).ok())
@@ -1615,6 +1859,14 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
     let mut artifacts = CaskArtifacts::default();
     for artifact in &cask.artifacts {
         let artifact_type = artifact_type(artifact);
+        if let Some(completion) = parse_shell_completion_artifact(artifact, &artifact_type) {
+            artifacts.binaries.push(completion);
+            continue;
+        }
+        if let Some(completion) = parse_generated_completion_artifact(artifact)? {
+            artifacts.generated_completions.push(completion);
+            continue;
+        }
         if is_non_install_artifact(&artifact_type) {
             collect_uninstall_pkg_ids(artifact, &mut artifacts.pkg_ids);
             continue;
@@ -1708,6 +1960,112 @@ fn parse_binary_artifact(value: &Value) -> Option<BinaryArtifact> {
         }
         _ => None,
     }
+}
+
+fn parse_shell_completion_artifact(value: &Value, kind: &str) -> Option<BinaryArtifact> {
+    if !matches!(
+        kind,
+        "bash_completion" | "fish_completion" | "zsh_completion"
+    ) {
+        return None;
+    }
+    let completion = value.as_object()?.get(kind)?;
+    let default_target = |source: &str| {
+        let filename = Path::new(source).file_name()?.to_str()?;
+        match kind {
+            "bash_completion" => {
+                let stem = Path::new(filename).file_stem()?.to_str()?;
+                Some(format!("$HOMEBREW_PREFIX/etc/bash_completion.d/{stem}"))
+            }
+            "zsh_completion" => Some(format!(
+                "$HOMEBREW_PREFIX/share/zsh/site-functions/{filename}"
+            )),
+            "fish_completion" => Some(format!(
+                "$HOMEBREW_PREFIX/share/fish/vendor_completions.d/{filename}"
+            )),
+            _ => None,
+        }
+    };
+    match completion {
+        Value::String(source) => Some(BinaryArtifact {
+            source: source.clone(),
+            target: value
+                .as_object()
+                .and_then(|object| object.get("target"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .or_else(|| default_target(source)),
+        }),
+        Value::Array(values) => {
+            let source = values.first()?.as_str()?.to_string();
+            Some(BinaryArtifact {
+                target: artifact_target(value, values).or_else(|| default_target(&source)),
+                source,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn parse_generated_completion_artifact(
+    value: &Value,
+) -> Result<Option<GeneratedCompletionArtifact>> {
+    let Some(values) = value
+        .as_object()
+        .and_then(|object| object.get("generate_completions_from_executable"))
+        .and_then(Value::as_array)
+    else {
+        return Ok(None);
+    };
+    let mut commands: &[Value] = values;
+    let options = commands
+        .last()
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if !options.is_empty() {
+        commands = &commands[..commands.len() - 1];
+    }
+    let executable = commands
+        .first()
+        .and_then(Value::as_str)
+        .ok_or_else(|| eyre!("brew-cask: generated completion requires an executable"))?
+        .to_string();
+    let args = commands[1..]
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| eyre!("brew-cask: generated completion arguments must be strings"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let base_name = options
+        .get("base_name")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let shell_parameter_format = options
+        .get("shell_parameter_format")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let shells = options
+        .get("shells")
+        .and_then(Value::as_array)
+        .map(|shells| {
+            shells
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_else(|| vec!["bash".into(), "zsh".into(), "fish".into()]);
+    Ok(Some(GeneratedCompletionArtifact {
+        executable,
+        args,
+        base_name,
+        shell_parameter_format,
+        shells,
+    }))
 }
 
 fn parse_pkg_artifact(value: &Value) -> Result<Option<PkgArtifact>> {
@@ -1896,6 +2254,10 @@ fn allowed_binary_target_roots() -> Vec<PathBuf> {
     roots
 }
 
+fn is_appdir_binary_target(target_name: &str) -> bool {
+    target_name.starts_with("$APPDIR/")
+}
+
 fn allowed_binary_target_roots_display(roots: &[PathBuf]) -> String {
     roots
         .iter()
@@ -1909,6 +2271,20 @@ fn binary_target_path(target_name: &str) -> Result<PathBuf> {
         bail!("brew-cask: binary target contains NUL");
     }
     let prefix = prefix::prefix();
+    if let Some(relative) = target_name.strip_prefix("$APPDIR/") {
+        let path = Path::new(relative);
+        if relative.is_empty()
+            || path
+                .components()
+                .any(|component| !matches!(component, Component::Normal(_)))
+        {
+            bail!("brew-cask: binary $APPDIR target '{target_name}' must stay below Applications");
+        }
+        return Ok(PathBuf::from("/Applications").join(relative));
+    }
+    if target_name.contains("$APPDIR") {
+        bail!("brew-cask: $APPDIR must prefix a binary target");
+    }
     let prefix_str = prefix.to_string_lossy();
     let target_name = target_name.replace("$HOMEBREW_PREFIX", prefix_str.as_ref());
     let path = PathBuf::from(&target_name);
@@ -1952,6 +2328,159 @@ fn binary_target_path(target_name: &str) -> Result<PathBuf> {
         );
     }
     Ok(target)
+}
+
+fn generated_completion_executable(
+    completion: &GeneratedCompletionArtifact,
+    binaries: &[BinaryArtifact],
+) -> Result<PathBuf> {
+    if !Path::new(&completion.executable).is_absolute()
+        && !completion.executable.starts_with("$HOMEBREW_PREFIX")
+        && let Some(binary) = binaries
+            .iter()
+            .find(|binary| binary.source == completion.executable)
+    {
+        return binary.target_path();
+    }
+    let expanded = completion
+        .executable
+        .replace("$HOMEBREW_PREFIX", &prefix::prefix().to_string_lossy());
+    let executable = normalize_absolute_components(Path::new(&expanded))?;
+    if !allowed_binary_target_roots()
+        .iter()
+        .any(|root| path_contained_in_or_eq(&executable, root).unwrap_or(false))
+    {
+        bail!(
+            "brew-cask: generated completion executable '{}' is outside the Homebrew prefix",
+            executable.display()
+        );
+    }
+    Ok(executable)
+}
+
+fn generated_completion_base_name(completion: &GeneratedCompletionArtifact) -> Result<String> {
+    let name = completion.base_name.clone().unwrap_or_else(|| {
+        Path::new(&completion.executable)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string()
+    });
+    Ok(SafePathComponent::parse("completion base name", &name)?.raw)
+}
+
+fn generated_completion_target(
+    completion: &GeneratedCompletionArtifact,
+    shell: &str,
+) -> Result<PathBuf> {
+    let prefix = prefix::prefix();
+    let name = generated_completion_base_name(completion)?;
+    match shell {
+        "bash" => Ok(prefix.join("etc/bash_completion.d").join(name)),
+        "zsh" => Ok(prefix
+            .join("share/zsh/site-functions")
+            .join(format!("_{name}"))),
+        "fish" => Ok(prefix
+            .join("share/fish/vendor_completions.d")
+            .join(format!("{name}.fish"))),
+        "pwsh" => Ok(prefix
+            .join("share/pwsh/completions")
+            .join(format!("_{name}.ps1"))),
+        _ => bail!("brew-cask: unsupported generated completion shell '{shell}'"),
+    }
+}
+
+fn completion_shell_parameter(
+    format: Option<&str>,
+    shell: &str,
+    executable: &Path,
+) -> Result<(Vec<String>, Vec<(String, String)>)> {
+    let shell_name = if shell == "pwsh" { "powershell" } else { shell };
+    let mut envs = Vec::new();
+    let args = match format {
+        None => vec![shell_name.to_string()],
+        Some("arg") => vec![format!("--shell={shell_name}")],
+        Some("clap") => {
+            envs.push(("COMPLETE".into(), shell_name.into()));
+            Vec::new()
+        }
+        Some("click") => {
+            let name = executable
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default()
+                .to_uppercase()
+                .replace('-', "_");
+            envs.push((format!("_{name}_COMPLETE"), format!("{shell_name}_source")));
+            Vec::new()
+        }
+        Some("cobra") => vec!["completion".into(), shell_name.into()],
+        Some("flag") => vec![format!("--{shell_name}")],
+        Some("none") => Vec::new(),
+        Some("typer") => {
+            envs.push((
+                "_TYPER_COMPLETE_TEST_DISABLE_SHELL_DETECTION".into(),
+                "1".into(),
+            ));
+            vec!["--show-completion".into(), shell_name.into()]
+        }
+        Some(custom) => vec![format!("{custom}{shell}")],
+    };
+    Ok((args, envs))
+}
+
+fn generate_completions(
+    completion: &GeneratedCompletionArtifact,
+    binaries: &[BinaryArtifact],
+) -> Result<Vec<CompletedCaskAction>> {
+    let executable = generated_completion_executable(completion, binaries)?;
+    if !executable.is_file() {
+        bail!(
+            "brew-cask: generated completion executable '{}' was not installed",
+            executable.display()
+        );
+    }
+    let mut actions = Vec::new();
+    for shell in &completion.shells {
+        let (shell_args, envs) = completion_shell_parameter(
+            completion.shell_parameter_format.as_deref(),
+            shell,
+            &executable,
+        )?;
+        let mut command = std::process::Command::new(&executable);
+        command.args(&completion.args).args(shell_args);
+        command.envs(envs);
+        command.env("SHELL", shell);
+        let output = command.output().wrap_err_with(|| {
+            format!(
+                "brew-cask: failed to generate {shell} completions from {}",
+                executable.display()
+            )
+        })?;
+        if !output.status.success() {
+            bail!(
+                "brew-cask: failed to generate {shell} completions from {}",
+                executable.display()
+            );
+        }
+        let target = generated_completion_target(completion, shell)?;
+        write_durable_file(&target, &output.stdout)?;
+        actions.push(CompletedCaskAction {
+            id: format!(
+                "completion:{shell}:{}",
+                generated_completion_base_name(completion)?
+            ),
+            kind: CaskActionKind::Completion,
+            operation: CaskActionOperation::Copy,
+            source: Some(executable.clone()),
+            target: Some(target),
+            phase: CaskActionPhase::Completed,
+            mise_created: true,
+            target_fingerprint: None,
+            identifiers: Vec::new(),
+        });
+    }
+    Ok(actions)
 }
 
 fn installed_version(token: &str) -> Option<String> {
@@ -2075,58 +2604,51 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
     let Ok(ids) = CaskIds::validate(&cask.token, &version) else {
         return Ok(None);
     };
+    if has_action_journals(&ids.token) {
+        return Ok(None);
+    }
     let version_dir = caskroom_version_dir(&ids.token, &ids.version);
     match read_receipt(&version_dir)? {
         Some(receipt) => {
-            // V2 uses completed-action truth exclusively. Legacy receipts may use
-            // only their recorded lists; empty legacy fields retain old status
-            // behavior but can never become handoff eligible.
-            let app_targets =
-                if receipt.schema_version < CASK_RECEIPT_SCHEMA_V2 && receipt.apps.is_empty() {
-                    artifacts
-                        .apps
-                        .iter()
-                        .map(|app| app_target_path(app.target_name()))
-                        .collect::<Result<Vec<_>>>()?
-                } else {
-                    receipt.apps.clone()
-                };
-            let binary_targets =
-                if receipt.schema_version < CASK_RECEIPT_SCHEMA_V2 && receipt.binaries.is_empty() {
-                    artifacts
-                        .binaries
-                        .iter()
-                        .map(BinaryArtifact::target_path)
-                        .collect::<Result<Vec<_>>>()?
-                } else {
-                    receipt.binaries.clone()
-                };
-            let pkg_ids: &[String] = if receipt.schema_version < CASK_RECEIPT_SCHEMA_V2 {
-                if artifacts.pkgs.is_empty() {
-                    &[]
-                } else if receipt.pkg_ids.is_empty() {
-                    &artifacts.pkg_ids
-                } else {
-                    &receipt.pkg_ids
-                }
-            } else {
-                &receipt.pkg_ids
-            };
+            receipt.validate_known()?;
+            if receipt.schema_version < CASK_RECEIPT_SCHEMA_V2
+                && receipt.apps.is_empty()
+                && receipt.binaries.is_empty()
+                && receipt.fonts.is_empty()
+                && receipt.completions.is_empty()
+                && receipt.formula_dependencies.is_empty()
+                && receipt.pkg_ids.is_empty()
+            {
+                return Ok(None);
+            }
+            // A receipt is historical truth. Missing legacy fields stay
+            // unknown; today's API must never invent actions for an old pour.
+            let app_targets = receipt.apps.clone();
+            let binary_targets = receipt.binaries.clone();
+            let pkg_ids = &receipt.pkg_ids;
             let pkgs_installed = pkg_ids.is_empty() || pkg_ids_installed(pkg_ids)?;
-            let font_targets =
-                if receipt.schema_version < CASK_RECEIPT_SCHEMA_V2 && receipt.fonts.is_empty() {
-                    artifacts
-                        .fonts
-                        .iter()
-                        .map(font_target_path)
-                        .collect::<Result<Vec<_>>>()?
-                } else {
-                    receipt.fonts.clone()
-                };
+            let font_targets = receipt.fonts.clone();
+            let completion_targets = receipt.completions.clone();
+            let formula_dependencies_healthy = receipt
+                .formula_dependencies
+                .iter()
+                .all(|name| super::pour::linked_version(name).is_some());
+            let actions_healthy = receipt
+                .actions
+                .iter()
+                .map(cask_target_matches)
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .all(|healthy| healthy);
             if app_targets.iter().all(|app| app.exists())
                 && binary_targets.iter().all(|binary| binary.exists())
                 && pkgs_installed
                 && font_targets.iter().all(|font| font.exists())
+                && completion_targets
+                    .iter()
+                    .all(|completion| completion.exists())
+                && formula_dependencies_healthy
+                && actions_healthy
             {
                 Ok(Some(receipt.version))
             } else {
@@ -2176,6 +2698,8 @@ fn write_receipt(caskroom: &Path, completed: &CompletedCaskActionManifest) -> Re
         apps: activated_targets(CaskActionKind::App),
         binaries: activated_targets(CaskActionKind::Binary),
         fonts: activated_targets(CaskActionKind::Font),
+        completions: activated_targets(CaskActionKind::Completion),
+        formula_dependencies: completed.formula_dependencies.clone(),
         pkg_ids: completed
             .actions
             .iter()
@@ -2196,9 +2720,10 @@ fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
         return Ok(None);
     }
     let body = crate::file::read_to_string(&path)?;
-    toml::from_str(&body)
-        .map(Some)
-        .wrap_err_with(|| format!("failed to parse {}", path.display()))
+    let receipt: CaskReceipt =
+        toml::from_str(&body).wrap_err_with(|| format!("failed to parse {}", path.display()))?;
+    receipt.validate_known()?;
+    Ok(Some(receipt))
 }
 
 fn caskroom_token_dir(token: &SafePathComponent) -> PathBuf {
@@ -2251,20 +2776,17 @@ fn artifact_type(value: &Value) -> String {
 fn is_non_install_artifact(kind: &str) -> bool {
     matches!(
         kind,
-        "bash_completion"
-            | "caveats"
+        "caveats"
             | "conflicts_with"
             | "depends_on"
-            | "fish_completion"
-            | "generate_completions_from_executable"
             | "manpage"
             | "postflight"
             | "preflight"
             | "uninstall"
             | "uninstall_postflight"
             | "uninstall_preflight"
+            | "uninstall_preflight_steps"
             | "zap"
-            | "zsh_completion"
     )
 }
 
@@ -2336,6 +2858,7 @@ mod tests {
             url: "https://example.com/example.zip".to_string(),
             sha256: Some("no_check".to_string()),
             artifacts: Vec::new(),
+            depends_on: CaskDependsOn::default(),
             ruby_source_path: None,
             ruby_source_checksum: None,
             tap_git_head: None,
@@ -2387,6 +2910,7 @@ mod tests {
                     target: Some(binary.target_path()?),
                     phase: CaskActionPhase::Completed,
                     mise_created: true,
+                    target_fingerprint: None,
                     identifiers: Vec::new(),
                 });
             }
@@ -2399,6 +2923,7 @@ mod tests {
                     target: Some(app_target_path(app.target_name())?),
                     phase: CaskActionPhase::Completed,
                     mise_created: true,
+                    target_fingerprint: None,
                     identifiers: Vec::new(),
                 });
             }
@@ -2411,6 +2936,7 @@ mod tests {
                     target: Some(font_target_path(font)?),
                     phase: CaskActionPhase::Completed,
                     mise_created: true,
+                    target_fingerprint: None,
                     identifiers: Vec::new(),
                 });
             }
@@ -2451,8 +2977,9 @@ mod tests {
     "en-US"
   end
   suffix = on_system_conditional linux: "-linux", macos: "-macos"
+  arch_suffix = on_arch_conditional arm: "-arm", intel: "-intel"
   preflight do
-    File.write staged_path/"result", "#{language}#{suffix}"
+    File.write staged_path/"result", "#{language}#{suffix}#{arch_suffix}"
   end
 end
 "##,
@@ -2469,7 +2996,15 @@ end
         } else {
             "-linux"
         };
-        assert_eq!(file::read_to_string(result)?, format!("en-US{suffix}"));
+        let arch_suffix = if cfg!(target_arch = "aarch64") {
+            "-arm"
+        } else {
+            "-intel"
+        };
+        assert_eq!(
+            file::read_to_string(result)?,
+            format!("en-US{suffix}{arch_suffix}")
+        );
         Ok(())
     }
 
@@ -2504,6 +3039,94 @@ end
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(file::read_to_string(result)?, "20628");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn cask_shim_ignores_known_declarative_completion_artifacts() -> Result<()> {
+        let Some(ruby) = file::which("ruby") else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("cask_shim.rb");
+        let cask = tmp.path().join("example.rb");
+        file::write(&shim, CASK_SHIM_RB)?;
+        file::write(
+            &cask,
+            r#"cask "example" do
+  version "1"
+  bash_completion "example.bash"
+  zsh_completion "_example"
+  fish_completion "example.fish"
+  generate_completions_from_executable "example", "--completions"
+  preflight do
+    File.write staged_path/"hook-ran", "yes"
+  end
+end
+"#,
+        )?;
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path(), "1")?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(file::read_to_string(tmp.path().join("hook-ran"))?, "yes");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn cask_shim_runs_managed_system_command_without_shell() -> Result<()> {
+        let Some(ruby) = file::which("ruby") else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("cask_shim.rb");
+        let cask = tmp.path().join("example.rb");
+        let command = tmp.path().join("hook-command");
+        file::write(&shim, CASK_SHIM_RB)?;
+        file::write(&command, "#!/bin/sh\nprintf '%s' \"$1\" > \"$2\"\n")?;
+        file::make_executable(&command)?;
+        file::write(
+            &cask,
+            format!(
+                r#"cask "example" do
+  version "1"
+  preflight do
+    system_command "{}", args: ["safe", "{}"]
+  end
+end
+"#,
+                command.display(),
+                tmp.path().join("system-command-ran").display()
+            ),
+        )?;
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path(), "1")?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            file::read_to_string(tmp.path().join("system-command-ran"))?,
+            "safe"
+        );
+
+        file::write(
+            &cask,
+            r#"cask "example" do
+  version "1"
+  preflight do
+    system_command "/bin/echo", args: ["must-not-run"]
+  end
+end
+"#,
+        )?;
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path(), "1")?;
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("outside managed roots"));
         Ok(())
     }
 
@@ -2742,7 +3365,7 @@ end
     }
 
     #[test]
-    fn parses_binary_artifacts_and_ignores_completion_generation() -> Result<()> {
+    fn parses_binary_artifacts_and_completion_generation() -> Result<()> {
         let mut cask = test_cask("1password-cli", "2.34.1");
         cask.artifacts = vec![
             serde_json::json!({"binary": ["op"], "target": "$HOMEBREW_PREFIX/bin/op"}),
@@ -2762,6 +3385,37 @@ end
                 binaries: vec![BinaryArtifact {
                     source: "op".to_string(),
                     target: Some("$HOMEBREW_PREFIX/bin/op".to_string())
+                }],
+                generated_completions: vec![GeneratedCompletionArtifact {
+                    executable: "op".to_string(),
+                    args: vec!["completion".to_string()],
+                    base_name: None,
+                    shell_parameter_format: None,
+                    shells: vec!["bash".to_string(), "zsh".to_string(), "fish".to_string()],
+                }],
+                ..Default::default()
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parses_tunnelblick_uninstall_preflight_steps_as_non_install_lifecycle() -> Result<()> {
+        let mut cask = test_cask("tunnelblick", "8.0.3,6303");
+        cask.artifacts = vec![
+            serde_json::json!({
+                "uninstall_preflight_steps": [{
+                    "steps": [{"paths": [{"base": "appdir", "path": "Tunnelblick.app"}]}]
+                }]
+            }),
+            serde_json::json!({"app": ["Tunnelblick.app"], "target": "/Applications/Tunnelblick.app"}),
+        ];
+        assert_eq!(
+            cask_artifacts(&cask)?,
+            CaskArtifacts {
+                apps: vec![AppArtifact {
+                    source: "Tunnelblick.app".to_string(),
+                    target: Some("/Applications/Tunnelblick.app".to_string()),
                 }],
                 ..Default::default()
             }
@@ -2952,7 +3606,7 @@ end
     }
 
     #[test]
-    fn skips_bash_completion_and_manpage_artifacts() -> Result<()> {
+    fn parses_shell_completions_and_skips_manpage() -> Result<()> {
         let mut cask = test_cask("ghostty", "1.2.0");
         cask.artifacts = vec![
             serde_json::json!({"app": "Ghostty.app"}),
@@ -2965,6 +3619,11 @@ end
         let artifacts = cask_artifacts(&cask)?;
         assert_eq!(artifacts.apps.len(), 1);
         assert_eq!(artifacts.fonts.len(), 0);
+        assert_eq!(artifacts.binaries.len(), 3);
+        assert_eq!(
+            artifacts.binaries[0].target.as_deref(),
+            Some("$HOMEBREW_PREFIX/etc/bash_completion.d/ghostty")
+        );
         Ok(())
     }
 
@@ -3136,6 +3795,34 @@ end
     }
 
     #[test]
+    fn binary_appdir_targets_are_contained_application_links() -> Result<()> {
+        let _lock = env_lock();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let binary = BinaryArtifact {
+            source: "$APPDIR/Surge.app/Contents/Applications/Surge Dashboard.app".to_string(),
+            target: Some("$APPDIR/Surge Dashboard.app".to_string()),
+        };
+        assert_eq!(
+            binary.target_path()?,
+            PathBuf::from("/Applications/Surge Dashboard.app")
+        );
+        assert_eq!(
+            caskroom_binary_path(&tmp.path().join("Caskroom/surge/1"), &binary)?,
+            tmp.path().join("Caskroom/surge/1/Surge Dashboard.app")
+        );
+        for bad in [
+            "$APPDIR/../evil",
+            "x/$APPDIR/Evil.app",
+            "$APPDIR/",
+            "$APPDIR/.",
+        ] {
+            assert!(binary_target_path(bad).is_err(), "{bad}");
+        }
+        Ok(())
+    }
+
+    #[test]
     fn binary_targets_must_stay_under_an_allowed_root() -> Result<()> {
         let _lock = env_lock();
         let tmp = tempfile::tempdir()?;
@@ -3207,7 +3894,7 @@ end
     }
 
     #[test]
-    fn installed_cask_version_ignores_receipt_pkg_ids_for_app_only_casks() -> Result<()> {
+    fn installed_cask_version_uses_only_historical_receipt_facts() -> Result<()> {
         let _lock = env_lock();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
@@ -3225,6 +3912,8 @@ end
             apps: vec![app_target_path(app.target_name())?],
             binaries: vec![],
             fonts: vec![],
+            completions: vec![],
+            formula_dependencies: vec![],
             pkg_ids: vec!["com.example.helper".to_string()],
             transaction_id: None,
             actions: vec![],
@@ -3242,7 +3931,7 @@ end
                     ..Default::default()
                 }
             )?,
-            Some("1.0.0".to_string())
+            None
         );
         Ok(())
     }
@@ -3532,7 +4221,7 @@ end
     }
 
     #[test]
-    fn installed_cask_version_checks_current_pkg_ids_with_old_receipt() -> Result<()> {
+    fn installed_cask_version_does_not_invent_pkg_ids_for_old_receipt() -> Result<()> {
         if crate::file::which("pkgutil").is_none() {
             return Ok(());
         }
@@ -3548,6 +4237,8 @@ end
             apps: vec![],
             binaries: vec![],
             fonts: vec![],
+            completions: vec![],
+            formula_dependencies: vec![],
             pkg_ids: vec![],
             transaction_id: None,
             actions: vec![],
@@ -4118,6 +4809,7 @@ end
             target: Some(tmp.path().join("bin/codex")),
             phase: CaskActionPhase::Completed,
             mise_created: true,
+            target_fingerprint: None,
             identifiers: Vec::new(),
         });
         write_action_journal(&ids, &completed)?;
@@ -4134,7 +4826,7 @@ end
             serde_json::from_str(&crate::file::read_to_string(&journal)?)?;
         assert_eq!(body.actions.len(), 1);
         body.validate_known()?;
-        clear_action_journal(&ids, "txn-journal-1")?;
+        clear_action_journals_for_token(&ids)?;
         assert!(!journal.exists());
         Ok(())
     }
@@ -4147,6 +4839,62 @@ end
         assert!(m.validate_known().is_err());
     }
 
+    #[test]
+    fn completed_action_fingerprint_detects_replaced_file() -> Result<()> {
+        let _lock = env_lock();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let target = tmp.path().join("completion");
+        file::write(&target, "original")?;
+        let mut manifest = CompletedCaskActionManifest::new(&test_ids("t", "1"), "txn");
+        record_completed_action(
+            &test_ids("t", "1"),
+            &mut manifest,
+            CompletedCaskAction {
+                id: "completion:bash:t".into(),
+                kind: CaskActionKind::Completion,
+                operation: CaskActionOperation::Copy,
+                source: None,
+                target: Some(target.clone()),
+                phase: CaskActionPhase::Completed,
+                mise_created: true,
+                target_fingerprint: None,
+                identifiers: Vec::new(),
+            },
+        )?;
+        assert!(cask_target_matches(&manifest.actions[0])?);
+        file::write(&target, "replaced")?;
+        assert!(!cask_target_matches(&manifest.actions[0])?);
+        Ok(())
+    }
+
+    #[test]
+    fn ruby_source_checksum_must_be_fixed_hex() {
+        assert!(validate_sha256("ruby source", &"a".repeat(64)).is_ok());
+        for bad in ["../escape", "abcd", "gggggggggggggggg"] {
+            assert!(validate_sha256("ruby source", bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn receipt_rejects_unknown_or_incomplete_current_schema() {
+        let mut receipt = CaskReceipt {
+            version: "1".into(),
+            schema_version: 99,
+            apps: vec![],
+            binaries: vec![],
+            fonts: vec![],
+            completions: vec![],
+            formula_dependencies: vec![],
+            pkg_ids: vec![],
+            transaction_id: None,
+            actions: vec![],
+        };
+        assert!(receipt.validate_known().is_err());
+        receipt.schema_version = CASK_RECEIPT_SCHEMA_V2;
+        assert!(receipt.validate_known().is_err());
+    }
+
     /// Plan 013: legacy receipts are LegacyUnverified for handoff.
     #[test]
     fn legacy_receipt_is_not_handoff_eligible() -> Result<()> {
@@ -4156,6 +4904,8 @@ end
             apps: vec![],
             binaries: vec![],
             fonts: vec![],
+            completions: vec![],
+            formula_dependencies: vec![],
             pkg_ids: vec![],
             transaction_id: None,
             actions: vec![],
@@ -4192,6 +4942,7 @@ end
             target: Some(installed_target),
             phase: CaskActionPhase::Completed,
             mise_created: true,
+            target_fingerprint: None,
             identifiers: Vec::new(),
         });
         write_receipt(&version_dir, &completed)?;
@@ -4227,6 +4978,11 @@ end
         // Simulate crash: version dir exists, no final receipt.
         assert!(read_receipt(&version_dir)?.is_none());
         assert!(action_journal_path(&ids, "txn-pending")?.is_file());
+        let cask = test_cask(ids.token.as_str(), ids.version.as_str());
+        assert_eq!(
+            installed_cask_version(&cask, &CaskArtifacts::default())?,
+            None
+        );
         Ok(())
     }
 

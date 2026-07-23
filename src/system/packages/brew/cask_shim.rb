@@ -251,6 +251,14 @@ class CaskContext
     shim_unsupported!("on_system_conditional without #{key}")
   end
 
+  def on_arch_conditional(values)
+    if Hardware::CPU.arm?
+      values.fetch(:arm, values.fetch("arm", nil))
+    else
+      values.fetch(:intel, values.fetch("intel", nil))
+    end
+  end
+
   def sha256(*) nil end
   def url(*) nil end
   def name(*) nil end
@@ -266,7 +274,15 @@ class CaskContext
   def pkg(*) nil end
   def font(*) nil end
   def uninstall(*) nil end
+  def uninstall_preflight_steps(*) nil end
   def zap(*) nil end
+  def bash_completion(*) nil end
+  def fish_completion(*) nil end
+  def zsh_completion(*) nil end
+  def manpage(*) nil end
+  def generate_completions_from_executable(*) nil end
+  def ohai(message) $stderr.puts "==> #{message}" end
+  def opoo(message) $stderr.puts "Warning: #{message}" end
 
   def preflight(&block) @hooks[:preflight] = block end
   def postflight(&block) @hooks[:postflight] = block end
@@ -295,6 +311,24 @@ class CaskContext
 
   def caskroom_path
     MISE_BREW_PREFIX + "Caskroom"
+  end
+
+  # Execute a checksum-bound hook command without a shell. Only binaries under
+  # the staged payload, selected Applications root, or this prefix's Caskroom
+  # are eligible.
+  def system_command(executable, args: [], **options)
+    shim_unsupported!("system_command options #{options.keys.join(",")}") unless options.empty?
+    command = Pathname.new(executable.to_s).cleanpath
+    roots = [staged_path, appdir, caskroom_path].map(&:cleanpath)
+    allowed_system_commands = [Pathname.new("/usr/bin/pkill")]
+    contained = roots.any? { |root| command == root || command.to_s.start_with?("#{root}/") }
+    unless command.absolute? && (contained || allowed_system_commands.include?(command))
+      shim_unsupported!("system_command outside managed roots")
+    end
+    argv = Array(args).map(&:to_s)
+    ok = system(command.to_s, *argv)
+    raise RuntimeError, "system_command failed: #{([command.to_s] + argv).join(" ")}" unless ok
+    true
   end
 
   def method_missing(name, *args, &block)

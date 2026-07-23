@@ -23,7 +23,10 @@ pass.
 dependency-bearing cask eligible for Homebrew handoff/private metadata.
 Handoff is unsupported and failed attempts empirically leave formula residue.
 Mise does not serialize a Homebrew dependency ledger. General direct-pour
-dependency support is a separate product feature, not an interop unblocker.
+dependency support shipped under Plan 014: formula dependencies pour through
+mise's in-process `BrewManager`, are recorded in the mise receipt, and
+participate in status checks. macOS and architecture constraints fail closed.
+No Homebrew handoff or autoremove claim is made.
 
 - **Priority**: P1
 - **Effort**: L
@@ -76,7 +79,7 @@ would incorrectly pin a new dependency as `installed_on_request=true`.
 | Diff check      | `rtk git diff --check`                        | no output           |
 
 If `rtk cargo` cannot find Cargo on this workstation, use
-`rtk proxy /Users/donbeave/.cargo/bin/cargo` with identical arguments.
+`rtk cargo` with identical arguments.
 
 ## Scope
 

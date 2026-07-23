@@ -3,7 +3,7 @@
 ## Status: DONE — unsupported; mise-only retained
 
 GitHub Actions run
-[`29979380126`](https://github.com/donbeave/mise/actions/runs/29979380126)
+run `29979380126`
 completed the final deterministic matrix on a fresh GitHub-hosted `macos-15`
 runner against Homebrew commit
 `6bd951d96e7ebc54787799dba77bfb26ec956c4c`. Isolation assertions, a

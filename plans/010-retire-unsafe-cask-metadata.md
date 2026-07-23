@@ -46,12 +46,12 @@ mise receipt only.
 
 ## Commands you will need
 
-| Purpose       | Command                                                                        | Expected on success                                                                  |
-| ------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Focused tests | `rtk proxy /Users/donbeave/.cargo/bin/cargo test system::packages::brew::cask` | all tests pass; no zero-test filter                                                  |
-| E2E           | `rtk mise run test:e2e e2e/cli/test_system_install_brew_macos_slow`            | pass on the supported macOS environment, or documented environment skip before merge |
-| Docs          | `rtk mise run docs:build`                                                      | exit 0                                                                               |
-| Diff          | `rtk git diff --check`                                                         | no output                                                                            |
+| Purpose       | Command                                                             | Expected on success                                                                  |
+| ------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Focused tests | `rtk cargo test system::packages::brew::cask`                       | all tests pass; no zero-test filter                                                  |
+| E2E           | `rtk mise run test:e2e e2e/cli/test_system_install_brew_macos_slow` | pass on the supported macOS environment, or documented environment skip before merge |
+| Docs          | `rtk mise run docs:build`                                           | exit 0                                                                               |
+| Diff          | `rtk git diff --check`                                              | no output                                                                            |
 
 ## Scope
 
@@ -120,7 +120,7 @@ Add/adjust tests proving a successful mise cask install writes
 existing mise receipt does not trigger Homebrew metadata repair.
 
 **Verify**:
-`rtk proxy /Users/donbeave/.cargo/bin/cargo test system::packages::brew::cask`
+`rtk cargo test system::packages::brew::cask`
 → all focused tests pass and the new assertions execute.
 
 ## Test plan

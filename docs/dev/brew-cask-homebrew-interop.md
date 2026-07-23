@@ -10,7 +10,7 @@
 > superseded by `HOMEBREW_FINDINGS.md` executive decision and `plans/README.md`.
 
 **Branch:** `fix/brew-cask-homebrew-metadata-receipt`  
-**Fork:** `donbeave/mise` (no upstream PR yet)  
+**Fork:** downstream mise fork (no upstream PR yet)
 **Date:** 2026-07-22  
 **Reproducer host:** macOS arm64, Homebrew 6.x, mise 2026.7.11 (pre-fix)
 
@@ -190,7 +190,7 @@ Codex   brew upgrade --cask codex  → hard fail on startup
 their next bootstrap. **Secondary:** e2e with `brew` present asserting
 `brew list --cask --versions <token>`; doc coexistence for casks.
 
-## Real-world failure (Codex / essential-mac)
+## Real-world failure (Codex / downstream bootstrap)
 
 1. User declares `"brew-cask:codex" = "latest"` in `[bootstrap.packages]`.
 2. `mise bootstrap` pours binary to
@@ -426,12 +426,12 @@ Tracked for later / already partially fixed elsewhere:
 
 These are separate from receipt interop.
 
-## essential-mac workaround (until this ships)
+## Downstream workaround (historical)
 
 While running mise without this fix:
 
 - Keep `"brew-cask:codex"` in mise (install works).
-- `essential-mac setup-ai` sets `check_for_update_on_startup = false` so Codex
+- downstream setup sets `check_for_update_on_startup = false` so Codex
   does not call `brew upgrade --cask` on startup; updates via mise bootstrap.
 - Optional: `brew install --cask --force <token>` adopts an existing mise pour
   and writes real metadata (verified for codex).

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Darwin" ]] || [[ ${CI:-} != "true" ]] || [[ ${MISE_CASK_DIRECT_DISPOSABLE:-} != "1" ]]; then
+  exit 0
+fi
+
+for cask in cloudflare-warp tableplus zoom orbstack surge plex-media-server zed@preview tunnelblick; do
+  mise bootstrap packages apply --dry-run --yes "brew-cask:$cask"
+done
+
+# Representative pours cover the prior decoder failure, checksum-bound postflight,
+# nested application target, and uninstall-only metadata. The runner is
+# disposable; never execute this matrix on an operator host.
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"brew-cask:tableplus" = "latest"
+"brew-cask:orbstack" = "latest"
+"brew-cask:surge" = "latest"
+"brew-cask:tunnelblick" = "latest"
+"brew-cask:zoom" = "latest"
+"brew-cask:codex" = "latest"
+"brew-cask:zed@preview" = "latest"
+EOF
+
+mise bootstrap packages apply --yes
+assert_directory_exists "/Applications/TablePlus.app"
+assert_directory_exists "/Applications/OrbStack.app"
+assert_directory_exists "/Applications/Surge.app"
+assert_directory_exists "/Applications/Tunnelblick.app"
+test -L "/Applications/Surge Dashboard.app"
+test -L "/opt/homebrew/bin/orb"
+test -L "/opt/homebrew/bin/orbctl"
+test -L "/opt/homebrew/bin/surge-cli"
+test -L "/opt/homebrew/sbin/surge-dhcpd"
+test -L "/opt/homebrew/etc/bash_completion.d/orbctl"
+test -L "/opt/homebrew/share/zsh/site-functions/_orb"
+test -L "/opt/homebrew/share/zsh/site-functions/_orbctl"
+test -L "/opt/homebrew/share/fish/vendor_completions.d/orbctl.fish"
+test -s "/opt/homebrew/etc/bash_completion.d/zed-preview"
+test -s "/opt/homebrew/share/zsh/site-functions/_zed-preview"
+test -s "/opt/homebrew/share/fish/vendor_completions.d/zed-preview.fish"
+test -s "/opt/homebrew/share/pwsh/completions/_zed-preview.ps1"
+test -L "/opt/homebrew/opt/ripgrep"
+test -L "/opt/homebrew/bin/codex"
+test -s "/opt/homebrew/etc/bash_completion.d/codex"
+test -s "/opt/homebrew/share/zsh/site-functions/_codex"
+test -s "/opt/homebrew/share/fish/vendor_completions.d/codex.fish"
+pkgutil --pkg-info us.zoom.pkg.videomeeting >/dev/null
+assert_contains "mise bootstrap packages status" "installed"

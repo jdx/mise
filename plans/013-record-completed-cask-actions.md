@@ -21,7 +21,12 @@
   `<prefix>/var/mise/cask-recovery` before mutation and after each completed
   action, with checked file/parent fsync; final `.mise-cask.toml` derives only
   from completed actions after activation; retained sources use final Caskroom
-  paths; legacy receipts remain `LegacyUnverified` / not handoff-eligible.
+  paths. Re-audit found unknown receipt schemas accepted, empty legacy fields
+  reconstructed from the current API, and pending journals unconsumed.
+  Schema validation and historical-only legacy status are fixed. Pending
+  journals make status unhealthy; successful retry clears same-token journals
+  only after durable receipt. Action target type/digest fingerprints detect
+  replacement. Unit, lint, and real macOS reinstall gates pass.
 
 ## Why this matters
 
@@ -50,7 +55,7 @@ manifest of actions mise actually completed.
 | Purpose         | Command                                                                                                                                                     | Expected on success      |
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
 | Locate mutators | `rtk rg -n -e "fn install_" -e "fn stage_" -e "fn link_" -e "fn remove_" -e write_receipt -e CaskArtifacts -e CaskReceipt src/system/packages/brew/cask.rs` | every mutator classified |
-| Focused tests   | `rtk proxy /Users/donbeave/.cargo/bin/cargo test system::packages::brew::cask`                                                                              | all pass                 |
+| Focused tests   | `rtk cargo test system::packages::brew::cask`                                                                                                               | all pass                 |
 | Lint            | `rtk mise run lint-fix`                                                                                                                                     | exit 0                   |
 | Diff            | `rtk git diff --check`                                                                                                                                      | no output                |
 

@@ -21,7 +21,10 @@
   `app_target_path`, `$APPDIR` contain-after-expand, **request-token equality**
   (exact `cask.token` always; `old_tokens`/`aliases` only for official homebrew/cask —
   never third-party self-declared lists; hostile-alias bypass test);
-  existing-symlink rejection at mutation boundaries; adversarial unit tests. No semver ordering.
+  existing-symlink rejection at mutation boundaries; adversarial unit tests.
+  Re-audit found unvalidated `ruby_source_checksum.sha256` in a cache filename.
+  It now requires 64 hexadecimal digits and is converted to a fixed safe key.
+  Full test/lint gates and real macOS pours pass. No semver ordering.
 
 ## Why this matters
 
@@ -48,7 +51,7 @@ its storage boundary is attacker-controlled.
 | Purpose       | Command                                                                                                         | Expected on success                    |
 | ------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | Locate sinks  | `rtk rg -n -e "cask\.token" -e "cask\.version" -e "target_name\(" -e "join\(" src/system/packages/brew/cask.rs` | every untrusted path sink reviewed     |
-| Focused tests | `rtk proxy /Users/donbeave/.cargo/bin/cargo test system::packages::brew::cask`                                  | all pass                               |
+| Focused tests | `rtk cargo test system::packages::brew::cask`                                                                   | all pass                               |
 | Lint          | `rtk mise run lint-fix`                                                                                         | exit 0; stage resulting relevant fixes |
 | Diff          | `rtk git diff --check`                                                                                          | no output                              |
 
@@ -118,7 +121,7 @@ directory creation, removal, or rename. Thread validated values through all
 cache/Caskroom helpers so raw strings cannot reach path joins.
 
 **Verify**:
-`rtk proxy /Users/donbeave/.cargo/bin/cargo test system::packages::brew::cask`
+`rtk cargo test system::packages::brew::cask`
 → invalid-input tests prove the temporary prefix/cache remains unchanged.
 
 ### Step 4: Replace lexical app containment

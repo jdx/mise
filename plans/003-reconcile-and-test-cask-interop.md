@@ -88,7 +88,7 @@ repair reachability; helper-only unit tests cannot prove that boundary.
 | Diff check        | `rtk git diff --check`                                              | no output                                   |
 
 If `rtk cargo` cannot find Cargo on this workstation, use
-`rtk proxy /Users/donbeave/.cargo/bin/cargo` with identical arguments.
+`rtk cargo` with identical arguments.
 
 ## Scope
 

@@ -27,21 +27,22 @@ not a durable product boundary.
 
 ## Execution order
 
-| Order | Plan                                                                                    | Priority | Effort  | Risk | Status                                                                                  | Depends on                                  |
-| ----: | --------------------------------------------------------------------------------------- | -------- | ------- | ---- | --------------------------------------------------------------------------------------- | ------------------------------------------- |
-|     1 | [Retire unsafe synthetic metadata](010-retire-unsafe-cask-metadata.md)                  | P1       | M       | MED  | **DONE** — writer/repair removed; foreign metadata preserved; suite green               | none                                        |
-|     2 | [Enforce cask path boundaries](011-secure-cask-path-boundaries.md)                      | P1       | M       | HIGH | **DONE** — path contain + token eq (aliases only official homebrew/cask)                | none                                        |
-|     3 | [Prove a supported Homebrew handoff](012-evaluate-homebrew-handoff.md)                  | P1       | L       | HIGH | **DONE** — unsupported; mise-only retained from disposable matrix                       | 010                                         |
-|     4 | [Record completed cask actions](013-record-completed-cask-actions.md)                   | P1       | L       | HIGH | **DONE** — per-action durable journal + action-derived final receipt; legacy unverified | 011                                         |
-|     5 | [Model ownership and prevent takeover](001-model-cask-ownership.md)                     | P1       | L       | HIGH | **DONE (revised)** — Homebrew marker blocks mise mutation across versions               | 011, 012, 013                               |
-|     6 | [Model constraints and dependency ownership](006-cask-dependencies.md)                  | P1       | L       | HIGH | **CLOSED — NOT APPLICABLE** to unsupported handoff                                      | 001, 013                                    |
-|     7 | [Add safe diagnosis and recovery](008-cask-interop-recovery.md)                         | P1       | L       | HIGH | **CLOSED — NOT APPLICABLE**; no handoff/dual-ledger transition ships                    | 001, 012, 013                               |
-|     8 | [Reconcile and test real lifecycle](003-reconcile-and-test-cask-interop.md)             | P1       | L       | HIGH | **CLOSED — NOT APPLICABLE**; no Homebrew lifecycle claim                                | 008                                         |
-|     9 | [Expand lifecycle parity by artifact class](004-expand-cask-lifecycle-parity.md)        | P2       | L/class | HIGH | **CLOSED — NOT APPLICABLE**; every handoff class excluded                               | 003                                         |
-|    10 | [Narrow an upstream supported contract](009-upstream-homebrew-registration-contract.md) | P2       | M-L     | HIGH | **DONE** — local validation/atomic-handoff gap proposal; no contact                     | 012                                         |
-|    11 | [Emit exact binary private metadata](002-emit-exact-binary-metadata.md)                 | P3       | L       | HIGH | BLOCKED — needs explicit operator A3 auth                                               | 001, 006, 013                               |
-|    12 | [Transactional private interop upgrades](007-transactional-interop-upgrades.md)         | P3       | L       | HIGH | REJECTED — no shared manager lock                                                       | supported contract or single-owner redesign |
-|    13 | [Consolidate the decision record](005-consolidate-homebrew-decision-record.md)          | P2       | M       | LOW  | **DONE** — final unsupported support matrix and evidence                                | 010; 012 final outcome                      |
+| Order | Plan                                                                                    | Priority | Effort  | Risk | Status                                                                     | Depends on                                  |
+| ----: | --------------------------------------------------------------------------------------- | -------- | ------- | ---- | -------------------------------------------------------------------------- | ------------------------------------------- |
+|     1 | [Retire unsafe synthetic metadata](010-retire-unsafe-cask-metadata.md)                  | P1       | M       | MED  | **DONE** — writer/repair removed; foreign metadata preserved; suite green  | none                                        |
+|     2 | [Enforce cask path boundaries](011-secure-cask-path-boundaries.md)                      | P1       | M       | HIGH | **DONE** — all untrusted path sinks contained; real pours pass             | none                                        |
+|     3 | [Prove a supported Homebrew handoff](012-evaluate-homebrew-handoff.md)                  | P1       | L       | HIGH | **DONE** — unsupported; mise-only retained from disposable matrix          | 010                                         |
+|     4 | [Record completed cask actions](013-record-completed-cask-actions.md)                   | P1       | L       | HIGH | **DONE** — durable journal, factual receipt, fingerprints, recovery health | 011                                         |
+|     5 | [Model ownership and prevent takeover](001-model-cask-ownership.md)                     | P1       | L       | HIGH | **DONE** — takeover blocked; pending transactions unhealthy                | 011, 012, 013                               |
+|     6 | [Model constraints and dependency ownership](006-cask-dependencies.md)                  | P1       | L       | HIGH | **CLOSED — NOT APPLICABLE** to handoff; direct-pour dependencies shipped   | 001, 013                                    |
+|     7 | [Add safe diagnosis and recovery](008-cask-interop-recovery.md)                         | P1       | L       | HIGH | **CLOSED — NOT APPLICABLE**; no handoff/dual-ledger transition ships       | 001, 012, 013                               |
+|     8 | [Reconcile and test real lifecycle](003-reconcile-and-test-cask-interop.md)             | P1       | L       | HIGH | **CLOSED — NOT APPLICABLE**; no Homebrew lifecycle claim                   | 008                                         |
+|     9 | [Expand lifecycle parity by artifact class](004-expand-cask-lifecycle-parity.md)        | P2       | L/class | HIGH | **CLOSED — NOT APPLICABLE**; every handoff class excluded                  | 003                                         |
+|    10 | [Narrow an upstream supported contract](009-upstream-homebrew-registration-contract.md) | P2       | M-L     | HIGH | **DONE** — local validation/atomic-handoff gap proposal; no contact        | 012                                         |
+|    11 | [Emit exact binary private metadata](002-emit-exact-binary-metadata.md)                 | P3       | L       | HIGH | **CLOSED — NOT APPLICABLE**; private metadata direction rejected           | 001, 006, 013                               |
+|    12 | [Transactional private interop upgrades](007-transactional-interop-upgrades.md)         | P3       | L       | HIGH | REJECTED — no shared manager lock                                          | supported contract or single-owner redesign |
+|    13 | [Consolidate the decision record](005-consolidate-homebrew-decision-record.md)          | P2       | M       | LOW  | **DONE** — final unsupported support matrix and evidence                   | 010; 012 final outcome                      |
+|    14 | [Prove representative direct-pour compatibility](014-direct-pour-compatibility.md)      | P1       | M       | HIGH | **IN PROGRESS** — local matrix green; disposable GitHub macOS gate pending | 011, 013                                    |
 
 Plans 010 and 011 are unconditional safety work. Plans 012 and 013 establish
 the supported handoff and truthful local state foundations. At the Plan 012
@@ -237,8 +238,8 @@ after required activation succeeds.
   migration, and locking paths. Current upstream was re-verified at
   `33c3da5f49885a8e19170935f6e8515a66516cff`; relevant cask code is unchanged
   from the local Homebrew checkout.
-- `rtk proxy /Users/donbeave/.cargo/bin/cargo test homebrew_cask`: 3 passed.
-- `rtk proxy /Users/donbeave/.cargo/bin/cargo test system::packages::brew::cask`:
+- `rtk cargo test homebrew_cask`: 3 passed.
+- `rtk cargo test system::packages::brew::cask`:
   63 passed.
 - Three independent research agents audited local architecture, adversarial
   state/concurrency behavior, and current upstream Homebrew semantics. Their

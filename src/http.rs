@@ -77,6 +77,7 @@ struct SendOnceOptions {
     use_netrc: bool,
     retry_github_oauth_401: bool,
     error_for_status: bool,
+    request_timeout: bool,
     retry_state: Option<RetryStateHandle>,
 }
 
@@ -86,6 +87,7 @@ impl SendOnceOptions {
             use_netrc,
             retry_github_oauth_401: true,
             error_for_status: true,
+            request_timeout: true,
             retry_state,
         }
     }
@@ -95,11 +97,17 @@ impl SendOnceOptions {
         self
     }
 
+    fn without_request_timeout(mut self) -> Self {
+        self.request_timeout = false;
+        self
+    }
+
     fn recursive_retry(&self) -> Self {
         Self {
             use_netrc: false,
             retry_github_oauth_401: false,
             error_for_status: self.error_for_status,
+            request_timeout: self.request_timeout,
             retry_state: self.retry_state.clone(),
         }
     }
@@ -424,7 +432,13 @@ impl Client {
                 attempt.fetch_add(1, Ordering::Relaxed);
                 bytes_received.store(0, Ordering::Relaxed);
                 let mut resp = self
-                    .send_once_with_https_fallback(Method::GET, request_url, headers, "GET")
+                    .send_once_with_https_fallback_with_retry_headers(
+                        Method::GET,
+                        request_url,
+                        headers,
+                        "GET",
+                        SendOnceOptions::new(None, true).without_request_timeout(),
+                    )
                     .await?;
                 if let Some(pr) = pr {
                     if let Some(length) = resp.content_length() {
@@ -551,30 +565,7 @@ impl Client {
         .await
     }
 
-    /// One attempt with http→https fallback, no retry. Used as the inner step
-    /// for both `send_with_https_fallback` (which adds retry) and
-    /// `download_file_with_headers` (which has its own outer retry covering the
-    /// chunk stream). Splitting this out avoids retry × retry blowup.
-    /// The fallback only fires on connection-level errors (corporate proxy
-    /// blocking plain http), not on HTTP status errors — falling back to https
-    /// after the server already returned a 4xx/5xx makes no sense.
-    async fn send_once_with_https_fallback(
-        &self,
-        method: Method,
-        url: Url,
-        headers: &HeaderMap,
-        verb_label: &str,
-    ) -> Result<Response> {
-        self.send_once_with_https_fallback_with_retry_headers(
-            method,
-            url,
-            headers,
-            verb_label,
-            SendOnceOptions::new(None, true),
-        )
-        .await
-    }
-
+    /// One attempt with http→https fallback and no outer retry.
     async fn send_once_with_https_fallback_with_retry_headers(
         &self,
         method: Method,
@@ -662,7 +653,7 @@ impl Client {
 
         let request_timeout = self.request_timeout();
         let mut req = self.reqwest.request(method.clone(), url.clone());
-        if matches!(self.kind, ClientKind::Fetch) {
+        if matches!(self.kind, ClientKind::Fetch) && options.request_timeout {
             req = req.timeout(request_timeout);
         }
         req = req.headers(final_headers.clone());
@@ -1906,7 +1897,10 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let path = dir.path().join("artifact.tar.gz");
         // The server sends a byte every 10ms, so the 100ms idle read timeout
         // never fires. The separate total budget must still end the download.
-        let client = Client::new(Duration::from_millis(100), ClientKind::Http).unwrap();
+        // Fetch clients normally put a whole-request timeout on metadata
+        // calls. Downloads must disable that request timeout and use the
+        // separate total download budget instead.
+        let client = Client::new(Duration::from_millis(100), ClientKind::Fetch).unwrap();
         let started_at = Instant::now();
         let result = tokio::time::timeout(
             Duration::from_secs(5),
