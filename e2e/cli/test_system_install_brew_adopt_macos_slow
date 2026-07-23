@@ -89,7 +89,7 @@ if [[ -z $TAP_DIR ]]; then
 fi
 mkdir -p "$TAP_DIR/Casks"
 cp "$FIXTURE_ROOT/tap/Casks/"*.rb "$TAP_DIR/Casks/"
-git -C "$TAP_DIR" add Casks
+git -C "$TAP_DIR" add -f Casks
 git -C "$TAP_DIR" -c user.name=mise-test -c user.email=mise-test@example.invalid \
   commit -m "test: add deterministic handoff casks"
 
