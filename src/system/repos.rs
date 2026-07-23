@@ -109,7 +109,16 @@ impl RepoRequest {
                     "relative repo path `{path_raw}` must name a directory inside the project root"
                 );
             }
-            root.join(&path)
+            // Join only the Normal segments so `./foobar` resolves to
+            // `<root>/foobar` rather than `<root>/./foobar` — a `.` component
+            // survives `Path::join` and leaks into every displayed path.
+            let mut resolved = root.to_path_buf();
+            for component in path.components() {
+                if let Component::Normal(segment) = component {
+                    resolved.push(segment);
+                }
+            }
+            resolved
         };
         let Some(url) = config.url.map(|s| s.trim().to_string()) else {
             bail!("must set `url`");
@@ -898,6 +907,15 @@ mod tests {
             .expect("relative path with a project root should resolve");
         assert_eq!(request.path, Path::new("/home/u/proj/vendor/tool"));
         assert_eq!(request.path_raw, "vendor/tool");
+
+        let request = RepoRequest::from_toml("./foobar".to_string(), config(), Some(root))
+            .expect("`./`-prefixed relative path should resolve");
+        assert_eq!(
+            request.path,
+            Path::new("/home/u/proj/foobar"),
+            "a leading `./` should not leak into the resolved path"
+        );
+        assert_eq!(request.path_raw, "./foobar");
 
         assert!(
             RepoRequest::from_toml("vendor/tool".to_string(), config(), None).is_err(),
