@@ -12,7 +12,7 @@ Describe 'python' {
 
         mise x python@3.12.0 -- where python
         mise x python@3.12.0 -- python --version | Should -Be "Python 3.12.0"
-        $python3Path = (mise x python@3.12.0 -- where python3).Trim()
+        $python3Path = (mise x python@3.12.0 -- where python3 | Select-Object -First 1).Trim()
         $python3Path | Should -Be (Join-Path $installPath 'python3.exe')
         mise x python@3.12.0 -- python3 --version | Should -Be "Python 3.12.0"
     }
