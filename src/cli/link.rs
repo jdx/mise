@@ -7,7 +7,7 @@ use eyre::bail;
 use path_absolutize::Absolutize;
 
 use crate::file::{make_symlink, remove_all};
-use crate::toolset::{ToolVersion, install_state};
+use crate::toolset::{ToolRequest, ToolVersion, install_state};
 use crate::{cli::args::ToolArg, config::Config};
 use crate::{config, file};
 
@@ -34,10 +34,14 @@ pub struct Link {
 impl Link {
     pub async fn run(self) -> Result<()> {
         let version_pathname = match self.tool.tvr {
-            Some(ref tvr) => {
+            Some(ref tvr @ (ToolRequest::Version { .. } | ToolRequest::Ref { .. })) => {
                 let version = tvr.version();
                 ToolVersion::new(tvr.clone(), version).tv_pathname()
             }
+            Some(ref tvr) => bail!(
+                "mise link only supports explicit versions and refs, not {}",
+                tvr.version()
+            ),
             None => bail!("must provide a version for {}", self.tool.style()),
         };
         let path = self.path.absolutize()?;

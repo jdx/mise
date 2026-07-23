@@ -53,6 +53,13 @@ assert "test ! -f \"$MISE_CACHE_DIR/tiny/ref-feature-foo/incomplete\""
 assert "mise where tiny@ref:feature/foo" "$MISE_DATA_DIR/installs/tiny/ref-feature-foo"
 assert "readlink \"$MISE_DATA_DIR/installs/tiny/ref-feature-foo\"" "$PWD/tmp/tiny-ref"
 
+# Selector-style requests do not identify a stable install pathname and must be
+# rejected instead of creating an unreachable link.
+assert_fail "mise link tiny@prefix:9 tmp/tiny2"
+assert_fail "mise link tiny@path:tmp/tiny2 tmp/tiny2"
+assert_fail "mise link tiny@sub-0:9 tmp/tiny2"
+assert_fail "mise link tiny@system tmp/tiny2"
+
 # Marker removal errors remain strict, while the marker itself is preserved.
 mkdir -p tmp/tiny3
 mkdir -p "$MISE_CACHE_DIR/tiny/9.9.7/incomplete"
