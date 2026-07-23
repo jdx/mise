@@ -698,6 +698,18 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
     ));
     file::remove_all(&tmp_target)?;
     ditto(&caskroom_app, &tmp_target)?;
+    swap_app(&target, &tmp_target)?;
+    // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
+    let _ = std::process::Command::new("xattr")
+        .args(["-r", "-d", "com.apple.quarantine"])
+        .arg(&target)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    Ok(())
+}
+
+fn swap_app(target: &Path, tmp_target: &Path) -> Result<()> {
     // Atomic swap: rename existing target aside before putting the new one in place so that
     // a failure during rename leaves the old app intact rather than leaving nothing.
     let old_target = target.with_extension(format!(
@@ -716,13 +728,6 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
         return Err(e);
     }
     file::remove_all(&old_target)?;
-    // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
-    let _ = std::process::Command::new("xattr")
-        .args(["-r", "-d", "com.apple.quarantine"])
-        .arg(&target)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
     Ok(())
 }
 
@@ -4548,6 +4553,45 @@ end
         };
 
         assert_eq!(cask_appdir(&[app])?, tmp.path().join("Applications"));
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn upgrades_app_with_protected_existing_contents() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("Docker.app");
+        let protected_dir = target.join("Contents/Resources");
+        file::create_dir_all(&protected_dir)?;
+        crate::file::write(protected_dir.join("docker"), "old")?;
+        let status = std::process::Command::new("chmod")
+            .args(["+a", "everyone deny delete_child"])
+            .arg(&protected_dir)
+            .status()?;
+        assert!(status.success());
+
+        let tmp_target = tmp.path().join("Docker.mise-tmp-test");
+        file::create_dir_all(&tmp_target)?;
+        crate::file::write(tmp_target.join("version"), "new")?;
+
+        let result = swap_app(&target, &tmp_target);
+
+        // Remove the ACL so tempfile can clean up even when the repro fails.
+        let old_target = target.with_extension(format!(
+            "mise-old-{}",
+            crate::hash::hash_to_str(&target.display().to_string())
+        ));
+        if old_target.exists() {
+            let status = std::process::Command::new("chmod")
+                .arg("-RN")
+                .arg(&old_target)
+                .status()?;
+            assert!(status.success());
+        }
+
+        result?;
+        assert_eq!(crate::file::read_to_string(target.join("version"))?, "new");
+        assert!(!old_target.exists());
         Ok(())
     }
 
