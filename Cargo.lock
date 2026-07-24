@@ -591,7 +591,7 @@ dependencies = [
  "ci_info",
  "clap",
  "clap_usage",
- "clx",
+ "clx 2.1.1",
  "console",
  "demand",
  "diffy",
@@ -2076,6 +2076,22 @@ dependencies = [
  "serde_json",
  "strum 0.28.0",
  "tera 1.20.1",
+ "thiserror 2.0.19",
+ "unicode-width 0.2.2",
+]
+
+[[package]]
+name = "clx"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58ae514e7ddc9e3b7b6d5fd3efe8428ad45273cb0cd69f3d4f6c6fc78b6389de"
+dependencies = [
+ "console",
+ "nix 0.31.3",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "tera 2.0.0",
  "thiserror 2.0.19",
  "unicode-width 0.2.2",
 ]
@@ -6372,7 +6388,7 @@ dependencies = [
  "ci_info",
  "clap",
  "clap-sort",
- "clx",
+ "clx 3.0.0",
  "color-eyre",
  "color-print",
  "comfy-table",
