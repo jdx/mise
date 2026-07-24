@@ -2010,9 +2010,9 @@ dependencies = [
 
 [[package]]
 name = "clx"
-version = "2.1.0"
+version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20daab9df9e49b0478215055d38362d5973043b7a4af836a58968760755e9a9f"
+checksum = "4c2a26324918dd5018f3bb2f0a886dde591ec7248fba8e4d947fe43b6f572e5f"
 dependencies = [
  "console",
  "nix 0.31.3",
