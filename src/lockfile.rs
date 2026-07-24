@@ -284,17 +284,18 @@ fn merge_additional_artifacts(
     current: &[ArtifactInfo],
     other: &[ArtifactInfo],
 ) -> Vec<ArtifactInfo> {
-    if current.is_empty() {
-        return other.to_vec();
-    }
-    if current.len() != other.len() {
-        return current.to_vec();
-    }
-    current
+    let shared_len = current.len().min(other.len());
+    let mut merged = current
         .iter()
         .zip(other)
         .map(|(current, other)| current.merge_with(other))
-        .collect()
+        .collect::<Vec<_>>();
+    if current.len() > shared_len {
+        merged.extend_from_slice(&current[shared_len..]);
+    } else if other.len() > shared_len {
+        merged.extend_from_slice(&other[shared_len..]);
+    }
+    merged
 }
 
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
@@ -4885,6 +4886,39 @@ backend = "conda:jq"
                 ..Default::default()
             }]
         );
+    }
+
+    #[test]
+    fn test_additional_artifacts_merge_preserves_longer_list() {
+        let short = vec![ArtifactInfo {
+            checksum: Some("sha256:base".to_string()),
+            url: "https://example.com/base.tar.gz".to_string(),
+            ..Default::default()
+        }];
+        let long = vec![
+            ArtifactInfo {
+                url: short[0].url.clone(),
+                url_api: Some("https://api.example.com/base".to_string()),
+                ..Default::default()
+            },
+            ArtifactInfo {
+                checksum: Some("sha256:extra".to_string()),
+                url: "https://example.com/extra.tar.gz".to_string(),
+                ..Default::default()
+            },
+        ];
+        let expected = vec![
+            ArtifactInfo {
+                checksum: short[0].checksum.clone(),
+                url: short[0].url.clone(),
+                url_api: long[0].url_api.clone(),
+                ..Default::default()
+            },
+            long[1].clone(),
+        ];
+
+        assert_eq!(merge_additional_artifacts(&short, &long), expected);
+        assert_eq!(merge_additional_artifacts(&long, &short), expected);
     }
 
     #[test]
