@@ -654,6 +654,20 @@ pub fn resolve_symlink(link: &Path) -> Result<Option<PathBuf>> {
     }
 }
 
+pub fn is_symlink_to(link: &Path, target: &Path) -> bool {
+    is_symlink_or_junction(link) && same_file::is_same_file(link, target).unwrap_or(false)
+}
+
+#[cfg(unix)]
+pub fn is_symlink_or_junction(path: &Path) -> bool {
+    path.is_symlink()
+}
+
+#[cfg(windows)]
+pub fn is_symlink_or_junction(path: &Path) -> bool {
+    path.is_symlink() || junction::get_target(path).is_ok()
+}
+
 #[cfg(unix)]
 pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     make_symlink(target, link)?;

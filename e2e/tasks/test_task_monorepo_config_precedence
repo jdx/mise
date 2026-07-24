@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+mkdir -p .mise projects/app/.config projects/app/.mise/tasks \
+  projects/app/high-dir projects/app/low-dir
+
+cat <<'EOF' >.mise/config.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/*"]
+EOF
+
+cat <<EOF >projects/app/.config/mise.toml
+[vars]
+task_context = "lower"
+
+[task_config]
+dir = "$PWD/projects/app/low-dir"
+
+[tasks.d]
+description = "app/.config/d"
+env = { LOWER_PRECEDENCE = "applied", TASK_CONTEXT = "{{vars.task_context}}" }
+
+[tasks.d-lower-context]
+run = "echo LOWER_CONTEXT={{vars.task_context}}"
+EOF
+
+cat <<EOF >projects/app/.mise/config.toml
+[vars]
+task_context = "higher"
+
+[task_config]
+dir = "$PWD/projects/app/high-dir"
+
+[tasks.d]
+description = "app/.mise/d"
+env = { HIGHER_PRECEDENCE = "applied", TASK_CONTEXT = "{{vars.task_context}}" }
+EOF
+
+cat <<'EOF' >projects/app/.mise/tasks/d
+#!/usr/bin/env bash
+echo "HIGHER_PRECEDENCE=${HIGHER_PRECEDENCE:-<unset>}"
+echo "LOWER_PRECEDENCE=${LOWER_PRECEDENCE:-<unset>}"
+echo "TASK_CONTEXT=${TASK_CONTEXT:-<unset>}"
+echo "TASK_DIR=$PWD"
+EOF
+chmod +x projects/app/.mise/tasks/d
+
+assert "mise tasks --all --json | jq -r '.[] | select(.name == \"//projects/app:d\") | .description'" "app/.mise/d"
+assert_contains "mise run //projects/app:d" "HIGHER_PRECEDENCE=applied"
+assert_contains "mise run //projects/app:d" "LOWER_PRECEDENCE=<unset>"
+assert_contains "mise run //projects/app:d" "TASK_CONTEXT=higher"
+assert_contains "mise run //projects/app:d" "TASK_DIR=$PWD/projects/app/high-dir"
+assert_not_contains "mise run //projects/app:d" "TASK_DIR=$PWD/projects/app/low-dir"
+assert_contains "mise run //projects/app:d-lower-context" "LOWER_CONTEXT=lower"

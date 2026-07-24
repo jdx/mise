@@ -1,4 +1,4 @@
-use eyre::Result;
+use eyre::{Result, eyre};
 use toml_edit::DocumentMut;
 
 use crate::config::settings::SettingsFile;
@@ -32,19 +32,22 @@ pub fn unset(mut key: &str, local: bool) -> Result<()> {
     };
     let raw = file::read_to_string(&path)?;
     let mut config: DocumentMut = raw.parse()?;
-    if let Some(mut settings) = config["settings"].as_table_mut() {
-        if let Some((parent_key, child_key)) = key.split_once('.') {
-            key = child_key;
-            settings = settings
-                .entry(parent_key)
-                .or_insert({
-                    let mut t = toml_edit::Table::new();
-                    t.set_implicit(true);
-                    toml_edit::Item::Table(t)
-                })
-                .as_table_mut()
-                .unwrap();
-        }
+    if let Some(settings) = config["settings"].as_table_like_mut() {
+        let settings: &mut dyn toml_edit::TableLike =
+            if let Some((parent_key, child_key)) = key.split_once('.') {
+                key = child_key;
+                settings
+                    .entry(parent_key)
+                    .or_insert({
+                        let mut t = toml_edit::Table::new();
+                        t.set_implicit(true);
+                        toml_edit::Item::Table(t)
+                    })
+                    .as_table_like_mut()
+                    .ok_or_else(|| eyre!("Setting [{parent_key}] is not a table"))?
+            } else {
+                settings
+            };
         settings.remove(key);
         // validate
         let _: SettingsFile = toml::from_str(&config.to_string())?;

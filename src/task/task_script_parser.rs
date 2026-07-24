@@ -172,6 +172,7 @@ impl TaskScriptParser {
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
             let matcher = Arc::new(crate::task::task_source_checker::build_source_matcher(
                 &root,
+                &root,
                 &task.sources,
             ));
 

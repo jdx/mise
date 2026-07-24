@@ -72,19 +72,22 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
         settings.set_implicit(true);
         config["settings"] = toml_edit::Item::Table(settings);
     }
-    if let Some(mut settings) = config["settings"].as_table_mut() {
-        if let Some((parent_key, child_key)) = key.split_once('.') {
-            key = child_key;
-            settings = settings
-                .entry(parent_key)
-                .or_insert({
-                    let mut t = toml_edit::Table::new();
-                    t.set_implicit(true);
-                    toml_edit::Item::Table(t)
-                })
-                .as_table_mut()
-                .unwrap();
-        }
+    if let Some(settings) = config["settings"].as_table_like_mut() {
+        let settings: &mut dyn toml_edit::TableLike =
+            if let Some((parent_key, child_key)) = key.split_once('.') {
+                key = child_key;
+                settings
+                    .entry(parent_key)
+                    .or_insert({
+                        let mut t = toml_edit::Table::new();
+                        t.set_implicit(true);
+                        toml_edit::Item::Table(t)
+                    })
+                    .as_table_like_mut()
+                    .ok_or_else(|| eyre!("Setting [{parent_key}] is not a table"))?
+            } else {
+                settings
+            };
 
         let value = match settings.get(key) {
             Some(current) if add && current.as_array().is_some() => {

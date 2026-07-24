@@ -1,5 +1,6 @@
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
+use std::process::Stdio;
 
 use async_trait::async_trait;
 use eyre::{WrapErr, bail, eyre};
@@ -698,24 +699,7 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
     ));
     file::remove_all(&tmp_target)?;
     ditto(&caskroom_app, &tmp_target)?;
-    // Atomic swap: rename existing target aside before putting the new one in place so that
-    // a failure during rename leaves the old app intact rather than leaving nothing.
-    let old_target = target.with_extension(format!(
-        "mise-old-{}",
-        crate::hash::hash_to_str(&target.display().to_string())
-    ));
-    file::remove_all(&old_target)?;
-    if target.exists() {
-        file::rename(&target, &old_target)?;
-    }
-    if let Err(e) = file::rename(&tmp_target, &target) {
-        // Restore the old app if the swap failed.
-        if old_target.exists() {
-            let _ = file::rename(&old_target, &target);
-        }
-        return Err(e);
-    }
-    file::remove_all(&old_target)?;
+    swap_app(&target, &tmp_target)?;
     // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
     let _ = std::process::Command::new("xattr")
         .args(["-r", "-d", "com.apple.quarantine"])
@@ -724,6 +708,92 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
         .stderr(std::process::Stdio::null())
         .status();
     Ok(())
+}
+
+/// Atomically replace an app, restoring the previous bundle if activation fails.
+fn swap_app(target: &Path, tmp_target: &Path) -> Result<()> {
+    // Atomic swap: rename existing target aside before putting the new one in place so that
+    // a failure during rename leaves the old app intact rather than leaving nothing.
+    let old_target = target.with_extension(format!(
+        "mise-old-{}",
+        crate::hash::hash_to_str(&target.display().to_string())
+    ));
+    remove_app(&old_target)?;
+    if target.exists() {
+        file::rename(target, &old_target)?;
+    }
+    if let Err(e) = file::rename(tmp_target, target) {
+        // Restore the old app if the swap failed.
+        if old_target.exists() {
+            let _ = file::rename(&old_target, target);
+        }
+        return Err(e);
+    }
+    // The replacement is already live. A cleanup failure must not report the
+    // install as failed or prevent install_app from removing quarantine.
+    if let Err(err) = remove_app(&old_target) {
+        warn!(
+            "brew-cask: failed to remove old app backup {}: {err:#}",
+            old_target.display()
+        );
+    }
+    Ok(())
+}
+
+/// Remove an app bundle, repairing protected contents before escalating ownership.
+fn remove_app(path: &Path) -> Result<()> {
+    match file::remove_all(path) {
+        Ok(()) => return Ok(()),
+        Err(err) if !is_permission_denied(&err) => return Err(err),
+        Err(_) => {}
+    }
+
+    repair_app_permissions(path);
+    match file::remove_all(path) {
+        Ok(()) => return Ok(()),
+        Err(err) if !is_permission_denied(&err) => return Err(err),
+        Err(_) => {}
+    }
+
+    let user = nix::unistd::User::from_uid(nix::unistd::geteuid())?
+        .map(|user| user.name)
+        .ok_or_else(|| eyre!("brew-cask: could not determine current user"))?;
+    // Match Homebrew's final ownership-recovery step. sudo::run applies the
+    // system_packages.sudo setting and refuses to prompt without a TTY.
+    sudo::run(
+        "chown",
+        &[
+            "-R".to_string(),
+            "--".to_string(),
+            user,
+            path.display().to_string(),
+        ],
+        &[],
+    )?;
+    repair_app_permissions(path);
+    file::remove_all(path)
+}
+
+/// Clear flags, restore owner permissions, and remove ACLs from an app bundle.
+fn repair_app_permissions(path: &Path) {
+    let run = |program: &str, args: &[&str]| {
+        let _ = std::process::Command::new(program)
+            .args(args)
+            .arg(path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    };
+    run("/usr/bin/chflags", &["-R", "--", "000"]);
+    run("/bin/chmod", &["-R", "--", "u+rwx"]);
+    run("/bin/chmod", &["-R", "-N"]);
+}
+
+/// Return whether an eyre chain originated from an I/O permission error.
+fn is_permission_denied(err: &eyre::Report) -> bool {
+    err.downcast_ref::<std::io::Error>()
+        .is_some_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied)
 }
 
 /// Copy a directory using macOS `ditto`, which preserves resource forks, extended attributes,
@@ -4548,6 +4618,45 @@ end
         };
 
         assert_eq!(cask_appdir(&[app])?, tmp.path().join("Applications"));
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn upgrades_app_with_protected_existing_contents() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("Docker.app");
+        let protected_dir = target.join("Contents/Resources");
+        file::create_dir_all(&protected_dir)?;
+        crate::file::write(protected_dir.join("docker"), "old")?;
+        let status = std::process::Command::new("chmod")
+            .args(["+a", "everyone deny delete_child"])
+            .arg(&protected_dir)
+            .status()?;
+        assert!(status.success());
+
+        let tmp_target = tmp.path().join("Docker.mise-tmp-test");
+        file::create_dir_all(&tmp_target)?;
+        crate::file::write(tmp_target.join("version"), "new")?;
+
+        let result = swap_app(&target, &tmp_target);
+
+        // Remove the ACL so tempfile can clean up even when the repro fails.
+        let old_target = target.with_extension(format!(
+            "mise-old-{}",
+            crate::hash::hash_to_str(&target.display().to_string())
+        ));
+        if old_target.exists() {
+            let status = std::process::Command::new("chmod")
+                .arg("-RN")
+                .arg(&old_target)
+                .status()?;
+            assert!(status.success());
+        }
+
+        result?;
+        assert_eq!(crate::file::read_to_string(target.join("version"))?, "new");
+        assert!(!old_target.exists());
         Ok(())
     }
 

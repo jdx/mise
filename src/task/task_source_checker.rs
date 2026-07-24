@@ -46,20 +46,24 @@ pub fn is_glob_pattern(path: &str) -> bool {
 
 /// Build an [`Override`] matcher for a task's `sources` patterns.
 ///
-/// Patterns use gitignore syntax with `!` inverted (the [`Override`] convention,
-/// see `ignore::overrides`): a non-negated entry marks a file as a *source*,
-/// and a `!`-prefixed entry *excludes* it. `\!` escapes a literal leading `!`,
-/// and order matters — a later non-negated entry can re-include a file an
-/// earlier `!` excluded.
+/// `match_root` is the directory the [`Override`] is anchored at (the workspace
+/// root in workspace setups, otherwise the task CWD). `task_cwd` is the
+/// directory the task actually runs from. When they differ — a subproject task
+/// inside a workspace — relative patterns are prefixed with the
+/// `task_cwd`-relative-to-`match_root` path so they remain correctly anchored.
+/// Absolute patterns are stripped of the `match_root` prefix as before.
 ///
-/// Patterns that are absolute paths under `root` are rewritten to be relative,
-/// matching the convention used by `Override` itself (see its tests) and the
-/// `ignore::WalkBuilder`: matchers receive root-relative patterns and let
-/// `matched()` strip the root from incoming paths automatically.
-pub(crate) fn build_source_matcher(root: &Path, sources: &[String]) -> Override {
-    let mut builder = OverrideBuilder::new(root);
+/// Patterns use gitignore syntax with `!` inverted (the [`Override`] convention):
+/// a non-negated entry marks a file as a *source*, `!`-prefixed excludes it,
+/// `\!` escapes a literal `!`, and order matters.
+pub(crate) fn build_source_matcher(
+    match_root: &Path,
+    task_cwd: &Path,
+    sources: &[String],
+) -> Override {
+    let mut builder = OverrideBuilder::new(match_root);
     for s in sources {
-        let normalized = relativize_pattern(root, s);
+        let normalized = normalize_pattern(match_root, task_cwd, s);
         if let Err(e) = builder.add(&normalized) {
             warn!("invalid source pattern {s:?}: {e}");
         }
@@ -70,13 +74,17 @@ pub(crate) fn build_source_matcher(root: &Path, sources: &[String]) -> Override 
     })
 }
 
-/// If `pattern`'s body is an absolute path under `root`, rewrite it as a
-/// root-relative path so the matcher can use gitignore's relative-path
-/// semantics. The `!` / `\!` prefix is preserved as-is.
-fn relativize_pattern(root: &Path, pattern: &str) -> String {
+/// Normalise `pattern` so it is always expressed relative to `match_root`.
+///
+/// - **Absolute** body under `match_root`: strip the prefix.
+/// - **Relative** body when `task_cwd` is a subdirectory of `match_root`:
+///   prefix with `task_cwd`-relative-to-`match_root` so the pattern is
+///   anchored at the workspace root rather than the subproject CWD.
+///   E.g. `match_root=/ws`, `task_cwd=/ws/lib/worker`, `src/**/*.go`
+///   → `lib/worker/src/**/*.go`.
+/// - Everything else: returned unchanged.
+fn normalize_pattern(match_root: &Path, task_cwd: &Path, pattern: &str) -> String {
     let (prefix, body) = if pattern.starts_with("\\!") {
-        // `\!body` is a literal include of a path beginning with `!`. Don't
-        // peek past the escape — `OverrideBuilder::add` handles it.
         return pattern.to_string();
     } else if let Some(rest) = pattern.strip_prefix('!') {
         ("!", rest)
@@ -84,11 +92,20 @@ fn relativize_pattern(root: &Path, pattern: &str) -> String {
         ("", pattern)
     };
     let body_path = Path::new(body);
-    if body_path.is_absolute()
-        && let Ok(rel) = body_path.strip_prefix(root)
-        && let Some(rel_str) = rel.to_str()
+    if body_path.is_absolute() {
+        if let Ok(rel) = body_path.strip_prefix(match_root)
+            && let Some(rel_str) = rel.to_str()
+        {
+            return format!("{prefix}{rel_str}");
+        }
+        return pattern.to_string();
+    }
+    // Relative pattern: anchor it at match_root by prepending the subproject path.
+    if let Ok(cwd_rel) = task_cwd.strip_prefix(match_root)
+        && let Some(cwd_rel_str) = cwd_rel.to_str()
+        && !cwd_rel_str.is_empty()
     {
-        return format!("{prefix}{rel_str}");
+        return format!("{prefix}{cwd_rel_str}/{body}");
     }
     pattern.to_string()
 }
@@ -101,8 +118,7 @@ fn relativize_pattern(root: &Path, pattern: &str) -> String {
 /// gitignore's domain — `Override::matched` would return `Match::None` and,
 /// when positive patterns are present, promote that to `Match::Ignore`,
 /// silently dropping a file the glob legitimately included. Trust the glob
-/// in that case (matching pre-PR behavior for workspace-root paths
-/// referenced from sub-package tasks, etc.).
+/// in that case.
 pub(crate) fn is_source(matcher: &Override, path: &Path) -> bool {
     if path.is_absolute() && !path.starts_with(matcher.path()) {
         return true;
@@ -218,7 +234,25 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
 
     let run = async || -> Result<bool> {
         let root = task_cwd(task, config).await?;
-        let matcher = build_source_matcher(&root, &task.sources);
+        // Anchor the Override matcher at the outermost config root that is an
+        // ancestor of the task CWD (i.e. the workspace root). This allows
+        // workspace-rooted patterns like `{{ config_root }}/lib/**/*` to be
+        // correctly relativized so that files inside a subproject directory are
+        // not silently dropped.
+        //
+        // config.project_root cannot be used directly: BTreeMap iterates by
+        // lexicographic path order, so a subproject config may be returned
+        // before the workspace root config (mise.toml) even though
+        // the workspace root has a shorter path.
+        let match_root_owned = config
+            .config_files
+            .values()
+            .filter_map(|cf| cf.project_root())
+            .filter(|pr| root.starts_with(pr) || *pr == root)
+            .min_by_key(|p| p.components().count())
+            .unwrap_or_else(|| root.clone());
+        let match_root = match_root_owned.as_path();
+        let matcher = build_source_matcher(match_root, &root, &task.sources);
         let glob_patterns = source_glob_patterns(&task.sources);
         let mut source_metadatas = get_file_metadatas(&root, &glob_patterns, &matcher)?;
         // Always include every file that contributed to the task definition,
@@ -562,7 +596,8 @@ mod tests {
 
     fn matches(sources: &[&str], path: &str) -> bool {
         let sources: Vec<String> = sources.iter().map(|s| s.to_string()).collect();
-        let matcher = build_source_matcher(Path::new("."), &sources);
+        let root = Path::new(".");
+        let matcher = build_source_matcher(root, root, &sources);
         is_source(&matcher, Path::new(path))
     }
 
@@ -637,7 +672,7 @@ mod tests {
         // `Path::is_absolute` returns false for `/proj` there.
         let root = Path::new("/proj");
         let sources = vec!["/proj/input".to_string()];
-        let matcher = build_source_matcher(root, &sources);
+        let matcher = build_source_matcher(root, root, &sources);
         assert!(is_source(&matcher, Path::new("/proj/input")));
         assert!(!is_source(&matcher, Path::new("/proj/other")));
     }
@@ -650,7 +685,7 @@ mod tests {
             "/proj/src/**/*.ts".to_string(),
             "!/proj/src/**/*.test.ts".to_string(),
         ];
-        let matcher = build_source_matcher(root, &sources);
+        let matcher = build_source_matcher(root, root, &sources);
         assert!(is_source(&matcher, Path::new("/proj/src/foo.ts")));
         assert!(!is_source(&matcher, Path::new("/proj/src/foo.test.ts")));
     }
@@ -665,8 +700,41 @@ mod tests {
     fn matcher_absolute_path_outside_root_passes_through() {
         let root = Path::new("/proj");
         let sources = vec!["/elsewhere/Cargo.toml".to_string()];
-        let matcher = build_source_matcher(root, &sources);
+        let matcher = build_source_matcher(root, root, &sources);
         assert!(is_source(&matcher, Path::new("/elsewhere/Cargo.toml")));
+    }
+
+    /// Workspace-rooted absolute pattern in a subproject task must match files
+    /// both inside and outside the subproject CWD.
+    #[test]
+    #[cfg(unix)]
+    fn matcher_subproject_absolute_workspace_pattern() {
+        let match_root = Path::new("/workspace");
+        let task_cwd = Path::new("/workspace/lib/worker");
+        let sources = vec!["/workspace/lib/**/*".to_string()];
+        let matcher = build_source_matcher(match_root, task_cwd, &sources);
+        assert!(is_source(
+            &matcher,
+            Path::new("/workspace/lib/worker/worker.go")
+        ));
+        assert!(is_source(&matcher, Path::new("/workspace/lib/shared.go")));
+        assert!(!is_source(&matcher, Path::new("/workspace/other/file.go")));
+    }
+
+    /// Relative pattern in a subproject task must be anchored at the task CWD,
+    /// not the workspace root.
+    #[test]
+    #[cfg(unix)]
+    fn matcher_subproject_relative_pattern() {
+        let match_root = Path::new("/workspace");
+        let task_cwd = Path::new("/workspace/lib/worker");
+        let sources = vec!["src/**/*.go".to_string()];
+        let matcher = build_source_matcher(match_root, task_cwd, &sources);
+        assert!(is_source(
+            &matcher,
+            Path::new("/workspace/lib/worker/src/main.go")
+        ));
+        assert!(!is_source(&matcher, Path::new("/workspace/src/other.go")));
     }
 
     #[test]

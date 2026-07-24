@@ -36,3 +36,11 @@ assert_not_contains "cat '$INSTALL_ENV_LOG'" "not activated"
 # in src/toolset/tool_request_set.rs; we don't repeat it here because
 # installing node in e2e is expensive and `--dry-run` returns before the
 # inactive-tool warning would fire.)
+
+# Test: a tool whose install FAILS must NOT be reported as "installed but not
+# activated". The failure is surfaced on its own; also claiming it installed
+# is misleading (discussion #11224). `dummy@other-dummy` fails on purpose.
+INSTALL_FAIL_LOG="$TMPDIR/mise-install-fail.log"
+mise install dummy@other-dummy >"$INSTALL_FAIL_LOG" 2>&1 || true
+assert_contains "cat '$INSTALL_FAIL_LOG'" "on purpose"
+assert_not_contains_text "$(cat "$INSTALL_FAIL_LOG")" "not activated"
