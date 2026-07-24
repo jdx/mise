@@ -1650,9 +1650,14 @@ pub fn update_lockfiles(
         // Check for provenance regression before merging (which drops old version entries).
         // For github backend tools, error if the highest prior version had provenance but
         // the new version does not — this could indicate a supply chain attack.
-        // Regressing tools are excluded from merge to preserve the old provenance entry.
-        let (regressing_tools, regression_errors) =
-            check_provenance_regression(&existing_lockfile, &tools_by_short);
+        // Confirmed regressions are excluded from merge to preserve the old provenance entry.
+        // Unverified upgrades (already-installed versions) instead preserve the prior
+        // provenance entry as a baseline for the later auto-lock pass (see #11225).
+        let ProvenanceRegressionCheck {
+            regressing: regressing_tools,
+            errors: regression_errors,
+            deferred_baselines,
+        } = check_provenance_regression(&existing_lockfile, &tools_by_short);
         provenance_errors.extend(regression_errors);
 
         // Process each tool with deduplication, skipping regressing tools
@@ -1688,6 +1693,21 @@ pub fn update_lockfiles(
                     &consumed_keys,
                 );
             }
+            // Keep the prior provenance-bearing entry alive for unverified upgrades so
+            // the auto-lock pass can verify the new version and compare against it. The
+            // merge above drops superseded versions; without this the baseline would be
+            // gone before auto-lock runs, letting a genuine regression slip through. The
+            // stale baseline self-heals on the next update once the new version is locked.
+            if let Some(baselines) = deferred_baselines.get(&short) {
+                for baseline in baselines {
+                    if !merged_tools
+                        .iter()
+                        .any(|t| t.version == baseline.version && t.options == baseline.options)
+                    {
+                        merged_tools.push(baseline.clone());
+                    }
+                }
+            }
             existing_lockfile.tools.insert(short, merged_tools);
         }
 
@@ -1716,19 +1736,21 @@ pub fn update_lockfiles(
     Ok(())
 }
 
-/// Check if a single tool version is losing provenance relative to prior lockfile entries.
+/// Find the prior lockfile entry a version would regress against by losing provenance.
 ///
-/// Returns an error message if a github backend tool upgrade loses provenance,
-/// or None if the check passes. Used by both `check_provenance_regression` and
-/// `apply_lock_result` to avoid duplicating the detection logic.
-fn check_single_tool_provenance(
-    existing_tools: Option<&Vec<LockfileTool>>,
-    short: &str,
+/// Returns the highest prior github semver version that has verified provenance on
+/// this platform when `version` is a semver upgrade over it and carries no provenance
+/// itself. Returns `None` when there is no such baseline (not a github tool, the new
+/// version already has provenance, no comparable prior version, or the new version is
+/// not an upgrade). Shared by the regression check and error formatting so detection
+/// logic lives in one place.
+fn find_provenance_regression_baseline<'a>(
+    existing_tools: Option<&'a Vec<LockfileTool>>,
     version: &str,
     backend: &str,
     platform_key: &str,
     new_provenance: Option<&ProvenanceType>,
-) -> Option<String> {
+) -> Option<&'a LockfileTool> {
     if new_provenance.is_some() || !backend.starts_with("github:") {
         return None;
     }
@@ -1738,7 +1760,7 @@ fn check_single_tool_provenance(
 
     // Find the highest prior github semver version with provenance on this platform.
     // Non-semver tags are opaque to mise, so do not guess whether they are upgrades.
-    let prior = tools
+    let (prior_version, prior) = tools
         .iter()
         .filter(|t| t.version != version)
         .filter(|t| t.backend.as_ref().is_some_and(|b| b.starts_with("github:")))
@@ -1750,24 +1772,80 @@ fn check_single_tool_provenance(
         .filter_map(|t| Some((parse_provenance_version(&t.version)?, t)))
         .max_by(|(a, _), (b, _)| a.cmp(b))?;
 
-    let (prior_version, prior) = prior;
-
     // Only flag upgrades — intentional downgrades are allowed
     if new_version <= prior_version {
         return None;
     }
 
-    let prov = prior.platforms[platform_key].provenance.as_ref().unwrap();
-    Some(format!(
+    Some(prior)
+}
+
+/// Format the supply-chain regression error for a version that lost provenance
+/// relative to `baseline`.
+fn provenance_regression_message(
+    short: &str,
+    version: &str,
+    platform_key: &str,
+    baseline: &LockfileTool,
+) -> String {
+    let prov = baseline.platforms[platform_key]
+        .provenance
+        .as_ref()
+        .expect("baseline entry must have provenance on this platform");
+    format!(
         "{short}@{version} has no provenance verification on {platform_key}, \
          but {short}@{} had {prov}. This could indicate a supply chain \
          attack. Verify the release is authentic before proceeding.",
-        prior.version,
+        baseline.version,
+    )
+}
+
+/// Check if a single tool version is losing provenance relative to prior lockfile entries.
+///
+/// Returns an error message if a github backend tool upgrade loses provenance,
+/// or None if the check passes. Used by `apply_lock_result` (the authoritative
+/// lock-time pass that has already downloaded and verified the artifact).
+fn check_single_tool_provenance(
+    existing_tools: Option<&Vec<LockfileTool>>,
+    short: &str,
+    version: &str,
+    backend: &str,
+    platform_key: &str,
+    new_provenance: Option<&ProvenanceType>,
+) -> Option<String> {
+    let baseline = find_provenance_regression_baseline(
+        existing_tools,
+        version,
+        backend,
+        platform_key,
+        new_provenance,
+    )?;
+    Some(provenance_regression_message(
+        short,
+        version,
+        platform_key,
+        baseline,
     ))
 }
 
 fn parse_provenance_version(version: &str) -> Option<nodejs_semver::Version> {
     nodejs_semver::Version::parse(strip_leading_v(version)).ok()
+}
+
+/// Outcome of the pre-merge provenance regression check.
+#[derive(Default)]
+struct ProvenanceRegressionCheck {
+    /// Tools with a confirmed regression: exclude from merge to preserve the old
+    /// provenance-verified entry, and fail the command with `errors`.
+    regressing: HashSet<String>,
+    /// Error messages for confirmed regressions.
+    errors: Vec<String>,
+    /// Prior provenance-bearing entries to preserve through the merge (keyed by
+    /// tool short) for upgrades that could not be verified in this pass. Keeping
+    /// the baseline lets the authoritative `auto_lock_new_versions` pass — which
+    /// downloads and verifies the artifact — compare against it, since the merge
+    /// otherwise drops superseded versions before auto-lock runs.
+    deferred_baselines: HashMap<String, Vec<LockfileTool>>,
 }
 
 /// Check if any github backend tool is losing provenance when upgrading versions.
@@ -1776,51 +1854,59 @@ fn parse_provenance_version(version: &str) -> Option<nodejs_semver::Version> {
 /// `ToolVersionList`) only have `lock_platforms` populated for the platform where
 /// installation ran. Checking other platforms would produce false positives.
 ///
-/// Returns the set of regressing tool short names and their error messages.
-/// Regressing tools should be excluded from merge/save to preserve the old
-/// provenance-verified entry in the lockfile.
+/// A regression is only *confirmed* when the new version was actually downloaded and
+/// resolved this session — signalled by a `url` on the current platform. When a user
+/// "upgrades" to a version that is *already installed* on disk, mise skips the download
+/// entirely, so no provenance is populated and the platform entry has no url. Its
+/// missing provenance means "not checked", not "verified absent" — flagging it as a
+/// regression is a false positive (#11225). For those, the prior provenance-bearing
+/// entry is instead preserved as a baseline so the authoritative `auto_lock_new_versions`
+/// pass can download, verify, and compare against it.
 fn check_provenance_regression(
     existing_lockfile: &Lockfile,
     new_tools: &HashMap<String, Vec<LockfileTool>>,
-) -> (HashSet<String>, Vec<String>) {
+) -> ProvenanceRegressionCheck {
     let current_platform = Platform::current().to_key();
-    let mut regressing = HashSet::new();
-    let mut errors = Vec::new();
+    let mut result = ProvenanceRegressionCheck::default();
 
     for (short, new_entries) in new_tools {
         for new_entry in new_entries {
             let backend = new_entry.backend.as_deref().unwrap_or("");
             let platform_info = new_entry.platforms.get(&current_platform);
-
-            // Only evaluate a regression when this version was actually
-            // downloaded/resolved with integrity data this session, which the
-            // presence of a `url` on the current platform signals. When a user
-            // "upgrades" to a version that is *already installed* on disk, mise
-            // skips the download entirely, so no provenance is populated and the
-            // platform entry has no url. Its missing provenance means "not
-            // checked", not "verified absent" — flagging it as a regression is a
-            // false positive (#11225). The authoritative `auto_lock_new_versions`
-            // pass re-resolves and verifies provenance for these afterward.
-            if platform_info.and_then(|pi| pi.url.as_ref()).is_none() {
-                continue;
-            }
-
             let new_provenance = platform_info.and_then(|pi| pi.provenance.as_ref());
 
-            if let Some(err) = check_single_tool_provenance(
+            let Some(baseline) = find_provenance_regression_baseline(
                 existing_lockfile.tools.get(short),
-                short,
                 &new_entry.version,
                 backend,
                 &current_platform,
                 new_provenance,
-            ) {
-                regressing.insert(short.clone());
-                errors.push(err);
+            ) else {
+                continue;
+            };
+
+            if platform_info.and_then(|pi| pi.url.as_ref()).is_some() {
+                // Freshly downloaded and verified: the new version genuinely lacks
+                // provenance the prior version had — a confirmed regression.
+                result.regressing.insert(short.clone());
+                result.errors.push(provenance_regression_message(
+                    short,
+                    &new_entry.version,
+                    &current_platform,
+                    baseline,
+                ));
+            } else {
+                // Not downloaded this session (already installed on disk): unverified.
+                // Preserve the baseline so auto-lock can make the authoritative call.
+                result
+                    .deferred_baselines
+                    .entry(short.clone())
+                    .or_default()
+                    .push(baseline.clone());
             }
         }
     }
-    (regressing, errors)
+    result
 }
 
 /// Snapshot the platform keys present in each lockfile that the upcoming install run
@@ -4626,10 +4712,21 @@ backend = "conda:jq"
         .into_iter()
         .collect();
 
-        let (regressing, errors) = check_provenance_regression(&existing, &new_tools);
+        let check = check_provenance_regression(&existing, &new_tools);
         assert!(
-            regressing.is_empty() && errors.is_empty(),
-            "already-installed upgrade with no fresh verification must not regress: {errors:?}"
+            check.regressing.is_empty() && check.errors.is_empty(),
+            "already-installed upgrade with no fresh verification must not regress: {:?}",
+            check.errors
+        );
+        // ...but the prior provenance-bearing entry must be preserved as a baseline so
+        // the auto-lock pass can still compare against it after the merge.
+        let baselines = check
+            .deferred_baselines
+            .get("repo")
+            .expect("baseline must be preserved for the unverified upgrade");
+        assert!(
+            baselines.iter().any(|t| t.version == "0.11.0"),
+            "expected 0.11.0 baseline to be preserved, got {baselines:?}"
         );
 
         // Contrast: a freshly-installed version populates a url but genuinely has
@@ -4645,10 +4742,14 @@ backend = "conda:jq"
         );
         let new_tools: HashMap<String, Vec<LockfileTool>> =
             [("repo".to_string(), vec![fresh])].into_iter().collect();
-        let (regressing, errors) = check_provenance_regression(&existing, &new_tools);
+        let check = check_provenance_regression(&existing, &new_tools);
         assert!(
-            regressing.contains("repo") && !errors.is_empty(),
+            check.regressing.contains("repo") && !check.errors.is_empty(),
             "freshly-installed version that lost provenance must still regress"
+        );
+        assert!(
+            check.deferred_baselines.is_empty(),
+            "confirmed regression must not be deferred"
         );
     }
 
