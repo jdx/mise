@@ -44,3 +44,11 @@ INSTALL_FAIL_LOG="$TMPDIR/mise-install-fail.log"
 mise install dummy@other-dummy >"$INSTALL_FAIL_LOG" 2>&1 || true
 assert_contains "cat '$INSTALL_FAIL_LOG'" "on purpose"
 assert_not_contains_text "$(cat "$INSTALL_FAIL_LOG")" "not activated"
+
+# Test: on partial success the hint names only the tools that actually
+# installed — the filter must not degrade to "warn about nothing whenever
+# anything failed" (discussion #11279).
+mise uninstall tiny --all 2>/dev/null || true
+mise install tiny@3.1.0 dummy@other-dummy >"$INSTALL_FAIL_LOG" 2>&1 || true
+assert_contains "cat '$INSTALL_FAIL_LOG'" "tiny installed but not activated"
+assert_not_contains "cat '$INSTALL_FAIL_LOG'" "dummy installed but not activated"
