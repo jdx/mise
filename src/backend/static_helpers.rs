@@ -1007,20 +1007,22 @@ fn take_matching(available: &mut Vec<PathBuf>, pattern: &str) -> eyre::Result<Op
 }
 
 /// Renames `path` (named `file_name`) to `target` within `dir`, preserving any
-/// required extension and ensuring the result is executable. Refuses to clobber
-/// an existing different file so overlapping mappings can't silently drop a binary.
+/// required extension and ensuring the result is executable. A collision on the
+/// target (two mappings pointing at the same name, or the archive already
+/// containing that name) is unsatisfiable, so it fails the install loudly rather
+/// than silently dropping a binary and reporting success.
 fn finish_rename(dir: &Path, path: &Path, file_name: &str, target: &str) -> eyre::Result<()> {
     let target_path = keep_required_extensions(dir, file_name, target, dir.join(target));
     if path == target_path {
         return Ok(());
     }
     if target_path.exists() {
-        warn!(
-            "rename_exe: refusing to overwrite existing '{}' while renaming '{}'",
-            target_path.display(),
-            path.display()
+        bail!(
+            "rename_exe: cannot rename '{}' to '{}': target already exists. \
+             Check for duplicate or overlapping rename_exe mappings.",
+            path.display(),
+            target_path.display()
         );
-        return Ok(());
     }
     if !file::is_executable(path) {
         file::make_executable(path)?;
@@ -2146,9 +2148,9 @@ bin = "tool.exe"
 
     #[cfg(unix)]
     #[test]
-    fn test_apply_rename_exe_table_refuses_to_clobber_shared_target() {
-        // Two sources mapped to the same target: the first rename wins, the
-        // second is refused rather than silently replacing the first binary.
+    fn test_apply_rename_exe_table_errors_on_shared_target() {
+        // Two sources mapped to the same target is unsatisfiable: the install
+        // must fail loudly rather than silently drop one binary and report success.
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("a-bin"), b"aaa").unwrap();
         std::fs::write(tmp.path().join("b-bin"), b"bbb").unwrap();
@@ -2166,10 +2168,10 @@ bin = "tool.exe"
             t
         });
 
-        apply_rename_exe(tmp.path(), &value, None).unwrap();
-
-        // `a-bin` renamed to `common`; `b-bin` left in place (not dropped).
-        assert_eq!(std::fs::read(tmp.path().join("common")).unwrap(), b"aaa");
-        assert!(tmp.path().join("b-bin").is_file());
+        let err = apply_rename_exe(tmp.path(), &value, None).unwrap_err();
+        assert!(
+            err.to_string().contains("target already exists"),
+            "unexpected error: {err}"
+        );
     }
 }

@@ -1149,28 +1149,15 @@ impl Backend for HttpBackend {
     }
 }
 
-/// Produce a path-safe cache-key token for a `rename_exe` value. A scalar name is
-/// kept verbatim when it is safe to use as a single path component (the common
-/// case, e.g. `plz`), so cache keys stay readable and stable. Anything else — the
-/// table form, or a scalar containing path separators or Windows-invalid
-/// characters — is hashed, so nothing unsafe reaches the cache directory name.
+/// Produce a cache-key token for a `rename_exe` value. The value is always hashed
+/// rather than embedded, so nothing can leak into or alias the cache directory
+/// name — not the table form's glob/brace syntax, not path separators or
+/// Windows-invalid characters, and not trailing dots/spaces that Windows strips
+/// (which would otherwise make `tool.` and `tool` share a cache entry). The key
+/// still differs whenever the rename config differs, which is all it needs to do;
+/// the human-readable part of the cache key is the file checksum, not this token.
 fn rename_cache_token(rename: &toml::Value) -> String {
-    if let Some(name) = rename.as_str()
-        && is_path_safe_component(name)
-    {
-        return name.to_string();
-    }
     hash::hash_blake3_to_str(&rename.to_string())
-}
-
-/// Whether `s` is safe to use as a single filesystem path component on all
-/// platforms: non-empty, no path separators, and none of the characters Windows
-/// forbids in file names.
-fn is_path_safe_component(s: &str) -> bool {
-    !s.is_empty()
-        && !s.chars().any(|c| {
-            matches!(c, '/' | '\\' | '<' | '>' | ':' | '"' | '|' | '?' | '*') || c.is_control()
-        })
 }
 
 #[cfg(test)]
@@ -1365,45 +1352,38 @@ mod tests {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), b"archive-contents").unwrap();
 
-        // Characters that are illegal in Windows path components and must never
-        // appear in a cache directory name derived from rename_exe.
-        let illegal = ['*', '"', '{', '}', '<', '>', ':', '|', '?', '\\', ' '];
+        // Characters that are illegal or unsafe in Windows path components and
+        // must never appear in a cache directory name derived from rename_exe.
+        let illegal = ['*', '"', '{', '}', '<', '>', ':', '|', '?', '\\', '/', ' '];
 
-        // Scalar form stays readable and path-safe.
-        let scalar_opts = crate::toolset::parse_tool_options("rename_exe=plz");
-        let scalar_key = backend
-            .cache_key(tmp.path(), &HttpOptions::new(&scalar_opts), 0)
-            .unwrap();
-        assert!(scalar_key.contains("rename_plz"), "key: {scalar_key}");
-        assert!(!scalar_key.contains(illegal), "key: {scalar_key}");
+        let key_for = |opt: &str| {
+            let opts = crate::toolset::parse_tool_options(opt);
+            backend
+                .cache_key(tmp.path(), &HttpOptions::new(&opts), 0)
+                .unwrap()
+        };
 
-        // A scalar containing path separators / illegal characters is hashed,
-        // so it never produces a nested path or a Windows-invalid component.
-        let unsafe_opts = crate::toolset::parse_tool_options(r#"rename_exe="foo/bar:baz""#);
-        let unsafe_key = backend
-            .cache_key(tmp.path(), &HttpOptions::new(&unsafe_opts), 0)
-            .unwrap();
-        assert!(!unsafe_key.contains(illegal), "key: {unsafe_key}");
-        assert!(!unsafe_key.contains('/'), "key: {unsafe_key}");
-
-        // Table form is hashed, so globs/quotes/braces never reach the path.
-        let table_opts = crate::toolset::parse_tool_options(
+        // Scalar, table, and adversarial values all yield path-safe keys.
+        for opt in [
+            "rename_exe=plz",
+            r#"rename_exe="foo/bar:baz""#,
             r#"rename_exe={ "ols-*" = "ols", "odinfmt-*" = "odinfmt" }"#,
-        );
-        let table_key = backend
-            .cache_key(tmp.path(), &HttpOptions::new(&table_opts), 0)
-            .unwrap();
-        assert!(
-            !table_key.contains(illegal),
-            "table cache key must be path-safe, got: {table_key}"
+        ] {
+            let key = key_for(opt);
+            assert!(key.contains("rename_"), "key: {key}");
+            assert!(!key.contains(illegal), "unsafe cache key for {opt}: {key}");
+        }
+
+        // Different rename configs must produce different keys...
+        assert_ne!(key_for("rename_exe=plz"), key_for("rename_exe=other"));
+        assert_ne!(
+            key_for(r#"rename_exe={ "ols-*" = "ols" }"#),
+            key_for(r#"rename_exe={ "ols-*" = "renamed" }"#)
         );
 
-        // Different table values must still produce different keys.
-        let other_opts =
-            crate::toolset::parse_tool_options(r#"rename_exe={ "ols-*" = "renamed" }"#);
-        let other_key = backend
-            .cache_key(tmp.path(), &HttpOptions::new(&other_opts), 0)
-            .unwrap();
-        assert_ne!(table_key, other_key);
+        // ...including values that only differ by a trailing dot or space, which
+        // Windows would otherwise collapse to the same path component.
+        assert_ne!(key_for("rename_exe=tool"), key_for(r#"rename_exe="tool.""#));
+        assert_ne!(key_for("rename_exe=tool"), key_for(r#"rename_exe="tool ""#));
     }
 }
