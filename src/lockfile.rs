@@ -2880,6 +2880,7 @@ pub fn get_locked_version(
     path: Option<&Path>,
     short: &str,
     prefix: &str,
+    require_prefix_boundary: bool,
     request_options: &BTreeMap<String, String>,
 ) -> Result<Option<LockfileTool>> {
     let settings = Settings::get();
@@ -2906,7 +2907,10 @@ pub fn get_locked_version(
         let mut matching: Vec<_> = tools
             .iter()
             .filter(|v| {
-                lockfile_version_matches(prefix, &v.version) && &v.options == request_options
+                lockfile_version_matches(prefix, &v.version)
+                    && (!require_prefix_boundary
+                        || lockfile_version_matches_prefix_boundary(prefix, &v.version))
+                    && &v.options == request_options
             })
             .collect();
 
@@ -2929,6 +2933,24 @@ pub fn get_locked_version(
 
 fn lockfile_version_matches(prefix: &str, version: &str) -> bool {
     prefix == "latest" || strip_leading_v(version).starts_with(strip_leading_v(prefix))
+}
+
+/// Boundary-aware check applied additionally for `prefix:` requests: the
+/// stored version must equal the prefix or continue with a version separator
+/// right after it. This keeps a stale `10.0.0` entry from satisfying
+/// `prefix:1` (which prefix resolution itself would never pick — it matches at
+/// separator boundaries) and keeps an empty prefix from matching everything.
+fn lockfile_version_matches_prefix_boundary(prefix: &str, version: &str) -> bool {
+    let prefix = strip_leading_v(prefix);
+    if prefix.is_empty() {
+        return false;
+    }
+    match strip_leading_v(version).strip_prefix(prefix) {
+        None => false,
+        Some(rest) => {
+            rest.is_empty() || prefix.ends_with('-') || rest.starts_with(['.', '-', '+'])
+        }
+    }
 }
 
 fn strip_leading_v(version: &str) -> &str {
@@ -3546,6 +3568,26 @@ options = { exe = "rg" }
         assert_eq!(lockfile.tools["ripgrep"].len(), 2);
         assert_eq!(lockfile.tools["ripgrep"][0].options.len(), 2);
         assert_eq!(lockfile.tools["ripgrep"][1].options.len(), 1);
+    }
+
+    #[test]
+    fn test_lockfile_version_matches_prefix_boundary() {
+        assert!(lockfile_version_matches_prefix_boundary("1", "1"));
+        assert!(lockfile_version_matches_prefix_boundary("1", "1.0.0"));
+        assert!(lockfile_version_matches_prefix_boundary("1.7", "1.7.1"));
+        assert!(lockfile_version_matches_prefix_boundary("1", "1-rc1"));
+        assert!(lockfile_version_matches_prefix_boundary("1", "v1.0.0"));
+        assert!(lockfile_version_matches_prefix_boundary("v1", "1.0.0"));
+        assert!(lockfile_version_matches_prefix_boundary(
+            "temurin-",
+            "temurin-25.0.1"
+        ));
+        // the textual trap: a stale 10.0.0 must NOT satisfy prefix:1
+        assert!(!lockfile_version_matches_prefix_boundary("1", "10.0.0"));
+        assert!(!lockfile_version_matches_prefix_boundary("0.8", "0.81.0"));
+        // an empty prefix must not match everything
+        assert!(!lockfile_version_matches_prefix_boundary("", "1.0.0"));
+        assert!(!lockfile_version_matches_prefix_boundary("2", "1.0.0"));
     }
 
     #[test]

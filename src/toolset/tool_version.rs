@@ -337,9 +337,19 @@ impl ToolVersion {
         // Re-check the lockfile after alias resolution (e.g., "lts" → "24")
         // The initial lockfile check in resolve() uses the unresolved alias which
         // won't match lockfile entries like "24.13.0".starts_with("lts")
+        // If the alias resolved to a `prefix:` selector, match on the bare
+        // prefix with separator-boundary matching — the lockfile stores
+        // concrete versions (#5781). Config-level `prefix:...` strings always
+        // parse into ToolRequest::Prefix, so a Version request only carries
+        // this scheme via an alias.
+        let (lock_query, lock_prefix_boundary) = match v.strip_prefix("prefix:") {
+            Some(p) => (p, true),
+            None => (v.as_str(), false),
+        };
         if opts.use_locked_version
             && !has_linked_version(request.ba())
-            && let Some(lt) = request.lockfile_resolve_with_prefix(config, &v)?
+            && let Some(lt) =
+                request.lockfile_resolve_with_prefix(config, lock_query, lock_prefix_boundary)?
         {
             return Ok(Self::from_lockfile(request.clone(), lt));
         }
