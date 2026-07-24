@@ -341,16 +341,40 @@ impl ToolRequest {
     }
 
     pub fn lockfile_resolve(&self, config: &Config) -> Result<Option<LockfileTool>> {
-        self.lockfile_resolve_with_prefix(config, &self.version())
+        let (query, prefix_boundary) = self.lockfile_version_query();
+        self.lockfile_resolve_with_prefix(config, &query, prefix_boundary)
+    }
+
+    /// The string used to match this request against lockfile entries, plus
+    /// whether the match must respect version-separator boundaries.
+    ///
+    /// Lockfiles store resolved concrete versions (e.g. `0.8.1`), so a
+    /// `prefix:` request must match on the bare prefix — the scheme-qualified
+    /// request string (`prefix:0.8`) can never starts-with-match a stored
+    /// version, which made the lockfile a no-op for `prefix:` requests (#5781).
+    /// The boundary flag mirrors prefix resolution's own separator-boundary
+    /// matching, so a stale `10.0.0` entry cannot satisfy `prefix:1`.
+    /// `ref:`/`path:`/`system` requests keep using `version()` because their
+    /// lockfile entries store that string verbatim, and `sub-` requests get
+    /// their lockfile check in `resolve_version` after the subtraction is
+    /// computed.
+    fn lockfile_version_query(&self) -> (String, bool) {
+        match self {
+            Self::Prefix { prefix, .. } => (prefix.clone(), true),
+            _ => (self.version(), false),
+        }
     }
 
     /// Like lockfile_resolve but uses a custom prefix instead of self.version().
     /// This is used after alias resolution (e.g., "lts" → "24") so the lockfile
     /// prefix match can find entries like "24.13.0".starts_with("24").
+    /// `require_prefix_boundary` additionally restricts matches to version-
+    /// separator boundaries (used for `prefix:` selectors).
     pub fn lockfile_resolve_with_prefix(
         &self,
         config: &Config,
         prefix: &str,
+        require_prefix_boundary: bool,
     ) -> Result<Option<LockfileTool>> {
         let request_options = if let Ok(backend) = self.backend() {
             let target = PlatformTarget::from_current();
@@ -367,6 +391,7 @@ impl ToolRequest {
             path.map(|p| p.as_path()),
             &self.ba().short,
             prefix,
+            require_prefix_boundary,
             &request_options,
         )
     }
@@ -588,9 +613,53 @@ impl Display for ToolRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_ref_string, validate_version_string, version_sub};
+    use super::{ToolRequest, validate_ref_string, validate_version_string, version_sub};
+    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::toolset::{ToolSource, ToolVersionOptions};
     use pretty_assertions::assert_str_eq;
+    use std::sync::Arc;
     use test_log::test;
+
+    fn test_ba() -> Arc<BackendArg> {
+        let short = "lockfile-query-test";
+        Arc::new(BackendArg::new_raw(
+            short.into(),
+            Some(format!("asdf:{short}")),
+            short.into(),
+            Some(ToolVersionOptions::default()),
+            BackendResolution::new(true),
+        ))
+    }
+
+    #[test]
+    fn test_lockfile_version_query_uses_bare_prefix() {
+        // Lockfiles store resolved concrete versions, so the scheme-qualified
+        // "prefix:0.8" could never starts_with-match a stored "0.8.1" (#5781).
+        // Prefix requests also require separator-boundary matching so a stale
+        // "0.81.0" entry cannot satisfy prefix:0.8.
+        let prefix = ToolRequest::Prefix {
+            backend: test_ba(),
+            prefix: "0.8".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let (query, boundary) = prefix.lockfile_version_query();
+        assert_str_eq!(query, "0.8");
+        assert!(boundary);
+        assert_str_eq!(prefix.version(), "prefix:0.8");
+
+        // Every other variant keeps matching on its version() string, without
+        // the boundary restriction (pre-existing fuzzy semantics).
+        let version = ToolRequest::Version {
+            backend: test_ba(),
+            version: "0.8".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let (query, boundary) = version.lockfile_version_query();
+        assert_str_eq!(query, "0.8");
+        assert!(!boundary);
+    }
 
     #[test]
     fn test_validate_version_string_accepts_real_versions() {
