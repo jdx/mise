@@ -23,6 +23,10 @@ If not specified, all current tools will be upgraded
 
 ## Flags
 
+### `-g --global`
+
+Only upgrade tools defined in the global config file
+
 ### `-i --interactive`
 
 Display multiselect menu to choose which tools to upgrade
@@ -115,4 +119,7 @@ $ mise upgrade --interactive
 
 # Only upgrade tools defined in local mise.toml, not global ones
 $ mise upgrade --local
+
+# Only upgrade tools defined in the global config
+$ mise upgrade --global
 ```
