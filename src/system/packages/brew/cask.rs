@@ -578,6 +578,7 @@ async fn execute_lifecycle_hook(
         ("MISE_BREW_CASK_APPDIR", appdir.display().to_string()),
         ("MISE_BREW_PREFIX", prefix::prefix().display().to_string()),
         ("MISE_BREW_CASK_HOOK", hook.to_string()),
+        ("MISE_BREW_CASK_SUDO", sudo::subprocess_mode().to_string()),
     ]);
     let runner = match pr {
         Some(pr) => runner.with_pr(pr),
@@ -794,6 +795,80 @@ fn repair_app_permissions(path: &Path) {
 fn is_permission_denied(err: &eyre::Report) -> bool {
     err.downcast_ref::<std::io::Error>()
         .is_some_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied)
+}
+
+/// Retry a failed artifact-target mutation with sudo on permission errors.
+///
+/// Cask artifact targets can live in root-owned directories — most commonly
+/// `/usr/local/bin` on Apple Silicon, where casks like docker-desktop
+/// hardcode absolute binary targets. Homebrew elevates its cask
+/// `ln`/`mkdir`/`rm`/`mv` calls when the target directory is not writable;
+/// this matches that behavior. sudo::run honors `system_packages.sudo` and
+/// never prompts for a password without a TTY.
+fn with_sudo_fallback(result: Result<()>, program: &str, args: &[String]) -> Result<()> {
+    match result {
+        Err(err) if is_permission_denied(&err) => sudo::run(program, args, &[]),
+        other => other,
+    }
+}
+
+fn create_dir_all_elevating(dir: &Path) -> Result<()> {
+    with_sudo_fallback(
+        file::create_dir_all(dir),
+        "mkdir",
+        &["-p".into(), "--".into(), dir.display().to_string()],
+    )
+}
+
+fn make_symlink_elevating(source: &Path, link: &Path) -> Result<()> {
+    with_sudo_fallback(
+        file::make_symlink(source, link).map(|_| ()),
+        "ln",
+        &[
+            "-s".into(),
+            "-f".into(),
+            "-h".into(),
+            "--".into(),
+            source.display().to_string(),
+            link.display().to_string(),
+        ],
+    )
+}
+
+fn rename_elevating(from: &Path, to: &Path) -> Result<()> {
+    with_sudo_fallback(
+        file::rename(from, to),
+        "mv",
+        &[
+            "-f".into(),
+            "--".into(),
+            from.display().to_string(),
+            to.display().to_string(),
+        ],
+    )
+}
+
+fn remove_artifact_target_elevating(path: &Path) -> Result<()> {
+    let Ok(metadata) = path.symlink_metadata() else {
+        return Ok(());
+    };
+    let (result, args) = if metadata.file_type().is_symlink() {
+        (
+            file::remove_file(path),
+            vec!["-f".into(), "--".into(), path.display().to_string()],
+        )
+    } else {
+        (
+            file::remove_all(path),
+            vec![
+                "-r".into(),
+                "-f".into(),
+                "--".into(),
+                path.display().to_string(),
+            ],
+        )
+    };
+    with_sudo_fallback(result, "rm", &args)
 }
 
 /// Copy a directory using macOS `ditto`, which preserves resource forks, extended attributes,
@@ -1216,10 +1291,10 @@ fn link_completion(cask: &Cask, caskroom: &Path, target: &Path) -> Result<()> {
         );
     }
     if let Some(parent) = target.parent() {
-        file::create_dir_all(parent)?;
+        create_dir_all_elevating(parent)?;
     }
     ensure_completion_target_replaceable(cask, target)?;
-    file::make_symlink(&caskroom_completion, target)?;
+    make_symlink_elevating(&caskroom_completion, target)?;
     Ok(())
 }
 
@@ -1787,9 +1862,9 @@ fn link_binary(caskroom: &Path, binary: &BinaryArtifact) -> Result<()> {
     }
     let target = binary.target_path()?;
     if let Some(parent) = target.parent() {
-        file::create_dir_all(parent)?;
+        create_dir_all_elevating(parent)?;
     }
-    file::make_symlink(&caskroom_binary, &target)?;
+    make_symlink_elevating(&caskroom_binary, &target)?;
     Ok(())
 }
 
@@ -2529,7 +2604,7 @@ fn remove_obsolete_binary_links(
                 .unwrap_or(link_target)
         };
         if file::desymlink_path(&resolved).starts_with(&token_dir) {
-            file::remove_file(target)?;
+            remove_artifact_target_elevating(target)?;
         }
     }
     Ok(())
@@ -2697,8 +2772,8 @@ impl ArtifactLinkTransaction {
                         ".mise-link-backup-{}",
                         hash::hash_to_str(&target.display().to_string())
                     ));
-                    remove_artifact_target(&backup)?;
-                    file::rename(&target, &backup)?;
+                    remove_artifact_target_elevating(&backup)?;
+                    rename_elevating(&target, &backup)?;
                     Some(backup)
                 } else {
                     None
@@ -2723,10 +2798,10 @@ impl ArtifactLinkTransaction {
     fn rollback(&mut self) -> Result<()> {
         let mut first_error = None;
         for entry in self.backups.iter().rev() {
-            match remove_artifact_target(&entry.target) {
+            match remove_artifact_target_elevating(&entry.target) {
                 Ok(()) => {
                     if let Some(backup) = &entry.backup
-                        && let Err(err) = file::rename(backup, &entry.target)
+                        && let Err(err) = rename_elevating(backup, &entry.target)
                     {
                         first_error.get_or_insert(err);
                     }
@@ -2747,22 +2822,11 @@ impl ArtifactLinkTransaction {
     fn commit(&mut self) -> Result<()> {
         for entry in &self.backups {
             if let Some(backup) = &entry.backup {
-                remove_artifact_target(backup)?;
+                remove_artifact_target_elevating(backup)?;
             }
         }
         self.backups.clear();
         Ok(())
-    }
-}
-
-fn remove_artifact_target(path: &Path) -> Result<()> {
-    let Ok(metadata) = path.symlink_metadata() else {
-        return Ok(());
-    };
-    if metadata.file_type().is_symlink() {
-        file::remove_file(path)
-    } else {
-        file::remove_all(path)
     }
 }
 
@@ -2895,6 +2959,17 @@ mod tests {
         staged_path: &Path,
         version: &str,
     ) -> std::io::Result<std::process::Output> {
+        run_cask_shim_hook(ruby, shim, cask, staged_path, version, "preflight")
+    }
+
+    fn run_cask_shim_hook(
+        ruby: &Path,
+        shim: &Path,
+        cask: &Path,
+        staged_path: &Path,
+        version: &str,
+        hook: &str,
+    ) -> std::io::Result<std::process::Output> {
         std::process::Command::new(ruby)
             .arg(shim)
             .env("LANG", "zz_ZZ.UTF-8")
@@ -2904,7 +2979,7 @@ mod tests {
             .env("MISE_BREW_CASK_STAGED_PATH", staged_path)
             .env("MISE_BREW_CASK_APPDIR", staged_path)
             .env("MISE_BREW_PREFIX", staged_path)
-            .env("MISE_BREW_CASK_HOOK", "preflight")
+            .env("MISE_BREW_CASK_HOOK", hook)
             .output()
     }
 
@@ -3187,6 +3262,132 @@ end
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(file::read_to_string(result)?, "20628");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn cask_shim_supports_completion_stanzas_and_system_command() -> Result<()> {
+        let Some(ruby) = file::which("ruby") else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("cask_shim.rb");
+        let cask = tmp.path().join("example.rb");
+        file::write(&shim, CASK_SHIM_RB)?;
+        crate::file::write(tmp.path().join("kubectl"), "kubectl")?;
+        // Modeled on the docker-desktop cask: completion stanzas plus a
+        // postflight that symlinks kubectl via system_command.
+        file::write(
+            &cask,
+            r##"cask "example" do
+  version "1.0.0"
+  app "Example.app"
+  binary "#{appdir}/Example.app/Contents/Resources/bin/example"
+  bash_completion "#{appdir}/Example.app/Contents/Resources/etc/example.bash-completion"
+  zsh_completion "#{appdir}/Example.app/Contents/Resources/etc/example.zsh-completion"
+  fish_completion "#{appdir}/Example.app/Contents/Resources/etc/example.fish-completion"
+  manpage "#{appdir}/Example.app/Contents/Resources/man/example.1"
+  postflight do
+    kubectl_target = staged_path/"kubectl-link"
+    next if kubectl_target.exist?
+    system_command "/bin/ln", args: ["-sfn", staged_path/"kubectl", kubectl_target],
+                              sudo: false
+    echoed = system_command "/bin/echo", args: ["-n", "hello"], print_stderr: false
+    File.write staged_path/"result", echoed.stdout if echoed.success?
+    # A no-args executable whose path contains spaces and shell
+    # metacharacters must run via argv, not a shell command line.
+    spaced = system_command staged_path/"my tool $HOME"
+    File.write staged_path/"spaced-result", spaced.stdout
+  end
+end
+"##,
+        )?;
+        let spaced_tool = tmp.path().join("my tool $HOME");
+        crate::file::write(&spaced_tool, "#!/bin/sh\nprintf spaced-ok\n")?;
+        file::make_executable(&spaced_tool)?;
+
+        let output = run_cask_shim_hook(&ruby, &shim, &cask, tmp.path(), "1.0.0", "postflight")?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            std::fs::read_link(tmp.path().join("kubectl-link"))?,
+            tmp.path().join("kubectl")
+        );
+        assert_eq!(file::read_to_string(tmp.path().join("result"))?, "hello");
+        assert_eq!(
+            file::read_to_string(tmp.path().join("spaced-result"))?,
+            "spaced-ok"
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn cask_shim_system_command_reports_denied_sudo() -> Result<()> {
+        let Some(ruby) = file::which("ruby") else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("cask_shim.rb");
+        let cask = tmp.path().join("example.rb");
+        file::write(&shim, CASK_SHIM_RB)?;
+        file::write(
+            &cask,
+            r#"cask "example" do
+  version "1.0.0"
+  preflight do
+    system_command "/usr/bin/true", args: ["--flag"], sudo: true
+  end
+end
+"#,
+        )?;
+
+        // MISE_BREW_CASK_SUDO is unset, which must behave as "deny".
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path(), "1.0.0")?;
+        if nix::unistd::geteuid().is_root() {
+            // root never needs to elevate, so the hook succeeds
+            assert!(output.status.success());
+            return Ok(());
+        }
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("needs sudo"), "{stderr}");
+        assert!(stderr.contains("sudo /usr/bin/true --flag"), "{stderr}");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn cask_shim_system_command_reports_failed_commands() -> Result<()> {
+        let Some(ruby) = file::which("ruby") else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("cask_shim.rb");
+        let cask = tmp.path().join("example.rb");
+        file::write(&shim, CASK_SHIM_RB)?;
+        file::write(
+            &cask,
+            r#"cask "example" do
+  version "1.0.0"
+  preflight do
+    system_command "/usr/bin/false"
+  end
+end
+"#,
+        )?;
+
+        let output = run_cask_shim(&ruby, &shim, &cask, tmp.path(), "1.0.0")?;
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("command failed (exit 1): /usr/bin/false"),
+            "{stderr}"
+        );
         Ok(())
     }
 
