@@ -955,12 +955,8 @@ pub fn args_safe() -> Vec<String> {
 pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     trace!("cd {}", display_path(path));
-    unsafe {
-        std::env::set_current_dir(path).wrap_err_with(|| {
-            format!("failed to set current directory to {}", display_path(path))
-        })?;
-        path_absolutize::update_cwd();
-    }
+    std::env::set_current_dir(path)
+        .wrap_err_with(|| format!("failed to set current directory to {}", display_path(path)))?;
     Ok(())
 }
 

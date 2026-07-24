@@ -135,11 +135,6 @@ async fn main_() -> eyre::Result<()> {
     let (panic_hook, eyre_hook) = hook_builder.into_hooks();
     eyre_hook.install()?;
     install_panic_hook(panic_hook);
-    if std::env::current_dir().is_ok() {
-        unsafe {
-            path_absolutize::update_cwd();
-        }
-    }
     measure!("main", {
         let args = env::args_safe();
         match Cli::run(&args)
