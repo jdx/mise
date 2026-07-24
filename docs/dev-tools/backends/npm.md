@@ -64,9 +64,13 @@ compatible with Socket's
 Set `AUBE_SECURITY_SCANNER` to enable it:
 
 ```sh
+MISE_NPM_PACKAGE_MANAGER=aube \
 AUBE_SECURITY_SCANNER=/absolute/path/to/scanner.mjs \
   mise install npm:prettier@latest
 ```
+
+Selecting `aube` explicitly ensures the scanner is used even if the user's
+mise settings otherwise select npm, Bun, or pnpm.
 
 The scanner runs after dependency resolution and before package tarballs are
 downloaded. It receives the resolved direct and transitive registry packages;
