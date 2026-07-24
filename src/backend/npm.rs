@@ -948,7 +948,11 @@ impl NPMBackend {
             "private": true,
         });
         if let AllowBuilds::Packages(packages) = allow_builds {
-            manifest["aube"] = serde_json::json!({ "allowBuilds": packages });
+            let allow_builds = packages
+                .iter()
+                .map(|package| (package.clone(), serde_json::Value::Bool(true)))
+                .collect::<serde_json::Map<_, _>>();
+            manifest["aube"] = serde_json::json!({ "allowBuilds": allow_builds });
         }
         crate::file::write(
             install_path.join("package.json"),
@@ -1885,9 +1889,13 @@ mod tests {
         let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
         assert!(npmrc.contains("trustPolicyExclude=undici,undici@^5\n"));
         // The build-script allowlist goes in package.json's aube namespace.
-        let manifest = std::fs::read_to_string(install_path.join("package.json")).unwrap();
-        assert!(manifest.contains("\"allowBuilds\""));
-        assert!(manifest.contains("esbuild"));
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(install_path.join("package.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            manifest["aube"]["allowBuilds"],
+            serde_json::json!({ "esbuild": true })
+        );
     }
 
     #[test]
