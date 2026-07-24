@@ -285,16 +285,12 @@ impl HttpBackend {
 
         // Include rename_exe in cache key since it modifies the extracted content.
         // Use the raw value so the table form (multi-binary rename) is captured too;
-        // `opts.rename_exe()` only stringifies the scalar form. Keep the readable
-        // unquoted name for the scalar form, but hash the table form so glob/quote
-        // characters (`*`, `"`, `{`, `}`) never leak into the cache directory name —
-        // those are illegal in Windows paths.
+        // `opts.rename_exe()` only stringifies the scalar form. `rename_cache_token`
+        // keeps a readable name when it is path-safe and hashes anything else (the
+        // table form, or a scalar with path separators / Windows-invalid characters)
+        // so nothing unsafe reaches the cache directory name.
         if let Some(rename) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
-            let rename_key = match rename.as_str() {
-                Some(name) => name.to_string(),
-                None => hash::hash_blake3_to_str(&rename.to_string()),
-            };
-            parts.push(format!("rename_{rename_key}"));
+            parts.push(format!("rename_{}", rename_cache_token(rename)));
             // When rename_exe is used, bin_path affects where the rename happens,
             // so different bin_path values result in different cached content
             if let Some(bin_path) = opts.bin_path() {
@@ -1153,6 +1149,30 @@ impl Backend for HttpBackend {
     }
 }
 
+/// Produce a path-safe cache-key token for a `rename_exe` value. A scalar name is
+/// kept verbatim when it is safe to use as a single path component (the common
+/// case, e.g. `plz`), so cache keys stay readable and stable. Anything else — the
+/// table form, or a scalar containing path separators or Windows-invalid
+/// characters — is hashed, so nothing unsafe reaches the cache directory name.
+fn rename_cache_token(rename: &toml::Value) -> String {
+    if let Some(name) = rename.as_str()
+        && is_path_safe_component(name)
+    {
+        return name.to_string();
+    }
+    hash::hash_blake3_to_str(&rename.to_string())
+}
+
+/// Whether `s` is safe to use as a single filesystem path component on all
+/// platforms: non-empty, no path separators, and none of the characters Windows
+/// forbids in file names.
+fn is_path_safe_component(s: &str) -> bool {
+    !s.is_empty()
+        && !s.chars().any(|c| {
+            matches!(c, '/' | '\\' | '<' | '>' | ':' | '"' | '|' | '?' | '*') || c.is_control()
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1356,6 +1376,15 @@ mod tests {
             .unwrap();
         assert!(scalar_key.contains("rename_plz"), "key: {scalar_key}");
         assert!(!scalar_key.contains(illegal), "key: {scalar_key}");
+
+        // A scalar containing path separators / illegal characters is hashed,
+        // so it never produces a nested path or a Windows-invalid component.
+        let unsafe_opts = crate::toolset::parse_tool_options(r#"rename_exe="foo/bar:baz""#);
+        let unsafe_key = backend
+            .cache_key(tmp.path(), &HttpOptions::new(&unsafe_opts), 0)
+            .unwrap();
+        assert!(!unsafe_key.contains(illegal), "key: {unsafe_key}");
+        assert!(!unsafe_key.contains('/'), "key: {unsafe_key}");
 
         // Table form is hashed, so globs/quotes/braces never reach the path.
         let table_opts = crate::toolset::parse_tool_options(
