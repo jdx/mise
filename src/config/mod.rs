@@ -2206,22 +2206,28 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     // Snapshot the lockfiles' platform keys BEFORE update_lockfiles writes
     // current-platform entries — auto-lock uses this to tell a curated lockfile
     // (existing entries are authoritative) from a fresh one (expand to common).
-    let pre_install_platforms = lockfile::snapshot_pre_install_platforms(config, ts, new_versions);
-    measure!("updating lockfiles", {
+    let pre_install_platforms = if new_versions.is_empty() {
+        Default::default()
+    } else {
+        lockfile::snapshot_pre_install_platforms(config, ts, new_versions)
+    };
+    let has_deferred_provenance = measure!("updating lockfiles", {
         lockfile::update_lockfiles(config, ts, new_versions, lockfile_update_mode)
-            .wrap_err("failed to update lockfiles")?;
+            .wrap_err("failed to update lockfiles")?
     });
-    measure!("auto-locking platforms", {
-        lockfile::auto_lock_new_versions(
-            config,
-            ts,
-            new_versions,
-            &pre_install_platforms,
-            lockfile_update_mode,
-        )
-        .await
-        .wrap_err("failed to auto-lock platforms")?;
-    });
+    if !new_versions.is_empty() || has_deferred_provenance {
+        measure!("auto-locking platforms", {
+            lockfile::auto_lock_new_versions(
+                config,
+                ts,
+                new_versions,
+                &pre_install_platforms,
+                lockfile_update_mode,
+            )
+            .await
+            .wrap_err("failed to auto-lock platforms")?;
+        });
+    }
 
     Ok(())
 }

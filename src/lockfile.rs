@@ -1476,9 +1476,9 @@ pub fn update_lockfiles(
     ts: &Toolset,
     new_versions: &[ToolVersion],
     mode: LockfileUpdateMode,
-) -> Result<()> {
+) -> Result<bool> {
     if !Settings::get().lockfile_enabled() || (Settings::get().locked && !mode.allow_locked()) {
-        return Ok(());
+        return Ok(false);
     }
 
     // Collect tools by source (config file)
@@ -1531,6 +1531,7 @@ pub fn update_lockfiles(
 
     // Process each lockfile, deferring provenance errors until all lockfiles are saved.
     let mut provenance_errors: Vec<String> = Vec::new();
+    let mut has_deferred_provenance = false;
 
     for (lockfile_path, _configs) in lockfile_configs {
         // Only update existing lockfiles - creation is done elsewhere (e.g., by `mise lock`)
@@ -1658,6 +1659,7 @@ pub fn update_lockfiles(
             errors: regression_errors,
             deferred_baselines,
         } = check_provenance_regression(&existing_lockfile, &tools_by_short);
+        has_deferred_provenance |= !deferred_baselines.is_empty();
         provenance_errors.extend(regression_errors);
 
         // Process each tool with deduplication, skipping regressing tools
@@ -1724,7 +1726,7 @@ pub fn update_lockfiles(
         return Err(eyre!("{}", provenance_errors.join("\n")));
     }
 
-    Ok(())
+    Ok(has_deferred_provenance)
 }
 
 /// Find the prior lockfile entry a version would regress against by losing provenance.
@@ -1954,11 +1956,15 @@ pub fn snapshot_pre_install_platforms(
     result
 }
 
-fn tool_version_needs_auto_lock(
+fn tool_version_matches_lockfile_target<F>(
     lockfile: &Lockfile,
     tv: &ToolVersion,
     target_platforms: &[Platform],
-) -> Result<bool> {
+    predicate: F,
+) -> Result<bool>
+where
+    F: Fn(&[LockfileTool], &str, &str, &BTreeMap<String, String>) -> bool,
+{
     let Some(tools) = lockfile.tools.get(tv.short()) else {
         return Ok(false);
     };
@@ -1975,13 +1981,26 @@ fn tool_version_needs_auto_lock(
             let target = PlatformTarget::new(variant.clone());
             let options = backend.resolve_lockfile_options(&tv.request, &target)?;
             let platform_key = variant.to_key();
-            if lockfile_target_needs_auto_lock(tools, &tv.version, &platform_key, &options) {
+            if predicate(tools, &tv.version, &platform_key, &options) {
                 return Ok(true);
             }
         }
     }
 
     Ok(false)
+}
+
+fn tool_version_needs_auto_lock(
+    lockfile: &Lockfile,
+    tv: &ToolVersion,
+    target_platforms: &[Platform],
+) -> Result<bool> {
+    tool_version_matches_lockfile_target(
+        lockfile,
+        tv,
+        target_platforms,
+        lockfile_target_needs_auto_lock,
+    )
 }
 
 fn lockfile_target_needs_auto_lock(
@@ -2046,30 +2065,12 @@ fn tool_version_needs_deferred_provenance_retry(
     tv: &ToolVersion,
     target_platforms: &[Platform],
 ) -> Result<bool> {
-    let Some(tools) = lockfile.tools.get(tv.short()) else {
-        return Ok(false);
-    };
-    if !tools.iter().any(|tool| tool.version == tv.version) {
-        return Ok(false);
-    }
-    let backend = tv.request.backend()?;
-
-    for platform in target_platforms {
-        for variant in backend.platform_variants(platform) {
-            let target = PlatformTarget::new(variant.clone());
-            let options = backend.resolve_lockfile_options(&tv.request, &target)?;
-            if lockfile_target_has_deferred_provenance(
-                tools,
-                &tv.version,
-                &variant.to_key(),
-                &options,
-            ) {
-                return Ok(true);
-            }
-        }
-    }
-
-    Ok(false)
+    tool_version_matches_lockfile_target(
+        lockfile,
+        tv,
+        target_platforms,
+        lockfile_target_has_deferred_provenance,
+    )
 }
 
 /// Determine target platforms for auto-lock from the pre-install lockfile snapshot.
@@ -2210,9 +2211,15 @@ pub async fn auto_lock_new_versions(
         let mut lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
 
-        let pre_install_keys = pre_install_platforms
-            .get(&lockfile_path)
-            .unwrap_or(&empty_keys);
+        let existing_keys;
+        let pre_install_keys = if deferred_retry_only {
+            existing_keys = lockfile.all_platform_keys();
+            &existing_keys
+        } else {
+            pre_install_platforms
+                .get(&lockfile_path)
+                .unwrap_or(&empty_keys)
+        };
         let target_platforms = determine_target_platforms_from_lockfile(pre_install_keys)?;
 
         let versions: Vec<_> = versions
@@ -4231,14 +4238,23 @@ options = { exe = "rg" }
             .insert("repo".to_string(), vec![baseline, pending.clone()]);
 
         assert!(
-            tool_version_needs_deferred_provenance_retry(&lockfile, &tv, &[platform.clone()])
-                .unwrap(),
+            tool_version_needs_deferred_provenance_retry(
+                &lockfile,
+                &tv,
+                std::slice::from_ref(&platform),
+            )
+            .unwrap(),
             "a later install with no new versions must retry deferred verification"
         );
 
         lockfile.tools.insert("repo".to_string(), vec![pending]);
         assert!(
-            !tool_version_needs_deferred_provenance_retry(&lockfile, &tv, &[platform]).unwrap(),
+            !tool_version_needs_deferred_provenance_retry(
+                &lockfile,
+                &tv,
+                std::slice::from_ref(&platform),
+            )
+            .unwrap(),
             "ordinary incomplete lock entries must not broaden the no-new-version retry"
         );
     }
