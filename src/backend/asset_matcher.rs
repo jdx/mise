@@ -499,15 +499,15 @@ impl AssetPicker {
         if asset_with_platform_mismatch {
             return -100;
         }
-        // Check for Windows-specific file extensions (.msi, .exe)
-        // These should be penalized on non-Windows platforms
+        // Prefer .exe assets on Windows and penalize Windows-specific extensions elsewhere.
         // See: https://github.com/jdx/mise/discussions/7837
         let lower = asset.to_lowercase();
         if (lower.ends_with(".msi") || lower.ends_with(".exe")) && self.target_os != "windows" {
             return -100;
         }
-        // On Windows, these are valid but don't need a boost - let other
-        // factors (arch match, format preferences) determine the best asset
+        if lower.ends_with(".exe") {
+            return 100;
+        }
         0
     }
 
@@ -2562,6 +2562,14 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
         let assets = vec!["foo.exe".to_string()];
         let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
         assert!(picker.pick_best_asset(&assets).is_none());
+    }
+
+    #[test]
+    fn test_exe_on_windows_preferred_over_extensionless_asset() {
+        let assets = vec!["k3sup".to_string(), "k3sup.exe".to_string()];
+        let picker = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("k3sup");
+        assert_eq!(picker.pick_best_asset(&assets).unwrap(), "k3sup.exe");
     }
 
     #[test]
