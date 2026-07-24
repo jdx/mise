@@ -609,6 +609,34 @@ pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> Strin
     }
 }
 
+/// Standard GitHub token env vars, in precedence order (applies to every host).
+const GITHUB_TOKEN_ENV_VARS: &[&str] = &["MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN", "GITHUB_TOKEN"];
+
+/// Returns the env var whose GitHub token for `host` equals `token`, if any.
+///
+/// Side-effect free (env vars only; no `credential_command`, OAuth, or network)
+/// so it is safe to call on an error path — unlike [`resolve_token`], which can
+/// re-spawn the credential helper. Mirrors the value handling in [`resolve_token`]
+/// (the enterprise token is used verbatim; standard tokens are trimmed) so a
+/// rejected credential can be attributed to the exact variable that supplied it,
+/// and not to an unrelated env token when the request carried a netrc or
+/// caller-provided `Authorization` header instead.
+pub fn env_var_for_token(host: &str, token: &str) -> Option<&'static str> {
+    // An empty/whitespace Bearer credential is never a real token — resolve_token
+    // filters those out, so it must not be attributed to any env var.
+    if token.trim().is_empty() {
+        return None;
+    }
+    let is_ghcom = host == "github.com" || host == "api.github.com";
+    if !is_ghcom && env::MISE_GITHUB_ENTERPRISE_TOKEN.as_deref() == Some(token) {
+        return Some("MISE_GITHUB_ENTERPRISE_TOKEN");
+    }
+    GITHUB_TOKEN_ENV_VARS
+        .iter()
+        .copied()
+        .find(|var_name| std::env::var(var_name).is_ok_and(|t| t.trim() == token))
+}
+
 /// Resolve the GitHub token for the given hostname, returning the token and its source.
 ///
 /// Priority:
@@ -638,7 +666,7 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     }
 
     // 2. Standard env vars (checked individually for correct precedence and source reporting)
-    for var_name in &["MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN", "GITHUB_TOKEN"] {
+    for var_name in GITHUB_TOKEN_ENV_VARS {
         if let Some(token) = std::env::var(var_name)
             .ok()
             .map(|t| t.trim().to_string())
@@ -994,6 +1022,20 @@ mod tests {
         }
 
         result
+    }
+
+    #[test]
+    fn test_env_var_for_token_matches_only_the_supplying_var() {
+        with_github_token(|| {
+            // with_github_token sets GITHUB_TOKEN=ghp_test and clears the others.
+            assert_eq!(
+                env_var_for_token("github.com", "ghp_test"),
+                Some("GITHUB_TOKEN")
+            );
+            // A token from netrc / a caller-provided header (not this env var) must
+            // not be attributed to GITHUB_TOKEN.
+            assert_eq!(env_var_for_token("github.com", "from-netrc"), None);
+        });
     }
 
     #[test]

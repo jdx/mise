@@ -750,6 +750,31 @@ impl Client {
                 }
             }
         }
+        if options.error_for_status && is_github_unauthorized(&url, &resp) {
+            // A static invalid/expired token (env var, gh CLI, ...) produces a 401
+            // that the OAuth-refresh path above cannot recover. Surface a clear
+            // error naming the token source instead of a bare status error. See #7218.
+            let status_error = resp
+                .error_for_status_ref()
+                .expect_err("401 response should be an error");
+            let used_github_token = final_headers.contains_key(AUTHORIZATION);
+            // Attribute the rejection to an env var only when the token we actually
+            // sent matches it — a netrc/caller-provided header must not be blamed on
+            // an unrelated env token.
+            let env_var = final_headers
+                .get(AUTHORIZATION)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.strip_prefix("Bearer "))
+                .zip(original_url.host_str())
+                .and_then(|(token, host)| crate::github::env_var_for_token(host, token));
+            let body = read_bounded_error_body(resp, self.timeout).await;
+            return Err(github_unauthorized_report(
+                status_error,
+                used_github_token,
+                env_var,
+                &body,
+            ));
+        }
         if options.error_for_status && is_github_forbidden(&url, &resp) {
             let status = resp.status();
             let status_error = resp
@@ -757,7 +782,7 @@ impl Client {
                 .expect_err("403 response should be an error");
             let used_github_token = final_headers.contains_key(AUTHORIZATION);
             let rate_limit = github_rate_limit_summary(&resp);
-            let body = resp.text().await.unwrap_or_default();
+            let body = read_bounded_error_body(resp, self.timeout).await;
             // Retry without auth when the response mentions IP allow lists: GitHub App
             // installation tokens (`ghs_*`) get 403 on public API resources for orgs with IP
             // allow lists; stripping auth avoids that path.
@@ -846,6 +871,69 @@ impl TextRequest<'_> {
 
 fn is_github_forbidden(url: &Url, resp: &Response) -> bool {
     resp.status() == StatusCode::FORBIDDEN && url.host_str() == Some("api.github.com")
+}
+
+fn is_github_unauthorized(url: &Url, resp: &Response) -> bool {
+    resp.status() == StatusCode::UNAUTHORIZED && crate::github::is_github_api_url(url)
+}
+
+/// Maximum body bytes buffered when building a GitHub error report, so an
+/// oversized or slow-trickling error response can't exhaust memory. The overall
+/// request timeout bounds the time; this bounds the memory.
+const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
+
+/// Reads at most [`MAX_ERROR_BODY_BYTES`] of the response body for use in an
+/// error message, streaming chunk-by-chunk instead of buffering the whole body,
+/// and abandoning the read after `deadline` so a slowly-trickling response can't
+/// block indefinitely (the `Http` client has no overall request timeout, only an
+/// idle `read_timeout`). On timeout the partial body is dropped and "" returned.
+async fn read_bounded_error_body(resp: Response, deadline: Duration) -> String {
+    let read = async move {
+        let mut resp = resp;
+        let mut bytes = Vec::new();
+        while let Ok(Some(chunk)) = resp.chunk().await {
+            let remaining = MAX_ERROR_BODY_BYTES.saturating_sub(bytes.len());
+            if remaining == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        }
+        String::from_utf8_lossy(&bytes).to_string()
+    };
+    tokio::time::timeout(deadline, read)
+        .await
+        .unwrap_or_default()
+}
+
+fn github_unauthorized_report(
+    status_error: reqwest::Error,
+    used_github_token: bool,
+    env_var: Option<&str>,
+    body: &str,
+) -> Report {
+    // Only report a token when one was actually sent: the process may have a
+    // GitHub token env var set that wasn't applied to this request.
+    let auth = if !used_github_token {
+        "no".to_string()
+    } else {
+        env_var
+            .map(|var| format!("yes (token from {var})"))
+            .unwrap_or_else(|| "yes".to_string())
+    };
+    let body = format_response_body(body);
+    let hint = if used_github_token {
+        let source = env_var
+            .map(|var| format!("token in `{var}`"))
+            .unwrap_or_else(|| "configured GitHub token".to_string());
+        format!(
+            "\nhint: the {source} was rejected by GitHub (401 Unauthorized). Verify it is a \
+             valid, non-expired token for this host with the required scopes — see \
+             https://mise.jdx.dev/dev-tools/github-tokens.html"
+        )
+    } else {
+        String::new()
+    };
+    eyre!("{status_error}\ngithub auth: {auth}\ngithub response: {body}{hint}")
 }
 
 fn github_forbidden_report(
@@ -1682,6 +1770,137 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert!(msg.contains("github auth: yes"));
         assert!(msg.contains("github rate limit: 42/5000 (core), resets at 1781337353"));
         assert!(msg.contains(r#"{"message":"secondary rate limit","docs":"url"}"#));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_github_unauthorized_report_names_token_source() {
+        // env var known → the message names it and includes the token-guide hint.
+        let (port, _count) = spawn_canned_server(vec![unauthorized_response()]).await;
+        let url = format!("http://127.0.0.1:{port}/repos/owner/repo/releases");
+        let resp = reqwest::Client::new().get(url).send().await.unwrap();
+        let status_error = resp
+            .error_for_status_ref()
+            .expect_err("401 response should be an error");
+        let body = resp.text().await.unwrap();
+        let err = github_unauthorized_report(status_error, true, Some("GITHUB_TOKEN"), &body);
+        let msg = format!("{err:?}");
+
+        assert!(
+            msg.contains("github auth: yes (token from GITHUB_TOKEN)"),
+            "{msg}"
+        );
+        assert!(msg.contains("Bad credentials"), "{msg}");
+        assert!(
+            msg.contains("token in `GITHUB_TOKEN` was rejected by GitHub (401 Unauthorized)"),
+            "{msg}"
+        );
+        assert!(msg.contains("github-tokens.html"), "{msg}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_github_unauthorized_report_without_env_var() {
+        // Token used but source unknown → generic auth "yes" and generic hint;
+        // no token → auth "no" and no hint.
+        let (port, _count) =
+            spawn_canned_server(vec![unauthorized_response(), unauthorized_response()]).await;
+        let url = format!("http://127.0.0.1:{port}/repos/owner/repo/releases");
+
+        let resp = reqwest::Client::new().get(&url).send().await.unwrap();
+        let status_error = resp.error_for_status_ref().unwrap_err();
+        let body = resp.text().await.unwrap();
+        let used_msg = format!(
+            "{:?}",
+            github_unauthorized_report(status_error, true, None, &body)
+        );
+        assert!(used_msg.contains("github auth: yes"), "{used_msg}");
+        assert!(!used_msg.contains("token from"), "{used_msg}");
+        assert!(used_msg.contains("configured GitHub token"), "{used_msg}");
+
+        let resp = reqwest::Client::new().get(&url).send().await.unwrap();
+        let status_error = resp.error_for_status_ref().unwrap_err();
+        let body = resp.text().await.unwrap();
+        let anon_msg = format!(
+            "{:?}",
+            github_unauthorized_report(status_error, false, None, &body)
+        );
+        assert!(anon_msg.contains("github auth: no"), "{anon_msg}");
+        assert!(!anon_msg.contains("hint:"), "{anon_msg}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_github_unauthorized_report_ignores_env_var_when_no_auth_sent() {
+        // A GitHub token env var may be present in the process even when this
+        // request sent no Authorization header; it must not be reported as used.
+        let (port, _count) = spawn_canned_server(vec![unauthorized_response()]).await;
+        let url = format!("http://127.0.0.1:{port}/repos/owner/repo/releases");
+        let resp = reqwest::Client::new().get(url).send().await.unwrap();
+        let status_error = resp.error_for_status_ref().unwrap_err();
+        let body = resp.text().await.unwrap();
+        let msg = format!(
+            "{:?}",
+            github_unauthorized_report(status_error, false, Some("GITHUB_TOKEN"), &body)
+        );
+
+        assert!(msg.contains("github auth: no"), "{msg}");
+        assert!(!msg.contains("token from"), "{msg}");
+        assert!(!msg.contains("hint:"), "{msg}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_read_bounded_error_body_caps_large_body() {
+        // An oversized error body must be truncated during reading, not buffered
+        // whole, so a hostile endpoint can't exhaust memory.
+        let big_body = "x".repeat(MAX_ERROR_BODY_BYTES + 4096);
+        let raw = format!(
+            "HTTP/1.1 401 Unauthorized\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            big_body.len(),
+            big_body
+        );
+        let leaked: &'static str = Box::leak(raw.into_boxed_str());
+        let (port, _count) = spawn_canned_server(vec![leaked]).await;
+        let url = format!("http://127.0.0.1:{port}/repos/owner/repo/releases");
+        let resp = reqwest::Client::new().get(url).send().await.unwrap();
+
+        let body = read_bounded_error_body(resp, Duration::from_secs(30)).await;
+        assert_eq!(body.len(), MAX_ERROR_BODY_BYTES);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_read_bounded_error_body_honors_deadline() {
+        // A response body that trickles forever (staying under the byte cap and
+        // the idle read_timeout) must still be abandoned at the deadline instead
+        // of blocking indefinitely.
+        use tokio::io::AsyncWriteExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                // No Content-Length + `close` → body is read until EOF, which the
+                // server never sends; it just trickles one byte at a time.
+                let _ = sock
+                    .write_all(b"HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n")
+                    .await;
+                loop {
+                    if sock.write_all(b"x").await.is_err() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            }
+        });
+        let url = format!("http://127.0.0.1:{port}/repos/owner/repo/releases");
+        let resp = reqwest::Client::new().get(url).send().await.unwrap();
+
+        let start = tokio::time::Instant::now();
+        let body = read_bounded_error_body(resp, Duration::from_millis(150)).await;
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "read must stop at the deadline"
+        );
+        assert!(
+            body.is_empty(),
+            "timed-out read yields no body, got {body:?}"
+        );
     }
 
     #[test]
