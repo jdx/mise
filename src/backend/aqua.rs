@@ -3182,7 +3182,13 @@ async fn resolve_aqua_http_url(
     let Ok(prefixed_url) = pkg.url(prefixed_version, target_os, target_arch) else {
         return Ok((url, version.to_string()));
     };
-    if prefixed_url == url || HTTP.head(&prefixed_url).await.is_ok() {
+    // Some artifact hosts reject HEAD even though GET is supported. get_async()
+    // only waits for the response headers; dropping the response avoids downloading
+    // the artifact during URL resolution.
+    if prefixed_url == url
+        || HTTP.head(&prefixed_url).await.is_ok()
+        || HTTP.get_async(&prefixed_url).await.is_ok()
+    {
         Ok((prefixed_url, prefixed_version.to_string()))
     } else {
         Ok((url, version.to_string()))
@@ -4516,8 +4522,14 @@ mod lock_candidate_tests {
     #[tokio::test]
     async fn test_http_url_falls_back_to_unprefixed_version() {
         let mut server = mockito::Server::new_async().await;
-        let prefixed = server
+        let prefixed_head = server
             .mock("HEAD", "/tool-v1.2.3")
+            .with_status(404)
+            .expect(1)
+            .create_async()
+            .await;
+        let prefixed_get = server
+            .mock("GET", "/tool-v1.2.3")
             .with_status(404)
             .expect(1)
             .create_async()
@@ -4529,9 +4541,38 @@ mod lock_candidate_tests {
             .await
             .unwrap();
 
-        prefixed.assert_async().await;
+        prefixed_head.assert_async().await;
+        prefixed_get.assert_async().await;
         assert_eq!(url, format!("{}/tool-1.2.3", server.url()));
         assert_eq!(version, "1.2.3");
+    }
+
+    #[tokio::test]
+    async fn test_http_url_uses_get_when_head_is_rejected() {
+        let mut server = mockito::Server::new_async().await;
+        let prefixed_head = server
+            .mock("HEAD", "/tool-v1.2.3")
+            .with_status(405)
+            .expect(1)
+            .create_async()
+            .await;
+        let prefixed_get = server
+            .mock("GET", "/tool-v1.2.3")
+            .with_status(200)
+            .expect(1)
+            .create_async()
+            .await;
+        let mut pkg = AquaPackage::default();
+        pkg.url = format!("{}/tool-{{{{.Version}}}}", server.url());
+
+        let (url, version) = resolve_aqua_http_url(&pkg, "1.2.3", Some("v1.2.3"), "linux", "amd64")
+            .await
+            .unwrap();
+
+        prefixed_head.assert_async().await;
+        prefixed_get.assert_async().await;
+        assert_eq!(url, format!("{}/tool-v1.2.3", server.url()));
+        assert_eq!(version, "v1.2.3");
     }
 
     #[test]
