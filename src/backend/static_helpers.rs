@@ -567,6 +567,15 @@ pub fn install_artifact(
         .or_else(|| opts.get_string("strip_components"))
         .and_then(|s| s.parse().ok());
 
+    // These options name the installed binary and get joined onto install/bin
+    // dirs throughout this function — a path in either would escape them.
+    // (Table-form rename_exe is not a scalar and is validated in apply_rename_exe.)
+    for option in ["bin", "rename_exe"] {
+        if let Some(name) = lookup_with_fallback(opts, option) {
+            ensure_plain_bin_name(option, &name)?;
+        }
+    }
+
     file::remove_all(&install_path)?;
     file::create_dir_all(&install_path)?;
 
@@ -705,6 +714,11 @@ pub fn install_artifact(
 }
 
 fn make_configured_bin_executable(search_dir: &Path, bin_name: &str) -> Result<()> {
+    // Runs before rename_executable_in_dir validates bin_name; don't chmod
+    // through a traversal path — the rename call right after reports the error.
+    if !file::is_plain_file_name(bin_name) {
+        return Ok(());
+    }
     let bin_path = search_dir.join(bin_name);
     if bin_path.is_file() {
         file::make_executable(bin_path)?;
@@ -807,6 +821,7 @@ pub fn rename_executable_in_dir(
     new_name: &str,
     tool_name: Option<&str>,
 ) -> eyre::Result<()> {
+    ensure_plain_bin_name("rename target", new_name)?;
     let target_path = dir.join(new_name);
 
     // Check if target already exists before iterating
@@ -948,6 +963,13 @@ pub fn apply_rename_exe(
 ) -> eyre::Result<()> {
     match value {
         toml::Value::Table(entries) => {
+            // Validate every target before renaming anything, so a bad entry
+            // fails the install without leaving a half-applied table.
+            for target in entries.values() {
+                if let Some(target) = target.as_str() {
+                    ensure_plain_bin_name("rename_exe", target)?;
+                }
+            }
             // Snapshot the directory once and consume each matched file, so a
             // rename's *output* can never become a later entry's *input*
             // (e.g. `tool-*`→`tool` then `tool`→`x` must not rename twice) and a
@@ -1012,6 +1034,19 @@ fn take_matching(available: &mut Vec<PathBuf>, pattern: &str) -> eyre::Result<Op
     }
 
     Ok(None)
+}
+
+/// Rejects `bin`/`rename_exe` names that are not plain file names (`../tool`,
+/// `/abs/tool`, `bin/tool`), which would otherwise be joined onto the install
+/// or search directory and place the binary outside it.
+pub fn ensure_plain_bin_name(option: &str, name: &str) -> eyre::Result<()> {
+    if !file::is_plain_file_name(name) {
+        bail!(
+            "{option}: '{name}' must be a plain file name \
+             (no path separators or parent directories)"
+        );
+    }
+    Ok(())
 }
 
 /// Renames `path` (named `file_name`) to `target` within `dir`, preserving any
@@ -2183,6 +2218,33 @@ bin = "tool.exe"
             err.to_string().contains("target already exists"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn test_apply_rename_exe_rejects_path_traversal_targets() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("tool"), b"bin").unwrap();
+
+        // Table form: a target escaping the directory fails before any rename.
+        for target in ["../tool", "/abs/tool", "sub/tool"] {
+            let value = toml::Value::Table({
+                let mut t = toml::value::Table::new();
+                t.insert("tool".to_string(), toml::Value::String(target.to_string()));
+                t
+            });
+            let err = apply_rename_exe(tmp.path(), &value, None).unwrap_err();
+            assert!(
+                err.to_string().contains("plain file name"),
+                "unexpected error for {target:?}: {err}"
+            );
+            assert!(tmp.path().join("tool").is_file(), "nothing may be renamed");
+        }
+
+        // String form takes the same validation path.
+        let value = toml::Value::String("../evil".to_string());
+        let err = apply_rename_exe(tmp.path(), &value, Some("tool")).unwrap_err();
+        assert!(err.to_string().contains("plain file name"), "{err}");
+        assert!(!tmp.path().join("..").join("evil").exists());
     }
 
     #[cfg(unix)]

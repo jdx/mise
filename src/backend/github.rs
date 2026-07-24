@@ -1727,6 +1727,15 @@ impl UnifiedGitBackend {
         }
 
         for bin_name in bins {
+            // A name with separators or parent components would resolve outside
+            // the install directories and symlink an arbitrary file onto PATH.
+            if !file::is_plain_file_name(&bin_name) {
+                warn!(
+                    "filter_bins: '{}' must be a plain file name, skipping",
+                    bin_name
+                );
+                continue;
+            }
             // Find the binary in any of the source directories
             let mut found = false;
             for dir in &src_dirs {

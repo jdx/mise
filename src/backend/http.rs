@@ -5,10 +5,10 @@ use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
-    apply_rename_exe, clean_binary_name, eval_checksum_expr, fetch_checksum_from_file,
-    fetch_checksum_from_shasums, get_filename_from_url, lookup_value_with_fallback,
-    rename_binary_name, shasums_has_entries, template_string, template_string_for_target,
-    verify_artifact,
+    apply_rename_exe, clean_binary_name, ensure_plain_bin_name, eval_checksum_expr,
+    fetch_checksum_from_file, fetch_checksum_from_shasums, get_filename_from_url,
+    lookup_value_with_fallback, rename_binary_name, shasums_has_entries, template_string,
+    template_string_for_target, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::cli::args::BackendArg;
@@ -347,24 +347,28 @@ impl HttpBackend {
     // Filename determination
     // -------------------------------------------------------------------------
 
-    /// Determine the destination filename for a raw file or compressed binary
+    /// Determine the destination filename for a raw file or compressed binary.
+    /// `bin`/`rename_exe` values are joined onto the extraction directory, so a
+    /// path in either (`../evil`, `a/b`) would escape it and is rejected.
     fn dest_filename(
         &self,
         file_path: &Path,
         file_info: &FileInfo,
         opts: &HttpOptions<'_>,
-    ) -> String {
+    ) -> Result<String> {
         // Check for explicit bin name first
         if let Some(bin_name) = opts.bin() {
-            return bin_name;
+            ensure_plain_bin_name("bin", &bin_name)?;
+            return Ok(bin_name);
         }
         if let Some(rename_to) = opts.rename_exe() {
+            ensure_plain_bin_name("rename_exe", &rename_to)?;
             let source_name = if file_info.is_compressed_binary {
                 file_info.decompressed_name()
             } else {
                 file_path.file_name().unwrap().to_string_lossy().to_string()
             };
-            return rename_binary_name(&source_name, &rename_to);
+            return Ok(rename_binary_name(&source_name, &rename_to));
         }
 
         // Auto-clean the binary name
@@ -374,7 +378,7 @@ impl HttpBackend {
             file_path.file_name().unwrap().to_string_lossy().to_string()
         };
 
-        clean_binary_name(&raw_name, Some(&self.ba.tool_name))
+        Ok(clean_binary_name(&raw_name, Some(&self.ba.tool_name)))
     }
 
     // -------------------------------------------------------------------------
@@ -485,7 +489,7 @@ impl HttpBackend {
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
-        let filename = self.dest_filename(file_path, file_info, opts);
+        let filename = self.dest_filename(file_path, file_info, opts)?;
         let dest_file = dest.join(&filename);
 
         // Report extraction progress (no bytes - we don't know total for extraction)
@@ -508,7 +512,7 @@ impl HttpBackend {
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
-        let filename = self.dest_filename(file_path, file_info, opts);
+        let filename = self.dest_filename(file_path, file_info, opts)?;
         let dest_file = dest.join(&filename);
 
         // Report extraction progress (no bytes - we don't know total for extraction)
@@ -1332,9 +1336,36 @@ mod tests {
 
         assert!(file_info.is_compressed_binary);
         assert_eq!(
-            backend.dest_filename(file_path, &file_info, &opts),
+            backend.dest_filename(file_path, &file_info, &opts).unwrap(),
             "code2prompt.exe"
         );
+    }
+
+    #[test]
+    fn dest_filename_rejects_path_traversal_in_bin_and_rename_exe() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-mytool".to_string(),
+                Some("http:mytool".to_string()),
+                "mytool".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+        let file_path = Path::new("mytool-linux-x64");
+
+        for opt in [r#"bin="../evil""#, r#"rename_exe="a/b""#] {
+            let raw_opts = crate::toolset::parse_tool_options(opt);
+            let opts = HttpOptions::new(&raw_opts);
+            let file_info = FileInfo::new(file_path, &opts);
+            let err = backend
+                .dest_filename(file_path, &file_info, &opts)
+                .unwrap_err();
+            assert!(
+                err.to_string().contains("plain file name"),
+                "unexpected error for {opt}: {err}"
+            );
+        }
     }
 
     #[test]
