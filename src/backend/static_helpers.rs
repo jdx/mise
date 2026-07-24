@@ -567,13 +567,14 @@ pub fn install_artifact(
         .or_else(|| opts.get_string("strip_components"))
         .and_then(|s| s.parse().ok());
 
-    // These options name the installed binary and get joined onto install/bin
-    // dirs throughout this function — a path in either would escape them.
-    // (Table-form rename_exe is not a scalar and is validated in apply_rename_exe.)
-    for option in ["bin", "rename_exe"] {
-        if let Some(name) = lookup_with_fallback(opts, option) {
-            ensure_plain_bin_name(option, &name)?;
-        }
+    // `bin` historically accepts a path within the install directory (for
+    // example `bin/tiny`), while rename_exe names a file in one search dir.
+    if let Some(name) = lookup_with_fallback(opts, "bin") {
+        ensure_safe_relative_bin_path("bin", &name)?;
+    }
+    // Table-form rename_exe is not a scalar and is validated in apply_rename_exe.
+    if let Some(name) = lookup_with_fallback(opts, "rename_exe") {
+        ensure_plain_bin_name("rename_exe", &name)?;
     }
 
     file::remove_all(&install_path)?;
@@ -714,11 +715,7 @@ pub fn install_artifact(
 }
 
 fn make_configured_bin_executable(search_dir: &Path, bin_name: &str) -> Result<()> {
-    // Runs before rename_executable_in_dir validates bin_name; don't chmod
-    // through a traversal path — the rename call right after reports the error.
-    if !file::is_plain_file_name(bin_name) {
-        return Ok(());
-    }
+    ensure_safe_relative_bin_path("bin", bin_name)?;
     let bin_path = search_dir.join(bin_name);
     if bin_path.is_file() {
         file::make_executable(bin_path)?;
@@ -821,7 +818,10 @@ pub fn rename_executable_in_dir(
     new_name: &str,
     tool_name: Option<&str>,
 ) -> eyre::Result<()> {
-    ensure_plain_bin_name("rename target", new_name)?;
+    // This helper is shared by `bin`, which may be a nested path within the
+    // install directory, and scalar `rename_exe`, which is validated as a plain
+    // file name by apply_rename_exe before reaching here.
+    ensure_safe_relative_bin_path("rename target", new_name)?;
     let target_path = dir.join(new_name);
 
     // Check if target already exists before iterating
@@ -977,7 +977,15 @@ pub fn apply_rename_exe(
             // a glob matching several files resolves deterministically.
             let mut available: Vec<PathBuf> = file::ls(search_dir)?
                 .into_iter()
-                .filter(|p| p.is_file())
+                // Do not follow archive-provided symlinks: chmod on a symlink
+                // follows its target and could change permissions outside the
+                // extraction directory.
+                .filter(|p| {
+                    matches!(
+                        p.symlink_metadata(),
+                        Ok(metadata) if metadata.file_type().is_file()
+                    )
+                })
                 .collect();
             for (source, target) in entries {
                 let Some(target) = target.as_str() else {
@@ -997,7 +1005,10 @@ pub fn apply_rename_exe(
             }
             Ok(())
         }
-        toml::Value::String(new_name) => rename_executable_in_dir(search_dir, new_name, tool_name),
+        toml::Value::String(new_name) => {
+            ensure_plain_bin_name("rename_exe", new_name)?;
+            rename_executable_in_dir(search_dir, new_name, tool_name)
+        }
         other => {
             warn!("rename_exe: expected a string or table, got {other}");
             Ok(())
@@ -1044,6 +1055,18 @@ pub fn ensure_plain_bin_name(option: &str, name: &str) -> eyre::Result<()> {
         bail!(
             "{option}: '{name}' must be a plain file name \
              (no path separators or parent directories)"
+        );
+    }
+    Ok(())
+}
+
+/// Rejects a configured binary path that is absolute or contains parent
+/// components, while preserving the established `bin = "bin/tool"` form.
+pub fn ensure_safe_relative_bin_path(option: &str, path: &str) -> eyre::Result<()> {
+    if !file::is_safe_relative_path(path) {
+        bail!(
+            "{option}: '{path}' must be a safe relative path \
+             (no absolute paths or parent directories)"
         );
     }
     Ok(())
@@ -2292,5 +2315,39 @@ bin = "tool.exe"
 
         assert!(tool.is_file());
         assert!(file::is_executable(&tool));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_ignores_symlinks() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::fs::set_permissions(outside.path(), std::fs::Permissions::from_mode(0o600)).unwrap();
+        let link = tmp.path().join("tool-linux-x64");
+        symlink(outside.path(), &link).unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert(
+                "tool-*".to_string(),
+                toml::Value::String("tool".to_string()),
+            );
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, None).unwrap();
+
+        assert!(
+            link.is_symlink(),
+            "the archive symlink must remain untouched"
+        );
+        assert!(!tmp.path().join("tool").exists());
+        assert_eq!(
+            outside.path().metadata().unwrap().permissions().mode() & 0o777,
+            0o600,
+            "the external target's permissions must not change"
+        );
     }
 }

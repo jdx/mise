@@ -5,10 +5,10 @@ use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
-    apply_rename_exe, clean_binary_name, ensure_plain_bin_name, eval_checksum_expr,
-    fetch_checksum_from_file, fetch_checksum_from_shasums, get_filename_from_url,
-    lookup_value_with_fallback, rename_binary_name, shasums_has_entries, template_string,
-    template_string_for_target, verify_artifact,
+    apply_rename_exe, clean_binary_name, ensure_plain_bin_name, ensure_safe_relative_bin_path,
+    eval_checksum_expr, fetch_checksum_from_file, fetch_checksum_from_shasums,
+    get_filename_from_url, lookup_value_with_fallback, rename_binary_name, shasums_has_entries,
+    template_string, template_string_for_target, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::cli::args::BackendArg;
@@ -358,7 +358,7 @@ impl HttpBackend {
     ) -> Result<String> {
         // Check for explicit bin name first
         if let Some(bin_name) = opts.bin() {
-            ensure_plain_bin_name("bin", &bin_name)?;
+            ensure_safe_relative_bin_path("bin", &bin_name)?;
             return Ok(bin_name);
         }
         if let Some(rename_to) = opts.rename_exe() {
@@ -1354,7 +1354,10 @@ mod tests {
         };
         let file_path = Path::new("mytool-linux-x64");
 
-        for opt in [r#"bin="../evil""#, r#"rename_exe="a/b""#] {
+        for (opt, expected) in [
+            (r#"bin="../evil""#, "safe relative path"),
+            (r#"rename_exe="a/b""#, "plain file name"),
+        ] {
             let raw_opts = crate::toolset::parse_tool_options(opt);
             let opts = HttpOptions::new(&raw_opts);
             let file_info = FileInfo::new(file_path, &opts);
@@ -1362,10 +1365,18 @@ mod tests {
                 .dest_filename(file_path, &file_info, &opts)
                 .unwrap_err();
             assert!(
-                err.to_string().contains("plain file name"),
+                err.to_string().contains(expected),
                 "unexpected error for {opt}: {err}"
             );
         }
+
+        let raw_opts = crate::toolset::parse_tool_options(r#"bin="bin/mytool""#);
+        let opts = HttpOptions::new(&raw_opts);
+        let file_info = FileInfo::new(file_path, &opts);
+        assert_eq!(
+            backend.dest_filename(file_path, &file_info, &opts).unwrap(),
+            "bin/mytool"
+        );
     }
 
     #[test]

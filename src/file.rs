@@ -1465,6 +1465,25 @@ pub fn is_plain_file_name(name: &str) -> bool {
     )
 }
 
+/// Whether `path` is a non-empty relative path containing only normal
+/// components. Both slash styles are treated as separators so config values are
+/// validated consistently across platforms.
+pub fn is_safe_relative_path(path: &str) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    let normalized = path.replace('\\', "/");
+    let bytes = normalized.as_bytes();
+    if normalized.starts_with('/')
+        || (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
+    {
+        return false;
+    }
+    let mut components = Path::new(&normalized).components();
+    matches!(components.next(), Some(std::path::Component::Normal(_)))
+        && components.all(|component| matches!(component, std::path::Component::Normal(_)))
+}
+
 fn sanitize_7z_entry_path(path: &str) -> Result<PathBuf> {
     let normalized = PathBuf::from(path.replace('\\', "/"));
     let mut safe_path = PathBuf::new();
@@ -1849,6 +1868,26 @@ mod tests {
             "C:\\tool",
         ] {
             assert!(!is_plain_file_name(bad), "should reject {bad:?}");
+        }
+    }
+
+    #[test]
+    fn test_is_safe_relative_path() {
+        for ok in ["tool", "bin/tool", "nested/path/tool.exe", "a b/tool"] {
+            assert!(is_safe_relative_path(ok), "should accept {ok:?}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../tool",
+            "bin/../../tool",
+            "/abs/tool",
+            "..\\tool",
+            "C:\\tool",
+            "\\\\server\\share\\tool",
+        ] {
+            assert!(!is_safe_relative_path(bad), "should reject {bad:?}");
         }
     }
 
