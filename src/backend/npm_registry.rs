@@ -74,12 +74,7 @@ async fn fetch_packument(name: &str) -> Result<aube_registry::Packument> {
 /// stable position at the end.
 pub async fn list_versions(name: &str) -> Result<Vec<VersionInfo>> {
     let packument = fetch_packument(name).await?;
-    let mut versions: Vec<&String> = packument.versions.keys().collect();
-    versions.sort_by_cached_key(|v| {
-        let parsed = versions::SemVer::new(v);
-        (parsed.is_none(), parsed)
-    });
-    Ok(versions
+    Ok(sort_versions(packument.versions.keys())
         .into_iter()
         .map(|version| VersionInfo {
             version: version.clone(),
@@ -90,8 +85,59 @@ pub async fn list_versions(name: &str) -> Result<Vec<VersionInfo>> {
         .collect())
 }
 
+fn sort_versions<'a>(versions: impl Iterator<Item = &'a String>) -> Vec<&'a String> {
+    // npm accepts numeric components up to JavaScript's MAX_SAFE_INTEGER.
+    // `versions::SemVer` stores them as u32, so use `semver::Version`'s u64
+    // components and compare precedence without build metadata.
+    let mut versions = versions
+        .map(|version| (version, semver::Version::parse(version).ok()))
+        .collect::<Vec<_>>();
+    versions.sort_by(|(_, a), (_, b)| match (a, b) {
+        (Some(a), Some(b)) => a.cmp_precedence(b),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+    versions.into_iter().map(|(version, _)| version).collect()
+}
+
 /// Resolve the `latest` dist-tag for a package, if the registry publishes one.
 pub async fn latest_dist_tag(name: &str) -> Result<Option<String>> {
     let packument = fetch_packument(name).await?;
     Ok(packument.dist_tags.get("latest").cloned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sort_versions;
+
+    #[test]
+    fn sort_versions_supports_npm_safe_integer_components() {
+        let versions = [
+            "0.52.0",
+            "0.0.8999999999999999",
+            "0.1.0",
+            "0.0.8888888888",
+            "0.0.899999999",
+            "0.0.9007199254740991",
+        ]
+        .map(String::from);
+
+        let sorted = sort_versions(versions.iter())
+            .into_iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            sorted,
+            [
+                "0.0.899999999",
+                "0.0.8888888888",
+                "0.0.8999999999999999",
+                "0.0.9007199254740991",
+                "0.1.0",
+                "0.52.0",
+            ]
+        );
+    }
 }

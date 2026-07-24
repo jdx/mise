@@ -6460,6 +6460,7 @@ dependencies = [
  "same-file",
  "seccompiler",
  "self_update",
+ "semver",
  "serde",
  "serde_ignored",
  "serde_json",
