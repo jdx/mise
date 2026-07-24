@@ -270,6 +270,15 @@ rename_exe = "kubectl-openunison-cli"  # Rename extracted binary for kubectl plu
 
 This works by searching for the first executable in the extracted directory (or `bin_path` if specified) and renaming it to the specified name.
 
+To rename **multiple** binaries from one archive, use the table form — each key is a source name (an exact file name or a glob) and each value is the new name:
+
+```toml
+[tools."http:mytool"]
+version = "1.0.0"
+url = "https://example.com/mytool-v{{version}}-linux.zip"
+rename_exe = { "mytool-*" = "mytool", "myhelper-*" = "myhelper" }
+```
+
 ::: tip
 Use `bin` for renaming single binary downloads, and `rename_exe` for renaming executables inside archives.
 :::

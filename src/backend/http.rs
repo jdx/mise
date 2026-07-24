@@ -5,9 +5,10 @@ use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
-    clean_binary_name, eval_checksum_expr, fetch_checksum_from_file, fetch_checksum_from_shasums,
-    get_filename_from_url, rename_binary_name, rename_executable_in_dir, shasums_has_entries,
-    template_string, template_string_for_target, verify_artifact,
+    apply_rename_exe, clean_binary_name, eval_checksum_expr, fetch_checksum_from_file,
+    fetch_checksum_from_shasums, get_filename_from_url, lookup_value_with_fallback,
+    rename_binary_name, shasums_has_entries, template_string, template_string_for_target,
+    verify_artifact,
 };
 use crate::backend::version_list;
 use crate::cli::args::BackendArg;
@@ -282,8 +283,10 @@ impl HttpBackend {
             parts.push(format!("strip_{strip_components}"));
         }
 
-        // Include rename_exe in cache key since it modifies the extracted content
-        if let Some(rename) = opts.rename_exe() {
+        // Include rename_exe in cache key since it modifies the extracted content.
+        // Use the raw value so the table form (multi-binary rename) is captured too;
+        // `opts.rename_exe()` only stringifies the scalar form.
+        if let Some(rename) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
             parts.push(format!("rename_{rename}"));
             // When rename_exe is used, bin_path affects where the rename happens,
             // so different bin_path values result in different cached content
@@ -535,7 +538,7 @@ impl HttpBackend {
         file::extract_archive(file_path, dest, cache_plan.file_info.format, &extract_opts)?;
 
         // Handle rename_exe option for archives
-        if let Some(rename_to) = opts.rename_exe() {
+        if let Some(rename_value) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
             // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
             // the same logic used by discover_bin_paths() for PATH construction
             let search_dir = if let Some(bin_path_template) = opts.bin_path() {
@@ -551,7 +554,7 @@ impl HttpBackend {
             };
             // rsplit('/') always yields at least one element (the full string if no delimiter)
             let tool_name = self.ba.tool_name.rsplit('/').next().unwrap();
-            rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
+            apply_rename_exe(&search_dir, rename_value, Some(tool_name))?;
         }
 
         Ok(ExtractionType::Archive)

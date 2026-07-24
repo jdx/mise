@@ -345,6 +345,16 @@ pub fn lookup_with_fallback(opts: &ToolVersionOptions, key: &str) -> Option<Stri
     lookup_platform_key(opts, key).or_else(|| opts.get_string(key))
 }
 
+/// Looks up a raw option value with platform-specific fallback.
+/// Like [`lookup_with_fallback`] but preserves the original `toml::Value` so
+/// callers can distinguish scalar and table forms (e.g. `rename_exe`).
+pub fn lookup_value_with_fallback<'a>(
+    opts: &'a ToolVersionOptions,
+    key: &str,
+) -> Option<&'a toml::Value> {
+    lookup_platform_value(opts, key).or_else(|| opts.opts.get(key))
+}
+
 fn lookup_nested_value<'a>(opts: &'a ToolVersionOptions, key: &str) -> Option<&'a toml::Value> {
     let parts: Vec<&str> = key.split('.').collect();
     if parts.len() < 2 {
@@ -677,7 +687,7 @@ pub fn install_artifact(
         // Handle rename_exe option for archives
         // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
         // the same logic used by discover_bin_paths() for PATH construction
-        if let Some(rename_to) = lookup_with_fallback(opts, "rename_exe") {
+        if let Some(rename_value) = lookup_value_with_fallback(opts, "rename_exe") {
             let search_dir = if let Some(ref dir) = explicit_bin_path {
                 dir.clone()
             } else {
@@ -688,7 +698,7 @@ pub fn install_artifact(
                     install_path.clone()
                 }
             };
-            rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
+            apply_rename_exe(&search_dir, rename_value, Some(tool_name))?;
         }
     }
     Ok(())
@@ -917,6 +927,88 @@ pub fn rename_executable_in_dir(
         }
     }
 
+    Ok(())
+}
+
+/// Applies the `rename_exe` option to freshly-extracted archive contents.
+///
+/// Two forms are supported:
+/// - String — `rename_exe = "plz"` — renames the tool's primary executable
+///   (located via the `tool_name` hint) to the given name. This is the original
+///   single-binary behavior.
+/// - Table — `rename_exe = { "ols-*" = "ols", "odinfmt-*" = "odinfmt" }` — renames
+///   every matched executable. Keys are source names that may contain glob
+///   patterns (matched against the file name); values are the new names. This
+///   lets archives that ship several binaries expose all of them under clean
+///   names.
+pub fn apply_rename_exe(
+    search_dir: &Path,
+    value: &toml::Value,
+    tool_name: Option<&str>,
+) -> eyre::Result<()> {
+    match value {
+        toml::Value::Table(entries) => {
+            for (source, target) in entries {
+                let Some(target) = target.as_str() else {
+                    warn!("rename_exe: target for '{source}' is not a string, skipping");
+                    continue;
+                };
+                rename_matching_executable(search_dir, source, target)?;
+            }
+            Ok(())
+        }
+        toml::Value::String(new_name) => rename_executable_in_dir(search_dir, new_name, tool_name),
+        other => {
+            warn!("rename_exe: expected a string or table, got {other}");
+            Ok(())
+        }
+    }
+}
+
+/// Renames a single binary matched by `source_pattern` (an exact file name or a
+/// glob such as `ols-*`) to `target`. Adds the executable bit when the archive
+/// dropped it (common for ZIPs). Used by the table form of `rename_exe`.
+fn rename_matching_executable(dir: &Path, source_pattern: &str, target: &str) -> eyre::Result<()> {
+    // Fast path: exact file name match.
+    let exact = dir.join(source_pattern);
+    if exact.is_file() {
+        return finish_rename(dir, &exact, source_pattern, target);
+    }
+
+    // Otherwise treat the key as a glob against the file names in `dir`.
+    // `file::ls` returns a sorted set, so a pattern matching more than one file
+    // resolves deterministically to the first match.
+    let pattern = glob::Pattern::new(source_pattern)
+        .map_err(|e| eyre::eyre!("invalid rename_exe pattern '{source_pattern}': {e}"))?;
+    for path in file::ls(dir)? {
+        if !path.is_file() {
+            continue;
+        }
+        let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+        if pattern.matches(&file_name) {
+            return finish_rename(dir, &path, &file_name, target);
+        }
+    }
+
+    warn!(
+        "rename_exe: no file matching '{source_pattern}' found in {}",
+        dir.display()
+    );
+    Ok(())
+}
+
+/// Renames `path` (named `file_name`) to `target` within `dir`, preserving any
+/// required extension and ensuring the result is executable.
+fn finish_rename(dir: &Path, path: &Path, file_name: &str, target: &str) -> eyre::Result<()> {
+    let target_path = keep_required_extensions(dir, file_name, target, dir.join(target));
+    if path == target_path {
+        return Ok(());
+    }
+    if !file::is_executable(path) {
+        file::make_executable(path)?;
+    }
+    file::rename(path, &target_path)?;
+    debug!("Renamed {} to {}", path.display(), target_path.display());
     Ok(())
 }
 
@@ -1908,5 +2000,99 @@ bin = "tool.exe"
         assert!(!file::is_executable(&readme));
         assert!(!file::is_executable(&config));
         assert!(!file::is_executable(&unrelated));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_renames_multiple_binaries_by_glob() {
+        // An archive that ships several binaries with platform-suffixed names.
+        // The table form should clean up all of them, not just one.
+        let tmp = tempfile::tempdir().unwrap();
+        let ols = tmp.path().join("ols-x86_64-unknown-linux-gnu");
+        let odinfmt = tmp.path().join("odinfmt-x86_64-unknown-linux-gnu");
+        std::fs::write(&ols, b"bin").unwrap();
+        std::fs::write(&odinfmt, b"bin").unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert("ols-*".to_string(), toml::Value::String("ols".to_string()));
+            t.insert(
+                "odinfmt-*".to_string(),
+                toml::Value::String("odinfmt".to_string()),
+            );
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, Some("ols")).unwrap();
+
+        let ols_renamed = tmp.path().join("ols");
+        let odinfmt_renamed = tmp.path().join("odinfmt");
+        assert!(ols_renamed.is_file(), "ols should be renamed");
+        assert!(odinfmt_renamed.is_file(), "odinfmt should be renamed");
+        assert!(!ols.exists(), "original ols-* should be gone");
+        assert!(!odinfmt.exists(), "original odinfmt-* should be gone");
+        // ZIP archives drop the exec bit; rename should restore it.
+        assert!(file::is_executable(&ols_renamed));
+        assert!(file::is_executable(&odinfmt_renamed));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_exact_match() {
+        let tmp = tempfile::tempdir().unwrap();
+        let please = tmp.path().join("please");
+        let other = tmp.path().join("please_sandbox");
+        std::fs::write(&please, b"bin").unwrap();
+        std::fs::write(&other, b"bin").unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert("please".to_string(), toml::Value::String("plz".to_string()));
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, Some("please")).unwrap();
+
+        assert!(tmp.path().join("plz").is_file());
+        assert!(!please.exists());
+        // Untargeted binaries are left untouched.
+        assert!(other.is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_string_delegates_to_single_rename() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("please");
+        std::fs::write(&bin, b"bin").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let value = toml::Value::String("plz".to_string());
+        apply_rename_exe(tmp.path(), &value, Some("please")).unwrap();
+
+        assert!(tmp.path().join("plz").is_file());
+        assert!(!bin.exists());
+    }
+
+    #[test]
+    fn test_apply_rename_exe_table_missing_source_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("keep"), b"bin").unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert(
+                "nonexistent-*".to_string(),
+                toml::Value::String("whatever".to_string()),
+            );
+            t
+        });
+
+        // No matching file: warns and leaves the directory untouched.
+        apply_rename_exe(tmp.path(), &value, None).unwrap();
+        assert!(tmp.path().join("keep").is_file());
+        assert!(!tmp.path().join("whatever").exists());
     }
 }
