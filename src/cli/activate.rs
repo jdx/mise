@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::config::Settings;
 use crate::env::PATH_KEY;
@@ -73,14 +73,9 @@ impl Activate {
         // touch ROOT to allow hook-env to run
         let _ = touch_dir(&dirs::DATA);
 
-        let mise_bin = if cfg!(target_os = "linux") {
+        let mise_bin = if cfg!(target_os = "linux") && *env::IS_RUNNING_AS_SHIM {
             // linux dereferences symlinks, so use argv0 instead
-            let argv0 = PathBuf::from(&*env::ARGV0);
-            let path = if argv0.is_absolute() {
-                argv0
-            } else {
-                which::which(&*env::ARGV0).unwrap_or_else(|_| env::MISE_BIN.clone())
-            };
+            let path = env::MISE_INVOKED_PATH.clone();
             if path.is_absolute() {
                 path
             } else {

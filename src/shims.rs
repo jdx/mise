@@ -21,11 +21,10 @@ use itertools::Itertools;
 use path_absolutize::Absolutize;
 use tokio::task::JoinSet;
 
-// executes as if it was a shim if the command is not "mise", e.g.: "node"
+// Execute tool commands invoked through a mise-managed shim, e.g. "node".
 pub async fn handle_shim() -> Result<()> {
-    // TODO: instead, check if bin is in shims dir
     let bin_name = *env::MISE_BIN_NAME;
-    if env::is_mise_binary(bin_name) || cfg!(test) {
+    if env::is_mise_binary(bin_name) || !*env::IS_RUNNING_AS_SHIM || cfg!(test) {
         return Ok(());
     }
     #[cfg(windows)]

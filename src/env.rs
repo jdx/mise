@@ -364,6 +364,16 @@ pub static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| !var_is_false("MISE_USE_TOML
 pub static MISE_LIST_ALL_VERSIONS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LIST_ALL_VERSIONS"));
 pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
 pub static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
+pub static MISE_INVOKED_PATH: Lazy<PathBuf> = Lazy::new(|| {
+    let argv0 = PathBuf::from(&*ARGV0);
+    if argv0.is_absolute() {
+        return argv0;
+    }
+    if argv0.components().count() > 1 {
+        return current_dir().map(|cwd| cwd.join(&argv0)).unwrap_or(argv0);
+    }
+    which::which(&argv0).unwrap_or_else(|_| MISE_BIN.clone())
+});
 pub static MISE_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_LOG_FILE"));
 pub static MISE_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
 fn find_in_tree(base: &Path, rels: &[&[&str]]) -> Option<PathBuf> {
@@ -451,8 +461,18 @@ pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
         return true;
     }
 
-    let bin_name = *MISE_BIN_NAME;
-    !is_mise_binary(bin_name)
+    #[cfg(unix)]
+    {
+        MISE_INVOKED_PATH
+            .parent()
+            .is_some_and(crate::file::is_mise_shims_dir)
+    }
+
+    #[cfg(windows)]
+    {
+        let bin_name = *MISE_BIN_NAME;
+        !is_mise_binary(bin_name)
+    }
 });
 
 /// Returns true if the given binary name refers to mise itself (not a shim).

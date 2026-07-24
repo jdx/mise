@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+if [[ $(uname -s) != Linux ]]; then
+  exit 0
+fi
+
+mise_bin="$(command -v mise)"
+appimage_path="/tmp/Cursor.AppImage"
+
+# AppImage launchers export ARGV0. zsh propagates that value as argv[0] when it
+# starts external commands, so direct mise invocations must not be treated as
+# shims for the AppImage executable.
+doctor_output="$(bash -c 'exec -a "$1" "$2" doctor' _ "$appimage_path" "$mise_bin" 2>&1 || true)"
+assert_not_contains_text "$doctor_output" "Cursor.AppImage is not a valid shim"
+assert_contains_text "$doctor_output" "version:"
+
+activate_output="$(bash -c 'exec -a "$1" "$2" activate zsh' _ "$appimage_path" "$mise_bin")"
+assert_not_contains_text "$activate_output" "$appimage_path"
+assert_contains_text "$activate_output" "$mise_bin"
+
+# A symlink in mise's configured shims directory must still dispatch normally.
+mise use dummy@latest
+assert_contains "$MISE_DATA_DIR/shims/dummy --version" "This is Dummy"

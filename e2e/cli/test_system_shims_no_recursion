@@ -15,8 +15,11 @@ mkdir -p "$shimdir"
 # Simulate a second (system-level) shims directory on PATH.
 # The binary inside it is a symlink to the mise binary, exactly like a real
 # system shim created by `mise install --system`.
-sys_shimdir="$(mktemp -d)"
-trap 'rm -rf "$sys_shimdir"' EXIT
+sys_data_dir="$(mktemp -d)"
+sys_shimdir="$sys_data_dir/shims"
+mkdir -p "$sys_shimdir"
+export MISE_SYSTEM_DATA_DIR="$sys_data_dir"
+trap 'rm -rf "$sys_data_dir"' EXIT
 mise_bin="$(command -v mise)"
 ln -s "$mise_bin" "$sys_shimdir/dummy"
 
