@@ -1,5 +1,88 @@
 # Changelog
 
+## [2026.7.13](https://github.com/jdx/mise/compare/v2026.7.12..v2026.7.13) - 2026-07-24
+
+### 🚀 Features
+
+- **(backend)** support renaming multiple binaries via rename_exe table form by @jdx in [#11231](https://github.com/jdx/mise/pull/11231)
+- **(brew)** support cask shell completions by @jdx in [#11198](https://github.com/jdx/mise/pull/11198)
+- **(go)** support go.mod as idiomatic version file by @JamBalaya56562 in [#11213](https://github.com/jdx/mise/pull/11213)
+- **(task)** pass -NoProfile to PowerShell task shells by @jdx in [#11199](https://github.com/jdx/mise/pull/11199)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** strip "./" from relative [bootstrap.repos] paths by @lilienblum in [#11214](https://github.com/jdx/mise/pull/11214)
+- **(brew)** handle cask flight steps and zap receipts by @jdx in [#11197](https://github.com/jdx/mise/pull/11197)
+- **(brew)** remove protected cask app backups by @jdx in [#11219](https://github.com/jdx/mise/pull/11219)
+- **(env)** resolve _.path/_.file/_.source directives in written order by @JamBalaya56562 in [#11163](https://github.com/jdx/mise/pull/11163)
+- **(http)** return an error instead of panicking on invalid URLs by @Marukome0743 in [#11160](https://github.com/jdx/mise/pull/11160)
+- **(install)** serialize logical state mutations by @risu729 in [#11207](https://github.com/jdx/mise/pull/11207)
+- **(install)** don't report failed installs as "installed but not activated" by @jdx in [#11227](https://github.com/jdx/mise/pull/11227)
+- **(lockfile)** don't flag already-installed upgrades as provenance regressions by @jdx in [#11230](https://github.com/jdx/mise/pull/11230)
+- **(npm)** surface aube install error chain instead of opaque message by @jdx in [#11226](https://github.com/jdx/mise/pull/11226)
+- **(python)** add python3 executable on Windows by @jdx in [#11212](https://github.com/jdx/mise/pull/11212)
+- **(python)** deprecate virtualenv tool option in favor of _.python.venv by @JamBalaya56562 in [#11234](https://github.com/jdx/mise/pull/11234)
+- **(ruby)** bypass versions host for custom precompiled releases by @risu729 in [#11154](https://github.com/jdx/mise/pull/11154)
+- **(ruby)** accept multi-digit versions in Gemfile parse by @capnregex in [#11229](https://github.com/jdx/mise/pull/11229)
+- **(settings)** avoid panic when parent key is an inline table by @Marukome0743 in [#11184](https://github.com/jdx/mise/pull/11184)
+- **(task)** preserve inline overlay precedence by @risu729 in [#11103](https://github.com/jdx/mise/pull/11103)
+- **(task)** fix source freshness for workspace-rooted patterns in subproject tasks by @rabadin in [#11202](https://github.com/jdx/mise/pull/11202)
+- align self-update TLS backend with feature activation by @bltavares in [#10834](https://github.com/jdx/mise/pull/10834)
+
+### 📚 Documentation
+
+- **(python)** clarify uv_venv_auto requires a uv.lock file by @jdx in [#11223](https://github.com/jdx/mise/pull/11223)
+- retarget dead registry_comment.yml link in contributing guide by @Bartok9 in [#11123](https://github.com/jdx/mise/pull/11123)
+- fix dead aqua-registry and pipx installation links by @Bartok9 in [#11167](https://github.com/jdx/mise/pull/11167)
+
+### 📦️ Dependency Updates
+
+- scope task providers by config root by @risu729 in [#11180](https://github.com/jdx/mise/pull/11180)
+- share state across provider scopes by @risu729 in [#11181](https://github.com/jdx/mise/pull/11181)
+- bump clx to 2.1.1 by @jdx in [#11233](https://github.com/jdx/mise/pull/11233)
+- update docker/login-action digest to 06fb636 by @renovate[bot] in [#11238](https://github.com/jdx/mise/pull/11238)
+- update ghcr.io/jdx/mise:alpine docker digest to 91ff6f4 by @renovate[bot] in [#11239](https://github.com/jdx/mise/pull/11239)
+- update ubuntu docker tag to resolute-20260707 by @renovate[bot] in [#11244](https://github.com/jdx/mise/pull/11244)
+- update rust docker digest to 1bcff4b by @renovate[bot] in [#11242](https://github.com/jdx/mise/pull/11242)
+- update zizmorcore/zizmor-action action to v0.6.0 by @renovate[bot] in [#11245](https://github.com/jdx/mise/pull/11245)
+- update ghcr.io/jdx/mise:rpm docker digest to fa31e49 by @renovate[bot] in [#11241](https://github.com/jdx/mise/pull/11241)
+- update ghcr.io/jdx/mise:deb docker digest to 99749e6 by @renovate[bot] in [#11240](https://github.com/jdx/mise/pull/11240)
+- update rust crate usage-lib to v3.5.6 by @renovate[bot] in [#11243](https://github.com/jdx/mise/pull/11243)
+- update jdx/mise-action digest to f10502f by @renovate[bot] in [#11253](https://github.com/jdx/mise/pull/11253)
+
+### Chore
+
+- **(ci)** remove redundant main push tests by @jdx in [#11210](https://github.com/jdx/mise/pull/11210)
+- **(ci)** double macos release build timeouts by @jdx in [330dd4a](https://github.com/jdx/mise/commit/330dd4a257eafe28af3a8c2ba91a7d96abe5564c)
+- **(docker)** install cmake in builder image by @jdx in [#11209](https://github.com/jdx/mise/pull/11209)
+
+### New Contributors
+
+- @capnregex made their first contribution in [#11229](https://github.com/jdx/mise/pull/11229)
+- @rabadin made their first contribution in [#11202](https://github.com/jdx/mise/pull/11202)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`dyoshikawa/rulesync`](https://github.com/dyoshikawa/rulesync)
+
+#### Updated Packages (13)
+
+- [`colbymchenry/codegraph`](https://github.com/colbymchenry/codegraph)
+- [`ekristen/aws-nuke`](https://github.com/ekristen/aws-nuke)
+- [`eth-p/bat-extras`](https://github.com/eth-p/bat-extras)
+- [`getsops/sops`](https://github.com/getsops/sops)
+- [`jenkins-x/jx`](https://github.com/jenkins-x/jx)
+- [`jreleaser/jreleaser`](https://github.com/jreleaser/jreleaser)
+- [`nektro/zigmod`](https://github.com/nektro/zigmod)
+- [`ovh/venom`](https://github.com/ovh/venom)
+- [`sigstore/gitsign`](https://github.com/sigstore/gitsign)
+- [`smallstep/cli`](https://github.com/smallstep/cli)
+- [`suzuki-shunsuke/pinact`](https://github.com/suzuki-shunsuke/pinact)
+- [`uutils/coreutils`](https://github.com/uutils/coreutils)
+- [`version-fox/vfox`](https://github.com/version-fox/vfox)
+
 ## [2026.7.12](https://github.com/jdx/mise/compare/v2026.7.11..v2026.7.12) - 2026-07-22
 
 ### 🚀 Features
