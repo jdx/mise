@@ -27471,6 +27471,25 @@ packages:
             files:
               - name: codegraph
                 src: "{{.AssetWithoutExt}}/bin/codegraph.cmd"
+      - version_constraint: semver("< 1.5.0")
+        asset: codegraph-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: codegraph
+            src: "{{.AssetWithoutExt}}/bin/codegraph"
+        replacements:
+          amd64: x64
+          windows: win32
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: codegraph
+                src: "{{.AssetWithoutExt}}/bin/codegraph.cmd"
       - version_constraint: "true"
         asset: codegraph-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -27484,6 +27503,8 @@ packages:
           type: github_release
           asset: SHA256SUMS
           algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: colbymchenry/codegraph/\.github/workflows/release\.yml
         overrides:
           - goos: windows
             format: zip
@@ -35933,6 +35954,74 @@ packages:
               - name: zencode-exec
                 src: zenroom-{{.OS}}/zencode-exec
   - type: github_release
+    repo_owner: dyoshikawa
+    repo_name: rulesync
+    description: A Utility CLI for AI Coding Agents
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v6.7.1"
+        no_asset: true
+      - version_constraint: semver("<= 3.14.0")
+        no_asset: true
+      - version_constraint: semver("<= 3.17.1")
+        asset: rulesync-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 4.0.0")
+        asset: rulesync-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+      - version_constraint: semver("<= 5.5.1")
+        asset: rulesync-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: semver("<= 14.1.0")
+        asset: rulesync-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: rulesync-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        github_artifact_attestations:
+          signer_workflow: dyoshikawa/rulesync/.github/workflows/publish-assets.yml
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+  - type: github_release
     repo_owner: earendil-works
     repo_name: pi
     description: Interactive coding agent CLI
@@ -36109,7 +36198,7 @@ packages:
     description: Remove all the resources from an AWS account
     version_constraint: "false"
     version_overrides:
-      - version_constraint: Version in ["v3.0.0-beta.25", "v3.0.0-beta.44", "v3.0.0-beta.56", "v3.46.0"]
+      - version_constraint: Version in ["v3.0.0-beta.25", "v3.0.0-beta.44", "v3.0.0-beta.56", "v3.46.0", "v3.53.0", "v3.62.1", "v3.63.0", "v3.64.3"]
         no_asset: true
       - version_constraint: Version == "v2.17.0-ek.1"
         asset: aws-nuke-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
@@ -36161,7 +36250,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<= 3.64.2")
         asset: aws-nuke-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
@@ -36179,6 +36268,26 @@ packages:
               - https://token.actions.githubusercontent.com
               - --signature
               - https://github.com/ekristen/aws-nuke/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: aws-nuke-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - "https://github.com/ekristen/aws-nuke/.github/workflows/goreleaser.yml@refs/tags/{{.Version}}"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
         overrides:
           - goos: windows
             format: zip
@@ -37022,6 +37131,7 @@ packages:
     repo_owner: eth-p
     repo_name: bat-extras
     description: Bash scripts that integrate bat with various command line tools
+    version_filter: Version matches "^v\\d{4}\\.\\d{2}\\.\\d{2}$"
     version_constraint: "false"
     supported_envs:
       - linux
@@ -37042,6 +37152,8 @@ packages:
       - name: bat-modules
         src: bin/bat-modules
     version_overrides:
+      - version_constraint: semver("<= 2020.10.05")
+        no_asset: true
       - version_constraint: semver("<= 2023.03.21")
         asset: bat-extras-{{ trimV .Version | replace "." "" }}.zip
       - version_constraint: semver("<= 2024.02.12")
@@ -40969,6 +41081,29 @@ packages:
     description: Simple and flexible tool for managing secrets
     version_constraint: "false"
     version_overrides:
+      - version_constraint: Version == "v3.8.0-rc.1"
+        asset: sops-{{.Version}}.{{.OS}}.{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sops-{{.Version}}.checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/getsops/sops/releases/download/{{.Version}}/sops-{{.Version}}.checksums.pem
+              - --signature
+              - https://github.com/getsops/sops/releases/download/{{.Version}}/sops-{{.Version}}.checksums.sig
+              - --certificate-identity-regexp
+              - https://github.com/getsops
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        slsa_provenance:
+          type: github_release
+          asset: provenance.intoto.jsonl
+        overrides:
+          - goos: windows
+            asset: sops-{{.Version}}
       - version_constraint: semver("<= 3.7.1")
         asset: sops-{{.Version}}.{{.OS}}
         format: raw
@@ -41008,7 +41143,7 @@ packages:
         overrides:
           - goos: windows
             asset: sops-{{.Version}}
-      - version_constraint: "true"
+      - version_constraint: semver("<= 3.12.2")
         asset: sops-{{.Version}}.{{.OS}}.{{.Arch}}
         format: raw
         checksum:
@@ -41021,6 +41156,28 @@ packages:
               - https://github.com/getsops/sops/releases/download/{{.Version}}/sops-{{.Version}}.checksums.pem
               - --signature
               - https://github.com/getsops/sops/releases/download/{{.Version}}/sops-{{.Version}}.checksums.sig
+              - --certificate-identity-regexp
+              - https://github.com/getsops
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        slsa_provenance:
+          type: github_release
+          asset: sops-{{.Version}}.intoto.jsonl
+        overrides:
+          - goos: windows
+            asset: sops-{{.Version}}.{{.Arch}}
+      - version_constraint: "true"
+        asset: sops-{{.Version}}.{{.OS}}.{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sops-{{.Version}}.checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: sops-{{.Version}}.checksums.sigstore.json
+            opts:
               - --certificate-identity-regexp
               - https://github.com/getsops
               - --certificate-oidc-issuer
@@ -52305,7 +52462,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<= 3.17.6")
         asset: jx-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
@@ -52323,6 +52480,28 @@ packages:
               - https://github.com/jenkins-x/jx/releases/download/{{.Version}}/jx-checksums.txt.sig
               - --certificate
               - https://github.com/jenkins-x/jx/releases/download/{{.Version}}/jx-checksums.txt.pem
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version in ["v3.17.7", "v3.17.8", "v3.17.9"]
+        no_asset: true
+      - version_constraint: "true"
+        asset: jx-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: jx-checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: jx-checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/jenkins-x/jx/.github/workflows/jenkins-x-release.yaml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -53848,13 +54027,31 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.24.0")
         asset: jreleaser-native-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: zip
         windows_arm_emulation: true
         files:
           - name: jreleaser
             src: "{{.AssetWithoutExt}}/bin/jreleaser"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: osx
+        overrides:
+          - goos: windows
+            replacements: {}
+        slsa_provenance:
+          type: github_release
+          asset: jreleaser-all-{{trimV .Version}}.intoto.jsonl
+          source_tag: "-"
+      - version_constraint: "true"
+        asset: jreleaser-native-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: jreleaser
+            src: "{{.AssetWithoutExt}}/bin/{{.AssetWithoutExt}}"
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -68529,12 +68726,25 @@ packages:
     repo_name: zigmod
     description: Zig package manager
     version_prefix: "r"
-    asset: zigmod-{{.Arch}}-{{.OS}}
-    format: raw
-    replacements:
-      amd64: x86_64
-      arm64: aarch64
-      darwin: macos
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 100")
+        asset: zigmod-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+      - version_constraint: "true"
+        asset: zigmod-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        supported_envs:
+          - darwin
+          - linux
   - type: github_release
     repo_owner: neondatabase
     repo_name: neonctl
@@ -72859,11 +73069,15 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.2.0")
         asset: venom.{{.OS}}-{{.Arch}}
         format: raw
         windows_arm_emulation: true
         complete_windows_ext: false
+      - version_constraint: "true"
+        asset: venom.{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
   - type: github_release
     repo_owner: owenlamont
     repo_name: ryl
@@ -83453,7 +83667,7 @@ packages:
     version_overrides:
       - version_constraint: semver("<= 0.0.1-alpha")
         no_asset: true
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.14.0")
         asset: gitsign_{{trimV .Version}}_{{.OS}}_{{.Arch}}
         format: raw
         checksum:
@@ -83470,6 +83684,24 @@ packages:
             - https://token.actions.githubusercontent.com
             - --signature
             - https://github.com/sigstore/gitsign/releases/download/{{.Version}}/{{.Asset}}.sig
+      - version_constraint: Version == "v0.15.0"
+        no_asset: true
+      - version_constraint: "true"
+        asset: gitsign_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        cosign:
+          bundle:
+            type: github_release
+            asset: "{{.Asset}}.bundle"
+          opts:
+            - --certificate-identity
+            - https://github.com/sigstore/gitsign/.github/workflows/release.yml@refs/tags/{{.Version}}
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
   - type: github_release
     repo_owner: sigstore
     repo_name: rekor
@@ -84533,7 +84765,7 @@ packages:
         src: step_{{.OS}}_{{.Arch}}/bin/step
     version_constraint: "false"
     version_overrides:
-      - version_constraint: Version in ["v0.15.1", "v0.27.0", "v0.28.1", "v0.28.4"]
+      - version_constraint: Version in ["v0.15.1", "v0.27.0", "v0.28.1", "v0.28.4", "v0.30.3-rc1"]
         no_asset: true
       - version_constraint: Version == "v0.0.1"
         asset: step_{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
@@ -84629,7 +84861,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.29.0")
         asset: step_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -84646,6 +84878,25 @@ packages:
               - https://token.actions.githubusercontent.com
               - --signature
               - https://github.com/smallstep/cli/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: step_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/smallstep/workflows/.github/workflows/goreleaser.yml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -89580,7 +89831,7 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
-      - version_constraint: "true"
+      - version_constraint: semver("<= 4.1.0")
         asset: pinact_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -89597,6 +89848,30 @@ packages:
               - https://token.actions.githubusercontent.com
               - --signature
               - https://github.com/suzuki-shunsuke/pinact/releases/download/{{.Version}}/pinact_{{trimV .Version}}_checksums.txt.sig
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: pinact_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: pinact_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: pinact_{{trimV .Version}}_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.+$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
@@ -96564,6 +96839,21 @@ packages:
         files:
           - name: coreutils
             src: coreutils-{{.Arch}}-{{.OS}}/coreutils
+      - version_constraint: semver("<= 0.6.0")
+        asset: coreutils-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: coreutils
+            src: coreutils-{{.Version}}-{{.Arch}}-{{.OS}}/coreutils
       - version_constraint: "true"
         asset: coreutils-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -96575,6 +96865,12 @@ packages:
           windows: pc-windows-msvc
         overrides:
           - goos: windows
+            goarch: amd64
+            format: zip
+            replacements:
+              windows: pc-windows-gnu
+          - goos: windows
+            goarch: arm64
             format: zip
         files:
           - name: coreutils
@@ -97517,11 +97813,38 @@ packages:
   - type: github_release
     repo_owner: version-fox
     repo_name: vfox
-    description: A cross-platform and extendable version manager with support for Java, Node.js, Flutter, .Net & more
+    description: A cross-platform and extendable version manager with support for Java, Node.js, Golang, Python, Flutter, .NET & more
     version_constraint: "false"
     version_overrides:
       - version_constraint: Version == "v0.2.5"
         no_asset: true
+      - version_constraint: semver("<= 1.0.8")
+        asset: vfox_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: vfox
+            src: "{{.AssetWithoutExt}}/vfox"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/version-fox/vfox/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity-regexp
+              - "^https://github\\.com/version-fox/vfox/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/version-fox/vfox/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: vfox_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -97539,13 +97862,12 @@ packages:
           cosign:
             opts:
               - --certificate-identity-regexp
-              - "https://github\\.com/version-fox/vfox/\\.github/workflows/go-releaser\\.yml@.*"
+              - "^https://github\\.com/version-fox/vfox/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
               - --certificate-oidc-issuer
-              - "https://token.actions.githubusercontent.com"
-              - --signature
-              - https://github.com/version-fox/vfox/releases/download/{{.Version}}/checksums.txt.sig
-              - --certificate
-              - https://github.com/version-fox/vfox/releases/download/{{.Version}}/checksums.txt.pem
+              - https://token.actions.githubusercontent.com
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
         overrides:
           - goos: windows
             format: zip
