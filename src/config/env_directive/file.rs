@@ -33,22 +33,49 @@ impl EnvResults {
         exec_env: &TeraEnvMap,
         config_root: &Path,
         input: String,
+        expand: bool,
     ) -> Result<IndexMap<PathBuf, EnvMap>> {
         let mut out = IndexMap::new();
         let s = r.parse_template(ctx, tera, source, exec_env, &input)?;
+        let expand = expand && crate::config::Settings::get().env_shell_expand;
+        // Accumulate loaded vars so opted-in expansion can reference values from
+        // an earlier file in the same directive or an earlier env block.
+        let mut acc: TeraEnvMap = exec_env.clone();
         for p in xx::file::glob(normalize_path(config_root, s.into())).unwrap_or_default() {
-            let env = out.entry(p.clone()).or_insert_with(IndexMap::new);
             let parse_template = |s: String| r.parse_template(ctx, tera, source, exec_env, &s);
             let ext = p
                 .extension()
                 .map(|e| e.to_string_lossy().to_string())
                 .unwrap_or_default();
-            *env = match ext.as_str() {
+            let mut loaded = match ext.as_str() {
                 "json" => Self::json(config, exec_env, &p, parse_template).await?,
                 "yaml" => Self::yaml(config, exec_env, &p, parse_template).await?,
                 "toml" => Self::toml(config, exec_env, &p, parse_template).await?,
-                _ => Self::dotenv(&p).await?,
+                _ => Self::dotenv(&p, &acc, expand).await?,
             };
+            // Structured files are literal by default. With `expand = true`, run
+            // their values through the same `$VAR` engine used by `[env]` values
+            // and accumulate key-by-key for same-file references.
+            if expand && matches!(ext.as_str(), "json" | "yaml" | "toml") {
+                for (k, v) in loaded.iter_mut() {
+                    let mut missing = Vec::new();
+                    let expanded = super::shell_expand_env(&*v, &acc, &mut missing);
+                    for var in missing {
+                        warn_once!(
+                            "env var '{var}' is not defined and will be left unexpanded. \
+                             Use ${{{var}:-}} to default to an empty string and suppress \
+                             this warning."
+                        );
+                    }
+                    *v = expanded;
+                    acc.insert(k.clone(), v.clone());
+                }
+            } else {
+                for (k, v) in &loaded {
+                    acc.insert(k.clone(), v.clone());
+                }
+            }
+            out.insert(p, loaded);
         }
         Ok(out)
     }
@@ -191,17 +218,76 @@ impl EnvResults {
         }
     }
 
-    async fn dotenv(p: &Path) -> Result<EnvMap> {
+    async fn dotenv(p: &Path, acc: &TeraEnvMap, expand: bool) -> Result<EnvMap> {
         let errfn = || eyre!("failed to parse dotenv file: {}", display_path(p));
+        if !expand {
+            // Preserve dotenvy's normal behavior unless cross-file expansion was
+            // explicitly requested.
+            let mut env = EnvMap::new();
+            if let Ok(dotenv) = dotenvy::from_path_iter(p) {
+                for item in dotenv {
+                    let (k, v) = item.wrap_err_with(errfn)?;
+                    env.insert(k, v);
+                }
+            }
+            return Ok(env);
+        }
+        // dotenvy substitutes `${VAR}` only against the process env + vars defined
+        // earlier in the same file and has no API for a custom map. Seed the parse
+        // with accumulated values, then retain only keys defined by this file.
+        let Ok(content) = file::read_to_string(p) else {
+            return Ok(EnvMap::new());
+        };
+        let mut own_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for item in dotenvy::from_read_iter(content.as_bytes()) {
+            let (k, _v) = item.wrap_err_with(errfn)?;
+            own_keys.insert(k);
+        }
+        if own_keys.is_empty() {
+            return Ok(EnvMap::new());
+        }
+        let mut prefix = String::new();
+        for (k, v) in acc {
+            if own_keys.contains(k) || !is_env_key(k) {
+                continue;
+            }
+            prefix.push_str(k);
+            prefix.push_str("=\"");
+            prefix.push_str(&escape_dotenv_double_quoted(v));
+            prefix.push_str("\"\n");
+        }
+        let augmented = format!("{prefix}{content}");
         let mut env = EnvMap::new();
-        if let Ok(dotenv) = dotenvy::from_path_iter(p) {
-            for item in dotenv {
-                let (k, v) = item.wrap_err_with(errfn)?;
+        for item in dotenvy::from_read_iter(augmented.as_bytes()) {
+            let (k, v) = item.wrap_err_with(errfn)?;
+            if own_keys.contains(&k) {
                 env.insert(k, v);
             }
         }
         Ok(env)
     }
+}
+
+fn is_env_key(k: &str) -> bool {
+    let mut chars = k.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn escape_dotenv_double_quoted(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '$' => out.push_str("\\$"),
+            '\n' => out.push_str("\\n"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -349,5 +435,20 @@ mod tests {
         restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
         restore_env_var("MISE_SOPS_ROPS", prev_rops);
         Settings::reset(None);
+    }
+
+    #[test]
+    fn escapes_seeded_dotenv_values() {
+        assert_eq!(escape_dotenv_double_quoted(r#"a$b"c\d"#), r#"a\$b\"c\\d"#);
+        assert_eq!(escape_dotenv_double_quoted("l1\nl2"), "l1\\nl2");
+    }
+
+    #[test]
+    fn validates_seeded_dotenv_keys() {
+        assert!(is_env_key("PGHOST"));
+        assert!(is_env_key("_FOO123"));
+        assert!(!is_env_key("1FOO"));
+        assert!(!is_env_key("FOO-BAR"));
+        assert!(!is_env_key(""));
     }
 }

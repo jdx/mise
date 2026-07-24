@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# Expansion in _.file is opt-in so structured files remain literal by default.
+
+# dotenv cross-file reference within a single `_.file` directive
+cat >mise.toml <<'EOF'
+[env]
+_.file = { path = ['.postgres', '.local'], expand = true }
+EOF
+printf 'PGHOST=postgres\n' >.postgres
+printf 'PGTEST="${PGHOST}"\nPGTESTING=$PGHOST\n' >.local
+assert "mise env | grep '^export PGTEST='" "export PGTEST=postgres"
+assert "mise env | grep '^export PGTESTING='" "export PGTESTING=postgres"
+
+# same result via separate `[[env]]` blocks
+cat >mise.toml <<'EOF'
+[[env]]
+_.file = '.postgres'
+[[env]]
+_.file = { path = '.local', expand = true }
+EOF
+assert "mise env | grep '^export PGTEST='" "export PGTEST=postgres"
+
+# a dotenv file can reference a var defined in `[env]`
+cat >mise.toml <<'EOF'
+[env]
+BASE = "base"
+_.file = { path = '.child', expand = true }
+EOF
+printf 'CHILD="${BASE}/child"\n' >.child
+assert "mise env | grep '^export CHILD='" "export CHILD=base/child"
+
+# a structured file can reference an earlier `[env]` var when opted in
+cat >mise.toml <<'EOF'
+[env]
+FIRST = "one"
+_.file = { path = 'vals.json', expand = true }
+EOF
+echo '{"SECOND": "${FIRST}/two"}' >vals.json
+assert "mise env | grep '^export SECOND='" "export SECOND=one/two"
+
+# a structured file value can reference an earlier key from the same file
+cat >mise.toml <<'EOF'
+[env]
+_.file = { path = 'chain.json', expand = true }
+EOF
+echo '{"BASE": "/opt", "BIN": "${BASE}/bin"}' >chain.json
+assert "mise env | grep '^export BIN='" "export BIN=/opt/bin"
+
+# The global setting remains a master switch for explicitly requested expansion.
+cat >mise.toml <<'EOF'
+[env]
+_.file = { path = ['.postgres', '.local'], expand = true }
+EOF
+assert_not_contains "MISE_ENV_SHELL_EXPAND=false mise env" "export PGTEST=postgres"

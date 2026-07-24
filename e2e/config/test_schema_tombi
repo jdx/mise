@@ -136,7 +136,7 @@ TOML
 
 cat >"$HOME/workdir/mise-env-directives.toml" <<'TOML'
 [env]
-_.file = { path = ".env", tools = true, redact = true, required = true }
+_.file = { path = ".env", tools = true, redact = true, required = true, expand = true }
 _.source = [{ path = "env.sh", tools = true, redact = true, required = "source env.sh" }]
 _.path = { paths = ["./bin", "./scripts"], tools = true }
 TOML

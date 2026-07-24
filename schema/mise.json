@@ -130,6 +130,11 @@
       "type": "boolean",
       "description": "load tools before resolving"
     },
+    "env_file_expand": {
+      "type": "boolean",
+      "default": false,
+      "description": "enable shell-style variable expansion for values loaded by env._.file"
+    },
     "env_redact": {
       "type": "boolean",
       "description": "redact the value from logs"
@@ -184,6 +189,9 @@
         },
         "tools": {
           "$ref": "#/$defs/env_tools"
+        },
+        "expand": {
+          "$ref": "#/$defs/env_file_expand"
         },
         "redact": {
           "$ref": "#/$defs/env_redact"
