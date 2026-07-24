@@ -948,12 +948,30 @@ pub fn apply_rename_exe(
 ) -> eyre::Result<()> {
     match value {
         toml::Value::Table(entries) => {
+            // Snapshot the directory once and consume each matched file, so a
+            // rename's *output* can never become a later entry's *input*
+            // (e.g. `tool-*`→`tool` then `tool`→`x` must not rename twice) and a
+            // single file satisfies at most one mapping. `file::ls` is sorted, so
+            // a glob matching several files resolves deterministically.
+            let mut available: Vec<PathBuf> = file::ls(search_dir)?
+                .into_iter()
+                .filter(|p| p.is_file())
+                .collect();
             for (source, target) in entries {
                 let Some(target) = target.as_str() else {
                     warn!("rename_exe: target for '{source}' is not a string, skipping");
                     continue;
                 };
-                rename_matching_executable(search_dir, source, target)?;
+                match take_matching(&mut available, source)? {
+                    Some(path) => {
+                        let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+                        finish_rename(search_dir, &path, &file_name, target)?;
+                    }
+                    None => warn!(
+                        "rename_exe: no file matching '{source}' found in {}",
+                        search_dir.display()
+                    ),
+                }
             }
             Ok(())
         }
@@ -965,43 +983,43 @@ pub fn apply_rename_exe(
     }
 }
 
-/// Renames a single binary matched by `source_pattern` (an exact file name or a
-/// glob such as `ols-*`) to `target`. Adds the executable bit when the archive
-/// dropped it (common for ZIPs). Used by the table form of `rename_exe`.
-fn rename_matching_executable(dir: &Path, source_pattern: &str, target: &str) -> eyre::Result<()> {
-    // Fast path: exact file name match.
-    let exact = dir.join(source_pattern);
-    if exact.is_file() {
-        return finish_rename(dir, &exact, source_pattern, target);
+/// Removes and returns the first file in `available` matching `pattern` — an
+/// exact file name (preferred) or a glob such as `ols-*`. Consuming the match
+/// keeps one file from satisfying two mappings and keeps a rename output from
+/// being re-matched by a later pattern.
+fn take_matching(available: &mut Vec<PathBuf>, pattern: &str) -> eyre::Result<Option<PathBuf>> {
+    let exact = std::ffi::OsStr::new(pattern);
+    if let Some(idx) = available.iter().position(|p| p.file_name() == Some(exact)) {
+        return Ok(Some(available.remove(idx)));
     }
 
-    // Otherwise treat the key as a glob against the file names in `dir`.
-    // `file::ls` returns a sorted set, so a pattern matching more than one file
-    // resolves deterministically to the first match.
-    let pattern = glob::Pattern::new(source_pattern)
-        .map_err(|e| eyre::eyre!("invalid rename_exe pattern '{source_pattern}': {e}"))?;
-    for path in file::ls(dir)? {
-        if !path.is_file() {
-            continue;
-        }
-        let file_name = path.file_name().unwrap().to_string_lossy().to_string();
-        if pattern.matches(&file_name) {
-            return finish_rename(dir, &path, &file_name, target);
-        }
+    let glob = glob::Pattern::new(pattern)
+        .map_err(|e| eyre::eyre!("invalid rename_exe pattern '{pattern}': {e}"))?;
+    if let Some(idx) = available.iter().position(|p| {
+        p.file_name()
+            .map(|n| glob.matches(&n.to_string_lossy()))
+            .unwrap_or(false)
+    }) {
+        return Ok(Some(available.remove(idx)));
     }
 
-    warn!(
-        "rename_exe: no file matching '{source_pattern}' found in {}",
-        dir.display()
-    );
-    Ok(())
+    Ok(None)
 }
 
 /// Renames `path` (named `file_name`) to `target` within `dir`, preserving any
-/// required extension and ensuring the result is executable.
+/// required extension and ensuring the result is executable. Refuses to clobber
+/// an existing different file so overlapping mappings can't silently drop a binary.
 fn finish_rename(dir: &Path, path: &Path, file_name: &str, target: &str) -> eyre::Result<()> {
     let target_path = keep_required_extensions(dir, file_name, target, dir.join(target));
     if path == target_path {
+        return Ok(());
+    }
+    if target_path.exists() {
+        warn!(
+            "rename_exe: refusing to overwrite existing '{}' while renaming '{}'",
+            target_path.display(),
+            path.display()
+        );
         return Ok(());
     }
     if !file::is_executable(path) {
@@ -2094,5 +2112,64 @@ bin = "tool.exe"
         apply_rename_exe(tmp.path(), &value, None).unwrap();
         assert!(tmp.path().join("keep").is_file());
         assert!(!tmp.path().join("whatever").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_does_not_rename_its_own_output() {
+        // `tool-*` -> `tool` then `tool` -> `renamed` must not chain: the file
+        // produced by the first mapping must not be consumed by the second.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("tool-linux-x64"), b"bin").unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert(
+                "tool-*".to_string(),
+                toml::Value::String("tool".to_string()),
+            );
+            t.insert(
+                "tool".to_string(),
+                toml::Value::String("renamed".to_string()),
+            );
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, None).unwrap();
+
+        // The `tool-*` mapping wins; the `tool` mapping finds nothing (its only
+        // candidate was the freshly-created output, which is not re-matched).
+        assert!(tmp.path().join("tool").is_file());
+        assert!(!tmp.path().join("renamed").exists());
+        assert!(!tmp.path().join("tool-linux-x64").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_refuses_to_clobber_shared_target() {
+        // Two sources mapped to the same target: the first rename wins, the
+        // second is refused rather than silently replacing the first binary.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a-bin"), b"aaa").unwrap();
+        std::fs::write(tmp.path().join("b-bin"), b"bbb").unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert(
+                "a-bin".to_string(),
+                toml::Value::String("common".to_string()),
+            );
+            t.insert(
+                "b-bin".to_string(),
+                toml::Value::String("common".to_string()),
+            );
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, None).unwrap();
+
+        // `a-bin` renamed to `common`; `b-bin` left in place (not dropped).
+        assert_eq!(std::fs::read(tmp.path().join("common")).unwrap(), b"aaa");
+        assert!(tmp.path().join("b-bin").is_file());
     }
 }
