@@ -271,6 +271,17 @@ asset_pattern = "yt-dlp_linux.zip"
 rename_exe = "yt-dlp"  # Rename the extracted binary to yt-dlp
 ```
 
+The string form renames the tool's primary binary (matched against the repo name). When an archive ships **multiple** binaries that you want to expose under clean names, use the table form instead — each key is a source name (an exact file name or a glob), and each value is the new name:
+
+```toml
+[tools."github:DanielGavin/ols"]
+version = "latest"
+# archive contains ols-x86_64-unknown-linux-gnu and odinfmt-x86_64-unknown-linux-gnu
+rename_exe = { "ols-*" = "ols", "odinfmt-*" = "odinfmt" }
+```
+
+Both binaries are renamed and become available on PATH. Missing sources are skipped with a warning, and the executable bit is restored for archives (such as ZIPs) that drop it.
+
 ::: tip
 Use `rename_exe` for archives where the binary inside has a different name than desired. Use `bin` for single binary downloads (non-archives).
 :::

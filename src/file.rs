@@ -1461,6 +1461,43 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
     })
 }
 
+/// Whether `name` is a plain file name: exactly one normal path component, with
+/// no separators, parent/root components, or drive prefixes on any platform.
+/// Use to validate user-supplied names (e.g. `bin`, `rename_exe`, `filter_bins`
+/// tool options) before joining them onto a directory, so a value like
+/// `../evil` or `/abs/path` cannot escape it.
+pub fn is_plain_file_name(name: &str) -> bool {
+    // Reject both separators explicitly: `\` is a legal file-name character on
+    // Unix, but these names come from cross-platform config.
+    if name.contains('/') || name.contains('\\') {
+        return false;
+    }
+    let mut components = Path::new(name).components();
+    matches!(
+        (components.next(), components.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    )
+}
+
+/// Whether `path` is a non-empty relative path containing only normal
+/// components. Both slash styles are treated as separators so config values are
+/// validated consistently across platforms.
+pub fn is_safe_relative_path(path: &str) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    let normalized = path.replace('\\', "/");
+    let bytes = normalized.as_bytes();
+    if normalized.starts_with('/')
+        || (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
+    {
+        return false;
+    }
+    let mut components = Path::new(&normalized).components();
+    matches!(components.next(), Some(std::path::Component::Normal(_)))
+        && components.all(|component| matches!(component, std::path::Component::Normal(_)))
+}
+
 fn sanitize_7z_entry_path(path: &str) -> Result<PathBuf> {
     let normalized = PathBuf::from(path.replace('\\', "/"));
     let mut safe_path = PathBuf::new();
@@ -1826,6 +1863,46 @@ mod tests {
     fn test_run_blocking_outside_runtime() {
         // no tokio runtime at all — must run the closure inline, not panic
         assert_eq!(run_blocking(|| 42), 42);
+    }
+
+    #[test]
+    fn test_is_plain_file_name() {
+        for ok in ["tool", "my-tool.exe", "tool.tar.gz", "..hidden", "a b"] {
+            assert!(is_plain_file_name(ok), "should accept {ok:?}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../tool",
+            "a/b",
+            "/abs/tool",
+            "..\\tool",
+            "a\\b",
+            "C:\\tool",
+        ] {
+            assert!(!is_plain_file_name(bad), "should reject {bad:?}");
+        }
+    }
+
+    #[test]
+    fn test_is_safe_relative_path() {
+        for ok in ["tool", "bin/tool", "nested/path/tool.exe", "a b/tool"] {
+            assert!(is_safe_relative_path(ok), "should accept {ok:?}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../tool",
+            "bin/../../tool",
+            "/abs/tool",
+            "..\\tool",
+            "C:\\tool",
+            "\\\\server\\share\\tool",
+        ] {
+            assert!(!is_safe_relative_path(bad), "should reject {bad:?}");
+        }
     }
 
     #[tokio::test]

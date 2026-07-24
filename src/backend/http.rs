@@ -5,8 +5,9 @@ use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
-    clean_binary_name, eval_checksum_expr, fetch_checksum_from_file, fetch_checksum_from_shasums,
-    get_filename_from_url, rename_binary_name, rename_executable_in_dir, shasums_has_entries,
+    apply_rename_exe, clean_binary_name, ensure_plain_bin_name, ensure_safe_relative_bin_path,
+    eval_checksum_expr, fetch_checksum_from_file, fetch_checksum_from_shasums,
+    get_filename_from_url, lookup_value_with_fallback, rename_binary_name, shasums_has_entries,
     template_string, template_string_for_target, verify_artifact,
 };
 use crate::backend::version_list;
@@ -282,9 +283,14 @@ impl HttpBackend {
             parts.push(format!("strip_{strip_components}"));
         }
 
-        // Include rename_exe in cache key since it modifies the extracted content
-        if let Some(rename) = opts.rename_exe() {
-            parts.push(format!("rename_{rename}"));
+        // Include rename_exe in cache key since it modifies the extracted content.
+        // Use the raw value so the table form (multi-binary rename) is captured too;
+        // `opts.rename_exe()` only stringifies the scalar form. `rename_cache_token`
+        // keeps a readable name when it is path-safe and hashes anything else (the
+        // table form, or a scalar with path separators / Windows-invalid characters)
+        // so nothing unsafe reaches the cache directory name.
+        if let Some(rename) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
+            parts.push(format!("rename_{}", rename_cache_token(rename)));
             // When rename_exe is used, bin_path affects where the rename happens,
             // so different bin_path values result in different cached content
             if let Some(bin_path) = opts.bin_path() {
@@ -341,24 +347,28 @@ impl HttpBackend {
     // Filename determination
     // -------------------------------------------------------------------------
 
-    /// Determine the destination filename for a raw file or compressed binary
+    /// Determine the destination filename for a raw file or compressed binary.
+    /// `bin`/`rename_exe` values are joined onto the extraction directory, so a
+    /// path in either (`../evil`, `a/b`) would escape it and is rejected.
     fn dest_filename(
         &self,
         file_path: &Path,
         file_info: &FileInfo,
         opts: &HttpOptions<'_>,
-    ) -> String {
+    ) -> Result<String> {
         // Check for explicit bin name first
         if let Some(bin_name) = opts.bin() {
-            return bin_name;
+            ensure_safe_relative_bin_path("bin", &bin_name)?;
+            return Ok(bin_name);
         }
         if let Some(rename_to) = opts.rename_exe() {
+            ensure_plain_bin_name("rename_exe", &rename_to)?;
             let source_name = if file_info.is_compressed_binary {
                 file_info.decompressed_name()
             } else {
                 file_path.file_name().unwrap().to_string_lossy().to_string()
             };
-            return rename_binary_name(&source_name, &rename_to);
+            return Ok(rename_binary_name(&source_name, &rename_to));
         }
 
         // Auto-clean the binary name
@@ -368,7 +378,7 @@ impl HttpBackend {
             file_path.file_name().unwrap().to_string_lossy().to_string()
         };
 
-        clean_binary_name(&raw_name, Some(&self.ba.tool_name))
+        Ok(clean_binary_name(&raw_name, Some(&self.ba.tool_name)))
     }
 
     // -------------------------------------------------------------------------
@@ -479,7 +489,7 @@ impl HttpBackend {
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
-        let filename = self.dest_filename(file_path, file_info, opts);
+        let filename = self.dest_filename(file_path, file_info, opts)?;
         let dest_file = dest.join(&filename);
 
         // Report extraction progress (no bytes - we don't know total for extraction)
@@ -502,7 +512,7 @@ impl HttpBackend {
         opts: &HttpOptions<'_>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
-        let filename = self.dest_filename(file_path, file_info, opts);
+        let filename = self.dest_filename(file_path, file_info, opts)?;
         let dest_file = dest.join(&filename);
 
         // Report extraction progress (no bytes - we don't know total for extraction)
@@ -535,7 +545,7 @@ impl HttpBackend {
         file::extract_archive(file_path, dest, cache_plan.file_info.format, &extract_opts)?;
 
         // Handle rename_exe option for archives
-        if let Some(rename_to) = opts.rename_exe() {
+        if let Some(rename_value) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
             // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
             // the same logic used by discover_bin_paths() for PATH construction
             let search_dir = if let Some(bin_path_template) = opts.bin_path() {
@@ -551,7 +561,7 @@ impl HttpBackend {
             };
             // rsplit('/') always yields at least one element (the full string if no delimiter)
             let tool_name = self.ba.tool_name.rsplit('/').next().unwrap();
-            rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
+            apply_rename_exe(&search_dir, rename_value, Some(tool_name))?;
         }
 
         Ok(ExtractionType::Archive)
@@ -1143,6 +1153,17 @@ impl Backend for HttpBackend {
     }
 }
 
+/// Produce a cache-key token for a `rename_exe` value. The value is always hashed
+/// rather than embedded, so nothing can leak into or alias the cache directory
+/// name — not the table form's glob/brace syntax, not path separators or
+/// Windows-invalid characters, and not trailing dots/spaces that Windows strips
+/// (which would otherwise make `tool.` and `tool` share a cache entry). The key
+/// still differs whenever the rename config differs, which is all it needs to do;
+/// the human-readable part of the cache key is the file checksum, not this token.
+fn rename_cache_token(rename: &toml::Value) -> String {
+    hash::hash_blake3_to_str(&rename.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1315,8 +1336,96 @@ mod tests {
 
         assert!(file_info.is_compressed_binary);
         assert_eq!(
-            backend.dest_filename(file_path, &file_info, &opts),
+            backend.dest_filename(file_path, &file_info, &opts).unwrap(),
             "code2prompt.exe"
         );
+    }
+
+    #[test]
+    fn dest_filename_rejects_path_traversal_in_bin_and_rename_exe() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-mytool".to_string(),
+                Some("http:mytool".to_string()),
+                "mytool".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+        let file_path = Path::new("mytool-linux-x64");
+
+        for (opt, expected) in [
+            (r#"bin="../evil""#, "safe relative path"),
+            (r#"rename_exe="a/b""#, "plain file name"),
+        ] {
+            let raw_opts = crate::toolset::parse_tool_options(opt);
+            let opts = HttpOptions::new(&raw_opts);
+            let file_info = FileInfo::new(file_path, &opts);
+            let err = backend
+                .dest_filename(file_path, &file_info, &opts)
+                .unwrap_err();
+            assert!(
+                err.to_string().contains(expected),
+                "unexpected error for {opt}: {err}"
+            );
+        }
+
+        let raw_opts = crate::toolset::parse_tool_options(r#"bin="bin/mytool""#);
+        let opts = HttpOptions::new(&raw_opts);
+        let file_info = FileInfo::new(file_path, &opts);
+        assert_eq!(
+            backend.dest_filename(file_path, &file_info, &opts).unwrap(),
+            "bin/mytool"
+        );
+    }
+
+    #[test]
+    fn cache_key_is_path_safe_for_scalar_and_table_rename_exe() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-mytool".to_string(),
+                Some("http:mytool".to_string()),
+                "mytool".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), b"archive-contents").unwrap();
+
+        // Characters that are illegal or unsafe in Windows path components and
+        // must never appear in a cache directory name derived from rename_exe.
+        let illegal = ['*', '"', '{', '}', '<', '>', ':', '|', '?', '\\', '/', ' '];
+
+        let key_for = |opt: &str| {
+            let opts = crate::toolset::parse_tool_options(opt);
+            backend
+                .cache_key(tmp.path(), &HttpOptions::new(&opts), 0)
+                .unwrap()
+        };
+
+        // Scalar, table, and adversarial values all yield path-safe keys.
+        for opt in [
+            "rename_exe=plz",
+            r#"rename_exe="foo/bar:baz""#,
+            r#"rename_exe={ "ols-*" = "ols", "odinfmt-*" = "odinfmt" }"#,
+        ] {
+            let key = key_for(opt);
+            assert!(key.contains("rename_"), "key: {key}");
+            assert!(!key.contains(illegal), "unsafe cache key for {opt}: {key}");
+        }
+
+        // Different rename configs must produce different keys...
+        assert_ne!(key_for("rename_exe=plz"), key_for("rename_exe=other"));
+        assert_ne!(
+            key_for(r#"rename_exe={ "ols-*" = "ols" }"#),
+            key_for(r#"rename_exe={ "ols-*" = "renamed" }"#)
+        );
+
+        // ...including values that only differ by a trailing dot or space, which
+        // Windows would otherwise collapse to the same path component.
+        assert_ne!(key_for("rename_exe=tool"), key_for(r#"rename_exe="tool.""#));
+        assert_ne!(key_for("rename_exe=tool"), key_for(r#"rename_exe="tool ""#));
     }
 }
