@@ -50,6 +50,25 @@ pub(crate) fn argv_with_env(
     argv
 }
 
+/// Elevation mode for helper subprocesses (e.g. the brew cask shim) that may
+/// need sudo themselves. Mirrors [`run`]'s policy without running anything:
+/// - `"interactive"`: sudo may prompt on the controlling TTY (also returned
+///   when already root — the subprocess won't elevate at euid 0 anyway)
+/// - `"noninteractive"`: no TTY; the subprocess must use `sudo -n` so it
+///   fails instead of hanging on a password prompt
+/// - `"deny"`: elevation is disabled or sudo is unavailable
+pub(crate) fn subprocess_mode() -> &'static str {
+    if is_root() {
+        "interactive"
+    } else if !Settings::get().system_packages.sudo || crate::file::which("sudo").is_none() {
+        "deny"
+    } else if console::user_attended_stderr() {
+        "interactive"
+    } else {
+        "noninteractive"
+    }
+}
+
 /// Run `program args...`, elevating with sudo when not running as root.
 ///
 /// - root: runs the command directly (containers/CI)

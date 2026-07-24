@@ -9,8 +9,10 @@
 
 require "etc"
 require "fileutils"
+require "open3"
 require "pathname"
 require "rbconfig"
+require "shellwords"
 
 class Array
   def second
@@ -197,6 +199,24 @@ class Version
   end
 end
 
+class SystemCommandResult
+  attr_reader :stdout, :stderr, :exit_status
+
+  def initialize(stdout, stderr, exit_status)
+    @stdout = stdout
+    @stderr = stderr
+    @exit_status = exit_status
+  end
+
+  def success?
+    @exit_status.zero?
+  end
+
+  def merged_output
+    @stdout + @stderr
+  end
+end
+
 class CaskContext
   attr_reader :token
 
@@ -265,6 +285,12 @@ class CaskContext
   def binary(*) nil end
   def pkg(*) nil end
   def font(*) nil end
+  def manpage(*) nil end
+  # Completion artifacts are linked natively by Rust; the stanzas only need to
+  # parse so lifecycle hooks in the same cask can run.
+  def bash_completion(*) nil end
+  def zsh_completion(*) nil end
+  def fish_completion(*) nil end
   def uninstall(*) nil end
   def zap(*) nil end
 
@@ -284,6 +310,36 @@ class CaskContext
   def on_arm(&block) instance_eval(&block) if Hardware::CPU.arm? end
   def on_macos(&block) instance_eval(&block) if OS.mac? end
   def on_linux(&block) instance_eval(&block) if OS.linux? end
+
+  # Mirrors Homebrew's Cask DSL `system_command` (SystemCommand.run!): raises
+  # on failure unless must_succeed: false. Elevation follows mise's sudo
+  # policy, passed down from Rust via MISE_BREW_CASK_SUDO:
+  # - "interactive": run `sudo`, which may prompt on the controlling TTY
+  # - "noninteractive": run `sudo -n`, so it fails instead of hanging on a
+  #   password prompt that nothing can answer
+  # - "deny": error with the exact command to run manually
+  def system_command(executable, args: [], sudo: false, env: {}, must_succeed: true,
+                     print_stdout: false, print_stderr: true, verbose: false,
+                     input: nil, chdir: nil, **rest)
+    shim_unsupported!("system_command #{rest.keys.join(", ")}") if rest.any?
+
+    env = env.map { |k, v| [k.to_s, v.to_s] }.to_h
+    argv = [executable.to_s, *args.map(&:to_s)]
+    argv = sudo_argv(argv, env) if sudo && Process.euid != 0
+
+    opts = {}
+    opts[:chdir] = chdir.to_s if chdir
+    opts[:stdin_data] = input.to_s if input
+    stdout, stderr, status = Open3.capture3(env, *argv, **opts)
+    $stdout.print(stdout) if print_stdout || verbose
+    $stderr.print(stderr) if print_stderr || verbose
+
+    result = SystemCommandResult.new(stdout, stderr, status.exitstatus || 1)
+    if must_succeed && !result.success?
+      odie "command failed (exit #{result.exit_status}): #{argv.shelljoin}\n#{stderr}"
+    end
+    result
+  end
 
   def staged_path
     MISE_BREW_CASK_STAGED_PATH
@@ -306,6 +362,22 @@ class CaskContext
   end
 
   private
+
+  def sudo_argv(argv, env)
+    # sudo resets the environment; pass env vars through `env` so they reach
+    # the elevated command (same as mise's sudo::run on the Rust side)
+    argv = ["env", *env.map { |k, v| "#{k}=#{v}" }, *argv] unless env.empty?
+    case ENV.fetch("MISE_BREW_CASK_SUDO", "deny")
+    when "interactive"
+      ["sudo", *argv]
+    when "noninteractive"
+      ["sudo", "-n", *argv]
+    else
+      odie "cask lifecycle hook needs sudo, but mise is not allowed to elevate " \
+           "(system_packages.sudo is disabled or sudo is unavailable). Run manually:\n" \
+           "  #{(["sudo"] + argv).shelljoin}"
+    end
+  end
 
   def run_macos_condition(version, method, &block)
     target = MacOSVersion.from_symbol(version)
