@@ -50,6 +50,63 @@ mise use -g pnpm
 mise use -g bun
 ```
 
+## Socket security
+
+There are two ways to use [Socket](https://socket.dev) with `npm:` tools installed
+by mise.
+
+### Bun-compatible security scanner
+
+The embedded aube installer implements
+[Bun's Security Scanner API](https://bun.sh/docs/pm/security-scanner-api) and is
+compatible with Socket's
+[`@socketsecurity/bun-security-scanner`](https://socket.dev/blog/socket-integrates-with-bun-1-3-security-scanner-api).
+Set `AUBE_SECURITY_SCANNER` to enable it:
+
+```sh
+AUBE_SECURITY_SCANNER=/absolute/path/to/scanner.mjs \
+  mise install npm:prettier@latest
+```
+
+The scanner runs after dependency resolution and before package tarballs are
+downloaded. It receives the resolved direct and transitive registry packages;
+a fatal finding blocks the install. A configured scanner also fails closed if
+it cannot start or complete. See
+[aube's security scanner documentation](https://aube.jdx.dev/package-manager/security-scanner.html)
+for the complete behavior and configuration.
+
+Mise installs each `npm:` tool in a synthetic project, so a bare scanner package
+name is not normally resolvable from that project's `node_modules`. Point the
+setting at an absolute module instead. For example, install the Socket scanner
+in a separate, stable directory and place this wrapper beside that directory's
+`node_modules`:
+
+```js
+// scanner.mjs
+export { scanner } from "@socketsecurity/bun-security-scanner";
+```
+
+The scanner bridge requires Node.js 22.6 or newer. It inherits Socket-specific
+environment variables such as `SOCKET_SECURITY_API_KEY`, while aube removes
+common npm and GitHub credentials from the scanner subprocess.
+
+### Socket Firewall
+
+[Socket Firewall](https://docs.socket.dev/docs/socket-firewall-free) can instead
+wrap mise itself:
+
+```sh
+sfw mise install npm:prettier@latest
+sfw mise use -g npm:prettier
+```
+
+This works at the network layer. Mise's npm metadata client and embedded aube
+installer honor the `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, and
+`NODE_EXTRA_CA_CERTS` configuration injected by the firewall. Socket currently
+documents npm, yarn, and pnpm rather than mise or aube as supported JavaScript
+package managers, so this interoperability is not an upstream compatibility
+guarantee.
+
 ## Usage
 
 The following installs the latest version of [prettier](https://www.npmjs.com/package/prettier)
