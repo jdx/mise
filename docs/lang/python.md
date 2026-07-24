@@ -88,6 +88,10 @@ mise has two ways to manage Python virtualenvs:
 These are separate mechanisms with different code paths. Options like `uv_create_args` and `python_create_args` in `_.python.venv` are not used by `python.uv_venv_auto`.
 :::
 
+::: warning
+The legacy `virtualenv` tool option (`python = { version = "3.15", virtualenv = ".venv" }` in `[tools]`) is deprecated and will be removed in a future release. Use `_.python.venv` (below) instead.
+:::
+
 ### `_.python.venv` configuration
 
 Use `_.python.venv` in the `[env]` section of `mise.toml`:

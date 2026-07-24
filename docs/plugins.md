@@ -126,6 +126,11 @@ of tools. One example of this is virtualenv on python runtimes:
 python = { version='3.11', virtualenv='.venv' }
 ```
 
+::: warning
+The python `virtualenv` tool option is deprecated and will be removed in a future release.
+Use [`_.python.venv`](/lang/python.html#automatic-virtualenv-activation) in the `[env]` section instead.
+:::
+
 This will be passed to all plugin scripts as `MISE_TOOL_OPTS__VIRTUALENV=.venv`. The user can specify
 any option, and it will be passed to the plugin in that format.
 

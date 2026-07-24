@@ -529,12 +529,17 @@ impl PythonPlugin {
         let raw_opts = tv.request.options();
         let opts = PythonOptions::new(&raw_opts);
         if let Some(virtualenv) = opts.virtualenv() {
+            deprecated_at!(
+                "2026.7.0",
+                "2027.7.0",
+                "python.virtualenv",
+                "the python `virtualenv` tool option is deprecated. Use `_.python.venv` in the `[env]` section instead: https://mise.en.dev/lang/python.html#automatic-virtualenv-activation"
+            );
             let mut virtualenv: PathBuf = file::replace_path(Path::new(virtualenv));
-            if !virtualenv.is_absolute() {
-                // TODO: use the path of the config file that specified python, not the top one like this
-                if let Some(project_root) = &config.project_root {
-                    virtualenv = project_root.join(virtualenv);
-                }
+            if !virtualenv.is_absolute()
+                && let Some(project_root) = &config.project_root
+            {
+                virtualenv = project_root.join(virtualenv);
             }
             if !virtualenv.exists() {
                 warn!(
