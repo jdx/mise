@@ -1,5 +1,44 @@
 # Changelog
 
+## [2026.7.14](https://github.com/jdx/mise/compare/v2026.7.13..v2026.7.14) - 2026-07-24
+
+### 🐛 Bug Fixes
+
+- **(aqua)** preserve v prefix in HTTP lock URLs by @jdx in [#11267](https://github.com/jdx/mise/pull/11267)
+- **(backend)** strip platform suffix from single binary inside archives by @Marukome0743 in [#11232](https://github.com/jdx/mise/pull/11232)
+- **(brew)** support cask completion stanzas, system_command, and elevated artifact links by @jdx in [#11273](https://github.com/jdx/mise/pull/11273)
+- **(env)** make env file expansion opt-in by @jdx in [#11269](https://github.com/jdx/mise/pull/11269)
+- **(github)** prefer .exe assets on Windows by @gologames in [#11257](https://github.com/jdx/mise/pull/11257)
+- **(npm)** serialize aube allow_builds as map by @jdx in [#11262](https://github.com/jdx/mise/pull/11262)
+
+### 📚 Documentation
+
+- **(npm)** document Socket integrations by @jdx in [#11268](https://github.com/jdx/mise/pull/11268)
+
+### 📦️ Dependency Updates
+
+- update docker/login-action digest to abd2ef4 by @renovate[bot] in [#11261](https://github.com/jdx/mise/pull/11261)
+- update actions/setup-node action to v7 by @renovate[bot] in [#11247](https://github.com/jdx/mise/pull/11247)
+- update ghcr.io/jdx/mise:alpine docker digest to 7a44a65 by @renovate[bot] in [#11264](https://github.com/jdx/mise/pull/11264)
+- update dependency toml to v5 by @renovate[bot] in [#11248](https://github.com/jdx/mise/pull/11248)
+- update rust crate age to 0.12 by @renovate[bot] in [#11246](https://github.com/jdx/mise/pull/11246)
+- update rust crate clx to v3 by @renovate[bot] in [#11270](https://github.com/jdx/mise/pull/11270)
+- update ghcr.io/jdx/mise:rpm docker digest to f26a306 by @renovate[bot] in [#11266](https://github.com/jdx/mise/pull/11266)
+
+### Chore
+
+- **(ci)** add cmake to ppa build dependencies by @jdx in [#11274](https://github.com/jdx/mise/pull/11274)
+
+### New Contributors
+
+- @gologames made their first contribution in [#11257](https://github.com/jdx/mise/pull/11257)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`checkstyle/checkstyle`](https://github.com/checkstyle/checkstyle)
+
 ## [2026.7.13](https://github.com/jdx/mise/compare/v2026.7.12..v2026.7.13) - 2026-07-24
 
 ### 🚀 Features
