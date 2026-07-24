@@ -3295,10 +3295,17 @@ end
                               sudo: false
     echoed = system_command "/bin/echo", args: ["-n", "hello"], print_stderr: false
     File.write staged_path/"result", echoed.stdout if echoed.success?
+    # A no-args executable whose path contains spaces and shell
+    # metacharacters must run via argv, not a shell command line.
+    spaced = system_command staged_path/"my tool $HOME"
+    File.write staged_path/"spaced-result", spaced.stdout
   end
 end
 "##,
         )?;
+        let spaced_tool = tmp.path().join("my tool $HOME");
+        crate::file::write(&spaced_tool, "#!/bin/sh\nprintf spaced-ok\n")?;
+        file::make_executable(&spaced_tool)?;
 
         let output = run_cask_shim_hook(&ruby, &shim, &cask, tmp.path(), "1.0.0", "postflight")?;
         assert!(
@@ -3311,6 +3318,10 @@ end
             tmp.path().join("kubectl")
         );
         assert_eq!(file::read_to_string(tmp.path().join("result"))?, "hello");
+        assert_eq!(
+            file::read_to_string(tmp.path().join("spaced-result"))?,
+            "spaced-ok"
+        );
         Ok(())
     }
 

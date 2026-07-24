@@ -330,7 +330,10 @@ class CaskContext
     opts = {}
     opts[:chdir] = chdir.to_s if chdir
     opts[:stdin_data] = input.to_s if input
-    stdout, stderr, status = Open3.capture3(env, *argv, **opts)
+    # [argv[0], argv[0]] forces argv execution: a lone string would be treated
+    # as a shell command line, breaking paths with spaces and inviting shell
+    # interpretation.
+    stdout, stderr, status = Open3.capture3(env, [argv[0], argv[0]], *argv[1..], **opts)
     $stdout.print(stdout) if print_stdout || verbose
     $stderr.print(stderr) if print_stderr || verbose
 
