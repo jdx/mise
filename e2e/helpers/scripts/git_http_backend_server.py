@@ -119,6 +119,33 @@ def create_test_repo(repo_path):
     ripgrep_file.write_text('#!/usr/bin/env bash\necho "ripgrep task executed"\n')
     ripgrep_file.chmod(0o755)
 
+    snapshot_root = Path(repo_path) / 'xtasks' / 'snapshot'
+    snapshot_parent = snapshot_root / 'parent' / 'snapshot_parent'
+    snapshot_parent.parent.mkdir(parents=True)
+    snapshot_parent.write_text(
+        '#!/usr/bin/env bash\n'
+        '#MISE depends=["snapshot_child"]\n'
+        'echo "snapshot parent checkout: ${0%%/xtasks/*}"\n'
+    )
+    snapshot_parent.chmod(0o755)
+
+    snapshot_child = snapshot_root / 'child' / 'snapshot_child'
+    snapshot_child.parent.mkdir(parents=True)
+    snapshot_child.write_text(
+        '#!/usr/bin/env bash\n'
+        'echo "snapshot child checkout: ${0%%/xtasks/*}"\n'
+    )
+    snapshot_child.chmod(0o755)
+
+    snapshot_failure = snapshot_root / 'failure' / 'snapshot_failure'
+    snapshot_failure.parent.mkdir(parents=True)
+    snapshot_failure.write_text(
+        '#!/usr/bin/env bash\n'
+        'echo "snapshot failure"\n'
+        'exit 1\n'
+    )
+    snapshot_failure.chmod(0o755)
+
     # A toml task file colocated with the executable scripts. Keys are task
     # names; values are the run command (or a table). Used by tests covering
     # remote toml task includes.

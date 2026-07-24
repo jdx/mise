@@ -1,4 +1,9 @@
-use std::{fmt::Debug, path::PathBuf};
+use std::{
+    collections::HashSet,
+    fmt::Debug,
+    path::{Path, PathBuf},
+    sync::{Arc, LazyLock, Mutex},
+};
 
 mod local_task;
 mod remote_task_git;
@@ -13,6 +18,94 @@ use remote_task_http::RemoteTaskHttpBuilder;
 pub trait TaskFileProvider: Debug + Send + Sync {
     fn is_match(&self, file: &str) -> bool;
     async fn get_local_path(&self, file: &str) -> Result<PathBuf>;
+
+    async fn get_local_artifact(&self, file: &str) -> Result<TaskFileArtifact> {
+        Ok(TaskFileArtifact::persistent(
+            self.get_local_path(file).await?,
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct TaskFileArtifactCleanup {
+    path: PathBuf,
+}
+
+static TEMPORARY_TASK_ARTIFACTS: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+impl TaskFileArtifactCleanup {
+    fn new(path: PathBuf) -> Self {
+        TEMPORARY_TASK_ARTIFACTS
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .insert(path.clone());
+        Self { path }
+    }
+}
+
+impl Drop for TaskFileArtifactCleanup {
+    fn drop(&mut self) {
+        TEMPORARY_TASK_ARTIFACTS
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .remove(&self.path);
+        if let Err(err) = crate::file::remove_all(&self.path) {
+            warn!(
+                "failed to clean up remote task artifact {}: {err:#}",
+                crate::file::display_path(&self.path)
+            );
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskFileArtifact {
+    pub path: PathBuf,
+    pub(crate) cleanup: Option<Arc<TaskFileArtifactCleanup>>,
+}
+
+impl TaskFileArtifact {
+    pub(crate) fn persistent(path: PathBuf) -> Self {
+        Self {
+            path,
+            cleanup: None,
+        }
+    }
+
+    pub(crate) fn temporary(path: PathBuf, cleanup_path: PathBuf) -> Self {
+        Self {
+            path,
+            cleanup: Some(Arc::new(TaskFileArtifactCleanup::new(cleanup_path))),
+        }
+    }
+
+    pub(crate) fn cleanup_path(&self) -> Option<&Path> {
+        self.cleanup.as_ref().map(|cleanup| cleanup.path.as_path())
+    }
+
+    pub(crate) fn with_path(&self, path: PathBuf) -> Self {
+        Self {
+            path,
+            cleanup: self.cleanup.clone(),
+        }
+    }
+}
+
+pub(crate) fn cleanup_temporary_artifacts() {
+    let paths = TEMPORARY_TASK_ARTIFACTS
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .drain()
+        .collect::<Vec<_>>();
+    for path in paths {
+        if let Err(err) = crate::file::remove_all(&path) {
+            warn!(
+                "failed to clean up remote task artifact {}: {err:#}",
+                crate::file::display_path(&path)
+            );
+        }
+    }
 }
 
 pub struct TaskFileProvidersBuilder {

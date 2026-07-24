@@ -25,8 +25,9 @@ use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
+use crate::remote_source::RemoteSource;
 use crate::shorthands::{Shorthands, get_shorthands};
-use crate::task::task_file_providers::TaskFileProvidersBuilder;
+use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
 use crate::task::{Task, TaskTemplate, monorepo_scope, strip_extension};
 use crate::tera::{contains_template_syntax, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
@@ -55,6 +56,13 @@ use crate::wildcard::Wildcard;
 type AliasMap = IndexMap<String, Alias>;
 pub(crate) type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
 pub type EnvWithSources = IndexMap<String, (String, PathBuf)>;
+type RemoteTaskIncludeKey = (String, Option<String>);
+type RemoteTaskIncludeArtifacts = DashMap<RemoteTaskIncludeKey, Arc<OnceCell<TaskFileArtifact>>>;
+static REMOTE_TASK_INCLUDE_ARTIFACTS: Lazy<RemoteTaskIncludeArtifacts> = Lazy::new(DashMap::new);
+
+pub(crate) fn clear_remote_task_include_artifacts() {
+    REMOTE_TASK_INCLUDE_ARTIFACTS.clear();
+}
 
 pub(crate) struct MonorepoUnion {
     pub config_files: ConfigMap,
@@ -597,7 +605,8 @@ impl Config {
         // Default context (None) becomes TaskLoadContext::default()
         let cache_key = ctx.cloned().unwrap_or_default();
 
-        // Check if already cached
+        // Reuse one task snapshot throughout the command. The CLI explicitly
+        // clears this cache when the command finishes.
         if let Some(cached) = self.tasks_cache.get(&cache_key) {
             return Ok(cached.value().clone());
         }
@@ -608,10 +617,13 @@ impl Config {
         });
         let tasks_arc = Arc::new(tasks);
 
-        // Insert into cache
         self.tasks_cache.insert(cache_key, tasks_arc.clone());
 
         Ok(tasks_arc)
+    }
+
+    pub(crate) fn clear_tasks_cache(&self) {
+        self.tasks_cache.clear();
     }
 
     pub async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, Task>> {
@@ -3023,16 +3035,49 @@ fn is_mise_config_file_in_task_include(root: &Path, path: &Path) -> bool {
     })
 }
 
-async fn resolve_git_url_to_path(git_url: &str) -> Result<PathBuf> {
+async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
     let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
-    let task_file_providers = TaskFileProvidersBuilder::new()
-        .with_cache(!no_cache)
-        .build();
-
-    match task_file_providers.get_provider(git_url) {
-        Some(provider) => provider.get_local_path(git_url).await,
-        None => bail!("No provider found for git URL: {}", git_url),
+    if !no_cache {
+        let task_file_providers = TaskFileProvidersBuilder::new().with_cache(true).build();
+        return match task_file_providers.get_provider(git_url) {
+            Some(provider) => provider.get_local_artifact(git_url).await,
+            None => bail!("No provider found for git URL: {}", git_url),
+        };
     }
+
+    let source = RemoteSource::parse_git(git_url)
+        .ok_or_else(|| eyre!("No provider found for git URL: {}", git_url))?;
+    let cache_key = (source.url.clone(), source.git_ref.clone());
+    let checkout = REMOTE_TASK_INCLUDE_ARTIFACTS
+        .entry(cache_key)
+        .or_insert_with(|| Arc::new(OnceCell::new()))
+        .clone();
+    let checkout = checkout
+        .get_or_try_init(|| async {
+            let task_file_providers = TaskFileProvidersBuilder::new().with_cache(false).build();
+            let provider = task_file_providers
+                .get_provider(git_url)
+                .ok_or_else(|| eyre!("No provider found for git URL: {}", git_url))?;
+            let artifact = provider.get_local_artifact(git_url).await?;
+            let checkout_path = artifact
+                .cleanup_path()
+                .ok_or_else(|| eyre!("no cleanup path for no-cache Git task include"))?
+                .to_path_buf();
+            Ok::<TaskFileArtifact, eyre::Report>(artifact.with_path(checkout_path))
+        })
+        .await?;
+
+    let artifact = checkout.with_path(checkout.path.join(source.path));
+    let metadata = artifact.path.symlink_metadata()?;
+    if metadata.file_type().is_file() {
+        file::make_executable(&artifact.path)?;
+    } else if !metadata.file_type().is_dir() {
+        bail!(
+            "remote task path is not a regular file or directory: {}",
+            display_path(&artifact.path)
+        );
+    }
+    Ok(artifact)
 }
 
 /// Check if a pattern contains glob metacharacters
@@ -3247,12 +3292,16 @@ async fn load_task_sources_from_configs(
         None
     };
     for include in &includes {
-        let paths = if include.starts_with("git::") {
+        let artifacts = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(include).await?]
         } else {
             expand_task_include(&resolve_dir, include)
+                .into_iter()
+                .map(TaskFileArtifact::persistent)
+                .collect()
         };
-        for p in paths {
+        for artifact in artifacts {
+            let p = artifact.path;
             let mut loaded = load_tasks_includes(
                 config,
                 &p,
@@ -3263,6 +3312,11 @@ async fn load_task_sources_from_configs(
                 require_task_include_trust,
             )
             .await?;
+            if let Some(cleanup) = artifact.cleanup {
+                for task in &mut loaded {
+                    task.remote_artifact_cleanups.push(cleanup.clone());
+                }
+            }
             if is_global || is_global_task_include_path(&p) {
                 mark_tasks_as_global(&mut loaded);
             }

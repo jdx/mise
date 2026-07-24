@@ -606,6 +606,11 @@ pub struct Task {
     #[serde(skip)]
     pub remote_file_source: Option<String>,
 
+    /// Keeps a no-cache remote snapshot alive while this Task (and any clones)
+    /// may still execute it. The final clone removes the temporary file/repo.
+    #[serde(skip)]
+    pub(crate) remote_artifact_cleanups: Vec<Arc<task_file_providers::TaskFileArtifactCleanup>>,
+
     /// Block reads, writes, network, and env vars
     #[serde(default)]
     pub deny_all: bool,
@@ -2397,6 +2402,7 @@ impl Default for Task {
             usage: "".to_string(),
             timeout: None,
             remote_file_source: None,
+            remote_artifact_cleanups: vec![],
             deny_all: false,
             deny_read: false,
             deny_write: false,
