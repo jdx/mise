@@ -988,16 +988,24 @@ pub fn apply_rename_exe(
 /// keeps one file from satisfying two mappings and keeps a rename output from
 /// being re-matched by a later pattern.
 fn take_matching(available: &mut Vec<PathBuf>, pattern: &str) -> eyre::Result<Option<PathBuf>> {
+    // An exact file name honors the user's explicit choice, even for files a glob
+    // heuristic would skip.
     let exact = std::ffi::OsStr::new(pattern);
     if let Some(idx) = available.iter().position(|p| p.file_name() == Some(exact)) {
         return Ok(Some(available.remove(idx)));
     }
 
+    // For a glob, skip obvious non-binary collateral (LICENSE, README, *.txt/.md,
+    // …) the same way the string-form rename path does, so e.g. `ols-*` grabs the
+    // real binary rather than `ols-license.txt`, which would sort first.
     let glob = glob::Pattern::new(pattern)
         .map_err(|e| eyre::eyre!("invalid rename_exe pattern '{pattern}': {e}"))?;
     if let Some(idx) = available.iter().position(|p| {
         p.file_name()
-            .map(|n| glob.matches(&n.to_string_lossy()))
+            .map(|n| {
+                let name = n.to_string_lossy();
+                !should_skip_file(&name, true) && glob.matches(&name)
+            })
             .unwrap_or(false)
     }) {
         return Ok(Some(available.remove(idx)));
@@ -1013,6 +1021,11 @@ fn take_matching(available: &mut Vec<PathBuf>, pattern: &str) -> eyre::Result<Op
 /// than silently dropping a binary and reporting success.
 fn finish_rename(dir: &Path, path: &Path, file_name: &str, target: &str) -> eyre::Result<()> {
     let target_path = keep_required_extensions(dir, file_name, target, dir.join(target));
+    // Ensure the binary is executable whether or not we move it: ZIP archives drop
+    // the exec bit, and the file may already carry the desired name.
+    if !file::is_executable(path) {
+        file::make_executable(path)?;
+    }
     if path == target_path {
         return Ok(());
     }
@@ -1023,9 +1036,6 @@ fn finish_rename(dir: &Path, path: &Path, file_name: &str, target: &str) -> eyre
             path.display(),
             target_path.display()
         );
-    }
-    if !file::is_executable(path) {
-        file::make_executable(path)?;
     }
     file::rename(path, &target_path)?;
     debug!("Renamed {} to {}", path.display(), target_path.display());
@@ -2173,5 +2183,52 @@ bin = "tool.exe"
             err.to_string().contains("target already exists"),
             "unexpected error: {err}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_glob_skips_collateral_files() {
+        // A glob must pick the real binary, not a lexicographically-earlier
+        // collateral file like a license that also matches the pattern.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("ols-license.txt"), b"MIT").unwrap();
+        std::fs::write(tmp.path().join("ols-x86_64-unknown-linux-gnu"), b"bin").unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert("ols-*".to_string(), toml::Value::String("ols".to_string()));
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, None).unwrap();
+
+        // The binary is renamed; the license is untouched.
+        assert_eq!(std::fs::read(tmp.path().join("ols")).unwrap(), b"bin");
+        assert!(tmp.path().join("ols-license.txt").is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_sets_exec_bit_when_already_named() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // A ZIP-extracted file already carrying the target name must still be made
+        // executable, matching the behavior of renames that move a file.
+        let tmp = tempfile::tempdir().unwrap();
+        let tool = tmp.path().join("tool");
+        std::fs::write(&tool, b"bin").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(!file::is_executable(&tool));
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert("tool".to_string(), toml::Value::String("tool".to_string()));
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, None).unwrap();
+
+        assert!(tool.is_file());
+        assert!(file::is_executable(&tool));
     }
 }
