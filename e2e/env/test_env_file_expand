@@ -51,6 +51,6 @@ assert "mise env | grep '^export BIN='" "export BIN=/opt/bin"
 # The global setting remains a master switch for explicitly requested expansion.
 cat >mise.toml <<'EOF'
 [env]
-_.file = { path = ['.postgres', '.local'], expand = true }
+_.file = { path = 'chain.json', expand = true }
 EOF
-assert_not_contains "MISE_ENV_SHELL_EXPAND=false mise env" "export PGTEST=postgres"
+assert_contains "MISE_ENV_SHELL_EXPAND=false mise env -s bash" "export BIN='\${BASE}/bin'"
