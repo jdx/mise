@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# When source_freshness_hash_contents=true, mtime must NOT be the final
+# freshness gate — the content hash alone determines freshness. This fixes
+# CI cache-restore scenarios (e.g. GitHub Actions) where all files get their
+# mtime reset to the restore time, making source mtimes appear newer than
+# output mtimes even though nothing has changed.
+
+cat <<EOF >mise.toml
+[settings.task]
+source_freshness_hash_contents = true
+
+[tasks.build]
+run = 'touch out.txt && echo built'
+sources = ['src.txt']
+outputs = ['out.txt']
+EOF
+
+echo "hello" >src.txt
+
+# First run: no stored hash, no output → stale → runs
+assert "mise run -q build" "built"
+
+# Second run: nothing changed → fresh
+assert_empty "mise run -q build"
+
+# Simulate CI cache restore: same content, but mtime of src reset to "now"
+# (newer than out.txt). With the fix, hash match wins; mtime is ignored.
+sleep 0.1
+touch src.txt
+assert_empty "mise run -q build"
+
+# Changing content must still trigger a rebuild
+echo "changed" >src.txt
+assert "mise run -q build" "built"
+
+# Touching src again (same content as after last rebuild) must remain fresh
+sleep 0.1
+touch src.txt
+assert_empty "mise run -q build"
+
+# Deleting outputs must trigger a rebuild even when content hash matches
+rm out.txt
+assert "mise run -q build" "built"

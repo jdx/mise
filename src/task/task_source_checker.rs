@@ -310,7 +310,8 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
         if let Some(dir) = source_hash_path.parent() {
             file::create_dir_all(dir)?;
         }
-        if source_existing_hash(task, &root, use_content_hash).is_some_and(|h| h != source_hash) {
+        let existing_hash = source_existing_hash(task, &root, use_content_hash);
+        if existing_hash.as_deref().is_some_and(|h| h != source_hash) {
             debug!(
                 "source {} hash mismatch in {}",
                 if use_content_hash {
@@ -322,6 +323,13 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
             );
             file::write(&source_hash_path, &source_hash)?;
             return Ok(false);
+        }
+        if use_content_hash && existing_hash.is_some() {
+            // In hash mode, content alone determines freshness — no mtime check.
+            let outputs_exist =
+                get_last_modified(&root, &task.outputs.paths(task, &root))?.is_some();
+            file::write(&source_hash_path, &source_hash)?;
+            return Ok(outputs_exist);
         }
         let sources = get_last_modified_from_metadatas(&source_metadatas);
         let outputs = get_last_modified(&root, &task.outputs.paths(task, &root))?;
