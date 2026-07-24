@@ -81,9 +81,11 @@ are not supported. They are extracted without applying the primary asset's
 `strip_components`, `bin`, or `rename_exe` options. If a supplemental archive contains
 the same path as an earlier archive, the later archive's file wins.
 
-When lockfiles are enabled, mise records the URL, checksum, and verified provenance for
-each supplemental artifact. `--locked` installations use only that recorded artifact
-list and fail if it is incomplete.
+When lockfiles are enabled, mise records the URL and checksum for each supplemental
+artifact, plus any available provenance metadata. Provenance is cryptographically
+verified for the current platform; cross-platform lock entries record detected
+provenance for verification when installed. `--locked` installations use only the
+recorded artifact list and fail if it is incomplete.
 
 ### `matching`
 

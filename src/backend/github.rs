@@ -42,6 +42,26 @@ struct ReleaseAsset {
     digest: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct AssetVerification {
+    explicit_pattern: bool,
+    additional_overlay: bool,
+}
+
+impl AssetVerification {
+    const fn primary(explicit_pattern: bool) -> Self {
+        Self {
+            explicit_pattern,
+            additional_overlay: false,
+        }
+    }
+
+    const ADDITIONAL: Self = Self {
+        explicit_pattern: true,
+        additional_overlay: true,
+    };
+}
+
 const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
 const DEFAULT_GITLAB_API_BASE_URL: &str = "https://gitlab.com/api/v4";
 const DEFAULT_FORGEJO_API_BASE_URL: &str = "https://codeberg.org/api/v1";
@@ -588,7 +608,6 @@ impl Backend for UnifiedGitBackend {
         let repo = self.repo();
         let raw_opts = ctx.config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = self.options(&raw_opts);
-        let api_url = opts.api_url();
 
         // Validate `matching_regex` up front, before the cached-URL branch below.
         // Reusing a cached lockfile URL skips binary selection (the path that
@@ -633,7 +652,7 @@ impl Backend for UnifiedGitBackend {
             }
         } else {
             // Find the asset URL for this specific version
-            self.resolve_asset_url(&tv, &opts, &repo, &api_url).await?
+            self.resolve_asset_url(&tv, &opts, &repo).await?
         };
 
         let additional_assets = match tv.lock_platforms.get(&platform_key) {
@@ -670,7 +689,6 @@ impl Backend for UnifiedGitBackend {
                             &tv,
                             &opts,
                             &repo,
-                            &api_url,
                             &PlatformTarget::from_current(),
                             Some(pattern),
                         )
@@ -730,7 +748,6 @@ impl Backend for UnifiedGitBackend {
         let repo = self.repo();
         let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
-        let api_url = opts.api_url();
 
         // Fail closed on an invalid `matching_regex` instead of writing an empty
         // entry. The `Err` arm below intentionally swallows resolution failures so a
@@ -747,7 +764,7 @@ impl Backend for UnifiedGitBackend {
 
         // Resolve asset for the target platform
         let asset = self
-            .resolve_asset_url_for_target(tv, &opts, &repo, &api_url, target)
+            .resolve_asset_url_for_target(tv, &opts, &repo, target)
             .await;
 
         match asset {
@@ -755,16 +772,8 @@ impl Backend for UnifiedGitBackend {
                 let primary_explicit_pattern = opts.asset_pattern_for_target(target).is_some();
                 // Detect provenance availability from release assets and attestation API
                 let mut provenance = if !self.is_gitlab() && !self.is_forgejo() {
-                    self.detect_provenance_type(
-                        tv,
-                        &opts,
-                        &repo,
-                        &api_url,
-                        &asset,
-                        target,
-                        primary_explicit_pattern,
-                    )
-                    .await?
+                    self.detect_provenance_type(tv, &opts, &asset, target, primary_explicit_pattern)
+                        .await?
                 } else {
                     None
                 };
@@ -777,11 +786,8 @@ impl Backend for UnifiedGitBackend {
                         .verify_provenance_at_lock_time(
                             tv,
                             &opts,
-                            &repo,
-                            &api_url,
                             &asset,
-                            primary_explicit_pattern,
-                            false,
+                            AssetVerification::primary(primary_explicit_pattern),
                         )
                         .await
                     {
@@ -806,22 +812,13 @@ impl Backend for UnifiedGitBackend {
                             tv,
                             &opts,
                             &repo,
-                            &api_url,
                             target,
                             Some(&pattern),
                         )
                         .await?;
                     let mut additional_provenance = if !self.is_gitlab() && !self.is_forgejo() {
-                        self.detect_provenance_type(
-                            tv,
-                            &opts,
-                            &repo,
-                            &api_url,
-                            &additional,
-                            target,
-                            true,
-                        )
-                        .await?
+                        self.detect_provenance_type(tv, &opts, &additional, target, true)
+                            .await?
                     } else {
                         None
                     };
@@ -830,11 +827,8 @@ impl Backend for UnifiedGitBackend {
                             .verify_provenance_at_lock_time(
                                 tv,
                                 &opts,
-                                &repo,
-                                &api_url,
                                 &additional,
-                                true,
-                                true,
+                                AssetVerification::ADDITIONAL,
                             )
                             .await
                             .unwrap_or_else(|e| {
@@ -921,19 +915,19 @@ impl UnifiedGitBackend {
         &self,
         tv: &ToolVersion,
         opts: &GitBackendOptions<'_>,
-        repo: &str,
-        api_url: &str,
         asset: &ReleaseAsset,
         target: &PlatformTarget,
         explicit_pattern: bool,
     ) -> Result<Option<ProvenanceType>> {
+        let repo = self.repo();
+        let api_url = opts.api_url();
         let settings = Settings::get();
         let version = &tv.version;
         let version_prefix = opts.version_prefix();
 
         let use_versions_host = self.use_versions_host_for_github_metadata();
         let release =
-            try_with_v_prefix_and_repo(version, version_prefix, Some(repo), |candidate| {
+            try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.to_string();
                 async move {
@@ -957,7 +951,7 @@ impl UnifiedGitBackend {
         if settings.github_attestations
             && settings.github.github_attestations
             && opts.github_attestations()
-            && attestations_supported(api_url)
+            && attestations_supported(&api_url)
             && let Some(digest) = asset.digest.as_deref()
         {
             let parts: Vec<&str> = repo.split('/').collect();
@@ -966,7 +960,7 @@ impl UnifiedGitBackend {
                 match crate::github::sigstore::detect_attestations(
                     owner,
                     repo_name,
-                    api_url,
+                    &api_url,
                     digest,
                     self.use_versions_host_for_github_metadata(),
                 )
@@ -1042,12 +1036,11 @@ impl UnifiedGitBackend {
         &self,
         tv: &ToolVersion,
         opts: &GitBackendOptions<'_>,
-        repo: &str,
-        api_url: &str,
         asset: &ReleaseAsset,
-        explicit_pattern: bool,
-        additional_overlay: bool,
+        verification: AssetVerification,
     ) -> Result<Option<ProvenanceType>> {
+        let repo = self.repo();
+        let api_url = opts.api_url();
         let tmp_dir = tempfile::tempdir()?;
         let filename = get_filename_from_url(&asset.url);
         let artifact_path = tmp_dir.path().join(&filename);
@@ -1079,7 +1072,7 @@ impl UnifiedGitBackend {
         if settings.github_attestations
             && settings.github.github_attestations
             && opts.github_attestations()
-            && attestations_supported(api_url)
+            && attestations_supported(&api_url)
         {
             let parts: Vec<&str> = repo.split('/').collect();
             if parts.len() == 2 {
@@ -1089,7 +1082,7 @@ impl UnifiedGitBackend {
                     owner,
                     repo_name,
                     None,
-                    Some(api_url),
+                    Some(&api_url),
                     self.use_versions_host_for_github_metadata(),
                 )
                 .await
@@ -1121,7 +1114,7 @@ impl UnifiedGitBackend {
             let version_prefix = opts.version_prefix();
             let use_versions_host = self.use_versions_host_for_github_metadata();
             let release =
-                try_with_v_prefix_and_repo(version, version_prefix, Some(repo), |candidate| {
+                try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                     let api_url = api_url.to_string();
                     let repo = repo.to_string();
                     async move {
@@ -1141,7 +1134,7 @@ impl UnifiedGitBackend {
             // Keep provenance aligned with the matching-selected binary, unless
             // `asset_pattern` is set (it selects the binary, ignoring `matching`).
             let (matching, matching_regex) =
-                opts.matching_for_provenance(&current_platform, explicit_pattern);
+                opts.matching_for_provenance(&current_platform, verification.explicit_pattern);
             let picker = AssetPicker::with_libc(
                 current_platform.os_name().to_string(),
                 current_platform.arch_name().to_string(),
@@ -1194,7 +1187,7 @@ impl UnifiedGitBackend {
                                     tv,
                                     &artifact_path,
                                     &provenance_path,
-                                    additional_overlay,
+                                    verification.additional_overlay,
                                 )
                                 .await
                             {
@@ -1353,9 +1346,10 @@ impl UnifiedGitBackend {
                     &file_path,
                     &asset.name,
                     locked_provenance.as_ref(),
-                    opts.asset_pattern_for_target(&PlatformTarget::from_current())
-                        .is_some(),
-                    false,
+                    AssetVerification::primary(
+                        opts.asset_pattern_for_target(&PlatformTarget::from_current())
+                            .is_some(),
+                    ),
                 )
                 .await?;
 
@@ -1438,8 +1432,7 @@ impl UnifiedGitBackend {
                     &file_path,
                     &asset.name,
                     expected_provenance.as_ref(),
-                    true,
-                    true,
+                    AssetVerification::ADDITIONAL,
                 )
                 .await?;
             if provenance.is_some() {
@@ -1602,10 +1595,9 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         opts: &GitBackendOptions<'_>,
         repo: &str,
-        api_url: &str,
     ) -> Result<ReleaseAsset> {
         let current_platform = PlatformTarget::from_current();
-        self.resolve_asset_url_for_target(tv, opts, repo, api_url, &current_platform)
+        self.resolve_asset_url_for_target(tv, opts, repo, &current_platform)
             .await
     }
 
@@ -1615,10 +1607,9 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         opts: &GitBackendOptions<'_>,
         repo: &str,
-        api_url: &str,
         target: &PlatformTarget,
     ) -> Result<ReleaseAsset> {
-        self.resolve_asset_url_for_target_with_pattern(tv, opts, repo, api_url, target, None)
+        self.resolve_asset_url_for_target_with_pattern(tv, opts, repo, target, None)
             .await
     }
 
@@ -1627,7 +1618,6 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         opts: &GitBackendOptions<'_>,
         repo: &str,
-        api_url: &str,
         target: &PlatformTarget,
         asset_pattern: Option<&str>,
     ) -> Result<ReleaseAsset> {
@@ -1651,7 +1641,6 @@ impl UnifiedGitBackend {
                     tv,
                     opts,
                     repo,
-                    api_url,
                     &candidate,
                     target,
                     asset_pattern,
@@ -1665,7 +1654,6 @@ impl UnifiedGitBackend {
                     tv,
                     opts,
                     repo,
-                    api_url,
                     &candidate,
                     target,
                     asset_pattern,
@@ -1684,7 +1672,6 @@ impl UnifiedGitBackend {
                         tv,
                         opts,
                         repo,
-                        api_url,
                         &candidate,
                         target,
                         asset_pattern,
@@ -1702,13 +1689,13 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         opts: &GitBackendOptions<'_>,
         repo: &str,
-        api_url: &str,
         version: &str,
         target: &PlatformTarget,
         asset_pattern: Option<&str>,
     ) -> Result<ReleaseAsset> {
+        let api_url = opts.api_url();
         let release = self
-            .get_github_release_for_url(api_url, repo, version)
+            .get_github_release_for_url(&api_url, repo, version)
             .await?;
         let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
 
@@ -1797,12 +1784,12 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         opts: &GitBackendOptions<'_>,
         repo: &str,
-        api_url: &str,
         version: &str,
         target: &PlatformTarget,
         asset_pattern: Option<&str>,
     ) -> Result<ReleaseAsset> {
-        let release = gitlab::get_release_for_url(api_url, repo, version).await?;
+        let api_url = opts.api_url();
+        let release = gitlab::get_release_for_url(&api_url, repo, version).await?;
         let available_assets: Vec<String> = release
             .assets
             .links
@@ -1890,12 +1877,12 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         opts: &GitBackendOptions<'_>,
         repo: &str,
-        api_url: &str,
         version: &str,
         target: &PlatformTarget,
         asset_pattern: Option<&str>,
     ) -> Result<ReleaseAsset> {
-        let release = forgejo::get_release_for_url(api_url, repo, version).await?;
+        let api_url = opts.api_url();
+        let release = forgejo::get_release_for_url(&api_url, repo, version).await?;
         let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
 
         // Build asset list with URLs for checksum fetching
@@ -2224,8 +2211,7 @@ impl UnifiedGitBackend {
         file_path: &std::path::Path,
         asset_name: &str,
         expected_provenance: Option<&ProvenanceType>,
-        explicit_pattern: bool,
-        additional_overlay: bool,
+        verification: AssetVerification,
     ) -> Result<Option<ProvenanceType>> {
         let settings = Settings::get();
 
@@ -2321,15 +2307,7 @@ impl UnifiedGitBackend {
         // Fall back to SLSA provenance (if enabled globally and for github backend)
         if !skip_slsa && settings.slsa && settings.github.slsa {
             match self
-                .try_verify_slsa(
-                    ctx,
-                    tv,
-                    file_path,
-                    asset_name,
-                    &api_url,
-                    explicit_pattern,
-                    additional_overlay,
-                )
+                .try_verify_slsa(ctx, tv, file_path, asset_name, &api_url, verification)
                 .await
             {
                 Ok((true, provenance_url)) => {
@@ -2498,8 +2476,7 @@ impl UnifiedGitBackend {
         file_path: &std::path::Path,
         asset_name: &str,
         api_url: &str,
-        explicit_pattern: bool,
-        additional_overlay: bool,
+        verification: AssetVerification,
     ) -> std::result::Result<(bool, Option<String>), VerificationStatus> {
         if self.is_gitlab() || self.is_forgejo() {
             return Err(VerificationStatus::NoAttestations);
@@ -2547,7 +2524,7 @@ impl UnifiedGitBackend {
         // time, matching the selection used at lock time. Suppressed when
         // `asset_pattern` is set (it selects the binary, ignoring `matching`).
         let (matching, matching_regex) =
-            opts.matching_for_provenance(&current_platform, explicit_pattern);
+            opts.matching_for_provenance(&current_platform, verification.explicit_pattern);
         let picker = AssetPicker::with_libc(
             current_platform.os_name().to_string(),
             current_platform.arch_name().to_string(),
@@ -2615,7 +2592,7 @@ impl UnifiedGitBackend {
                             tv,
                             file_path,
                             &provenance_path,
-                            additional_overlay,
+                            verification.additional_overlay,
                         )
                         .await
                     {

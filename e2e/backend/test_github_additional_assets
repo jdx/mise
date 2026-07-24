@@ -23,8 +23,24 @@ assert_contains "cat mise.lock" 'additional_asset_patterns = "fd-8.7.0.tar.gz"'
 assert_contains "cat mise.lock" 'url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/fd-8.7.0.tar.gz"'
 assert_contains "cat mise.lock" 'checksum = "sha256:230cf587de59730a1d7f9c49004f301292927621a336578723518fc9d03f4824"'
 
-# A locked reinstall must use the complete recorded artifact list.
+# Locked mode must reject an incomplete supplemental artifact list.
+cp mise.lock mise.lock.complete
 mise uninstall github:jdx/mise-test-fixtures
+awk '
+  /^\[\[tools\."github:jdx\/mise-test-fixtures"\."platforms\..*"\.additional_artifacts\]\]$/ {
+    skip_artifact = 1
+    next
+  }
+  skip_artifact && /^$/ {
+    skip_artifact = 0
+    next
+  }
+  !skip_artifact { print }
+' mise.lock.complete >mise.lock
+assert_fail "mise install --locked"
+
+# Restoring the complete lock permits the reinstall.
+cp mise.lock.complete mise.lock
 mise install --locked
 install_path=$(mise where github:jdx/mise-test-fixtures)
 assert_contains "$install_path/fd-8.7.0/bin/fd" "alternative to 'find'"

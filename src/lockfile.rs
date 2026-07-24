@@ -233,7 +233,6 @@ pub enum GithubAttestationsStatus {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct ArtifactInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
@@ -4833,7 +4832,20 @@ backend = "conda:jq"
             ..Default::default()
         };
 
-        let toml_val: toml::Value = info.clone().into();
+        let mut toml_val: toml::Value = info.clone().into();
+        toml_val
+            .as_table_mut()
+            .unwrap()
+            .get_mut("additional_artifacts")
+            .unwrap()
+            .as_array_mut()
+            .unwrap()[0]
+            .as_table_mut()
+            .unwrap()
+            .insert(
+                "future_lockfile_field".to_string(),
+                toml::Value::String("ignored by older mise versions".to_string()),
+            );
         let parsed: PlatformInfo = toml_val.try_into().unwrap();
 
         assert_eq!(parsed, info);
