@@ -250,13 +250,13 @@ async fn load_ssh_recipient_from_private_key(path: &Path) -> Result<String> {
     ))
 }
 
-async fn load_all_identities() -> Result<Vec<Box<dyn Identity>>> {
+async fn load_all_identities() -> Result<Vec<Box<dyn Identity + Send + Sync>>> {
     // Get identity files first
     let identity_files = get_all_identity_files().await;
     let ssh_identity_files = get_all_ssh_identity_files();
 
     // Now process identities without holding them across await points
-    let mut identities: Vec<Box<dyn Identity>> = Vec::new();
+    let mut identities: Vec<Box<dyn Identity + Send + Sync>> = Vec::new();
 
     // Check MISE_AGE_KEY environment variable
     if let Ok(age_key) = env::var("MISE_AGE_KEY")
