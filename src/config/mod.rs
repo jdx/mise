@@ -2224,11 +2224,11 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     } else {
         lockfile::snapshot_pre_install_platforms(config, ts, new_versions)
     };
-    measure!("updating lockfiles", {
+    let has_deferred_provenance = measure!("updating lockfiles", {
         lockfile::update_lockfiles(config, ts, new_versions, lockfile_update_mode)
-            .wrap_err("failed to update lockfiles")?;
+            .wrap_err("failed to update lockfiles")?
     });
-    if !new_versions.is_empty() {
+    if !new_versions.is_empty() || has_deferred_provenance {
         measure!("auto-locking platforms", {
             lockfile::auto_lock_new_versions(
                 config,
@@ -2238,7 +2238,7 @@ pub async fn rebuild_shims_and_runtime_symlinks(
                 lockfile_update_mode,
             )
             .await
-            .wrap_err("failed to auto-lock platforms for new versions")?;
+            .wrap_err("failed to auto-lock platforms")?;
         });
     }
 

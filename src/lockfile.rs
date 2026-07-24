@@ -1476,9 +1476,9 @@ pub fn update_lockfiles(
     ts: &Toolset,
     new_versions: &[ToolVersion],
     mode: LockfileUpdateMode,
-) -> Result<()> {
+) -> Result<bool> {
     if !Settings::get().lockfile_enabled() || (Settings::get().locked && !mode.allow_locked()) {
-        return Ok(());
+        return Ok(false);
     }
 
     // Collect tools by source (config file)
@@ -1531,6 +1531,7 @@ pub fn update_lockfiles(
 
     // Process each lockfile, deferring provenance errors until all lockfiles are saved.
     let mut provenance_errors: Vec<String> = Vec::new();
+    let mut has_deferred_provenance = false;
 
     for (lockfile_path, _configs) in lockfile_configs {
         // Only update existing lockfiles - creation is done elsewhere (e.g., by `mise lock`)
@@ -1650,9 +1651,15 @@ pub fn update_lockfiles(
         // Check for provenance regression before merging (which drops old version entries).
         // For github backend tools, error if the highest prior version had provenance but
         // the new version does not — this could indicate a supply chain attack.
-        // Regressing tools are excluded from merge to preserve the old provenance entry.
-        let (regressing_tools, regression_errors) =
-            check_provenance_regression(&existing_lockfile, &tools_by_short);
+        // Confirmed regressions are excluded from merge to preserve the old provenance entry.
+        // Unverified upgrades (already-installed versions) instead preserve the prior
+        // provenance entry as a baseline for the later auto-lock pass (see #11225).
+        let ProvenanceRegressionCheck {
+            regressing: regressing_tools,
+            errors: regression_errors,
+            deferred_baselines,
+        } = check_provenance_regression(&existing_lockfile, &tools_by_short);
+        has_deferred_provenance |= !deferred_baselines.is_empty();
         provenance_errors.extend(regression_errors);
 
         // Process each tool with deduplication, skipping regressing tools
@@ -1688,6 +1695,12 @@ pub fn update_lockfiles(
                     &consumed_keys,
                 );
             }
+            // Keep the prior provenance-bearing entry alive for unverified upgrades so
+            // the auto-lock pass can verify the new version and compare against it. The
+            // merge above drops superseded versions; without this the baseline would be
+            // gone before auto-lock runs, letting a genuine regression slip through. The
+            // stale baseline self-heals on the next update once the new version is locked.
+            reinsert_deferred_baselines(&mut merged_tools, &deferred_baselines, &short);
             existing_lockfile.tools.insert(short, merged_tools);
         }
 
@@ -1713,22 +1726,24 @@ pub fn update_lockfiles(
         return Err(eyre!("{}", provenance_errors.join("\n")));
     }
 
-    Ok(())
+    Ok(has_deferred_provenance)
 }
 
-/// Check if a single tool version is losing provenance relative to prior lockfile entries.
+/// Find the prior lockfile entry a version would regress against by losing provenance.
 ///
-/// Returns an error message if a github backend tool upgrade loses provenance,
-/// or None if the check passes. Used by both `check_provenance_regression` and
-/// `apply_lock_result` to avoid duplicating the detection logic.
-fn check_single_tool_provenance(
-    existing_tools: Option<&Vec<LockfileTool>>,
-    short: &str,
+/// Returns the highest prior github semver version that has verified provenance on
+/// this platform when `version` is a semver upgrade over it and carries no provenance
+/// itself. Returns `None` when there is no such baseline (not a github tool, the new
+/// version already has provenance, no comparable prior version, or the new version is
+/// not an upgrade). Shared by the regression check and error formatting so detection
+/// logic lives in one place.
+fn find_provenance_regression_baseline<'a>(
+    existing_tools: Option<&'a [LockfileTool]>,
     version: &str,
     backend: &str,
     platform_key: &str,
     new_provenance: Option<&ProvenanceType>,
-) -> Option<String> {
+) -> Option<&'a LockfileTool> {
     if new_provenance.is_some() || !backend.starts_with("github:") {
         return None;
     }
@@ -1738,10 +1753,10 @@ fn check_single_tool_provenance(
 
     // Find the highest prior github semver version with provenance on this platform.
     // Non-semver tags are opaque to mise, so do not guess whether they are upgrades.
-    let prior = tools
+    let (prior_version, prior) = tools
         .iter()
         .filter(|t| t.version != version)
-        .filter(|t| t.backend.as_ref().is_some_and(|b| b.starts_with("github:")))
+        .filter(|t| t.backend.as_deref() == Some(backend))
         .filter(|t| {
             t.platforms
                 .get(platform_key)
@@ -1750,24 +1765,98 @@ fn check_single_tool_provenance(
         .filter_map(|t| Some((parse_provenance_version(&t.version)?, t)))
         .max_by(|(a, _), (b, _)| a.cmp(b))?;
 
-    let (prior_version, prior) = prior;
-
     // Only flag upgrades — intentional downgrades are allowed
     if new_version <= prior_version {
         return None;
     }
 
-    let prov = prior.platforms[platform_key].provenance.as_ref().unwrap();
-    Some(format!(
+    Some(prior)
+}
+
+/// Format the supply-chain regression error for a version that lost provenance
+/// relative to `baseline`.
+fn provenance_regression_message(
+    short: &str,
+    version: &str,
+    platform_key: &str,
+    baseline: &LockfileTool,
+) -> String {
+    let prov = baseline.platforms[platform_key]
+        .provenance
+        .as_ref()
+        .expect("baseline entry must have provenance on this platform");
+    format!(
         "{short}@{version} has no provenance verification on {platform_key}, \
          but {short}@{} had {prov}. This could indicate a supply chain \
          attack. Verify the release is authentic before proceeding.",
-        prior.version,
+        baseline.version,
+    )
+}
+
+/// Check if a single tool version is losing provenance relative to prior lockfile entries.
+///
+/// Returns an error message if a github backend tool upgrade loses provenance,
+/// or None if the check passes. Used by `apply_lock_result` (the authoritative
+/// lock-time pass that has already downloaded and verified the artifact).
+fn check_single_tool_provenance(
+    existing_tools: Option<&[LockfileTool]>,
+    short: &str,
+    version: &str,
+    backend: &str,
+    platform_key: &str,
+    new_provenance: Option<&ProvenanceType>,
+) -> Option<String> {
+    let baseline = find_provenance_regression_baseline(
+        existing_tools,
+        version,
+        backend,
+        platform_key,
+        new_provenance,
+    )?;
+    Some(provenance_regression_message(
+        short,
+        version,
+        platform_key,
+        baseline,
     ))
 }
 
 fn parse_provenance_version(version: &str) -> Option<nodejs_semver::Version> {
     nodejs_semver::Version::parse(strip_leading_v(version)).ok()
+}
+
+/// Outcome of the pre-merge provenance regression check.
+#[derive(Default)]
+struct ProvenanceRegressionCheck {
+    /// Tools with a confirmed regression: exclude from merge to preserve the old
+    /// provenance-verified entry, and fail the command with `errors`.
+    regressing: HashSet<String>,
+    /// Error messages for confirmed regressions.
+    errors: Vec<String>,
+    /// Prior provenance-bearing entries to preserve through the merge (keyed by
+    /// tool short) for upgrades that could not be verified in this pass. Keeping
+    /// the baseline lets the authoritative `auto_lock_new_versions` pass — which
+    /// downloads and verifies the artifact — compare against it, since the merge
+    /// otherwise drops superseded versions before auto-lock runs.
+    deferred_baselines: HashMap<String, Vec<LockfileTool>>,
+}
+
+fn reinsert_deferred_baselines(
+    merged_tools: &mut Vec<LockfileTool>,
+    deferred_baselines: &HashMap<String, Vec<LockfileTool>>,
+    short: &str,
+) {
+    let Some(baselines) = deferred_baselines.get(short) else {
+        return;
+    };
+    for baseline in baselines {
+        if !merged_tools
+            .iter()
+            .any(|tool| tool.version == baseline.version && tool.options == baseline.options)
+        {
+            merged_tools.push(baseline.clone());
+        }
+    }
 }
 
 /// Check if any github backend tool is losing provenance when upgrading versions.
@@ -1776,39 +1865,59 @@ fn parse_provenance_version(version: &str) -> Option<nodejs_semver::Version> {
 /// `ToolVersionList`) only have `lock_platforms` populated for the platform where
 /// installation ran. Checking other platforms would produce false positives.
 ///
-/// Returns the set of regressing tool short names and their error messages.
-/// Regressing tools should be excluded from merge/save to preserve the old
-/// provenance-verified entry in the lockfile.
+/// A regression is only *confirmed* when the new version was actually downloaded and
+/// resolved this session — signalled by a `url` on the current platform. When a user
+/// "upgrades" to a version that is *already installed* on disk, mise skips the download
+/// entirely, so no provenance is populated and the platform entry has no url. Its
+/// missing provenance means "not checked", not "verified absent" — flagging it as a
+/// regression is a false positive (#11225). For those, the prior provenance-bearing
+/// entry is instead preserved as a baseline so the authoritative `auto_lock_new_versions`
+/// pass can download, verify, and compare against it.
 fn check_provenance_regression(
     existing_lockfile: &Lockfile,
     new_tools: &HashMap<String, Vec<LockfileTool>>,
-) -> (HashSet<String>, Vec<String>) {
+) -> ProvenanceRegressionCheck {
     let current_platform = Platform::current().to_key();
-    let mut regressing = HashSet::new();
-    let mut errors = Vec::new();
+    let mut result = ProvenanceRegressionCheck::default();
 
     for (short, new_entries) in new_tools {
         for new_entry in new_entries {
             let backend = new_entry.backend.as_deref().unwrap_or("");
-            let new_provenance = new_entry
-                .platforms
-                .get(&current_platform)
-                .and_then(|pi| pi.provenance.as_ref());
+            let platform_info = new_entry.platforms.get(&current_platform);
+            let new_provenance = platform_info.and_then(|pi| pi.provenance.as_ref());
 
-            if let Some(err) = check_single_tool_provenance(
-                existing_lockfile.tools.get(short),
-                short,
+            let Some(baseline) = find_provenance_regression_baseline(
+                existing_lockfile.tools.get(short).map(Vec::as_slice),
                 &new_entry.version,
                 backend,
                 &current_platform,
                 new_provenance,
-            ) {
-                regressing.insert(short.clone());
-                errors.push(err);
+            ) else {
+                continue;
+            };
+
+            if platform_info.and_then(|pi| pi.url.as_ref()).is_some() {
+                // Freshly downloaded and verified: the new version genuinely lacks
+                // provenance the prior version had — a confirmed regression.
+                result.regressing.insert(short.clone());
+                result.errors.push(provenance_regression_message(
+                    short,
+                    &new_entry.version,
+                    &current_platform,
+                    baseline,
+                ));
+            } else {
+                // Not downloaded this session (already installed on disk): unverified.
+                // Preserve the baseline so auto-lock can make the authoritative call.
+                result
+                    .deferred_baselines
+                    .entry(short.clone())
+                    .or_default()
+                    .push(baseline.clone());
             }
         }
     }
-    (regressing, errors)
+    result
 }
 
 /// Snapshot the platform keys present in each lockfile that the upcoming install run
@@ -1847,11 +1956,15 @@ pub fn snapshot_pre_install_platforms(
     result
 }
 
-fn tool_version_needs_auto_lock(
+fn tool_version_matches_lockfile_target<F>(
     lockfile: &Lockfile,
     tv: &ToolVersion,
     target_platforms: &[Platform],
-) -> Result<bool> {
+    predicate: F,
+) -> Result<bool>
+where
+    F: Fn(&[LockfileTool], &str, &str, &BTreeMap<String, String>) -> bool,
+{
     let Some(tools) = lockfile.tools.get(tv.short()) else {
         return Ok(false);
     };
@@ -1868,13 +1981,26 @@ fn tool_version_needs_auto_lock(
             let target = PlatformTarget::new(variant.clone());
             let options = backend.resolve_lockfile_options(&tv.request, &target)?;
             let platform_key = variant.to_key();
-            if lockfile_target_needs_auto_lock(tools, &tv.version, &platform_key, &options) {
+            if predicate(tools, &tv.version, &platform_key, &options) {
                 return Ok(true);
             }
         }
     }
 
     Ok(false)
+}
+
+fn tool_version_needs_auto_lock(
+    lockfile: &Lockfile,
+    tv: &ToolVersion,
+    target_platforms: &[Platform],
+) -> Result<bool> {
+    tool_version_matches_lockfile_target(
+        lockfile,
+        tv,
+        target_platforms,
+        lockfile_target_needs_auto_lock,
+    )
 }
 
 fn lockfile_target_needs_auto_lock(
@@ -1889,10 +2015,62 @@ fn lockfile_target_needs_auto_lock(
     else {
         return true;
     };
-    !tool
+    let Some(info) = tool.platforms.get(platform_key) else {
+        return true;
+    };
+    if info.checksum.is_none() || info.url.is_none() {
+        return true;
+    }
+
+    // A complete-looking same-version row can still be an unresolved deferred
+    // provenance upgrade. Force resolution while a verified prior baseline exists.
+    find_provenance_regression_baseline(
+        Some(tools),
+        version,
+        tool.backend.as_deref().unwrap_or(""),
+        platform_key,
+        info.provenance.as_ref(),
+    )
+    .is_some()
+}
+
+fn lockfile_target_has_deferred_provenance(
+    tools: &[LockfileTool],
+    version: &str,
+    platform_key: &str,
+    options: &BTreeMap<String, String>,
+) -> bool {
+    let Some(tool) = tools
+        .iter()
+        .find(|tool| tool.version == version && &tool.options == options)
+    else {
+        return false;
+    };
+    let provenance = tool
         .platforms
         .get(platform_key)
-        .is_some_and(|info| info.checksum.is_some() && info.url.is_some())
+        .and_then(|info| info.provenance.as_ref());
+    find_provenance_regression_baseline(
+        Some(tools),
+        version,
+        tool.backend.as_deref().unwrap_or(""),
+        platform_key,
+        provenance,
+    )
+    .is_some()
+}
+
+fn tool_version_needs_deferred_provenance_retry(
+    lockfile: &Lockfile,
+    tv: &ToolVersion,
+    target_platforms: &[Platform],
+) -> Result<bool> {
+    tool_version_matches_lockfile_target(
+        lockfile,
+        tv,
+        target_platforms,
+        lockfile_target_has_deferred_provenance,
+    )
 }
 
 /// Determine target platforms for auto-lock from the pre-install lockfile snapshot.
@@ -1966,7 +2144,8 @@ pub fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform
 
 /// After installing new tool versions, resolve checksums/URLs for all common platforms
 /// so the lockfile is complete and doesn't change when other developers on different
-/// platforms run `mise install`.
+/// platforms run `mise install`. When no versions were installed, retry only deferred
+/// provenance verification left incomplete by an earlier auto-lock failure.
 pub async fn auto_lock_new_versions(
     config: &Config,
     ts: &Toolset,
@@ -1974,15 +2153,13 @@ pub async fn auto_lock_new_versions(
     pre_install_platforms: &HashMap<PathBuf, BTreeSet<String>>,
     mode: LockfileUpdateMode,
 ) -> Result<()> {
-    if !Settings::get().lockfile_enabled()
-        || (Settings::get().locked && !mode.allow_locked())
-        || new_versions.is_empty()
-    {
+    if !Settings::get().lockfile_enabled() || (Settings::get().locked && !mode.allow_locked()) {
         return Ok(());
     }
 
     let settings = Settings::get();
     let jobs = settings.jobs;
+    let deferred_retry_only = new_versions.is_empty();
     let mut all_provenance_errors: Vec<String> = Vec::new();
 
     let empty_keys: BTreeSet<String> = BTreeSet::new();
@@ -2034,26 +2211,35 @@ pub async fn auto_lock_new_versions(
         let mut lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
 
-        let pre_install_keys = pre_install_platforms
-            .get(&lockfile_path)
-            .unwrap_or(&empty_keys);
+        let existing_keys;
+        let pre_install_keys = if deferred_retry_only {
+            existing_keys = lockfile.all_platform_keys();
+            &existing_keys
+        } else {
+            pre_install_platforms
+                .get(&lockfile_path)
+                .unwrap_or(&empty_keys)
+        };
         let target_platforms = determine_target_platforms_from_lockfile(pre_install_keys)?;
 
         let versions: Vec<_> = versions
             .into_iter()
             .filter(|tv| {
-                tool_version_needs_auto_lock(&lockfile, tv, &target_platforms).unwrap_or_else(
-                    |err| {
-                        debug!(
-                            "auto-lock candidate check failed for {}@{} in {}: {}",
-                            tv.short(),
-                            tv.version,
-                            display_path(&lockfile_path),
-                            err
-                        );
-                        false
-                    },
-                )
+                let needs_auto_lock = if deferred_retry_only {
+                    tool_version_needs_deferred_provenance_retry(&lockfile, tv, &target_platforms)
+                } else {
+                    tool_version_needs_auto_lock(&lockfile, tv, &target_platforms)
+                };
+                needs_auto_lock.unwrap_or_else(|err| {
+                    debug!(
+                        "auto-lock candidate check failed for {}@{} in {}: {}",
+                        tv.short(),
+                        tv.version,
+                        display_path(&lockfile_path),
+                        err
+                    );
+                    false
+                })
             })
             .collect();
         if versions.is_empty() {
@@ -2079,16 +2265,17 @@ pub async fn auto_lock_new_versions(
                     let platform_key = variant.to_key();
                     let target = PlatformTarget::new(variant.clone());
 
-                    // Skip if this tool/version/platform already has both checksum and URL
+                    // Skip complete targets unless a prior provenance-bearing version
+                    // means this target still needs authoritative verification.
                     if let Some(ref backend) = backend
                         && let Ok(options) = backend.resolve_lockfile_options(&tv.request, &target)
                         && let Some(tools) = lockfile.tools.get(&ba.short)
-                        && let Some(tool) = tools
-                            .iter()
-                            .find(|t| t.version == tv.version && t.options == options)
-                        && let Some(info) = tool.platforms.get(&platform_key)
-                        && info.checksum.is_some()
-                        && info.url.is_some()
+                        && !lockfile_target_needs_auto_lock(
+                            tools,
+                            &tv.version,
+                            &platform_key,
+                            &options,
+                        )
                     {
                         continue;
                     }
@@ -2113,7 +2300,28 @@ pub async fn auto_lock_new_versions(
             match result {
                 Ok(resolution) => {
                     if let Err(msg) = &resolution.4 {
-                        debug!("auto-lock: {msg}");
+                        let (short, version, backend, platform) =
+                            (&resolution.0, &resolution.1, &resolution.2, &resolution.3);
+                        let platform_key = platform.to_key();
+                        // Auto-lock is best-effort, so resolution failures are normally
+                        // just logged. But if this url-less version is a deferred
+                        // provenance upgrade — a prior provenance-bearing version is
+                        // still present as a baseline — a failure here means the
+                        // deferred supply-chain check could not be completed. Fail
+                        // closed rather than silently locking the upgrade without
+                        // provenance (#11225); it self-heals on a later successful run.
+                        if let Some(err) = deferred_provenance_resolution_error(
+                            lockfile.tools.get(short).map(Vec::as_slice),
+                            short,
+                            version,
+                            backend,
+                            &platform_key,
+                            msg,
+                        ) {
+                            provenance_errors.push(err);
+                        } else {
+                            debug!("auto-lock: {msg}");
+                        }
                     }
                     if let Err(e) = apply_lock_result(&mut lockfile, resolution) {
                         provenance_errors.push(e.to_string());
@@ -2135,6 +2343,23 @@ pub async fn auto_lock_new_versions(
     }
 
     Ok(())
+}
+
+fn deferred_provenance_resolution_error(
+    existing_tools: Option<&[LockfileTool]>,
+    short: &str,
+    version: &str,
+    backend: &str,
+    platform_key: &str,
+    resolution_error: &str,
+) -> Option<String> {
+    find_provenance_regression_baseline(existing_tools, version, backend, platform_key, None)?;
+    Some(format!(
+        "could not verify provenance for {short}@{version} on \
+         {platform_key}: {resolution_error}\nA prior version had provenance, so \
+         mise refuses to lock this upgrade without verifying it. \
+         Retry once the release source is reachable."
+    ))
 }
 
 /// Result type for lock resolution tasks (shared by `mise lock` and auto-lock).
@@ -2270,7 +2495,7 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
     let platform_key = platform.to_key();
     if let Ok(ref info) = info {
         if let Some(err) = check_single_tool_provenance(
-            lockfile.tools.get(&short),
+            lockfile.tools.get(&short).map(Vec::as_slice),
             &short,
             &version,
             &backend,
@@ -3437,6 +3662,24 @@ options = { exe = "rg" }
     }
 
     #[test]
+    fn test_reinsert_deferred_baselines_restores_dropped_entry_without_duplicates() {
+        let baseline = basic_tool("0.11.0", "github:owner/repo");
+        let deferred =
+            HashMap::from([("repo".to_string(), vec![baseline.clone(), baseline.clone()])]);
+        let mut merged = vec![basic_tool("0.12.0", "github:owner/repo")];
+
+        reinsert_deferred_baselines(&mut merged, &deferred, "repo");
+
+        assert_eq!(
+            merged
+                .iter()
+                .filter(|tool| tool.version == baseline.version && tool.options == baseline.options)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
     fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
         // #10564: after merge_tool_entries rekeys an empty-options entry into a
         // same-version optioned entry, the monorepo preserve pass must not
@@ -3936,6 +4179,84 @@ options = { exe = "rg" }
             "windows-x64",
             &unix_options,
         ));
+    }
+
+    #[test]
+    fn test_complete_target_still_auto_locks_deferred_provenance_upgrade() {
+        let platform = Platform::current().to_key();
+        let mut baseline = basic_tool("0.11.0", "github:owner/repo");
+        baseline.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        let mut pending = basic_tool("0.12.0", "github:owner/repo");
+        pending.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                checksum: Some("sha256:pending".to_string()),
+                url: Some("https://example.com/repo-0.12.0.tar.gz".to_string()),
+                ..Default::default()
+            },
+        );
+        let mut tools = vec![baseline, pending];
+
+        assert!(
+            lockfile_target_needs_auto_lock(&tools, "0.12.0", &platform, &BTreeMap::new()),
+            "complete URL/checksum data must not skip deferred provenance verification"
+        );
+
+        tools[1].platforms.get_mut(&platform).unwrap().provenance =
+            Some(ProvenanceType::GithubAttestations);
+        assert!(!lockfile_target_needs_auto_lock(
+            &tools,
+            "0.12.0",
+            &platform,
+            &BTreeMap::new()
+        ));
+    }
+
+    #[test]
+    fn test_no_new_versions_retries_only_deferred_provenance() {
+        let platform = Platform::current();
+        let platform_key = platform.to_key();
+        let tv = basic_tv("github:owner/repo", "0.12.0");
+        let mut baseline = basic_tool("0.11.0", "github:owner/repo");
+        baseline.platforms.insert(
+            platform_key.clone(),
+            PlatformInfo {
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        let pending = basic_tool("0.12.0", "github:owner/repo");
+        let mut lockfile = Lockfile::default();
+        lockfile
+            .tools
+            .insert("repo".to_string(), vec![baseline, pending.clone()]);
+
+        assert!(
+            tool_version_needs_deferred_provenance_retry(
+                &lockfile,
+                &tv,
+                std::slice::from_ref(&platform),
+            )
+            .unwrap(),
+            "a later install with no new versions must retry deferred verification"
+        );
+
+        lockfile.tools.insert("repo".to_string(), vec![pending]);
+        assert!(
+            !tool_version_needs_deferred_provenance_retry(
+                &lockfile,
+                &tv,
+                std::slice::from_ref(&platform),
+            )
+            .unwrap(),
+            "ordinary incomplete lock entries must not broaden the no-new-version retry"
+        );
     }
 
     #[test]
@@ -4582,6 +4903,174 @@ backend = "conda:jq"
                 None,
             )
             .is_none()
+        );
+    }
+
+    #[test]
+    fn test_provenance_regression_skips_unverified_already_installed_version() {
+        // Reproduces #11225: upgrading a locked tool to a newer version that is
+        // *already installed* on disk skips the download, so the new entry has no
+        // platform info (no url, no provenance). That missing provenance means
+        // "not checked", not "verified absent", and must NOT be flagged as a
+        // supply-chain regression.
+        let platform = Platform::current().to_key();
+
+        let mut prior = basic_tool("0.11.0", "github:owner/repo");
+        prior.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                url: Some("https://example.com/repo-0.11.0.tar.gz".to_string()),
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        let mut existing = Lockfile::default();
+        existing.tools.insert("repo".to_string(), vec![prior]);
+
+        // New version with an empty platform map (nothing downloaded/verified).
+        let new_tools: HashMap<String, Vec<LockfileTool>> = [(
+            "repo".to_string(),
+            vec![basic_tool("0.12.0", "github:owner/repo")],
+        )]
+        .into_iter()
+        .collect();
+
+        let check = check_provenance_regression(&existing, &new_tools);
+        assert!(
+            check.regressing.is_empty() && check.errors.is_empty(),
+            "already-installed upgrade with no fresh verification must not regress: {:?}",
+            check.errors
+        );
+        // ...but the prior provenance-bearing entry must be preserved as a baseline so
+        // the auto-lock pass can still compare against it after the merge.
+        let baselines = check
+            .deferred_baselines
+            .get("repo")
+            .expect("baseline must be preserved for the unverified upgrade");
+        assert!(
+            baselines.iter().any(|t| t.version == "0.11.0"),
+            "expected 0.11.0 baseline to be preserved, got {baselines:?}"
+        );
+
+        // The platform can also be present but still unverified when installation
+        // populated an empty PlatformInfo. The URL predicate must defer this case too.
+        let mut present_unverified = basic_tool("0.12.0", "github:owner/repo");
+        present_unverified
+            .platforms
+            .insert(platform.clone(), PlatformInfo::default());
+        let new_tools = HashMap::from([("repo".to_string(), vec![present_unverified])]);
+        let check = check_provenance_regression(&existing, &new_tools);
+        assert!(check.regressing.is_empty() && check.errors.is_empty());
+        assert!(
+            check
+                .deferred_baselines
+                .get("repo")
+                .is_some_and(|baselines| baselines.iter().any(|t| t.version == "0.11.0")),
+            "present-but-unverified platform must preserve the provenance baseline"
+        );
+
+        // Contrast: a freshly-installed version populates a url but genuinely has
+        // no provenance — that is a real regression and must still be flagged.
+        let mut fresh = basic_tool("0.12.0", "github:owner/repo");
+        fresh.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                url: Some("https://example.com/repo-0.12.0.tar.gz".to_string()),
+                provenance: None,
+                ..Default::default()
+            },
+        );
+        let new_tools: HashMap<String, Vec<LockfileTool>> =
+            [("repo".to_string(), vec![fresh])].into_iter().collect();
+        let check = check_provenance_regression(&existing, &new_tools);
+        assert!(
+            check.regressing.contains("repo") && !check.errors.is_empty(),
+            "freshly-installed version that lost provenance must still regress"
+        );
+        assert!(
+            check.deferred_baselines.is_empty(),
+            "confirmed regression must not be deferred"
+        );
+    }
+
+    #[test]
+    fn test_deferred_resolution_failure_blocks_when_baseline_present() {
+        // Models the auto-lock escalation gate (#11225): when an already-installed
+        // upgrade could not be resolved/verified, a failure must fail-closed only if a
+        // prior provenance-bearing version is still present as a baseline; otherwise it
+        // stays best-effort. This tests the decision `find_provenance_regression_baseline`
+        // drives in `auto_lock_new_versions`.
+        let platform = Platform::current().to_key();
+
+        let mut baseline = basic_tool("0.11.0", "github:owner/repo");
+        baseline.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                url: Some("https://example.com/repo-0.11.0.tar.gz".to_string()),
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        // The deferred, still-unverified new version (no url/provenance yet).
+        let pending = basic_tool("0.12.0", "github:owner/repo");
+        let tools = vec![baseline, pending];
+
+        // A resolution failure for 0.12.0 must become the caller's blocking error.
+        let err = deferred_provenance_resolution_error(
+            Some(&tools),
+            "repo",
+            "0.12.0",
+            "github:owner/repo",
+            &platform,
+            "network unavailable",
+        )
+        .expect("failure must fail-closed while the provenance baseline is present");
+        assert!(err.contains("could not verify provenance for repo@0.12.0"));
+        assert!(err.contains("network unavailable"));
+
+        // Without a provenance-bearing prior version, a failure stays best-effort.
+        let no_baseline = vec![
+            basic_tool("0.11.0", "github:owner/repo"),
+            basic_tool("0.12.0", "github:owner/repo"),
+        ];
+        assert!(
+            deferred_provenance_resolution_error(
+                Some(&no_baseline),
+                "repo",
+                "0.12.0",
+                "github:owner/repo",
+                &platform,
+                "network unavailable",
+            )
+            .is_none(),
+            "no baseline means a resolution failure should remain non-blocking"
+        );
+    }
+
+    #[test]
+    fn test_provenance_baseline_requires_exact_github_backend() {
+        let platform = Platform::current().to_key();
+        let mut prior = basic_tool("1.0.0", "github:owner/original");
+        prior.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        let existing = vec![prior];
+
+        assert!(
+            check_single_tool_provenance(
+                Some(&existing),
+                "tool",
+                "2.0.0",
+                "github:owner/fork",
+                &platform,
+                None,
+            )
+            .is_none(),
+            "an unrelated github repository must not supply the provenance baseline"
         );
     }
 
