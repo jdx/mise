@@ -7,10 +7,19 @@ cat <<EOF >mise.toml
 [tools."github:jdx/mise-test-fixtures"]
 version = "1.0.0"
 asset_pattern = "hello-world-1.0.0.tar.gz"
-additional_asset_patterns = ["fd-8.7.0.tar.gz"]
 EOF
 
 touch mise.lock
+mise install
+
+# Adding a supplemental pattern to an existing version must not be skipped.
+cat <<EOF >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+asset_pattern = "hello-world-1.0.0.tar.gz"
+additional_asset_patterns = ["fd-8.7.0.tar.gz"]
+EOF
+
 mise install
 
 # Both archives are extracted into one installation.

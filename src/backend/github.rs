@@ -62,6 +62,13 @@ impl AssetVerification {
     };
 }
 
+const ADDITIONAL_ASSETS_STATE_FILENAME: &str = ".mise-additional-assets.toml";
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct AdditionalAssetsInstallState {
+    patterns: Vec<String>,
+}
+
 const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
 const DEFAULT_GITLAB_API_BASE_URL: &str = "https://gitlab.com/api/v4";
 const DEFAULT_FORGEJO_API_BASE_URL: &str = "https://codeberg.org/api/v1";
@@ -328,6 +335,22 @@ impl Backend for UnifiedGitBackend {
 
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
+        if !self.is_version_installed(config, tv, check_symlink) {
+            return Ok(false);
+        }
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let patterns = self
+            .options(&raw_opts)
+            .additional_asset_patterns_for_target(&PlatformTarget::from_current());
+        Ok(self.additional_assets_install_state_matches(tv, &patterns))
     }
 
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
@@ -608,6 +631,8 @@ impl Backend for UnifiedGitBackend {
         let repo = self.repo();
         let raw_opts = ctx.config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = self.options(&raw_opts);
+        let current_target = PlatformTarget::from_current();
+        let additional_patterns = opts.additional_asset_patterns_for_target(&current_target);
 
         // Validate `matching_regex` up front, before the cached-URL branch below.
         // Reusing a cached lockfile URL skips binary selection (the path that
@@ -633,9 +658,6 @@ impl Backend for UnifiedGitBackend {
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
-        let current_target = PlatformTarget::from_current();
-        let additional_patterns = opts.additional_asset_patterns_for_target(&current_target);
-
         let asset = if let Some(existing_platform) = tv.lock_platforms.get(&platform_key)
             && existing_platform.url.is_some()
         {
@@ -713,6 +735,7 @@ impl Backend for UnifiedGitBackend {
             self.download_verify_and_install_additional_asset(ctx, &mut tv, asset, &opts, index)
                 .await?;
         }
+        self.write_additional_assets_install_state(&tv, &additional_patterns)?;
 
         Ok(tv)
     }
@@ -924,6 +947,38 @@ impl UnifiedGitBackend {
                 self.pick_by_pattern([name], &pattern, String::as_str)
                     .is_some()
             })
+    }
+
+    fn additional_assets_install_state_matches(
+        &self,
+        tv: &ToolVersion,
+        patterns: &[String],
+    ) -> bool {
+        let state_path = tv.install_path().join(ADDITIONAL_ASSETS_STATE_FILENAME);
+        if !state_path.exists() {
+            return patterns.is_empty();
+        }
+        file::read_to_string(&state_path)
+            .ok()
+            .and_then(|body| toml::from_str::<AdditionalAssetsInstallState>(&body).ok())
+            .is_some_and(|state| state.patterns == patterns)
+    }
+
+    fn write_additional_assets_install_state(
+        &self,
+        tv: &ToolVersion,
+        patterns: &[String],
+    ) -> Result<()> {
+        if patterns.is_empty() {
+            return Ok(());
+        }
+        let state = AdditionalAssetsInstallState {
+            patterns: patterns.to_vec(),
+        };
+        file::write(
+            tv.install_path().join(ADDITIONAL_ASSETS_STATE_FILENAME),
+            toml::to_string(&state)?,
+        )
     }
 
     async fn get_github_release_for_url(
@@ -2858,6 +2913,36 @@ mod tests {
                 .get("additional_asset_patterns"),
             Some(&"rocm.tar.gz".to_string())
         );
+    }
+
+    #[test]
+    fn test_additional_assets_install_state_tracks_patterns() {
+        let backend = create_test_backend();
+        let backend_arg = Arc::new(BackendArg::new(
+            "github:test/repo".to_string(),
+            Some("github:test/repo".to_string()),
+        ));
+        let request =
+            ToolRequest::new(backend_arg, "1.0.0", crate::toolset::ToolSource::Unknown).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("install");
+        file::create_dir_all(&install_path).unwrap();
+        let mut tv = ToolVersion::new(request, "1.0.0".to_string());
+        tv.install_path = Some(install_path);
+        let patterns = vec!["base-*.tar.gz".to_string(), "extra-*.tar.gz".to_string()];
+
+        assert!(backend.additional_assets_install_state_matches(&tv, &[]));
+        assert!(!backend.additional_assets_install_state_matches(&tv, &patterns));
+
+        backend
+            .write_additional_assets_install_state(&tv, &patterns)
+            .unwrap();
+        assert!(backend.additional_assets_install_state_matches(&tv, &patterns));
+        assert!(!backend.additional_assets_install_state_matches(
+            &tv,
+            &["extra-*.tar.gz".to_string(), "base-*.tar.gz".to_string()],
+        ));
+        assert!(!backend.additional_assets_install_state_matches(&tv, &[]));
     }
 
     #[test]
