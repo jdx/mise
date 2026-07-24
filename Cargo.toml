@@ -137,7 +137,7 @@ nucleo-matcher = "0.3"
 num_cpus = "1"
 once_cell = "1"
 openssl = { version = "0.10", optional = true }
-path-absolutize = { version = "4", features = ["unsafe_cache"] }
+path-absolutize = "4"
 petgraph = "0.8"
 pgp = "0.20"
 phf = "0.14"
