@@ -6,7 +6,6 @@ use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::file::{ExtractOptions, ExtractionFormat, display_path};
 use crate::git::{CloneOptions, Git};
@@ -14,7 +13,7 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::platform::Platform;
-use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
 use crate::{dirs, file, plugins, sysconfig};
@@ -530,12 +529,18 @@ impl PythonPlugin {
         let raw_opts = tv.request.options();
         let opts = PythonOptions::new(&raw_opts);
         if let Some(virtualenv) = opts.virtualenv() {
-            let virtualenv: PathBuf = file::replace_path(Path::new(virtualenv));
-            let virtualenv = resolve_virtualenv_path(
-                virtualenv,
-                tv.request.source(),
-                config.project_root.as_deref(),
+            deprecated_at!(
+                "2026.7.0",
+                "2027.7.0",
+                "python.virtualenv",
+                "the python `virtualenv` tool option is deprecated. Use `_.python.venv` in the `[env]` section instead: https://mise.en.dev/lang/python.html#automatic-virtualenv-activation"
             );
+            let mut virtualenv: PathBuf = file::replace_path(Path::new(virtualenv));
+            if !virtualenv.is_absolute() {
+                if let Some(project_root) = &config.project_root {
+                    virtualenv = project_root.join(virtualenv);
+                }
+            }
             if !virtualenv.exists() {
                 warn!(
                     "no venv found at: {p}\n\n\
@@ -791,40 +796,6 @@ impl PythonPlugin {
             )),
         }
     }
-}
-
-/// Resolve a `virtualenv` tool-option path.
-///
-/// `virtualenv` has already been passed through [`file::replace_path`], so a
-/// leading `~` is expanded. Absolute paths are returned as-is. Relative paths are
-/// joined against the config root of the file that *declared* the tool (`source`),
-/// so a `virtualenv` set in the global config resolves against the global config
-/// root rather than the current project. When the source has no backing file
-/// (e.g. a CLI argument), fall back to `project_root`, then the current working
-/// directory.
-fn resolve_virtualenv_path(
-    virtualenv: PathBuf,
-    source: &ToolSource,
-    project_root: Option<&Path>,
-) -> PathBuf {
-    if virtualenv.is_absolute() {
-        return virtualenv;
-    }
-    let virtualenv = virtualenv
-        .strip_prefix("./")
-        .map(Path::to_path_buf)
-        .unwrap_or(virtualenv);
-    let base = source
-        .path()
-        .map(config_root::config_root)
-        .or_else(|| project_root.map(Path::to_path_buf))
-        .unwrap_or_else(|| {
-            dirs::CWD
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| PathBuf::from("."))
-        });
-    base.join(virtualenv)
 }
 
 #[async_trait]
@@ -1269,52 +1240,6 @@ mod tests {
     fn python_options_reads_virtualenv() {
         let opts = opts_with("virtualenv", ".venv");
         assert_eq!(PythonOptions::new(&opts).virtualenv(), Some(".venv"));
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn resolve_virtualenv_path_absolute_passthrough() {
-        let out = resolve_virtualenv_path(
-            PathBuf::from("/abs/venv"),
-            &ToolSource::Argument,
-            Some(Path::new("/some/project")),
-        );
-        assert_eq!(out, PathBuf::from("/abs/venv"));
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn resolve_virtualenv_path_relative_uses_declaring_config_root() {
-        // A relative venv resolves against the config file that declared the tool,
-        // NOT the passed-in project_root. This is the bug being fixed (#6019): a
-        // `virtualenv` in the global config must not resolve into unrelated projects.
-        let source = ToolSource::MiseToml(PathBuf::from("/tmp/mise-test-proj/mise.toml"));
-        let out = resolve_virtualenv_path(
-            PathBuf::from(".venv"),
-            &source,
-            Some(Path::new("/tmp/some-other-project")),
-        );
-        assert_eq!(out, PathBuf::from("/tmp/mise-test-proj/.venv"));
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn resolve_virtualenv_path_relative_argument_falls_back_to_project_root() {
-        // No backing config file (e.g. a CLI argument) -> fall back to project_root.
-        let out = resolve_virtualenv_path(
-            PathBuf::from(".venv"),
-            &ToolSource::Argument,
-            Some(Path::new("/tmp/mise-fallback-proj")),
-        );
-        assert_eq!(out, PathBuf::from("/tmp/mise-fallback-proj/.venv"));
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn resolve_virtualenv_path_relative_no_base_uses_cwd() {
-        // No source path and no project_root -> resolve under CWD.
-        let out = resolve_virtualenv_path(PathBuf::from(".venv"), &ToolSource::Argument, None);
-        assert_eq!(out, dirs::CWD.as_ref().unwrap().join(".venv"));
     }
 
     #[test]

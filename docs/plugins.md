@@ -123,12 +123,13 @@ of tools. One example of this is virtualenv on python runtimes:
 
 ```toml
 [tools]
-python = { version='3.11', virtualenv='.venv' } # a relative path resolves against this file's config root
+python = { version='3.11', virtualenv='.venv' }
 ```
 
-A relative `virtualenv` path is resolved against the config root of the file that declares it
-(matching `_.python.venv`), not the current project root — so a `virtualenv` set in the global
-config won't be looked up inside unrelated projects.
+::: warning
+The python `virtualenv` tool option is deprecated and will be removed in a future release.
+Use [`_.python.venv`](/lang/python.html#automatic-virtualenv-activation) in the `[env]` section instead.
+:::
 
 This will be passed to all plugin scripts as `MISE_TOOL_OPTS__VIRTUALENV=.venv`. The user can specify
 any option, and it will be passed to the plugin in that format.

@@ -88,7 +88,9 @@ mise has two ways to manage Python virtualenvs:
 These are separate mechanisms with different code paths. Options like `uv_create_args` and `python_create_args` in `_.python.venv` are not used by `python.uv_venv_auto`.
 :::
 
-There is also a legacy `virtualenv` tool option (`python = { version = "3.15", virtualenv = ".venv" }` in `[tools]`) that activates an existing venv. A relative path is resolved against the config root of the file that declares it — the same base as `_.python.venv` — so a `virtualenv` set in the global config is not looked up inside unrelated projects. Prefer `_.python.venv` for new configs.
+::: warning
+The legacy `virtualenv` tool option (`python = { version = "3.15", virtualenv = ".venv" }` in `[tools]`) is deprecated and will be removed in a future release. Use `_.python.venv` (below) instead.
+:::
 
 ### `_.python.venv` configuration
 
