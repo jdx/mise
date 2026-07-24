@@ -105,11 +105,11 @@ sfw mise use -g npm:prettier
 ```
 
 This works at the network layer. Mise's npm metadata client and embedded aube
-installer honor the `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, and
-`NODE_EXTRA_CA_CERTS` configuration injected by the firewall. Socket currently
-documents npm, yarn, and pnpm rather than mise or aube as supported JavaScript
-package managers, so this interoperability is not an upstream compatibility
-guarantee.
+installer both use aube-registry, which honors the `HTTP_PROXY`, `HTTPS_PROXY`,
+and `NO_PROXY` settings and explicitly loads the `NODE_EXTRA_CA_CERTS` bundle
+into its Rust TLS clients. Socket currently documents npm, yarn, and pnpm rather
+than mise or aube as supported JavaScript package managers, so this
+interoperability is not an upstream compatibility guarantee.
 
 ## Usage
 
