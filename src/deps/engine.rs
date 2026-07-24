@@ -603,8 +603,9 @@ impl DepsEngine {
                             .map(|p| state::relative_str(p, project_root))
                             .collect();
                         let mut st = DepsState::load(project_root);
-                        st.set_hashes(id, hashes);
-                        st.set_seen_outputs(id, seen);
+                        let provider_id = provider.base().id.as_str();
+                        st.set_hashes(provider_id, hashes);
+                        st.set_seen_outputs(provider_id, seen);
                         if let Err(e) = st.save(project_root) {
                             warn!("failed to save deps state: {e}");
                         }
@@ -873,7 +874,7 @@ impl DepsEngine {
 
         let project_root = &provider.base().project_root;
         let st = DepsState::load(project_root);
-        let provider_id = provider.id();
+        let provider_id = provider.base().id.as_str();
 
         // Session-stale check applies to any output that currently exists,
         // regardless of whether it was required or optional.
