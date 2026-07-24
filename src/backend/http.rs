@@ -285,9 +285,16 @@ impl HttpBackend {
 
         // Include rename_exe in cache key since it modifies the extracted content.
         // Use the raw value so the table form (multi-binary rename) is captured too;
-        // `opts.rename_exe()` only stringifies the scalar form.
+        // `opts.rename_exe()` only stringifies the scalar form. Keep the readable
+        // unquoted name for the scalar form, but hash the table form so glob/quote
+        // characters (`*`, `"`, `{`, `}`) never leak into the cache directory name —
+        // those are illegal in Windows paths.
         if let Some(rename) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
-            parts.push(format!("rename_{rename}"));
+            let rename_key = match rename.as_str() {
+                Some(name) => name.to_string(),
+                None => hash::hash_blake3_to_str(&rename.to_string()),
+            };
+            parts.push(format!("rename_{rename_key}"));
             // When rename_exe is used, bin_path affects where the rename happens,
             // so different bin_path values result in different cached content
             if let Some(bin_path) = opts.bin_path() {
@@ -1321,5 +1328,53 @@ mod tests {
             backend.dest_filename(file_path, &file_info, &opts),
             "code2prompt.exe"
         );
+    }
+
+    #[test]
+    fn cache_key_is_path_safe_for_scalar_and_table_rename_exe() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-mytool".to_string(),
+                Some("http:mytool".to_string()),
+                "mytool".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), b"archive-contents").unwrap();
+
+        // Characters that are illegal in Windows path components and must never
+        // appear in a cache directory name derived from rename_exe.
+        let illegal = ['*', '"', '{', '}', '<', '>', ':', '|', '?', '\\', ' '];
+
+        // Scalar form stays readable and path-safe.
+        let scalar_opts = crate::toolset::parse_tool_options("rename_exe=plz");
+        let scalar_key = backend
+            .cache_key(tmp.path(), &HttpOptions::new(&scalar_opts), 0)
+            .unwrap();
+        assert!(scalar_key.contains("rename_plz"), "key: {scalar_key}");
+        assert!(!scalar_key.contains(illegal), "key: {scalar_key}");
+
+        // Table form is hashed, so globs/quotes/braces never reach the path.
+        let table_opts = crate::toolset::parse_tool_options(
+            r#"rename_exe={ "ols-*" = "ols", "odinfmt-*" = "odinfmt" }"#,
+        );
+        let table_key = backend
+            .cache_key(tmp.path(), &HttpOptions::new(&table_opts), 0)
+            .unwrap();
+        assert!(
+            !table_key.contains(illegal),
+            "table cache key must be path-safe, got: {table_key}"
+        );
+
+        // Different table values must still produce different keys.
+        let other_opts =
+            crate::toolset::parse_tool_options(r#"rename_exe={ "ols-*" = "renamed" }"#);
+        let other_key = backend
+            .cache_key(tmp.path(), &HttpOptions::new(&other_opts), 0)
+            .unwrap();
+        assert_ne!(table_key, other_key);
     }
 }
