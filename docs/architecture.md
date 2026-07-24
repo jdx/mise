@@ -25,7 +25,7 @@ These three pillars work together to provide a unified development environment m
 The CLI layer provides the user interface and delegates to core functionality:
 
 - **Modular Commands**: Each command is a separate module ([`install.rs`](https://github.com/jdx/mise/blob/main/src/cli/install.rs), [`use.rs`](https://github.com/jdx/mise/blob/main/src/cli/use.rs), [`run.rs`](https://github.com/jdx/mise/blob/main/src/cli/run.rs), etc.)
-- **Argument Parsing**: Leverages [`clap`](https://clap.rs) for robust CLI parsing and validation
+- **Argument Parsing**: Leverages [`clap`](https://docs.rs/clap) for robust CLI parsing and validation
 - **Async Command Execution**: All commands support concurrent operations
 - **Unified Error Handling**: Consistent error reporting across all commands
 
