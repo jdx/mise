@@ -36,49 +36,19 @@ impl EnvResults {
     ) -> Result<IndexMap<PathBuf, EnvMap>> {
         let mut out = IndexMap::new();
         let s = r.parse_template(ctx, tera, source, exec_env, &input)?;
-        let shell_expand = crate::config::Settings::get().env_shell_expand;
-        // Accumulate loaded vars so a later file in the same `_.file` directive can
-        // reference vars defined by an earlier one (matching how separate `[[env]]`
-        // blocks accumulate through `resolve`). See discussion #3897.
-        let mut acc: TeraEnvMap = exec_env.clone();
         for p in xx::file::glob(normalize_path(config_root, s.into())).unwrap_or_default() {
+            let env = out.entry(p.clone()).or_insert_with(IndexMap::new);
             let parse_template = |s: String| r.parse_template(ctx, tera, source, exec_env, &s);
             let ext = p
                 .extension()
                 .map(|e| e.to_string_lossy().to_string())
                 .unwrap_or_default();
-            let mut loaded = match ext.as_str() {
+            *env = match ext.as_str() {
                 "json" => Self::json(config, exec_env, &p, parse_template).await?,
                 "yaml" => Self::yaml(config, exec_env, &p, parse_template).await?,
                 "toml" => Self::toml(config, exec_env, &p, parse_template).await?,
-                _ => Self::dotenv(&p, &acc, shell_expand).await?,
+                _ => Self::dotenv(&p).await?,
             };
-            // Structured files keep `${VAR}` intact (serde doesn't expand), so run
-            // their values through the same `$VAR` engine used for `KEY = value`
-            // vars. Expand and accumulate key-by-key so a later value in the same
-            // file can reference an earlier one (e.g. `BIN = "${BASE}/bin"`), and
-            // warn on undefined refs like the normal expansion path does. dotenv is
-            // expanded inside `Self::dotenv` via dotenvy itself.
-            if shell_expand && matches!(ext.as_str(), "json" | "yaml" | "toml") {
-                for (k, v) in loaded.iter_mut() {
-                    let mut missing = Vec::new();
-                    let expanded = super::shell_expand_env(&*v, &acc, &mut missing);
-                    for var in missing {
-                        warn_once!(
-                            "env var '{var}' is not defined and will be left unexpanded. \
-                             Use ${{{var}:-}} to default to an empty string and suppress \
-                             this warning."
-                        );
-                    }
-                    *v = expanded;
-                    acc.insert(k.clone(), v.clone());
-                }
-            } else {
-                for (k, v) in &loaded {
-                    acc.insert(k.clone(), v.clone());
-                }
-            }
-            out.insert(p, loaded);
         }
         Ok(out)
     }
@@ -221,92 +191,17 @@ impl EnvResults {
         }
     }
 
-    async fn dotenv(p: &Path, acc: &TeraEnvMap, seed: bool) -> Result<EnvMap> {
+    async fn dotenv(p: &Path) -> Result<EnvMap> {
         let errfn = || eyre!("failed to parse dotenv file: {}", display_path(p));
-        if !seed {
-            // env_shell_expand disabled: preserve the original behavior exactly
-            // (dotenvy substitutes against the process env + same-file vars only).
-            let mut env = EnvMap::new();
-            if let Ok(dotenv) = dotenvy::from_path_iter(p) {
-                for item in dotenv {
-                    let (k, v) = item.wrap_err_with(errfn)?;
-                    env.insert(k, v);
-                }
-            }
-            return Ok(env);
-        }
-        // dotenvy substitutes `${VAR}` only against the process env + vars defined
-        // earlier in the *same* file, collapsing anything else to "" — and 0.15 has
-        // no API to disable substitution or supply a custom map. To make cross-file
-        // references resolve (discussion #3897) we reuse dotenvy's own parser by
-        // prepending the accumulated env as escaped `KEY="..."` lines, then keep
-        // only the keys the file itself defines.
-        let Ok(content) = file::read_to_string(p) else {
-            return Ok(EnvMap::new());
-        };
-        // Keys the file itself defines (values here may be collapsed; we only need
-        // the key set to filter the seeded parse below).
-        let mut own_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for item in dotenvy::from_read_iter(content.as_bytes()) {
-            let (k, _v) = item.wrap_err_with(errfn)?;
-            own_keys.insert(k);
-        }
-        if own_keys.is_empty() {
-            return Ok(EnvMap::new());
-        }
-        // Seed lines for cross-file vars. dotenvy resolves `${VAR}` against the
-        // process env first and only then this prepended (same-file) data, so the
-        // seed fills genuinely-missing refs. This intentionally preserves dotenv's
-        // own substitution semantics; the one gap is that an ambient export still
-        // wins over a mise override of the same name for dotenv values (there is no
-        // dotenvy API to supply a custom substitution map).
-        let mut prefix = String::new();
-        for (k, v) in acc {
-            if own_keys.contains(k) || !is_env_key(k) {
-                continue;
-            }
-            prefix.push_str(k);
-            prefix.push_str("=\"");
-            prefix.push_str(&escape_dotenv_double_quoted(v));
-            prefix.push_str("\"\n");
-        }
-        let augmented = format!("{prefix}{content}");
         let mut env = EnvMap::new();
-        for item in dotenvy::from_read_iter(augmented.as_bytes()) {
-            let (k, v) = item.wrap_err_with(errfn)?;
-            if own_keys.contains(&k) {
+        if let Ok(dotenv) = dotenvy::from_path_iter(p) {
+            for item in dotenv {
+                let (k, v) = item.wrap_err_with(errfn)?;
                 env.insert(k, v);
             }
         }
         Ok(env)
     }
-}
-
-/// Whether `k` is a valid env var name we can safely emit as a dotenv key.
-fn is_env_key(k: &str) -> bool {
-    let mut chars = k.chars();
-    chars
-        .next()
-        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
-/// Escape a value for a dotenv double-quoted context so dotenvy stores it
-/// verbatim (no re-substitution). dotenvy 0.15 only supports the `\\ \" \$ \n`
-/// escapes inside double quotes — emitting any other backslash escape is a parse
-/// error — so we escape exactly those and leave everything else literal.
-fn escape_dotenv_double_quoted(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '$' => out.push_str("\\$"),
-            '\n' => out.push_str("\\n"),
-            _ => out.push(c),
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -454,21 +349,5 @@ mod tests {
         restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
         restore_env_var("MISE_SOPS_ROPS", prev_rops);
         Settings::reset(None);
-    }
-
-    #[test]
-    fn test_escape_dotenv_double_quoted() {
-        assert_eq!(escape_dotenv_double_quoted("plain"), "plain");
-        assert_eq!(escape_dotenv_double_quoted(r#"a$b"c\d"#), r#"a\$b\"c\\d"#);
-        assert_eq!(escape_dotenv_double_quoted("l1\nl2"), "l1\\nl2");
-    }
-
-    #[test]
-    fn test_is_env_key() {
-        assert!(is_env_key("PGHOST"));
-        assert!(is_env_key("_FOO123"));
-        assert!(!is_env_key("1FOO"));
-        assert!(!is_env_key("FOO-BAR"));
-        assert!(!is_env_key(""));
     }
 }

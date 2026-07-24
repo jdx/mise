@@ -71,6 +71,17 @@ echo '{"B": 2}' >b.json
 assert "mise env | grep -v PATH" "export A=1
 export B=2"
 
+# Structured env files are data, so shell-like values must remain literal even
+# when matching variables exist in the process environment.
+cat <<EOF >mise.toml
+[env]
+_.file = 'password-hash.json'
+EOF
+# shellcheck disable=SC2016
+echo '{"FOO": "$6$salt$hash"}' >password-hash.json
+assert_contains "salt=changed hash=changed mise env -s bash 2>&1" "export FOO='\$6\$salt\$hash'"
+assert_not_contains "mise env -s bash 2>&1" "env var 'salt' is not defined"
+
 cat <<EOF >mise.toml
 [env]
 _.file = ['a', {path = 'b.json', tools = true}]
