@@ -698,19 +698,81 @@ pub fn install_artifact(
         // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
         // the same logic used by discover_bin_paths() for PATH construction
         if let Some(rename_value) = lookup_value_with_fallback(opts, "rename_exe") {
-            let search_dir = if let Some(ref dir) = explicit_bin_path {
-                dir.clone()
-            } else {
-                let bin_dir = install_path.join("bin");
-                if bin_dir.is_dir() {
-                    bin_dir
-                } else {
-                    install_path.clone()
-                }
-            };
+            let search_dir = archive_bin_search_dir(&install_path, explicit_bin_path.as_deref());
             apply_rename_exe(&search_dir, rename_value, Some(tool_name))?;
         }
+
+        // When neither bin= nor rename_exe= is set, auto-clean a single extracted
+        // binary whose filename carries an OS/arch platform suffix (e.g. a linux
+        // archive shipping `tool-macos-aarch64`), mirroring the behavior for
+        // single-file (non-archive) downloads. See discussion #6532.
+        if lookup_with_fallback(opts, "bin").is_none()
+            && lookup_value_with_fallback(opts, "rename_exe").is_none()
+        {
+            let search_dir = archive_bin_search_dir(&install_path, explicit_bin_path.as_deref());
+            auto_clean_single_archive_binary(&search_dir, tool_name)?;
+        }
     }
+    Ok(())
+}
+
+/// Directory to search for an archive's executable: an explicit `bin_path` when
+/// configured, else the conventional `bin/` subdirectory if it exists, else the
+/// install root. Mirrors the `bin/` auto-detection used by `discover_bin_paths()`
+/// for PATH construction so renaming/auto-cleaning targets the same location.
+fn archive_bin_search_dir(install_path: &Path, explicit_bin_path: Option<&Path>) -> PathBuf {
+    if let Some(dir) = explicit_bin_path {
+        return dir.to_path_buf();
+    }
+    let bin_dir = install_path.join("bin");
+    if bin_dir.is_dir() {
+        bin_dir
+    } else {
+        install_path.to_path_buf()
+    }
+}
+
+/// When an archive contains a single binary whose filename carries an OS/arch
+/// platform suffix (e.g. `tool-macos-aarch64`), rename it to the cleaned name
+/// (`tool`), matching what single-file (non-archive) downloads already do.
+///
+/// Only acts when the directory holds exactly one file (after dropping hidden
+/// files, LICENSE/README, and docs) and cleaning actually changes its name, so
+/// multi-file archives and files without a platform suffix are left untouched.
+/// See discussion #6532.
+fn auto_clean_single_archive_binary(dir: &Path, tool_name: &str) -> eyre::Result<()> {
+    // Only act on an unambiguously single-binary archive: exactly one file after
+    // dropping obvious non-binaries (hidden files, LICENSE/README, and known doc
+    // extensions via should_skip_file). Any other companion file makes the
+    // archive multi-file and we must not rename — a clean-named companion binary
+    // and a plain metadata file (e.g. CHANGELOG) are indistinguishable when a zip
+    // extracts them without an exec bit and they carry no platform suffix, so the
+    // only safe, deterministic choice is to leave multi-file archives untouched
+    // (users can disambiguate with `bin=`/`rename_exe=`). See discussion #6532.
+    let files = file::ls(dir)?
+        .into_iter()
+        .filter(|p| p.is_file())
+        .filter(|p| {
+            let name = p.file_name().unwrap_or_default().to_string_lossy();
+            !should_skip_file(&name, true)
+        })
+        .collect::<Vec<_>>();
+    let [path] = files.as_slice() else {
+        return Ok(());
+    };
+    let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+    let cleaned_name = clean_binary_name(&file_name, Some(tool_name));
+    // The sole file has no platform suffix; nothing to clean.
+    if cleaned_name == file_name {
+        return Ok(());
+    }
+    let dest = dir.join(&cleaned_name);
+    if dest.exists() {
+        return Ok(());
+    }
+    file::rename(path, &dest)?;
+    file::make_executable(&dest)?;
+    debug!("Auto-cleaned archive binary {file_name} -> {cleaned_name}");
     Ok(())
 }
 
@@ -880,7 +942,7 @@ pub fn rename_executable_in_dir(
                     );
                     return Ok(());
                 }
-                if file_name.contains(tool_name) {
+                if file_name.to_lowercase().contains(&tool_name.to_lowercase()) {
                     if substring_match.is_none() {
                         substring_match = Some(path);
                     }
@@ -925,7 +987,9 @@ pub fn rename_executable_in_dir(
                 }
 
                 // Check if filename matches tool name pattern or the target name
-                if file_name.contains(tool_name) || *file_name == *new_name {
+                if file_name.to_lowercase().contains(&tool_name.to_lowercase())
+                    || *file_name == *new_name
+                {
                     let target_path_with_extension =
                         keep_required_extensions(dir, &file_name, new_name, target_path);
 
@@ -2349,5 +2413,159 @@ bin = "tool.exe"
             0o600,
             "the external target's permissions must not change"
         );
+    }
+
+    #[test]
+    fn test_auto_clean_single_archive_binary_strips_platform_suffix() {
+        // A single-file archive whose inner binary carries a platform suffix that
+        // doesn't match the host (linux archive shipping a macos-named binary)
+        // should still be renamed to the clean tool name. See discussion #6532.
+        let tmp = tempfile::tempdir().unwrap();
+        let extracted = tmp.path().join("gdscript-formatter-macos-aarch64");
+        std::fs::write(&extracted, b"not-a-binary").unwrap();
+
+        auto_clean_single_archive_binary(tmp.path(), "GDScript-formatter").unwrap();
+
+        let cleaned = tmp.path().join("gdscript-formatter");
+        assert!(cleaned.is_file(), "binary should be renamed to clean name");
+        // make_executable is a no-op on Windows (executability is inferred from
+        // the file extension there), so only assert it on Unix.
+        #[cfg(unix)]
+        assert!(file::is_executable(&cleaned));
+        assert!(!extracted.exists(), "suffixed name should no longer exist");
+    }
+
+    #[test]
+    fn test_auto_clean_single_archive_binary_leaves_multi_file_archive() {
+        // With more than one relevant file we cannot tell which is the binary,
+        // so nothing should be renamed.
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("tool-linux-x86_64");
+        let b = tmp.path().join("helper-linux-x86_64");
+        std::fs::write(&a, b"x").unwrap();
+        std::fs::write(&b, b"x").unwrap();
+
+        auto_clean_single_archive_binary(tmp.path(), "tool").unwrap();
+
+        assert!(a.is_file());
+        assert!(b.is_file());
+        assert!(!tmp.path().join("tool").exists());
+        assert!(!tmp.path().join("helper").exists());
+    }
+
+    #[test]
+    fn test_auto_clean_single_archive_binary_leaves_already_clean_name() {
+        // A single file without a platform suffix must be left untouched.
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("tool");
+        std::fs::write(&bin, b"x").unwrap();
+
+        auto_clean_single_archive_binary(tmp.path(), "tool").unwrap();
+
+        assert!(bin.is_file());
+        assert_eq!(file::ls(tmp.path()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_auto_clean_single_archive_binary_leaves_nonexec_companion() {
+        // A clean-named companion extracted without an exec bit (e.g. from a zip
+        // that stored no permissions) still makes the archive multi-file, so the
+        // suffixed binary must NOT be renamed — the outcome must not depend on
+        // executable permissions. Regression for the permission-dependent
+        // multi-binary guard. See discussion #6532.
+        let tmp = tempfile::tempdir().unwrap();
+        let suffixed = tmp.path().join("tool-linux-x86_64");
+        let companion = tmp.path().join("helper");
+        std::fs::write(&suffixed, b"x").unwrap();
+        std::fs::write(&companion, b"x").unwrap();
+        // Intentionally not marked executable.
+
+        auto_clean_single_archive_binary(tmp.path(), "tool").unwrap();
+
+        assert!(suffixed.is_file(), "suffixed binary must be left untouched");
+        assert!(companion.is_file(), "companion must be left untouched");
+        assert!(!tmp.path().join("tool").exists());
+    }
+
+    #[test]
+    fn test_auto_clean_single_archive_binary_ignores_license_readme_siblings() {
+        // LICENSE/README are dropped by should_skip_file, so the common
+        // "binary + LICENSE + README" layout is still treated as single-binary
+        // and the suffix is cleaned. See discussion #6532.
+        let tmp = tempfile::tempdir().unwrap();
+        let extracted = tmp.path().join("tool-linux-x86_64");
+        std::fs::write(&extracted, b"x").unwrap();
+        std::fs::write(tmp.path().join("LICENSE"), b"lic").unwrap();
+        std::fs::write(tmp.path().join("README.md"), b"readme").unwrap();
+
+        auto_clean_single_archive_binary(tmp.path(), "tool").unwrap();
+
+        assert!(
+            tmp.path().join("tool").is_file(),
+            "binary should be cleaned"
+        );
+        assert!(!extracted.exists());
+    }
+
+    #[test]
+    fn test_archive_bin_search_dir_selection() {
+        let tmp = tempfile::tempdir().unwrap();
+        let install = tmp.path();
+
+        // No explicit bin_path and no bin/ dir -> install root.
+        assert_eq!(archive_bin_search_dir(install, None), install.to_path_buf());
+
+        // Implicit bin/ dir present -> bin/.
+        let bin_dir = install.join("bin");
+        std::fs::create_dir(&bin_dir).unwrap();
+        assert_eq!(archive_bin_search_dir(install, None), bin_dir);
+
+        // Explicit bin_path always wins.
+        let explicit = install.join("custom");
+        assert_eq!(
+            archive_bin_search_dir(install, Some(explicit.as_path())),
+            explicit
+        );
+    }
+
+    #[test]
+    fn test_auto_clean_single_archive_binary_in_implicit_bin_dir() {
+        // An archive whose sole platform-suffixed binary lives under bin/ should
+        // still be cleaned, since archive_bin_search_dir points there. See #6532.
+        let tmp = tempfile::tempdir().unwrap();
+        let install = tmp.path();
+        let bin_dir = install.join("bin");
+        std::fs::create_dir(&bin_dir).unwrap();
+        let extracted = bin_dir.join("tool-linux-x86_64");
+        std::fs::write(&extracted, b"x").unwrap();
+
+        let search_dir = archive_bin_search_dir(install, None);
+        assert_eq!(search_dir, bin_dir);
+        auto_clean_single_archive_binary(&search_dir, "tool").unwrap();
+
+        let cleaned = bin_dir.join("tool");
+        assert!(cleaned.is_file());
+        // make_executable is a no-op on Windows; only assert executability on Unix.
+        #[cfg(unix)]
+        assert!(file::is_executable(&cleaned));
+        assert!(!extracted.exists());
+    }
+
+    #[test]
+    fn test_rename_executable_in_dir_is_case_insensitive() {
+        // The tool_name (repo short name) can differ in case from the extracted
+        // file, e.g. `GDScript-formatter` vs `gdscript-formatter-macos-aarch64`.
+        // The substring match must be case-insensitive so `bin=`/`rename_exe=`
+        // can locate the file. See discussion #6532.
+        let tmp = tempfile::tempdir().unwrap();
+        let extracted = tmp.path().join("gdscript-formatter-macos-aarch64");
+        std::fs::write(&extracted, b"x").unwrap();
+        file::make_executable(&extracted).unwrap();
+
+        rename_executable_in_dir(tmp.path(), "gdscript-formatter", Some("GDScript-formatter"))
+            .unwrap();
+
+        assert!(tmp.path().join("gdscript-formatter").is_file());
+        assert!(!extracted.exists());
     }
 }
