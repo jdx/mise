@@ -5089,6 +5089,21 @@ backend = "conda:jq"
     }
 
     #[test]
+    fn test_merge_provenance_state_prefers_verified() {
+        let verified = Some(ProvenanceType::GithubAttestations);
+        let detected = Some(ProvenanceType::Slsa { url: None });
+
+        assert_eq!(
+            merge_provenance_state(verified.clone(), true, detected.clone(), false),
+            (verified.clone(), true)
+        );
+        assert_eq!(
+            merge_provenance_state(detected, false, verified.clone(), true),
+            (verified, true)
+        );
+    }
+
+    #[test]
     fn test_provenance_merge_preserves_existing() {
         let with_provenance = PlatformInfo {
             provenance: Some(ProvenanceType::GithubAttestations),

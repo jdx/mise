@@ -969,16 +969,17 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         patterns: &[String],
     ) -> Result<()> {
+        let state_path = tv.install_path().join(ADDITIONAL_ASSETS_STATE_FILENAME);
         if patterns.is_empty() {
+            if state_path.exists() {
+                file::remove_file(state_path)?;
+            }
             return Ok(());
         }
         let state = AdditionalAssetsInstallState {
             patterns: patterns.to_vec(),
         };
-        file::write(
-            tv.install_path().join(ADDITIONAL_ASSETS_STATE_FILENAME),
-            toml::to_string(&state)?,
-        )
+        file::write(state_path, toml::to_string(&state)?)
     }
 
     async fn get_github_release_for_url(
@@ -2943,6 +2944,11 @@ mod tests {
             &["extra-*.tar.gz".to_string(), "base-*.tar.gz".to_string()],
         ));
         assert!(!backend.additional_assets_install_state_matches(&tv, &[]));
+
+        backend
+            .write_additional_assets_install_state(&tv, &[])
+            .unwrap();
+        assert!(backend.additional_assets_install_state_matches(&tv, &[]));
     }
 
     #[test]
