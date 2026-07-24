@@ -536,10 +536,10 @@ impl PythonPlugin {
                 "the python `virtualenv` tool option is deprecated. Use `_.python.venv` in the `[env]` section instead: https://mise.en.dev/lang/python.html#automatic-virtualenv-activation"
             );
             let mut virtualenv: PathBuf = file::replace_path(Path::new(virtualenv));
-            if !virtualenv.is_absolute() {
-                if let Some(project_root) = &config.project_root {
-                    virtualenv = project_root.join(virtualenv);
-                }
+            if !virtualenv.is_absolute()
+                && let Some(project_root) = &config.project_root
+            {
+                virtualenv = project_root.join(virtualenv);
             }
             if !virtualenv.exists() {
                 warn!(
