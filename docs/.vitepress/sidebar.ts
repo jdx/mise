@@ -88,6 +88,7 @@ export const sidebar: SidebarItem[] = [
           { text: "gitlab", link: "/dev-tools/backends/gitlab" },
           { text: "go", link: "/dev-tools/backends/go" },
           { text: "http", link: "/dev-tools/backends/http" },
+          { text: "jar", link: "/dev-tools/backends/jar" },
           { text: "npm", link: "/dev-tools/backends/npm" },
           { text: "pipx", link: "/dev-tools/backends/pipx" },
           { text: "pkgx", link: "/dev-tools/backends/pkgx" },

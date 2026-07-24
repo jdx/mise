@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# Maven-coordinate mode: versions are listed from the repository's
+# maven-metadata.xml without any version_list_url configuration.
+assert_contains "mise ls-remote jar:org.fusesource.jansi/jansi" "2.4.1"
+
+# Maven-coordinate mode install. jansi is a tiny (~250KB) runnable jar whose
+# main class prints "Jansi <version>" diagnostics.
+cat <<EOF >mise.toml
+[tools]
+"jar:org.fusesource.jansi/jansi" = "2.4.1"
+EOF
+
+mise install
+
+# Install layout: stable versionless jar path plus generated launchers.
+install_path="$(mise where jar:org.fusesource.jansi/jansi)"
+assert "test -f $install_path/lib/jansi.jar"
+assert "test -x $install_path/bin/jansi"
+# shellcheck disable=SC2016 # literal launcher content, not an expansion
+assert_contains "cat $install_path/bin/jansi" '-jar "$jar"'
+assert_contains "cat $install_path/bin/jansi.cmd" 'lib\jansi.jar'
+assert_contains "mise which jansi" "bin/jansi"
+
+# The launcher actually runs the jar (requires a working java on PATH — macOS
+# ships a /usr/bin/java stub that fails without a JRE, so probe with -version).
+has_java() {
+	java -version >/dev/null 2>&1
+}
+if has_java; then
+	assert_contains "mise x -- jansi" "Jansi 2.4.1"
+fi
+
+# URL mode with a custom launcher name and baked-in JVM args. The launcher name
+# also renames the installed jar.
+cat <<EOF >mise.toml
+[tools."jar:jansi-url"]
+version = "2.4.1"
+url = "https://repo1.maven.org/maven2/org/fusesource/jansi/jansi/{{version}}/jansi-{{version}}.jar"
+bin = "jansi-renamed"
+java_args = "-Djansi.mode=strip"
+EOF
+
+mise install
+
+install_path="$(mise where jar:jansi-url)"
+assert "test -f $install_path/lib/jansi-renamed.jar"
+assert_contains "cat $install_path/bin/jansi-renamed" "-Djansi.mode=strip"
+if has_java; then
+	assert_contains "mise x -- jansi-renamed" "Jansi 2.4.1"
+fi
+
+# Maven classifier selects alternate artifacts (checked via lock resolution URL
+# rather than downloading a fat jar).
+cat <<EOF >mise.toml
+[tools."jar:com.facebook/ktfmt"]
+version = "0.64"
+classifier = "with-dependencies"
+EOF
+
+assert_contains "mise ls-remote jar:com.facebook/ktfmt" "0.64"

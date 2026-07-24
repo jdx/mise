@@ -70,6 +70,7 @@ pub mod gem;
 pub mod github;
 pub mod go;
 pub mod http;
+pub mod jar;
 pub mod jq;
 pub mod npm;
 pub mod npm_registry;
@@ -491,6 +492,7 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Github => Some(Arc::new(github::UnifiedGitBackend::from_arg(ba))),
         BackendType::Gitlab => Some(Arc::new(github::UnifiedGitBackend::from_arg(ba))),
         BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
+        BackendType::Jar => Some(Arc::new(jar::JarBackend::from_arg(ba))),
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
         BackendType::Pkgx => Some(Arc::new(pkgx::PkgxBackend::from_arg(ba))),
@@ -515,6 +517,7 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
 pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<String> {
     match backend_type {
         BackendType::Http => http::install_time_option_keys(),
+        BackendType::Jar => jar::install_time_option_keys(),
         BackendType::S3 => s3::install_time_option_keys(),
         BackendType::Github | BackendType::Gitlab | BackendType::Forgejo => {
             github::install_time_option_keys()
@@ -2159,8 +2162,10 @@ pub trait Backend: Debug + Send + Sync {
                     }
                 })
                 .collect_vec();
+            // http and jar tools may legitimately have no remote version
+            // listing (url-mode pins), so an empty list is not worth a warning.
             if versions.is_empty()
-                && self.get_type() != BackendType::Http
+                && !matches!(self.get_type(), BackendType::Http | BackendType::Jar)
                 && self.unresolved_latest_version().is_none()
                 // A backend that just recorded a fetch failure already warned
                 // with the actual cause; "No versions found" on top of it reads
