@@ -223,6 +223,25 @@ a different version. See <https://gregoryszorc.com/docs/python-build-standalone/
 more information
 on this option. Set it to "x86_64" for the most compatible binaries.
 
+## Windows
+
+mise uses the same precompiled python-build-standalone binaries on Windows
+(compiling with python-build is not supported there). Two of the upstream
+[quirks](https://github.com/astral-sh/python-build-standalone/blob/main/docs/quirks.rst)
+are smoothed over by mise:
+
+- The archives only ship `python.exe`, so mise creates a `python3.exe` alias
+  next to it.
+- The archives ship no `pip.exe` (pip is only available as `python -m pip`),
+  so mise creates `pip.cmd`/`pip3.cmd` wrappers in the install root that
+  delegate to `python -m pip`. Because they delegate, they keep working even
+  after pip upgrades itself.
+
+The install's `Scripts` directory is included in `PATH`, so console scripts
+from `pip install` (e.g. `black`) are runnable. If you rely on shims instead
+of `mise activate`, run `mise reshim` after `pip install` to generate shims
+for newly installed executables.
+
 ## python-build
 
 Optionally, mise
