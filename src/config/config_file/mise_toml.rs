@@ -2243,9 +2243,11 @@ impl<'de> de::Deserialize<'de> for Tasks {
                             where
                                 M: de::MapAccess<'de>,
                             {
-                                let t = de::Deserialize::deserialize(
+                                let value = toml::Value::deserialize(
                                     de::value::MapAccessDeserializer::new(map),
                                 )?;
+                                let t =
+                                    Task::from_toml_definition(value).map_err(de::Error::custom)?;
                                 Ok(TaskDef(t))
                             }
                         }
@@ -2460,11 +2462,59 @@ mod tests {
 
     use crate::dirs;
     use crate::file;
+    use crate::task::Silent;
     use crate::test::replace_path;
     use crate::toolset::{CoreToolOptions, ToolRequest};
     use crate::{config::Config, dirs::CWD};
 
     use super::*;
+
+    #[test]
+    fn test_task_toml_boolean_overlay_presence() {
+        let Tasks(mut tasks) = toml::from_str(
+            r#"
+            [explicit]
+            hide = false
+            raw = false
+            raw_args = false
+            interactive = false
+            quiet = false
+            silent = false
+
+            [omitted]
+            description = "no boolean overrides"
+            "#,
+        )
+        .unwrap();
+
+        let script_task = || Task {
+            hide: true,
+            raw: true,
+            raw_args: true,
+            interactive: true,
+            quiet: true,
+            silent: Silent::Bool(true),
+            ..Default::default()
+        };
+
+        let mut explicit = script_task();
+        explicit.merge_toml_overlay(tasks.remove("explicit").unwrap());
+        assert!(!explicit.hide);
+        assert!(!explicit.raw);
+        assert!(!explicit.raw_args);
+        assert!(!explicit.interactive);
+        assert!(!explicit.quiet);
+        assert_eq!(explicit.silent, Silent::Off);
+
+        let mut omitted = script_task();
+        omitted.merge_toml_overlay(tasks.remove("omitted").unwrap());
+        assert!(omitted.hide);
+        assert!(omitted.raw);
+        assert!(omitted.raw_args);
+        assert!(omitted.interactive);
+        assert!(omitted.quiet);
+        assert_eq!(omitted.silent, Silent::Bool(true));
+    }
 
     #[tokio::test]
     async fn test_fixture() {
