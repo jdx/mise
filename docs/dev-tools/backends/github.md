@@ -56,6 +56,37 @@ Specifies the pattern to match against release asset names. This is useful when 
 "github:cli/cli" = { version = "latest", asset_pattern = "gh_*_linux_x64.tar.gz" }
 ```
 
+### `additional_asset_patterns`
+
+Downloads additional archives from the same release and extracts them into the primary
+asset's install directory, in the order listed. Use this when an upstream distributes one
+installation across a base archive and one or more supplemental archives.
+
+For example, Ollama publishes its Linux AMD64 ROCm support as an archive that must be
+overlaid on the normal Ollama archive:
+
+```toml
+[tools."github:ollama/ollama"]
+version = "latest"
+
+[tools."github:ollama/ollama".platforms]
+linux-x64 = {
+  additional_asset_patterns = ["ollama-linux-amd64-rocm.tar.zst"],
+}
+```
+
+Each pattern must select exactly one archive. Patterns support the same templating as
+[`asset_pattern`](#asset_pattern). Supplemental assets must be archives; bare binaries
+are not supported. They are extracted without applying the primary asset's
+`strip_components`, `bin`, or `rename_exe` options. If a supplemental archive contains
+the same path as an earlier archive, the later archive's file wins.
+
+When lockfiles are enabled, mise records the URL and checksum for each supplemental
+artifact, plus any available provenance metadata. Provenance is cryptographically
+verified for the current platform; cross-platform lock entries record detected
+provenance for verification when installed. `--locked` installations use only the
+recorded artifact list and fail if it is incomplete.
+
 ### `matching`
 
 Narrows asset selection to names containing the given substring, **while keeping platform autodetection**. Unlike [`asset_pattern`](#asset_pattern) (which replaces autodetection entirely), `matching` only refines the candidate set — autodetection still chooses the correct OS/arch from the narrowed list, so a single config stays portable across platforms.
@@ -134,10 +165,14 @@ macos-arm64 = { asset_pattern = "gh_*_macOS_arm64.tar.gz" }
 
 ### Multiple Assets from the Same Release
 
-The GitHub backend installs one release asset for each tool. If a repository publishes
-multiple binaries as separate assets in the same release, define one tool alias per
-binary and point each alias at the same `github:owner/repo` backend, then narrow each
-alias to its binary.
+There are two distinct cases:
+
+- If the assets are parts of one installation, use
+  [`additional_asset_patterns`](#additional_asset_patterns). The supplemental archives
+  are overlaid into the same install directory.
+- If the assets are independent tools that should have separate install directories,
+  define one tool alias per binary and point each alias at the same
+  `github:owner/repo` backend.
 
 Prefer [`matching`](#matching) (or [`matching_regex`](#matching_regex)): it narrows the
 candidate set while **keeping platform autodetection**, so one config works on every
@@ -167,13 +202,9 @@ rename_exe = "oxfmt"
 ```
 
 ::: warning
-A distinct alias per binary is **required**, not just tidy. `matching`/`matching_regex` are
-**not** part of the install path — it is keyed by the tool name (the alias, or `owner/repo`
-when unaliased) and version. Installing the same `github:owner/repo` backend string twice
-with different `matching` values (for example `mise use "github:owner/repo[matching=tool-a]"`
-followed by `mise use "github:owner/repo[matching=tool-b]"`) resolves to the **same**
-directory, so the second install overwrites the first. Giving each binary its own alias gives
-each its own install directory, so they coexist.
+Aliases are not an overlay mechanism. Each alias creates a separate install directory.
+Use them for independent binaries such as `oxlint` and `oxfmt`; use
+`additional_asset_patterns` when both archives must compose one runnable tool.
 :::
 
 If the binary isn't named the way you want to invoke it, add

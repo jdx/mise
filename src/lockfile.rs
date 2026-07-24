@@ -74,9 +74,10 @@ pub struct LockfileTool {
 type LockfileToolKey = (String, BTreeMap<String, String>);
 type MergeToolEntriesResult = (Vec<LockfileTool>, HashSet<LockfileToolKey>);
 
-/// Type of provenance, ordered by priority (lowest to highest).
-/// The ordering is significant: during verification, higher-priority verified
-/// mechanisms are tried first, and the lockfile records whichever succeeds.
+/// Type of detected or verified provenance, ordered by priority (lowest to highest).
+/// The ordering is significant: during verification, higher-priority mechanisms
+/// are tried first. Lockfile artifact entries separately record whether the
+/// provenance was verified or only detected.
 /// SLSA carries an optional URL for the provenance file (.intoto.jsonl).
 ///
 /// If adding or reordering verified attestation variants, also update
@@ -232,6 +233,101 @@ pub enum GithubAttestationsStatus {
     Unavailable,
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+fn merge_provenance_state(
+    current: Option<ProvenanceType>,
+    current_verified: bool,
+    other: Option<ProvenanceType>,
+    other_verified: bool,
+) -> (Option<ProvenanceType>, bool) {
+    match (current, other) {
+        (Some(current), Some(_)) if current_verified && !other_verified => (Some(current), true),
+        (Some(_), Some(other)) if !current_verified && other_verified => (Some(other), true),
+        (Some(current), Some(other)) => (
+            Some(current.merge(other)),
+            current_verified && other_verified,
+        ),
+        (Some(current), None) => (Some(current), current_verified),
+        (None, Some(other)) => (Some(other), other_verified),
+        (None, None) => (None, false),
+    }
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ArtifactInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
+    /// Size in bytes (read-only field, preserved from existing lockfiles but not written)
+    #[serde(skip_serializing, default)]
+    pub size: Option<u64>,
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url_api: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<ProvenanceType>,
+    /// Whether `provenance` was cryptographically verified for this artifact.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub provenance_verified: bool,
+}
+
+impl ArtifactInfo {
+    pub fn has_checksum_and_verified_provenance(&self) -> bool {
+        self.checksum.is_some() && self.provenance.is_some() && self.provenance_verified
+    }
+
+    fn merge_with(&self, other: &ArtifactInfo) -> ArtifactInfo {
+        if self.url != other.url {
+            return self.clone();
+        }
+        let checksum = match (&self.checksum, &other.checksum) {
+            (Some(self_checksum), Some(other_checksum)) => {
+                if other_checksum.starts_with("sha256:") && !self_checksum.starts_with("sha256:") {
+                    Some(other_checksum.clone())
+                } else {
+                    Some(self_checksum.clone())
+                }
+            }
+            (Some(checksum), None) | (None, Some(checksum)) => Some(checksum.clone()),
+            (None, None) => None,
+        };
+        let (provenance, provenance_verified) = merge_provenance_state(
+            self.provenance.clone(),
+            self.provenance_verified,
+            other.provenance.clone(),
+            other.provenance_verified,
+        );
+        ArtifactInfo {
+            checksum,
+            size: self.size.or(other.size),
+            url: self.url.clone(),
+            url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
+            provenance,
+            provenance_verified,
+        }
+    }
+}
+
+fn merge_additional_artifacts(
+    current: &[ArtifactInfo],
+    other: &[ArtifactInfo],
+) -> Vec<ArtifactInfo> {
+    let shared_len = current.len().min(other.len());
+    let mut merged = current
+        .iter()
+        .zip(other)
+        .map(|(current, other)| current.merge_with(other))
+        .collect::<Vec<_>>();
+    if current.len() > shared_len {
+        merged.extend_from_slice(&current[shared_len..]);
+    } else if other.len() > shared_len {
+        merged.extend_from_slice(&other[shared_len..]);
+    }
+    merged
+}
+
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -257,12 +353,18 @@ pub struct PlatformInfo {
     /// Pkgx runtime environment for the main package, captured for locked installs.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pkgx_runtime_env: Option<BTreeMap<String, String>>,
-    /// Type of provenance verification that succeeded (SLSA carries its URL)
+    /// Type of provenance detected or verified (SLSA carries its URL).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<ProvenanceType>,
+    /// Whether `provenance` was cryptographically verified for this platform.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub provenance_verified: bool,
     /// GitHub attestation probe status when no provenance was verified.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub github_attestations: Option<GithubAttestationsStatus>,
+    /// Ordered release artifacts extracted into the primary artifact's install directory.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub additional_artifacts: Vec<ArtifactInfo>,
 }
 
 // Re-export CondaPackageInfo from conda backend for lockfile serialization
@@ -291,11 +393,13 @@ impl PlatformInfo {
             && self.pkgx_provides.is_none()
             && self.pkgx_runtime_env.is_none()
             && self.provenance.is_none()
+            && !self.provenance_verified
+            && self.additional_artifacts.is_empty()
     }
 
     /// True when the lockfile has checksum-backed, successfully verified provenance.
     pub fn has_checksum_and_verified_provenance(&self) -> bool {
-        self.checksum.is_some() && self.provenance.is_some()
+        self.checksum.is_some() && self.provenance.is_some() && self.provenance_verified
     }
 
     /// Merge this PlatformInfo with another, preserving important data.
@@ -345,13 +449,15 @@ impl PlatformInfo {
             self.url_api.clone().or_else(|| other.url_api.clone())
         };
 
-        let provenance = if artifact_changed {
-            self.provenance.clone()
+        let (provenance, provenance_verified) = if artifact_changed {
+            (self.provenance.clone(), self.provenance_verified)
         } else {
-            match (self.provenance.clone(), other.provenance.clone()) {
-                (Some(a), Some(b)) => Some(a.merge(b)),
-                (a, b) => a.or(b),
-            }
+            merge_provenance_state(
+                self.provenance.clone(),
+                self.provenance_verified,
+                other.provenance.clone(),
+                other.provenance_verified,
+            )
         };
         PlatformInfo {
             install: self.install.clone().or_else(|| {
@@ -380,7 +486,13 @@ impl PlatformInfo {
                 .clone()
                 .or_else(|| other.pkgx_runtime_env.clone()),
             provenance,
+            provenance_verified,
             github_attestations: None,
+            additional_artifacts: if artifact_changed {
+                self.additional_artifacts.clone()
+            } else {
+                merge_additional_artifacts(&self.additional_artifacts, &other.additional_artifacts)
+            },
         }
     }
 }
@@ -494,10 +606,23 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     }
                     _ => None,
                 };
+                let provenance_verified = provenance.is_some()
+                    && matches!(
+                        t.remove("provenance_verified"),
+                        Some(toml::Value::Boolean(true))
+                    );
                 let github_attestations = if provenance.is_some() {
                     None
                 } else {
                     github_attestations
+                };
+                let additional_artifacts = match t.remove("additional_artifacts") {
+                    Some(toml::Value::Array(values)) => values
+                        .into_iter()
+                        .map(|value| value.try_into().map_err(Report::from))
+                        .collect::<Result<Vec<ArtifactInfo>>>()?,
+                    Some(_) => bail!("additional_artifacts must be an array in lockfile"),
+                    None => Vec::new(),
                 };
                 Ok(PlatformInfo {
                     install,
@@ -510,7 +635,9 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     pkgx_provides,
                     pkgx_runtime_env,
                     provenance,
+                    provenance_verified,
                     github_attestations,
+                    additional_artifacts,
                 })
             }
             _ => bail!("unsupported asset info format"),
@@ -563,6 +690,20 @@ impl From<PlatformInfo> for toml::Value {
                 toml::Value::Table(toml_table_from_string_map(pkgx_runtime_env)),
             );
         }
+        if !platform_info.additional_artifacts.is_empty() {
+            let artifacts = platform_info
+                .additional_artifacts
+                .into_iter()
+                .map(|artifact| {
+                    toml::Value::try_from(artifact)
+                        .expect("ArtifactInfo should always serialize to TOML")
+                })
+                .collect::<Vec<_>>();
+            table.insert(
+                "additional_artifacts".to_string(),
+                toml::Value::Array(artifacts),
+            );
+        }
         if let Some(ref provenance) = platform_info.provenance {
             match provenance {
                 ProvenanceType::Slsa { url: Some(url) } => {
@@ -577,6 +718,9 @@ impl From<PlatformInfo> for toml::Value {
                     table.insert("provenance".to_string(), provenance.to_string().into());
                 }
             }
+        }
+        if platform_info.provenance_verified {
+            table.insert("provenance_verified".to_string(), true.into());
         }
         toml::Value::Table(table)
     }
@@ -1092,16 +1236,18 @@ impl Lockfile {
                     && platform_info.install.is_none()
                     && existing.install.as_deref() == Some("source");
                 let preserve_artifact_fields = !url_changed && !install_changed && !source_to_url;
-                let provenance = if preserve_artifact_fields {
-                    match (
+                let (provenance, provenance_verified) = if preserve_artifact_fields {
+                    merge_provenance_state(
                         platform_info.provenance.clone(),
+                        platform_info.provenance_verified,
                         existing.provenance.clone(),
-                    ) {
-                        (Some(a), Some(b)) => Some(a.merge(b)),
-                        (a, b) => a.or(b),
-                    }
+                        existing.provenance_verified,
+                    )
                 } else {
-                    platform_info.provenance.clone()
+                    (
+                        platform_info.provenance.clone(),
+                        platform_info.provenance_verified,
+                    )
                 };
                 PlatformInfo {
                     install: platform_info.install.or_else(|| {
@@ -1144,7 +1290,16 @@ impl Lockfile {
                     pkgx_provides: platform_info.pkgx_provides,
                     pkgx_runtime_env: platform_info.pkgx_runtime_env,
                     provenance,
+                    provenance_verified,
                     github_attestations: None,
+                    additional_artifacts: if preserve_artifact_fields {
+                        merge_additional_artifacts(
+                            &platform_info.additional_artifacts,
+                            &existing.additional_artifacts,
+                        )
+                    } else {
+                        platform_info.additional_artifacts
+                    },
                 }
             } else {
                 platform_info
@@ -4721,6 +4876,7 @@ backend = "conda:jq"
             provenance: Some(ProvenanceType::Slsa {
                 url: Some("https://example.com/tool.intoto.jsonl".to_string()),
             }),
+            provenance_verified: true,
             ..Default::default()
         };
 
@@ -4733,8 +4889,13 @@ backend = "conda:jq"
             slsa_table.get("url").unwrap().as_str().unwrap(),
             "https://example.com/tool.intoto.jsonl"
         );
+        assert_eq!(
+            table.get("provenance_verified").and_then(|v| v.as_bool()),
+            Some(true)
+        );
         let parsed: PlatformInfo = toml_val.try_into().unwrap();
         assert!(parsed.provenance.as_ref().unwrap().is_slsa());
+        assert!(parsed.provenance_verified);
         match &parsed.provenance {
             Some(ProvenanceType::Slsa { url }) => {
                 assert_eq!(
@@ -4744,6 +4905,116 @@ backend = "conda:jq"
             }
             _ => panic!("expected Slsa provenance"),
         }
+    }
+
+    #[test]
+    fn test_additional_artifacts_roundtrip() {
+        let info = PlatformInfo {
+            checksum: Some("sha256:primary".to_string()),
+            url: Some("https://example.com/tool.tar.gz".to_string()),
+            additional_artifacts: vec![
+                ArtifactInfo {
+                    checksum: Some("sha256:rocm".to_string()),
+                    url: "https://example.com/tool-rocm.tar.gz".to_string(),
+                    provenance: Some(ProvenanceType::GithubAttestations),
+                    provenance_verified: true,
+                    ..Default::default()
+                },
+                ArtifactInfo {
+                    checksum: Some("blake3:debug".to_string()),
+                    url: "https://example.com/tool-debug.zip".to_string(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let mut toml_val: toml::Value = info.clone().into();
+        toml_val
+            .as_table_mut()
+            .unwrap()
+            .get_mut("additional_artifacts")
+            .unwrap()
+            .as_array_mut()
+            .unwrap()[0]
+            .as_table_mut()
+            .unwrap()
+            .insert(
+                "future_lockfile_field".to_string(),
+                toml::Value::String("ignored by older mise versions".to_string()),
+            );
+        let parsed: PlatformInfo = toml_val.try_into().unwrap();
+
+        assert_eq!(parsed, info);
+        assert!(!parsed.is_empty());
+    }
+
+    #[test]
+    fn test_additional_artifacts_merge_integrity_for_same_urls() {
+        let resolved = PlatformInfo {
+            url: Some("https://example.com/tool.tar.gz".to_string()),
+            additional_artifacts: vec![ArtifactInfo {
+                url: "https://example.com/tool-rocm.tar.gz".to_string(),
+                url_api: Some("https://api.example.com/rocm".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let installed = PlatformInfo {
+            url: resolved.url.clone(),
+            additional_artifacts: vec![ArtifactInfo {
+                checksum: Some("blake3:rocm".to_string()),
+                url: "https://example.com/tool-rocm.tar.gz".to_string(),
+                provenance: Some(ProvenanceType::Slsa { url: None }),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let merged = resolved.merge_with(&installed);
+        assert_eq!(
+            merged.additional_artifacts,
+            vec![ArtifactInfo {
+                checksum: Some("blake3:rocm".to_string()),
+                url: "https://example.com/tool-rocm.tar.gz".to_string(),
+                url_api: Some("https://api.example.com/rocm".to_string()),
+                provenance: Some(ProvenanceType::Slsa { url: None }),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
+    fn test_additional_artifacts_merge_preserves_longer_list() {
+        let short = vec![ArtifactInfo {
+            checksum: Some("sha256:base".to_string()),
+            url: "https://example.com/base.tar.gz".to_string(),
+            ..Default::default()
+        }];
+        let long = vec![
+            ArtifactInfo {
+                url: short[0].url.clone(),
+                url_api: Some("https://api.example.com/base".to_string()),
+                ..Default::default()
+            },
+            ArtifactInfo {
+                checksum: Some("sha256:extra".to_string()),
+                url: "https://example.com/extra.tar.gz".to_string(),
+                ..Default::default()
+            },
+        ];
+        let expected = vec![
+            ArtifactInfo {
+                checksum: short[0].checksum.clone(),
+                url: short[0].url.clone(),
+                url_api: long[0].url_api.clone(),
+                ..Default::default()
+            },
+            long[1].clone(),
+        ];
+
+        assert_eq!(merge_additional_artifacts(&short, &long), expected);
+        assert_eq!(merge_additional_artifacts(&long, &short), expected);
     }
 
     #[test]
@@ -4801,21 +5072,75 @@ backend = "conda:jq"
         table.insert("provenance".to_string(), "slsa".into());
         table.insert("github_attestations".to_string(), "unavailable".into());
 
-        let parsed: PlatformInfo = toml::Value::Table(table).try_into().unwrap();
+        let parsed: PlatformInfo = toml::Value::Table(table.clone()).try_into().unwrap();
         assert!(parsed.provenance.as_ref().unwrap().is_slsa());
         assert!(parsed.github_attestations.is_none());
+        assert!(!parsed.has_checksum_and_verified_provenance());
+
+        table.insert("provenance_verified".to_string(), true.into());
+        let parsed: PlatformInfo = toml::Value::Table(table).try_into().unwrap();
         assert!(parsed.has_checksum_and_verified_provenance());
 
         let serialized: toml::Value = PlatformInfo {
             checksum: Some("sha256:abc123".to_string()),
             provenance: Some(ProvenanceType::GithubAttestations),
+            provenance_verified: true,
             github_attestations: Some(GithubAttestationsStatus::Unavailable),
             ..Default::default()
         }
         .into();
         let table = serialized.as_table().unwrap();
         assert!(table.get("provenance").is_some());
+        assert_eq!(
+            table.get("provenance_verified").and_then(|v| v.as_bool()),
+            Some(true)
+        );
         assert!(table.get("github_attestations").is_none());
+    }
+
+    #[test]
+    fn test_detected_cross_platform_provenance_is_not_verified() {
+        let detected = PlatformInfo {
+            checksum: Some("sha256:detected".to_string()),
+            provenance: Some(ProvenanceType::GithubAttestations),
+            ..Default::default()
+        };
+        assert!(!detected.has_checksum_and_verified_provenance());
+
+        let verified = PlatformInfo {
+            provenance_verified: true,
+            ..detected.clone()
+        };
+        assert!(verified.has_checksum_and_verified_provenance());
+
+        let detected_artifact = ArtifactInfo {
+            checksum: detected.checksum,
+            url: "https://example.com/supplemental.tar.gz".to_string(),
+            provenance: detected.provenance,
+            ..Default::default()
+        };
+        assert!(!detected_artifact.has_checksum_and_verified_provenance());
+
+        let verified_artifact = ArtifactInfo {
+            provenance_verified: true,
+            ..detected_artifact
+        };
+        assert!(verified_artifact.has_checksum_and_verified_provenance());
+    }
+
+    #[test]
+    fn test_merge_provenance_state_prefers_verified() {
+        let verified = Some(ProvenanceType::GithubAttestations);
+        let detected = Some(ProvenanceType::Slsa { url: None });
+
+        assert_eq!(
+            merge_provenance_state(verified.clone(), true, detected.clone(), false),
+            (verified.clone(), true)
+        );
+        assert_eq!(
+            merge_provenance_state(detected, false, verified.clone(), true),
+            (verified, true)
+        );
     }
 
     #[test]

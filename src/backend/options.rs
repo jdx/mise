@@ -1,7 +1,7 @@
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
     list_available_platforms_with_key, lookup_platform_key_for_target, lookup_platform_value,
-    lookup_with_fallback,
+    lookup_platform_value_for_target, lookup_with_fallback,
 };
 use crate::toolset::ToolVersionOptions;
 
@@ -72,6 +72,14 @@ impl<'a> BackendOptions<'a> {
         target: &PlatformTarget,
     ) -> Option<String> {
         lookup_platform_key_for_target(self.raw, key, target)
+    }
+
+    pub(crate) fn platform_value_for_target(
+        &self,
+        key: &str,
+        target: &PlatformTarget,
+    ) -> Option<&'a toml::Value> {
+        lookup_platform_value_for_target(self.raw, key, target).or_else(|| self.raw.opts.get(key))
     }
 
     pub(crate) fn platform_bool_for_target(&self, key: &str, target: &PlatformTarget) -> bool {
