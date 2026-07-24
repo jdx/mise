@@ -1790,10 +1790,22 @@ fn check_provenance_regression(
     for (short, new_entries) in new_tools {
         for new_entry in new_entries {
             let backend = new_entry.backend.as_deref().unwrap_or("");
-            let new_provenance = new_entry
-                .platforms
-                .get(&current_platform)
-                .and_then(|pi| pi.provenance.as_ref());
+            let platform_info = new_entry.platforms.get(&current_platform);
+
+            // Only evaluate a regression when this version was actually
+            // downloaded/resolved with integrity data this session, which the
+            // presence of a `url` on the current platform signals. When a user
+            // "upgrades" to a version that is *already installed* on disk, mise
+            // skips the download entirely, so no provenance is populated and the
+            // platform entry has no url. Its missing provenance means "not
+            // checked", not "verified absent" — flagging it as a regression is a
+            // false positive (#11225). The authoritative `auto_lock_new_versions`
+            // pass re-resolves and verifies provenance for these afterward.
+            if platform_info.and_then(|pi| pi.url.as_ref()).is_none() {
+                continue;
+            }
+
+            let new_provenance = platform_info.and_then(|pi| pi.provenance.as_ref());
 
             if let Some(err) = check_single_tool_provenance(
                 existing_lockfile.tools.get(short),
@@ -4582,6 +4594,61 @@ backend = "conda:jq"
                 None,
             )
             .is_none()
+        );
+    }
+
+    #[test]
+    fn test_provenance_regression_skips_unverified_already_installed_version() {
+        // Reproduces #11225: upgrading a locked tool to a newer version that is
+        // *already installed* on disk skips the download, so the new entry has no
+        // platform info (no url, no provenance). That missing provenance means
+        // "not checked", not "verified absent", and must NOT be flagged as a
+        // supply-chain regression.
+        let platform = Platform::current().to_key();
+
+        let mut prior = basic_tool("0.11.0", "github:owner/repo");
+        prior.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                url: Some("https://example.com/repo-0.11.0.tar.gz".to_string()),
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        let mut existing = Lockfile::default();
+        existing.tools.insert("repo".to_string(), vec![prior]);
+
+        // New version with an empty platform map (nothing downloaded/verified).
+        let new_tools: HashMap<String, Vec<LockfileTool>> = [(
+            "repo".to_string(),
+            vec![basic_tool("0.12.0", "github:owner/repo")],
+        )]
+        .into_iter()
+        .collect();
+
+        let (regressing, errors) = check_provenance_regression(&existing, &new_tools);
+        assert!(
+            regressing.is_empty() && errors.is_empty(),
+            "already-installed upgrade with no fresh verification must not regress: {errors:?}"
+        );
+
+        // Contrast: a freshly-installed version populates a url but genuinely has
+        // no provenance — that is a real regression and must still be flagged.
+        let mut fresh = basic_tool("0.12.0", "github:owner/repo");
+        fresh.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                url: Some("https://example.com/repo-0.12.0.tar.gz".to_string()),
+                provenance: None,
+                ..Default::default()
+            },
+        );
+        let new_tools: HashMap<String, Vec<LockfileTool>> =
+            [("repo".to_string(), vec![fresh])].into_iter().collect();
+        let (regressing, errors) = check_provenance_regression(&existing, &new_tools);
+        assert!(
+            regressing.contains("repo") && !errors.is_empty(),
+            "freshly-installed version that lost provenance must still regress"
         );
     }
 
