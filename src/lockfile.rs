@@ -2211,7 +2211,34 @@ pub async fn auto_lock_new_versions(
             match result {
                 Ok(resolution) => {
                     if let Err(msg) = &resolution.4 {
-                        debug!("auto-lock: {msg}");
+                        let (short, version, backend, platform) =
+                            (&resolution.0, &resolution.1, &resolution.2, &resolution.3);
+                        let platform_key = platform.to_key();
+                        // Auto-lock is best-effort, so resolution failures are normally
+                        // just logged. But if this url-less version is a deferred
+                        // provenance upgrade — a prior provenance-bearing version is
+                        // still present as a baseline — a failure here means the
+                        // deferred supply-chain check could not be completed. Fail
+                        // closed rather than silently locking the upgrade without
+                        // provenance (#11225); it self-heals on a later successful run.
+                        if find_provenance_regression_baseline(
+                            lockfile.tools.get(short),
+                            version,
+                            backend,
+                            &platform_key,
+                            None,
+                        )
+                        .is_some()
+                        {
+                            provenance_errors.push(format!(
+                                "could not verify provenance for {short}@{version} on \
+                                 {platform_key}: {msg}\nA prior version had provenance, so \
+                                 mise refuses to lock this upgrade without verifying it. \
+                                 Retry once the release source is reachable."
+                            ));
+                        } else {
+                            debug!("auto-lock: {msg}");
+                        }
                     }
                     if let Err(e) = apply_lock_result(&mut lockfile, resolution) {
                         provenance_errors.push(e.to_string());
@@ -4750,6 +4777,59 @@ backend = "conda:jq"
         assert!(
             check.deferred_baselines.is_empty(),
             "confirmed regression must not be deferred"
+        );
+    }
+
+    #[test]
+    fn test_deferred_resolution_failure_blocks_when_baseline_present() {
+        // Models the auto-lock escalation gate (#11225): when an already-installed
+        // upgrade could not be resolved/verified, a failure must fail-closed only if a
+        // prior provenance-bearing version is still present as a baseline; otherwise it
+        // stays best-effort. This tests the decision `find_provenance_regression_baseline`
+        // drives in `auto_lock_new_versions`.
+        let platform = Platform::current().to_key();
+
+        let mut baseline = basic_tool("0.11.0", "github:owner/repo");
+        baseline.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                url: Some("https://example.com/repo-0.11.0.tar.gz".to_string()),
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        // The deferred, still-unverified new version (no url/provenance yet).
+        let pending = basic_tool("0.12.0", "github:owner/repo");
+        let tools = vec![baseline, pending];
+
+        // A resolution failure for 0.12.0 must escalate — the baseline is at stake.
+        assert!(
+            find_provenance_regression_baseline(
+                Some(&tools),
+                "0.12.0",
+                "github:owner/repo",
+                &platform,
+                None,
+            )
+            .is_some(),
+            "failure must fail-closed while the 0.11.0 provenance baseline is present"
+        );
+
+        // Without a provenance-bearing prior version, a failure stays best-effort.
+        let no_baseline = vec![
+            basic_tool("0.11.0", "github:owner/repo"),
+            basic_tool("0.12.0", "github:owner/repo"),
+        ];
+        assert!(
+            find_provenance_regression_baseline(
+                Some(&no_baseline),
+                "0.12.0",
+                "github:owner/repo",
+                &platform,
+                None,
+            )
+            .is_none(),
+            "no baseline means a resolution failure should remain non-blocking"
         );
     }
 
