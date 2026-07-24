@@ -10,6 +10,7 @@ expression: cf.env_entries().unwrap()
             tools: false,
             redact: None,
             required: False,
+            expand: false,
         },
     ),
 ]

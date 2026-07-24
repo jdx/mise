@@ -112,6 +112,8 @@ pub struct EnvDirectiveOptions {
     pub(crate) redact: Option<bool>,
     #[serde(default)]
     pub(crate) required: RequiredValue,
+    #[serde(default)]
+    pub(crate) expand: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -597,7 +599,7 @@ impl EnvResults {
                     // Don't modify PATH in env - just add to env_paths
                     // This allows consumers to control PATH ordering
                 }
-                EnvDirective::File(input, _opts) => {
+                EnvDirective::File(input, opts) => {
                     let files = Self::file(
                         config,
                         &mut ctx,
@@ -608,6 +610,7 @@ impl EnvResults {
                         &env_vars,
                         &config_root,
                         input,
+                        opts.expand,
                     )
                     .await?;
                     for (f, new_env) in files {

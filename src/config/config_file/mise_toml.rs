@@ -1894,6 +1894,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         tools: true,
                                         redact: Some(false),
                                         required: RequiredValue::False,
+                                        expand: false,
                                     },
                                 });
                             }

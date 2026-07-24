@@ -1039,6 +1039,9 @@
         "tools": {
           "$ref": "#/$defs/env_tools"
         },
+        "expand": {
+          "$ref": "#/$defs/env_file_expand"
+        },
         "redact": {
           "$ref": "#/$defs/env_redact"
         },
@@ -1108,6 +1111,11 @@
           }
         }
       ]
+    },
+    "env_file_expand": {
+      "type": "boolean",
+      "default": false,
+      "description": "enable shell-style variable expansion for values loaded by env._.file"
     },
     "os_filter_item": {
       "description": "operating system or os/arch pair to install on",
