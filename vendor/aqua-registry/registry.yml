@@ -25105,6 +25105,12 @@ packages:
           asset: checksums.txt
           algorithm: sha256
   - type: github_release
+    repo_owner: checkstyle
+    repo_name: checkstyle
+    description: A development tool for checking Java source code against a coding standard
+    version_prefix: checkstyle-
+    asset: checkstyle-{{.SemVer}}-all.jar
+  - type: github_release
     repo_owner: chenjiandongx
     repo_name: kubectl-images
     description: Show container images used in the cluster
