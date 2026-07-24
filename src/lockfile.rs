@@ -2015,6 +2015,63 @@ fn lockfile_target_needs_auto_lock(
     .is_some()
 }
 
+fn lockfile_target_has_deferred_provenance(
+    tools: &[LockfileTool],
+    version: &str,
+    platform_key: &str,
+    options: &BTreeMap<String, String>,
+) -> bool {
+    let Some(tool) = tools
+        .iter()
+        .find(|tool| tool.version == version && &tool.options == options)
+    else {
+        return false;
+    };
+    let provenance = tool
+        .platforms
+        .get(platform_key)
+        .and_then(|info| info.provenance.as_ref());
+    find_provenance_regression_baseline(
+        Some(tools),
+        version,
+        tool.backend.as_deref().unwrap_or(""),
+        platform_key,
+        provenance,
+    )
+    .is_some()
+}
+
+fn tool_version_needs_deferred_provenance_retry(
+    lockfile: &Lockfile,
+    tv: &ToolVersion,
+    target_platforms: &[Platform],
+) -> Result<bool> {
+    let Some(tools) = lockfile.tools.get(tv.short()) else {
+        return Ok(false);
+    };
+    if !tools.iter().any(|tool| tool.version == tv.version) {
+        return Ok(false);
+    }
+    let backend = tv.request.backend()?;
+
+    for platform in target_platforms {
+        for variant in backend.platform_variants(platform) {
+            let target = PlatformTarget::new(variant.clone());
+            let options = backend.resolve_lockfile_options(&tv.request, &target)?;
+            if lockfile_target_has_deferred_provenance(
+                tools,
+                &tv.version,
+                &variant.to_key(),
+                &options,
+            ) {
+                return Ok(true);
+            }
+        }
+    }
+
+    Ok(false)
+}
+
 /// Determine target platforms for auto-lock from the pre-install lockfile snapshot.
 ///
 /// If the lockfile had platform entries before this install run, those are authoritative
@@ -2086,7 +2143,8 @@ pub fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform
 
 /// After installing new tool versions, resolve checksums/URLs for all common platforms
 /// so the lockfile is complete and doesn't change when other developers on different
-/// platforms run `mise install`.
+/// platforms run `mise install`. When no versions were installed, retry only deferred
+/// provenance verification left incomplete by an earlier auto-lock failure.
 pub async fn auto_lock_new_versions(
     config: &Config,
     ts: &Toolset,
@@ -2094,15 +2152,13 @@ pub async fn auto_lock_new_versions(
     pre_install_platforms: &HashMap<PathBuf, BTreeSet<String>>,
     mode: LockfileUpdateMode,
 ) -> Result<()> {
-    if !Settings::get().lockfile_enabled()
-        || (Settings::get().locked && !mode.allow_locked())
-        || new_versions.is_empty()
-    {
+    if !Settings::get().lockfile_enabled() || (Settings::get().locked && !mode.allow_locked()) {
         return Ok(());
     }
 
     let settings = Settings::get();
     let jobs = settings.jobs;
+    let deferred_retry_only = new_versions.is_empty();
     let mut all_provenance_errors: Vec<String> = Vec::new();
 
     let empty_keys: BTreeSet<String> = BTreeSet::new();
@@ -2162,18 +2218,21 @@ pub async fn auto_lock_new_versions(
         let versions: Vec<_> = versions
             .into_iter()
             .filter(|tv| {
-                tool_version_needs_auto_lock(&lockfile, tv, &target_platforms).unwrap_or_else(
-                    |err| {
-                        debug!(
-                            "auto-lock candidate check failed for {}@{} in {}: {}",
-                            tv.short(),
-                            tv.version,
-                            display_path(&lockfile_path),
-                            err
-                        );
-                        false
-                    },
-                )
+                let needs_auto_lock = if deferred_retry_only {
+                    tool_version_needs_deferred_provenance_retry(&lockfile, tv, &target_platforms)
+                } else {
+                    tool_version_needs_auto_lock(&lockfile, tv, &target_platforms)
+                };
+                needs_auto_lock.unwrap_or_else(|err| {
+                    debug!(
+                        "auto-lock candidate check failed for {}@{} in {}: {}",
+                        tv.short(),
+                        tv.version,
+                        display_path(&lockfile_path),
+                        err
+                    );
+                    false
+                })
             })
             .collect();
         if versions.is_empty() {
@@ -4150,6 +4209,38 @@ options = { exe = "rg" }
             &platform,
             &BTreeMap::new()
         ));
+    }
+
+    #[test]
+    fn test_no_new_versions_retries_only_deferred_provenance() {
+        let platform = Platform::current();
+        let platform_key = platform.to_key();
+        let tv = basic_tv("github:owner/repo", "0.12.0");
+        let mut baseline = basic_tool("0.11.0", "github:owner/repo");
+        baseline.platforms.insert(
+            platform_key.clone(),
+            PlatformInfo {
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        let pending = basic_tool("0.12.0", "github:owner/repo");
+        let mut lockfile = Lockfile::default();
+        lockfile
+            .tools
+            .insert("repo".to_string(), vec![baseline, pending.clone()]);
+
+        assert!(
+            tool_version_needs_deferred_provenance_retry(&lockfile, &tv, &[platform.clone()])
+                .unwrap(),
+            "a later install with no new versions must retry deferred verification"
+        );
+
+        lockfile.tools.insert("repo".to_string(), vec![pending]);
+        assert!(
+            !tool_version_needs_deferred_provenance_retry(&lockfile, &tv, &[platform]).unwrap(),
+            "ordinary incomplete lock entries must not broaden the no-new-version retry"
+        );
     }
 
     #[test]
