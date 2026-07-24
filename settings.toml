@@ -1875,6 +1875,29 @@ env = "MISE_OS"
 optional = true
 type = "String"
 
+[otel.enabled]
+default = false
+description = "[experimental] Enable OpenTelemetry trace export for task executions."
+docs = """
+When `true`, mise exports OpenTelemetry traces for `mise run` executions, provided a
+traces endpoint is configured (`OTEL_EXPORTER_OTLP_ENDPOINT` or
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`).
+
+Configure the collector endpoint and other options using the standard OpenTelemetry
+environment variables (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
+`OTEL_SERVICE_NAME`, etc.).
+
+W3C trace context is propagated in both directions: if `TRACEPARENT` is set in the
+environment (e.g. by CI or an outer `mise run`), the run joins that trace, and each
+task's environment receives `TRACEPARENT`/`TRACESTATE` so nested `mise run` and
+OTEL-aware tools join the task's span.
+
+This flag prevents mise from unexpectedly emitting spans in environments that set
+`OTEL_EXPORTER_OTLP_ENDPOINT` for other tools.
+"""
+env = "MISE_OTEL_ENABLED"
+type = "Bool"
+
 [override_config_filenames]
 default = []
 description = "If set, mise will ignore default config files like `mise.toml` and use these filenames instead."

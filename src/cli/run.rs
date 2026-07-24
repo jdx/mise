@@ -225,6 +225,9 @@ pub struct Run {
 
     #[clap(skip)]
     pub executor: Option<crate::task::task_executor::TaskExecutor>,
+
+    #[clap(skip)]
+    pub otel: Option<crate::otel::RunTelemetry>,
 }
 
 impl Run {
@@ -310,6 +313,11 @@ impl Run {
             .collect_vec();
 
         let mut task_list = get_task_lists(&config, &args, true, self.skip_deps).await?;
+
+        // Capture the user-requested task names before dependency resolution,
+        // so the OpenTelemetry root span is named after what was invoked
+        // rather than the (much larger) resolved dep set.
+        let requested_task_names: Vec<String> = task_list.iter().map(|t| t.name.clone()).collect();
 
         // Args after -- go directly to tasks (no prefix). They are also
         // recorded on `trailing_args` so the task renderer can detect
@@ -468,6 +476,11 @@ impl Run {
             }
         }
 
+        // Initialize OpenTelemetry before the timeout wrapper. RunTelemetry
+        // finalizes on drop, so traces are flushed even when the run is
+        // cancelled by --timeout.
+        self.otel = crate::otel::RunTelemetry::init_if_enabled(&requested_task_names);
+
         // Apply global timeout for entire run if configured
         let timeout = if let Some(timeout_str) = &self.timeout {
             Some(duration::parse_duration(timeout_str)?)
@@ -554,7 +567,16 @@ impl Run {
             )
             .await?;
 
-        scheduler.join_all(this.continue_on_error).await?;
+        let join_result = scheduler.join_all(this.continue_on_error).await;
+
+        if let Some(otel) = &this.otel {
+            if join_result.is_ok() && !this.is_stopping() {
+                otel.set_succeeded();
+            }
+            // Finalize the root span and flush before displaying results.
+            otel.finish();
+        }
+        join_result?;
 
         // Step 5: Display results and handle failures
         let results_display = crate::task::task_results_display::TaskResultsDisplay::new(
@@ -640,6 +662,11 @@ impl Run {
                 let deps = deps_for_remove.lock().await;
                 (deps.handled_task_keys(), deps.any_dep_ran(&task))
             };
+            let otel_span = this
+                .otel
+                .as_ref()
+                .map(|otel| otel.start_task(&task, ctx.config.project_root.as_ref()));
+            let trace_env = otel_span.as_ref().and_then(crate::otel::trace_env);
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(
                 &task,
                 &ctx.config,
@@ -648,6 +675,7 @@ impl Run {
                 dep_ran,
                 semaphore,
                 &mut permit,
+                trace_env,
             ))
             .catch_unwind()
             .await
@@ -658,6 +686,9 @@ impl Run {
                     true,
                 ),
             };
+            if let (Some(otel), Some(span)) = (&this.otel, otel_span) {
+                otel.end_task(span, &task, &result);
+            }
             // If the task actually ran (not skipped) and has sources defined,
             // mark it so dependents' source freshness checks are invalidated.
             // Tasks without sources always run and should not trigger invalidation.
@@ -866,6 +897,7 @@ impl Run {
         dep_ran: bool,
         semaphore: Arc<tokio::sync::Semaphore>,
         permit: &mut Option<tokio::sync::OwnedSemaphorePermit>,
+        trace_env: Option<crate::otel::TraceEnv>,
     ) -> Result<bool> {
         self.executor
             .as_ref()
@@ -878,6 +910,7 @@ impl Run {
                 dep_ran,
                 semaphore,
                 permit,
+                trace_env,
             )
             .await
     }
