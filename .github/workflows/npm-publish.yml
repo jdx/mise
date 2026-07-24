@@ -75,7 +75,7 @@ jobs:
         # auth into ~/.npmrc — aube reads the same file when it PUTs the
         # tarball, so this step is still needed even though npm itself is not
         # the publish client.
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "24.x"
           registry-url: "https://registry.npmjs.org"
