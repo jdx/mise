@@ -633,8 +633,8 @@ impl Backend for UnifiedGitBackend {
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
-        let additional_patterns =
-            opts.additional_asset_patterns_for_target(&PlatformTarget::from_current());
+        let current_target = PlatformTarget::from_current();
+        let additional_patterns = opts.additional_asset_patterns_for_target(&current_target);
 
         let asset = if let Some(existing_platform) = tv.lock_platforms.get(&platform_key)
             && existing_platform.url.is_some()
@@ -655,13 +655,18 @@ impl Backend for UnifiedGitBackend {
             self.resolve_asset_url(&tv, &opts, &repo).await?
         };
 
+        let locked_additional_artifacts_present = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(|platform| !platform.additional_artifacts.is_empty());
         let additional_assets = match tv.lock_platforms.get(&platform_key) {
             Some(platform)
-                if platform.additional_artifacts.len() == additional_patterns.len()
-                    && platform
-                        .additional_artifacts
-                        .iter()
-                        .all(|artifact| !artifact.url.is_empty()) =>
+                if self.additional_artifacts_match_patterns(
+                    &tv,
+                    &current_target,
+                    &additional_patterns,
+                    &platform.additional_artifacts,
+                ) =>
             {
                 platform
                     .additional_artifacts
@@ -674,9 +679,11 @@ impl Backend for UnifiedGitBackend {
                     })
                     .collect()
             }
-            _ if ctx.locked && !additional_patterns.is_empty() => {
+            _ if ctx.locked
+                && (!additional_patterns.is_empty() || locked_additional_artifacts_present) =>
+            {
                 eyre::bail!(
-                    "No complete lockfile artifact list found for {} on platform {} (--locked mode)",
+                    "No matching complete lockfile artifact list found for {} on platform {} (--locked mode)",
                     tv.style(),
                     platform_key
                 )
@@ -689,7 +696,7 @@ impl Backend for UnifiedGitBackend {
                             &tv,
                             &opts,
                             &repo,
-                            &PlatformTarget::from_current(),
+                            &current_target,
                             Some(pattern),
                         )
                         .await?,
@@ -777,6 +784,7 @@ impl Backend for UnifiedGitBackend {
                 } else {
                     None
                 };
+                let mut provenance_verified = false;
 
                 // For the current platform, verify provenance cryptographically at lock time.
                 // This ensures the lockfile's provenance entry is backed by actual verification,
@@ -793,6 +801,7 @@ impl Backend for UnifiedGitBackend {
                     {
                         Ok(verified) => {
                             provenance = verified;
+                            provenance_verified = provenance.is_some();
                         }
                         Err(e) => {
                             // Clear provenance so install-time verification will run.
@@ -822,6 +831,7 @@ impl Backend for UnifiedGitBackend {
                     } else {
                         None
                     };
+                    let mut additional_provenance_verified = false;
                     if additional_provenance.is_some() && target.is_current() {
                         additional_provenance = self
                             .verify_provenance_at_lock_time(
@@ -838,12 +848,14 @@ impl Backend for UnifiedGitBackend {
                                 );
                                 None
                             });
+                        additional_provenance_verified = additional_provenance.is_some();
                     }
                     additional_artifacts.push(ArtifactInfo {
                         checksum: additional.digest,
                         url: additional.url,
                         url_api: (!additional.url_api.is_empty()).then_some(additional.url_api),
                         provenance: additional_provenance,
+                        provenance_verified: additional_provenance_verified,
                         ..Default::default()
                     });
                 }
@@ -853,6 +865,7 @@ impl Backend for UnifiedGitBackend {
                     url_api: (!asset.url_api.is_empty()).then_some(asset.url_api),
                     checksum: asset.digest,
                     provenance,
+                    provenance_verified,
                     github_attestations: None,
                     additional_artifacts,
                     ..Default::default()
@@ -892,6 +905,25 @@ impl UnifiedGitBackend {
 
     fn use_versions_host_for_github_metadata(&self) -> bool {
         backend_arg_matches_registry_backend(&self.ba)
+    }
+
+    fn additional_artifacts_match_patterns(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+        patterns: &[String],
+        artifacts: &[ArtifactInfo],
+    ) -> bool {
+        artifacts.len() == patterns.len()
+            && artifacts.iter().zip(patterns).all(|(artifact, pattern)| {
+                if artifact.url.is_empty() {
+                    return false;
+                }
+                let name = get_filename_from_url(&artifact.url);
+                let pattern = template_string_for_target(pattern, tv, target);
+                self.pick_by_pattern([name], &pattern, String::as_str)
+                    .is_some()
+            })
     }
 
     async fn get_github_release_for_url(
@@ -1357,6 +1389,7 @@ impl UnifiedGitBackend {
             if provenance_result.is_some() {
                 let platform_info = tv.lock_platforms.entry(platform_key).or_default();
                 platform_info.provenance = provenance_result;
+                platform_info.provenance_verified = true;
                 platform_info.github_attestations = None;
             }
         }
@@ -1437,6 +1470,7 @@ impl UnifiedGitBackend {
                 .await?;
             if provenance.is_some() {
                 artifact_info.provenance = provenance;
+                artifact_info.provenance_verified = true;
             }
         }
 
@@ -2902,6 +2936,39 @@ mod tests {
         };
         assert!(matches("test-v1.0.0.zip", "test-*"));
         assert!(!matches("other-v1.0.0.zip", "test-*"));
+    }
+
+    #[test]
+    fn test_additional_artifacts_must_match_pattern_order() {
+        let backend = create_test_backend();
+        let backend_arg = Arc::new(BackendArg::new(
+            "github:test/repo".to_string(),
+            Some("github:test/repo".to_string()),
+        ));
+        let request =
+            ToolRequest::new(backend_arg, "1.0.0", crate::toolset::ToolSource::Unknown).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".to_string());
+        let target = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        let patterns = vec!["base-*.tar.gz".to_string(), "extra-*.tar.gz".to_string()];
+        let artifacts = vec![
+            ArtifactInfo {
+                url: "https://example.com/base-1.0.0.tar.gz".to_string(),
+                ..Default::default()
+            },
+            ArtifactInfo {
+                url: "https://example.com/extra-1.0.0.tar.gz".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        assert!(backend.additional_artifacts_match_patterns(&tv, &target, &patterns, &artifacts));
+        assert!(!backend.additional_artifacts_match_patterns(
+            &tv,
+            &target,
+            &patterns,
+            &[artifacts[1].clone(), artifacts[0].clone()],
+        ));
+        assert!(!backend.additional_artifacts_match_patterns(&tv, &target, &[], &artifacts));
     }
 
     #[test]

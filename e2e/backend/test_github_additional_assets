@@ -39,8 +39,14 @@ awk '
 ' mise.lock.complete >mise.lock
 assert_fail "mise install --locked"
 
-# Restoring the complete lock permits the reinstall.
+# Locked mode must also reject removing the supplemental pattern from config.
 cp mise.lock.complete mise.lock
+cp mise.toml mise.toml.complete
+sed '/additional_asset_patterns/d' mise.toml.complete >mise.toml
+assert_fail "mise install --locked"
+
+# Restoring the complete config and lock permits the reinstall.
+cp mise.toml.complete mise.toml
 mise install --locked
 install_path=$(mise where github:jdx/mise-test-fixtures)
 assert_contains "$install_path/fd-8.7.0/bin/fd" "alternative to 'find'"
