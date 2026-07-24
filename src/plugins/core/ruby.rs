@@ -1152,8 +1152,9 @@ fn parse_gemfile(body: &str) -> String {
     let v = regex!(r#"(.*)__ENGINE__(.*)"#)
         .replace_all(&v, "$2-$1")
         .to_string();
-    // make sure it's like "ruby-3.0.0" or "3.0.0"
-    if !regex!(r"^(\w+-)?([0-9])(\.[0-9])*$").is_match(&v) {
+    // make sure it's a version string like "3.0.0", "3.4.10", "ruby-3.0.0",
+    // or "jruby-9.4.12.0" (optional engine prefix, one or more numeric segments)
+    if !regex!(r"^(\w+-)?\d+(\.\d+)*$").is_match(&v) {
         return "".to_string();
     }
     v
@@ -1255,6 +1256,19 @@ mod tests {
         "#}),
             "2.7.2"
         );
+        // Each numeric segment may be more than one digit (e.g. 3.4.10, 4.0.6)
+        assert_eq!(
+            parse_gemfile(indoc! {r#"
+            ruby "3.4.10"
+        "#}),
+            "3.4.10"
+        );
+        assert_eq!(
+            parse_gemfile(indoc! {r#"
+            ruby "4.0.6"
+        "#}),
+            "4.0.6"
+        );
         assert_eq!(
             parse_gemfile(indoc! {r#"
             ruby '1.9.3', engine: 'jruby', engine_version: "1.6.7"
@@ -1272,6 +1286,12 @@ mod tests {
             ruby '1.9.3', :engine_version => '1.6.7', :engine => 'jruby'
         "#}),
             "jruby-1.6.7"
+        );
+        assert_eq!(
+            parse_gemfile(indoc! {r#"
+            ruby "3.3.0", engine: "jruby", engine_version: "9.4.12.0"
+        "#}),
+            "jruby-9.4.12.0"
         );
         assert_eq!(
             parse_gemfile(indoc! {r#"
