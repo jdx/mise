@@ -353,8 +353,18 @@ impl Backend for UnifiedGitBackend {
         Ok(self.additional_assets_install_state_matches(tv, &patterns))
     }
 
-    async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
-        let raw_opts = tv.request.options();
+    async fn install_operation_count(&self, tv: &ToolVersion, ctx: &InstallContext) -> usize {
+        let raw_opts = ctx
+            .config
+            .get_tool_opts_with_overrides(&self.ba)
+            .await
+            .unwrap_or_else(|err| {
+                debug!(
+                    "failed to resolve merged options while counting install operations for {}: {err:#}",
+                    tv.style()
+                );
+                tv.request.options()
+            });
         let opts = self.options(&raw_opts);
         3 + opts
             .additional_asset_patterns_for_target(&PlatformTarget::from_current())
