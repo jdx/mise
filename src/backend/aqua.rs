@@ -532,7 +532,11 @@ impl Backend for AquaBackend {
                 platform_key
             );
         } else {
-            let (url, url_api, v, digest) = if let Some(v_prefixed) = v_prefixed {
+            let (url, url_api, v, digest) = if pkg.r#type == AquaPackageType::Http {
+                let (url, resolved_version) =
+                    resolve_aqua_http_url(&pkg, &v, v_prefixed.as_deref(), os(), arch()).await?;
+                (url, None, resolved_version, None)
+            } else if let Some(v_prefixed) = v_prefixed {
                 // Try v-prefixed version first because most aqua packages use v-prefixed versions
                 match self.get_url(&pkg, v_prefixed.as_ref()).await {
                     // If the url is already checked, use it
@@ -831,7 +835,17 @@ impl Backend for AquaBackend {
                     bail!("github_content package requires `path`")
                 }
             }
-            AquaPackageType::Http => (pkg.url(&v, target_os, target_arch).ok(), None, None),
+            AquaPackageType::Http => {
+                match resolve_aqua_http_url(&pkg, &v, v_prefixed.as_deref(), target_os, target_arch)
+                    .await
+                {
+                    Ok((url, resolved_version)) => {
+                        v = resolved_version;
+                        (Some(url), None, None)
+                    }
+                    Err(_) => (None, None, None),
+                }
+            }
             _ => (None, None, None),
         };
 
@@ -3158,6 +3172,27 @@ fn select_github_probe_url<'a>(
     }
 }
 
+async fn resolve_aqua_http_url(
+    pkg: &AquaPackage,
+    version: &str,
+    prefixed_version: Option<&str>,
+    target_os: &str,
+    target_arch: &str,
+) -> Result<(String, String)> {
+    let url = pkg.url(version, target_os, target_arch)?;
+    let Some(prefixed_version) = prefixed_version else {
+        return Ok((url, version.to_string()));
+    };
+    let Ok(prefixed_url) = pkg.url(prefixed_version, target_os, target_arch) else {
+        return Ok((url, version.to_string()));
+    };
+    if prefixed_url == url || HTTP.head(&prefixed_url).await.is_ok() {
+        Ok((prefixed_url, prefixed_version.to_string()))
+    } else {
+        Ok((url, version.to_string()))
+    }
+}
+
 fn version_with_prefix<'a>(version: &'a str, version_prefix: Option<&str>) -> Cow<'a, str> {
     if let Some(prefix) = version_prefix
         && !version.starts_with(prefix)
@@ -4459,6 +4494,48 @@ mod lock_candidate_tests {
         let (v, candidates) = build_lock_candidates("1.7.1", None, Some("jq-"));
         assert_eq!(v, "jq-1.7.1");
         assert_eq!(candidates, vec!["jq-v1.7.1", "jq-1.7.1"]);
+    }
+
+    #[tokio::test]
+    async fn test_http_url_prefers_reachable_v_prefixed_version() {
+        let mut server = mockito::Server::new_async().await;
+        let prefixed = server
+            .mock("HEAD", "/tool-v1.2.3")
+            .with_status(200)
+            .expect(1)
+            .create_async()
+            .await;
+        let mut pkg = AquaPackage::default();
+        pkg.url = format!("{}/tool-{{{{.Version}}}}", server.url());
+
+        let (url, version) = resolve_aqua_http_url(&pkg, "1.2.3", Some("v1.2.3"), "linux", "amd64")
+            .await
+            .unwrap();
+
+        prefixed.assert_async().await;
+        assert_eq!(url, format!("{}/tool-v1.2.3", server.url()));
+        assert_eq!(version, "v1.2.3");
+    }
+
+    #[tokio::test]
+    async fn test_http_url_falls_back_to_unprefixed_version() {
+        let mut server = mockito::Server::new_async().await;
+        let prefixed = server
+            .mock("HEAD", "/tool-v1.2.3")
+            .with_status(404)
+            .expect(1)
+            .create_async()
+            .await;
+        let mut pkg = AquaPackage::default();
+        pkg.url = format!("{}/tool-{{{{.Version}}}}", server.url());
+
+        let (url, version) = resolve_aqua_http_url(&pkg, "1.2.3", Some("v1.2.3"), "linux", "amd64")
+            .await
+            .unwrap();
+
+        prefixed.assert_async().await;
+        assert_eq!(url, format!("{}/tool-1.2.3", server.url()));
+        assert_eq!(version, "1.2.3");
     }
 
     #[test]
