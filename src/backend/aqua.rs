@@ -836,15 +836,11 @@ impl Backend for AquaBackend {
                 }
             }
             AquaPackageType::Http => {
-                match resolve_aqua_http_url(&pkg, &v, v_prefixed.as_deref(), target_os, target_arch)
-                    .await
-                {
-                    Ok((url, resolved_version)) => {
-                        v = resolved_version;
-                        (Some(url), None, None)
-                    }
-                    Err(_) => (None, None, None),
-                }
+                let (url, resolved_version) =
+                    resolve_aqua_http_url(&pkg, &v, v_prefixed.as_deref(), target_os, target_arch)
+                        .await?;
+                v = resolved_version;
+                (Some(url), None, None)
             }
             _ => (None, None, None),
         };
