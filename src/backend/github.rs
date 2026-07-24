@@ -735,6 +735,11 @@ impl Backend for UnifiedGitBackend {
             self.download_verify_and_install_additional_asset(ctx, &mut tv, asset, &opts, index)
                 .await?;
         }
+        if let Some(platform) = tv.lock_platforms.get_mut(&platform_key) {
+            platform
+                .additional_artifacts
+                .truncate(additional_assets.len());
+        }
         self.write_additional_assets_install_state(&tv, &additional_patterns)?;
 
         Ok(tv)
