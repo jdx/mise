@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+
+cat <<EOF >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+asset_pattern = "hello-world-1.0.0.tar.gz"
+additional_asset_patterns = ["fd-8.7.0.tar.gz"]
+EOF
+
+touch mise.lock
+mise install
+
+# Both archives are extracted into one installation.
+install_path=$(mise where github:jdx/mise-test-fixtures)
+assert_contains "$install_path/hello-world-1.0.0/bin/hello-world" "hello world"
+assert_contains "$install_path/fd-8.7.0/bin/fd" "alternative to 'find'"
+
+# The supplemental artifact is independently pinned and checksummed.
+assert_contains "cat mise.lock" 'additional_asset_patterns = "fd-8.7.0.tar.gz"'
+assert_contains "cat mise.lock" 'url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/fd-8.7.0.tar.gz"'
+assert_contains "cat mise.lock" 'checksum = "sha256:230cf587de59730a1d7f9c49004f301292927621a336578723518fc9d03f4824"'
+
+# A locked reinstall must use the complete recorded artifact list.
+mise uninstall github:jdx/mise-test-fixtures
+mise install --locked
+install_path=$(mise where github:jdx/mise-test-fixtures)
+assert_contains "$install_path/fd-8.7.0/bin/fd" "alternative to 'find'"

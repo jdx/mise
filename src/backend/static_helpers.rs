@@ -435,6 +435,20 @@ pub fn lookup_platform_key_for_target(
     )
 }
 
+/// Looks up a raw option value for a specific target platform.
+pub fn lookup_platform_value_for_target<'a>(
+    opts: &'a ToolVersionOptions,
+    key_type: &str,
+    target: &PlatformTarget,
+) -> Option<&'a toml::Value> {
+    lookup_platform_value_for_aliases(
+        target_platform_aliases(target),
+        key_type,
+        |key| lookup_nested_value(opts, key),
+        |key| opts.opts.get(key),
+    )
+}
+
 /// Looks up a raw platform-specific option value.
 pub fn lookup_platform_value<'a>(
     opts: &'a ToolVersionOptions,
