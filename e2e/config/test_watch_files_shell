@@ -20,7 +20,7 @@ exec bash -c "$2"
 SCRIPT
 chmod +x "$HOME/watch-explicit-shell"
 
-export MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS="$HOME/watch-fallback-shell -c"
+export MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS="\"$HOME/watch-fallback-shell\" -c"
 
 cat <<EOF >mise.toml
 [[watch_files]]
@@ -30,7 +30,7 @@ run = "echo WATCH_FALLBACK_RUN"
 [[watch_files]]
 patterns = ["explicit.txt"]
 run = "echo WATCH_EXPLICIT_RUN"
-shell = "$HOME/watch-explicit-shell -c"
+shell = '"$HOME/watch-explicit-shell" -c'
 EOF
 
 touch fallback.txt explicit.txt
