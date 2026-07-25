@@ -32,16 +32,9 @@ if [[ -f $RELEASE_SKIP_FILE ]]; then
 fi
 
 pushd e2e >/dev/null
-# List test files with a portable fallback chain.
 list_test_files() {
   local pattern="$1"
-  if command -v fd >/dev/null 2>&1; then
-    fd -tf -g "$pattern" | sort
-  elif command -v rg >/dev/null 2>&1; then
-    rg --files -g "$pattern" | sort
-  else
-    find . -type f -name "$pattern" | sed 's#^\./##' | sort
-  fi
+  find . -type f -name "$pattern" | sed 's#^\./##' | sort
 }
 
 # Avoid mapfile that is not available on bash 3.2 for compatibility with macOS
