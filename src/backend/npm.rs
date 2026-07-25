@@ -960,6 +960,11 @@ impl NPMBackend {
         options: &NpmOptions,
         allow_builds: &AllowBuilds,
     ) -> Result<()> {
+        // Validate the fallible options before writing anything, so a malformed
+        // value fails without leaving a half-written project dir behind.
+        let trust_policy_excludes = options.aube_trust_policy_excludes_npmrc_value()?;
+        let allow_low_downloads = options.allow_low_downloads()?;
+
         let mut manifest = serde_json::json!({
             "name": "mise-npm-install",
             "private": true,
@@ -985,10 +990,10 @@ impl NPMBackend {
             // aube documents minimumReleaseAge in minutes, matching pnpm's setting.
             npmrc.push_str(&format!("minimumReleaseAge={minutes}\n"));
         }
-        if let Some(excludes) = options.aube_trust_policy_excludes_npmrc_value()? {
+        if let Some(excludes) = trust_policy_excludes {
             npmrc.push_str(&format!("trustPolicyExclude={excludes}\n"));
         }
-        if options.allow_low_downloads()? {
+        if allow_low_downloads {
             // Exempt only this tool's own package, not the whole install, so a
             // transitive dependency below the threshold still fails the gate.
             // aube gates the directly-requested packages, which for mise is
@@ -1966,6 +1971,31 @@ mod tests {
         assert!(npmrc.contains("allowedUnpopularPackages=bibtex-tidy\n"));
         assert!(!npmrc.contains('*'));
         assert!(!npmrc.contains("lowDownloadThreshold"));
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_writes_nothing_when_an_option_is_malformed() {
+        let backend = create_npm_backend("bibtex-tidy");
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-bibtex-tidy").join("1.14.0");
+        crate::file::create_dir_all(&install_path).unwrap();
+        let mut raw_options = ToolVersionOptions::default();
+        raw_options.opts.insert(
+            "allow_low_downloads".to_string(),
+            toml::Value::Integer(1000),
+        );
+        let options = NpmOptions::new(&raw_options);
+        let allow_builds = options.allow_builds().unwrap();
+
+        assert!(
+            backend
+                .write_aube_embed_project(&install_path, None, &options, &allow_builds)
+                .is_err()
+        );
+        // Options are validated up front, so the aborted call leaves no
+        // half-written project behind for a later step to trip over.
+        assert!(!install_path.join("package.json").exists());
+        assert!(!install_path.join(".npmrc").exists());
     }
 
     #[test]
