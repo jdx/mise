@@ -3344,7 +3344,7 @@ Examples:
         arg <KEY> help="The setting to remove"
     }
 }
-cmd shell help="Sets a tool version for the current session." effect=write {
+cmd shell help="Sets a tool version for the current session." effect=read {
     alias sh
     long_help #"""
 Sets a tool version for the current session.

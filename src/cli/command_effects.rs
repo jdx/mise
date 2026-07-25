@@ -14,6 +14,19 @@
 //! - `destructive` — removes something the user installed or configured, where
 //!   getting it back means redoing work. Deserves a confirmation prompt.
 //!
+//! **Installing a declared tool version is not an effect.** Almost anything
+//! that resolves a toolset — `env`, `activate`, `exec`, `hook-env` — may
+//! install a version the config already asks for. That is mise doing its job:
+//! it is idempotent, mise recreates it on demand, and it changes nothing the
+//! user authored. Counting it would make nearly every command `write` and
+//! leave the field with no signal at all. What counts is a change to something
+//! the user manages — their config, their files, their installed toolset as a
+//! deliberate act. `install` and `use` are `write` because installing is the
+//! point, not a precondition.
+//!
+//! The same reasoning covers the cache: `cache clear` is `write` rather than
+//! `destructive` because mise refills it without the user doing anything.
+//!
 //! **An unlisted command means "unknown", not "safe".** Consumers treat the
 //! absence of a value as "ask", so leaving a command out is the conservative
 //! choice and mislabeling one `read` is the dangerous one. Commands that run
@@ -124,7 +137,10 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     // Writes the global config after setting the version.
     ("global", Write),
     ("hook-env", Read),
-    // Installs the missing tool when not_found_auto_install is on.
+    // Unlike `env` or `activate`, this installs a tool that no config asked
+    // for: with not_found_auto_install set it resolves an unknown command name
+    // against the registry and installs it. That is a new tool on disk from a
+    // typo, not a declared version being realized.
     ("hook-not-found", Write),
     // Removes the mise CLI and every tool, plugin and cache it owns.
     ("implode", Destructive),
@@ -169,8 +185,9 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("settings ls", Read),
     ("settings set", Write),
     ("settings unset", Write),
-    // May install the requested version before emitting the shell code.
-    ("shell", Write),
+    // Emits shell code; the session change is ephemeral, and installing the
+    // requested version is the same incidental install as `env` or `activate`.
+    ("shell", Read),
     ("shell-alias", Read),
     ("shell-alias get", Read),
     ("shell-alias ls", Read),
