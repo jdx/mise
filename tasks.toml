@@ -114,6 +114,24 @@ run = [
   "mise run show-output-on-failure -- mise x node@latest -- npx markdown-magic",
 ]
 
+["render:llms"]
+description = 'Generate docs/public/llms.txt (docs index for AI agents)'
+# render:usage writes docs/cli/*.md and render:help writes cli_commands.ts,
+# both of which the index is built from.
+depends = ["render:usage", "render:help"]
+sources = [
+  "docs/**/*.md",
+  "docs/.vitepress/sidebar.ts",
+  "docs/.vitepress/llms.ts",
+  # sidebar.ts builds the CLI section from this, so a render:help change to
+  # command visibility must invalidate the index even if no markdown changed.
+  "docs/.vitepress/cli_commands.ts",
+  # the title and summary come from the docs homepage hero
+  "docs/index.md",
+]
+outputs = ["docs/public/llms.txt"]
+run = "bun docs/.vitepress/llms.ts"
+
 [render]
 description = 'Run all render tasks'
 depends = ["render:*"]
