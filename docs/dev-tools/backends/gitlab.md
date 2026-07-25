@@ -344,7 +344,7 @@ When `no_app = true`:
 ### `bin_path`
 
 ::: v-pre
-Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with variables like `{{ version }}`, `{{ os }}`, `{{ arch }}`, and arch aliases (`{{ darwin_os }}`, `{{ amd64_arch }}`, `{{ x86_64_arch }}`, `{{ gnu_arch }}`):
+Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with `{{ version }}` and the `{{ os() }}` / `{{ arch() }}` functions:
 :::
 
 ```toml
@@ -352,6 +352,26 @@ Specify the directory containing binaries within the extracted archive, or where
 version = "latest"
 bin_path = "gitlab-runner-{{ version }}/bin" # expands to gitlab-runner-1.0.0/bin
 ```
+
+Both take keyword arguments that remap the value mise would emit (`linux`, `macos`,
+`windows` for `os()`; `x64`, `arm64` for `arch()`), for when upstream names the directory
+differently:
+
+```toml
+[tools."gitlab:owner/repo"]
+version = "latest"
+# expands to tool-1.0.0-linux-x86_64/bin
+bin_path = 'tool-{{ version }}-{{ os() }}-{{ arch(x64="x86_64", arm64="aarch64") }}/bin'
+```
+
+::: tip
+Use a single-quoted TOML string when the template contains double quotes, as above.
+:::
+
+::: v-pre
+There are no bare `{{ os }}` / `{{ arch }}` variables, and no `{{ x86_64_arch }}`-style
+aliases — `{{ arch(x64="x86_64", arm64="aarch64") }}` is how you get those names.
+:::
 
 **Binary path lookup order:**
 

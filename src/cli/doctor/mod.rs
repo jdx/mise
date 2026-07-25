@@ -1101,7 +1101,13 @@ async fn render_env_files(config: &Arc<Config>) -> eyre::Result<String> {
 fn render_backends() -> String {
     BackendType::iter()
         .filter(|b| b != &BackendType::Unknown)
-        .map(|b| b.to_string())
+        .map(|b| {
+            if backend::is_disabled_backend_type(&b) {
+                format!("{b} {}", style::ndim("(disabled)"))
+            } else {
+                b.to_string()
+            }
+        })
         .join("\n")
 }
 
