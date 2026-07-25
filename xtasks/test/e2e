@@ -48,7 +48,7 @@ else
 		FILENAME="$(basename "$PATTERN")"
 
 		pushd e2e >/dev/null
-		FILES="$(find . -type f -name "test_*" | sed 's#^\./##' | grep -E "$FILENAME" || true)"
+		FILES="$(find . -type f -name "test_*" | sed 's#^\./##' | awk -v pattern="$FILENAME" '{ name = $0; sub(/^.*\//, "", name); if (name ~ pattern) print }' | sort || true)"
 		popd >/dev/null
 
 		if [[ -z $FILES ]]; then
