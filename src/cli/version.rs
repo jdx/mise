@@ -7,6 +7,7 @@ use versions::Versioning;
 
 use crate::build_time::BUILD_TIME;
 use crate::cli::self_update::SelfUpdate;
+use crate::config::Settings;
 use crate::file::modified_duration;
 use crate::ui::style;
 use crate::{dirs, duration, env, file};
@@ -119,6 +120,13 @@ pub async fn show_latest() {
     if ci_info::is_ci() && !cfg!(test) {
         return;
     }
+    // Bail before anything can touch the HTTP client. Constructing it eagerly
+    // parses the system CA trust store, which is ~34M instructions — roughly 70%
+    // of the cost of `mise --version`. The request itself would fail on the
+    // offline check in http.rs anyway, so that work is pure waste.
+    if Settings::get().offline() {
+        return;
+    }
     if let Some(latest) = check_for_new_version(duration::DAILY).await {
         warn!("mise version {} available", latest);
         if SelfUpdate::is_available() {
@@ -143,18 +151,29 @@ pub async fn check_for_new_version(cache_duration: Duration) -> Option<String> {
 
 async fn get_latest_version(duration: Duration) -> Option<String> {
     let version_file_path = dirs::CACHE.join("latest-version");
-    if let Ok(metadata) = modified_duration(&version_file_path)
-        && metadata < duration
-        && let Some(version) = file::read_to_string(&version_file_path)
+    // Freshness is only about *when we last checked*, never about what we found.
+    //
+    // Previously this guard also required the cached version to be >= ours, which
+    // conflated "the cache is current" with "an update exists". Every outcome
+    // meaning "no update available" therefore failed the guard and re-ran the
+    // whole check on the next invocation — and since a failed check writes an
+    // empty file (below), an offline machine re-parsed the entire CA trust store
+    // on *every* `mise --version`, forever. The `*V < latest` comparison that
+    // actually decides whether to nag lives in `check_for_new_version`, so
+    // dropping it here loses nothing.
+    if let Ok(age) = modified_duration(&version_file_path)
+        && age < duration
+    {
+        return file::read_to_string(&version_file_path)
             .ok()
             .map(|s| s.trim().to_string())
             .and_then(Versioning::new)
-        && *V <= version
-    {
-        return Some(version.to_string());
+            .map(|v| v.to_string());
     }
     let _ = file::create_dir_all(*dirs::CACHE);
     let version = get_latest_version_call().await;
+    // Written even on failure, so its mtime acts as a negative cache and a
+    // machine that cannot reach the network stops retrying once per invocation.
     let _ = file::write(version_file_path, version.clone().unwrap_or_default());
     version
 }
