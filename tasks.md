@@ -186,6 +186,14 @@ Generate shell completions
 
 Render help documentation
 
+## `render:llms`
+
+- Depends: render:usage, render:help
+
+- **Usage**: `render:llms`
+
+Generate docs/public/llms.txt (docs index for AI agents)
+
 ## `render:mangen`
 
 - Depends: render:usage

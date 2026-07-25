@@ -114,6 +114,19 @@ run = [
   "mise run show-output-on-failure -- mise x node@latest -- npx markdown-magic",
 ]
 
+["render:llms"]
+description = 'Generate docs/public/llms.txt (docs index for AI agents)'
+# render:usage writes docs/cli/*.md and render:help writes cli_commands.ts,
+# both of which the index is built from.
+depends = ["render:usage", "render:help"]
+sources = [
+  "docs/**/*.md",
+  "docs/.vitepress/sidebar.ts",
+  "docs/.vitepress/llms.ts",
+]
+outputs = ["docs/public/llms.txt"]
+run = "bun docs/.vitepress/llms.ts"
+
 [render]
 description = 'Run all render tasks'
 depends = ["render:*"]

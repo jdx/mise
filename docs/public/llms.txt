@@ -1,0 +1,284 @@
+# mise
+
+> mise-en-place is a polyglot dev tool version manager, environment variable manager, and task runner. It installs and switches between versions of tools like node, python, and go, loads project environment variables, and runs project tasks.
+
+This file indexes the mise documentation for coding agents. Every page below is
+the same page a human reads — there is no separate agent documentation. Fetch a
+page for the detail; do not guess at flags, settings, or config keys.
+
+## Guides
+
+- [Demo](https://mise.jdx.dev/demo.html): The following demo shows.
+- [Getting Started](https://mise.jdx.dev/getting-started.html): Get up and running with mise in minutes.
+- [Walkthrough](https://mise.jdx.dev/walkthrough.html): Once you've completed the Getting Started guide, you're ready to start using mise. This document offers a quick overview on some initial things you may want to try out.
+- [Installing mise](https://mise.jdx.dev/installing-mise.html): If you are new to mise, follow the Getting Started guide first.
+- [IDE Integration](https://mise.jdx.dev/ide-integration.html): Code editors and IDEs work differently than interactive shells.
+- [Continuous Integration](https://mise.jdx.dev/continuous-integration.html): You can use Mise in continuous integration environments to provision the environment with the tools the project needs.
+
+## Configuration
+
+- [mise.toml](https://mise.jdx.dev/configuration.html): Learn how to configure mise for your project with mise.toml files, environment variables, and various configuration options to manage your development environment.
+- [Settings](https://mise.jdx.dev/configuration/settings.html): The following is a list of all of mise's settings. These can be set via mise settings key=value, by directly modifying the global config file (~/.config/mise/config.toml) or local config, or via…
+- [Configuration Environments](https://mise.jdx.dev/configuration/environments.html): It's possible to have separate mise.toml files in the same directory for different environments like development and production.
+
+## Dev Tools
+
+- [Dev Tools Overview](https://mise.jdx.dev/dev-tools/): Install and switch between dev tools like node, python, cmake, terraform, and hundreds more, all from the same project config.
+- [Comparison to asdf](https://mise.jdx.dev/dev-tools/comparison-to-asdf.html): mise can be used as a drop-in replacement for asdf. It supports the same .tool-versions files that you may have used with asdf and can use asdf plugins through the asdf backend.
+- [Shims](https://mise.jdx.dev/dev-tools/shims.html): There are several ways for the mise context (dev tools, environment variables) to be loaded into your shell.
+- [Tool Aliases](https://mise.jdx.dev/dev-tools/aliases.html): [alias] has been renamed to [toolalias] to distinguish it from [shellalias]. The old [alias] key still works but is deprecated.
+- [Tool Stubs](https://mise.jdx.dev/dev-tools/tool-stubs.html): Tool stubs allow you to create executable files with embedded TOML configuration for tool execution. They provide a convenient way to define tool versions, backends, and execution parameters directly…
+- [Registry](https://mise.jdx.dev/registry.html): List of all tools aliased by default in mise.
+- [GitHub Tokens](https://mise.jdx.dev/dev-tools/github-tokens.html): Many tools in mise are hosted on GitHub. For public releases, mise uses mise-versions by default as a shared cache for version lists, release metadata, and GitHub artifact attestations.
+- [mise.lock Lockfile](https://mise.jdx.dev/dev-tools/mise-lock.html): mise.lock is a lockfile that pins exact versions and checksums of tools for reproducible environments. Lockfiles are not created automatically—you must run mise lock to generate them.
+- [Security](https://mise.jdx.dev/security.html): mise includes several supply-chain controls for installing and managing tools. These controls have different coverage depending on the backend and the metadata available from upstream.
+- [OCI Images (experimental)](https://mise.jdx.dev/dev-tools/mise-oci.html): mise oci build turns a mise.toml into a container image, with one OCI layer per installed tool.
+- [Deps](https://mise.jdx.dev/dev-tools/deps.html): The mise deps command manages project dependencies by hashing source files (e.g., package-lock.json) and running install commands when changes are detected.
+- [Backend Architecture](https://mise.jdx.dev/dev-tools/backend_architecture.html): Understanding how mise's backend system works can help you choose the right backend for your tools and troubleshoot issues when they arise.
+- [Core tools](https://mise.jdx.dev/core-tools.html): mise comes with some plugins built into the CLI written in Rust. These are new and will improve over time.
+- [Bun](https://mise.jdx.dev/lang/bun.html): mise can be used to install and manage multiple versions of bun on the same system.
+- [Deno](https://mise.jdx.dev/lang/deno.html): mise can be used to install and manage multiple versions of deno on the same system.
+- [Elixir](https://mise.jdx.dev/lang/elixir.html): mise can be used to manage multiple elixir versions on the same system.
+- [Erlang](https://mise.jdx.dev/lang/erlang.html): mise can be used to install and manage multiple versions of erlang on the same system.
+- [Go](https://mise.jdx.dev/lang/go.html): mise can be used to install and manage multiple versions of go on the same system.
+- [Java](https://mise.jdx.dev/lang/java.html): Like sdkman, mise can manage multiple versions of Java on the same system.
+- [Node.js](https://mise.jdx.dev/lang/node.html): Like nvm, (or volta, fnm or asdf...), mise can manage multiple versions of Node.js on the same system.
+- [Python](https://mise.jdx.dev/lang/python.html): Like pyenv, mise can manage multiple versions of Python on the same system. Mise can also automatically create virtual environments for your projects and integrates with uv.
+- [Ruby](https://mise.jdx.dev/lang/ruby.html): Like rvm, rbenv, or asdf, mise can manage multiple versions of Ruby on the same system.
+- [Rust](https://mise.jdx.dev/lang/rust.html): Rust/cargo can be installed which uses rustup under the hood. mise will install rustup if it is not already installed and install the requested toolchain, components, and targets.
+- [Swift](https://mise.jdx.dev/lang/swift.html): mise can be used to manage multiple versions of swift on the same system. Swift is supported for macos and linux.
+- [Zig](https://mise.jdx.dev/lang/zig.html): mise can be used to install and manage multiple versions of zig on the same system.
+- [Backends](https://mise.jdx.dev/dev-tools/backends/): Backends are package managers or ecosystems that mise uses to install tools and plugins. Each backend can install and manage multiple tools from its ecosystem.
+- [aqua](https://mise.jdx.dev/dev-tools/backends/aqua.html): Aqua tools may be used natively in mise. aqua is the ideal backend to use for new tools since they don't require plugins, they work on windows, they offer security features in addition to checksums.
+- [asdf](https://mise.jdx.dev/dev-tools/backends/asdf.html): asdf plugins are considered legacy. New asdf and vfox plugins are not accepted into the mise registry for supply-chain security reasons — for registry submissions use the aqua (preferred) or github…
+- [cargo](https://mise.jdx.dev/dev-tools/backends/cargo.html): You may install packages directly from Cargo Crates even if there isn't an asdf plugin for it.
+- [conda](https://mise.jdx.dev/dev-tools/backends/conda.html): You may install packages directly from conda-forge and other Anaconda channels without needing conda or mamba installed.
+- [dotnet](https://mise.jdx.dev/dev-tools/backends/dotnet.html): The code for this is inside the mise repository at ./src/backend/dotnet.rs.
+- [forgejo](https://mise.jdx.dev/dev-tools/backends/forgejo.html): You may install Codeberg and other Forgejo compatible release assets directly using the forgejo backend.
+- [gem](https://mise.jdx.dev/dev-tools/backends/gem.html): mise can be used to install CLIs from RubyGems. The code for this is inside of the mise repository at ./src/backend/gem.rs.
+- [github](https://mise.jdx.dev/dev-tools/backends/github.html): You may install GitHub release assets directly using the github backend. This backend downloads release assets from GitHub repositories and is ideal for tools that distribute pre-built binaries…
+- [gitlab](https://mise.jdx.dev/dev-tools/backends/gitlab.html): You may install GitLab release assets directly using the gitlab backend. This backend downloads release assets from GitLab repositories and is ideal for tools that distribute pre-built binaries…
+- [go](https://mise.jdx.dev/dev-tools/backends/go.html): You may install packages directly via go install even if there isn't an asdf plugin for it.
+- [http](https://mise.jdx.dev/dev-tools/backends/http.html): You may install tools directly from HTTP URLs using the http backend. This backend downloads files from any HTTP/HTTPS URL and is ideal for tools that distribute pre-built binaries or archives through…
+- [npm](https://mise.jdx.dev/dev-tools/backends/npm.html): You may install packages directly from npmjs.org even if there isn't an asdf plugin for it.
+- [pipx](https://mise.jdx.dev/dev-tools/backends/pipx.html): pipx is a tool for running Python CLIs in isolated virtualenvs. This is necessary for Python CLIs because it prevents conflicting dependencies between CLIs or between a CLI and Python projects.
+- [pkgx](https://mise.jdx.dev/dev-tools/backends/pkgx.html): The pkgx backend installs packages from the pkgx pantry without shelling out to the pkgx CLI. mise resolves pantry metadata, downloads pkgx bottles from dist.pkgx.dev, verifies bottle checksums when…
+- [spm](https://mise.jdx.dev/dev-tools/backends/spm.html): You may install executables managed by Swift Package Manager directly from GitHub or GitLab releases.
+- [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html): The ubi backend is deprecated. Please use the GitHub backend instead.
+- [vfox](https://mise.jdx.dev/dev-tools/backends/vfox.html): Vfox is the recommended plugin system for mise. It provides cross-platform support, built-in modules, and a modern hook-based architecture.
+
+## Bootstrap
+
+- [Overview](https://mise.jdx.dev/bootstrap.html): mise bootstrap sets up a machine for the current config in one command: OS packages, git repos, dotfiles, mise shell activation, macOS defaults, macOS LaunchAgents, Linux systemd user services, the…
+- [Bootstrap Packages](https://mise.jdx.dev/bootstrap/packages/): mise can ensure machine-global system packages are installed via the [bootstrap.packages] section of mise.toml, applied by mise bootstrap packages apply or as part of mise bootstrap.
+- [apk](https://mise.jdx.dev/bootstrap/packages/apk.html): System packages for Alpine Linux.
+- [apt](https://mise.jdx.dev/bootstrap/packages/apt.html): System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
+- [dnf](https://mise.jdx.dev/bootstrap/packages/dnf.html): System packages for RedHat-family Linux (Fedora, RHEL, CentOS Stream, Rocky, Alma, ...).
+- [pacman](https://mise.jdx.dev/bootstrap/packages/pacman.html): System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
+- [brew](https://mise.jdx.dev/bootstrap/packages/brew.html): Homebrew formulae and casks — without requiring Homebrew to be installed.
+- [mas](https://mise.jdx.dev/bootstrap/packages/mas.html): Mac App Store apps via the mas CLI.
+- [Package Plugins](https://mise.jdx.dev/bootstrap/packages/plugins.html): Package manager plugins extend [[bootstrap.packages]](/bootstrap/packages/) without adding a manager to mise core.
+- [Repos](https://mise.jdx.dev/bootstrap/repos.html): mise can declare git repositories in [bootstrap.repos] and apply them with mise bootstrap repos apply or as part of mise bootstrap.
+- [Dotfiles](https://mise.jdx.dev/dotfiles.html): mise can manage dotfiles from the [dotfiles] section of mise.toml. Entries can either own a whole file or directory, or manage one small piece of a file something else owns.
+- [Shell Activation](https://mise.jdx.dev/bootstrap/shell.html): mise can declaratively add shell activation snippets for bash, zsh, and fish with [bootstrap.miseshellactivate], applied by mise bootstrap mise-shell-activate apply or as part of mise bootstrap.
+- [macOS Defaults](https://mise.jdx.dev/bootstrap/macos-defaults.html): mise can declare macOS user defaults (preferences) in the [bootstrap.macos.defaults] section of mise.toml and apply them with mise bootstrap macos defaults apply or as part of mise bootstrap.
+- [launchd](https://mise.jdx.dev/bootstrap/launchd.html): mise can declare macOS user LaunchAgents in [bootstrap.macos.launchd.agents] and apply them with mise bootstrap macos launchd-agents apply or as part of mise bootstrap.
+- [systemd](https://mise.jdx.dev/bootstrap/systemd.html): mise can declare Linux systemd user services and timers in [bootstrap.linux.systemd.units] and apply them with mise bootstrap linux systemd-units apply or as part of mise bootstrap.
+- [User Login Shell](https://mise.jdx.dev/bootstrap/user.html): mise can declare the current user's login shell in [bootstrap.user] and apply it with mise bootstrap user apply or as part of mise bootstrap.
+
+## Environments
+
+- [Environment Variables](https://mise.jdx.dev/environments/): Load the right environment variables automatically for each project directory.
+- [Shell Aliases](https://mise.jdx.dev/shell-aliases.html): mise can manage shell aliases that are set dynamically when you enter a directory and unset when you leave, similar to how environment variables work.
+- [Secrets](https://mise.jdx.dev/environments/secrets/): Use mise to manage sensitive environment variables securely. There are multiple supported approaches.
+- [sops](https://mise.jdx.dev/environments/secrets/sops.html): mise reads encrypted secret files and makes values available as environment variables via env._.file.
+- [age](https://mise.jdx.dev/environments/secrets/age.html): Encrypt individual environment variable values directly in mise.toml using age encryption. The age tool is not required—mise has support built-in.
+- [Hooks](https://mise.jdx.dev/hooks.html): You can have mise automatically execute scripts during a mise activate session. You cannot use these without the mise activate shell hook installed in your shell—except the preinstall and postinstall…
+- [direnv](https://mise.jdx.dev/direnv.html): direnv and mise both manage environment variables based on directory. Because they both analyze the current environment variables before and after their respective "hook" commands are run, they can…
+
+## Tasks
+
+- [Task Overview](https://mise.jdx.dev/tasks/): Define and run project tasks for building, testing, linting, deploying, and everyday development workflows.
+- [Task Architecture](https://mise.jdx.dev/tasks/architecture.html): Understanding how mise's task system works helps you write more efficient tasks and troubleshoot dependency issues.
+- [Running Tasks](https://mise.jdx.dev/tasks/running-tasks.html): See available tasks with mise tasks. To show tasks hidden with property hide=true, use the option --hidden.
+- [TOML Tasks](https://mise.jdx.dev/tasks/toml-tasks.html): Tasks can be defined in mise.toml files in different ways. Trivial tasks can be written into a [tasks] section, while more detailed tasks each get their own section.
+- [File Tasks](https://mise.jdx.dev/tasks/file-tasks.html): In addition to defining tasks through the configuration, they can also be defined as standalone script files in one of the following directories.
+- [Task Arguments](https://mise.jdx.dev/tasks/task-arguments.html): Task arguments allow you to pass parameters to tasks, making them more flexible and reusable. There are three ways to define task arguments in mise, but only two are recommended for current use.
+- [Task Configuration](https://mise.jdx.dev/tasks/task-configuration.html): This is an exhaustive list of all the configuration options available for tasks in mise.toml or as file tasks.
+- [Task Templates](https://mise.jdx.dev/tasks/templates.html): Task templates allow you to define reusable task definitions that can be extended by multiple tasks. This is particularly useful in monorepos or projects with similar task patterns across different…
+- [Monorepo Tasks](https://mise.jdx.dev/tasks/monorepo.html): mise supports monorepo-style task organization with target path syntax. This feature allows you to manage tasks across multiple projects in a single repository, where each project can have its own…
+- [Sandboxing](https://mise.jdx.dev/sandboxing.html): Mise supports lightweight process sandboxing for mise exec and mise run, inspired by zerobox. Sandboxing restricts filesystem, network, and environment variable access with granular controls.
+
+## Plugins
+
+- [Plugin Overview](https://mise.jdx.dev/plugins.html): Plugins in mise are a way to extend mise with new functionality like extra tools or environment variable management.
+- [Using Plugins](https://mise.jdx.dev/plugin-usage.html): mise supports plugins that extend its functionality, allowing you to install tools that aren't available in the standard registry. This is particularly useful for.
+- [Backend Plugin Development](https://mise.jdx.dev/backend-plugin-development.html): The mise-backend-plugin-template provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
+- [Tool Plugin Development](https://mise.jdx.dev/tool-plugin-development.html): The mise-tool-plugin-template provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
+- [Environment Plugin Development](https://mise.jdx.dev/env-plugin-development.html): Environment plugins are a special type of mise plugin that provide environment variables and PATH modifications without managing tool versions.
+- [Package Plugin Development](https://mise.jdx.dev/package-plugin-development.html): A package plugin is a Lua-based vfox plugin that implements a machine-global manager for [[bootstrap.packages]](/bootstrap/packages/).
+- [Plugin Lua Modules](https://mise.jdx.dev/plugin-lua-modules.html): mise plugins have access to a comprehensive set of built-in Lua modules that provide common functionality.
+- [Plugin Publishing](https://mise.jdx.dev/plugin-publishing.html): This guide shows how to publish and distribute your plugins, whether they are backend plugins or tool plugins.
+- [asdf (Legacy) Plugins](https://mise.jdx.dev/asdf-legacy-plugins.html): asdf plugins are considered legacy. New asdf and vfox plugins are not accepted into the mise registry for supply-chain security reasons — for registry submissions use the aqua (preferred) or github…
+
+## About
+
+- [About mise](https://mise.jdx.dev/about.html): mise (pronounced "meez") or "mise-en-place" is a development environment setup tool. The name refers to a French culinary phrase that roughly translates to "setup" or "put in place".
+- [mise-en-place: The Song](https://mise.jdx.dev/mise-en-place.html): I keep a tidy kitchen for the working software engineer, Where every runtime's labeled so the shell can find it bright and clear; I pin the Node and Python, Rust and Go all reproducibly, Then place…
+- [Glossary](https://mise.jdx.dev/glossary.html): This glossary defines key terms and concepts used throughout the mise documentation.
+- [FAQs](https://mise.jdx.dev/faq.html): Use mise.local.toml and put that into your global gitignore file. This file should never be committed.
+- [Troubleshooting](https://mise.jdx.dev/troubleshooting.html): If you're looking for help with a specific error message, see Errors — this page is organized by symptom instead.
+- [Errors](https://mise.jdx.dev/errors.html): This page lists common error messages mise emits, what causes them, and how to fix them. It complements Troubleshooting, which is organized by symptom (wrong tool version, slow prompts, activation…
+- [Tips & Tricks](https://mise.jdx.dev/tips-and-tricks.html): An assortment of helpful tips for using mise.
+- [Cookbook](https://mise.jdx.dev/mise-cookbook/): Here we are sharing a few mise setups that other people have found useful.
+- [C++](https://mise.jdx.dev/mise-cookbook/cpp.html): Here are some tips on managing C++ projects with mise.
+- [Docker](https://mise.jdx.dev/mise-cookbook/docker.html): Here are some tips on using Docker with mise.
+- [Node](https://mise.jdx.dev/mise-cookbook/nodejs.html): Here are some tips on managing Node.js projects with mise.
+- [Ruby](https://mise.jdx.dev/mise-cookbook/ruby.html): Here are some tips on managing Ruby projects with mise.
+- [Terraform](https://mise.jdx.dev/mise-cookbook/terraform.html): Here are some tips on managing Terraform projects with mise.
+- [Python](https://mise.jdx.dev/mise-cookbook/python.html): Here are some tips on managing Python projects with mise.
+- [Presets](https://mise.jdx.dev/mise-cookbook/presets.html): You can create your own presets by leveraging mise tasks to reduce boilerplate and make it easier to set up new projects.
+- [Shell tricks](https://mise.jdx.dev/mise-cookbook/shell-tricks.html): A collection of shell utilities leveraging mise.
+- [Team](https://mise.jdx.dev/team.html): Jeff Dickey is the primary developer behind mise. He does the bulk of development for the project.
+- [Contributing](https://mise.jdx.dev/contributing.html): mise has a specific scope and design taste. Before opening a PR, unless it is something obvious, start a discussion or mention what you plan to do in Discord.
+- [External Resources](https://mise.jdx.dev/external-resources.html): Links to articles, videos, and other resources that are relevant to mise.
+
+## Advanced
+
+- [Architecture](https://mise.jdx.dev/architecture.html): This document provides a comprehensive overview of mise's architecture, designed primarily for contributors and those interested in understanding how mise works internally.
+- [Paranoid](https://mise.jdx.dev/paranoid.html): Paranoid is an optional behavior that locks mise down more to make it harder for a bad actor to compromise your system.
+- [Templates](https://mise.jdx.dev/templates.html): Templates in mise provide a powerful way to configure different aspects of your environment and project settings.
+- [URL Replacements](https://mise.jdx.dev/url-replacements.html): mise does not include a built-in registry for downloading artifacts. Instead, it retrieves remote registry manifests, which specify the URLs for downloading tools.
+- [Model Context Protocol](https://mise.jdx.dev/mcp.html): The Model Context Protocol (MCP) is a standard protocol that enables AI assistants to interact with development tools and access project context.
+- [Directory Structure](https://mise.jdx.dev/directories.html): The following are the directories that mise uses.
+- [Cache Behavior](https://mise.jdx.dev/cache-behavior.html): mise makes use of caching in many places in order to be efficient. The details about how long to keep cache for should eventually all be configurable.
+
+## CLI Reference
+
+- [CLI Overview](https://mise.jdx.dev/cli/): Usage: mise [FLAGS] [TASK]
+- [mise activate](https://mise.jdx.dev/cli/activate.html): Initializes mise in the current shell session
+- [mise backends](https://mise.jdx.dev/cli/backends.html): Manage backends
+- [mise backends ls](https://mise.jdx.dev/cli/backends/ls.html): List built-in backends
+- [mise bin-paths](https://mise.jdx.dev/cli/bin-paths.html): List all the active runtime bin paths
+- [mise bootstrap](https://mise.jdx.dev/cli/bootstrap.html): Set up a machine for the current config in one command
+- [mise bootstrap dotfiles](https://mise.jdx.dev/cli/bootstrap/dotfiles.html): Manage dotfiles from [dotfiles]
+- [mise bootstrap linux](https://mise.jdx.dev/cli/bootstrap/linux.html): Manage Linux bootstrap config from [bootstrap.linux]
+- [mise bootstrap macos](https://mise.jdx.dev/cli/bootstrap/macos.html): Manage macOS bootstrap config from [bootstrap.macos]
+- [mise bootstrap mise-shell-activate](https://mise.jdx.dev/cli/bootstrap/mise-shell-activate.html): Manage mise shell activation from [bootstrap.miseshellactivate]
+- [mise bootstrap packages](https://mise.jdx.dev/cli/bootstrap/packages.html): Manage bootstrap system packages from [bootstrap.packages]
+- [mise bootstrap plugins](https://mise.jdx.dev/cli/bootstrap/plugins.html): Manage package manager plugins declared in [bootstrap.plugins]
+- [mise bootstrap repos](https://mise.jdx.dev/cli/bootstrap/repos.html): Manage git repo checkouts from [bootstrap.repos]
+- [mise bootstrap status](https://mise.jdx.dev/cli/bootstrap/status.html): Show the aggregate bootstrap status
+- [mise bootstrap user](https://mise.jdx.dev/cli/bootstrap/user.html): Manage current-user bootstrap settings from [bootstrap.user]
+- [mise cache](https://mise.jdx.dev/cli/cache.html): Manage the mise cache
+- [mise cache clear](https://mise.jdx.dev/cli/cache/clear.html): Deletes all cache files in mise
+- [mise cache path](https://mise.jdx.dev/cli/cache/path.html): Show the cache directory path
+- [mise cache prune](https://mise.jdx.dev/cli/cache/prune.html): Removes stale mise cache files
+- [mise completion](https://mise.jdx.dev/cli/completion.html): Generate shell completions
+- [mise config](https://mise.jdx.dev/cli/config.html): Manage config files
+- [mise config get](https://mise.jdx.dev/cli/config/get.html): Display the value of a setting in a mise.toml file
+- [mise config ls](https://mise.jdx.dev/cli/config/ls.html): List config files currently in use
+- [mise config set](https://mise.jdx.dev/cli/config/set.html): Set the value of a setting in a mise.toml file
+- [mise deactivate](https://mise.jdx.dev/cli/deactivate.html): Disable mise for current shell session
+- [mise deps](https://mise.jdx.dev/cli/deps.html): [experimental] Manage project dependencies
+- [mise deps add](https://mise.jdx.dev/cli/deps/add.html): Add a dependency
+- [mise deps install](https://mise.jdx.dev/cli/deps/install.html): Install all project dependencies
+- [mise deps remove](https://mise.jdx.dev/cli/deps/remove.html): Remove a dependency
+- [mise doctor](https://mise.jdx.dev/cli/doctor.html): Check mise installation for possible problems
+- [mise doctor path](https://mise.jdx.dev/cli/doctor/path.html): Print the current PATH entries mise is providing
+- [mise dotfiles](https://mise.jdx.dev/cli/dotfiles.html): Manage dotfiles from [dotfiles]
+- [mise dotfiles add](https://mise.jdx.dev/cli/dotfiles/add.html): Add or update dotfiles in [dotfiles]
+- [mise dotfiles apply](https://mise.jdx.dev/cli/dotfiles/apply.html): Apply dotfiles from [dotfiles]
+- [mise dotfiles edit](https://mise.jdx.dev/cli/dotfiles/edit.html): Edit a managed dotfile source
+- [mise dotfiles status](https://mise.jdx.dev/cli/dotfiles/status.html): Show the status of dotfiles from [dotfiles]
+- [mise edit](https://mise.jdx.dev/cli/edit.html): Edit mise.toml interactively
+- [mise en](https://mise.jdx.dev/cli/en.html): Starts a new shell with the mise environment built from the current configuration
+- [mise env](https://mise.jdx.dev/cli/env.html): Exports env vars to activate mise a single time
+- [mise exec](https://mise.jdx.dev/cli/exec.html): Execute a command with tool(s) set
+- [mise fmt](https://mise.jdx.dev/cli/fmt.html): Formats mise.toml
+- [mise generate](https://mise.jdx.dev/cli/generate.html): Generate files for various tools/services
+- [mise generate bootstrap](https://mise.jdx.dev/cli/generate/bootstrap.html): Generate a script to download+execute mise
+- [mise generate config](https://mise.jdx.dev/cli/generate/config.html): Generate a mise.toml file
+- [mise generate devcontainer](https://mise.jdx.dev/cli/generate/devcontainer.html): Generate a devcontainer to execute mise
+- [mise generate git-pre-commit](https://mise.jdx.dev/cli/generate/git-pre-commit.html): Generate a git pre-commit hook
+- [mise generate github-action](https://mise.jdx.dev/cli/generate/github-action.html): Generate a GitHub Action workflow file
+- [mise generate task-docs](https://mise.jdx.dev/cli/generate/task-docs.html): Generate documentation for tasks in a project
+- [mise generate task-stubs](https://mise.jdx.dev/cli/generate/task-stubs.html): Generates shims to run mise tasks
+- [mise generate tool-stub](https://mise.jdx.dev/cli/generate/tool-stub.html): Generate a tool stub for HTTP-based tools
+- [mise implode](https://mise.jdx.dev/cli/implode.html): Removes mise CLI and all related data
+- [mise install](https://mise.jdx.dev/cli/install.html): Install a tool version
+- [mise install-into](https://mise.jdx.dev/cli/install-into.html): Install a tool version to a specific path
+- [mise latest](https://mise.jdx.dev/cli/latest.html): Gets the latest available version for a plugin
+- [mise link](https://mise.jdx.dev/cli/link.html): Symlinks a tool version into mise
+- [mise lock](https://mise.jdx.dev/cli/lock.html): Update lockfile checksums and URLs for all specified platforms
+- [mise ls](https://mise.jdx.dev/cli/ls.html): List installed and active tool versions
+- [mise ls-remote](https://mise.jdx.dev/cli/ls-remote.html): List runtime versions available for install.
+- [mise mcp](https://mise.jdx.dev/cli/mcp.html): Run Model Context Protocol (MCP) server
+- [mise oci](https://mise.jdx.dev/cli/oci.html): [experimental] Build OCI container images from a mise.toml
+- [mise oci build](https://mise.jdx.dev/cli/oci/build.html): [experimental] Build an OCI image from the current mise.toml
+- [mise oci push](https://mise.jdx.dev/cli/oci/push.html): [experimental] Build an OCI image and push it to a registry
+- [mise oci run](https://mise.jdx.dev/cli/oci/run.html): [experimental] Build an OCI image from the current mise.toml and run a command in it
+- [mise outdated](https://mise.jdx.dev/cli/outdated.html): Shows outdated tool versions
+- [mise patrons](https://mise.jdx.dev/cli/patrons.html): Show the individuals supporting mise as Patron-tier members
+- [mise plugins](https://mise.jdx.dev/cli/plugins.html): Manage plugins
+- [mise plugins install](https://mise.jdx.dev/cli/plugins/install.html): Install a plugin
+- [mise plugins link](https://mise.jdx.dev/cli/plugins/link.html): Symlinks a plugin into mise
+- [mise plugins ls](https://mise.jdx.dev/cli/plugins/ls.html): List installed plugins
+- [mise plugins ls-remote](https://mise.jdx.dev/cli/plugins/ls-remote.html): List all available remote plugins
+- [mise plugins uninstall](https://mise.jdx.dev/cli/plugins/uninstall.html): Removes a plugin
+- [mise plugins update](https://mise.jdx.dev/cli/plugins/update.html): Updates a plugin to the latest version
+- [mise prune](https://mise.jdx.dev/cli/prune.html): Delete unused versions of tools
+- [mise registry](https://mise.jdx.dev/cli/registry.html): List available tools to install
+- [mise reshim](https://mise.jdx.dev/cli/reshim.html): Creates new shims based on bin paths from currently installed tools.
+- [mise run](https://mise.jdx.dev/cli/run.html): Run task(s)
+- [mise search](https://mise.jdx.dev/cli/search.html): Search for tools in the registry
+- [mise self-update](https://mise.jdx.dev/cli/self-update.html): Updates mise itself.
+- [mise set](https://mise.jdx.dev/cli/set.html): Set environment variables in mise.toml
+- [mise settings](https://mise.jdx.dev/cli/settings.html): Show current settings
+- [mise settings add](https://mise.jdx.dev/cli/settings/add.html): Adds a setting to the configuration file
+- [mise settings get](https://mise.jdx.dev/cli/settings/get.html): Show a current setting
+- [mise settings ls](https://mise.jdx.dev/cli/settings/ls.html): Show current settings
+- [mise settings set](https://mise.jdx.dev/cli/settings/set.html): Add/update a setting
+- [mise settings unset](https://mise.jdx.dev/cli/settings/unset.html): Clears a setting
+- [mise shell](https://mise.jdx.dev/cli/shell.html): Sets a tool version for the current session.
+- [mise shell-alias](https://mise.jdx.dev/cli/shell-alias.html): Manage shell aliases.
+- [mise shell-alias get](https://mise.jdx.dev/cli/shell-alias/get.html): Show the command for a shell alias
+- [mise shell-alias ls](https://mise.jdx.dev/cli/shell-alias/ls.html): List shell aliases
+- [mise shell-alias set](https://mise.jdx.dev/cli/shell-alias/set.html): Add/update a shell alias
+- [mise shell-alias unset](https://mise.jdx.dev/cli/shell-alias/unset.html): Removes a shell alias
+- [mise sponsors](https://mise.jdx.dev/cli/sponsors.html): Show the companies sponsoring mise and the jdx.dev open source tools
+- [mise sync](https://mise.jdx.dev/cli/sync.html): Synchronize tools from other version managers with mise
+- [mise sync node](https://mise.jdx.dev/cli/sync/node.html): Symlinks all tool versions from an external tool into mise
+- [mise sync python](https://mise.jdx.dev/cli/sync/python.html): Symlinks all tool versions from an external tool into mise
+- [mise sync ruby](https://mise.jdx.dev/cli/sync/ruby.html): Symlinks all ruby tool versions from an external tool into mise
+- [mise tasks](https://mise.jdx.dev/cli/tasks.html): Manage tasks
+- [mise tasks add](https://mise.jdx.dev/cli/tasks/add.html): Create a new task
+- [mise tasks deps](https://mise.jdx.dev/cli/tasks/deps.html): Display a tree visualization of a dependency graph
+- [mise tasks edit](https://mise.jdx.dev/cli/tasks/edit.html): Edit a task with $EDITOR
+- [mise tasks info](https://mise.jdx.dev/cli/tasks/info.html): Get information about a task
+- [mise tasks ls](https://mise.jdx.dev/cli/tasks/ls.html): List available tasks to execute These may be included from the config file or from the project's .mise/tasks directory mise will merge all tasks from all parent directories into this list.
+- [mise tasks run](https://mise.jdx.dev/cli/tasks/run.html): Run task(s)
+- [mise tasks validate](https://mise.jdx.dev/cli/tasks/validate.html): Validate tasks for common errors and issues
+- [mise test-tool](https://mise.jdx.dev/cli/test-tool.html): Test a tool installs and executes
+- [mise token](https://mise.jdx.dev/cli/token.html): Display git provider tokens mise will use
+- [mise token forgejo](https://mise.jdx.dev/cli/token/forgejo.html): Forgejo token
+- [mise token github](https://mise.jdx.dev/cli/token/github.html): GitHub token
+- [mise token gitlab](https://mise.jdx.dev/cli/token/gitlab.html): GitLab token
+- [mise tool](https://mise.jdx.dev/cli/tool.html): Gets information about a tool
+- [mise tool-alias](https://mise.jdx.dev/cli/tool-alias.html): Manage tool version aliases.
+- [mise tool-alias get](https://mise.jdx.dev/cli/tool-alias/get.html): Show an alias for a tool
+- [mise tool-alias ls](https://mise.jdx.dev/cli/tool-alias/ls.html): List tool version aliases Shows the aliases that can be specified. These can come from user config or from plugins in bin/list-aliases.
+- [mise tool-alias set](https://mise.jdx.dev/cli/tool-alias/set.html): Add/update an alias for a tool/backend
+- [mise tool-alias unset](https://mise.jdx.dev/cli/tool-alias/unset.html): Clears an alias for a tool/backend
+- [mise tool-stub](https://mise.jdx.dev/cli/tool-stub.html): Execute a tool stub
+- [mise trust](https://mise.jdx.dev/cli/trust.html): Marks a config file as trusted
+- [mise uninstall](https://mise.jdx.dev/cli/uninstall.html): Removes installed tool versions
+- [mise unset](https://mise.jdx.dev/cli/unset.html): Remove environment variable(s) from the config file.
+- [mise untrust](https://mise.jdx.dev/cli/untrust.html): No longer trust a config, will prompt in the future
+- [mise unuse](https://mise.jdx.dev/cli/unuse.html): Removes installed tool versions from mise.toml
+- [mise upgrade](https://mise.jdx.dev/cli/upgrade.html): Upgrades outdated tools
+- [mise use](https://mise.jdx.dev/cli/use.html): Installs a tool and adds the version to mise.toml.
+- [mise version](https://mise.jdx.dev/cli/version.html): Display the version of mise
+- [mise watch](https://mise.jdx.dev/cli/watch.html): Run task(s) and watch for changes to rerun it
+- [mise where](https://mise.jdx.dev/cli/where.html): Display the installation path for a tool
+- [mise which](https://mise.jdx.dev/cli/which.html): Shows the path that a tool's bin points to.
