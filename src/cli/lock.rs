@@ -1052,11 +1052,15 @@ impl Lock {
                     }
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
-                    if let Err(e) = lockfile::apply_lock_result(lockfile, resolution) {
-                        provenance_errors.push(e.to_string());
-                        results.push((short, platform_key, false));
-                    } else {
-                        results.push((short, platform_key, ok));
+                    match lockfile::apply_lock_result(lockfile, resolution) {
+                        Err(e) => {
+                            provenance_errors.push(e.to_string());
+                            results.push((short, platform_key, false));
+                        }
+                        // A resolution that wrote nothing is a skip, not an
+                        // update — backends that can't resolve metadata without
+                        // installing return empty info rather than an error.
+                        Ok(applied) => results.push((short, platform_key, ok && applied)),
                     }
                 }
                 Err(e) => {
@@ -1065,7 +1069,9 @@ impl Lock {
             }
         }
 
-        pr.finish_with_message(format!("{} platform entries", total_tasks));
+        // Report entries actually written, not tasks attempted
+        let updated = results.iter().filter(|(_, _, ok)| *ok).count();
+        pr.finish_with_message(format!("{} platform entries", updated));
 
         Ok((results, provenance_errors))
     }

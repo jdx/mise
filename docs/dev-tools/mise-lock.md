@@ -82,6 +82,26 @@ Each tool entry (`[[tools.name]]`) can contain:
 - **`options`** (optional): Backend-specific options that identify the artifact (e.g., `{exe = "rg", matching = "musl"}`)
 - **`platforms`** (optional): Platform-specific metadata (checksums, URLs, sizes)
 
+A tool can have several entries for the same version when its artifact identity
+depends on more than the platform key. Swift, for example, publishes a different
+Linux tarball per distro, so its entries record which one they describe:
+
+```toml
+[[tools.swift]]
+version = "6.3.1"
+backend = "core:swift"
+options = { swift_platform = "ubuntu24.04" }
+
+[[tools.swift]]
+version = "6.3.1"
+backend = "core:swift"
+options = { swift_platform = "fedora39" }
+```
+
+Entries are matched on options exactly, so a machine only verifies against the
+entry written for its own distro. Pin `swift.platform` to make every machine
+resolve the same artifact, and commit the entry it produces.
+
 ### Platform Keys
 
 The platform key format is generally `os-arch` but can be customized by backends:

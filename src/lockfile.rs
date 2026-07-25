@@ -397,6 +397,28 @@ impl PlatformInfo {
             && self.additional_artifacts.is_empty()
     }
 
+    /// Drop the fields that describe one specific downloaded artifact, keeping
+    /// the fields that describe how the tool is built or what it depends on.
+    /// Used when an entry is known to be for the right tool version but not
+    /// necessarily the right artifact.
+    pub fn without_artifact_data(&self) -> Self {
+        PlatformInfo {
+            install: self.install.clone(),
+            conda_deps: self.conda_deps.clone(),
+            pkgx_deps: self.pkgx_deps.clone(),
+            pkgx_provides: self.pkgx_provides.clone(),
+            pkgx_runtime_env: self.pkgx_runtime_env.clone(),
+            checksum: None,
+            size: None,
+            url: None,
+            url_api: None,
+            provenance: None,
+            provenance_verified: false,
+            github_attestations: None,
+            additional_artifacts: Default::default(),
+        }
+    }
+
     /// True when the lockfile has checksum-backed, successfully verified provenance.
     pub fn has_checksum_and_verified_provenance(&self) -> bool {
         self.checksum.is_some() && self.provenance.is_some() && self.provenance_verified
@@ -2643,11 +2665,17 @@ pub async fn resolve_tool_lock_info(
 /// Apply a lock resolution result to a lockfile, updating platform info and conda packages.
 /// Only applies data when the resolution succeeded (info is `Ok`).
 ///
+/// Returns whether the resolution contributed any data. A backend that can't
+/// resolve metadata without installing falls back to an empty `PlatformInfo`,
+/// which is `Ok` but writes no entry — callers report those as skipped rather
+/// than claiming an update they didn't make.
+///
 /// Returns an error if a github backend tool loses provenance on version upgrade,
 /// which could indicate a supply chain attack.
-pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) -> Result<()> {
+pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) -> Result<bool> {
     let (short, version, backend, platform, info, options, conda_packages, pkgx_packages) = result;
     let platform_key = platform.to_key();
+    let mut applied = false;
     if let Ok(ref info) = info {
         if let Some(err) = check_single_tool_provenance(
             lockfile.tools.get(&short).map(Vec::as_slice),
@@ -2659,6 +2687,7 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
         ) {
             return Err(eyre!("{err}"));
         }
+        applied |= !info.is_empty();
         lockfile.set_platform_info(
             &short,
             &version,
@@ -2669,12 +2698,14 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
         );
     }
     for (basename, pkg_info) in conda_packages {
+        applied = true;
         lockfile.set_conda_package(&platform_key, &basename, pkg_info);
     }
     for (id, pkg_info) in pkgx_packages {
+        applied = true;
         lockfile.set_pkgx_package(&platform_key, &id, pkg_info);
     }
-    Ok(())
+    Ok(applied)
 }
 
 type RekeyDecisions = HashMap<(String, String), Option<BTreeMap<String, String>>>;
@@ -2723,6 +2754,9 @@ fn build_rekey_decisions(
         for platform_key in platforms {
             let resolved = Platform::parse(platform_key).ok().and_then(|platform| {
                 let backend = tv.request.backend().ok()?;
+                if backend.lockfile_options_are_host_specific() {
+                    return None;
+                }
                 backend
                     .resolve_lockfile_options(&tv.request, &PlatformTarget::new(platform))
                     .ok()
@@ -3030,6 +3064,11 @@ pub(crate) fn read_lockfile_for_tool_source(
         .clone())
 }
 
+/// `legacy_options_fallback` lets a backend whose options describe the writing
+/// host (see `Backend::lockfile_options_are_host_specific`) fall back to an
+/// entry written before those options existed. The version pin is honored — it
+/// is the only record of what this project resolved to — but the artifact data
+/// is dropped, since there's no way to tell which variant it describes.
 pub fn get_locked_version(
     config: &Config,
     path: Option<&Path>,
@@ -3037,6 +3076,7 @@ pub fn get_locked_version(
     prefix: &str,
     require_prefix_boundary: bool,
     request_options: &BTreeMap<String, String>,
+    legacy_options_fallback: bool,
 ) -> Result<Option<LockfileTool>> {
     let settings = Settings::get();
     if !settings.lockfile_enabled() {
@@ -3058,15 +3098,15 @@ pub fn get_locked_version(
     };
 
     if let Some(tools) = lockfile.tools.get(short) {
+        let version_matches = |v: &LockfileTool| {
+            lockfile_version_matches(prefix, &v.version)
+                && (!require_prefix_boundary
+                    || lockfile_version_matches_prefix_boundary(prefix, &v.version))
+        };
         // Filter by version prefix and options
         let mut matching: Vec<_> = tools
             .iter()
-            .filter(|v| {
-                lockfile_version_matches(prefix, &v.version)
-                    && (!require_prefix_boundary
-                        || lockfile_version_matches_prefix_boundary(prefix, &v.version))
-                    && &v.options == request_options
-            })
+            .filter(|v| version_matches(v) && &v.options == request_options)
             .collect();
 
         // Only sort when prefix is "latest" and we have multiple matches
@@ -3080,6 +3120,34 @@ pub fn get_locked_version(
         if let Some(found) = matching.first() {
             trace!("[{short}@{prefix}] found {} in lockfile", found.version);
             return Ok(Some((*found).clone()));
+        }
+
+        if legacy_options_fallback && !request_options.is_empty() {
+            let mut legacy: Vec<_> = tools
+                .iter()
+                .filter(|v| version_matches(v) && v.options.is_empty())
+                .collect();
+            if prefix == "latest" && legacy.len() > 1 {
+                legacy.sort_by(|a, b| {
+                    versions::Versioning::new(&b.version)
+                        .cmp(&versions::Versioning::new(&a.version))
+                });
+            }
+            if let Some(found) = legacy.first() {
+                trace!(
+                    "[{short}@{prefix}] found {} in lockfile without options, keeping the version pin and dropping its artifact data",
+                    found.version
+                );
+                let mut found = (*found).clone();
+                found.options = request_options.clone();
+                found.platforms = found
+                    .platforms
+                    .into_iter()
+                    .map(|(key, info)| (key, info.without_artifact_data()))
+                    .filter(|(_, info)| !info.is_empty())
+                    .collect();
+                return Ok(Some(found));
+            }
         }
     }
 

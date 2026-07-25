@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/11295
+# Swift's Linux tarballs differ per distro (ubuntu24.04, fedora39, ubi9, …) but
+# the lock platform key is just linux-x64, so an entry written on one distro used
+# to be matched on another and its checksum verified against a different
+# tarball. Entries now record the distro in their options.
+#
+# Locking swift resolves URLs only — it never downloads the ~1GB toolchain.
+
+if [[ "$(uname -s)" != Linux ]]; then
+  echo "skipping: swift artifacts are only distro-specific on linux"
+  exit 0
+fi
+
+export MISE_LOCKFILE=1
+
+write_config() {
+  cat <<EOF >mise.toml
+[settings]
+swift.platform = "$1"
+[tools]
+"core:swift" = "6.3.1"
+EOF
+}
+
+write_config "ubi9"
+mise lock swift --platform linux-x64
+assert_contains "cat mise.lock" 'swift_platform = "ubi9"'
+assert_contains "cat mise.lock" 'swift-6.3.1-RELEASE-ubi9.tar.gz'
+
+# Changing the pinned distro must produce its own entry rather than silently
+# keeping the previous distro's artifact data.
+write_config "ubuntu24.04"
+mise lock swift --platform linux-x64
+assert_contains "cat mise.lock" 'swift_platform = "ubuntu24.04"'
+assert_contains "cat mise.lock" 'swift-6.3.1-RELEASE-ubuntu24.04.tar.gz'
+
+# An entry written before the distro was recorded still pins the version, but
+# its checksum — which describes an unknown distro's tarball — is not reused.
+cat <<EOF >mise.lock
+[[tools.swift]]
+version = "6.3.1"
+backend = "core:swift"
+[tools.swift."platforms.linux-x64"]
+checksum = "blake3:8a95707e406fa824266e95319f9f906415871df8f8dce47304a90302ec9977e8"
+EOF
+cat <<EOF >mise.toml
+[settings]
+swift.platform = "ubi9"
+[tools]
+"core:swift" = "6"
+EOF
+assert_contains "mise install --dry-run 2>&1" "swift@6.3.1"
+
+mise lock swift --platform linux-x64
+assert "grep -c '^\[\[tools.swift\]\]' mise.lock" "2"
+assert_contains "cat mise.lock" 'swift-6.3.1-RELEASE-ubi9.tar.gz'
