@@ -2684,7 +2684,7 @@ Default: 4
         arg "[PLUGIN]…" help="Plugin(s) to update" required=#false var=#true
     }
 }
-cmd deps help="[experimental] Manage project dependencies" effect=read {
+cmd deps help="[experimental] Manage project dependencies" effect=write {
     alias dep
     alias prepare hide=#true
     long_help #"""
@@ -3210,7 +3210,7 @@ Environment variable(s) to set
 e.g.: NODE_ENV=production
 """# required=#false var=#true
 }
-cmd settings help="Manage settings" effect=read {
+cmd settings help="Manage settings" effect=write {
     long_help #"""
 Show current settings
 

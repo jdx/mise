@@ -91,7 +91,8 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("config set", Write),
     ("current", Read),
     ("deactivate", Read),
-    ("deps", Read),
+    // Bare `mise deps` defaults to `deps install` and runs install steps.
+    ("deps", Write),
     ("deps add", Write),
     ("deps install", Write),
     ("deps remove", Destructive),
@@ -149,12 +150,16 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("plugins update", Write),
     ("prune", Destructive),
     ("registry", Read),
-    ("render-help", Write),
     ("reshim", Write),
     ("search", Read),
     ("self-update", Write),
     ("set", Write),
-    ("settings", Read),
+    // Bare `mise settings` lists, but `mise settings foo=bar` (and
+    // `mise settings foo bar`) route to `settings set` and write config.
+    // Once the spec can raise the effect from an argument this becomes
+    // `read` plus a `write` on the value arg; until then `write` is the
+    // honest floor, since it keeps the command out of a read-only allowlist.
+    ("settings", Write),
     ("settings add", Write),
     ("settings get", Read),
     ("settings ls", Read),
@@ -202,16 +207,21 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("which", Read),
 ];
 
-/// `bootstrap packages brew` is `#[cfg(unix)]`, so it must only be classified
-/// where it exists — otherwise the stale-entry test below fails on Windows.
-#[cfg(unix)]
+/// Commands that only exist in some builds, so they must only be classified
+/// where they exist — otherwise the stale-entry test below fails there.
+///
+/// `bootstrap packages brew` is `#[cfg(unix)]`; `render-help` is
+/// `#[cfg(debug_assertions)]`.
 pub const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[
+    #[cfg(unix)]
     ("bootstrap packages brew", Read),
+    #[cfg(unix)]
     ("bootstrap packages brew tap", Write),
+    #[cfg(unix)]
     ("bootstrap packages brew untap", Write),
+    #[cfg(debug_assertions)]
+    ("render-help", Write),
 ];
-#[cfg(not(unix))]
-pub const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[];
 
 /// Commands with no fixed effect, and why.
 ///
