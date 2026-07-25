@@ -1,3 +1,10 @@
-backends = ["npm:purty"]
 description = "PureScript pretty-printer"
 test = { cmd = "purty version", expected = "Purty version: {{version}}" }
+
+[[backends]]
+full = "npm:purty"
+
+[backends.options]
+# ~845 weekly downloads, below aube's 1000 threshold. Curated here, so the
+# registry entry is the popularity decision rather than the download count.
+allow_low_downloads = true

@@ -88,6 +88,23 @@ impl<'a> NpmOptions<'a> {
         )
     }
 
+    /// Whether this tool's own package may install despite falling below
+    /// aube's weekly-download threshold. Scoped to the requested package
+    /// only — transitive dependencies stay gated.
+    fn allow_low_downloads(&self) -> eyre::Result<bool> {
+        let Some(value) = self.values.raw().opts.get("allow_low_downloads") else {
+            return Ok(false);
+        };
+        match value {
+            toml::Value::Boolean(value) => Ok(*value),
+            toml::Value::String(value) if value.eq_ignore_ascii_case("true") => Ok(true),
+            toml::Value::String(value) if value.eq_ignore_ascii_case("false") => Ok(false),
+            value => Err(eyre::eyre!(
+                "allow_low_downloads must be a boolean, got {value}"
+            )),
+        }
+    }
+
     fn allow_builds(&self) -> eyre::Result<AllowBuilds> {
         let Some(value) = self.values.raw().opts.get("allow_builds") else {
             return Ok(AllowBuilds::None);
@@ -949,6 +966,11 @@ impl NPMBackend {
         options: &NpmOptions,
         allow_builds: &AllowBuilds,
     ) -> Result<()> {
+        // Validate the fallible options before writing anything, so a malformed
+        // value fails without leaving a half-written project dir behind.
+        let trust_policy_excludes = options.aube_trust_policy_excludes_npmrc_value()?;
+        let allow_low_downloads = options.allow_low_downloads()?;
+
         let mut manifest = serde_json::json!({
             "name": "mise-npm-install",
             "private": true,
@@ -974,8 +996,15 @@ impl NPMBackend {
             // aube documents minimumReleaseAge in minutes, matching pnpm's setting.
             npmrc.push_str(&format!("minimumReleaseAge={minutes}\n"));
         }
-        if let Some(excludes) = options.aube_trust_policy_excludes_npmrc_value()? {
+        if let Some(excludes) = trust_policy_excludes {
             npmrc.push_str(&format!("trustPolicyExclude={excludes}\n"));
+        }
+        if allow_low_downloads {
+            // Exempt only this tool's own package, not the whole install, so a
+            // transitive dependency below the threshold still fails the gate.
+            // aube gates the directly-requested packages, which for mise is
+            // always exactly this one.
+            npmrc.push_str(&format!("allowedUnpopularPackages={}\n", self.tool_name()));
         }
         crate::file::write(install_path.join(".npmrc"), npmrc)?;
         Ok(())
@@ -1219,6 +1248,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "aube_args".into(),
         "allow_builds".into(),
         "trust_policy_excludes".into(),
+        "allow_low_downloads".into(),
     ]
 }
 
@@ -1921,6 +1951,95 @@ mod tests {
             manifest["aube"]["allowBuilds"],
             serde_json::json!({ "esbuild": true })
         );
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_scopes_allow_low_downloads_to_the_tool() {
+        let backend = create_npm_backend("bibtex-tidy");
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-bibtex-tidy").join("1.14.0");
+        crate::file::create_dir_all(&install_path).unwrap();
+        let mut raw_options = ToolVersionOptions::default();
+        raw_options.opts.insert(
+            "allow_low_downloads".to_string(),
+            toml::Value::Boolean(true),
+        );
+        let options = NpmOptions::new(&raw_options);
+        let allow_builds = options.allow_builds().unwrap();
+
+        backend
+            .write_aube_embed_project(&install_path, None, &options, &allow_builds)
+            .unwrap();
+
+        // Only the requested package is exempt — not a wildcard, so a
+        // transitive dependency below the threshold still fails aube's gate.
+        let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
+        assert!(npmrc.contains("allowedUnpopularPackages=bibtex-tidy\n"));
+        assert!(!npmrc.contains('*'));
+        assert!(!npmrc.contains("lowDownloadThreshold"));
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_writes_nothing_when_an_option_is_malformed() {
+        let backend = create_npm_backend("bibtex-tidy");
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-bibtex-tidy").join("1.14.0");
+        crate::file::create_dir_all(&install_path).unwrap();
+        let mut raw_options = ToolVersionOptions::default();
+        raw_options.opts.insert(
+            "allow_low_downloads".to_string(),
+            toml::Value::Integer(1000),
+        );
+        let options = NpmOptions::new(&raw_options);
+        let allow_builds = options.allow_builds().unwrap();
+
+        assert!(
+            backend
+                .write_aube_embed_project(&install_path, None, &options, &allow_builds)
+                .is_err()
+        );
+        // Options are validated up front, so the aborted call leaves no
+        // half-written project behind for a later step to trip over.
+        assert!(!install_path.join("package.json").exists());
+        assert!(!install_path.join(".npmrc").exists());
+    }
+
+    #[test]
+    fn test_allow_low_downloads_defaults_off_and_rejects_non_bool() {
+        let empty = ToolVersionOptions::default();
+        assert!(!NpmOptions::new(&empty).allow_low_downloads().unwrap());
+
+        let mut string_true = ToolVersionOptions::default();
+        string_true.opts.insert(
+            "allow_low_downloads".to_string(),
+            toml::Value::String("true".into()),
+        );
+        assert!(NpmOptions::new(&string_true).allow_low_downloads().unwrap());
+
+        let mut bad = ToolVersionOptions::default();
+        bad.opts.insert(
+            "allow_low_downloads".to_string(),
+            toml::Value::Integer(1000),
+        );
+        assert!(NpmOptions::new(&bad).allow_low_downloads().is_err());
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_omits_allow_low_downloads_by_default() {
+        let backend = create_npm_backend("bibtex-tidy");
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-bibtex-tidy").join("1.14.0");
+        crate::file::create_dir_all(&install_path).unwrap();
+        let raw_options = ToolVersionOptions::default();
+        let options = NpmOptions::new(&raw_options);
+        let allow_builds = options.allow_builds().unwrap();
+
+        backend
+            .write_aube_embed_project(&install_path, None, &options, &allow_builds)
+            .unwrap();
+
+        let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
+        assert!(!npmrc.contains("allowedUnpopularPackages"));
     }
 
     #[test]
