@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::time::Duration;
 
 use console::style;
@@ -7,7 +8,6 @@ use versions::Versioning;
 
 use crate::build_time::BUILD_TIME;
 use crate::cli::self_update::SelfUpdate;
-use crate::config::Settings;
 use crate::file::modified_duration;
 use crate::ui::style;
 use crate::{dirs, duration, env, file};
@@ -120,13 +120,6 @@ pub async fn show_latest() {
     if ci_info::is_ci() && !cfg!(test) {
         return;
     }
-    // Bail before anything can touch the HTTP client. Constructing it eagerly
-    // parses the system CA trust store, which is ~34M instructions — roughly 70%
-    // of the cost of `mise --version`. The request itself would fail on the
-    // offline check in http.rs anyway, so that work is pure waste.
-    if Settings::get().offline() {
-        return;
-    }
     if let Some(latest) = check_for_new_version(duration::DAILY).await {
         warn!("mise version {} available", latest);
         if SelfUpdate::is_available() {
@@ -149,26 +142,44 @@ pub async fn check_for_new_version(cache_duration: Duration) -> Option<String> {
     None
 }
 
+/// State of the `latest-version` cache file.
+///
+/// The distinction between the two variants is the point: `Fresh(None)` means
+/// "we checked recently and learned nothing", which is a negative cache and must
+/// suppress another lookup. Collapsing it into `Stale` is what made a machine
+/// that cannot reach the network re-check on every single invocation.
+#[derive(Debug, PartialEq)]
+enum Cached {
+    /// Checked within `duration`; the payload is whatever we last learned.
+    Fresh(Option<String>),
+    /// Missing, unreadable, or older than `duration`.
+    Stale,
+}
+
+/// Classify the cache file.
+///
+/// Deliberately does not compare against [`V`]. Doing so conflated "the cache is
+/// current" with "an update exists", so every outcome meaning "no update
+/// available" — a failed request, or running a build newer than the latest
+/// release — looked stale forever. `check_for_new_version` applies `*V < latest`
+/// itself.
+fn cached_latest_version(path: &Path, duration: Duration) -> Cached {
+    match modified_duration(path) {
+        Ok(age) if age < duration => Cached::Fresh(
+            file::read_to_string(path)
+                .ok()
+                .map(|s| s.trim().to_string())
+                .and_then(Versioning::new)
+                .map(|v| v.to_string()),
+        ),
+        _ => Cached::Stale,
+    }
+}
+
 async fn get_latest_version(duration: Duration) -> Option<String> {
     let version_file_path = dirs::CACHE.join("latest-version");
-    // Freshness is only about *when we last checked*, never about what we found.
-    //
-    // Previously this guard also required the cached version to be >= ours, which
-    // conflated "the cache is current" with "an update exists". Every outcome
-    // meaning "no update available" therefore failed the guard and re-ran the
-    // whole check on the next invocation — and since a failed check writes an
-    // empty file (below), an offline machine re-parsed the entire CA trust store
-    // on *every* `mise --version`, forever. The `*V < latest` comparison that
-    // actually decides whether to nag lives in `check_for_new_version`, so
-    // dropping it here loses nothing.
-    if let Ok(age) = modified_duration(&version_file_path)
-        && age < duration
-    {
-        return file::read_to_string(&version_file_path)
-            .ok()
-            .map(|s| s.trim().to_string())
-            .and_then(Versioning::new)
-            .map(|v| v.to_string());
+    if let Cached::Fresh(version) = cached_latest_version(&version_file_path, duration) {
+        return version;
     }
     let _ = file::create_dir_all(*dirs::CACHE);
     let version = get_latest_version_call().await;
@@ -196,5 +207,82 @@ async fn get_latest_version_call() -> Option<String> {
             debug!("failed to check for version: {:#?}", err);
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const HOUR: Duration = Duration::from_secs(3600);
+
+    fn write(dir: &Path, body: &str) -> std::path::PathBuf {
+        let p = dir.join("latest-version");
+        std::fs::write(&p, body).unwrap();
+        p
+    }
+
+    #[test]
+    fn missing_file_is_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("latest-version");
+        assert_eq!(cached_latest_version(&p, HOUR), Cached::Stale);
+    }
+
+    #[test]
+    fn fresh_file_returns_its_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = write(dir.path(), "2030.1.2\n");
+        assert_eq!(
+            cached_latest_version(&p, HOUR),
+            Cached::Fresh(Some("2030.1.2".to_string()))
+        );
+    }
+
+    /// The negative cache. A check that learned nothing still records *when* it
+    /// ran, so the next invocation must not retry — that retry loop is what made
+    /// a machine with an unreachable network re-parse the CA trust store on
+    /// every single run.
+    #[test]
+    fn fresh_but_empty_file_is_a_negative_cache_not_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = write(dir.path(), "");
+        assert_eq!(cached_latest_version(&p, HOUR), Cached::Fresh(None));
+    }
+
+    /// `Versioning` is permissive and parses almost any string, so garbage in the
+    /// cache round-trips as a version rather than reading as "learned nothing".
+    /// Pinned here because it means the empty file above is the *only* negative
+    /// cache we get — a stricter parser would give us a second one for free, and
+    /// anyone tempted to widen this should know which behaviour they are relying on.
+    #[test]
+    fn versioning_is_permissive_so_garbage_is_not_a_negative_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = write(dir.path(), "not-a-version\n");
+        assert_eq!(
+            cached_latest_version(&p, HOUR),
+            Cached::Fresh(Some("not-a-version".to_string()))
+        );
+    }
+
+    /// A zero TTL expires any file without having to fake an mtime.
+    #[test]
+    fn expired_file_is_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = write(dir.path(), "2030.1.2\n");
+        assert_eq!(cached_latest_version(&p, Duration::ZERO), Cached::Stale);
+    }
+
+    /// Regression: freshness must not depend on the cached version being newer
+    /// than ours. It used to, which meant anyone running a build newer than the
+    /// latest release re-ran the full lookup on every invocation.
+    #[test]
+    fn cache_is_honoured_even_when_it_is_older_than_us() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = write(dir.path(), "0.0.1\n");
+        assert_eq!(
+            cached_latest_version(&p, HOUR),
+            Cached::Fresh(Some("0.0.1".to_string()))
+        );
     }
 }
