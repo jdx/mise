@@ -317,6 +317,33 @@ mod tests {
         }
     }
 
+    /// The tables are only worth having if they reach the spec. Everything
+    /// else here checks the tables against the CLI; this checks that `apply`
+    /// actually transfers them.
+    #[test]
+    fn apply_annotates_the_spec() {
+        let mut spec: usage::Spec = crate::cli::Cli::command().into();
+        apply(&mut spec);
+
+        let cmd = |name: &str| {
+            spec.cmd
+                .subcommands
+                .get(name)
+                .unwrap_or_else(|| panic!("no `mise {name}`"))
+        };
+        assert_eq!(cmd("uninstall").effect, Some(Destructive));
+        assert_eq!(cmd("ls").effect, Some(Read));
+        assert_eq!(cmd("use").effect, Some(Write));
+        // Nested commands are reached too.
+        assert_eq!(
+            cmd("plugins").subcommands["uninstall"].effect,
+            Some(Destructive)
+        );
+        // Anything in UNCLASSIFIED must be left unset, not defaulted.
+        assert_eq!(cmd("run").effect, None);
+        assert_eq!(cmd("exec").effect, None);
+    }
+
     /// Adding a command without deciding what it does to the world is the
     /// failure mode this whole table exists to prevent, so make it a test
     /// failure rather than a silently missing annotation.
