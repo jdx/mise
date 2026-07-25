@@ -298,6 +298,21 @@ Single-level globs (`*`) are supported, but recursive globs (`**`) are not. This
 Automatic filesystem walking to discover monorepo subdirectories is deprecated. If you don't define `[monorepo].config_roots`, mise will still walk the filesystem but will emit a deprecation warning. Please migrate to explicit config roots.
 :::
 
+### Nested Monorepo Roots
+
+When more than one config in the hierarchy sets `monorepo_root = true`, the **nearest** one wins. This comes up with git worktrees checked out inside the main checkout:
+
+```
+myproject/mise.toml                       # monorepo_root = true
+myproject/packages/api/mise.toml
+myproject/.worktrees/feature-x/mise.toml  # monorepo_root = true (same repo, other branch)
+myproject/.worktrees/feature-x/packages/api/mise.toml
+```
+
+From inside `myproject/.worktrees/feature-x`, that directory is the monorepo root: `//packages/api:build` resolves to the worktree's copy, `{{config_root}}` points inside the worktree, and the worktree's own `[monorepo].config_roots` are the ones expanded.
+
+The enclosing `myproject/mise.toml` is still an ancestor config, though, so its tools, environment variables, and tasks continue to be inherited the same way any parent config would be. Its tasks appear **unnamespaced** (outside the `//` namespace of the selected root), so `mise tasks` inside the worktree can list a task twice — once as `//:build` from the worktree and once as `build` from the enclosing checkout. To avoid that entirely, keep worktrees outside the main checkout (e.g. `myproject-worktrees/feature-x`).
+
 ## Listing Tasks
 
 The difference between `mise tasks` and `mise tasks --all`:

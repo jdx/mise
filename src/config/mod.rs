@@ -1109,6 +1109,16 @@ fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
 }
 
 /// Find the config file that has monorepo_root = true
+///
+/// `ConfigMap` is ordered nearest-first — [`load_config_paths`] builds it from
+/// [`file::all_dirs`], which walks from the cwd upward — so the first match is the
+/// *deepest* applicable monorepo root. That matters when monorepo roots nest, e.g. a
+/// git worktree checked out inside the main checkout (`<repo>/.worktrees/<name>`),
+/// where both configs set `monorepo_root = true`: the nested one wins, and its
+/// `[monorepo].config_roots` are the ones expanded. Configs above the selected root
+/// still inherit as ordinary parent configs (env, tools, unnamespaced tasks).
+/// See `e2e/tasks/test_task_monorepo_nested_root` and
+/// https://github.com/jdx/mise/discussions/11276.
 fn find_monorepo_config(config_files: &ConfigMap) -> Option<&Arc<dyn ConfigFile>> {
     config_files
         .values()
