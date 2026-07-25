@@ -86,11 +86,13 @@ impl Usage {
             promote_orphan_shorts(tasks_run);
         }
 
-        // Require usage >= 3.5, the release that ships zsh colon completion
-        // fixes for task names and insert strings (see jdx/usage#666 and
-        // jdx/usage#670). This guards old `usage` CLIs from silently
-        // re-triggering the broken colon completion behavior.
-        let min_version = r#"min_usage_version "3.5""#;
+        // Require usage >= 3.6, the release that stops the mounting CLI's global flags
+        // from being inherited into mounted task commands (jdx/usage#738). Older `usage`
+        // CLIs offer mise's globals after a task name — where they are forwarded to the
+        // task and rejected — and let a global shadow a same-named task flag, dropping
+        // its choices (see mise#11282). 3.5 was required for the zsh colon completion
+        // fixes for task names and insert strings (jdx/usage#666, jdx/usage#670).
+        let min_version = r#"min_usage_version "3.6""#;
         let extra = include_str!("../assets/mise-extra.usage.kdl").trim();
         println!("{min_version}\n{}\n{extra}", spec.to_string().trim());
         Ok(())
