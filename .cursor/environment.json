@@ -1,7 +1,7 @@
 {
   "name": "mise development",
   "user": "root",
-  "install": "cargo build",
+  "install": "rustup toolchain install 1.91 --profile minimal && rustup default 1.91 && cargo build --all-features && ln -sfn \"$PWD/target/debug/mise\" /usr/local/bin/mise",
   "terminals": [
     {
       "name": "Build",
