@@ -154,11 +154,15 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("search", Read),
     ("self-update", Write),
     ("set", Write),
-    // Bare `mise settings` lists, but `mise settings foo=bar` (and
-    // `mise settings foo bar`) route to `settings set` and write config.
-    // Once the spec can raise the effect from an argument this becomes
-    // `read` plus a `write` on the value arg; until then `write` is the
-    // honest floor, since it keeps the command out of a read-only allowlist.
+    // Bare `mise settings` lists, but `mise settings foo bar` and
+    // `mise settings foo=bar` both route to `settings set` and write config.
+    //
+    // usage 4 can raise an effect from an argument being *present*, which
+    // covers the two-argument form — but not `foo=bar`, where the trigger is
+    // the value of `[SETTING]` rather than whether `[VALUE]` was given. Since
+    // one of the two writing forms cannot be expressed, the command keeps
+    // `write` as its floor: labelling it `read` would report `read` for
+    // `mise settings foo=bar`, which is the dangerous direction.
     ("settings", Write),
     ("settings add", Write),
     ("settings get", Read),

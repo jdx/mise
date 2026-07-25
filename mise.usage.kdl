@@ -1,4 +1,4 @@
-min_usage_version "3.6"
+min_usage_version "4.0"
 name mise
 bin mise
 about "Dev tools, env vars, and tasks in one CLI"

@@ -26,9 +26,8 @@ impl Usage {
         // bind each word to the flag it was read as, so the promotion is no longer needed.
         if let Some(run) = spec.cmd.subcommands.get_mut("run") {
             run.args = vec![];
-            run.mounts.push(usage::SpecMount {
-                run: "mise tasks --usage".to_string(),
-            });
+            run.mounts
+                .push(usage::SpecMount::new("mise tasks --usage".to_string()));
             // Enable completions after ::: separator for multi-task invocations
             run.restart_token = Some(":::".to_string());
         }
@@ -39,9 +38,9 @@ impl Usage {
             .get_mut("tasks")
             .and_then(|tasks| tasks.subcommands.get_mut("run"))
         {
-            tasks_run.mounts.push(usage::SpecMount {
-                run: "mise tasks --usage".to_string(),
-            });
+            tasks_run
+                .mounts
+                .push(usage::SpecMount::new("mise tasks --usage".to_string()));
             tasks_run.restart_token = Some(":::".to_string());
         }
 
@@ -57,10 +56,11 @@ impl Usage {
         // so it is applied to the derived spec; see command_effects.
         crate::cli::command_effects::apply(&mut spec);
 
-        // 3.6 added `effect=` (jdx/usage#739), which the spec now carries; older
-        // `usage` CLIs reject it outright with "unsupported cmd prop effect", so
-        // this has to move in lockstep with emitting the field.
-        let min_version = r#"min_usage_version "3.6""#;
+        // 3.6 added `effect=` (jdx/usage#739) and 4.0 added it on flags and args
+        // (jdx/usage#742); older `usage` CLIs reject the spec outright with
+        // "unsupported cmd prop effect", so this moves in lockstep with the
+        // fields the spec actually carries.
+        let min_version = r#"min_usage_version "4.0""#;
         let extra = include_str!("../assets/mise-extra.usage.kdl").trim();
         println!("{min_version}\n{}\n{extra}", spec.to_string().trim());
         Ok(())
