@@ -75,6 +75,19 @@ mise could not resolve the version requested by the named config file — for ex
 - **Network/API errors**: the backend couldn't list versions (rate limits, offline).
   The underlying error after the colon will say so.
 
+## `HTTP status client error (401 Unauthorized)`
+
+GitHub rejected the credential mise sent, usually because the token is invalid,
+expired, for a different GitHub host, or missing a required scope. The error
+includes a `github auth:` line that names the token source when mise resolved it,
+for example `GITHUB_TOKEN`, `gh CLI (hosts.yml)`, or `github_tokens.toml`.
+
+Check or replace the token in the named source. If the source is not known, mise
+prints `github auth: yes` and refers to a configured GitHub token. If no
+Authorization header was sent, it prints `github auth: no`. See
+[GitHub Tokens](/dev-tools/github-tokens.html) for supported token sources and
+configuration.
+
 ## `HTTP status client error (403 Forbidden)` / `GitHub rate limit exceeded`
 
 You've hit GitHub's API rate limit, which is very low for unauthenticated requests.
