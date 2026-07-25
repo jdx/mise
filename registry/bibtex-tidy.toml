@@ -1,3 +1,10 @@
-backends = ["npm:bibtex-tidy"]
 description = "Cleaner and Formatter for BibTeX files"
 test = { cmd = "bibtex-tidy --version", expected = "v{{version}}" }
+
+[[backends]]
+full = "npm:bibtex-tidy"
+
+[backends.options]
+# ~930 weekly downloads, below aube's 1000 threshold. Curated here, so the
+# registry entry is the popularity decision rather than the download count.
+allow_low_downloads = true

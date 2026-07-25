@@ -296,6 +296,28 @@ To exempt only selected versions, use aube's package-version pattern syntax:
 `trust_policy_excludes` is written to the aube install `.npmrc` as `trustPolicyExclude`. It does
 not affect `npm`, `pnpm`, or `bun` installs.
 
+### `allow_low_downloads`
+
+Allows the requested package to install even though its weekly download count falls below aube's
+`lowDownloadThreshold` (1000 by default). Without it, aube refuses:
+
+```
+refusing to add some-tool: only 930 weekly downloads (threshold: 1000).
+```
+
+```toml
+[tools]
+"npm:some-tool" = { version = "latest", allow_low_downloads = true }
+```
+
+The exemption is scoped to the package you asked for, written to the aube install `.npmrc` as
+`allowedUnpopularPackages=<package>`. Transitive dependencies stay gated, and the threshold itself
+is left alone — so this cannot silently admit an unpopular dependency you did not choose.
+
+Download count is a popularity signal, not a safety one: a low count means few others have vetted
+the package, so prefer confirming you trust the publisher over reaching for this. It does not affect
+`npm`, `pnpm`, or `bun` installs.
+
 ### Investigating trust downgrades
 
 A `trustPolicy=no-downgrade` failure is a supply-chain signal, not an ordinary inability to find a
