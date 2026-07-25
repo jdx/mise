@@ -34,6 +34,12 @@ mise run build --release
 
 If there are multiple commands, the args are only passed to the last command.
 
+Because everything after the task name belongs to the task, mise's own flags have to come
+_before_ it—`mise run --silent build` rather than `mise run build --silent`, which passes
+`--silent` to the task and fails with `unexpected word: --silent` unless the task defines it.
+This also means a task is free to define a flag that shares a name with a mise flag, e.g. a
+task with its own `--env`.
+
 :::tip
 You can define arguments/flags for tasks which will provide validation, parsing, autocomplete, and documentation.
 

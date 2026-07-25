@@ -2840,9 +2840,9 @@ dependencies = [
 
 [[package]]
 name = "demand"
-version = "2.0.3"
+version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c96e17936c1a2340dde9999f89a2f749020a3dd3f8bcf5c321741047b15ca024"
+checksum = "5439b2dab1b826af399f3b21a84538f52102a4b32f0dd59b0c69b40725e20fdd"
 dependencies = [
  "console",
  "fuzzy-matcher",
@@ -6490,7 +6490,7 @@ dependencies = [
  "ubi",
  "url",
  "urlencoding",
- "usage-lib 3.5.6",
+ "usage-lib 3.5.7",
  "versions",
  "vfox",
  "walkdir",
@@ -11168,9 +11168,9 @@ dependencies = [
 
 [[package]]
 name = "usage-lib"
-version = "3.5.6"
+version = "3.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45174c8a3ffe041c4af8f64eb64b62044a05ed8844e9dc1dab2648c2dea3dd98"
+checksum = "14c48cda5d90702277243e54782ddcae91cf1430a11deee6360f5c46c05a9437"
 dependencies = [
  "clap",
  "heck",

@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Regression test for https://github.com/jdx/mise/discussions/10069
-# Completion must work when a root global flag (e.g. -C/--cd) precedes `run`, or
-# a `run` flag precedes the task, when the task has a positional arg with
-# choices. -C/--cd, -j/--jobs and -q/--quiet are handled by the upstream usage
-# parser fix (jdx/usage#649). -r/--raw and -S/--silent still need mise's
-# completion-spec promotion: their root globals are long-only, so the parser
-# would drop the -r/-S shorts that only exist on the non-global `run`
-# redeclarations.
+# Completion must work when a root global flag (e.g. -C/--cd) precedes `run`, or a `run`
+# flag precedes the task, when the task has a positional arg with choices. Both are
+# handled by the usage parser: it keeps the inherited global recognized while descending
+# (jdx/usage#649) and scans for the subcommand across any known flag, global or not
+# (jdx/usage#738). mise used to promote `-r`/`-S` to global in the completion spec
+# because their root globals are long-only, so the parser dropped the shorts that exist
+# only on the non-global `run` redeclarations; that workaround is no longer needed.
+#
+# Needs usage >= 3.5.7. `latest` only reaches it once it clears the default 24h
+# minimum_release_age, so opt out of the delay here.
+export MISE_MINIMUM_RELEASE_AGE=0s
 
 cat <<'EOF' >mise.toml
 [tools]
@@ -35,9 +39,9 @@ assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise
 beta		beta
 gamma		gamma"
 
-# orphan-short flags: -r/--raw and -S/--silent have no short on the root global,
-# so usage#649 alone would drop the short. The completion-spec promotion keeps
-# them recognized before the mounted task (previously errored: unexpected word).
+# orphan-short flags: -r/--raw and -S/--silent have no short on the root global, so the
+# shorts exist only on the non-global `run` redeclarations. They must stay recognized
+# before the mounted task (previously errored: unexpected word).
 assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -r sample:run -- ''" "alpha		alpha
 beta		beta
 gamma		gamma"
@@ -50,5 +54,19 @@ assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise
 beta		beta
 gamma		gamma"
 assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise tasks run -S sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"
+
+# purely-local `run` flags (no root global of the same name at all) must not hide the
+# task either — `mise run --force <task>` used to fail with "unexpected word"
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run --force sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -f sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"
+
+# including one that takes a value, which must be consumed rather than read as the task
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -o interleave sample:run -- ''" "alpha		alpha
 beta		beta
 gamma		gamma"
