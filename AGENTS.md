@@ -42,6 +42,7 @@ Before touching `registry/`, ALWAYS do the following:
 
 For registry entries the backend tiers are:
 
+- **Version listing is mandatory.** Before adding a registry entry, run `mise ls-remote <backend>` and confirm it returns installable versions. A backend that can install only an explicitly pinned version is not sufficient, even if the package exists in an upstream registry. If the preferred backend cannot list versions, use another accepted backend (for example, a custom `http:` backend with a reliable `version_list_url`) or stop.
 - **Tier 1 — preferred:** `aqua:`, `github:`, and `gitlab:`. These are the routinely accepted backends.
   - **Prefer `aqua:`** when the tool is in the [aqua registry](https://github.com/aquaproj/aqua-registry). Better UX, SLSA verification, and per-version logic.
   - **Use `github:`** when the tool isn't in aqua but ships GitHub releases.
