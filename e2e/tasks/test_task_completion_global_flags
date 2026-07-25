@@ -66,3 +66,9 @@ assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mis
 major
 minor
 patch"
+
+# a global whose name the task also uses keeps parsing as the global before the task,
+# while the task's flag still owns the name after it
+assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise --env dev run deploy --env ''" "dev
+stage
+prod"

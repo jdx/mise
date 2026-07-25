@@ -2981,7 +2981,7 @@ Change how tasks information is output when running tasks
 Read/write directly to stdin/stdout/stderr instead of by line
 Redactions are not applied with this option
 Configure with `raw` config or `MISE_RAW` env var
-"""# global=#true
+"""#
     flag "-s --shell" help="Shell to use to run toml tasks" {
         long_help #"""
 Shell to use to run toml tasks
@@ -2992,7 +2992,7 @@ Or it can be overridden with the `shell` property on a task.
 """#
         arg <SHELL>
     }
-    flag "-S --silent" help="Don't show any output except for errors" global=#true
+    flag "-S --silent" help="Don't show any output except for errors"
     flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
         arg <TOOL@VERSION>
     }
@@ -3778,7 +3778,7 @@ Change how tasks information is output when running tasks
 Read/write directly to stdin/stdout/stderr instead of by line
 Redactions are not applied with this option
 Configure with `raw` config or `MISE_RAW` env var
-"""# global=#true
+"""#
         flag "-s --shell" help="Shell to use to run toml tasks" {
             long_help #"""
 Shell to use to run toml tasks
@@ -3789,7 +3789,7 @@ Or it can be overridden with the `shell` property on a task.
 """#
             arg <SHELL>
         }
-        flag "-S --silent" help="Don't show any output except for errors" global=#true
+        flag "-S --silent" help="Don't show any output except for errors"
         flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
             arg <TOOL@VERSION>
         }
