@@ -18,6 +18,7 @@ use crate::semver::{semver_is_at_least, semver_is_older_than};
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use async_trait::async_trait;
+use aube::embed::EmbedderRuntime;
 use jiff::Timestamp;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -895,7 +896,7 @@ impl NPMBackend {
             // dependency, so `allow_builds` installs work even when node isn't
             // on the ambient PATH (the in-process installer doesn't inherit the
             // per-command PATH the old `aube add --global` subprocess got).
-            node_bin_dir: self.aube_embed_node_bin_dir(ctx).await,
+            runtime: self.aube_embed_runtime(ctx).await,
             ..Default::default()
         };
         opts.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
@@ -923,13 +924,18 @@ impl NPMBackend {
         eyre::eyre!(build_aube_install_error_message(&err, &self.ba().full()))
     }
 
-    /// Directory containing the `node` mise resolved as a dependency, handed to
-    /// the embedded aube installer so lifecycle scripts spawn on it. `None` (no
-    /// node dependency resolved) lets aube fall back to an ambient `node`.
-    async fn aube_embed_node_bin_dir(&self, ctx: &InstallContext) -> Option<PathBuf> {
+    /// The `node` mise resolved as a dependency, handed to the embedded aube
+    /// installer so lifecycle scripts spawn on it. `None` (no node dependency
+    /// resolved) lets aube fall back to an ambient `node`.
+    ///
+    /// `selector` is the version-manager shape: mise hands over a real bin dir
+    /// holding `node`/`npm`/`npx`, aube prepends it to PATH and uses that node
+    /// for both `NODE` and `npm_node_execpath`. (`wrapper` is for hosts that
+    /// interpose a shim on `node`; mise resolves the real binary here.)
+    async fn aube_embed_runtime(&self, ctx: &InstallContext) -> Option<EmbedderRuntime> {
         let ts = self.dependency_toolset(&ctx.config).await.ok()?;
         let node = ts.which_bin(&ctx.config, "node").await?;
-        node.parent().map(Path::to_path_buf)
+        node.parent().map(EmbedderRuntime::selector)
     }
 
     /// Write the throwaway project's `package.json` + `.npmrc` for an embedded
