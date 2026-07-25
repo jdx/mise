@@ -6,6 +6,39 @@ set -euo pipefail
 
 echo "=== Setting up test for remote task with tools ==="
 
+PORT_FILE="$TMPDIR/mise_git_http_port"
+READY_FILE="$TMPDIR/mise_git_http_ready"
+INFO_FILE="$TMPDIR/mise_git_http_info"
+
+rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
+
+MISE_GIT_HTTP_PORT_FILE="$PORT_FILE" \
+	MISE_GIT_HTTP_READY_FILE="$READY_FILE" \
+	MISE_GIT_HTTP_INFO_FILE="$INFO_FILE" \
+	python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
+SERVER_PID=$!
+
+cleanup() {
+	kill "$SERVER_PID" 2>/dev/null || true
+	rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
+}
+trap cleanup EXIT
+
+for _ in $(seq 1 30); do
+	if [[ -f $READY_FILE && -f $PORT_FILE ]]; then
+		break
+	fi
+	sleep 1
+done
+
+if [[ ! -f $READY_FILE || ! -f $PORT_FILE ]]; then
+	echo "ERROR: Git HTTP server failed to start within 30 seconds"
+	exit 1
+fi
+
+SERVER_PORT="$(cat "$PORT_FILE")"
+LOCAL_GIT_URL="http://localhost:${SERVER_PORT}/repo.git"
+
 # Create a parent directory with tool definition
 mkdir -p parent/child
 cd parent
@@ -13,61 +46,61 @@ cd parent
 # Parent mise.toml with the tool
 cat >mise.toml <<'EOF'
 [tools]
-ripgrep = "latest"
+jq = "latest"
 EOF
 
 # Install the tool
 mise install
 
 # Verify tool is installed and accessible
-if ! mise where ripgrep >/dev/null 2>&1; then
-  echo "ERROR: ripgrep not installed"
-  exit 1
+if ! mise where jq >/dev/null 2>&1; then
+	echo "ERROR: jq not installed"
+	exit 1
 fi
 
 cd child
 
 # Child mise.toml with remote task from mise repo (NO tools defined here)
-# This task uses ripgrep which should come from parent/mise.toml
-cat >mise.toml <<'EOF'
+# This task uses jq which should come from parent/mise.toml
+cat >mise.toml <<EOF
 [tasks.remote_lint]
-file = "git::https://github.com/jdx/mise.git//xtasks/lint/ripgrep?ref=main"
+file = "git::${LOCAL_GIT_URL}//xtasks/lint/jq"
 EOF
 
 # Trust and try to run the remote task
 mise trust
 
-echo "=== Running remote task that needs ripgrep from parent config ==="
+echo "=== Running remote task that needs jq from parent config ==="
 
-# First, let's check what happens with a simple command task that uses rg
+# First, check a simple local task that uses jq.
 cat >>mise.toml <<'EOF'
 
 [tasks.test_tool]
-run = "rg --version"
+run = "jq --version"
 EOF
 
 mise trust
 
-# Run the simple local task to see if rg is available
-echo "Testing local task with rg:"
+# Run the simple local task to see if jq is available
+echo "Testing local task with jq:"
 TEST_TOOL_OUTPUT="$TMPDIR/test_tool_output.txt"
-if mise run test_tool 2>&1 | tee "$TEST_TOOL_OUTPUT" | grep -q "ripgrep"; then
-  echo "✓ Local task can find rg"
+if mise run test_tool 2>&1 | tee "$TEST_TOOL_OUTPUT" | grep -q "jq-"; then
+	echo "✓ Local task can find jq"
 else
-  echo "✗ Local task cannot find rg"
-  cat "$TEST_TOOL_OUTPUT"
+	echo "✗ Local task cannot find jq"
+	cat "$TEST_TOOL_OUTPUT"
+	exit 1
 fi
 
 # Now run the remote task
-echo "Testing remote task with rg:"
+echo "Testing remote task with jq:"
 REMOTE_LINT_OUTPUT="$TMPDIR/remote_lint_output.txt"
-if mise run remote_lint 2>&1 | tee "$REMOTE_LINT_OUTPUT" | grep -E "(command not found|rg: not found)"; then
-  echo "✗ FAIL: Remote task could not find ripgrep from parent config"
-  echo "Remote task output:"
-  cat "$REMOTE_LINT_OUTPUT"
-  exit 1
+if mise run remote_lint 2>&1 | tee "$REMOTE_LINT_OUTPUT" | grep -q "jq-"; then
+	echo "✓ PASS: Remote task successfully accessed jq from parent config"
+	echo "Remote task ran successfully"
 else
-  echo "✓ PASS: Remote task successfully accessed ripgrep from parent config"
-  echo "Remote task ran successfully (may have linting errors but rg was found)"
-  exit 0
+	echo "✗ FAIL: Remote task could not find jq from parent config"
+	echo "Remote task output:"
+	cat "$REMOTE_LINT_OUTPUT"
+	exit 1
 fi
