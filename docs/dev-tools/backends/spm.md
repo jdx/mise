@@ -143,6 +143,32 @@ product in the package, installation fails with a clear error.
 "spm:swiftlang/swiftly" = { version = "latest", filter_bins = "swiftly" }
 ```
 
+### `install_command`
+
+Run an explicit command from the checked-out package directory instead of discovering executable
+products and running `swift build --product`. The command uses mise's default inline shell and
+inherits [`install_env`](#install_env) plus the `PATH` for the Swift dependency. `PREFIX` and
+`MISE_TOOL_INSTALL_PATH` are both set to the tool's installation directory.
+
+This option only applies to source installs and cannot be combined with `filter_bins`. Mise never
+automatically runs a package's Makefile or other installation scripts; the command must be
+configured explicitly.
+
+For example, Danger Swift's official `make install` installs both its executable and the dynamic
+library required by `danger-swift local`:
+
+```toml
+[tools]
+"spm:danger/swift" = { version = "3.22.1", artifactbundle = false, install_command = "make install PREFIX=\"$MISE_TOOL_INSTALL_PATH\"" }
+```
+
+The `danger-swift` registry shorthand already supplies these options, so this is sufficient:
+
+```toml
+[tools]
+danger-swift = "3.22.1"
+```
+
 ## Settings
 
 ### `spm.artifactbundle_only`
