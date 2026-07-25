@@ -895,7 +895,12 @@ impl NPMBackend {
             // dependency, so `allow_builds` installs work even when node isn't
             // on the ambient PATH (the in-process installer doesn't inherit the
             // per-command PATH the old `aube add --global` subprocess got).
-            node_bin_dir: self.aube_embed_node_bin_dir(ctx).await,
+            // mise only selects a node toolchain — it doesn't interpose on node
+            // — so `selector` is the right runtime shape here.
+            runtime: self
+                .aube_embed_node_bin_dir(ctx)
+                .await
+                .map(aube::embed::EmbedderRuntime::selector),
             ..Default::default()
         };
         opts.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
