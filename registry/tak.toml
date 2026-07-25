@@ -1,0 +1,3 @@
+backends = ["github:jdx/tak", "cargo:tak-cli"]
+description = "CLI performance, tracked"
+test = { cmd = "tak --version", expected = "tak {{version}}" }
