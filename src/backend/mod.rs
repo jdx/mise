@@ -45,7 +45,7 @@ use crate::{
 use crate::{dirs, env, file, hash, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
-use eyre::{Result, bail, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use platform_target::PlatformTarget;
@@ -1195,6 +1195,19 @@ pub trait Backend: Debug + Send + Sync {
     /// this to return false, since they don't have downloadable artifacts with lockable URLs.
     fn supports_lockfile_url(&self) -> bool {
         true
+    }
+
+    /// Whether this backend's artifact-identity options describe the machine
+    /// that wrote a lock entry rather than the tool request.
+    ///
+    /// Swift's Linux artifacts differ per distro, so its options record which
+    /// distro an entry describes. An entry written before those options existed
+    /// can't be attributed to a distro, and guessing the local one would apply
+    /// a foreign artifact's checksum to a different tarball. Backends that
+    /// return true keep such an entry's version pin but ignore its
+    /// checksum/URL, and are excluded from legacy option rekeying.
+    fn lockfile_options_are_host_specific(&self) -> bool {
+        false
     }
 
     async fn description(&self) -> Option<String> {
@@ -2826,23 +2839,42 @@ pub trait Backend: Debug + Send + Sync {
         let platform_key = self.get_platform_key();
 
         // Get or create asset info for this platform
-        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
+        let locked = tv
+            .lock_platforms
+            .entry(platform_key.clone())
+            .or_default()
+            .clone();
 
-        if let Some(checksum) = &platform_info.checksum {
+        if let Some(checksum) = &locked.checksum {
             ctx.pr.set_message(format!("checksum {filename}"));
             if let Some((algo, check)) = checksum.split_once(':') {
-                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
+                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo).wrap_err_with(
+                    || {
+                        // Name the lock entry the expectation came from: a mismatch
+                        // usually means the entry describes a different artifact
+                        // than the one this machine downloads (e.g. a Swift build
+                        // for another Linux distro).
+                        let entry = self.describe_lock_entry(tv, &platform_key);
+                        match &locked.url {
+                            Some(url) => format!("{entry} locks {url}"),
+                            None => entry,
+                        }
+                    },
+                )?;
             } else {
                 bail!("Invalid checksum: {checksum}");
             }
         } else if lockfile_enabled {
             ctx.pr.set_message(format!("generate checksum {filename}"));
             let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
-            platform_info.checksum = Some(format!("blake3:{hash}"));
+            tv.lock_platforms
+                .entry(platform_key.clone())
+                .or_default()
+                .checksum = Some(format!("blake3:{hash}"));
         }
 
         // Handle size verification and generation
-        if let Some(expected_size) = platform_info.size {
+        if let Some(expected_size) = locked.size {
             ctx.pr.set_message(format!("verify size {filename}"));
             let actual_size = file.metadata()?.len();
             if actual_size != expected_size {
@@ -2854,9 +2886,24 @@ pub trait Backend: Debug + Send + Sync {
                 );
             }
         } else if lockfile_enabled {
-            platform_info.size = Some(file.metadata()?.len());
+            tv.lock_platforms.entry(platform_key).or_default().size = Some(file.metadata()?.len());
         }
         Ok(())
+    }
+
+    /// Human-readable identity of the lock entry consulted for `tv` on
+    /// `platform_key`, including the options that distinguish artifact variants.
+    fn describe_lock_entry(&self, tv: &ToolVersion, platform_key: &str) -> String {
+        let options = self
+            .resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())
+            .unwrap_or_default();
+        let entry = format!("lockfile entry for {} on {platform_key}", tv.style());
+        if options.is_empty() {
+            entry
+        } else {
+            let options = options.iter().map(|(k, v)| format!("{k}={v}")).join(", ");
+            format!("{entry} [{options}]")
+        }
     }
 
     async fn outdated_info(

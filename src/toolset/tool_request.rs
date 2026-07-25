@@ -376,11 +376,14 @@ impl ToolRequest {
         prefix: &str,
         require_prefix_boundary: bool,
     ) -> Result<Option<LockfileTool>> {
-        let request_options = if let Ok(backend) = self.backend() {
+        let (request_options, legacy_options_fallback) = if let Ok(backend) = self.backend() {
             let target = PlatformTarget::from_current();
-            backend.resolve_lockfile_options(self, &target)?
+            (
+                backend.resolve_lockfile_options(self, &target)?,
+                backend.lockfile_options_are_host_specific(),
+            )
         } else {
-            BTreeMap::new()
+            (BTreeMap::new(), false)
         };
         let path = match self.source() {
             ToolSource::MiseToml(path) => Some(path),
@@ -393,6 +396,7 @@ impl ToolRequest {
             prefix,
             require_prefix_boundary,
             &request_options,
+            legacy_options_fallback,
         )
     }
 
