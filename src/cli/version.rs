@@ -150,7 +150,7 @@ pub async fn check_for_new_version(cache_duration: Duration) -> Option<String> {
 /// that cannot reach the network re-check on every single invocation.
 #[derive(Debug, PartialEq)]
 enum Cached {
-    /// Checked within `duration`; the payload is whatever we last learned.
+    /// Read within `duration`; the payload is whatever we last learned.
     Fresh(Option<String>),
     /// Missing, unreadable, or older than `duration`.
     Stale,
@@ -165,13 +165,16 @@ enum Cached {
 /// itself.
 fn cached_latest_version(path: &Path, duration: Duration) -> Cached {
     match modified_duration(path) {
-        Ok(age) if age < duration => Cached::Fresh(
-            file::read_to_string(path)
-                .ok()
-                .map(|s| s.trim().to_string())
-                .and_then(Versioning::new)
-                .map(|v| v.to_string()),
-        ),
+        Ok(age) if age < duration => match file::read_to_string(path) {
+            // Read succeeded, so this reflects what the last check learned —
+            // possibly nothing, which is the negative cache.
+            Ok(body) => Cached::Fresh(Versioning::new(body.trim()).map(|v| v.to_string())),
+            // Could not read it at all. Distinct from an empty body: treating a
+            // permissions problem or transient I/O error as a negative cache
+            // would suppress update checks for the whole TTL on the strength of
+            // a file we never actually saw.
+            Err(_) => Cached::Stale,
+        },
         _ => Cached::Stale,
     }
 }
@@ -248,6 +251,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "");
         assert_eq!(cached_latest_version(&p, HOUR), Cached::Fresh(None));
+    }
+
+    /// A file we cannot read is not evidence of anything, so it must not act as a
+    /// negative cache — otherwise a permissions problem or transient I/O error
+    /// silently suppresses update checks for the whole TTL.
+    #[test]
+    fn fresh_but_unreadable_file_is_stale_not_a_negative_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        // A directory where a file is expected: fresh mtime, but every read fails.
+        let p = dir.path().join("latest-version");
+        std::fs::create_dir(&p).unwrap();
+        assert_eq!(cached_latest_version(&p, HOUR), Cached::Stale);
     }
 
     /// `Versioning` is permissive and parses almost any string, so garbage in the
