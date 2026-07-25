@@ -3,6 +3,7 @@
 
 - **Usage**: `mise unuse [FLAGS] <INSTALLED_TOOL@VERSION>…`
 - **Aliases**: `rm`, `remove`
+- **Effect**: destructive — may delete or irreversibly overwrite
 - **Source code**: [`src/cli/unuse.rs`](https://github.com/jdx/mise/blob/main/src/cli/unuse.rs)
 
 Removes installed tool versions from mise.toml

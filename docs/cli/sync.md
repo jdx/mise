@@ -2,6 +2,7 @@
 # `mise sync`
 
 - **Usage**: `mise sync <SUBCOMMAND>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/sync/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/sync/mod.rs)
 
 Synchronize tools from other version managers with mise

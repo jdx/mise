@@ -28,7 +28,7 @@ These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks
 The name of the script will be the name of the tasks.
 
 ```
-$ cat .mise/tasks/build&lt;&lt;EOF
+$ cat .mise/tasks/build<<EOF
 #!/usr/bin/env bash
 npm run build
 EOF

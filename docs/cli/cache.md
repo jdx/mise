@@ -2,6 +2,7 @@
 # `mise cache`
 
 - **Usage**: `mise cache <SUBCOMMAND>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/cache/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/cache/mod.rs)
 
 Manage the mise cache

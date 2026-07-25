@@ -3,6 +3,7 @@
 
 - **Usage**: `mise tool-alias unset <TOOL> [ALIAS]`
 - **Aliases**: `rm`, `remove`, `delete`, `del`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/tool_alias/unset.rs`](https://github.com/jdx/mise/blob/main/src/cli/tool_alias/unset.rs)
 
 Clears an alias for a tool/backend

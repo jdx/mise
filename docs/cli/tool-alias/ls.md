@@ -3,6 +3,7 @@
 
 - **Usage**: `mise tool-alias ls [--no-header] [TOOL]`
 - **Aliases**: `list`
+- **Effect**: read-only
 - **Source code**: [`src/cli/tool_alias/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/tool_alias/ls.rs)
 
 List tool version aliases

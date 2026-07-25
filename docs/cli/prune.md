@@ -2,6 +2,7 @@
 # `mise prune`
 
 - **Usage**: `mise prune [FLAGS] [INSTALLED_TOOL]…`
+- **Effect**: destructive — may delete or irreversibly overwrite
 - **Source code**: [`src/cli/prune.rs`](https://github.com/jdx/mise/blob/main/src/cli/prune.rs)
 
 Delete unused versions of tools

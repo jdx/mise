@@ -3,6 +3,7 @@
 
 - **Usage**: `mise ls [FLAGS] [INSTALLED_TOOL]…`
 - **Aliases**: `list`
+- **Effect**: read-only
 - **Source code**: [`src/cli/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/ls.rs)
 
 List installed and active tool versions

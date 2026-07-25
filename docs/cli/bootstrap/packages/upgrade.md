@@ -3,6 +3,7 @@
 
 - **Usage**: `mise bootstrap packages upgrade [FLAGS] [PACKAGE]…`
 - **Aliases**: `up`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/system/upgrade.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/upgrade.rs)
 
 Upgrade installed bootstrap packages from `[bootstrap.packages]`

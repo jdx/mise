@@ -3,6 +3,7 @@
 
 - **Usage**: `mise tool-alias set <ARGS>…`
 - **Aliases**: `add`, `create`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/tool_alias/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/tool_alias/set.rs)
 
 Add/update an alias for a tool/backend

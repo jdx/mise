@@ -3,6 +3,7 @@
 
 - **Usage**: `mise shell [FLAGS] <TOOL@VERSION>…`
 - **Aliases**: `sh`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/shell.rs`](https://github.com/jdx/mise/blob/main/src/cli/shell.rs)
 
 Sets a tool version for the current session.

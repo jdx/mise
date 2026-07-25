@@ -3,6 +3,7 @@
 
 - **Usage**: `mise bootstrap packages brew untap [FLAGS] <TAPS>…`
 - **Aliases**: `remove`, `rm`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/system/brew/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/brew/mod.rs)
 
 Remove Homebrew tap URLs from [bootstrap.brew.taps]

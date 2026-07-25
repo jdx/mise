@@ -3,6 +3,7 @@
 
 - **Usage**: `mise settings ls [FLAGS] [SETTING]`
 - **Aliases**: `list`
+- **Effect**: read-only
 - **Source code**: [`src/cli/settings/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/ls.rs)
 
 Show current settings

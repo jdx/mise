@@ -2,6 +2,7 @@
 # `mise config get`
 
 - **Usage**: `mise config get [-f --file <FILE>] [KEY]`
+- **Effect**: read-only
 - **Source code**: [`src/cli/config/get.rs`](https://github.com/jdx/mise/blob/main/src/cli/config/get.rs)
 
 Display the value of a setting in a mise.toml file

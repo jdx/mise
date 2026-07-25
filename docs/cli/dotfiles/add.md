@@ -2,6 +2,7 @@
 # `mise dotfiles add`
 
 - **Usage**: `mise dotfiles add [FLAGS] <TARGET>…`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/dotfiles/add.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/add.rs)
 
 Add or update dotfiles in `[dotfiles]`

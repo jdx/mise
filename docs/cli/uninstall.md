@@ -2,6 +2,7 @@
 # `mise uninstall`
 
 - **Usage**: `mise uninstall [FLAGS] [INSTALLED_TOOL@VERSION]…`
+- **Effect**: destructive — may delete or irreversibly overwrite
 - **Source code**: [`src/cli/uninstall.rs`](https://github.com/jdx/mise/blob/main/src/cli/uninstall.rs)
 
 Removes installed tool versions

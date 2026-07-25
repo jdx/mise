@@ -3,6 +3,7 @@
 
 - **Usage**: `mise cache clear [TOOL]…`
 - **Aliases**: `c`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/cache/clear.rs`](https://github.com/jdx/mise/blob/main/src/cli/cache/clear.rs)
 
 Deletes all cache files in mise

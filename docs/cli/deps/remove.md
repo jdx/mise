@@ -2,6 +2,7 @@
 # `mise deps remove`
 
 - **Usage**: `mise deps remove <PACKAGES>…`
+- **Effect**: destructive — may delete or irreversibly overwrite
 - **Source code**: [`src/cli/deps/remove.rs`](https://github.com/jdx/mise/blob/main/src/cli/deps/remove.rs)
 
 Remove a dependency

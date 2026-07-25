@@ -3,6 +3,7 @@
 
 - **Usage**: `mise bootstrap packages use [FLAGS] <PACKAGE>…`
 - **Aliases**: `u`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/system/use.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/use.rs)
 
 Add bootstrap packages to [bootstrap.packages] and install them

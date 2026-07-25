@@ -2,6 +2,7 @@
 # `mise generate github-action`
 
 - **Usage**: `mise generate github-action [FLAGS]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/generate/github_action.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/github_action.rs)
 
 Generate a GitHub Action workflow file

@@ -2,6 +2,7 @@
 # `mise completion`
 
 - **Usage**: `mise completion [--include-bash-completion-lib] [SHELL]`
+- **Effect**: read-only
 - **Source code**: [`src/cli/completion.rs`](https://github.com/jdx/mise/blob/main/src/cli/completion.rs)
 
 Generate shell completions

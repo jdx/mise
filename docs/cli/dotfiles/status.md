@@ -3,6 +3,7 @@
 
 - **Usage**: `mise dotfiles status [-J --json] [--missing] [TARGET]…`
 - **Aliases**: `ls`
+- **Effect**: read-only
 - **Source code**: [`src/cli/dotfiles/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/status.rs)
 
 Show the status of dotfiles from `[dotfiles]`

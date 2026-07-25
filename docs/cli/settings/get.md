@@ -2,6 +2,7 @@
 # `mise settings get`
 
 - **Usage**: `mise settings get [-l --local] <SETTING>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/settings/get.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/get.rs)
 
 Show a current setting

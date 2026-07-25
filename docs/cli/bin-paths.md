@@ -2,6 +2,7 @@
 # `mise bin-paths`
 
 - **Usage**: `mise bin-paths [--bin-names] [-J --json] [TOOL@VERSION]…`
+- **Effect**: read-only
 - **Source code**: [`src/cli/bin_paths.rs`](https://github.com/jdx/mise/blob/main/src/cli/bin_paths.rs)
 
 List all the active runtime bin paths

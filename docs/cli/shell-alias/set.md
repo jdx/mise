@@ -3,6 +3,7 @@
 
 - **Usage**: `mise shell-alias set <shell_alias> [COMMAND]`
 - **Aliases**: `add`, `create`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/shell_alias/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/shell_alias/set.rs)
 
 Add/update a shell alias

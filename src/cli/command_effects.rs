@@ -1,0 +1,348 @@
+//! What each mise command does to the world.
+//!
+//! mise's usage spec is derived from clap, and clap has no way to express this,
+//! so the classification lives here and is applied in [`crate::cli::usage`].
+//! Keeping it in one table is deliberate: a safety classification is much easier
+//! to review as a single list than as annotations scattered over sixty files.
+//!
+//! The three values are defined by the usage spec:
+//!
+//! - `read` — only inspects state; running it twice is the same as running it
+//!   once, and not running it changes nothing.
+//! - `write` — creates or modifies state, but removes nothing the user cannot
+//!   recreate.
+//! - `destructive` — removes something the user installed or configured, where
+//!   getting it back means redoing work. Deserves a confirmation prompt.
+//!
+//! **An unlisted command means "unknown", not "safe".** Consumers treat the
+//! absence of a value as "ask", so leaving a command out is the conservative
+//! choice and mislabeling one `read` is the dangerous one. Commands that run
+//! user-supplied code have no fixed effect at all and are listed in
+//! [`UNCLASSIFIED`] with the reason.
+
+use std::collections::HashMap;
+
+use usage::SpecCommandEffect::{self, Destructive, Read, Write};
+
+/// Commands whose effect is fixed, keyed by their full path under `mise`.
+pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
+    ("activate", Read),
+    ("backends", Read),
+    ("backends ls", Read),
+    ("bin-paths", Read),
+    ("bootstrap", Write),
+    ("bootstrap dotfiles", Read),
+    // Hidden compatibility spellings of the nested macos/linux subcommands.
+    ("bootstrap launchd", Read),
+    ("bootstrap launchd apply", Write),
+    ("bootstrap launchd status", Read),
+    ("bootstrap macos-defaults", Read),
+    ("bootstrap macos-defaults apply", Write),
+    ("bootstrap macos-defaults status", Read),
+    ("bootstrap systemd", Read),
+    ("bootstrap systemd apply", Write),
+    ("bootstrap systemd status", Read),
+    ("bootstrap dotfiles apply", Write),
+    ("bootstrap dotfiles status", Read),
+    ("bootstrap linux", Read),
+    ("bootstrap linux systemd-units", Read),
+    ("bootstrap linux systemd-units apply", Write),
+    ("bootstrap linux systemd-units status", Read),
+    ("bootstrap macos", Read),
+    ("bootstrap macos defaults", Read),
+    ("bootstrap macos defaults apply", Write),
+    ("bootstrap macos defaults status", Read),
+    ("bootstrap macos launchd-agents", Read),
+    ("bootstrap macos launchd-agents apply", Write),
+    ("bootstrap macos launchd-agents status", Read),
+    ("bootstrap mise-shell-activate", Read),
+    ("bootstrap mise-shell-activate apply", Write),
+    ("bootstrap mise-shell-activate status", Read),
+    ("bootstrap packages", Read),
+    ("bootstrap packages apply", Write),
+    ("bootstrap packages import", Write),
+    // Uninstalls system packages that are no longer declared.
+    ("bootstrap packages prune", Destructive),
+    ("bootstrap packages status", Read),
+    ("bootstrap packages upgrade", Write),
+    ("bootstrap packages use", Write),
+    ("bootstrap plugins", Read),
+    ("bootstrap plugins apply", Write),
+    ("bootstrap plugins status", Read),
+    ("bootstrap repos", Read),
+    ("bootstrap repos apply", Write),
+    ("bootstrap repos status", Read),
+    ("bootstrap repos update", Write),
+    ("bootstrap status", Read),
+    // Changes the current user's login shell.
+    ("bootstrap user", Read),
+    ("bootstrap user apply", Write),
+    ("bootstrap user status", Read),
+    ("cache", Read),
+    // The cache is regenerated automatically, so clearing it costs the user
+    // nothing but time — `write` rather than `destructive`.
+    ("cache clear", Write),
+    ("cache path", Read),
+    ("cache prune", Write),
+    ("completion", Read),
+    ("config", Read),
+    ("config get", Read),
+    ("config ls", Read),
+    ("config set", Write),
+    ("current", Read),
+    ("deactivate", Read),
+    ("deps", Read),
+    ("deps add", Write),
+    ("deps install", Write),
+    ("deps remove", Destructive),
+    ("direnv", Read),
+    ("direnv activate", Read),
+    ("direnv envrc", Read),
+    ("doctor", Read),
+    ("doctor path", Read),
+    ("dotfiles", Read),
+    ("dotfiles add", Write),
+    ("dotfiles apply", Write),
+    ("dotfiles edit", Write),
+    ("dotfiles status", Read),
+    ("edit", Write),
+    ("env", Read),
+    ("fmt", Write),
+    ("generate", Read),
+    ("generate bootstrap", Write),
+    ("generate config", Write),
+    ("generate devcontainer", Write),
+    ("generate git-pre-commit", Write),
+    ("generate github-action", Write),
+    ("generate task-docs", Write),
+    ("generate task-stubs", Write),
+    ("generate tool-stub", Write),
+    // Removes the mise CLI and every tool, plugin and cache it owns.
+    ("github", Read),
+    ("github token", Read),
+    // Writes the global config after setting the version.
+    ("global", Write),
+    ("hook-env", Read),
+    // Installs the missing tool when not_found_auto_install is on.
+    ("hook-not-found", Write),
+    // Removes the mise CLI and every tool, plugin and cache it owns.
+    ("implode", Destructive),
+    ("install", Write),
+    ("install-into", Write),
+    ("latest", Read),
+    ("link", Write),
+    ("lock", Write),
+    ("local", Write),
+    ("ls", Read),
+    ("ls-remote", Read),
+    ("oci", Read),
+    ("oci build", Write),
+    ("oci push", Write),
+    ("outdated", Read),
+    ("patrons", Read),
+    ("plugins", Read),
+    ("plugins install", Write),
+    ("plugins link", Write),
+    ("plugins ls", Read),
+    ("plugins ls-remote", Read),
+    ("plugins uninstall", Destructive),
+    ("plugins update", Write),
+    ("prune", Destructive),
+    ("registry", Read),
+    ("render-help", Write),
+    ("reshim", Write),
+    ("search", Read),
+    ("self-update", Write),
+    ("set", Write),
+    ("settings", Read),
+    ("settings add", Write),
+    ("settings get", Read),
+    ("settings ls", Read),
+    ("settings set", Write),
+    ("settings unset", Write),
+    // May install the requested version before emitting the shell code.
+    ("shell", Write),
+    ("shell-alias", Read),
+    ("shell-alias get", Read),
+    ("shell-alias ls", Read),
+    ("shell-alias set", Write),
+    ("shell-alias unset", Write),
+    ("sponsors", Read),
+    ("sync", Read),
+    ("sync node", Write),
+    ("sync python", Write),
+    ("sync ruby", Write),
+    ("tasks", Read),
+    ("tasks add", Write),
+    ("tasks deps", Read),
+    ("tasks edit", Write),
+    ("tasks info", Read),
+    ("tasks ls", Read),
+    ("tasks validate", Read),
+    ("token", Read),
+    ("token forgejo", Read),
+    ("token github", Read),
+    ("token gitlab", Read),
+    ("tool", Read),
+    ("tool-alias", Read),
+    ("tool-alias get", Read),
+    ("tool-alias ls", Read),
+    ("tool-alias set", Write),
+    ("tool-alias unset", Write),
+    ("trust", Write),
+    ("uninstall", Destructive),
+    ("unset", Write),
+    ("untrust", Write),
+    ("unuse", Destructive),
+    ("upgrade", Write),
+    ("usage", Read),
+    ("use", Write),
+    ("version", Read),
+    ("where", Read),
+    ("which", Read),
+];
+
+/// `bootstrap packages brew` is `#[cfg(unix)]`, so it must only be classified
+/// where it exists — otherwise the stale-entry test below fails on Windows.
+#[cfg(unix)]
+pub const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[
+    ("bootstrap packages brew", Read),
+    ("bootstrap packages brew tap", Write),
+    ("bootstrap packages brew untap", Write),
+];
+#[cfg(not(unix))]
+pub const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[];
+
+/// Commands with no fixed effect, and why.
+///
+/// These run code the user supplies — a task, a tool, a shell — so their effect
+/// is whatever that code does. Labeling them would be a lie in whichever
+/// direction it was labeled, and `read` in particular would be dangerous.
+pub const UNCLASSIFIED: &[(&str, &str)] = &[
+    ("asdf", "proxies whatever asdf command a plugin invoked"),
+    (
+        "bootstrap repos exec",
+        "runs an arbitrary command in each repo",
+    ),
+    ("direnv exec", "runs an arbitrary command"),
+    ("en", "starts an interactive shell"),
+    ("exec", "runs an arbitrary command"),
+    ("mcp", "serves tools that run tasks on request"),
+    ("oci run", "runs an arbitrary command in a container"),
+    ("run", "runs project tasks"),
+    ("tasks run", "runs project tasks"),
+    ("test-tool", "installs and executes a tool"),
+    ("tool-stub", "executes the tool a stub points at"),
+    ("watch", "runs project tasks on change"),
+];
+
+/// Annotate every command in the spec that has a declared effect.
+pub fn apply(spec: &mut usage::Spec) {
+    let effects: HashMap<&str, SpecCommandEffect> =
+        EFFECTS.iter().chain(PLATFORM_EFFECTS).copied().collect();
+    annotate(&mut spec.cmd, &mut vec![], &effects);
+}
+
+fn annotate(
+    cmd: &mut usage::SpecCommand,
+    path: &mut Vec<String>,
+    effects: &HashMap<&str, SpecCommandEffect>,
+) {
+    for (name, sub) in cmd.subcommands.iter_mut() {
+        path.push(name.clone());
+        if let Some(effect) = effects.get(path.join(" ").as_str()) {
+            sub.effect = Some(*effect);
+        }
+        annotate(sub, path, effects);
+        path.pop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+    use std::collections::HashSet;
+
+    /// Every command in the tree, hidden ones included: a hidden command is
+    /// still runnable, and `bootstrap launchd`/`systemd`/`macos-defaults` are
+    /// hidden compatibility spellings of commands that change system state.
+    fn all_commands() -> Vec<String> {
+        let spec: usage::Spec = crate::cli::Cli::command().into();
+        let mut out = vec![];
+        collect(&spec.cmd, &mut vec![], &mut out);
+        out
+    }
+
+    fn collect(cmd: &usage::SpecCommand, path: &mut Vec<String>, out: &mut Vec<String>) {
+        for (name, sub) in &cmd.subcommands {
+            path.push(name.clone());
+            out.push(path.join(" "));
+            collect(sub, path, out);
+            path.pop();
+        }
+    }
+
+    /// Adding a command without deciding what it does to the world is the
+    /// failure mode this whole table exists to prevent, so make it a test
+    /// failure rather than a silently missing annotation.
+    #[test]
+    fn every_visible_command_is_classified() {
+        let classified: HashSet<&str> = EFFECTS
+            .iter()
+            .chain(PLATFORM_EFFECTS)
+            .map(|(name, _)| *name)
+            .chain(UNCLASSIFIED.iter().map(|(name, _)| *name))
+            .collect();
+
+        let missing: Vec<String> = all_commands()
+            .into_iter()
+            .filter(|cmd| !classified.contains(cmd.as_str()))
+            .collect();
+
+        assert!(
+            missing.is_empty(),
+            "these commands have no entry in EFFECTS or UNCLASSIFIED \
+             (src/cli/command_effects.rs) — decide whether each is read, write, \
+             destructive, or genuinely unclassifiable:\n  {}",
+            missing.join("\n  ")
+        );
+    }
+
+    /// Catches entries left behind by a renamed or removed command.
+    #[test]
+    fn no_classification_refers_to_a_missing_command() {
+        let present: HashSet<String> = all_commands().into_iter().collect();
+        let stale: Vec<&str> = EFFECTS
+            .iter()
+            .chain(PLATFORM_EFFECTS)
+            .map(|(name, _)| *name)
+            .chain(UNCLASSIFIED.iter().map(|(name, _)| *name))
+            .filter(|name| !present.contains(*name))
+            .collect();
+
+        assert!(
+            stale.is_empty(),
+            "these entries in src/cli/command_effects.rs no longer match a \
+             command:\n  {}",
+            stale.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn classifications_are_not_duplicated() {
+        let mut seen = HashSet::new();
+        for (name, _) in EFFECTS
+            .iter()
+            .chain(PLATFORM_EFFECTS)
+            .map(|(n, e)| (*n, Some(*e)))
+            .chain(
+                UNCLASSIFIED
+                    .iter()
+                    .map(|(n, _)| (*n, None::<SpecCommandEffect>)),
+            )
+        {
+            assert!(seen.insert(name), "{name} is classified twice");
+        }
+    }
+}

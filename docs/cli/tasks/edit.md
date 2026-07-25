@@ -2,6 +2,7 @@
 # `mise tasks edit`
 
 - **Usage**: `mise tasks edit [-p --path] <TASK>`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/tasks/edit.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/edit.rs)
 
 Edit a task with $EDITOR

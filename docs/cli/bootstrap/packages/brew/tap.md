@@ -2,6 +2,7 @@
 # `mise bootstrap packages brew tap`
 
 - **Usage**: `mise bootstrap packages brew tap [FLAGS] <TAP> [URL]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/system/brew/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/brew/mod.rs)
 
 Add a Homebrew tap URL to [bootstrap.brew.taps]

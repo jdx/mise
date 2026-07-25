@@ -2,6 +2,7 @@
 # `mise shell-alias`
 
 - **Usage**: `mise shell-alias [--no-header] <SUBCOMMAND>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/shell_alias/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/shell_alias/mod.rs)
 
 Manage shell aliases.

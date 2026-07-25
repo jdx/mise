@@ -2,6 +2,7 @@
 # `mise generate tool-stub`
 
 - **Usage**: `mise generate tool-stub [FLAGS] <OUTPUT>`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/generate/tool_stub.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/tool_stub.rs)
 
 Generate a tool stub for HTTP-based tools

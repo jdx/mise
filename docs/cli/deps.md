@@ -3,6 +3,7 @@
 
 - **Usage**: `mise deps [FLAGS] [PROVIDER] <SUBCOMMAND>`
 - **Aliases**: `dep`
+- **Effect**: read-only
 - **Source code**: [`src/cli/deps/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/deps/mod.rs)
 
 [experimental] Manage project dependencies

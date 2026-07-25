@@ -3,6 +3,7 @@
 
 - **Usage**: `mise config [FLAGS] <SUBCOMMAND>`
 - **Aliases**: `cfg`
+- **Effect**: read-only
 - **Source code**: [`src/cli/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/config/mod.rs)
 
 Manage config files

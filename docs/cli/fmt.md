@@ -2,6 +2,7 @@
 # `mise fmt`
 
 - **Usage**: `mise fmt [FLAGS]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/fmt.rs`](https://github.com/jdx/mise/blob/main/src/cli/fmt.rs)
 
 Formats mise.toml

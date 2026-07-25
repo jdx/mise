@@ -2,6 +2,7 @@
 # `mise token forgejo`
 
 - **Usage**: `mise token forgejo [--unmask] [HOST]`
+- **Effect**: read-only
 - **Source code**: [`src/cli/token/forgejo.rs`](https://github.com/jdx/mise/blob/main/src/cli/token/forgejo.rs)
 
 Forgejo token

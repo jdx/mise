@@ -2,6 +2,7 @@
 # `mise tasks add`
 
 - **Usage**: `mise tasks add [FLAGS] <TASK> [-- RUN]…`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/tasks/add.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/add.rs)
 
 Create a new task

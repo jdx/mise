@@ -2,6 +2,7 @@
 # `mise oci push`
 
 - **Usage**: `mise oci push [FLAGS] <REF>`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/oci/push.rs`](https://github.com/jdx/mise/blob/main/src/cli/oci/push.rs)
 
 [experimental] Build an OCI image and push it to a registry

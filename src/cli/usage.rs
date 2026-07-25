@@ -53,7 +53,14 @@ impl Usage {
         // and fail outright on `mise run --force <task>`. 3.5 was required for the zsh
         // colon completion fixes for task names and insert strings (jdx/usage#666,
         // jdx/usage#670).
-        let min_version = r#"min_usage_version "3.5.7""#;
+        // Declare what each command does to the world. clap cannot express this,
+        // so it is applied to the derived spec; see command_effects.
+        crate::cli::command_effects::apply(&mut spec);
+
+        // 3.6 added `effect=` (jdx/usage#739), which the spec now carries; older
+        // `usage` CLIs reject it outright with "unsupported cmd prop effect", so
+        // this has to move in lockstep with emitting the field.
+        let min_version = r#"min_usage_version "3.6""#;
         let extra = include_str!("../assets/mise-extra.usage.kdl").trim();
         println!("{min_version}\n{}\n{extra}", spec.to_string().trim());
         Ok(())

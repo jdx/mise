@@ -2,6 +2,7 @@
 # `mise bootstrap plugins`
 
 - **Usage**: `mise bootstrap plugins <SUBCOMMAND>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Manage package manager plugins declared in `[bootstrap.plugins]`

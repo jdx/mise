@@ -2,6 +2,7 @@
 # `mise tasks info`
 
 - **Usage**: `mise tasks info [-J --json] <TASK>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/tasks/info.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/info.rs)
 
 Get information about a task

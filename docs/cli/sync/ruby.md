@@ -2,6 +2,7 @@
 # `mise sync ruby`
 
 - **Usage**: `mise sync ruby [--brew]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/sync/ruby.rs`](https://github.com/jdx/mise/blob/main/src/cli/sync/ruby.rs)
 
 Symlinks all ruby tool versions from an external tool into mise

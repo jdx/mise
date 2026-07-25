@@ -2,6 +2,7 @@
 # `mise tool-alias get`
 
 - **Usage**: `mise tool-alias get <TOOL> <ALIAS>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/tool_alias/get.rs`](https://github.com/jdx/mise/blob/main/src/cli/tool_alias/get.rs)
 
 Show an alias for a tool

@@ -2,6 +2,7 @@
 # `mise dotfiles`
 
 - **Usage**: `mise dotfiles <SUBCOMMAND>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/dotfiles/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/mod.rs)
 
 Manage dotfiles from `[dotfiles]`

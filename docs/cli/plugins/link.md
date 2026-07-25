@@ -3,6 +3,7 @@
 
 - **Usage**: `mise plugins link [-f --force] <NAME> [DIR]`
 - **Aliases**: `ln`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/plugins/link.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/link.rs)
 
 Symlinks a plugin into mise

@@ -2,6 +2,7 @@
 # `mise bootstrap user`
 
 - **Usage**: `mise bootstrap user <SUBCOMMAND>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Manage current-user bootstrap settings from `[bootstrap.user]`

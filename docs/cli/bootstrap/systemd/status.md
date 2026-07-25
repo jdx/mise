@@ -2,6 +2,7 @@
 # `mise bootstrap systemd status`
 
 - **Usage**: `mise bootstrap systemd status [-J --json] [--missing]`
+- **Effect**: read-only
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 ## Flags

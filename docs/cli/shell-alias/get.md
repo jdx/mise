@@ -2,6 +2,7 @@
 # `mise shell-alias get`
 
 - **Usage**: `mise shell-alias get <shell_alias>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/shell_alias/get.rs`](https://github.com/jdx/mise/blob/main/src/cli/shell_alias/get.rs)
 
 Show the command for a shell alias

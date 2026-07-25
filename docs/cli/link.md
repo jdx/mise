@@ -3,6 +3,7 @@
 
 - **Usage**: `mise link [-f --force] <TOOL@VERSION> <PATH>`
 - **Aliases**: `ln`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/link.rs`](https://github.com/jdx/mise/blob/main/src/cli/link.rs)
 
 Symlinks a tool version into mise

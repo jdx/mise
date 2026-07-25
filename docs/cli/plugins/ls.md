@@ -3,6 +3,7 @@
 
 - **Usage**: `mise plugins ls [-o --outdated] [-u --urls]`
 - **Aliases**: `list`
+- **Effect**: read-only
 - **Source code**: [`src/cli/plugins/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/ls.rs)
 
 List installed plugins

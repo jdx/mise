@@ -2,6 +2,7 @@
 # `mise tasks validate`
 
 - **Usage**: `mise tasks validate [--errors-only] [--json] [TASKS]…`
+- **Effect**: read-only
 - **Source code**: [`src/cli/tasks/validate.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/validate.rs)
 
 Validate tasks for common errors and issues

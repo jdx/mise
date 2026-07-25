@@ -2,6 +2,7 @@
 # `mise generate task-docs`
 
 - **Usage**: `mise generate task-docs [FLAGS]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/generate/task_docs.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/task_docs.rs)
 
 Generate documentation for tasks in a project

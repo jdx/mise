@@ -2,6 +2,7 @@
 # `mise generate bootstrap`
 
 - **Usage**: `mise generate bootstrap [FLAGS]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/generate/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/bootstrap.rs)
 
 Generate a script to download+execute mise

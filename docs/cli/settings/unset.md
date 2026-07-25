@@ -3,6 +3,7 @@
 
 - **Usage**: `mise settings unset [-l --local] <KEY>`
 - **Aliases**: `rm`, `remove`, `delete`, `del`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/settings/unset.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/unset.rs)
 
 Clears a setting
