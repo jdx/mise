@@ -419,8 +419,55 @@ fn escape_args_after_separator(args: &[String], separator_idx: usize) -> Vec<Str
     result
 }
 
+/// Long and short forms of the top-level flags that consume a following argument.
+///
+/// Hardcoded rather than derived because `env.rs` needs it from `Lazy` statics
+/// during startup — before anything has parsed arguments — and deriving it means
+/// building the entire clap tree, which costs ~3.1M instructions. Doing that
+/// there is what made every mise command ~6.3M instructions more expensive.
+///
+/// `test_global_flags_with_values_matches_clap` asserts this equals what clap
+/// reports, so adding a value-taking flag to [`Cli`] without updating this list
+/// fails CI rather than silently mis-parsing arguments.
+pub(crate) const GLOBAL_FLAGS_WITH_VALUES: &[&str] = &[
+    "--cd",
+    "-C",
+    "--env",
+    "-E",
+    "--jobs",
+    "-j",
+    "--profile",
+    "-P",
+    "--shell",
+    "-s",
+    "--tool",
+    "-t",
+    "--log-level",
+    "--output",
+];
+
+/// Index of the first argument that is not a global flag or one of its values.
+///
+/// Takes a `&Command` so callers that have already built one (argument parsing)
+/// use its real flag set. Callers without one want
+/// [`first_non_global_arg_idx_cached`].
 pub(crate) fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> Option<usize> {
-    let (flags_with_values, _) = get_global_flags(cmd);
+    let flags = get_global_flags(cmd).0;
+    first_non_global_arg_idx_with(|f| flags.iter().any(|x| x == f), args)
+}
+
+/// As [`first_non_global_arg_idx`], against [`GLOBAL_FLAGS_WITH_VALUES`].
+///
+/// For callers with no `Command` to hand, which would otherwise build the whole
+/// tree just to read its top-level arguments.
+pub(crate) fn first_non_global_arg_idx_cached(args: &[String]) -> Option<usize> {
+    first_non_global_arg_idx_with(|f| GLOBAL_FLAGS_WITH_VALUES.contains(&f), args)
+}
+
+fn first_non_global_arg_idx_with(
+    takes_value: impl Fn(&str) -> bool,
+    args: &[String],
+) -> Option<usize> {
     let mut i = 1;
     while i < args.len() {
         let arg = &args[i];
@@ -438,7 +485,7 @@ pub(crate) fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> 
                 false
             } else {
                 let flag_name = arg.split('=').next().unwrap();
-                flags_with_values.iter().any(|f| f == flag_name)
+                takes_value(flag_name)
             }
         } else if let Some(flag_name) = arg.get(..2) {
             // `arg.get(..2)` (not `&arg[..2]`) avoids panicking when the arg is
@@ -446,7 +493,7 @@ pub(crate) fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> 
             // malformed byte becomes a multi-byte U+FFFD and byte index 2 may not
             // be a char boundary. A short flag is always ASCII, so a non-ASCII
             // prefix simply matches no value-taking flag.
-            arg.len() == 2 && flags_with_values.iter().any(|f| f == flag_name)
+            arg.len() == 2 && takes_value(flag_name)
         } else {
             false
         };
@@ -851,6 +898,25 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Guards [`GLOBAL_FLAGS_WITH_VALUES`]. It is hardcoded so that startup does
+    /// not have to build the clap tree; this keeps it honest. If you added a
+    /// value-taking flag to `Cli`, add it to that list too.
+    #[test]
+    fn test_global_flags_with_values_matches_clap() {
+        let derived = get_global_flags(&Cli::command()).0;
+        let mut derived_sorted = derived.clone();
+        derived_sorted.sort();
+        let mut hardcoded: Vec<String> = GLOBAL_FLAGS_WITH_VALUES
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        hardcoded.sort();
+        assert_eq!(
+            hardcoded, derived_sorted,
+            "GLOBAL_FLAGS_WITH_VALUES is stale; clap reports {derived:?}"
+        );
+    }
     use super::*;
 
     #[test]

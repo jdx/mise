@@ -727,8 +727,7 @@ fn prefer_offline(args: &[String]) -> bool {
         return true;
     }
 
-    let command_idx = first_non_global_arg_idx(args);
-    let settings_args_end = command_idx.unwrap_or(args.len());
+    let settings_args_end = first_non_global_arg_idx(args).unwrap_or(args.len());
     if args[..settings_args_end]
         .iter()
         .any(|arg| arg == "--prefer-offline")
@@ -739,47 +738,49 @@ fn prefer_offline(args: &[String]) -> bool {
     prefer_offline_command(args)
 }
 
+/// Commands that should not fetch remote versions.
+const PREFER_OFFLINE_COMMANDS: &[&str] = &[
+    "activate", "current", "direnv", "env", "exec", "hook-env", "ls", "where", "which", "x",
+];
+
+/// Commands whose whole purpose is to enumerate remote versions. See
+/// [`REMOTE_FETCH_COMMAND`].
+const REMOTE_FETCH_COMMANDS: &[&str] = &[
+    "lock",
+    "ls-remote",
+    "list-all",
+    "list-remote",
+    "outdated",
+    "upgrade",
+    "up",
+];
+
 fn first_non_global_arg_idx(args: &[String]) -> Option<usize> {
-    crate::cli::first_non_global_arg_idx(
-        &<crate::cli::Cli as clap::CommandFactory>::command(),
-        args,
-    )
+    // Uses the cached global-flag list rather than building a fresh clap tree.
+    // This runs from `Lazy` statics during startup, so on essentially every
+    // invocation; building the tree here cost ~6.3M instructions per run.
+    crate::cli::first_non_global_arg_idx_cached(args)
 }
 
-fn command_arg(args: &[String]) -> Option<&str> {
-    first_non_global_arg_idx(args)
+/// Whether the subcommand at `command_idx` is one of `names`.
+fn is_command(args: &[String], command_idx: Option<usize>, names: &[&str]) -> bool {
+    command_idx
         .and_then(|idx| args.get(idx))
-        .map(String::as_str)
+        .map(|a| names.contains(&a.as_str()))
+        .unwrap_or_default()
 }
 
 fn prefer_offline_command(args: &[String]) -> bool {
-    command_arg(args)
-        .map(|a| {
-            [
-                "activate", "current", "direnv", "env", "exec", "hook-env", "ls", "where", "which",
-                "x",
-            ]
-            .contains(&a)
-        })
-        .unwrap_or_default()
+    is_command(
+        args,
+        first_non_global_arg_idx(args),
+        PREFER_OFFLINE_COMMANDS,
+    )
 }
 
 /// See [`REMOTE_FETCH_COMMAND`].
 fn remote_fetch_command(args: &[String]) -> bool {
-    command_arg(args)
-        .map(|a| {
-            [
-                "lock",
-                "ls-remote",
-                "list-all",
-                "list-remote",
-                "outdated",
-                "upgrade",
-                "up",
-            ]
-            .contains(&a)
-        })
-        .unwrap_or_default()
+    is_command(args, first_non_global_arg_idx(args), REMOTE_FETCH_COMMANDS)
 }
 
 /// returns true if missing required env vars should produce warnings instead of errors
