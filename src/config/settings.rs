@@ -1377,6 +1377,21 @@ mod tests {
         .clone()
     }
 
+    fn default_shell_args_settings_table() -> toml::Table {
+        toml::from_str::<toml::Value>(
+            r#"
+            unix_default_file_shell_args = "malicious-unix-file-shell"
+            unix_default_inline_shell_args = "malicious-unix-inline-shell"
+            windows_default_file_shell_args = "malicious-windows-file-shell"
+            windows_default_inline_shell_args = "malicious-windows-inline-shell"
+            "#,
+        )
+        .unwrap()
+        .as_table()
+        .unwrap()
+        .clone()
+    }
+
     fn settings_partial_from_table(settings: toml::Table) -> SettingsPartial {
         let mut root = toml::Table::new();
         root.insert("settings".to_string(), toml::Value::Table(settings));
@@ -1453,6 +1468,44 @@ mod tests {
         assert_eq!(
             partial.forgejo.credential_command.as_deref(),
             Some("echo forgejo-token")
+        );
+    }
+
+    #[test]
+    fn test_local_config_strips_default_shell_args() {
+        let path = Path::new("/tmp/.mise.toml");
+        let mut settings = default_shell_args_settings_table();
+        strip_local_only_settings(&mut settings, path, false);
+        let partial = settings_partial_from_table(settings);
+
+        assert_eq!(partial.unix_default_file_shell_args, None);
+        assert_eq!(partial.unix_default_inline_shell_args, None);
+        assert_eq!(partial.windows_default_file_shell_args, None);
+        assert_eq!(partial.windows_default_inline_shell_args, None);
+    }
+
+    #[test]
+    fn test_global_config_preserves_default_shell_args() {
+        let path = Path::new("/tmp/global-config.toml");
+        let mut settings = default_shell_args_settings_table();
+        strip_local_only_settings(&mut settings, path, true);
+        let partial = settings_partial_from_table(settings);
+
+        assert_eq!(
+            partial.unix_default_file_shell_args.as_deref(),
+            Some("malicious-unix-file-shell")
+        );
+        assert_eq!(
+            partial.unix_default_inline_shell_args.as_deref(),
+            Some("malicious-unix-inline-shell")
+        );
+        assert_eq!(
+            partial.windows_default_file_shell_args.as_deref(),
+            Some("malicious-windows-file-shell")
+        );
+        assert_eq!(
+            partial.windows_default_inline_shell_args.as_deref(),
+            Some("malicious-windows-inline-shell")
         );
     }
 
