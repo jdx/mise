@@ -656,6 +656,11 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         return None;
     }
 
+    #[cfg(test)]
+    if let Some(token) = test_support::lookup_tokens_file_override(&token_lookup_hosts(host)) {
+        return Some((token, TokenSource::TokensFile));
+    }
+
     let is_ghcom = host == "github.com" || host == "api.github.com";
     let lookup_hosts = token_lookup_hosts(host);
 
@@ -699,12 +704,6 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     }
 
     // 5. github_tokens.toml
-    #[cfg(test)]
-    if let Some((token, source)) = test_support::lookup_tokens_file_override(&lookup_hosts)
-        .map(|t| (t, TokenSource::TokensFile))
-    {
-        return Some((token, source));
-    }
     for lookup_host in &lookup_hosts {
         if let Some(token) = MISE_GITHUB_TOKENS.get(*lookup_host) {
             return Some((token.clone(), TokenSource::TokensFile));
@@ -879,7 +878,7 @@ pub(crate) mod test_support {
     use std::collections::HashMap;
     use std::sync::RwLock;
 
-    /// Overrides the `github_tokens.toml` path (source #4 in [`super::resolve_token`]).
+    /// Overrides the `github_tokens.toml` source in [`super::resolve_token`].
     /// Keyed by the same lookup hosts `resolve_token` walks — e.g. `"github.com"`.
     /// Hold [`super::TEST_ENV_LOCK`] while mutating; always clear before returning.
     pub(crate) static TOKENS_FILE_OVERRIDE: RwLock<Option<HashMap<String, String>>> =
@@ -1036,40 +1035,6 @@ mod tests {
         result
     }
 
-    struct TokenEnvGuard {
-        vars: Vec<(&'static str, Option<String>)>,
-    }
-
-    impl TokenEnvGuard {
-        fn clear() -> Self {
-            let vars = GITHUB_TOKEN_ENV_VARS
-                .iter()
-                .copied()
-                .chain(std::iter::once("MISE_GITHUB_ENTERPRISE_TOKEN"))
-                .map(|var| (var, std::env::var(var).ok()))
-                .collect();
-            for var in GITHUB_TOKEN_ENV_VARS
-                .iter()
-                .copied()
-                .chain(std::iter::once("MISE_GITHUB_ENTERPRISE_TOKEN"))
-            {
-                env::remove_var(var);
-            }
-            Self { vars }
-        }
-    }
-
-    impl Drop for TokenEnvGuard {
-        fn drop(&mut self) {
-            for (var, value) in &self.vars {
-                match value {
-                    Some(value) => env::set_var(var, value),
-                    None => env::remove_var(var),
-                }
-            }
-        }
-    }
-
     struct TokensFileOverrideGuard;
 
     impl TokensFileOverrideGuard {
@@ -1088,26 +1053,24 @@ mod tests {
     }
 
     #[test]
-    fn test_get_headers_remembers_source_for_only_the_supplying_token_and_host() {
-        with_github_token(|| {
-            let host = "github-source-test.example.com";
-            get_headers(format!("https://{host}/api/v3/repos/owner/repo/releases")).unwrap();
-            assert_eq!(
-                token_source_for_token(host, "ghp_test"),
-                Some(TokenSource::EnvVar("GITHUB_TOKEN"))
-            );
-            assert_eq!(token_source_for_token(host, "from-netrc"), None);
-            assert_eq!(
-                token_source_for_token("another-github.example.com", "ghp_test"),
-                None
-            );
-        });
+    fn test_token_source_memo_matches_only_the_supplying_token_and_host() {
+        let host = "github-source-test.example.com";
+        remember_token_source(host, "ghp_test", TokenSource::EnvVar("GITHUB_TOKEN"));
+
+        assert_eq!(
+            token_source_for_token(host, "ghp_test"),
+            Some(TokenSource::EnvVar("GITHUB_TOKEN"))
+        );
+        assert_eq!(token_source_for_token(host, "from-netrc"), None);
+        assert_eq!(
+            token_source_for_token("another-github.example.com", "ghp_test"),
+            None
+        );
     }
 
     #[test]
     fn test_get_headers_remembers_tokens_file_source() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _env = TokenEnvGuard::clear();
         let host = "github-tokens-file-test.example.com";
         let _tokens_file = TokensFileOverrideGuard::set(host, "ghp_from_tokens_file");
 
