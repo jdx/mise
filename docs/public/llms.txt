@@ -1,10 +1,6 @@
-# mise
+# mise-en-place
 
-> mise-en-place is a polyglot dev tool version manager, environment variable manager, and task runner. It installs and switches between versions of tools like node, python, and go, loads project environment variables, and runs project tasks.
-
-This file indexes the mise documentation for coding agents. Every page below is
-the same page a human reads — there is no separate agent documentation. Fetch a
-page for the detail; do not guess at flags, settings, or config keys.
+> Dev tools, env vars, and tasks in one CLI
 
 ## Guides
 

@@ -142,13 +142,19 @@ for (const group of sidebar) {
   sections.push(`## ${group.text}\n\n${lines.join("\n")}`);
 }
 
-const out = `# mise
+// The llms.txt format wants a title and a one-line summary. Both already exist
+// as the docs homepage hero, so take them from there rather than writing a
+// second description that can disagree with the site.
+const home = readFileSync(resolve(docsDir, "index.md"), "utf8");
+const hero = (key: string): string => {
+  const match = home.match(new RegExp(`^\\s{2}${key}:\\s*(.+)$`, "m"));
+  if (!match) throw new Error(`docs/index.md has no hero.${key}`);
+  return match[1].trim().replace(/^["']|["']$/g, "");
+};
 
-> mise-en-place is a polyglot dev tool version manager, environment variable manager, and task runner. It installs and switches between versions of tools like node, python, and go, loads project environment variables, and runs project tasks.
+const out = `# ${hero("name")}
 
-This file indexes the mise documentation for coding agents. Every page below is
-the same page a human reads — there is no separate agent documentation. Fetch a
-page for the detail; do not guess at flags, settings, or config keys.
+> ${hero("tagline")}
 
 ${sections.join("\n\n")}
 `;
