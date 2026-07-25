@@ -245,12 +245,20 @@ impl Backend for SwiftPlugin {
         if target.libc() == Some("musl") {
             bail!("swift does not publish musl builds");
         }
+        let url = url(tv, target);
+        // Not every distro/arch pair is published — `ubi9` has no aarch64 build,
+        // for instance — and which pairs exist changes per release, so ask rather
+        // than encode a matrix that would go stale. This keeps a lockfile from
+        // recording an artifact that isn't there.
+        if let Err(err) = HTTP.head(&url).await {
+            bail!("swift does not publish {url}: {err}");
+        }
         // swift.org publishes no checksum sidecar (only a detached GPG
         // signature), so a checksum can't be resolved without downloading the
-        // whole ~1GB toolchain. Record the URL the entry describes; the
-        // checksum is filled in when the tool is installed.
+        // whole ~1GB toolchain. Record the URL the entry describes; the checksum
+        // is filled in when the tool is installed.
         Ok(PlatformInfo {
-            url: Some(url(tv, target)),
+            url: Some(url),
             ..Default::default()
         })
     }
@@ -334,13 +342,17 @@ fn platform_directory(target: &PlatformTarget) -> String {
 }
 
 fn platform(target: &PlatformTarget) -> String {
-    if let Some(platform) = &Settings::get().swift.platform {
-        return platform.clone();
-    }
     match target.os_name() {
         "macos" => "osx".to_string(),
         "windows" => "windows10".to_string(),
-        _ => linux_platform(target),
+        // `swift.platform` names a Linux distro build, so it only applies to
+        // Linux targets. Letting it through for every target would build URLs
+        // like `.../ubi9/swift-6.3.1-RELEASE-ubi9.pkg` for macOS as soon as the
+        // setting is configured repo-wide.
+        _ => match &Settings::get().swift.platform {
+            Some(platform) => platform.clone(),
+            None => linux_platform(target),
+        },
     }
 }
 
@@ -511,26 +523,35 @@ mod lockfile_tests {
         assert!(options(&backend, &tv, "windows-x64").is_empty());
     }
 
-    #[tokio::test]
-    async fn lock_info_records_the_url_for_the_target() {
+    /// Locking another platform must build that platform's URL, not the host's.
+    #[test]
+    fn url_is_built_for_the_target_platform() {
         let _guard = pin_platform(Some("ubuntu24.04"));
         let backend = SwiftPlugin::new();
         let tv = tool_version(&backend, "6.3.1");
 
-        let info = backend
-            .resolve_lock_info(&tv, &target("linux-arm64"))
-            .await
-            .expect("swift lock info");
+        assert_eq!(
+            url(&tv, &target("linux-arm64")),
+            "https://download.swift.org/swift-6.3.1-release/ubuntu2404-aarch64/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-ubuntu24.04-aarch64.tar.gz"
+        );
+    }
+
+    /// `swift.platform` names a Linux distro build. A repo-wide pin must not
+    /// leak into the macOS and Windows URLs.
+    #[test]
+    fn pinned_distro_does_not_apply_off_linux() {
+        let _guard = pin_platform(Some("ubi9"));
+        let backend = SwiftPlugin::new();
+        let tv = tool_version(&backend, "6.3.1");
 
         assert_eq!(
-            info.url.as_deref(),
-            Some(
-                "https://download.swift.org/swift-6.3.1-release/ubuntu2404-aarch64/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-ubuntu24.04-aarch64.tar.gz"
-            )
+            url(&tv, &target("macos-arm64")),
+            "https://download.swift.org/swift-6.3.1-release/xcode/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-osx.pkg"
         );
-        // swift.org publishes no checksum sidecar, so the checksum is only
-        // known once the artifact is downloaded.
-        assert!(info.checksum.is_none());
+        assert_eq!(
+            url(&tv, &target("windows-x64")),
+            "https://download.swift.org/swift-6.3.1-release/windows10/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-windows10.exe"
+        );
     }
 
     #[tokio::test]

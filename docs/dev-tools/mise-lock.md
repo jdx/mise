@@ -99,8 +99,10 @@ options = { swift_platform = "fedora39" }
 ```
 
 Entries are matched on options exactly, so a machine only verifies against the
-entry written for its own distro. Pin `swift.platform` to make every machine
-resolve the same artifact, and commit the entry it produces.
+entry written for its own distro. Pin `swift.platform` to make every Linux
+machine resolve the same artifact, and commit the entry it produces. A platform
+whose artifact the tool doesn't publish — `ubi9` has no arm64 build, for
+instance — is reported as skipped rather than locked.
 
 ### Platform Keys
 
