@@ -2921,12 +2921,14 @@ type = "ListPath"
 default = "sh"
 description = "Default shell arguments for Unix to be used for file commands. For example, `sh` for sh."
 env = "MISE_UNIX_DEFAULT_FILE_SHELL_ARGS"
+global_only = true
 type = "String"
 
 [unix_default_inline_shell_args]
 default = "sh -c -o errexit"
 description = "Default shell arguments for Unix to be used for inline commands. For example, `sh -c` for sh."
 env = "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS"
+global_only = true
 type = "String"
 
 [url_replacements]
@@ -3005,12 +3007,14 @@ type = "Bool"
 default = "cmd /c"
 description = "Default shell arguments for Windows to be used for file commands. For example, `cmd /c` for cmd.exe."
 env = "MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS"
+global_only = true
 type = "String"
 
 [windows_default_inline_shell_args]
 default = "cmd /c"
 description = "Default shell arguments for Windows to be used for inline commands. For example, `cmd /c` for cmd.exe."
 env = "MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS"
+global_only = true
 type = "String"
 
 [windows_executable_extensions]
