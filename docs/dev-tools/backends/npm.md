@@ -299,25 +299,26 @@ not affect `npm`, `pnpm`, or `bun` installs.
 ### Investigating trust downgrades
 
 A `trustPolicy=no-downgrade` failure is a supply-chain signal, not an ordinary inability to find a
-matching version. It means an earlier release had npm trusted-publisher, staged-publish, or
-provenance evidence that the selected release no longer carries.
+matching version. It means an earlier release had stronger npm trusted-publisher, staged-publish,
+or provenance evidence than the selected release.
 
 Before adding an exception:
 
-1. Inspect the npm release, source tag/commit, publisher identity, and tarball, and confirm nothing
-   appears tampered with.
+1. Inspect the npm release, source tag/commit, publisher identity, and tarball, compare the metadata
+   with npmjs.org, and confirm nothing appears tampered with.
 2. Check whether the maintainer intentionally published manually, backported outside the trusted
    workflow, skipped provenance, or used a registry that stripped metadata.
-3. Report the failure upstream. Even when benign, inconsistent trust evidence is a packaging
-   failure the maintainer should correct.
+3. Report inconsistent evidence to the relevant upstream owner. Package-release drift belongs with
+   the maintainer; metadata present on npmjs.org but missing from a proxy or mirror belongs with
+   that registry operator.
 4. Prefer a version-scoped `"<package>@<version>"` exception after review. A bare package name
    exempts every future version.
 
 Using `mise settings npm.shell_out=true` switches to the npm CLI and bypasses this aube check
 entirely, so it should be a last resort rather than the first workaround.
 
-See aube's [trust-policy investigation guide and dynamically generated exception
-list](https://aube.jdx.dev/trust-policy-exceptions) for more detail.
+See aube's [trust-policy documentation](https://aube.jdx.dev/security#trust-policy) for more
+detail.
 
 ### `aube_args`
 

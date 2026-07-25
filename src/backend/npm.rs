@@ -1180,21 +1180,23 @@ fn build_aube_install_error_message(err: &miette::Report, tool_full: &str) -> St
     if err.code().map(|c| c.to_string()).as_deref() == Some("ERR_AUBE_TRUST_DOWNGRADE") {
         msg.push_str(&format!(
             "\n\nThis is a supply-chain trust failure, not an ordinary version-resolution error. \
-             An earlier release had trusted publishing evidence that the selected release lost. \
+             An earlier release had stronger trust evidence than the selected release. \
              This can indicate a compromised or tampered release; it can also happen when a \
              maintainer manually publishes, backports outside the trusted workflow, skips \
              provenance for convenience, or uses a registry that strips metadata.\n\n\
              Before bypassing, inspect the package's npm release, source tag/commit, publisher \
-             identity, and tarball. Confirm the release is expected and nothing appears tampered \
-             with, then report the downgrade upstream—the package's release process failed to \
-             preserve its previous trust evidence.\n\n\
+             identity, and tarball; compare the metadata with npmjs.org. Confirm the release is \
+             expected and nothing appears tampered with, then report inconsistent evidence to the \
+             relevant upstream owner. Package-release drift belongs with the maintainer; metadata \
+             present on npmjs.org but missing from a proxy or mirror belongs with that registry \
+             operator.\n\n\
              Only after review, add the narrowest affected `<package>@<version>` to \
              `trust_policy_excludes` for this tool, e.g.:\n  \
              \"{tool_full}\" = {{ version = \"latest\", trust_policy_excludes = [\"<package>@<version>\"] }}\n\
              A bare package name exempts every version. `mise settings npm.shell_out=true` uses \
              the npm CLI and bypasses this check entirely, so it should be a last resort.\n\n\
              Investigation guide and known exceptions: \
-             https://aube.jdx.dev/trust-policy-exceptions"
+             https://aube.jdx.dev/security#trust-policy"
         ));
     } else if let Some(help) = err.help() {
         msg.push_str(&format!("\n  help: {help}"));
@@ -1398,13 +1400,15 @@ mod tests {
         assert!(msg.contains("caused by: trust downgrade for @octokit/endpoint@9.0.6"));
         // mise-native remediation replaces aube's .npmrc-oriented help.
         assert!(msg.contains("not an ordinary version-resolution error"));
+        assert!(msg.contains("stronger trust evidence than the selected release"));
         assert!(msg.contains("nothing appears tampered with"));
-        assert!(msg.contains("report the downgrade upstream"));
+        assert!(msg.contains("report inconsistent evidence to the relevant upstream owner"));
+        assert!(msg.contains("belongs with that registry operator"));
         assert!(msg.contains("narrowest affected `<package>@<version>`"));
         assert!(msg.contains("trust_policy_excludes"));
         assert!(msg.contains("\"npm:danger\""));
         assert!(msg.contains("npm.shell_out=true"));
-        assert!(msg.contains("https://aube.jdx.dev/trust-policy-exceptions"));
+        assert!(msg.contains("https://aube.jdx.dev/security#trust-policy"));
     }
 
     #[test]
