@@ -45,13 +45,15 @@ impl Usage {
             tasks_run.restart_token = Some(":::".to_string());
         }
 
-        // Require usage >= 3.6, the release that stops the mounting CLI's global flags
-        // from being inherited into mounted task commands (jdx/usage#738). Older `usage`
-        // CLIs offer mise's globals after a task name — where they are forwarded to the
-        // task and rejected — and let a global shadow a same-named task flag, dropping
-        // its choices (see mise#11282). 3.5 was required for the zsh colon completion
-        // fixes for task names and insert strings (jdx/usage#666, jdx/usage#670).
-        let min_version = r#"min_usage_version "3.6""#;
+        // Require usage >= 3.5.7, the release that stops the mounting CLI's flags from
+        // being inherited into mounted task commands and keeps scanning for the task
+        // across non-global `run` flags (jdx/usage#738). Older `usage` CLIs offer mise's
+        // globals after a task name — where they are forwarded to the task and rejected —
+        // let a global shadow a same-named task flag, dropping its choices (mise#11282),
+        // and fail outright on `mise run --force <task>`. 3.5 was required for the zsh
+        // colon completion fixes for task names and insert strings (jdx/usage#666,
+        // jdx/usage#670).
+        let min_version = r#"min_usage_version "3.5.7""#;
         let extra = include_str!("../assets/mise-extra.usage.kdl").trim();
         println!("{min_version}\n{}\n{extra}", spec.to_string().trim());
         Ok(())
