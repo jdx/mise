@@ -2275,7 +2275,10 @@ fn enclosing_monorepo_roots(config_files: &ConfigMap, selected_root: &Path) -> V
         .values()
         .filter(|cf| cf.monorepo_root() == Some(true))
         .filter_map(|cf| cf.project_root())
-        .filter(|root| root != selected_root && selected_root.starts_with(root))
+        .filter(|root| {
+            !paths_equal_resolved(root, selected_root)
+                && path_starts_with_resolved(selected_root, root)
+        })
         .collect()
 }
 
@@ -2287,15 +2290,25 @@ fn enclosing_monorepo_roots(config_files: &ConfigMap, selected_root: &Path) -> V
 /// namespace — e.g. `build` next to `//:build` from another checkout of the same repo.
 /// Directories above the enclosing root (`$HOME`, global config) are unaffected and
 /// keep inheriting normally.
+///
+/// Prefix checks go through [`path_starts_with_resolved`] because `dir` comes from the
+/// cwd walk while the roots come from a config's `project_root`, and those can be
+/// different symlink spellings of the same path (e.g. Fedora Atomic's `/home` ->
+/// `/var/home`) when a task's config hierarchy was loaded from another directory.
+/// The empty-`enclosing_roots` early return keeps the non-nested case — every monorepo
+/// that isn't checked out inside another one — free of the resolved fallback's syscalls.
 fn dir_is_in_enclosing_monorepo(
     dir: &Path,
     selected_root: &Path,
     enclosing_roots: &[PathBuf],
 ) -> bool {
-    !dir.starts_with(selected_root)
-        && enclosing_roots
-            .iter()
-            .any(|enclosing| dir.starts_with(enclosing))
+    if enclosing_roots.is_empty() {
+        return false;
+    }
+    enclosing_roots
+        .iter()
+        .any(|enclosing| path_starts_with_resolved(dir, enclosing))
+        && !path_starts_with_resolved(dir, selected_root)
 }
 
 async fn load_local_tasks_with_context(
@@ -3487,6 +3500,34 @@ mod tests {
             selected,
             &[]
         ));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_dir_is_in_enclosing_monorepo_across_symlinked_prefix() {
+        // `dir` comes from the cwd walk and the roots from a config's project_root, so
+        // they can be different symlink spellings of the same path (Fedora Atomic's
+        // /home -> /var/home). The raw prefix check misses; the resolved one must not.
+        let tmp = TempDir::new().unwrap();
+        let real = tmp.path().join("real");
+        let selected = real.join("repo/.worktrees/wt");
+        fs::create_dir_all(&selected).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let enclosing = vec![real.join("repo")];
+
+        // the enclosing root, reached through the symlinked prefix
+        let dir = link.join("repo");
+        assert!(
+            !dir.starts_with(&enclosing[0]),
+            "raw check should miss here"
+        );
+        assert!(dir_is_in_enclosing_monorepo(&dir, &selected, &enclosing));
+
+        // the selected root through that same prefix is still not skipped
+        let dir = link.join("repo/.worktrees/wt");
+        assert!(!dir_is_in_enclosing_monorepo(&dir, &selected, &enclosing));
     }
 
     #[test]
