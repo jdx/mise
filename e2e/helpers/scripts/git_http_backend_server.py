@@ -119,10 +119,6 @@ def create_test_repo(repo_path):
     ripgrep_file.write_text('#!/usr/bin/env bash\necho "ripgrep task executed"\n')
     ripgrep_file.chmod(0o755)
 
-    jq_file = xtasks_dir / 'jq'
-    jq_file.write_text('#!/usr/bin/env bash\njq --version\n')
-    jq_file.chmod(0o755)
-
     # A toml task file colocated with the executable scripts. Keys are task
     # names; values are the run command (or a table). Used by tests covering
     # remote toml task includes.

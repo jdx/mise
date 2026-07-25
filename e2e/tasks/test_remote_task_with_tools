@@ -6,39 +6,6 @@ set -euo pipefail
 
 echo "=== Setting up test for remote task with tools ==="
 
-PORT_FILE="$TMPDIR/mise_git_http_port"
-READY_FILE="$TMPDIR/mise_git_http_ready"
-INFO_FILE="$TMPDIR/mise_git_http_info"
-
-rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
-
-MISE_GIT_HTTP_PORT_FILE="$PORT_FILE" \
-	MISE_GIT_HTTP_READY_FILE="$READY_FILE" \
-	MISE_GIT_HTTP_INFO_FILE="$INFO_FILE" \
-	python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
-SERVER_PID=$!
-
-cleanup() {
-	kill "$SERVER_PID" 2>/dev/null || true
-	rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
-}
-trap cleanup EXIT
-
-for _ in $(seq 1 30); do
-	if [[ -f $READY_FILE && -f $PORT_FILE ]]; then
-		break
-	fi
-	sleep 1
-done
-
-if [[ ! -f $READY_FILE || ! -f $PORT_FILE ]]; then
-	echo "ERROR: Git HTTP server failed to start within 30 seconds"
-	exit 1
-fi
-
-SERVER_PORT="$(cat "$PORT_FILE")"
-LOCAL_GIT_URL="http://localhost:${SERVER_PORT}/repo.git"
-
 # Create a parent directory with tool definition
 mkdir -p parent/child
 cd parent
@@ -61,10 +28,10 @@ fi
 cd child
 
 # Child mise.toml with remote task from mise repo (NO tools defined here)
-# This task uses jq which should come from parent/mise.toml
-cat >mise.toml <<EOF
+# This task runs its arguments with tools from the parent mise.toml.
+cat >mise.toml <<'EOF'
 [tasks.remote_lint]
-file = "git::${LOCAL_GIT_URL}//xtasks/lint/jq"
+file = "git::https://github.com/jdx/mise.git//xtasks/show-output-on-failure?ref=main"
 EOF
 
 # Trust and try to run the remote task
@@ -92,10 +59,10 @@ else
 	exit 1
 fi
 
-# Now run the remote task
+# Now run jq through the remote task.
 echo "Testing remote task with jq:"
 REMOTE_LINT_OUTPUT="$TMPDIR/remote_lint_output.txt"
-if mise run remote_lint 2>&1 | tee "$REMOTE_LINT_OUTPUT" | grep -q "jq-"; then
+if mise run remote_lint -- jq --version >"$REMOTE_LINT_OUTPUT" 2>&1; then
 	echo "✓ PASS: Remote task successfully accessed jq from parent config"
 	echo "Remote task ran successfully"
 else
