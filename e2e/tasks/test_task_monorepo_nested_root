@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Test that a nested `monorepo_root = true` config wins over an enclosing one.
+#
+# This is the git-worktree layout from https://github.com/jdx/mise/discussions/11276:
+# a second checkout lives inside the main one (`<repo>/.worktrees/<name>`), so both
+# `<repo>/mise.toml` and `<repo>/.worktrees/<name>/mise.toml` set `monorepo_root = true`.
+# From inside the nested checkout, the *nearest* root must be selected — its namespace,
+# its `[monorepo].config_roots`, and its `{{config_root}}` — not the enclosing one's.
+#
+# Config discovery walks from the cwd upward, so `ConfigMap` is nearest-first and
+# `find_monorepo_config` picks the deepest applicable root. That ordering is what
+# makes this work; this test guards it against a future reordering.
+export MISE_EXPERIMENTAL=1
+
+# Enclosing monorepo root (the "main checkout")
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["outer-projects/*"]
+
+[env]
+OUTER_ENV = "outer"
+
+[tasks.root-task]
+run = 'echo "OUTER root-task"'
+
+[tasks.only-in-outer]
+run = 'echo "OUTER only-in-outer"'
+TOML
+
+mkdir -p outer-projects/alpha
+cat <<'TOML' >outer-projects/alpha/mise.toml
+[tasks.build]
+run = 'echo "OUTER alpha build"'
+TOML
+
+# Nested monorepo root (the "worktree"), with its own config_roots layout
+mkdir -p .worktrees/wt/inner-projects/alpha
+cat <<'TOML' >.worktrees/wt/mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["inner-projects/*"]
+
+[tasks.root-task]
+run = 'echo "INNER root-task config_root={{config_root}}"'
+TOML
+
+cat <<'TOML' >.worktrees/wt/inner-projects/alpha/mise.toml
+[tasks.build]
+run = 'echo "INNER alpha build config_root={{config_root}}"'
+TOML
+
+cd .worktrees/wt
+
+# Test 1: the nested root defines the namespace, and its config_roots are the ones
+# expanded — the enclosing root's `outer-projects/*` must not contribute.
+echo "=== Test 1: nested root owns the namespace ==="
+assert_contains "mise tasks --all" "//:root-task"
+assert_contains "mise tasks --all" "//inner-projects/alpha:build"
+assert_not_contains "mise tasks --all" "//outer-projects/alpha:build"
+
+# Test 2: tasks resolve to the nested checkout's files, with its config_root
+echo "=== Test 2: tasks resolve inside the nested root ==="
+assert_contains "mise run //:root-task" "INNER root-task config_root=$PWD"
+assert_contains "mise run //inner-projects/alpha:build" "INNER alpha build config_root=$PWD/inner-projects/alpha"
+
+# Test 3: the enclosing monorepo's tasks are not loaded at all. They are a different
+# monorepo's task set, so they must not show up outside the nested root's namespace.
+echo "=== Test 3: enclosing monorepo tasks are dropped ==="
+assert_not_contains "mise tasks --all" "only-in-outer"
+assert_contains "mise run //:root-task" "INNER root-task"
+assert_fail "mise run only-in-outer"
+
+# The enclosing config is still an ancestor config for env and tools
+echo "=== Test 4: env from the enclosing config still inherits ==="
+assert_contains "mise env -s bash" "OUTER_ENV=outer"
+
+# Test 5: same from a subproject, where `:build` resolves relative to the nested root
+echo "=== Test 5: relative resolution from a subproject ==="
+cd inner-projects/alpha
+assert_contains "mise run :build" "INNER alpha build config_root=$PWD"
+assert_contains "mise tasks info build" "//inner-projects/alpha:build"
+assert_not_contains "mise tasks --all" "only-in-outer"
+
+echo "=== All nested monorepo root tests passed! ==="

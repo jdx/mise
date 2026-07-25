@@ -1109,6 +1109,17 @@ fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
 }
 
 /// Find the config file that has monorepo_root = true
+///
+/// `ConfigMap` is ordered nearest-first — [`load_config_paths`] builds it from
+/// [`file::all_dirs`], which walks from the cwd upward — so the first match is the
+/// *deepest* applicable monorepo root. That matters when monorepo roots nest, e.g. a
+/// git worktree checked out inside the main checkout (`<repo>/.worktrees/<name>`),
+/// where both configs set `monorepo_root = true`: the nested one wins, and its
+/// `[monorepo].config_roots` are the ones expanded. Configs above the selected root
+/// still inherit as ordinary parent configs for env/tools/vars, but tasks from an
+/// enclosing monorepo are dropped — see [`dir_is_in_enclosing_monorepo`],
+/// `e2e/tasks/test_task_monorepo_nested_root`, and
+/// https://github.com/jdx/mise/discussions/11276.
 fn find_monorepo_config(config_files: &ConfigMap) -> Option<&Arc<dyn ConfigFile>> {
     config_files
         .values()
@@ -2253,6 +2264,53 @@ fn prefix_monorepo_task_names(tasks: &mut [Task], dir: &Path, monorepo_root: &Pa
     }
 }
 
+/// Monorepo roots that enclose the selected one.
+///
+/// This happens when a git worktree is checked out inside the main checkout
+/// (`<repo>/.worktrees/<name>`) and both configs set `monorepo_root = true`:
+/// [`find_monorepo_config`] selects the nested root, but the enclosing one is still
+/// an ancestor config.
+fn enclosing_monorepo_roots(config_files: &ConfigMap, selected_root: &Path) -> Vec<PathBuf> {
+    config_files
+        .values()
+        .filter(|cf| cf.monorepo_root() == Some(true))
+        .filter_map(|cf| cf.project_root())
+        .filter(|root| {
+            !paths_equal_resolved(root, selected_root)
+                && path_starts_with_resolved(selected_root, root)
+        })
+        .collect()
+}
+
+/// Whether a directory's tasks belong to an enclosing monorepo rather than the
+/// selected one.
+///
+/// Such tasks are a *different* monorepo's task set, not a parent namespace of the
+/// selected root, so loading them would put them outside the selected root's `//`
+/// namespace — e.g. `build` next to `//:build` from another checkout of the same repo.
+/// Directories above the enclosing root (`$HOME`, global config) are unaffected and
+/// keep inheriting normally.
+///
+/// Prefix checks go through [`path_starts_with_resolved`] because `dir` comes from the
+/// cwd walk while the roots come from a config's `project_root`, and those can be
+/// different symlink spellings of the same path (e.g. Fedora Atomic's `/home` ->
+/// `/var/home`) when a task's config hierarchy was loaded from another directory.
+/// The empty-`enclosing_roots` early return keeps the non-nested case — every monorepo
+/// that isn't checked out inside another one — free of the resolved fallback's syscalls.
+fn dir_is_in_enclosing_monorepo(
+    dir: &Path,
+    selected_root: &Path,
+    enclosing_roots: &[PathBuf],
+) -> bool {
+    if enclosing_roots.is_empty() {
+        return false;
+    }
+    enclosing_roots
+        .iter()
+        .any(|enclosing| path_starts_with_resolved(dir, enclosing))
+        && !path_starts_with_resolved(dir, selected_root)
+}
+
 async fn load_local_tasks_with_context(
     config: &Arc<Config>,
     ctx: Option<&crate::task::TaskLoadContext>,
@@ -2270,8 +2328,22 @@ async fn load_local_tasks_with_context(
         .filter(|(_, cf)| !is_global_config(cf.get_path()))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect::<IndexMap<_, _>>();
+    let enclosing_roots = monorepo_root
+        .as_deref()
+        .map(|root| enclosing_monorepo_roots(&config.config_files, root))
+        .unwrap_or_default();
     for d in all_dirs()? {
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
+            continue;
+        }
+        if let Some(ref monorepo_root) = monorepo_root
+            && dir_is_in_enclosing_monorepo(&d, monorepo_root, &enclosing_roots)
+        {
+            trace!(
+                "skipping tasks in {}: belongs to a monorepo enclosing {}",
+                display_path(&d),
+                display_path(monorepo_root)
+            );
             continue;
         }
         let mut dir_tasks = load_tasks_in_dir(config, &d, &local_config_files, templates).await?;
@@ -3379,6 +3451,83 @@ mod tests {
 
         assert!(!Arc::ptr_eq(&before, &after));
         Settings::reset(None);
+    }
+
+    #[test]
+    fn test_dir_is_in_enclosing_monorepo() {
+        // https://github.com/jdx/mise/discussions/11276: a worktree checked out inside
+        // the main checkout, both setting monorepo_root = true.
+        let selected = Path::new("/repo/.worktrees/wt");
+        let enclosing = vec![PathBuf::from("/repo")];
+
+        // the enclosing root itself, and anything between it and the selected root
+        assert!(dir_is_in_enclosing_monorepo(
+            Path::new("/repo"),
+            selected,
+            &enclosing
+        ));
+        assert!(dir_is_in_enclosing_monorepo(
+            Path::new("/repo/.worktrees"),
+            selected,
+            &enclosing
+        ));
+
+        // the selected root and its subprojects
+        assert!(!dir_is_in_enclosing_monorepo(
+            selected, selected, &enclosing
+        ));
+        assert!(!dir_is_in_enclosing_monorepo(
+            Path::new("/repo/.worktrees/wt/packages/api"),
+            selected,
+            &enclosing
+        ));
+
+        // above the enclosing root: still inherits normally
+        assert!(!dir_is_in_enclosing_monorepo(
+            Path::new("/"),
+            selected,
+            &enclosing
+        ));
+        assert!(!dir_is_in_enclosing_monorepo(
+            Path::new("/home/user"),
+            selected,
+            &enclosing
+        ));
+
+        // no enclosing monorepo: nothing is ever skipped
+        assert!(!dir_is_in_enclosing_monorepo(
+            Path::new("/repo"),
+            selected,
+            &[]
+        ));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_dir_is_in_enclosing_monorepo_across_symlinked_prefix() {
+        // `dir` comes from the cwd walk and the roots from a config's project_root, so
+        // they can be different symlink spellings of the same path (Fedora Atomic's
+        // /home -> /var/home). The raw prefix check misses; the resolved one must not.
+        let tmp = TempDir::new().unwrap();
+        let real = tmp.path().join("real");
+        let selected = real.join("repo/.worktrees/wt");
+        fs::create_dir_all(&selected).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let enclosing = vec![real.join("repo")];
+
+        // the enclosing root, reached through the symlinked prefix
+        let dir = link.join("repo");
+        assert!(
+            !dir.starts_with(&enclosing[0]),
+            "raw check should miss here"
+        );
+        assert!(dir_is_in_enclosing_monorepo(&dir, &selected, &enclosing));
+
+        // the selected root through that same prefix is still not skipped
+        let dir = link.join("repo/.worktrees/wt");
+        assert!(!dir_is_in_enclosing_monorepo(&dir, &selected, &enclosing));
     }
 
     #[test]
