@@ -56,6 +56,11 @@ Specifies the pattern to match against release asset names. This is useful when 
 "github:cli/cli" = { version = "latest", asset_pattern = "gh_*_linux_x64.tar.gz" }
 ```
 
+::: v-pre
+Supports the same templating as [`bin_path`](#bin_path): `{{ version }}` plus the
+`{{ os() }}` / `{{ arch() }}` functions (with optional remap keyword arguments).
+:::
+
 ### `additional_asset_patterns`
 
 Downloads additional archives from the same release and extracts them into the primary
@@ -212,7 +217,7 @@ If the binary isn't named the way you want to invoke it, add
 [`bin`](#bin) (selects/renames the binary, including a single bare non-archive binary).
 
 Use [`asset_pattern`](#asset_pattern) instead only when you need full manual control and
-can name the asset portably (it replaces autodetection, so any `{{os}}`/`{{arch}}`
+can name the asset portably (it replaces autodetection, so any <code v-pre>{{ os() }}</code>/<code v-pre>{{ arch() }}</code>
 templating must cover every platform you target):
 
 ```toml
@@ -342,7 +347,7 @@ Without this option, mise's autodetection might select .app bundles on macOS, wh
 ### `bin_path`
 
 ::: v-pre
-Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with variables like `{{ version }}`, `{{ os }}`, `{{ arch }}`, and arch aliases (`{{ darwin_os }}`, `{{ amd64_arch }}`, `{{ x86_64_arch }}`, `{{ gnu_arch }}`):
+Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with `{{ version }}` and the `{{ os() }}` / `{{ arch() }}` functions:
 :::
 
 ```toml
@@ -350,6 +355,26 @@ Specify the directory containing binaries within the extracted archive, or where
 version = "latest"
 bin_path = "cli-{{ version }}/bin" # expands to cli-1.0.0/bin
 ```
+
+Both take keyword arguments that remap the value mise would emit (`linux`, `macos`,
+`windows` for `os()`; `x64`, `arm64` for `arch()`), for when upstream names the directory
+differently:
+
+```toml
+[tools."github:pizlonator/fil-c"]
+version = "latest"
+# expands to filc-0.681-linux-x86_64/build/bin
+bin_path = 'filc-{{ version }}-{{ os() }}-{{ arch(x64="x86_64", arm64="aarch64") }}/build/bin'
+```
+
+::: tip
+Use a single-quoted TOML string when the template contains double quotes, as above.
+:::
+
+::: v-pre
+There are no bare `{{ os }}` / `{{ arch }}` variables, and no `{{ x86_64_arch }}`-style
+aliases — `{{ arch(x64="x86_64", arm64="aarch64") }}` is how you get those names.
+:::
 
 **Binary path lookup order:**
 

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# bin_path and asset_pattern support {{ version }} plus the os()/arch() functions,
+# including their remapping keyword arguments. os/arch are functions, not variables --
+# `{{ os }}` fails to parse, so keep this pinned to the documented syntax.
+
+cat <<EOF >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+asset_pattern = 'hello-world-{{ version }}.tar.{{ os(linux="gz", macos="gz") }}'
+bin_path = 'hello-world-{{ version }}/{{ os(linux="bin", macos="bin") }}'
+postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
+EOF
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+assert_contains "mise bin-paths github:jdx/mise-test-fixtures@1.0.0" "hello-world-1.0.0/bin"
+
+# arch() remapping renders into bin_path too
+cat <<EOF >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+asset_pattern = "hello-world-1.0.0.tar.gz"
+bin_path = 'hello-world-{{ version }}/bin-{{ arch(x64="x86_64", arm64="aarch64") }}'
+EOF
+
+mise install
+assert_contains "mise bin-paths github:jdx/mise-test-fixtures@1.0.0" "hello-world-1.0.0/bin-"
+
+# `{{ os }}` is not a variable -- make sure the failure stays a clear parse error
+cat <<EOF >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+bin_path = "hello-world-{{ version }}-{{ os }}/bin"
+EOF
+
+assert_fail "mise install" "failed to parse template"
