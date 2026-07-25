@@ -18,6 +18,15 @@ monorepo_root = true
 
 [monorepo]
 config_roots = ["outer-projects/*"]
+
+[env]
+OUTER_ENV = "outer"
+
+[tasks.root-task]
+run = 'echo "OUTER root-task"'
+
+[tasks.only-in-outer]
+run = 'echo "OUTER only-in-outer"'
 TOML
 
 mkdir -p outer-projects/alpha
@@ -57,10 +66,22 @@ echo "=== Test 2: tasks resolve inside the nested root ==="
 assert_contains "mise run //:root-task" "INNER root-task config_root=$PWD"
 assert_contains "mise run //inner-projects/alpha:build" "INNER alpha build config_root=$PWD/inner-projects/alpha"
 
-# Test 3: same from a subproject, where `:build` resolves relative to the nested root
-echo "=== Test 3: relative resolution from a subproject ==="
+# Test 3: the enclosing monorepo's tasks are not loaded at all. They are a different
+# monorepo's task set, so they must not show up outside the nested root's namespace.
+echo "=== Test 3: enclosing monorepo tasks are dropped ==="
+assert_not_contains "mise tasks --all" "only-in-outer"
+assert_contains "mise run //:root-task" "INNER root-task"
+assert_fail "mise run only-in-outer"
+
+# The enclosing config is still an ancestor config for env and tools
+echo "=== Test 4: env from the enclosing config still inherits ==="
+assert_contains "mise env -s bash" "OUTER_ENV=outer"
+
+# Test 5: same from a subproject, where `:build` resolves relative to the nested root
+echo "=== Test 5: relative resolution from a subproject ==="
 cd inner-projects/alpha
 assert_contains "mise run :build" "INNER alpha build config_root=$PWD"
 assert_contains "mise tasks info build" "//inner-projects/alpha:build"
+assert_not_contains "mise tasks --all" "only-in-outer"
 
 echo "=== All nested monorepo root tests passed! ==="

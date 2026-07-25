@@ -311,7 +311,9 @@ myproject/.worktrees/feature-x/packages/api/mise.toml
 
 From inside `myproject/.worktrees/feature-x`, that directory is the monorepo root: `//packages/api:build` resolves to the worktree's copy, `{{config_root}}` points inside the worktree, and the worktree's own `[monorepo].config_roots` are the ones expanded.
 
-The enclosing `myproject/mise.toml` is still an ancestor config, though, so its tools, environment variables, and tasks continue to be inherited the same way any parent config would be. Its tasks appear **unnamespaced** (outside the `//` namespace of the selected root), so `mise tasks` inside the worktree can list a task twice — once as `//:build` from the worktree and once as `build` from the enclosing checkout. To avoid that entirely, keep worktrees outside the main checkout (e.g. `myproject-worktrees/feature-x`).
+Tasks from the **enclosing** monorepo are not loaded. They belong to a different monorepo's task set rather than to a parent namespace of the selected root, so loading them would place them outside the `//` namespace — you'd see `build` from the main checkout sitting next to `//:build` from the worktree. Everything above the enclosing root (your global config, a `$HOME/mise.toml`) is unaffected and still contributes tasks as usual.
+
+The enclosing config is still an ancestor config for **tools, environment variables, and vars**, which inherit the same way any parent config's would. If you don't want that either, keep worktrees outside the main checkout (e.g. `myproject-worktrees/feature-x`).
 
 ## Listing Tasks
 
