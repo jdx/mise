@@ -35,14 +35,18 @@ function pageUrl(link: string): string {
 
 /** Strip the markdown that would only add noise for a reader of this index. */
 function plain(md: string): string {
-  return md
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "") // images
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // links -> text
-    .replace(/`([^`]*)`/g, "$1")
-    .replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1")
-    .replace(/<[^>]+>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return (
+    md
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "") // images
+      // links -> text. The label may itself contain brackets, as it does for
+      // links to TOML sections: [`[bootstrap.packages]`](/bootstrap/packages/)
+      .replace(/\[((?:[^[\]]|\[[^[\]]*\])*)\]\([^)]*\)/g, "$1")
+      .replace(/`([^`]*)`/g, "$1")
+      .replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1")
+      .replace(/<[^>]+>/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
 }
 
 /**
@@ -98,10 +102,11 @@ function description(file: string): string | undefined {
   if (!text) return undefined;
   if (text.length <= MAX_DESCRIPTION) return text;
 
-  // Prefer cutting at a sentence boundary, else a word boundary.
+  // Prefer cutting at a sentence boundary, else a word boundary, else hard.
   const sentence = text.slice(0, MAX_DESCRIPTION).lastIndexOf(". ");
   if (sentence > MAX_DESCRIPTION / 2) return text.slice(0, sentence + 1);
-  return `${text.slice(0, text.lastIndexOf(" ", MAX_DESCRIPTION))}…`;
+  const word = text.lastIndexOf(" ", MAX_DESCRIPTION);
+  return `${text.slice(0, word > 0 ? word : MAX_DESCRIPTION)}…`;
 }
 
 type Entry = { text: string; link: string };

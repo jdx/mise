@@ -123,6 +123,9 @@ sources = [
   "docs/**/*.md",
   "docs/.vitepress/sidebar.ts",
   "docs/.vitepress/llms.ts",
+  # sidebar.ts builds the CLI section from this, so a render:help change to
+  # command visibility must invalidate the index even if no markdown changed.
+  "docs/.vitepress/cli_commands.ts",
 ]
 outputs = ["docs/public/llms.txt"]
 run = "bun docs/.vitepress/llms.ts"

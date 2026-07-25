@@ -77,7 +77,7 @@ page for the detail; do not guess at flags, settings, or config keys.
 - [pacman](https://mise.jdx.dev/bootstrap/packages/pacman.html): System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 - [brew](https://mise.jdx.dev/bootstrap/packages/brew.html): Homebrew formulae and casks — without requiring Homebrew to be installed.
 - [mas](https://mise.jdx.dev/bootstrap/packages/mas.html): Mac App Store apps via the mas CLI.
-- [Package Plugins](https://mise.jdx.dev/bootstrap/packages/plugins.html): Package manager plugins extend [[bootstrap.packages]](/bootstrap/packages/) without adding a manager to mise core.
+- [Package Plugins](https://mise.jdx.dev/bootstrap/packages/plugins.html): Package manager plugins extend [bootstrap.packages] without adding a manager to mise core. They are useful for machine-global state owned by another tool, such as VS Code extensions, Helm plugins,…
 - [Repos](https://mise.jdx.dev/bootstrap/repos.html): mise can declare git repositories in [bootstrap.repos] and apply them with mise bootstrap repos apply or as part of mise bootstrap.
 - [Dotfiles](https://mise.jdx.dev/dotfiles.html): mise can manage dotfiles from the [dotfiles] section of mise.toml. Entries can either own a whole file or directory, or manage one small piece of a file something else owns.
 - [Shell Activation](https://mise.jdx.dev/bootstrap/shell.html): mise can declaratively add shell activation snippets for bash, zsh, and fish with [bootstrap.miseshellactivate], applied by mise bootstrap mise-shell-activate apply or as part of mise bootstrap.
@@ -116,7 +116,7 @@ page for the detail; do not guess at flags, settings, or config keys.
 - [Backend Plugin Development](https://mise.jdx.dev/backend-plugin-development.html): The mise-backend-plugin-template provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
 - [Tool Plugin Development](https://mise.jdx.dev/tool-plugin-development.html): The mise-tool-plugin-template provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
 - [Environment Plugin Development](https://mise.jdx.dev/env-plugin-development.html): Environment plugins are a special type of mise plugin that provide environment variables and PATH modifications without managing tool versions.
-- [Package Plugin Development](https://mise.jdx.dev/package-plugin-development.html): A package plugin is a Lua-based vfox plugin that implements a machine-global manager for [[bootstrap.packages]](/bootstrap/packages/).
+- [Package Plugin Development](https://mise.jdx.dev/package-plugin-development.html): A package plugin is a Lua-based vfox plugin that implements a machine-global manager for [bootstrap.packages].
 - [Plugin Lua Modules](https://mise.jdx.dev/plugin-lua-modules.html): mise plugins have access to a comprehensive set of built-in Lua modules that provide common functionality.
 - [Plugin Publishing](https://mise.jdx.dev/plugin-publishing.html): This guide shows how to publish and distribute your plugins, whether they are backend plugins or tool plugins.
 - [asdf (Legacy) Plugins](https://mise.jdx.dev/asdf-legacy-plugins.html): asdf plugins are considered legacy. New asdf and vfox plugins are not accepted into the mise registry for supply-chain security reasons — for registry submissions use the aqua (preferred) or github…
