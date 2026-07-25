@@ -397,6 +397,9 @@ fn task_state_key(task: &Task, root: &Path) -> String {
     task.hash(&mut hasher);
     task.config_sources().hash(&mut hasher);
     root.hash(&mut hasher);
+    task.run.hash(&mut hasher);
+    task.sources.hash(&mut hasher);
+    task.outputs.patterns().hash(&mut hasher);
     format!("{:x}", hasher.finish())
 }
 
@@ -615,6 +618,35 @@ mod tests {
             .push(PathBuf::from("mise.toml"));
 
         assert_ne!(primary_key, task_state_key(&task, root));
+    }
+
+    #[test]
+    fn task_state_key_changes_when_run_changes() {
+        use crate::task::RunEntry;
+        let root = Path::new("/project");
+        let mut task = Task {
+            name: "build".to_string(),
+            config_source: PathBuf::from("mise.toml"),
+            run: vec![RunEntry::Script("echo v1".to_string())],
+            ..Default::default()
+        };
+        let key_v1 = task_state_key(&task, root);
+        task.run = vec![RunEntry::Script("echo v2".to_string())];
+        assert_ne!(key_v1, task_state_key(&task, root));
+    }
+
+    #[test]
+    fn task_state_key_changes_when_sources_change() {
+        let root = Path::new("/project");
+        let mut task = Task {
+            name: "build".to_string(),
+            config_source: PathBuf::from("mise.toml"),
+            sources: vec!["src.txt".to_string()],
+            ..Default::default()
+        };
+        let key_v1 = task_state_key(&task, root);
+        task.sources = vec!["other.txt".to_string()];
+        assert_ne!(key_v1, task_state_key(&task, root));
     }
 
     #[test]
