@@ -7,6 +7,10 @@
 # (jdx/usage#738). mise used to promote `-r`/`-S` to global in the completion spec
 # because their root globals are long-only, so the parser dropped the shorts that exist
 # only on the non-global `run` redeclarations; that workaround is no longer needed.
+#
+# Needs usage >= 3.5.7. `latest` only reaches it once it clears the default 24h
+# minimum_release_age, so opt out of the delay here.
+export MISE_MINIMUM_RELEASE_AGE=0s
 
 cat <<'EOF' >mise.toml
 [tools]

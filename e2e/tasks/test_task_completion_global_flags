@@ -7,7 +7,9 @@
 # choices instead of being shadowed by the global.
 #
 # Requires usage >= 3.5.7, which stops the mounting CLI's flags from being inherited
-# into mounted commands (jdx/usage#738).
+# into mounted commands (jdx/usage#738). `latest` only reaches it once it clears the
+# default 24h minimum_release_age, so opt out of the delay here.
+export MISE_MINIMUM_RELEASE_AGE=0s
 
 cat <<'EOF' >mise.toml
 [tools]
