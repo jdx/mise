@@ -29,7 +29,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fmt::Debug, sync::Arc};
 use versions::Versioning;

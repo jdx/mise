@@ -1,4 +1,5 @@
 use std::env::join_paths;
+#[cfg(unix)]
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
@@ -110,10 +111,12 @@ fn init() {
 /// Unit tests run single-threaded (`RUST_TEST_THREADS=1` in `.cargo/config.toml`
 /// and in the `test:unit` task), so a guarded set/read/restore sequence is not
 /// observed by other tests.
+#[cfg(unix)]
 pub struct EnvVarGuard {
     prev: Vec<(OsString, Option<OsString>)>,
 }
 
+#[cfg(unix)]
 impl EnvVarGuard {
     pub fn new() -> Self {
         Self { prev: vec![] }
@@ -127,6 +130,7 @@ impl EnvVarGuard {
     }
 }
 
+#[cfg(unix)]
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
         // restore in reverse so repeated sets of the same key unwind correctly

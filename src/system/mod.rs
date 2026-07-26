@@ -293,6 +293,7 @@ pub fn pending_plugin_packages_from_config(
 /// Aggregate `[bootstrap.packages]` from the current merged config plus every
 /// tracked config file, mirroring the way `mise prune` protects tool versions
 /// still referenced by other projects.
+#[cfg(unix)]
 pub async fn packages_from_config_and_tracked_config_files(
     config: &Arc<Config>,
 ) -> Result<Vec<ManagerPackages>> {
@@ -300,6 +301,7 @@ pub async fn packages_from_config_and_tracked_config_files(
     packages_from_config_files_and_tracked_config_files(&config.config_files, &tracked_config_files)
 }
 
+#[cfg(unix)]
 fn packages_from_config_files_and_tracked_config_files(
     current_config_files: &ConfigMap,
     tracked_config_files: &ConfigMap,
@@ -323,6 +325,7 @@ fn packages_from_config_files_and_tracked_config_files(
     resolve_managers(by_mgr, false)
 }
 
+#[cfg(unix)]
 fn merge_manager_packages(
     by_mgr: &mut IndexMap<String, Vec<PackageRequest>>,
     manager_packages: Vec<ManagerPackages>,
