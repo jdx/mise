@@ -40,7 +40,7 @@ impl Plugin {
         &self,
         ctx: PackageInstalledContext,
     ) -> Result<PackageInstalledResponse> {
-        debug!("[vfox:{}] package_installed", &self.name);
+        debug!("[vfox:{}] package_installed", self.name);
         self.eval_async(chunk! {
             require "hooks/package_installed"
             return PLUGIN:PackageInstalled($ctx)
@@ -52,7 +52,7 @@ impl Plugin {
         &self,
         ctx: PackageActionContext,
     ) -> Result<PackageActionResponse> {
-        debug!("[vfox:{}] package_install", &self.name);
+        debug!("[vfox:{}] package_install", self.name);
         self.eval_async(chunk! {
             require "hooks/package_install"
             return PLUGIN:PackageInstall($ctx)
@@ -64,7 +64,7 @@ impl Plugin {
         &self,
         ctx: PackageActionContext,
     ) -> Result<PackageActionResponse> {
-        debug!("[vfox:{}] package_upgrade", &self.name);
+        debug!("[vfox:{}] package_upgrade", self.name);
         self.eval_async(chunk! {
             require "hooks/package_upgrade"
             return PLUGIN:PackageUpgrade($ctx)

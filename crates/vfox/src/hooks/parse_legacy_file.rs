@@ -18,7 +18,7 @@ pub struct ParseLegacyFileResponse {
 
 impl Plugin {
     pub async fn parse_legacy_file(&self, legacy_file: &Path) -> Result<ParseLegacyFileResponse> {
-        debug!("[vfox:{}] parse_legacy_file", &self.name);
+        debug!("[vfox:{}] parse_legacy_file", self.name);
         let ctx = LegacyFileContext {
             args: vec![],
             filepath: legacy_file.to_path_buf(),

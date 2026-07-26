@@ -22,7 +22,7 @@ impl Plugin {
         &self,
         ctx: BackendInstallContext,
     ) -> Result<BackendInstallResponse> {
-        debug!("[vfox:{}] backend_install", &self.name);
+        debug!("[vfox:{}] backend_install", self.name);
         self.eval_async(chunk! {
             require "hooks/backend_install"
             return PLUGIN:BackendInstall($ctx)

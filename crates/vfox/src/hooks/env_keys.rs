@@ -28,7 +28,7 @@ impl Plugin {
         &self,
         ctx: EnvKeysContext<T>,
     ) -> Result<Vec<EnvKey>> {
-        debug!("[vfox:{}] env_keys", &self.name);
+        debug!("[vfox:{}] env_keys", self.name);
         let env_keys = self
             .eval_async(chunk! {
                 require "hooks/env_keys"

@@ -15,7 +15,7 @@ impl Plugin {
         &self,
         ctx: MisePathContext<T>,
     ) -> Result<Vec<String>> {
-        debug!("[vfox:{}] mise_path", &self.name);
+        debug!("[vfox:{}] mise_path", self.name);
         let path = self
             .eval_async(chunk! {
                 require "hooks/mise_path"

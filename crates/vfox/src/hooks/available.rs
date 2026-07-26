@@ -12,7 +12,7 @@ impl Plugin {
     }
 
     pub async fn available_async(&self) -> Result<Vec<AvailableVersion>> {
-        debug!("[vfox:{}] available_async", &self.name);
+        debug!("[vfox:{}] available_async", self.name);
         let ctx = self.context(None)?;
         let available = self
             .eval_async(chunk! {

@@ -23,7 +23,7 @@ impl Plugin {
         &self,
         ctx: BackendExecEnvContext,
     ) -> Result<BackendExecEnvResponse> {
-        debug!("[vfox:{}] backend_exec_env", &self.name);
+        debug!("[vfox:{}] backend_exec_env", self.name);
         self.eval_async(chunk! {
             require "hooks/backend_exec_env"
             return PLUGIN:BackendExecEnv($ctx)
