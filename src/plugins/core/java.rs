@@ -529,10 +529,6 @@ impl Backend for JavaPlugin {
         })
     }
 
-    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec![".java-version".into(), ".sdkmanrc".into()])
-    }
-
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let contents = file::read_to_string(path)?;
         if path.file_name() == Some(".sdkmanrc".as_ref()) {

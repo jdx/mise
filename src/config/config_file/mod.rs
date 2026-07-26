@@ -4,7 +4,7 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, Once};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -644,15 +644,48 @@ fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
     Ok(hash == actual)
 }
 
-async fn filename_is_idiomatic(file_name: String) -> Option<Vec<Arc<dyn Backend>>> {
-    let mut backends = vec![];
+pub(crate) fn matching_idiomatic_filenames<'a>(
+    path: &Path,
+    filenames: impl IntoIterator<Item = &'a str>,
+) -> Vec<&'a str> {
+    let matches = filenames
+        .into_iter()
+        .filter(|filename| path.ends_with(filename))
+        .collect::<Vec<_>>();
+    let max_components = matches
+        .iter()
+        .map(|filename| Path::new(filename).components().count())
+        .max()
+        .unwrap_or_default();
+    matches
+        .into_iter()
+        .filter(|filename| Path::new(filename).components().count() == max_components)
+        .collect()
+}
+
+async fn path_is_idiomatic(path: &Path) -> Option<Vec<Arc<dyn Backend>>> {
+    let mut backends_by_filename = BTreeMap::<String, Vec<Arc<dyn Backend>>>::new();
     for b in backend::list() {
         match b.idiomatic_filenames().await {
-            Ok(filenames) if filenames.contains(&file_name) => backends.push(b),
+            Ok(filenames) => {
+                for filename in filenames {
+                    backends_by_filename
+                        .entry(filename)
+                        .or_default()
+                        .push(b.clone());
+                }
+            }
             Err(e) => debug!("idiomatic_filenames failed for {}: {:?}", b, e),
-            _ => {}
         }
     }
+    let mut seen = HashSet::new();
+    let backends =
+        matching_idiomatic_filenames(path, backends_by_filename.keys().map(String::as_str))
+            .into_iter()
+            .flat_map(|filename| backends_by_filename.get(filename).into_iter().flatten())
+            .filter(|backend| seen.insert(backend.id().to_string()))
+            .cloned()
+            .collect::<Vec<_>>();
     if backends.is_empty() {
         None
     } else {
@@ -678,7 +711,7 @@ async fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
         f if env::MISE_OVERRIDE_CONFIG_FILENAMES.contains(f) => Some(ConfigFileType::MiseToml),
         f if env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::MiseToml),
         f => {
-            if let Some(backends) = filename_is_idiomatic(f.to_string()).await {
+            if let Some(backends) = path_is_idiomatic(path).await {
                 Some(ConfigFileType::IdiomaticVersion(backends))
             } else if f.ends_with(".toml") {
                 Some(ConfigFileType::MiseToml)
@@ -727,6 +760,7 @@ mod tests {
     #[tokio::test]
     async fn test_detect_config_file_type() {
         env::set_var("MISE_EXPERIMENTAL", "true");
+        backend::load_tools().await.unwrap();
         assert!(matches!(
             detect_config_file_type(Path::new("/foo/bar/.nvmrc")).await,
             Some(ConfigFileType::IdiomaticVersion(_))
@@ -747,6 +781,34 @@ mod tests {
             detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")).await,
             Some(ConfigFileType::IdiomaticVersion(_))
         ));
+        assert!(matches!(
+            detect_config_file_type(Path::new("/foo/bar/.config/goreleaser.yaml")).await,
+            Some(ConfigFileType::IdiomaticVersion(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_parse_nested_registry_idiomatic_file() -> Result<()> {
+        env::set_var("MISE_EXPERIMENTAL", "true");
+        backend::load_tools().await?;
+        let dir = tempfile::tempdir()?;
+        let config_dir = dir.path().join(".config");
+        std::fs::create_dir_all(&config_dir)?;
+        let path = config_dir.join("goreleaser.yaml");
+        file::write(&path, "version: 2\n")?;
+
+        let tools = parse(&path)
+            .await?
+            .to_tool_request_set()?
+            .into_iter()
+            .collect::<Vec<_>>();
+        let (_, versions, _) = tools
+            .iter()
+            .find(|(backend, _, _)| backend.short == "goreleaser")
+            .expect("goreleaser should be parsed from its nested idiomatic path");
+
+        assert_eq!(versions[0].version(), "2");
+        Ok(())
     }
 
     #[test]

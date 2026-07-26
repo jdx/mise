@@ -4,4 +4,21 @@ backends = [
   "go:github.com/evilmartians/lefthook",
 ]
 description = "Fast and powerful Git hooks manager for any type of projects"
+idiomatic_files = [
+  { path = "lefthook.yml", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = "lefthook.yaml", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = ".lefthook.yml", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = ".lefthook.yaml", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = "lefthook.toml", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = ".lefthook.toml", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = "lefthook.json", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = ".lefthook.json", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = "lefthook.jsonc", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = ".lefthook.jsonc", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = ".config/lefthook.yml", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = ".config/lefthook.yaml", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = ".config/lefthook.toml", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = ".config/lefthook.json", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = ".config/lefthook.jsonc", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+]
 test = { cmd = "lefthook version", expected = "{{version}}" }

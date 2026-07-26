@@ -120,10 +120,6 @@ impl Backend for DenoPlugin {
         Ok(versions)
     }
 
-    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec![".deno-version".into(), "package.json".into()])
-    }
-
     async fn install_version_(
         &self,
         ctx: &InstallContext,

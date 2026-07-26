@@ -155,10 +155,6 @@ impl Backend for DotnetPlugin {
             .collect())
     }
 
-    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec!["global.json".into()])
-    }
-
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let content = file::read_to_string(path)?;
         let global_json: GlobalJson = serde_json::from_str(&content)?;

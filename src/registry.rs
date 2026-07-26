@@ -24,6 +24,11 @@ use url::Url;
 
 // the registry is generated from registry/ in the project root
 static BAKED_REGISTRY: Registry = include!(concat!(env!("OUT_DIR"), "/registry.rs"));
+
+pub(crate) fn baked_registry() -> &'static Registry {
+    &BAKED_REGISTRY
+}
+
 pub static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
     if !Settings::get().registry_floating {
         return &BAKED_REGISTRY;
@@ -115,8 +120,24 @@ pub struct RegistryTool {
     pub overrides: &'static [&'static str],
     pub test: &'static Option<RegistryToolTest>,
     pub os: &'static [&'static str],
-    pub idiomatic_files: &'static [&'static str],
+    pub idiomatic_files: &'static [RegistryIdiomaticFile],
     pub detect: &'static [&'static str],
+}
+
+#[derive(Debug, Clone)]
+pub struct RegistryIdiomaticFile {
+    pub path: &'static str,
+    pub version_regex: Option<&'static str>,
+    pub version_json_path: Option<&'static str>,
+    pub version_expr: Option<&'static str>,
+}
+
+impl RegistryIdiomaticFile {
+    pub fn has_parser(&self) -> bool {
+        self.version_regex.is_some()
+            || self.version_json_path.is_some()
+            || self.version_expr.is_some()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -329,7 +350,7 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
     let aliases = string_array(table.get("aliases"), "aliases")?;
     let overrides = string_array(table.get("overrides"), "overrides")?;
     let os = string_array(table.get("os"), "os")?;
-    let idiomatic_files = string_array(table.get("idiomatic_files"), "idiomatic_files")?;
+    let idiomatic_files = parse_registry_idiomatic_files(table.get("idiomatic_files"))?;
     let detect = string_array(table.get("detect"), "detect")?;
     let description = table
         .get("description")
@@ -353,6 +374,66 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
         idiomatic_files: leak_vec(idiomatic_files),
         detect: leak_vec(detect),
     })
+}
+
+fn parse_registry_idiomatic_files(
+    value: Option<&toml::Value>,
+) -> Result<Vec<RegistryIdiomaticFile>> {
+    value
+        .map(|value| {
+            value
+                .as_array()
+                .ok_or_else(|| eyre::eyre!("idiomatic_files must be an array"))?
+                .iter()
+                .map(parse_registry_idiomatic_file)
+                .collect()
+        })
+        .transpose()
+        .map(Option::unwrap_or_default)
+}
+
+fn parse_registry_idiomatic_file(value: &toml::Value) -> Result<RegistryIdiomaticFile> {
+    match value {
+        toml::Value::String(path) => Ok(RegistryIdiomaticFile {
+            path: leak_string(path.clone()),
+            version_regex: None,
+            version_json_path: None,
+            version_expr: None,
+        }),
+        toml::Value::Table(table) => {
+            for key in table.keys() {
+                ensure!(
+                    matches!(
+                        key.as_str(),
+                        "path" | "version_regex" | "version_json_path" | "version_expr"
+                    ),
+                    "unknown idiomatic file field: {key}"
+                );
+            }
+            let string = |key: &str| -> Result<Option<&'static str>> {
+                table
+                    .get(key)
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(|value| leak_string(value.to_string()))
+                            .ok_or_else(|| eyre::eyre!("idiomatic_files.{key} must be a string"))
+                    })
+                    .transpose()
+            };
+            let path = string("path")?
+                .ok_or_else(|| eyre::eyre!("idiomatic_files.path must be a string"))?;
+            Ok(RegistryIdiomaticFile {
+                path,
+                version_regex: string("version_regex")?,
+                version_json_path: string("version_json_path")?,
+                version_expr: string("version_expr")?,
+            })
+        }
+        _ => Err(eyre::eyre!(
+            "idiomatic_files entries must be strings or tables"
+        )),
+    }
 }
 
 fn parse_registry_backend(value: &toml::Value) -> Result<RegistryBackend> {
@@ -687,6 +768,11 @@ backends = [
   "aqua:example/tool",
   { full = "github:example/tool", platforms = ["linux-x64"], options = { bin = "example" } },
 ]
+idiomatic_files = [
+  ".example-version",
+  { path = "example.json", version_json_path = ".tool.version" },
+  { path = "example.txt", version_regex = 'version=(\S+)', version_expr = "versions[0]" },
+]
 test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
 "#
             .to_string(),
@@ -702,7 +788,40 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             tool.backend_options("github:example/tool").get("bin"),
             Some("example")
         );
+        assert_eq!(tool.idiomatic_files[0].path, ".example-version");
+        assert!(!tool.idiomatic_files[0].has_parser());
+        assert_eq!(tool.idiomatic_files[1].path, "example.json");
+        assert_eq!(
+            tool.idiomatic_files[1].version_json_path,
+            Some(".tool.version")
+        );
+        assert_eq!(
+            tool.idiomatic_files[2].version_regex,
+            Some(r"version=(\S+)")
+        );
+        assert_eq!(tool.idiomatic_files[2].version_expr, Some("versions[0]"));
         assert_eq!(tool.test.as_ref().unwrap().tools, &["node"]);
+    }
+
+    #[test]
+    fn test_dynamic_registry_rejects_unknown_idiomatic_file_fields() {
+        use super::*;
+
+        let err = registry_from_sources(BTreeMap::from([(
+            "example".to_string(),
+            r#"
+backends = ["aqua:example/tool"]
+idiomatic_files = [{ path = ".example-version", parser = "shell" }]
+"#
+            .to_string(),
+        )]))
+        .err()
+        .unwrap();
+
+        assert!(
+            format!("{err:#}").contains("unknown idiomatic file field: parser"),
+            "{err:#}"
+        );
     }
 
     #[test]

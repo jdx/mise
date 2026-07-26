@@ -195,10 +195,6 @@ impl Backend for BunPlugin {
         Ok(versions)
     }
 
-    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec![".bun-version".into(), "package.json".into()])
-    }
-
     async fn install_version_(
         &self,
         ctx: &InstallContext,

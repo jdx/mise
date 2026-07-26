@@ -365,10 +365,6 @@ impl Backend for ZigPlugin {
         }
     }
 
-    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec![".zig-version".into()])
-    }
-
     async fn install_version_(
         &self,
         ctx: &InstallContext,

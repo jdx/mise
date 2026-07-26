@@ -1,3 +1,4 @@
 backends = ["core:swift"]
 description = "Swift Lang (Core)"
+idiomatic_files = [".swift-version"]
 os = ["linux", "macos"]

@@ -321,10 +321,6 @@ impl Backend for RustPlugin {
         Ok(versions)
     }
 
-    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec!["rust-toolchain.toml".into()])
-    }
-
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         Ok(self
             ._parse_idiomatic_file_with_options(path)

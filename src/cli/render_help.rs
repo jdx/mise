@@ -1,9 +1,13 @@
 use crate::cli::Cli;
 use crate::file;
+use crate::registry;
 use clap::{Command, CommandFactory};
-use eyre::Result;
+use eyre::{ContextCompat, Result, ensure};
 use indoc::formatdoc;
 use itertools::Itertools;
+
+const IDIOMATIC_FILES_START: &str = "<!-- mise:idiomatic-version-files:start -->";
+const IDIOMATIC_FILES_END: &str = "<!-- mise:idiomatic-version-files:end -->";
 
 /// internal command to generate markdown from help
 #[derive(Debug, clap::Args)]
@@ -15,6 +19,7 @@ impl RenderHelp {
         xx::file::mkdirp("docs/.vitepress")?;
 
         file::write("docs/.vitepress/cli_commands.ts", render_command_ts())?;
+        render_idiomatic_version_files()?;
         if cfg!(windows) {
             cmd!("prettier.cmd", "--write", "docs/.vitepress/cli_commands.ts").run()?;
         } else {
@@ -22,6 +27,72 @@ impl RenderHelp {
         }
         Ok(())
     }
+}
+
+fn render_idiomatic_version_files() -> Result<()> {
+    let path = "docs/configuration.md";
+    let content = file::read_to_string(path)?;
+    let start = content
+        .find(IDIOMATIC_FILES_START)
+        .wrap_err("missing idiomatic version files start marker")?
+        + IDIOMATIC_FILES_START.len();
+    let end = content
+        .find(IDIOMATIC_FILES_END)
+        .wrap_err("missing idiomatic version files end marker")?;
+    ensure!(start <= end, "idiomatic version files markers are reversed");
+
+    let table = render_idiomatic_version_files_table();
+    let rendered = format!(
+        "{}\n\n{}\n\n{}",
+        &content[..start],
+        table.trim(),
+        &content[end..]
+    );
+    file::write(path, rendered)?;
+    Ok(())
+}
+
+fn render_idiomatic_version_files_table() -> String {
+    let rows = registry::baked_registry()
+        .iter()
+        .filter(|(plugin, tool)| *plugin == tool.short && !tool.idiomatic_files.is_empty())
+        .map(|(plugin, tool)| {
+            let files = tool
+                .idiomatic_files
+                .iter()
+                .map(|file| format!("`{}`", file.path))
+                .join(", ");
+            (plugin, files)
+        })
+        .sorted_by_key(|(plugin, _)| *plugin)
+        .collect_vec();
+    let plugin_width = rows
+        .iter()
+        .map(|(plugin, _)| plugin.len())
+        .max()
+        .unwrap_or_default()
+        .max("Plugin".len());
+    let files_width = rows
+        .iter()
+        .map(|(_, files)| files.len())
+        .max()
+        .unwrap_or_default()
+        .max("Idiomatic Files".len());
+
+    let mut table = format!(
+        "| {plugin:<plugin_width$} | {files:<files_width$} |\n\
+         | {plugin_rule:<plugin_width$} | {files_rule:<files_width$} |\n",
+        plugin = "Plugin",
+        files = "Idiomatic Files",
+        plugin_rule = "-".repeat(plugin_width),
+        files_rule = "-".repeat(files_width),
+    );
+    for (plugin, files) in rows {
+        table.push_str(&format!(
+            "| {plugin:<plugin_width$} | {files:<files_width$} |\n"
+        ));
+    }
+    table
 }
 
 fn render_command_ts() -> String {
@@ -72,4 +143,29 @@ fn render_command(command: &mut Command, indent: usize) -> String {
     }
     output.push_str(&format!("{pad}}},\n"));
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn idiomatic_version_files_table_comes_from_baked_registry() {
+        let table = render_idiomatic_version_files_table();
+
+        assert!(
+            table
+                .lines()
+                .any(|line| line.starts_with("| cmake ") && line.contains("`CMakeLists.txt`"))
+        );
+        assert!(table.lines().any(|line| {
+            line.starts_with("| node ")
+                && line.contains("`.nvmrc`, `.node-version`, `package.json`")
+        }));
+        assert!(
+            table
+                .lines()
+                .any(|line| line.starts_with("| zig ") && line.contains("`.zig-version`"))
+        );
+    }
 }

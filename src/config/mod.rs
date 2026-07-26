@@ -2004,19 +2004,31 @@ async fn parse_config_file(
     f: &PathBuf,
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<Arc<dyn ConfigFile>> {
-    match idiomatic_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
-        Some(plugin) => {
-            trace!("idiomatic version file: {}", display_path(f));
-            let tools = backend::list()
-                .into_iter()
-                .filter(|f| plugin.contains(&f.to_string()))
-                .collect::<Vec<_>>();
-            IdiomaticVersionFile::parse(f.into(), tools)
-                .await
-                .map(|f| Arc::new(f) as Arc<dyn ConfigFile>)
-        }
-        None => config_file::parse(f).await,
+    let plugins = matching_idiomatic_tools(f, idiomatic_filenames);
+    if plugins.is_empty() {
+        config_file::parse(f).await
+    } else {
+        trace!("idiomatic version file: {}", display_path(f));
+        let tools = backend::list()
+            .into_iter()
+            .filter(|backend| plugins.contains(&backend.to_string()))
+            .collect::<Vec<_>>();
+        IdiomaticVersionFile::parse(f.into(), tools)
+            .await
+            .map(|f| Arc::new(f) as Arc<dyn ConfigFile>)
     }
+}
+
+fn matching_idiomatic_tools(
+    path: &Path,
+    idiomatic_filenames: &BTreeMap<String, Vec<String>>,
+) -> Vec<String> {
+    config_file::matching_idiomatic_filenames(path, idiomatic_filenames.keys().map(String::as_str))
+        .into_iter()
+        .flat_map(|filename| idiomatic_filenames.get(filename).into_iter().flatten())
+        .unique()
+        .cloned()
+        .collect()
 }
 
 fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
@@ -4366,6 +4378,25 @@ config_roots = ["apps/api", "apps/web"]
         assert!(!result.contains_key(&sub_dir));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_matching_idiomatic_tools_uses_relative_paths() {
+        let idiomatic_filenames = BTreeMap::from([
+            (
+                "subdir/tool.json".to_string(),
+                vec!["nested-tool".to_string()],
+            ),
+            ("tool.json".to_string(), vec!["root-tool".to_string()]),
+        ]);
+
+        assert_eq!(
+            matching_idiomatic_tools(
+                Path::new("/tmp/project/subdir/tool.json"),
+                &idiomatic_filenames
+            ),
+            vec!["nested-tool"]
+        );
     }
 
     #[tokio::test]

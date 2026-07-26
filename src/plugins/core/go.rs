@@ -280,10 +280,6 @@ impl Backend for GoPlugin {
         };
         Ok(versions)
     }
-    async fn _idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
-        Ok(vec![".go-version".into(), "go.mod".into()])
-    }
-
     async fn _parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
         let v = match path.file_name() {
             Some(name) if name == "go.mod" => parse_gomod(&file::read_to_string(path)?),

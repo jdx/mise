@@ -239,7 +239,58 @@ fn codegen_registry() {
                     .as_array()
                     .unwrap()
                     .iter()
-                    .map(|f| f.as_str().unwrap().to_string())
+                    .map(|f| match f {
+                        toml::Value::String(path) => format!(
+                            "RegistryIdiomaticFile {{ path: {}, version_regex: None, version_json_path: None, version_expr: None }}",
+                            raw_string_literal(path)
+                        ),
+                        toml::Value::Table(spec) => {
+                            for key in spec.keys() {
+                                assert!(
+                                    matches!(
+                                        key.as_str(),
+                                        "path"
+                                            | "version_regex"
+                                            | "version_json_path"
+                                            | "version_expr"
+                                    ),
+                                    "[{short}] unknown idiomatic file field: {key}"
+                                );
+                            }
+                            let required = |key: &str| {
+                                spec.get(key)
+                                    .and_then(|value| value.as_str())
+                                    .unwrap_or_else(|| {
+                                        panic!(
+                                            "[{short}] idiomatic_files.{key} must be a string"
+                                        )
+                                    })
+                            };
+                            let optional = |key: &str| {
+                                spec.get(key)
+                                    .map(|value| {
+                                        value.as_str().unwrap_or_else(|| {
+                                            panic!(
+                                                "[{short}] idiomatic_files.{key} must be a string"
+                                            )
+                                        })
+                                    })
+                                    .map(raw_string_literal)
+                                    .map(|value| format!("Some({value})"))
+                                    .unwrap_or_else(|| "None".to_string())
+                            };
+                            format!(
+                                "RegistryIdiomaticFile {{ path: {}, version_regex: {}, version_json_path: {}, version_expr: {} }}",
+                                raw_string_literal(required("path")),
+                                optional("version_regex"),
+                                optional("version_json_path"),
+                                optional("version_expr"),
+                            )
+                        }
+                        _ => panic!(
+                            "[{short}] idiomatic_files entries must be strings or tables"
+                        ),
+                    })
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
@@ -293,11 +344,7 @@ fn codegen_registry() {
                 .map(|o| format!("\"{o}\""))
                 .collect::<Vec<_>>()
                 .join(", "),
-            idiomatic_files = idiomatic_files
-                .iter()
-                .map(|f| format!("\"{f}\""))
-                .collect::<Vec<_>>()
-                .join(", "),
+            idiomatic_files = idiomatic_files.to_vec().join(", "),
             detect = detect
                 .iter()
                 .map(|f| format!("\"{f}\""))

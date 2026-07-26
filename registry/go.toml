@@ -1,3 +1,4 @@
 backends = ["core:go"]
 description = "go lang (Builtin plugin)"
 detect = ["go.mod", "go.sum"]
+idiomatic_files = [".go-version", "go.mod"]
