@@ -182,8 +182,8 @@ impl DepsEngine {
     /// Create a new DepsEngine, discovering all configured providers.
     pub fn new(config: &Config) -> Result<Self> {
         let providers = Self::discover_providers(config)?;
-        // Only require experimental when deps is actually configured
-        if !providers.is_empty() {
+        // Inactive-only config is diagnostic state and cannot run.
+        if providers.iter().any(|provider| provider.is_applicable()) {
             Settings::get().ensure_experimental("deps")?;
         }
         Ok(Self { providers })
@@ -294,7 +294,7 @@ impl DepsEngine {
                 )) as Box<dyn DepsProvider>
             })
             .collect();
-        if !providers.is_empty() {
+        if providers.iter().any(|provider| provider.is_applicable()) {
             Settings::get().ensure_experimental("deps")?;
         }
         Ok(Self { providers })
@@ -342,7 +342,7 @@ impl DepsEngine {
             &qualified_fallback_ids,
         )?;
         providers.append(&mut engine.providers);
-        if !providers.is_empty() {
+        if providers.iter().any(|provider| provider.is_applicable()) {
             Settings::get().ensure_experimental("deps")?;
         }
         Ok(Self { providers })
@@ -506,39 +506,59 @@ impl DepsEngine {
             .collect()
     }
 
+    /// Reject explicitly selected providers that cannot run.
+    pub fn validate_selection(&self, only: Option<&[String]>, skip: &[String]) -> Result<()> {
+        let Some(only) = only else {
+            return Ok(());
+        };
+        for id in only {
+            if skip.contains(id) {
+                continue;
+            }
+            let Some(provider) = self.providers.iter().find(|provider| provider.id() == id) else {
+                continue;
+            };
+            if let DepsProviderApplicability::Inactive(reason) = provider.applicability() {
+                bail!("provider '{}' is inactive: {reason}", provider.id());
+            }
+        }
+        Ok(())
+    }
+
     /// Run all stale deps steps, respecting dependency ordering
     pub async fn run(&self, opts: DepsOptions) -> Result<DepsResult> {
         let mut results = vec![];
 
-        if let Some(only) = &opts.only {
-            for id in only {
-                if opts.skip.contains(id) {
-                    continue;
-                }
-                let Some(provider) = self.providers.iter().find(|provider| provider.id() == id)
-                else {
-                    continue;
-                };
-                if let DepsProviderApplicability::Inactive(reason) = provider.applicability() {
-                    bail!("provider '{}' is inactive: {reason}", provider.id());
-                }
-            }
-        }
+        self.validate_selection(opts.only.as_deref(), &opts.skip)?;
 
-        // Collect providers that need to run
-        let mut to_run: Vec<DepsJob> = vec![];
+        let is_selected = |provider: &dyn DepsProvider| {
+            (!opts.auto_only || provider.is_auto())
+                && !opts.skip.iter().any(|id| id == provider.id())
+                && opts
+                    .only
+                    .as_ref()
+                    .is_none_or(|only| only.iter().any(|id| id == provider.id()))
+        };
+        let inactive_ids: HashMap<String, String> = self
+            .providers
+            .iter()
+            .filter(|provider| is_selected(provider.as_ref()))
+            .filter_map(|provider| match provider.applicability() {
+                DepsProviderApplicability::Applicable => None,
+                DepsProviderApplicability::Inactive(reason) => {
+                    Some((provider.id().to_string(), reason))
+                }
+            })
+            .collect();
+
+        // Collect stale providers before applying dependency blocking so a
+        // fresh provider remains satisfied even if one of its deps is inactive.
+        let mut candidates: Vec<(DepsJob, String)> = vec![];
         // Track IDs of providers that are fresh/skipped (treated as already satisfied for deps)
         let mut satisfied_ids: HashSet<String> = HashSet::new();
 
         for provider in &self.providers {
             let id = provider.id().to_string();
-
-            if !provider.is_applicable() {
-                trace!("deps step {} is inactive, skipping", id);
-                results.push(DepsStepResult::Skipped(id.clone()));
-                satisfied_ids.insert(id);
-                continue;
-            }
 
             // Check auto_only filter
             if opts.auto_only && !provider.is_auto() {
@@ -564,6 +584,12 @@ impl DepsEngine {
                 continue;
             }
 
+            if let DepsProviderApplicability::Inactive(_) = provider.applicability() {
+                trace!("deps step {} is inactive, skipping", id);
+                results.push(DepsStepResult::Skipped(id.clone()));
+                continue;
+            }
+
             let freshness = if opts.force {
                 FreshnessResult::Forced
             } else {
@@ -583,21 +609,63 @@ impl DepsEngine {
                 let timeout = provider.timeout();
                 let reason = freshness.reason().to_string();
 
-                if opts.dry_run {
-                    results.push(DepsStepResult::WouldRun(id, reason));
-                } else {
-                    to_run.push(DepsJob {
+                candidates.push((
+                    DepsJob {
                         id,
                         cmd,
                         outputs,
                         depends,
                         timeout,
-                    });
-                }
+                    },
+                    reason,
+                ));
             } else {
                 trace!("deps step {} is fresh, skipping", id);
                 results.push(DepsStepResult::Fresh(id.clone()));
                 satisfied_ids.insert(id);
+            }
+        }
+
+        let mut inactive_blocked_ids: HashSet<String> = inactive_ids.keys().cloned().collect();
+        loop {
+            let previous_len = inactive_blocked_ids.len();
+            for (job, _) in &candidates {
+                if job
+                    .depends
+                    .iter()
+                    .any(|dependency| inactive_blocked_ids.contains(dependency))
+                {
+                    inactive_blocked_ids.insert(job.id.clone());
+                }
+            }
+            if inactive_blocked_ids.len() == previous_len {
+                break;
+            }
+        }
+
+        let mut to_run: Vec<DepsJob> = vec![];
+        for (job, reason) in candidates {
+            if inactive_blocked_ids.contains(&job.id) {
+                if let Some((dependency, reason)) = job
+                    .depends
+                    .iter()
+                    .find_map(|dependency| inactive_ids.get(dependency).map(|r| (dependency, r)))
+                {
+                    warn!(
+                        "deps provider '{}' skipped because dependency '{}' is inactive: {}",
+                        job.id, dependency, reason
+                    );
+                } else {
+                    warn!(
+                        "deps provider '{}' skipped due to inactive dependency",
+                        job.id
+                    );
+                }
+                results.push(DepsStepResult::Skipped(job.id));
+            } else if opts.dry_run {
+                results.push(DepsStepResult::WouldRun(job.id, reason));
+            } else {
+                to_run.push(job);
             }
         }
 

@@ -37,6 +37,21 @@ assert_fail "mise deps npm" "is inactive: missing package-lock.json"
 assert_fail "mise deps --only npm" "is inactive: missing package-lock.json"
 assert_not_contains "mise deps --force 2>&1" "npm install"
 
+# Inactive-only automatic providers do not trigger the experimental feature
+# gate for otherwise unrelated commands.
+assert "env -u MISE_EXPERIMENTAL mise exec -- echo INACTIVE_DEPS_OK" "INACTIVE_DEPS_OK"
+
+# Explicit inactive selection fails before unrelated project tools are installed.
+mkdir inactive-before-tools
+cat >inactive-before-tools/mise.toml <<'EOF'
+[tools]
+tiny = "1"
+
+[deps.npm]
+EOF
+assert_fail "cd inactive-before-tools && MISE_DATA_DIR='$PWD/inactive-data' mise deps npm" "is inactive: missing package-lock.json"
+assert_fail "test -d inactive-data/installs/tiny"
+
 # A directory with the expected name is not a valid applicability file.
 mkdir package-lock.json
 assert_contains "mise deps --list" "status: inactive (missing package-lock.json)"
@@ -61,7 +76,14 @@ cat >mise.toml <<'EOF'
 depends = ["missing_run"]
 sources = ["schema.graphql"]
 outputs = ["generated/"]
-run = "echo codegen"
+run = "touch blocked-output; echo codegen"
+
+[deps.downstream]
+depends = ["codegen"]
+run = "touch downstream-output"
+
+[deps.unrelated]
+run = "touch unrelated-output"
 EOF
 
 # Create source file
@@ -81,6 +103,18 @@ EOF
 assert_contains "mise deps --list" "missing_run"
 assert_contains "mise deps --list" "status: inactive (missing run command)"
 assert_fail "mise deps missing_run --explain" "is inactive: missing run command"
+
+# Broad runs block the inactive provider's dependent chain but continue
+# unrelated providers.
+assert_contains "mise deps --force --skip npm 2>&1" "dependency 'missing_run' is inactive: missing run command"
+assert_fail "test -f blocked-output"
+assert_fail "test -f downstream-output"
+assert "test -f unrelated-output"
+
+# Dry-run uses the same blocked-dependency plan as execution.
+assert_not_contains "mise deps --dry-run --skip npm 2>&1" "Would install: codegen"
+assert_not_contains "mise deps --dry-run --skip npm 2>&1" "Would install: downstream"
+assert_contains "mise deps --dry-run --skip npm 2>&1" "Would install: unrelated"
 
 # Test --only flag
 assert_contains "mise deps --dry-run --only codegen 2>&1" "codegen"
