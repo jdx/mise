@@ -54,3 +54,24 @@ rm -rf dist
 PROFILE=release mise run --dry-run build
 assert_fail "test -e dist"
 assert "wc -l < runs.txt | tr -d ' '" "3"
+
+# Usage-derived environment values participate in the cache key.
+cat <<'EOF' >>mise.toml
+
+[tasks.usage-cache]
+usage = 'arg "<value>"'
+run = '''
+mkdir -p usage-dist
+printf '%s\n' "$usage_value" > usage-dist/result.txt
+printf 'ran\n' >> usage-runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["usage-dist"]
+cache = { enabled = true, env = ["usage_value"] }
+EOF
+
+mise run usage-cache alpha
+rm -rf usage-dist
+mise run usage-cache beta
+assert "cat usage-dist/result.txt" "beta"
+assert "wc -l < usage-runs.txt | tr -d ' '" "2"

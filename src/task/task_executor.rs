@@ -448,6 +448,30 @@ impl TaskExecutor {
             env.insert("__MISE_DIFF".into(), serialized);
         }
 
+        let task_file = task.file_path(config).await?;
+        let usage_args = || {
+            if let Some(file) = &task_file {
+                once(file.to_string_lossy().to_string())
+                    .chain(task.args.iter().cloned())
+                    .collect()
+            } else {
+                once(String::new())
+                    .chain(task.args.iter().cloned())
+                    .collect()
+            }
+        };
+        self.parse_usage_spec_and_init_env(config, task, &mut env, usage_args, extra_vars.clone())
+            .await?;
+
+        // Confirmation must happen before a cache restore because restoring
+        // outputs mutates the working tree just like executing the task.
+        let confirm_guard = if task.interactive {
+            Some(acquire_runtime_lock(task.interactive).await)
+        } else {
+            None
+        };
+        self.check_confirmation(config, task, &env).await?;
+
         let artifact_cache =
             if !self.dry_run && task.cache.as_ref().is_some_and(|cache| cache.enabled) {
                 match TaskArtifactCache::new(task, config, &ts, &env, &task_env).await? {
@@ -494,10 +518,10 @@ impl TaskExecutor {
 
         let timer = std::time::Instant::now();
 
-        if let Some(file) = task.file_path(config).await? {
+        if let Some(file) = task_file {
             let exec_start = std::time::Instant::now();
             remove_auto_output(task, config).await?;
-            self.exec_file(config, &file, task, &env, &prefix, extra_vars)
+            self.exec_file(config, &file, task, &env, &prefix, confirm_guard)
                 .await?;
             trace!(
                 "task {} exec_file took {}ms (total {}ms)",
@@ -515,27 +539,6 @@ impl TaskExecutor {
                     extra_vars.clone(),
                 )
                 .await?;
-
-            let get_args = || {
-                [String::new()]
-                    .iter()
-                    .chain(task.args.iter())
-                    .cloned()
-                    .collect()
-            };
-            self.parse_usage_spec_and_init_env(config, task, &mut env, get_args, extra_vars)
-                .await?;
-
-            // For interactive tasks, acquire the lock before confirmation so the
-            // prompt gets exclusive terminal access (consistent with exec_file path).
-            let confirm_guard = if task.interactive {
-                Some(acquire_runtime_lock(task.interactive).await)
-            } else {
-                None
-            };
-
-            // Check confirmation after usage args are parsed
-            self.check_confirmation(config, task, &env).await?;
 
             let exec_start = std::time::Instant::now();
             remove_auto_output(task, config).await?;
@@ -1056,26 +1059,9 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
-        extra_vars: Option<IndexMap<String, String>>,
+        guard: Option<RuntimeLockGuard<'static>>,
     ) -> Result<()> {
-        let mut env = env.clone();
-        let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
-        let get_args = || once(command.clone()).chain(args.clone()).collect_vec();
-        self.parse_usage_spec_and_init_env(config, task, &mut env, get_args, extra_vars)
-            .await?;
-
-        // For interactive tasks, acquire the lock before confirmation so the
-        // prompt gets exclusive terminal access. For non-interactive tasks,
-        // acquire after confirmation to avoid blocking the task graph.
-        let guard = if task.interactive {
-            Some(acquire_runtime_lock(task.interactive).await)
-        } else {
-            None
-        };
-
-        // Check confirmation after usage args are parsed
-        self.check_confirmation(config, task, &env).await?;
 
         if !self.quiet(Some(task)) {
             let cmd = format!("{} {}", display_path(file), args.join(" "))
@@ -1091,7 +1077,7 @@ impl TaskExecutor {
         } else {
             Some(acquire_runtime_lock(task.interactive).await)
         };
-        self.exec(file, &args, task, &env, prefix).await
+        self.exec(file, &args, task, env, prefix).await
     }
 
     async fn exec(

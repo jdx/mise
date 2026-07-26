@@ -166,6 +166,12 @@ impl TaskArtifactCache {
         if !archive_path.is_file() || !manifest_path.is_file() {
             return Ok(false);
         }
+        // Serialize restores targeting the same working directory across mise
+        // processes so ancestor validation and the following renames are one
+        // cooperative critical section.
+        let _output_lock =
+            crate::lock_file::LockFile::new(&self.root.join(".mise-task-artifact-cache-output"))
+                .lock()?;
 
         let restore = || -> Result<()> {
             let manifest: CacheManifest = serde_json::from_slice(&fs::read(&manifest_path)?)?;
