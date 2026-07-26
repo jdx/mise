@@ -55,6 +55,21 @@ EOF
 assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
 assert_contains "mise run a 2>&1 || true" "circular dependency detected: a -> b -> a"
 
+# Test non-cycle dependency graph failures are reported as validation errors
+cat <<'EOF' >mise.toml
+[tasks.root]
+run = "echo root"
+depends = ["child"]
+
+[tasks.child]
+usage = "not valid usage syntax"
+run = "echo child"
+depends = ["{{usage.target}}"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "Failed to build task dependency graph"
+assert_contains "mise tasks validate 2>&1 || true" "dependency-graph-error"
+
 # A depends_post reference reverses the scheduling edge, so this is acyclic:
 # a runs before b both because a schedules b afterward and b depends on a.
 cat <<EOF >mise.toml
@@ -178,7 +193,7 @@ depends = ["missing"]
 EOF
 
 assert_contains "mise tasks validate --json 2>&1 || true" '"tasks_validated": 2'
-assert_contains "mise tasks validate --json 2>&1 || true" '"errors": 1'
+assert_contains "mise tasks validate --json 2>&1 || true" '"errors": 2'
 assert_contains "mise tasks validate --json 2>&1 || true" '"category": "missing-dependency"'
 
 # Test errors-only flag

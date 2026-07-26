@@ -6,7 +6,9 @@ use crate::config::Config;
 use crate::duration;
 use crate::file;
 use crate::task::task_fetcher::TaskFetcher;
-use crate::task::{Deps, GetMatchingExt, Task, build_task_ref_map, resolve_task_pattern};
+use crate::task::{
+    Deps, GetMatchingExt, Task, TaskCycleError, build_task_ref_map, resolve_task_pattern,
+};
 use crate::tera::contains_template_syntax;
 use crate::ui::style;
 use console::style as console_style;
@@ -86,20 +88,29 @@ impl TasksValidate {
         let mut issues = Vec::new();
         if let Err(err) = Deps::new(&config, tasks.clone()).await {
             let details = err.to_string();
-            if details.contains("circular dependency detected") {
-                let task = details
-                    .split_once(": ")
-                    .and_then(|(_, path)| path.split(" -> ").next())
-                    .unwrap_or("task graph")
-                    .to_string();
-                issues.push(ValidationIssue {
-                    task,
-                    severity: Severity::Error,
-                    category: "circular-dependency".to_string(),
-                    message: "Circular dependency detected".to_string(),
-                    details: Some(details),
-                });
-            }
+            let (task, category, message) =
+                if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
+                    let task = cycle
+                        .path()
+                        .first()
+                        .map(String::as_str)
+                        .unwrap_or("task graph")
+                        .to_string();
+                    (task, "circular-dependency", "Circular dependency detected")
+                } else {
+                    (
+                        "task graph".to_string(),
+                        "dependency-graph-error",
+                        "Failed to build task dependency graph",
+                    )
+                };
+            issues.push(ValidationIssue {
+                task,
+                severity: Severity::Error,
+                category: category.to_string(),
+                message: message.to_string(),
+                details: Some(details),
+            });
         }
         for task in &tasks {
             issues.extend(self.validate_task(task, &all_tasks, &config).await);
