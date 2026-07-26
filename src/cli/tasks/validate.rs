@@ -88,29 +88,20 @@ impl TasksValidate {
         let mut issues = Vec::new();
         if let Err(err) = Deps::new(&config, tasks.clone()).await {
             let details = err.to_string();
-            let (task, category, message) =
-                if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
-                    let task = cycle
-                        .path()
-                        .first()
-                        .map(String::as_str)
-                        .unwrap_or("task graph")
-                        .to_string();
-                    (task, "circular-dependency", "Circular dependency detected")
-                } else {
-                    (
-                        "task graph".to_string(),
-                        "dependency-graph-error",
-                        "Failed to build task dependency graph",
-                    )
-                };
-            issues.push(ValidationIssue {
-                task,
-                severity: Severity::Error,
-                category: category.to_string(),
-                message: message.to_string(),
-                details: Some(details),
-            });
+            if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
+                issues.push(cycle_issue(cycle, details));
+            } else {
+                issues.push(ValidationIssue {
+                    task: "task graph".to_string(),
+                    severity: Severity::Error,
+                    category: "dependency-graph-error".to_string(),
+                    message: "Failed to build task dependency graph".to_string(),
+                    details: Some(details),
+                });
+                if let Some(issue) = self.find_cycle_in_valid_subgraph(&config, &tasks).await {
+                    issues.push(issue);
+                }
+            }
         }
         for task in &tasks {
             issues.extend(self.validate_task(task, &all_tasks, &config).await);
@@ -147,6 +138,35 @@ impl TasksValidate {
         }
 
         Ok(())
+    }
+
+    async fn find_cycle_in_valid_subgraph(
+        &self,
+        config: &Arc<Config>,
+        tasks: &[Task],
+    ) -> Option<ValidationIssue> {
+        let mut valid_tasks = Vec::new();
+        for task in tasks {
+            match Deps::new(config, vec![task.clone()]).await {
+                Ok(_) => valid_tasks.push(task.clone()),
+                Err(err) => {
+                    if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
+                        return Some(cycle_issue(cycle, err.to_string()));
+                    }
+                }
+            }
+        }
+
+        // A wait_for relationship only applies when both tasks are selected, so
+        // retry the tasks whose individual graphs built successfully together.
+        if valid_tasks.len() > 1 {
+            if let Err(err) = Deps::new(config, valid_tasks).await {
+                if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
+                    return Some(cycle_issue(cycle, err.to_string()));
+                }
+            }
+        }
+        None
     }
 
     fn get_all_tasks(&self, all_tasks: &BTreeMap<String, Task>) -> Vec<Task> {
@@ -700,6 +720,22 @@ impl TasksValidate {
         }
 
         Ok(())
+    }
+}
+
+fn cycle_issue(cycle: &TaskCycleError, details: String) -> ValidationIssue {
+    let task = cycle
+        .path()
+        .first()
+        .map(String::as_str)
+        .unwrap_or("task graph")
+        .to_string();
+    ValidationIssue {
+        task,
+        severity: Severity::Error,
+        category: "circular-dependency".to_string(),
+        message: "Circular dependency detected".to_string(),
+        details: Some(details),
     }
 }
 

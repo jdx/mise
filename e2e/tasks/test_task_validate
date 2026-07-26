@@ -70,6 +70,25 @@ EOF
 assert_contains "mise tasks validate 2>&1 || true" "Failed to build task dependency graph"
 assert_contains "mise tasks validate 2>&1 || true" "dependency-graph-error"
 
+# Test an unrelated graph failure does not hide a cycle in another task graph
+cat <<'EOF' >mise.toml
+[tasks.a]
+run = "echo a"
+depends = ["b"]
+
+[tasks.b]
+run = "echo b"
+depends = ["a"]
+
+[tasks.invalid]
+run = "echo invalid"
+depends = ["nonexistent"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "dependency-graph-error"
+assert_contains "mise tasks validate 2>&1 || true" "circular-dependency"
+assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
+
 # A depends_post reference reverses the scheduling edge, so this is acyclic:
 # a runs before b both because a schedules b afterward and b depends on a.
 cat <<EOF >mise.toml
