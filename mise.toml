@@ -6,14 +6,12 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 
 [tools]
 actionlint = "latest"
-age = "latest"
 aube = "latest"
 bun = "latest"
 cargo-binstall = "latest"
 communique = "latest"
 "cargo:cargo-edit" = "latest"
 cargo-insta = "latest"
-"github:crate-ci/cargo-release" = "latest"
 git-cliff = "latest"
 usage = "latest"
 gh = "latest"
@@ -29,7 +27,6 @@ shellcheck = "latest"
 shfmt = "latest"
 taplo = "latest"
 wait-for-gh-rate-limit = "latest"
-sops = "latest"
 node = "24"
 
 [task_config]
