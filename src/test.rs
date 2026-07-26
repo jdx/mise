@@ -1,4 +1,5 @@
 use std::env::join_paths;
+use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
 use indoc::indoc;
@@ -100,6 +101,42 @@ fn init() {
     )
     .unwrap();
     file::make_executable(".mise/tasks/filetask").unwrap();
+}
+
+/// Sets process environment variables for the duration of a test and restores
+/// the previous state when dropped — including on an early panic, so a failing
+/// assertion can never leak a variable into the rest of the test process.
+///
+/// Unit tests run single-threaded (`RUST_TEST_THREADS=1` in `.cargo/config.toml`
+/// and in the `test:unit` task), so a guarded set/read/restore sequence is not
+/// observed by other tests.
+pub struct EnvVarGuard {
+    prev: Vec<(OsString, Option<OsString>)>,
+}
+
+impl EnvVarGuard {
+    pub fn new() -> Self {
+        Self { prev: vec![] }
+    }
+
+    pub fn set<K: AsRef<OsStr>, V: AsRef<OsStr>>(&mut self, key: K, value: V) -> &mut Self {
+        let key = key.as_ref().to_os_string();
+        self.prev.push((key.clone(), env::var_os(&key)));
+        env::set_var(&key, value);
+        self
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        // restore in reverse so repeated sets of the same key unwind correctly
+        for (key, prev) in self.prev.drain(..).rev() {
+            match prev {
+                Some(value) => env::set_var(&key, value),
+                None => env::remove_var(&key),
+            }
+        }
+    }
 }
 
 pub fn replace_path(input: &str) -> String {

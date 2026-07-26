@@ -19,3 +19,25 @@ assert "mise env"
 # Test 3: Test with actual command that was reported in bug
 # This should not panic (may fail due to network but shouldn't panic)
 mise ls-remote bun >/dev/null 2>&1 || true
+
+# Test 4: a genuinely invalid UTF-8 value must not panic (#5370).
+# std::env::vars() panics if *any* var in the environment is not valid UTF-8, so
+# mise reads the environment through vars_safe(), which skips malformed pairs.
+# The tests above only export *valid* non-ASCII, so they could never catch a
+# reintroduced panic. 0xC0/0xC1 can never appear in valid UTF-8. Both a panic and
+# a graceful error exit non-zero, so the regression marker is the Rust panic
+# text, not the exit status. (Only the value can be malformed here: bash cannot
+# export a variable whose name is not valid UTF-8.)
+INVALID_UTF8_VAR="$(printf '\xc0\xc1')"
+export INVALID_UTF8_VAR
+
+out="$(RUST_BACKTRACE=0 mise --version 2>&1 || true)"
+assert_not_contains_text "$out" "panicked"
+
+out="$(RUST_BACKTRACE=0 mise env 2>&1 || true)"
+assert_not_contains_text "$out" "panicked"
+
+out="$(RUST_BACKTRACE=0 mise ls 2>&1 || true)"
+assert_not_contains_text "$out" "panicked"
+
+unset INVALID_UTF8_VAR

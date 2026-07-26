@@ -997,6 +997,43 @@ mod tests {
         remove_var("MISE_TEST_PATH");
     }
 
+    /// vars_safe() must skip pairs whose key or value is not valid UTF-8 rather
+    /// than panicking the way std::env::vars() does (#5370).
+    #[cfg(unix)]
+    #[test]
+    fn test_vars_safe_skips_invalid_utf8() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        // 0xff can never appear in valid UTF-8.
+        let bad_value_key = "MISE_TEST_VARS_SAFE_BAD_VALUE";
+        let bad_key = OsString::from_vec(b"MISE_TEST_VARS_SAFE_BAD_KEY_\xff".to_vec());
+        let good_key = "MISE_TEST_VARS_SAFE_GOOD";
+
+        // the guard restores the previous environment on drop, so even a failing
+        // assertion below cannot leak a non-UTF-8 var into the test process
+        let mut guard = crate::test::EnvVarGuard::new();
+        guard
+            .set(bad_value_key, OsString::from_vec(vec![0xff]))
+            .set(&bad_key, "ok")
+            .set(good_key, "1");
+
+        // Both malformed vars really are in the process environment...
+        assert!(vars_os().any(|(k, _)| k == bad_value_key));
+        assert!(vars_os().any(|(k, _)| k == bad_key));
+        // ...and vars_safe() returns without panicking.
+        let safe: Vec<(String, String)> = vars_safe().collect();
+
+        assert!(!safe.iter().any(|(k, _)| k == bad_value_key));
+        assert!(
+            !safe
+                .iter()
+                .any(|(k, _)| k.starts_with("MISE_TEST_VARS_SAFE_BAD_KEY_"))
+        );
+        // Valid neighbours are still returned.
+        assert!(safe.iter().any(|(k, v)| k == good_key && v == "1"));
+    }
+
     #[test]
     fn test_auto_env_default_for_version() {
         let v = |s: &str| versions::Versioning::new(s).unwrap();
