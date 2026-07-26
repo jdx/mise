@@ -706,6 +706,43 @@ aliases = ["alt-name"] # Optional alternative names
 os = ["linux", "macos"] # Optional OS restrictions
 ```
 
+#### Idiomatic version files
+
+Registry tools can opt into [idiomatic version files](/configuration.html#idiomatic-version-files)
+with `idiomatic_files`. A filename string uses mise's default plain-text parser:
+
+```toml
+backends = ["aqua:owner/repo"]
+idiomatic_files = [".your-tool-version"]
+```
+
+For structured or tool-specific files, use a table with the same parsing options supported by the
+[HTTP backend's version listing](/dev-tools/backends/http.html#version-listing):
+
+```toml
+idiomatic_files = [
+  { path = "your-tool.json", version_json_path = ".toolchain.version" },
+  { path = "your-tool.conf", version_regex = 'version\s*=\s*"([^"]+)"' },
+]
+```
+
+The supported parser fields are:
+
+- `version_regex`: extract every regex match, using the first capture group when present.
+- `version_json_path`: extract values using mise's jq-like JSON path syntax.
+- `version_expr`: extract or post-process versions using an
+  [expr-lang](https://expr-lang.org/) expression. The original contents are available as `body`,
+  and versions produced by `version_regex` or `version_json_path` are available as `versions`.
+
+These parsers are evaluated in-process and cannot run shell commands. Plain string entries remain
+compatible with existing registry entries and backend-native parsers.
+
+Idiomatic files are disabled by default. Users enable them for a registry shorthand with:
+
+```sh
+mise settings add idiomatic_version_file_enable_tools your-tool
+```
+
 ### Backend Priority
 
 List backends in order of preference. Users will get the first available

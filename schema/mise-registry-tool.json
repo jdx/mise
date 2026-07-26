@@ -147,9 +147,36 @@
     "idiomatic_files": {
       "type": "array",
       "items": {
-        "type": "string"
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Idiomatic version filename"
+              },
+              "version_regex": {
+                "type": "string",
+                "description": "Regular expression used to extract versions"
+              },
+              "version_json_path": {
+                "type": "string",
+                "description": "jq-like path used to extract versions from JSON"
+              },
+              "version_expr": {
+                "type": "string",
+                "description": "expr-lang expression used to extract or post-process versions"
+              }
+            },
+            "required": ["path"],
+            "additionalProperties": false
+          }
+        ]
       },
-      "description": "Files that indicate this tool should be used in a project"
+      "description": "Files that indicate this tool should be used in a project, optionally with version extraction rules"
     },
     "os": {
       "type": "array",

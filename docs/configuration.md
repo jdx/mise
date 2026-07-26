@@ -419,6 +419,12 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | terramate  | `.terramate-version`                      |
 | yarn       | `.yvmrc`, `package.json`                  |
 
+Registry-backed tools can also describe how mise should extract versions from structured
+idiomatic files. Registry entries may use the same `version_regex`, `version_json_path`, and
+`version_expr` parsers as the [HTTP backend](/dev-tools/backends/http.html#version-listing).
+This lets tools installed through backends such as `aqua:` and `github:` support JSON manifests
+and other tool-specific version files without requiring an asdf or vfox plugin.
+
 For `go.mod`, the `toolchain goX.Y.Z` directive (an exact toolchain pin) is used when present.
 Otherwise the `go X.Y` directive is used; because it declares only the _minimum_ required Go
 version, mise resolves it to the latest matching patch (e.g. `go 1.22` → latest `1.22.x`).
