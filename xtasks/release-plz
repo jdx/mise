@@ -103,6 +103,96 @@ get_latest_crates_version() {
 	cargo info --registry "crates-io" --color never --quiet "$crate" 2>/dev/null | grep "^version:" | cut -d' ' -f2 || echo ""
 }
 
+package_version() {
+	cargo metadata --offline --no-deps --format-version 1 |
+		jq -er --arg name "$1" '
+			[.packages[] | select(.name == $name)]
+			| if length == 1 then .[0].version else error("package not found or ambiguous: \($name)") end
+		'
+}
+
+version_relation() {
+	jq -ner --arg candidate "$1" --arg current "$2" '
+		def parts:
+			split(".")
+			| map(tonumber)
+			| if length == 3 then . else error("expected a numeric three-part version") end;
+		if ($candidate | parts) > ($current | parts) then "greater" else "not-greater" end
+	'
+}
+
+set_package_version() {
+	local crate_name="$1"
+	local manifest="$2"
+	local new_version="$3"
+	local old_version old_pattern relation
+
+	old_version="$(package_version "$crate_name")"
+	old_pattern="${old_version//./\\.}"
+	relation="$(version_relation "$new_version" "$old_version")"
+	if [[ $relation != greater ]]; then
+		echo "Cannot downgrade $crate_name from $old_version to $new_version" >&2
+		return 1
+	fi
+
+	grep -Fqx "version = \"$old_version\"" "$manifest"
+	sed -i.bak "s/^version = \"$old_pattern\"$/version = \"$new_version\"/" "$manifest"
+	rm -f "$manifest.bak"
+
+	# This is the only constrained workspace path dependency.
+	if [[ $crate_name == mise-interactive-config ]]; then
+		grep -Fqx \
+			"mise-interactive-config = { path = \"crates/mise-interactive-config\", version = \"$old_version\" }" \
+			Cargo.toml
+		sed -i.bak \
+			"/^mise-interactive-config = /s/version = \"$old_pattern\"/version = \"$new_version\"/" \
+			Cargo.toml
+		rm -f Cargo.toml.bak
+	fi
+
+	cargo update --offline -p "$crate_name" --precise "$new_version"
+}
+
+bump_package_version() {
+	local crate_name="$1"
+	local manifest="$2"
+	local component="$3"
+	local current major minor patch
+
+	current="$(package_version "$crate_name")"
+	IFS=. read -r major minor patch <<<"$current"
+	[[ $major =~ ^[0-9]+$ && $minor =~ ^[0-9]+$ && $patch =~ ^[0-9]+$ ]]
+
+	case "$component" in
+	patch) patch=$((patch + 1)) ;;
+	minor)
+		minor=$((minor + 1))
+		patch=0
+		;;
+	*)
+		echo "Unsupported version component: $component" >&2
+		return 1
+		;;
+	esac
+
+	set_package_version "$crate_name" "$manifest" "$major.$minor.$patch"
+}
+
+advance_package_version() {
+	local crate_name="$1"
+	local manifest="$2"
+	local candidate="$3"
+	local current relation
+
+	current="$(package_version "$crate_name")"
+	relation="$(version_relation "$candidate" "$current")"
+	if [[ $relation == greater ]]; then
+		set_package_version "$crate_name" "$manifest" "$candidate"
+	else
+		bump_package_version "$crate_name" "$manifest" patch
+	fi
+}
+
 use_published_aqua_registry() {
 	local version="$1"
 
@@ -147,10 +237,10 @@ bump_subcrate_if_changed() {
 
 	if echo "$cur_version" | grep -qE "^$year\.$month\."; then
 		# Same year.month, bump patch (e.g., 2025.12.0 -> 2025.12.1)
-		cargo set-version --bump patch -p "$crate_name"
+		bump_package_version "$crate_name" "$crate_dir/Cargo.toml" patch
 	else
 		# New month or new year, start fresh at YYYY.MM.0
-		cargo set-version "$year.$month.0" -p "$crate_name"
+		advance_package_version "$crate_name" "$crate_dir/Cargo.toml" "$year.$month.0"
 	fi
 
 	local new_version
@@ -190,10 +280,10 @@ bump_and_publish_subcrate() {
 
 	if echo "$cur_version" | grep -qE "^$year\.$month\."; then
 		# Same year.month, bump patch (e.g., 2025.12.0 -> 2025.12.1)
-		cargo set-version --bump patch -p "$crate_name"
+		bump_package_version "$crate_name" "$crate_dir/Cargo.toml" patch
 	else
 		# New month or new year, start fresh at YYYY.MM.0
-		cargo set-version "$year.$month.0" -p "$crate_name"
+		advance_package_version "$crate_name" "$crate_dir/Cargo.toml" "$year.$month.0"
 	fi
 
 	local new_version
@@ -203,7 +293,7 @@ bump_and_publish_subcrate() {
 	# This handles cases where a version was published but local code has changed since
 	while exists_on_crates "$crate_name" "$new_version"; do
 		echo "$crate_name@$new_version already on crates.io, bumping again"
-		cargo set-version --bump patch -p "$crate_name"
+		bump_package_version "$crate_name" "$crate_dir/Cargo.toml" patch
 		new_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
 	done
 
@@ -272,11 +362,11 @@ fi
 year="$(date +%Y)"
 month="$(date +%-m)"
 if echo "$cur_version" | grep -e "^$year\.$month\."; then
-	cargo set-version --bump patch -p mise
+	bump_package_version mise Cargo.toml patch
 elif echo "$cur_version" | grep -e "^$year\."; then
-	cargo set-version --bump minor -p mise
+	bump_package_version mise Cargo.toml minor
 else
-	cargo set-version "$year.1.0" -p mise
+	advance_package_version mise Cargo.toml "$year.1.0"
 fi
 
 version="$(cargo pkgid mise | cut -d# -f2)"
