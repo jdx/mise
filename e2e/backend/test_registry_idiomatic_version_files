@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+mise settings set idiomatic_version_file_enable_tools "dagger,task"
+
+cat >dagger.json <<'EOF'
+{
+  "name": "example",
+  "engineVersion": "v0.21.7"
+}
+EOF
+
+assert_contains "mise tool dagger" "0.21.7"
+
+cat >Taskfile.yml <<'EOF'
+version: '3.17'
+
+tasks:
+  default:
+    cmds:
+      - echo hello
+EOF
+
+assert_contains "mise tool task" "3.17"
+
+mv Taskfile.yml taskfile.yaml
+assert_contains "mise tool task" "3.17"
