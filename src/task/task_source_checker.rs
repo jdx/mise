@@ -19,6 +19,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use walkdir::WalkDir;
 
 /// Remove mise's automatic output before rerunning a task so an earlier
 /// success cannot make a failed attempt look fresh.
@@ -320,16 +321,19 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
         }
 
         // Check for epoch timestamps (files extracted from tarballs without preserved timestamps)
-        // These are considered stale since we can't trust the mtime
-        for (path, metadata) in &source_metadatas {
-            if let Ok(mtime) = metadata.modified()
-                && mtime == UNIX_EPOCH
-            {
-                debug!(
-                    "source file {} has epoch timestamp, treating as stale",
-                    display_path(path)
-                );
-                return Ok(false);
+        // These are considered stale since we can't trust the mtime.
+        // Skipped in hash mode — content is the authority there, not timestamps.
+        if !use_content_hash {
+            for (path, metadata) in &source_metadatas {
+                if let Ok(mtime) = metadata.modified()
+                    && mtime == UNIX_EPOCH
+                {
+                    debug!(
+                        "source file {} has epoch timestamp, treating as stale",
+                        display_path(path)
+                    );
+                    return Ok(false);
+                }
             }
         }
 
@@ -348,7 +352,8 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
         if let Some(dir) = source_hash_path.parent() {
             file::create_dir_all(dir)?;
         }
-        if source_existing_hash(task, &root, use_content_hash).is_some_and(|h| h != source_hash) {
+        let existing_hash = source_existing_hash(task, &root, use_content_hash);
+        if existing_hash.as_deref().is_some_and(|h| h != source_hash) {
             debug!(
                 "source {} hash mismatch in {}",
                 if use_content_hash {
@@ -363,6 +368,16 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
             // invocation still detects the mismatch. save_checksum writes the
             // hash after a successful run.
             return Ok(false);
+        }
+        if use_content_hash && existing_hash.is_some() {
+            // In hash mode, content alone determines freshness — no mtime check.
+            // Compare against the stored output hash to catch partial/missing outputs.
+            let current_output_hash = compute_output_hash(task, &root)?;
+            let stored_output_hash = output_existing_hash(task, &root);
+            let fresh = current_output_hash.is_some()
+                && current_output_hash.as_deref() == stored_output_hash.as_deref();
+            file::write(&source_hash_path, &source_hash)?;
+            return Ok(fresh);
         }
         let sources = get_last_modified_from_metadatas(&source_metadatas);
         let outputs = get_last_modified(&root, &task.outputs.paths(task, &root))?;
@@ -396,25 +411,21 @@ pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
     if task.sources.is_empty() {
         return Ok(());
     }
+    let root = task_cwd(task, config).await?;
     if task.outputs.is_auto() {
-        let root = task_cwd(task, config).await?;
         for p in task.outputs.paths(task, &root) {
             debug!("touching auto output file: {p}");
             file::touch_file(&PathBuf::from(&p))?;
         }
     } else {
-        // Check if explicitly defined outputs were generated
-        // Use task_cwd to respect the task's dir setting, matching sources_are_fresh behavior
-        let root = task_cwd(task, config).await?;
+        // Warn if any explicitly declared output was not generated.
         for output in task.outputs.paths(task, &root) {
             let output_exists = if is_glob_pattern(&output) {
-                // For glob patterns, check if any files match
                 let pattern = root.join(&output);
                 glob(pattern.to_str().unwrap_or_default())
                     .map(|paths| paths.flatten().next().is_some())
                     .unwrap_or(false)
             } else {
-                // For regular paths, check if file exists
                 let path = Path::new(&output);
                 let full_path = if path.is_relative() {
                     root.join(path)
@@ -439,6 +450,33 @@ pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
             file::create_dir_all(dir)?;
         }
         file::write(&path, &hash)?;
+    }
+    // Persist the output hash so the next freshness check can detect missing
+    // or incomplete outputs even when the source hash still matches.
+    // Traversal errors (broken symlinks, unreadable files) are warned but not
+    // propagated — the task itself succeeded; failing here would be misleading.
+    // Without a stored output hash the next freshness check will conservatively
+    // treat the task as stale.
+    if Settings::get().task.source_freshness_hash_contents {
+        let out_path = outputs_hash_path(task, &root);
+        match compute_output_hash(task, &root) {
+            Ok(Some(h)) => {
+                if let Some(dir) = out_path.parent() {
+                    file::create_dir_all(dir)?;
+                }
+                file::write(&out_path, &h)?;
+            }
+            Ok(None) => {} // no outputs defined — nothing to save
+            Err(e) => {
+                // Remove the stale baseline so the next run is not skipped
+                // against an obsolete output snapshot.
+                let _ = std::fs::remove_file(&out_path);
+                warn!(
+                    "task {} output hashing failed; next run will not be skipped: {e}",
+                    task.name
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -475,6 +513,136 @@ fn source_existing_hash(task: &Task, root: &Path, content_hash: bool) -> Option<
     } else {
         None
     }
+}
+
+/// Path to the stored output hash for a task.
+fn outputs_hash_path(task: &Task, root: &Path) -> PathBuf {
+    dirs::STATE
+        .join("task-sources")
+        .join(format!("{}-outputs", task_state_key(task, root)))
+}
+
+/// Read the previously stored output hash, if any.
+fn output_existing_hash(task: &Task, root: &Path) -> Option<String> {
+    let path = outputs_hash_path(task, root);
+    if path.exists() {
+        Some(file::read_to_string(&path).unwrap_or_default())
+    } else {
+        None
+    }
+}
+
+/// Compute a content-integrity hash for all current output files.
+///
+/// Returns `None` when any statically-named output is missing (incomplete
+/// outputs), when a glob pattern expands to zero matching filesystem objects,
+/// or when the task declares no outputs. A `Some` value encodes the sorted
+/// `(path, blake3_content_hash)` of every resolved output file — two identical
+/// sets of fully-present, content-identical outputs produce the same hash.
+///
+/// Content hashing (blake3) catches same-size modifications inside directory
+/// outputs that `(path, size)` or `(path, size, mtime)` would miss.
+/// Directory outputs (static or glob-matched) are walked recursively.
+fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
+    let patterns_or_paths = task.outputs.paths(task, root);
+    if patterns_or_paths.is_empty() {
+        return Ok(None);
+    }
+
+    let (glob_pats, static_paths): (Vec<&String>, Vec<&String>) =
+        patterns_or_paths.iter().partition(|p| is_glob_pattern(p));
+
+    // (path, blake3_hex) — full content hash for correctness.
+    let mut entries: Vec<(PathBuf, String)> = Vec::new();
+
+    fn hash_file(path: &Path) -> Result<(PathBuf, String)> {
+        Ok((path.to_path_buf(), hash::file_hash_blake3(path, None)?))
+    }
+
+    /// Walk a directory and push entries for all descendants.
+    /// Files get their blake3 content hash; subdirectories get a "dir" sentinel
+    /// so that additions/deletions of empty nested directories are detected.
+    /// Symlinked directories are followed so content changes inside them are
+    /// caught. Returns `true` when at least one entry was found.
+    fn push_dir_entries(dir: &Path, entries: &mut Vec<(PathBuf, String)>) -> Result<bool> {
+        let mut found_any = false;
+        for entry in WalkDir::new(dir).follow_links(true).into_iter() {
+            let entry = entry?;
+            let path = entry.path();
+            if path == dir {
+                continue; // skip the root directory itself
+            }
+            if entry.file_type().is_file() {
+                entries.push(hash_file(path)?);
+                found_any = true;
+            } else if entry.file_type().is_dir() {
+                entries.push((path.to_path_buf(), "dir".to_string()));
+                found_any = true;
+            }
+        }
+        Ok(found_any)
+    }
+
+    for path_str in static_paths {
+        let path = {
+            let p = Path::new(path_str.as_str());
+            if p.is_relative() {
+                root.join(p)
+            } else {
+                p.to_path_buf()
+            }
+        };
+        match path.metadata() {
+            Ok(m) if m.is_file() => entries.push(hash_file(&path)?),
+            Ok(m) if m.is_dir() => {
+                if !push_dir_entries(&path, &mut entries)? {
+                    // Empty directory — sentinel so its deletion is detected.
+                    entries.push((path, "empty-dir".to_string()));
+                }
+            }
+            Ok(_) => entries.push((path, "other".to_string())),
+            Err(_) => return Ok(None), // missing → outputs incomplete
+        }
+    }
+
+    for pattern_str in glob_pats {
+        let full = root.join(pattern_str.as_str());
+        let mut matched = false;
+        for entry in glob(full.to_str().unwrap_or_default())? {
+            // Propagate glob resolution errors (OS errors during directory
+            // reads) rather than silently skipping them — a partial result
+            // could produce the same hash as a complete one.
+            let path = entry?;
+            match path.metadata() {
+                Ok(m) if m.is_file() => {
+                    entries.push(hash_file(&path)?);
+                    matched = true;
+                }
+                Ok(m) if m.is_dir() => {
+                    if !push_dir_entries(&path, &mut entries)? {
+                        entries.push((path, "empty-dir".to_string()));
+                    }
+                    matched = true;
+                }
+                Ok(_) => {
+                    entries.push((path, "other".to_string()));
+                    matched = true;
+                }
+                Err(_) => return Ok(None), // unreadable entry → treat as incomplete
+            }
+        }
+        // A glob that matches nothing means expected outputs are missing.
+        if !matched {
+            return Ok(None);
+        }
+    }
+
+    if entries.is_empty() {
+        return Ok(None);
+    }
+
+    entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+    Ok(Some(hash::hash_to_str(&entries)))
 }
 
 /// Get file metadata for a list of include-side patterns or paths, retaining
