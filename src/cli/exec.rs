@@ -280,9 +280,16 @@ where
     // The lazy state must retain the dispatching shim for candidate filtering.
     drop(env::MISE_SHIM_PATH.read().unwrap());
     if sandbox.effective_deny_env() {
-        // When env is sandboxed, clear all vars and only set the filtered ones
-        for (k, _) in std::env::vars() {
-            if !env.contains_key(&k) {
+        // When env is sandboxed, clear all vars and only set the filtered ones.
+        //
+        // Deliberately iterates vars_os() rather than env::vars_safe(): vars_safe()
+        // drops a pair when *either* the key or the value is not valid UTF-8, so a
+        // variable with a non-UTF-8 value (e.g. SECRET=<binary>) would never be
+        // visited here and would survive --deny-env into the sandboxed child.
+        // A key that is not valid UTF-8 can never be present in `env` (a
+        // BTreeMap<String, String>), so treating it as "not allowed" is correct.
+        for (k, _) in std::env::vars_os() {
+            if !k.to_str().is_some_and(|key| env.contains_key(key)) {
                 env::remove_var(&k);
             }
         }

@@ -138,7 +138,7 @@ impl SandboxConfig {
         // For wildcard patterns, check all parent env vars; for exact names, check directly.
         for pattern in &self.allow_env {
             if pattern.contains('*') {
-                for (key, val) in std::env::vars() {
+                for (key, val) in crate::env::vars_safe() {
                     if !filtered.contains_key(&key) && env_pattern_matches(pattern, &key) {
                         filtered.insert(key, val);
                     }
@@ -322,6 +322,28 @@ mod tests {
         assert!(filtered.contains_key("MYAPP_BAR"));
         assert!(!filtered.contains_key("OTHER_VAR"));
         assert!(filtered.contains_key("PATH")); // default key
+    }
+
+    /// filter_env() walks the parent environment for wildcard allow_env
+    /// patterns; a non-UTF-8 parent var must be skipped, not panic (#5370).
+    #[cfg(unix)]
+    #[test]
+    fn test_filter_env_wildcard_skips_invalid_utf8_parent_var() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let key = "MISE_TEST_SANDBOX_INVALID";
+        let config = SandboxConfig {
+            allow_env: vec!["MISE_TEST_SANDBOX_*".to_string()],
+            ..Default::default()
+        };
+        // restores the environment on drop, even if the assertion below fails
+        let mut guard = crate::test::EnvVarGuard::new();
+        guard.set(key, OsString::from_vec(vec![0xff]));
+
+        let filtered = config.filter_env(&BTreeMap::new());
+
+        assert!(!filtered.contains_key(key));
     }
 
     #[test]

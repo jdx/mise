@@ -77,7 +77,7 @@ impl PackagePluginManager {
                 paths.extend(toolset.list_paths(&config).await);
                 let path =
                     join_paths(&paths).wrap_err("failed to construct package plugin PATH")?;
-                let mut env: IndexMap<String, String> = std::env::vars().collect();
+                let mut env: IndexMap<String, String> = crate::env::vars_safe().collect();
                 env.insert("PATH".into(), path.to_string_lossy().into_owned());
                 Ok(env)
             })

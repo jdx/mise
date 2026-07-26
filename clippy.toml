@@ -1,0 +1,10 @@
+# Configuration for `cargo clippy`.
+# https://doc.rust-lang.org/clippy/configuration.html
+#
+# `src/env.rs` does `pub use std::env::*`, so a bare `env::vars()` anywhere in
+# the crate is std's panicking version rather than a mise helper. These entries
+# match on the resolved DefId, so the re-exported spelling is caught too.
+disallowed-methods = [
+  { path = "std::env::vars", reason = "panics on non-UTF-8 environment variables (jdx/mise#5370); use crate::env::vars_safe(), or std::env::vars_os() when values must not be dropped" },
+  { path = "std::env::args", reason = "panics on non-UTF-8 arguments (jdx/mise#10056); use crate::env::args_safe(), or std::env::args_os()" },
+]

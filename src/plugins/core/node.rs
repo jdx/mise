@@ -1179,7 +1179,7 @@ mod tests {
 
     impl NodeEnvResetGuard {
         fn clear() -> Self {
-            let vars = std::env::vars()
+            let vars = env::vars_safe()
                 .filter(|(key, _)| key.starts_with("NODE_"))
                 .collect::<BTreeMap<_, _>>();
             for key in vars.keys() {
@@ -1191,7 +1191,7 @@ mod tests {
 
     impl Drop for NodeEnvResetGuard {
         fn drop(&mut self) {
-            for key in std::env::vars()
+            for key in env::vars_safe()
                 .map(|(key, _)| key)
                 .filter(|key| key.starts_with("NODE_"))
                 .collect::<Vec<_>>()
