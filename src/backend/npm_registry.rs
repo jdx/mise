@@ -34,6 +34,9 @@ use crate::config::Settings;
 /// network on a miss. (Offline state is set from the CLI/env at startup, so
 /// resolving it once at client construction is sufficient.)
 static CLIENT: Lazy<RegistryClient> = Lazy::new(|| {
+    // Before the first registry request, so the memoized User-Agent is
+    // mise's rather than standalone aube's.
+    crate::backend::aube_host::init();
     let config = NpmConfig::load(&meta_dir());
     let settings = Settings::get();
     let mode = if settings.offline() {

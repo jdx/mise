@@ -56,6 +56,7 @@ use versions::Versioning;
 pub mod aqua;
 pub mod asdf;
 pub mod asset_matcher;
+pub mod aube_host;
 pub mod backend_type;
 pub mod cargo;
 pub mod conda;

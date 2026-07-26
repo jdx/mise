@@ -887,6 +887,7 @@ impl NPMBackend {
         tv: &ToolVersion,
         options: &NpmOptions<'_>,
     ) -> Result<()> {
+        crate::backend::aube_host::init();
         let install_path = tv.install_path();
         crate::file::create_dir_all(&install_path)?;
 
