@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+git init -q .
+
+assert_contains "mise generate git-pre-commit --quiet" "exec mise run pre-commit"
+
+assert_contains "mise generate git-pre-commit --write" "Wrote to"
+test -x .git/hooks/pre-commit
+assert_contains "cat .git/hooks/pre-commit" "exec mise run pre-commit"
+
+assert_contains "mise generate git-pre-commit --write" "Moving existing hook"
+test -f .git/hooks/pre-commit.old
+
+mise generate git-pre-commit --write --hook quiet-hook >/dev/null
+assert_empty "mise generate git-pre-commit --quiet --write --hook quiet-hook 2>&1"
+test -x .git/hooks/quiet-hook
+test -f .git/hooks/quiet-hook.old
+
+mise generate git-pre-commit --write --hook silent-hook >/dev/null
+assert_empty "mise generate git-pre-commit --silent --write --hook silent-hook 2>&1"
+test -x .git/hooks/silent-hook
+test -f .git/hooks/silent-hook.old

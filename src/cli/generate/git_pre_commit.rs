@@ -1,5 +1,6 @@
 use xx::file::display_path;
 
+use crate::config::Settings;
 use crate::file;
 use crate::git::Git;
 
@@ -29,18 +30,23 @@ impl GitPreCommit {
     pub async fn run(self) -> eyre::Result<()> {
         let output = self.generate();
         if self.write {
+            let quiet = Settings::get().quiet;
             let path = Git::get_root()?.join(".git/hooks").join(&self.hook);
             if path.exists() {
                 let old_path = path.with_extension("old");
-                miseprintln!(
-                    "Moving existing hook to {:?}",
-                    old_path.file_name().unwrap()
-                );
+                if !quiet {
+                    miseprintln!(
+                        "Moving existing hook to {:?}",
+                        old_path.file_name().unwrap()
+                    );
+                }
                 file::rename(&path, path.with_extension("old"))?;
             }
             file::write(&path, &output)?;
             file::make_executable(&path)?;
-            miseprintln!("Wrote to {}", display_path(&path));
+            if !quiet {
+                miseprintln!("Wrote to {}", display_path(&path));
+            }
         } else {
             miseprintln!("{output}");
         }
