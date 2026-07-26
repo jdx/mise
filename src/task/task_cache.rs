@@ -165,12 +165,15 @@ impl TaskArtifactCache {
         &self.key
     }
 
-    pub fn is_current(&self) -> bool {
+    pub(crate) fn current_output(&self) -> Option<Vec<TaskCacheOutput>> {
         let (archive_path, manifest_path) = self.paths();
-        archive_path.is_file()
-            && manifest_path.is_file()
-            && file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
-            && self.read_manifest().is_ok()
+        if !archive_path.is_file()
+            || !manifest_path.is_file()
+            || !file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
+        {
+            return None;
+        }
+        self.read_manifest().ok().map(|manifest| manifest.output)
     }
 
     pub fn mark_current(&self) -> Result<()> {
@@ -178,10 +181,6 @@ impl TaskArtifactCache {
             file::create_dir_all(parent)?;
         }
         file::write(&self.state_path, &self.key)
-    }
-
-    pub(crate) fn current_output(&self) -> Result<Vec<TaskCacheOutput>> {
-        Ok(self.read_manifest()?.output)
     }
 
     pub(crate) fn restore(&self, task: &Task) -> Result<Option<Vec<TaskCacheOutput>>> {

@@ -183,7 +183,7 @@ pub struct OutputHandlerConfig {
 pub struct OutputHandler {
     pub keep_order_state: Arc<Mutex<KeepOrderState>>,
     pub task_prs: TaskPrMap,
-    pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, String)>>>,
+    pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, Vec<String>)>>>,
 
     // Configuration from CLI args
     output: Option<TaskOutput>,
@@ -334,6 +334,21 @@ impl OutputHandler {
         output: &[TaskCacheOutput],
     ) {
         let mode = self.output(Some(task));
+        if mode == TaskOutput::Timed && !task.silent.suppresses_stdout() {
+            let stdout = output
+                .iter()
+                .filter_map(|line| match line {
+                    TaskCacheOutput::Stdout(line) => Some(line.clone()),
+                    TaskCacheOutput::Stderr(_) => None,
+                })
+                .collect::<Vec<_>>();
+            if !stdout.is_empty() {
+                self.timed_outputs
+                    .lock()
+                    .unwrap()
+                    .insert(prefix.to_string(), (SystemTime::now(), stdout));
+            }
+        }
         for line in output {
             match line {
                 TaskCacheOutput::Stdout(_) if task.silent.suppresses_stdout() => continue,
@@ -373,12 +388,7 @@ impl OutputHandler {
                         self.get_or_init_task_pr(task).println(line.clone());
                     }
                 }
-                (TaskOutput::Timed, TaskCacheOutput::Stdout(line)) => {
-                    self.timed_outputs
-                        .lock()
-                        .unwrap()
-                        .insert(prefix.to_string(), (SystemTime::now(), line.clone()));
-                }
+                (TaskOutput::Timed, TaskCacheOutput::Stdout(_)) => {}
                 (TaskOutput::Interleave | TaskOutput::Quiet, TaskCacheOutput::Stdout(line)) => {
                     if console::colors_enabled() {
                         println!("{line}\x1b[0m");
@@ -433,5 +443,35 @@ impl OutputHandler {
         } else {
             self.jobs.unwrap_or(Settings::get().jobs)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cached_timed_output_preserves_all_stdout_lines() {
+        let handler = OutputHandler::new(OutputHandlerConfig {
+            output: Some(TaskOutput::Timed),
+            silent: false,
+            quiet: false,
+            raw: false,
+            is_linear: true,
+            jobs: None,
+        });
+        let task = Task::default();
+
+        handler.replay_cached_output(
+            &task,
+            "build",
+            &[
+                TaskCacheOutput::Stdout("first".into()),
+                TaskCacheOutput::Stdout("second".into()),
+            ],
+        );
+
+        let outputs = handler.timed_outputs.lock().unwrap();
+        assert_eq!(outputs.get("build").unwrap().1, ["first", "second"]);
     }
 }

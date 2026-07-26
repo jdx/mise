@@ -501,23 +501,20 @@ impl TaskExecutor {
                     None
                 }
                 Some(cache) => {
-                    if !self.force
+                    let current_output = if !self.force
                         && !dependency_state.any_unkeyed_did_work
-                        && cache.is_current()
                         && sources_are_fresh(task, config).await?
                     {
+                        cache.current_output()
+                    } else {
+                        None
+                    };
+                    if let Some(output) = current_output {
                         if !self.quiet(Some(task)) {
                             self.eprint(task, &prefix, "sources up-to-date, skipping");
                         }
-                        match cache.current_output() {
-                            Ok(output) => {
-                                self.output_handler
-                                    .replay_cached_output(task, &prefix, &output);
-                            }
-                            Err(err) => {
-                                warn!("task {} cached output read failed: {err}", task.name);
-                            }
-                        }
+                        self.output_handler
+                            .replay_cached_output(task, &prefix, &output);
                         return Ok(TaskRunOutcome {
                             did_work: false,
                             cache_key: Some(cache.key().to_string()),
@@ -1392,7 +1389,7 @@ impl TaskExecutor {
                         timed_outputs
                             .lock()
                             .unwrap()
-                            .insert(prefix.to_string(), (SystemTime::now(), line));
+                            .insert(prefix.to_string(), (SystemTime::now(), vec![line]));
                     });
                 } else if output_capture.is_some() {
                     cmd = cmd.with_on_stdout(|_| {});
@@ -1424,6 +1421,9 @@ impl TaskExecutor {
             // from style; it maps to `Interleave`), but the variant still exists as
             // a config value so it's kept here for match exhaustiveness.
             TaskOutput::Quiet | TaskOutput::Interleave => {
+                if raw || redactions.is_empty() {
+                    cmd = cmd.stdin(Stdio::inherit());
+                }
                 if output_capture.is_some() {
                     if task.silent.suppresses_stdout() {
                         cmd = cmd.with_on_stdout(|_| {});
@@ -1432,7 +1432,6 @@ impl TaskExecutor {
                         cmd = cmd.with_on_stderr(|_| {});
                     }
                 } else if raw || redactions.is_empty() {
-                    cmd = cmd.stdin(Stdio::inherit());
                     if !task.silent.suppresses_stdout() {
                         cmd = cmd.stdout(Stdio::inherit());
                     } else {

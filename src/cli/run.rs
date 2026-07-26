@@ -758,12 +758,14 @@ impl Run {
                     {
                         let mut outputs = timed_outputs.lock().unwrap();
                         for (prefix, out) in outputs.clone() {
-                            let (time, line) = out;
+                            let (time, lines) = out;
                             if time.elapsed().unwrap().as_secs() >= 1 {
-                                if console::colors_enabled() {
-                                    prefix_println!(prefix, "{line}\x1b[0m");
-                                } else {
-                                    prefix_println!(prefix, "{line}");
+                                for line in lines {
+                                    if console::colors_enabled() {
+                                        prefix_println!(prefix, "{line}\x1b[0m");
+                                    } else {
+                                        prefix_println!(prefix, "{line}");
+                                    }
                                 }
                                 outputs.shift_remove(&prefix);
                             }
