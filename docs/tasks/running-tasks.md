@@ -32,7 +32,14 @@ Extra arguments will be passed to the task, for example, if we want to run in re
 mise run build --release
 ```
 
-If there are multiple commands, the args are only passed to the last command.
+For a precise, validated task interface, define arguments and flags with the
+[`usage` field](/tasks/task-arguments#usage-field). Without a `usage` specification, extra arguments
+are forwarded according to how the task is executed:
+
+- If `run` is an array, the arguments are passed only to its last entry.
+- For a regular inline shell command, the arguments are appended to the command text.
+- A [shebang task](/tasks/toml-tasks#shell-shebang) is executed as a script file, so its interpreter
+  exposes the arguments normally—for example, as `$1` and `$@` in Bash.
 
 Because everything after the task name belongs to the task, mise's own flags have to come
 _before_ it—`mise run --silent build` rather than `mise run build --silent`, which passes
